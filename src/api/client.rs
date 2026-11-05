@@ -18,6 +18,16 @@ pub struct TeamsClient {
 }
 
 impl TeamsClient {
+    /// The signed-in user's display name, for message `imdisplayname`.
+    pub fn display_name(&self) -> Option<String> {
+        self.config.display_name()
+    }
+
+    /// The signed-in user's object id, to recognise their own messages.
+    pub fn object_id(&self) -> Option<String> {
+        self.config.object_id()
+    }
+
     /// Load config and build client. Attempts token refresh if AAD token is expired.
     pub async fn new() -> Result<Self> {
         let mut config = Config::load()?;

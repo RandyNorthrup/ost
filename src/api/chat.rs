@@ -52,6 +52,27 @@ struct MessagesResponse {
     messages: Option<Vec<NativeMessage>>,
 }
 
+/// Who sent a message: its `imdisplayname`, else the signed-in user's own
+/// name when the sender is them, else "Unknown".
+fn sender_name(msg: &NativeMessage, own_oid: Option<&str>, own_name: Option<&str>) -> String {
+    if let Some(name) = msg
+        .im_display_name
+        .as_deref()
+        .filter(|n| !n.trim().is_empty())
+    {
+        return name.to_string();
+    }
+    let is_own = match (msg.from.as_deref(), own_oid) {
+        (Some(from), Some(oid)) => from.ends_with(&format!("8:orgid:{oid}")),
+        _ => false,
+    };
+    match (is_own, own_name) {
+        (true, Some(name)) => name.to_string(),
+        (true, None) => "You".to_string(),
+        _ => "Unknown".to_string(),
+    }
+}
+
 /// Strip HTML tags from content for CLI display.
 fn strip_html(html: &str) -> String {
     let mut result = String::with_capacity(html.len());
@@ -171,11 +192,17 @@ pub async fn send_message_with_client(
     let url = format!("{}/v1/users/ME/conversations/{}/messages", base, chat_id);
 
     let escaped = html_escape(message);
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "content": format!("<p>{}</p>", escaped),
         "messagetype": "RichText/Html",
         "contenttype": "text"
     });
+    // Teams clients send the sender's display name with every message; the
+    // service stores it as-is, and clients that do not look the sender up
+    // themselves show a blank name without it.
+    if let Some(name) = client.display_name() {
+        body["imdisplayname"] = serde_json::Value::String(name);
+    }
 
     tracing::debug!("Sending message to {}", url);
     client.chat_post(&url, &body).await?;
@@ -320,6 +347,8 @@ pub async fn read_messages_data(
     let mut msgs: Vec<&NativeMessage> = messages.iter().collect();
     msgs.reverse();
 
+    let own_oid = client.object_id();
+    let own_name = client.display_name();
     let mut result = Vec::new();
     for msg in &msgs {
         let msgtype = msg.messagetype.as_deref().unwrap_or("");
@@ -328,7 +357,7 @@ pub async fn read_messages_data(
             continue;
         }
 
-        let sender = msg.im_display_name.as_deref().unwrap_or("?").to_string();
+        let sender = sender_name(msg, own_oid.as_deref(), own_name.as_deref());
         let time = msg
             .original_arrival_time
             .as_deref()
@@ -350,4 +379,51 @@ pub async fn read_messages_data(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod sender_name_tests {
+    use super::*;
+
+    fn msg(name: Option<&str>, from: Option<&str>) -> NativeMessage {
+        NativeMessage {
+            id: None,
+            compose_time: None,
+            original_arrival_time: None,
+            im_display_name: name.map(String::from),
+            content: None,
+            messagetype: None,
+            from: from.map(String::from),
+        }
+    }
+
+    const OID: &str = "4287e791-1b98-4963-8b94-281c50472683";
+    const OWN: &str =
+        "https://amer.ng.msg.teams.microsoft.com/v1/users/ME/contacts/8:orgid:4287e791-1b98-4963-8b94-281c50472683";
+
+    #[test]
+    fn uses_the_name_the_message_carries() {
+        assert_eq!(
+            sender_name(&msg(Some("Randy Northrup"), None), Some(OID), None),
+            "Randy Northrup"
+        );
+    }
+
+    #[test]
+    fn blank_name_on_own_message_shows_own_name() {
+        assert_eq!(
+            sender_name(&msg(Some(""), Some(OWN)), Some(OID), Some("OST Test 1")),
+            "OST Test 1"
+        );
+        assert_eq!(sender_name(&msg(None, Some(OWN)), Some(OID), None), "You");
+    }
+
+    #[test]
+    fn blank_name_from_someone_else_is_unknown() {
+        let other = OWN.replace("4287e791", "00000000");
+        assert_eq!(
+            sender_name(&msg(Some(" "), Some(&other)), Some(OID), Some("OST Test 1")),
+            "Unknown"
+        );
+    }
 }

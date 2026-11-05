@@ -40,6 +40,18 @@ impl Config {
         })
     }
 
+    /// The signed-in user's display name (`name` claim of the access token).
+    pub fn display_name(&self) -> Option<String> {
+        let token = self.access_token.as_ref()?;
+        jwt_claim(&token.token, "name").filter(|n| !n.trim().is_empty())
+    }
+
+    /// The signed-in user's Entra object id (`oid` claim), validated as a GUID.
+    pub fn object_id(&self) -> Option<String> {
+        let token = self.access_token.as_ref()?;
+        jwt_claim(&token.token, "oid").filter(|o| is_guid(o))
+    }
+
     /// Get config directory path
     fn config_dir() -> Result<PathBuf> {
         let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli")
@@ -161,24 +173,30 @@ impl TokenStore for Config {
     }
 }
 
-/// Read the `tid` (tenant id) claim from a JWT without verifying it.
+/// Read one string claim from a JWT payload without verifying the token.
 ///
-/// The token was just issued to us by Azure AD over TLS; this only reads a
-/// routing value from it, and never trusts it for authorization.
-fn tenant_id_from_jwt(token: &str) -> Option<String> {
+/// Tokens here were issued to us by Azure AD over TLS; claims read this way
+/// are used only for display and routing, never for authorization.
+fn jwt_claim(token: &str, claim: &str) -> Option<String> {
     use base64::Engine;
     let payload = token.split('.').nth(1)?;
     let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload.trim_end_matches('='))
         .ok()?;
     let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    let tid = json.get("tid")?.as_str()?;
-    // A tenant id is a GUID; refuse anything else rather than store junk.
-    let is_guid = tid.len() == 36
-        && tid.chars().enumerate().all(|(i, c)| {
+    Some(json.get(claim)?.as_str()?.to_string())
+}
+
+fn is_guid(s: &str) -> bool {
+    s.len() == 36
+        && s.chars().enumerate().all(|(i, c)| {
             matches!(i, 8 | 13 | 18 | 23) == (c == '-') && (c == '-' || c.is_ascii_hexdigit())
-        });
-    is_guid.then(|| tid.to_string())
+        })
+}
+
+/// Read the `tid` (tenant id) claim, accepting only a GUID.
+fn tenant_id_from_jwt(token: &str) -> Option<String> {
+    jwt_claim(token, "tid").filter(|t| is_guid(t))
 }
 
 #[cfg(test)]
@@ -212,6 +230,24 @@ mod tenant_id_tests {
             None
         );
         assert_eq!(tenant_id_from_jwt("not-a-jwt"), None);
+    }
+
+    #[test]
+    fn identity_claims_come_from_the_access_token() {
+        let mut c = Config::default();
+        assert_eq!(c.display_name(), None);
+        c.set_access_token(
+            jwt_with(r#"{"name":"OST Test 1","oid":"4287e791-1b98-4963-8b94-281c50472683"}"#),
+            Some(3600),
+        );
+        assert_eq!(c.display_name().as_deref(), Some("OST Test 1"));
+        assert_eq!(
+            c.object_id().as_deref(),
+            Some("4287e791-1b98-4963-8b94-281c50472683")
+        );
+        c.set_access_token(jwt_with(r#"{"name":"  ","oid":"nope"}"#), None);
+        assert_eq!(c.display_name(), None);
+        assert_eq!(c.object_id(), None);
     }
 
     #[test]
