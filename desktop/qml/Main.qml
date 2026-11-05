@@ -631,7 +631,12 @@ Window {
         interval: 4000
         onTriggered: {
             const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
-            if (!backend.currentChatId && chats.length > 0) { backend.selectChat(chats[0].id, chats[0].name); restart(); return }
+            if (!backend.currentChatId && chats.length > 0) {
+                // --open-chat=<id> picks whom to call; else the first chat.
+                const want = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+                const c = chats.find(c => c.id === want) || chats[0]
+                backend.selectChat(c.id, c.name); restart(); return
+            }
             if (window.outStarted) return
             window.outStarted = true
             backend.startCall()
