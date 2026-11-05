@@ -21,6 +21,8 @@ pub struct Reaction {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MessageView {
     pub id: String,
+    /// The sender's own id for the message (read receipts refer to it).
+    pub client_message_id: String,
     /// "message" or "call".
     pub kind: String,
     pub sender: String,
@@ -119,6 +121,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     };
     let base = MessageView {
         id: s("/id"),
+        client_message_id: s("/clientmessageid"),
         kind: "message".into(),
         sender,
         sender_mri,
@@ -451,6 +454,93 @@ fn html_escape(t: &str) -> String {
         .replace('\n', "<br>")
 }
 
+/// Mark a chat read up to `last_message_id` (our consumption horizon; the
+/// other side sees it as a read receipt, other clients clear the unread).
+pub async fn mark_read(
+    client: &TeamsClient,
+    chat_id: &str,
+    last_message_id: &str,
+    last_client_message_id: &str,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/properties?name=consumptionhorizon",
+        client.chat_service_url(),
+        chat_id
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let body = serde_json::json!({
+        "consumptionhorizon": format!("{last_message_id};{now};{last_client_message_id}")
+    });
+    client
+        .chat_request(reqwest::Method::PUT, &url, &body)
+        .await?;
+    Ok(())
+}
+
+/// Chats with messages from someone else newer than our read horizon.
+pub async fn unread_chat_ids(client: &TeamsClient) -> Result<Vec<String>> {
+    let url = format!(
+        "{}/v1/users/ME/conversations?view=msnp24Equivalent&pageSize=100",
+        client.chat_service_url()
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Conversations reply")?;
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    Ok(v.get("conversations")
+        .and_then(|c| c.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|c| is_unread(c, &me))
+        .filter_map(|c| c.get("id").and_then(|i| i.as_str()).map(str::to_string))
+        .collect())
+}
+
+fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
+    let id = conv.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+    if !id.starts_with("19:") {
+        return false;
+    }
+    let Some(last) = conv.get("lastMessage") else {
+        return false;
+    };
+    let kind = last
+        .get("messagetype")
+        .and_then(|k| k.as_str())
+        .unwrap_or_default();
+    if !(kind == "Text" || kind.starts_with("RichText")) {
+        return false;
+    }
+    let from = last
+        .get("from")
+        .and_then(|f| f.as_str())
+        .unwrap_or_default();
+    if !me.is_empty() && from.ends_with(me) {
+        return false;
+    }
+    let last_id: u64 = last
+        .get("id")
+        .and_then(|i| i.as_str())
+        .and_then(|i| i.parse().ok())
+        .unwrap_or(0);
+    let horizon: u64 = conv
+        .pointer("/properties/consumptionhorizon")
+        .and_then(|h| h.as_str())
+        .and_then(|h| h.split(';').next())
+        .and_then(|h| h.parse().ok())
+        .unwrap_or(0);
+    last_id > horizon
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,6 +566,32 @@ mod tests {
             "<p>🎉</p>"
         );
         assert_eq!(sanitize_html("line<br>two"), "line<br />two");
+    }
+
+    #[test]
+    fn unread_compares_the_last_message_with_the_horizon() {
+        let conv = |from: &str, last: &str, horizon: Option<&str>| {
+            let mut c = serde_json::json!({"id": "19:a_b@unq.gbl.spaces",
+                "lastMessage": {"id": last, "messagetype": "RichText/Html", "from": format!("https://x/contacts/{from}")},
+                "properties": {}});
+            if let Some(h) = horizon {
+                c["properties"]["consumptionhorizon"] = serde_json::json!(format!("{h};1;{h}"));
+            }
+            c
+        };
+        assert!(is_unread(
+            &conv("8:orgid:them", "200", Some("100")),
+            "8:orgid:me"
+        ));
+        assert!(!is_unread(
+            &conv("8:orgid:them", "200", Some("200")),
+            "8:orgid:me"
+        ));
+        assert!(!is_unread(
+            &conv("8:orgid:me", "200", Some("100")),
+            "8:orgid:me"
+        ));
+        assert!(is_unread(&conv("8:orgid:them", "200", None), "8:orgid:me"));
     }
 
     #[test]

@@ -104,6 +104,10 @@ pub mod qobject {
         #[qinvokable]
         fn load_calendar(self: Pin<&mut Backend>, start_utc: &QString, end_utc: &QString);
 
+        /// The window gained focus: mark the open chat read.
+        #[qinvokable]
+        fn mark_current_read(self: Pin<&mut Backend>);
+
         /// Load the Calls history.
         #[qinvokable]
         fn load_calls(self: Pin<&mut Backend>);
@@ -173,6 +177,10 @@ pub struct BackendRust {
     unread: HashSet<String>,
     /// The chat list as loaded, before unread flags are applied.
     chats: Vec<serde_json::Value>,
+    /// The newest message id in the open chat.
+    newest_message_id: Option<(String, String)>,
+    /// The last message id we marked read, per chat.
+    marked_read: std::collections::HashMap<String, String>,
     /// Our own MRI, to tell our messages apart in pushes.
     my_mri: Option<String>,
     /// Availability by MRI for the other members of 1:1 chats.
@@ -288,10 +296,15 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     Ok((me.display_name, list))
 }
 
-async fn load_messages(chat_id: String) -> anyhow::Result<String> {
+async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(String, String)>)> {
     let client = TeamsClient::new().await?;
     let timeline = api::messages::read_timeline(&client, &chat_id, MESSAGE_LIMIT).await?;
-    Ok(serde_json::to_string(&timeline)?)
+    let last_id = timeline
+        .iter()
+        .rev()
+        .find(|m| m.kind == "message")
+        .map(|m| (m.id.clone(), m.client_message_id.clone()));
+    Ok((serde_json::to_string(&timeline)?, last_id))
 }
 
 /// A call event arrived: ring for a new invitation; anything else about
@@ -1022,6 +1035,7 @@ impl qobject::Backend {
                         this.as_mut().set_status_text(QString::default());
                         this.as_mut().start_push();
                         this.as_mut().start_presence();
+                        this.as_mut().load_server_unread();
                     }
                     Err(e) => {
                         this.as_mut().set_signed_in(false);
@@ -1038,6 +1052,7 @@ impl qobject::Backend {
             self.as_mut().publish_chats();
         }
         self.as_mut().set_typing_text(QString::default());
+        self.as_mut().rust_mut().newest_message_id = None;
         self.as_mut().set_current_chat_id(chat_id.clone());
         self.as_mut().set_current_chat_name(chat_name.clone());
         self.as_mut().set_messages_json(QString::from("[]"));
@@ -1086,14 +1101,71 @@ impl qobject::Backend {
                     return;
                 }
                 match result {
-                    Ok(json) => this
-                        .as_mut()
-                        .set_messages_json(QString::from(json.as_str())),
+                    Ok((json, last_id)) => {
+                        this.as_mut()
+                            .set_messages_json(QString::from(json.as_str()));
+                        this.as_mut().rust_mut().newest_message_id = last_id;
+                        this.as_mut().mark_current_read();
+                    }
                     Err(e) => this
                         .as_mut()
                         .set_status_text(QString::from(short_error(&e).as_str())),
                 }
             });
+        });
+    }
+
+    /// Chats Teams considers unread (newer messages than our read horizon).
+    fn load_server_unread(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::messages::unread_chat_ids(&client).await
+            }
+            .await;
+            match result {
+                Ok(ids) => {
+                    let _ = qt.queue(move |mut this| {
+                        let current = this.rust().current_chat_id.to_string();
+                        for id in ids.into_iter().filter(|i| *i != current) {
+                            this.as_mut().rust_mut().unread.insert(id);
+                        }
+                        this.as_mut().publish_chats();
+                    });
+                }
+                Err(e) => tracing::warn!("unread state failed: {}", short_error(&e)),
+            }
+        });
+    }
+
+    /// Mark the open chat read up to its newest message, if the window has
+    /// focus and we have not already done so.
+    pub fn mark_current_read(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let Some(last) = self.rust().newest_message_id.clone() else {
+            return;
+        };
+        if chat_id.is_empty() || !self.rust().window_active {
+            return;
+        }
+        if self.rust().marked_read.get(&chat_id) == Some(&last.0) {
+            return;
+        }
+        self.as_mut()
+            .rust_mut()
+            .marked_read
+            .insert(chat_id.clone(), last.0.clone());
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::messages::mark_read(&client, &chat_id, &last.0, &last.1).await
+            }
+            .await;
+            match result {
+                Ok(()) => tracing::info!("marked read"),
+                Err(e) => tracing::warn!("mark read failed: {}", short_error(&e)),
+            }
         });
     }
 }

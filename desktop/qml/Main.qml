@@ -20,7 +20,9 @@ Window {
 
     Backend {
         id: backend
-        windowActive: window.active
+        // --assume-focused: captures run offscreen, where nothing has focus.
+        windowActive: window.active || Qt.application.arguments.indexOf("--assume-focused") >= 0
+        onWindowActiveChanged: if (windowActive) markCurrentRead()
         Component.onCompleted: start()
         onActivateRequested: { window.show(); window.raise(); window.requestActivate() }
     }
