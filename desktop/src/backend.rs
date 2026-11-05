@@ -1329,7 +1329,39 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::call_history(&client, CALL_HISTORY_LIMIT).await
+                let mut calls = api::call_history(&client, CALL_HISTORY_LIMIT).await?;
+                // Calls OST placed carry no display name for the other
+                // side; look those people up once each.
+                let mut names: HashMap<String, String> = HashMap::new();
+                for c in calls.iter().filter(|c| !c.peer_name.is_empty()) {
+                    names
+                        .entry(c.peer_mri.clone())
+                        .or_insert_with(|| c.peer_name.clone());
+                }
+                for c in calls.iter_mut().filter(|c| c.peer_name.is_empty()) {
+                    if let Some(n) = names.get(&c.peer_mri) {
+                        c.peer_name = n.clone();
+                        continue;
+                    }
+                    let Some(oid) = c
+                        .peer_mri
+                        .strip_prefix("8:orgid:")
+                        .filter(|o| o.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
+                    else {
+                        continue;
+                    };
+                    if let Ok(r) = client
+                        .graph_get(&format!("/users/{oid}?$select=displayName"))
+                        .await
+                    {
+                        let v: serde_json::Value = r.json().await.unwrap_or_default();
+                        if let Some(n) = v["displayName"].as_str() {
+                            names.insert(c.peer_mri.clone(), n.to_string());
+                            c.peer_name = n.to_string();
+                        }
+                    }
+                }
+                anyhow::Ok(calls)
             }
             .await;
             match result {

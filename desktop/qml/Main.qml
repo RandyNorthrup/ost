@@ -721,10 +721,20 @@ Window {
         visible: rail.current === "calls"
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         calls: backend.callsJson ? JSON.parse(backend.callsJson) : []
+        people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+        onSearchPeople: q => backend.searchPeople(q)
         onOpenChatWith: (mri, name) => {
             const c = chatList.chats.find(c => c.peerMri === mri)
-            if (c) backend.selectChat(c.id, c.name)
             rail.current = "chat"
+            if (c) backend.selectChat(c.id, c.name)
+            else if ((mri || "").startsWith("8:orgid:")) backend.openChatWith(mri.slice(8), name)
+        }
+        // Call someone: open your 1:1 chat with them and place the call.
+        onCallPerson: (oid, name) => {
+            if (!oid) return
+            rail.current = "chat"
+            window.callAfterOpen = true
+            backend.openChatWith(oid, name)
         }
     }
 
