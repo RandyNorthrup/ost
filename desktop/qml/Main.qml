@@ -448,12 +448,14 @@ Window {
 
     IncomingCall {
         id: incomingCall
-        visible: backend.callState === "ringing"
+        visible: backend.callState === "ringing" && !ignored
         peer: backend.callPeer
         videoOffered: backend.callVideoOffered
         onAcceptVideo: backend.acceptCall(true)
         onAcceptAudio: backend.acceptCall(false)
         onDecline: backend.declineCall()
+        // Ignore: stop ringing here; the call isn't declined.
+        onIgnore: backend.setRinger(false)
     }
     CallWindow {
         id: callWindow
