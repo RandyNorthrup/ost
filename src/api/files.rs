@@ -266,6 +266,28 @@ async fn upload_in_session(
 
 /// The e-mail addresses of a chat's other members (for sharing a file).
 async fn member_emails(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
+    let oids = member_oids(client, chat_id).await?;
+    let mut emails = Vec::new();
+    for oid in oids.iter().take(50) {
+        if let Ok(r) = client
+            .graph_get(&format!("/users/{oid}?$select=mail,userPrincipalName"))
+            .await
+        {
+            let u: serde_json::Value = r.json().await.unwrap_or_default();
+            if let Some(m) = u["mail"]
+                .as_str()
+                .or_else(|| u["userPrincipalName"].as_str())
+            {
+                emails.push(m.to_string());
+            }
+        }
+    }
+    Ok(emails)
+}
+
+/// The object ids of a chat's other members (people only; checked to be
+/// object ids).
+pub async fn member_oids(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
     let me = client.object_id().unwrap_or_default();
     let oids: Vec<String> = if let Some(inner) = chat_id
         .strip_prefix("19:")
@@ -298,25 +320,10 @@ async fn member_emails(client: &TeamsClient, chat_id: &str) -> Result<Vec<String
             .map(str::to_string)
             .collect()
     };
-    let mut emails = Vec::new();
-    for oid in oids.iter().take(50) {
-        if !oid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-            continue;
-        }
-        if let Ok(r) = client
-            .graph_get(&format!("/users/{oid}?$select=mail,userPrincipalName"))
-            .await
-        {
-            let u: serde_json::Value = r.json().await.unwrap_or_default();
-            if let Some(m) = u["mail"]
-                .as_str()
-                .or_else(|| u["userPrincipalName"].as_str())
-            {
-                emails.push(m.to_string());
-            }
-        }
-    }
-    Ok(emails)
+    Ok(oids
+        .into_iter()
+        .filter(|o| !o.is_empty() && o.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
+        .collect())
 }
 
 /// Post a message with files (and optional text), as Teams does.

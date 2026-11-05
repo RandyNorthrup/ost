@@ -1125,6 +1125,10 @@ impl qobject::Backend {
             .and_then(|c| c.object_id())
             .unwrap_or_default();
         tracing::info!(chat = %chat_id, has_oid = !my_oid.is_empty(), "start call");
+        if outgoing::is_group_chat(&chat_id) {
+            self.start_group_call(chat_id, peer);
+            return;
+        }
         let Some(callee) = outgoing::callee_mri_for_chat(&chat_id, &my_oid) else {
             self.as_mut()
                 .set_status_text(QString::from("Calls are available in 1:1 chats"));
@@ -1162,6 +1166,52 @@ impl qobject::Backend {
                     tracing::info!("outgoing call ended: {msg}");
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_status_text(QString::from(msg.as_str()));
+                        this.as_mut().end_call_ui();
+                    });
+                }
+            }
+        });
+    }
+
+    /// A group call in a group chat, shown with the meeting window.
+    fn start_group_call(mut self: Pin<&mut Self>, chat_id: String, title: QString) {
+        self.as_mut().set_call_peer(title);
+        self.as_mut().set_call_peer_id(QString::default());
+        self.as_mut().rust_mut().roster.clear();
+        self.as_mut().set_call_roster_json(QString::from("[]"));
+        self.as_mut()
+            .set_call_thread_id(QString::from(chat_id.as_str()));
+        self.as_mut().set_call_meeting(true);
+        self.as_mut().set_call_video_offered(false);
+        self.as_mut().set_call_muted(false);
+        self.as_mut().set_call_state(QString::from("connecting"));
+        let qt = self.qt_thread();
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
+        runtime().spawn(async move {
+            let result = outgoing::start_group_call(&chat_id, cancel_rx).await;
+            let mut slot = call_slot().lock().await;
+            slot.cancel_placing = None;
+            match result {
+                Ok(call) => {
+                    let has_audio = call.has_audio();
+                    tracing::info!(has_audio, "group call started");
+                    slot.outgoing = Some(call);
+                    drop(slot);
+                    spawn_call_stats_logger();
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_has_audio(has_audio);
+                        this.as_mut().set_call_state(QString::from("connected"));
+                    });
+                }
+                Err(e) => {
+                    drop(slot);
+                    let msg = short_error(&e);
+                    tracing::info!("group call ended: {msg}");
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_status_text(QString::from(
+                            format!("Couldn't start the call: {msg}").as_str(),
+                        ));
                         this.as_mut().end_call_ui();
                     });
                 }

@@ -14,6 +14,9 @@ use super::{call_test, signaling};
 use crate::config::Config;
 use crate::event_hub::{self, EventKind};
 
+/// Most members a group call rings (Teams rings small groups only).
+const MAX_RING: usize = 20;
+
 /// How long the callee may ring before we give up.
 const RING_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -235,9 +238,30 @@ pub async fn join_meeting(
     start(&link.thread_id, Target::Meeting(&link.message_id), cancel).await
 }
 
+/// Start a group call in a group chat (`19:…@thread.v2`): the call is
+/// tied to the chat, so Teams rings its members and they join it.
+pub async fn start_group_call(
+    thread_id: &str,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    if !is_group_chat(thread_id) {
+        bail!("Not a group chat");
+    }
+    start(thread_id, Target::Group, cancel).await
+}
+
+/// Group chats (not meetings, channels or 1:1 chats).
+pub fn is_group_chat(thread_id: &str) -> bool {
+    thread_id.starts_with("19:")
+        && thread_id.ends_with("@thread.v2")
+        && !thread_id.starts_with("19:meeting_")
+}
+
 enum Target<'a> {
     /// A 1:1 call to this MRI.
     Person(&'a str),
+    /// A group call in a group chat (Teams rings its members).
+    Group,
     /// The meeting with this message id on the thread.
     Meeting(&'a str),
 }
@@ -300,11 +324,40 @@ async fn start(
             signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
                 .await?
         }
+        Target::Group => {
+            signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, None).await?
+        }
         Target::Meeting(message_id) => {
             signaling::join_meeting(&http, &epconv_url, &params, &offer, message_id).await?
         }
     };
     let leave_url = leave_link(&created.response_body);
+    // A group call rings the chat's members, as Teams' does.
+    if matches!(target, Target::Group) {
+        match crate::api::client::TeamsClient::new().await {
+            Ok(client) => match crate::api::files::member_oids(&client, thread_id).await {
+                Ok(oids) => {
+                    for oid in oids.iter().take(MAX_RING) {
+                        let mri = format!("8:orgid:{oid}");
+                        if let Err(e) = signaling::invite_user(
+                            &http,
+                            &created.conversation_controller,
+                            &params,
+                            &mri,
+                            false,
+                        )
+                        .await
+                        {
+                            tracing::warn!("Ringing a member failed: {:#}", e);
+                        }
+                    }
+                    tracing::info!(rung = oids.len().min(MAX_RING), "group call members rung");
+                }
+                Err(e) => tracing::warn!("Group members unavailable: {:#}", e),
+            },
+            Err(e) => tracing::warn!("Group members unavailable: {:#}", e),
+        }
+    }
     tracing::info!("call placed; waiting for the answer");
 
     let wait_answer = async {
@@ -396,6 +449,14 @@ mod tests {
         );
         assert!(callee_mri_for_chat(chat, "cccc").is_none());
         assert!(callee_mri_for_chat("19:x@thread.v2", "aaaa-1").is_none());
+    }
+
+    #[test]
+    fn group_chats_are_told_apart() {
+        assert!(is_group_chat("19:abc@thread.v2"));
+        assert!(!is_group_chat("19:meeting_abc@thread.v2"));
+        assert!(!is_group_chat("19:abc@thread.tacv2"));
+        assert!(!is_group_chat("19:a_b@unq.gbl.spaces"));
     }
 
     #[test]

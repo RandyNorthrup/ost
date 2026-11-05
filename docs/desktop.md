@@ -23,7 +23,8 @@ Microsoft branding.
   synced to Teams.
 - **Calls**: 1:1 audio calls in and out, with Teams' incoming-call toast,
   ringing, mute, hang-up, decline, and Chat and People panes in the call
-  window. Call history in the Calls app.
+  window; group calls from a group chat (its members are rung). Call
+  history in the Calls app.
 - **Meetings**: join Teams meetings from the calendar, with audio both
   ways, Teams' meeting toolbar, the stage ("Waiting for others to join…"
   or a tile per person), the roster in People, and the meeting chat.
@@ -41,8 +42,7 @@ Microsoft branding.
 - **Search**: people, chats and channels from the title bar.
 
 Not yet: video, screen sharing, raising hands and reactions in
-meetings, group calls started from a chat, transfer, hold and the dial
-pad. Their buttons are shown disabled rather than hidden or faked.
+meetings, transfer, hold and the dial pad. Their buttons are shown disabled rather than hidden or faked.
 
 ## Build
 
@@ -155,6 +155,7 @@ account.
 | `--call-panes` | As `--call-test`, also opening the Chat and People panes. |
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
+| `--group-call-test` | Start a group call in "OST group test", capture it and People, hang up. |
 | `--cancel-ring` | With `--call-out`, hang up while it rings. |
 
 Unit tests for the engine and the desktop backend run with
