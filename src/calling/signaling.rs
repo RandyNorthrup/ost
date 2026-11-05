@@ -374,11 +374,24 @@ pub async fn join_conversation_with_sdp(
     })
 }
 
-/// Accept an incoming call by POSTing to the acceptance URL.
+/// Accept an incoming call by POSTing to the acceptance URL (audio only,
+/// microphone reported off, as the CLI's echo tests expect).
 pub async fn accept_call(
     http: &reqwest::Client,
     skype_token: &str,
     notification: &CallNotification,
+) -> Result<()> {
+    accept_call_with(http, skype_token, notification, false, false).await
+}
+
+/// Accept an incoming call, stating which modalities we take and whether
+/// our microphone is on.
+pub async fn accept_call_with(
+    http: &reqwest::Client,
+    skype_token: &str,
+    notification: &CallNotification,
+    video: bool,
+    microphone_on: bool,
 ) -> Result<()> {
     let invitation = notification
         .call_invitation
@@ -393,11 +406,16 @@ pub async fn accept_call(
         .as_ref()
         .context("No acceptance URL in links")?;
 
+    let modalities: &[&str] = if video {
+        &["Audio", "Video"]
+    } else {
+        &["Audio"]
+    };
     let payload = serde_json::json!({
-        "acceptedCallModalities": ["Audio"],
+        "acceptedCallModalities": modalities,
         "endpointMetadata": {
-            "isCallMediaCaptured": false,
-            "isMicrophoneOn": false
+            "isCallMediaCaptured": microphone_on,
+            "isMicrophoneOn": microphone_on
         }
     });
 

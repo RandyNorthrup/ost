@@ -38,6 +38,18 @@ impl ListenOptions {
     };
 }
 
+/// The live Trouter endpoint: (`surl`, `epid`). Call signalling needs it to
+/// build callback URLs that reach this socket.
+static CURRENT_ENDPOINT: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
+
+/// The connected Trouter endpoint, if any: (`surl`, `epid`).
+pub fn current_endpoint() -> Option<(String, String)> {
+    CURRENT_ENDPOINT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
 /// Reason the inner connection loop exited.
 enum DisconnectReason {
     /// Clean shutdown (Ctrl+C). Do not reconnect.
@@ -145,6 +157,8 @@ where
 
     // 1. Negotiate session (returns session info + epid)
     let (session, epid) = session::negotiate(&http, skype_token_str).await?;
+    *CURRENT_ENDPOINT.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some((session.surl.clone(), epid.clone()));
 
     // 2. Get socket.io session ID (authenticated via X-Skypetoken header)
     let session_id = session::get_session_id(&http, &session, skype_token_str, &epid).await?;
@@ -179,6 +193,11 @@ where
             tracing::warn!("Initial registrar registration failed: {:#}", e);
         }
     }
+    // Publish the endpoint to the presence service: users with no active
+    // endpoint show as Offline and are never rung.
+    if let Err(e) = crate::api::presence::publish_endpoint(&http, &epid).await {
+        tracing::warn!("Presence endpoint publish failed: {:#}", e);
+    }
     // Mark the endpoint active, as Teams clients do right after the
     // handshake; chat pushes only flow to active endpoints. (eisbaw/ost#88)
     let activity = serde_json::json!({
@@ -193,6 +212,10 @@ where
     //    force reconnect after session max age.
     let connected_at = Instant::now();
     let mut heartbeat = time::interval(Duration::from_secs(30));
+    // The presence service drops endpoints that stop reporting within a
+    // few minutes; republish well inside that window.
+    let mut presence_tick = time::interval(Duration::from_secs(120));
+    presence_tick.tick().await; // first publish happened above
     heartbeat.tick().await; // skip first immediate tick
 
     // Re-register 30s before TTL expires.
@@ -255,6 +278,14 @@ where
                     }
                 }
             }
+            _ = presence_tick.tick() => {
+                let (h, ep) = (http.clone(), epid.clone());
+                tokio::spawn(async move {
+                    if let Err(e) = crate::api::presence::publish_endpoint(&h, &ep).await {
+                        tracing::warn!("Presence refresh failed: {:#}", e);
+                    }
+                });
+            }
             _ = heartbeat.tick() => {
                 if let Err(e) = ws.send_text("2::").await {
                     break DisconnectReason::Error(e.context("Heartbeat send failed"));
@@ -303,6 +334,34 @@ where
     }
 }
 
+/// Developer aid: with `OST_TROUTER_DUMP_DIR` set, every frame is written
+/// there (one file each, owner-only). Frames carry message text and call
+/// links, so this is for local protocol work only and is off by default.
+fn dump_frame(frame: &str) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let Some(dir) = std::env::var_os("OST_TROUTER_DUMP_DIR") else {
+        return;
+    };
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let path = std::path::Path::new(&dir).join(format!("{ts}-{n:05}.txt"));
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    if let Ok(mut f) = opts.open(path) {
+        use std::io::Write;
+        let _ = f.write_all(frame.as_bytes());
+    }
+}
+
 /// Handle an incoming socket.io frame.
 async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, opts: ListenOptions) {
     use crate::event_hub::{publish, EventKind};
@@ -310,6 +369,7 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, op
     macro_rules! say {
         ($($t:tt)*) => { if opts.console { println!($($t)*); } };
     }
+    dump_frame(frame);
     // socket.io framing:
     // 1:: — handshake (handled above)
     // 2:: — heartbeat ping (server)
@@ -344,9 +404,10 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, op
             say!("{} Event: {}", prefix, json_str);
 
             if is_call {
-                publish(EventKind::Call, json_str.to_string());
+                let body = unwrap_call_payload(json_str);
+                publish(EventKind::Call, body.clone());
                 if opts.auto_answer {
-                    handle_call_event(json_str, http, skype_token).await;
+                    handle_call_event(&body, http, skype_token).await;
                 }
             } else if let Some(ev) = chat_event_json(json_str) {
                 publish(EventKind::Chat, ev);
@@ -369,6 +430,14 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, op
 
     // Chat-service pushes arrive as HTTP-over-WebSocket data frames.
     if let Some(payload) = frame.strip_prefix("3:::") {
+        if let Some(body) = data_frame_call(payload).map(|b| unwrap_call_payload(&b)) {
+            say!("[CALL] Event: {}", body);
+            publish(EventKind::Call, body.clone());
+            if opts.auto_answer {
+                handle_call_event(&body, http, skype_token).await;
+            }
+            return;
+        }
         if let Some(ev) = data_frame_event(payload) {
             say!("[CHAT] Event: {}", ev);
             publish(EventKind::Chat, ev);
@@ -376,55 +445,93 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, op
         }
     }
 
+    if let Some(payload) = frame.strip_prefix("3:::") {
+        // Unrecognised push: log only where it was sent, never its body.
+        if let Some((url, _)) = data_frame_body(payload) {
+            tracing::info!(%url, "unhandled data frame");
+        }
+    }
     say!("Frame: {}", frame);
 }
 
 /// Decode one Trouter `3:::` data frame payload
 /// (`{id, method, url, headers, body}`) into the pushed chat-service
-/// event JSON. `body` is the event itself, or base64 + gzip
-/// (`X-Microsoft-Skype-Content-Encoding: gzip`, also tried when the
-/// plain body isn't JSON). Only chat-service events (`resourceType` /
-/// `resource` / `eventMessages`) are returned; anything else (calls,
-/// other services) is None and keeps its existing path.
+/// event JSON. Only chat-service events (`resourceType` / `resource` /
+/// `eventMessages`) are returned; anything else is None.
 pub fn data_frame_event(payload: &str) -> Option<String> {
+    let (_, body) = data_frame_body(payload)?;
+    chat_event_json(&body)
+}
+
+/// Decode a `3:::` data frame carrying call signalling (an invitation or
+/// another call-controller callback) into its JSON body.
+pub fn data_frame_call(payload: &str) -> Option<String> {
+    let (url, body) = data_frame_body(payload)?;
+    let is_call = url.contains("NGCallManagerWin") || body.contains("\"callInvitation\"");
+    is_call.then_some(body)
+}
+
+/// Call-controller events wrap the notification as `{callId, callerId,
+/// evt, cp}` with `cp` = base64 + gzip JSON (or `gp` = base64 JSON).
+/// Return the inner notification, or the input unchanged.
+pub fn unwrap_call_payload(json: &str) -> String {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return json.to_string();
+    };
+    if let Some(cp) = v.get("cp").and_then(|c| c.as_str()) {
+        if let Some(inner) = gunzip_base64(cp) {
+            return inner;
+        }
+    }
+    if let Some(gp) = v.get("gp").and_then(|c| c.as_str()) {
+        use base64::Engine;
+        if let Some(inner) = base64::engine::general_purpose::STANDARD
+            .decode(gp.trim())
+            .ok()
+            .and_then(|raw| String::from_utf8(raw).ok())
+        {
+            return inner;
+        }
+    }
+    json.to_string()
+}
+
+/// The request URL and decoded body text of a `3:::` data frame. `body`
+/// sits top-level or under `data` depending on the Trouter version; it is
+/// an object, plain JSON text, or base64 + gzip
+/// (`X-Microsoft-Skype-Content-Encoding: gzip`, also tried when the plain
+/// body isn't JSON).
+fn data_frame_body(payload: &str) -> Option<(String, String)> {
     let v: serde_json::Value = serde_json::from_str(payload).ok()?;
     let obj = v.as_object()?;
-    // `body` sits top-level or under `data` depending on the Trouter
-    // version (same two shapes the call path reads); an object body is
-    // the event itself.
-    let find_body = |m: &serde_json::Map<String, serde_json::Value>| {
+    let field = |m: &serde_json::Map<String, serde_json::Value>, name: &str| {
         m.iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("body"))
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
             .map(|(_, v)| v.clone())
     };
-    let body_val = find_body(obj).or_else(|| {
-        obj.iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("data"))
-            .and_then(|(_, d)| d.as_object())
-            .and_then(|d| find_body(d))
-    })?;
+    let data = field(obj, "data").and_then(|d| d.as_object().cloned());
+    let body_val = field(obj, "body").or_else(|| data.as_ref().and_then(|d| field(d, "body")))?;
+    let url = field(obj, "url")
+        .or_else(|| data.as_ref().and_then(|d| field(d, "url")))
+        .and_then(|u| u.as_str().map(str::to_string))
+        .unwrap_or_default();
     if body_val.is_object() {
-        return chat_event_json(&body_val.to_string());
+        return Some((url, body_val.to_string()));
     }
     let body = body_val.as_str()?;
-    let gzip_header = obj
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("headers"))
-        .and_then(|(_, h)| h.as_object())
-        .map(|h| {
+    let gzip_header = field(obj, "headers")
+        .and_then(|h| h.as_object().cloned())
+        .is_some_and(|h| {
             h.iter().any(|(k, v)| {
                 k.eq_ignore_ascii_case("X-Microsoft-Skype-Content-Encoding")
                     && v.as_str()
-                        .map_or(false, |s| s.to_ascii_lowercase().contains("gzip"))
+                        .is_some_and(|s| s.to_ascii_lowercase().contains("gzip"))
             })
-        })
-        .unwrap_or(false);
-    let plain = if gzip_header {
-        None
-    } else {
-        chat_event_json(body)
-    };
-    plain.or_else(|| gunzip_base64(body).and_then(|t| chat_event_json(&t)))
+        });
+    let plain = (!gzip_header && serde_json::from_str::<serde_json::Value>(body).is_ok())
+        .then(|| body.to_string());
+    let text = plain.or_else(|| gunzip_base64(body))?;
+    Some((url, text))
 }
 
 fn chat_event_json(text: &str) -> Option<String> {
@@ -462,295 +569,50 @@ fn gunzip_base64(body: &str) -> Option<String> {
     Some(out)
 }
 
-/// Handle a call event from Trouter — parse invitation and auto-answer.
+/// Handle a call event from Trouter: print the invitation and auto-answer
+/// (the CLI's test mode). The call stays up, logging media statistics,
+/// until the process exits.
 async fn handle_call_event(json_str: &str, http: &reqwest::Client, skype_token: &str) {
-    let notification = match calling::parse_call_notification(json_str) {
-        Some(n) => n,
-        None => {
-            tracing::debug!("Could not parse call notification from JSON");
-            return;
-        }
+    let Some(call) = calling::incoming::IncomingCall::parse(json_str) else {
+        tracing::debug!("Call event is not an invitation");
+        return;
     };
-
-    // Log caller identity.
-    if let Some(ref participants) = notification.participants {
-        if let Some(ref from) = participants.from {
-            println!(
-                "  Incoming call from: {} ({})",
-                from.display_name.as_deref().unwrap_or("unknown"),
-                from.id.as_deref().unwrap_or("?")
-            );
-        }
+    println!(
+        "  Incoming call from: {} ({})",
+        call.caller_name(),
+        call.caller_id().as_deref().unwrap_or("?")
+    );
+    if let Some(id) = call.call_id() {
+        println!("  Call ID: {}", id);
     }
-
-    // Log call modalities.
-    if let Some(ref inv) = notification.call_invitation {
-        if let Some(ref mods) = inv.call_modalities {
-            println!("  Modalities: {:?}", mods);
-        }
-    }
-
-    // Log call ID from debug content.
-    if let Some(ref debug) = notification.debug_content {
-        if let Some(ref call_id) = debug.call_id {
-            println!("  Call ID: {}", call_id);
-        }
-    }
-
-    // Determine if video modality is requested.
-    let has_video = notification
-        .call_invitation
-        .as_ref()
-        .and_then(|inv| inv.call_modalities.as_ref())
-        .map(|mods| mods.iter().any(|m| m.eq_ignore_ascii_case("video")))
-        .unwrap_or(false);
-
-    // Auto-answer: generate SDP answer and send acceptance.
-    println!("  Auto-answering call...");
-
-    // Try to acquire TURN relay credentials (best-effort, fail gracefully).
-    let relay_config = match calling::turn::acquire_relay_credentials(http, skype_token).await {
-        Ok(config) => {
-            tracing::info!(
-                "Acquired relay credentials: {} servers, username={}, ttl={}s",
-                config.servers.len(),
-                config.username,
-                config.ttl
-            );
-            Some(config)
-        }
-        Err(e) => {
-            tracing::info!(
-                "Relay credential acquisition failed (will use direct/srflx only): {:#}",
-                e
-            );
-            None
-        }
-    };
-
-    // Gather relay candidate if we have credentials.
-    let relay_candidate = if let Some(ref config) = relay_config {
-        match calling::turn::gather_relay_candidate(config).await {
-            Some((candidate, _client)) => {
-                tracing::info!(
-                    "Gathered relay candidate: {}:{}",
-                    candidate.address,
-                    candidate.port
-                );
-                Some(candidate)
-            }
-            None => {
-                tracing::info!("Failed to gather relay candidate (TURN allocate failed)");
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // Try to generate and send media answer first (protocol order: media answer before acceptance).
-    if let Some(ref inv) = notification.call_invitation {
-        if let Some(ref mc) = inv.media_content {
-            if let Some(ref blob) = mc.blob {
-                match calling::sdp::parse_sdp_offer(blob) {
-                    Ok(offer_info) => {
-                        let local_ip = calling::sdp::get_local_ip();
-
-                        // Parse remote SRTP keying material from the offer's crypto lines.
-                        let remote_audio_crypto = offer_info
-                            .crypto_lines
-                            .iter()
-                            .find_map(|line| calling::srtp::parse_crypto_line(line).ok());
-
-                        let remote_video_crypto = offer_info.video.as_ref().and_then(|v| {
-                            v.crypto_lines
-                                .iter()
-                                .find_map(|line| calling::srtp::parse_crypto_line(line).ok())
-                        });
-
-                        // Build local candidates list (relay if available).
-                        let mut local_cands: Vec<calling::ice::IceCandidate> = Vec::new();
-                        if let Some(ref rc) = relay_candidate {
-                            local_cands.push(rc.clone());
-                        }
-
-                        // Generate SDP answer with ICE credentials.
-                        let answer_result = calling::sdp::generate_sdp_answer_full(
-                            &local_ip,
-                            0,
-                            0,
-                            &offer_info,
-                            &local_cands,
-                            &[],
-                        );
-
-                        // Parse our own SRTP keying material from the answer.
-                        let local_audio_crypto =
-                            calling::srtp::parse_crypto_line(&answer_result.audio_crypto_line).ok();
-                        let local_video_crypto = answer_result
-                            .video_crypto_line
-                            .as_ref()
-                            .and_then(|line| calling::srtp::parse_crypto_line(line).ok());
-
+    let video = call.has_video();
+    println!("  Auto-answering call (video: {video})...");
+    match calling::incoming::answer(http, skype_token, call, video, true).await {
+        Ok(active) => {
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    if let Some(s) = active.audio_stats().await {
                         tracing::info!(
-                            "Generated SDP answer ({} bytes, video={}, ufrag={})",
-                            answer_result.sdp.len(),
-                            offer_info.video.is_some(),
-                            answer_result.audio_ice_ufrag
+                            "Audio stats: sent={}, recv={} ({} bytes)",
+                            s.packets_sent,
+                            s.packets_received,
+                            s.bytes_received
                         );
-
-                        if let Err(e) = calling::signaling::send_media_answer(
-                            http,
-                            skype_token,
-                            &notification,
-                            &answer_result.sdp,
-                        )
-                        .await
-                        {
-                            tracing::warn!("Failed to send media answer: {:#}", e);
-                        }
-
-                        // Start audio media session with ICE connectivity checks.
-                        if let (Some(local_mat), Some(remote_mat)) =
-                            (local_audio_crypto, remote_audio_crypto)
-                        {
-                            let candidates = calling::ice::parse_candidates_from_sdp(blob);
-                            if candidates.iter().any(|c| {
-                                c.transport == calling::ice::Transport::Udp && c.component == 1
-                            }) {
-                                let local_creds = calling::ice::IceCredentials {
-                                    ufrag: answer_result.audio_ice_ufrag.clone(),
-                                    pwd: answer_result.audio_ice_pwd.clone(),
-                                };
-                                let remote_creds = calling::ice::IceCredentials {
-                                    ufrag: offer_info.ice_ufrag.clone(),
-                                    pwd: offer_info.ice_pwd.clone(),
-                                };
-                                tracing::info!(
-                                    "Starting audio media session with ICE ({} candidates)",
-                                    candidates.len()
-                                );
-                                tokio::spawn(async move {
-                                    match calling::media::MediaSession::start_with_ice(
-                                        0,
-                                        &candidates,
-                                        &local_creds,
-                                        &remote_creds,
-                                        &local_mat,
-                                        &remote_mat,
-                                    )
-                                    .await
-                                    {
-                                        Ok(session) => {
-                                            tracing::info!(
-                                                "Audio session started on port {}",
-                                                session.local_port().unwrap_or(0)
-                                            );
-                                            loop {
-                                                tokio::time::sleep(std::time::Duration::from_secs(
-                                                    5,
-                                                ))
-                                                .await;
-                                                let stats = session.stats().await;
-                                                tracing::info!(
-                                                    "Audio stats: sent={}, recv={} ({} bytes)",
-                                                    stats.packets_sent,
-                                                    stats.packets_received,
-                                                    stats.bytes_received
-                                                );
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                "Failed to start audio session: {:#}",
-                                                e
-                                            );
-                                        }
-                                    }
-                                });
-                            } else {
-                                tracing::warn!("No suitable audio ICE candidate found");
-                            }
-                        } else {
-                            tracing::warn!(
-                                "Missing audio SRTP keying material, audio session not started"
-                            );
-                        }
-
-                        // Start video media session if video modality is present.
-                        if has_video {
-                            if let (Some(local_mat), Some(remote_mat)) =
-                                (local_video_crypto, remote_video_crypto)
-                            {
-                                let vid_candidates =
-                                    calling::ice::parse_candidates_from_sdp_section(blob, "video");
-                                if let Some(remote_addr) =
-                                    calling::ice::select_remote_candidate(&vid_candidates)
-                                {
-                                    tracing::info!(
-                                        "Starting video media session to remote {}",
-                                        remote_addr
-                                    );
-                                    tokio::spawn(async move {
-                                        match calling::media::VideoMediaSession::start(
-                                            0,
-                                            remote_addr,
-                                            &local_mat,
-                                            &remote_mat,
-                                        )
-                                        .await
-                                        {
-                                            Ok(session) => {
-                                                tracing::info!(
-                                                    "Video session started on port {}",
-                                                    session.local_port().unwrap_or(0)
-                                                );
-                                                loop {
-                                                    tokio::time::sleep(
-                                                        std::time::Duration::from_secs(5),
-                                                    )
-                                                    .await;
-                                                    let stats = session.stats().await;
-                                                    tracing::info!(
-                                                        "Video stats: sent={} pkts/{} frames, recv={} pkts/{} frames ({} bytes)",
-                                                        stats.packets_sent,
-                                                        stats.frames_sent,
-                                                        stats.packets_received,
-                                                        stats.frames_received,
-                                                        stats.bytes_received
-                                                    );
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!(
-                                                    "Failed to start video session: {:#}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    });
-                                } else {
-                                    tracing::warn!("No suitable video ICE candidate found");
-                                }
-                            } else {
-                                tracing::warn!(
-                                    "Missing video SRTP keying material, video session not started"
-                                );
-                            }
-                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("Could not parse SDP offer (may be compressed): {:#}", e);
-                        // Still try acceptance without media answer.
+                    if let Some(v) = active.video_stats().await {
+                        tracing::info!(
+                            "Video stats: sent={} pkts/{} frames, recv={} pkts/{} frames",
+                            v.packets_sent,
+                            v.frames_sent,
+                            v.packets_received,
+                            v.frames_received
+                        );
                     }
                 }
-            }
+            });
         }
-    }
-
-    // Send acceptance.
-    if let Err(e) = calling::signaling::accept_call(http, skype_token, &notification).await {
-        tracing::warn!("Failed to accept call: {:#}", e);
+        Err(e) => tracing::warn!("Failed to answer call: {:#}", e),
     }
 }
 
@@ -825,5 +687,33 @@ mod data_frame_tests {
         );
         assert!(data_frame_event("not json").is_none());
         assert!(data_frame_event(r#"{"id":1,"status":200}"#).is_none());
+    }
+
+    #[test]
+    fn data_frame_call_invitations_are_recognised() {
+        use super::data_frame_call;
+        let inv = r#"{"callInvitation":{"links":{"acceptance":"https://cc/a"}}}"#;
+        let by_url = serde_json::json!({"id": 3, "method": "POST",
+            "url": "/v4/f/x/NGCallManagerWin", "headers": {}, "body": inv})
+        .to_string();
+        assert_eq!(data_frame_call(&by_url).as_deref(), Some(inv));
+        // A chat event is not a call.
+        let chat = frame(r#"{"resourceType":"NewMessage"}"#, serde_json::json!({}));
+        assert!(data_frame_call(&chat).is_none());
+    }
+
+    #[test]
+    fn call_payload_cp_wrapper_is_unwrapped() {
+        use super::unwrap_call_payload;
+        use base64::Engine;
+        use std::io::Write;
+        let inv = r#"{"callInvitation":{"links":{"acceptance":"https://cc/a"}}}"#;
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(inv.as_bytes()).unwrap();
+        let cp = base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+        let wrapped =
+            serde_json::json!({"callId": "c", "callerId": "8:x", "evt": 107, "cp": cp}).to_string();
+        assert_eq!(unwrap_call_payload(&wrapped), inv);
+        assert_eq!(unwrap_call_payload(inv), inv);
     }
 }

@@ -51,6 +51,18 @@ async fn acquire_graph_token(client: &AadClient, rt: &str) -> Result<(String, Op
     acquire_token(client, rt, GRAPH_SCOPE, "Graph").await
 }
 
+/// Mint a short-lived access token for another audience from the stored
+/// refresh token, without storing it (for services used now and then).
+pub async fn access_token_for(scope: &str) -> Result<String> {
+    let config = Config::load()?;
+    let rt = config
+        .get_refresh_token()
+        .context("Not signed in (no refresh token)")?;
+    let client = build_client(&AuthConfig::default());
+    let full_scope = format!("{scope} offline_access");
+    Ok(acquire_token(&client, &rt, &full_scope, scope).await?.0)
+}
+
 /// Store the primary (Skype-audience) AAD tokens.
 fn store_primary(config: &mut Config, tokens: &TokenSet) {
     config.set_access_token(tokens.access_token.clone(), tokens.expires_in);

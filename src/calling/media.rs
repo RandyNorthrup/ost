@@ -5,6 +5,7 @@
 //! and logs received packet statistics.
 
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -35,6 +36,8 @@ pub struct MediaSession {
     srtp_ctx: Arc<Mutex<srtp::SrtpContext>>,
     ssrc: u32,
     stats: Arc<Mutex<MediaStats>>,
+    /// While set, the microphone is captured but silence is sent.
+    muted: Arc<AtomicBool>,
     /// Handle to the send task (for shutdown).
     send_handle: Option<tokio::task::JoinHandle<()>>,
     /// Handle to the recv task (for shutdown).
@@ -124,6 +127,7 @@ impl MediaSession {
         #[cfg(not(feature = "audio"))]
         let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>> = None;
 
+        let muted = Arc::new(AtomicBool::new(false));
         let send_handle = {
             let socket = socket.clone();
             let srtp_ctx = srtp_ctx.clone();
@@ -135,6 +139,7 @@ impl MediaSession {
                 ssrc,
                 stats,
                 mic_rx,
+                muted.clone(),
             ))
         };
 
@@ -154,6 +159,7 @@ impl MediaSession {
             srtp_ctx,
             ssrc,
             stats,
+            muted,
             send_handle: Some(send_handle),
             recv_handle: Some(recv_handle),
             #[cfg(feature = "audio")]
@@ -217,6 +223,7 @@ impl MediaSession {
         #[cfg(not(feature = "audio"))]
         let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>> = None;
 
+        let muted = Arc::new(AtomicBool::new(false));
         let send_handle = {
             let socket = socket.clone();
             let srtp_ctx = srtp_ctx.clone();
@@ -228,6 +235,7 @@ impl MediaSession {
                 ssrc,
                 stats,
                 mic_rx,
+                muted.clone(),
             ))
         };
 
@@ -244,6 +252,7 @@ impl MediaSession {
             srtp_ctx,
             ssrc,
             stats,
+            muted,
             send_handle: Some(send_handle),
             recv_handle: Some(recv_handle),
             #[cfg(feature = "audio")]
@@ -256,6 +265,16 @@ impl MediaSession {
     /// Get the local port this session is bound to.
     pub fn local_port(&self) -> Result<u16> {
         Ok(self.socket.local_addr()?.port())
+    }
+
+    /// Mute or unmute the microphone. Muted sessions keep sending silence,
+    /// so the call stays alive and the peer sees no media gap.
+    pub fn set_muted(&self, muted: bool) {
+        self.muted.store(muted, Ordering::Relaxed);
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.muted.load(Ordering::Relaxed)
     }
 
     /// Get current media statistics.
@@ -309,6 +328,7 @@ async fn send_loop(
     ssrc: u32,
     stats: Arc<Mutex<MediaStats>>,
     mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>>,
+    muted: Arc<AtomicBool>,
 ) {
     let mut seq: u16 = 0;
     let mut timestamp: u32 = 0;
@@ -327,6 +347,8 @@ async fn send_loop(
         // Try to get a frame from the microphone; fall back to silence.
         let payload = if let Some(ref rx) = mic_rx {
             match rx.try_recv() {
+                // Muted: drain the frame so capture doesn't back up, send silence.
+                Ok(_) if muted.load(Ordering::Relaxed) => rtp::silence_payload(),
                 Ok(samples) => {
                     let mut encoded = Vec::with_capacity(samples.len());
                     for &s in &samples {

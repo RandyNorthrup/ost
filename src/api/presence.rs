@@ -77,3 +77,34 @@ pub async fn set_presence(status: &str) -> Result<()> {
     println!("Presence set to: {}", status);
     Ok(())
 }
+
+/// Presence service audience and front door.
+const PRESENCE_SCOPE: &str = "https://presence.teams.microsoft.com/.default";
+const PRESENCE_URL: &str = "https://presence.teams.microsoft.com";
+
+/// Tell the presence service this endpoint (the Trouter `epid`) is online
+/// and active. Without an active endpoint the user shows as Offline and
+/// incoming calls are not offered to it; they go straight to voicemail.
+pub async fn publish_endpoint(http: &reqwest::Client, epid: &str) -> Result<()> {
+    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
+    let endpoint = serde_json::json!({
+        "id": epid,
+        "activity": "Available",
+        "availability": "Available",
+        "deviceType": "Desktop",
+    });
+    let url = format!("{PRESENCE_URL}/v1/me/endpoints/");
+    let resp = http
+        .put(&url)
+        .bearer_auth(&token)
+        .json(&endpoint)
+        .send()
+        .await
+        .context("Presence endpoint PUT failed to send")?;
+    let status = resp.status();
+    if !status.is_success() {
+        bail!("Presence endpoint PUT failed: HTTP {status}");
+    }
+    tracing::debug!("Presence endpoint published ({status})");
+    Ok(())
+}

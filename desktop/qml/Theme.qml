@@ -20,6 +20,18 @@ QtObject {
     readonly property color badge: "#C4314B"
     readonly property color danger: "#C4314B"
 
+    // Calls use the dark stage in every theme, as in Teams.
+    readonly property color stage: "#1F1F1F"
+    readonly property color stageBar: "#292929"
+    readonly property color stageTile: "#2E2E2E"
+    readonly property color stageText: "#FFFFFF"
+    readonly property color stageTextSecondary: "#ADADAD"
+    readonly property color stageControlHover: "#3D3D3D"
+    readonly property color accept: "#107C10"
+    readonly property color acceptHover: "#0E700E"
+    readonly property color leave: "#C4314B"
+    readonly property color leaveHover: "#B12C44"
+
     readonly property string font: "Selawik"
     readonly property int base: 14
     readonly property int small: 12

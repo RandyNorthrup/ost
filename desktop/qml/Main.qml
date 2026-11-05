@@ -31,7 +31,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0
+        running: window.shotPath.length > 0 && !window.callTest
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -86,6 +86,68 @@ Window {
             window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
         }
     }
+
+    IncomingCall {
+        id: incomingCall
+        visible: backend.callState === "ringing"
+        peer: backend.callPeer
+        videoOffered: backend.callVideoOffered
+        onAcceptVideo: backend.acceptCall(true)
+        onAcceptAudio: backend.acceptCall(false)
+        onDecline: backend.declineCall()
+    }
+    CallWindow {
+        id: callWindow
+        visible: ["connecting", "connected", "ended"].indexOf(backend.callState) >= 0
+        peer: backend.callPeer
+        state: backend.callState
+        muted: backend.callMuted
+        hasAudio: backend.callHasAudio
+        onLeave: backend.hangUp()
+        onToggleMute: backend.toggleMute()
+        onClosing: if (backend.callState !== "ended") backend.hangUp()
+    }
+    // "Call ended" shows briefly, then the call window closes.
+    Timer {
+        running: backend.callState === "ended"
+        interval: 2000
+        onTriggered: backend.callState = ""
+    }
+
+    // --call-test: capture the toast, answer, capture the call, hang up.
+    readonly property bool callTest: Qt.application.arguments.indexOf("--call-test") >= 0
+    Connections {
+        target: backend
+        enabled: window.callTest
+        function onCallStateChanged() {
+            console.warn("CALL-STATE", backend.callState)
+            if (backend.callState === "ringing") {
+                callTestTimer.step = "ring"; callTestTimer.restart()
+            } else if (backend.callState === "connected") {
+                callTestTimer.step = "talk"; callTestTimer.interval = 12000; callTestTimer.restart()
+            }
+        }
+    }
+    Timer {
+        id: callTestTimer
+        property string step
+        interval: 1500
+        onTriggered: {
+            if (step === "ring") {
+                incomingCall.contentItem.grabToImage(r => {
+                    r.saveToFile(window.shotPath.replace(".png", "-toast.png"))
+                    backend.acceptCall(false)
+                })
+            } else if (step === "talk") {
+                callWindow.contentItem.grabToImage(r => {
+                    r.saveToFile(window.shotPath.replace(".png", "-call.png"))
+                    backend.hangUp()
+                    quitTimer.start()
+                })
+            }
+        }
+    }
+    Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
 
     TitleBar {
         id: titleBar
