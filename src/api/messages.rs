@@ -707,6 +707,131 @@ pub async fn set_read_receipts_enabled(client: &TeamsClient, on: bool) -> Result
     Ok(())
 }
 
+/// Turn the rich text Qt's editor produces (`getFormattedText`: a full HTML
+/// document with styled spans) into the small, safe HTML Teams sends:
+/// paragraphs, line breaks, b/i/u/s, lists and http(s) links. Everything
+/// else (head, styles, fonts, colours, scripts) is dropped; text keeps the
+/// escaping Qt gave it.
+pub fn teams_html_from_editor(qt: &str) -> String {
+    let body = match (qt.find("<body"), qt.rfind("</body>")) {
+        (Some(b), Some(e)) if b < e => {
+            let start = qt[b..].find('>').map(|i| b + i + 1).unwrap_or(b);
+            &qt[start..e]
+        }
+        _ => qt,
+    };
+    let mut out = String::new();
+    // For each open <span>, the tags it opened (closed in reverse).
+    let mut spans: Vec<Vec<&'static str>> = Vec::new();
+    let mut rest = body;
+    while let Some(lt) = rest.find('<') {
+        let text = &rest[..lt];
+        out.push_str(&text.replace(['\n', '\r'], ""));
+        let Some(gt) = rest[lt..].find('>') else {
+            break;
+        };
+        let tag = &rest[lt + 1..lt + gt];
+        rest = &rest[lt + gt + 1..];
+        let closing = tag.starts_with('/');
+        let name: String = tag
+            .trim_start_matches('/')
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        let style = editor_attr(tag, "style")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .replace(' ', "");
+        match (name.as_str(), closing) {
+            ("p", false) => out.push_str("<p>"),
+            ("p", true) => out.push_str("</p>"),
+            ("br", _) => out.push_str("<br>"),
+            ("ul" | "ol" | "li", false) => {
+                out.push('<');
+                out.push_str(&name);
+                out.push('>');
+            }
+            ("ul" | "ol" | "li", true) => {
+                out.push_str("</");
+                out.push_str(&name);
+                out.push('>');
+            }
+            ("b" | "strong", _) => out.push_str(if closing { "</b>" } else { "<b>" }),
+            ("i" | "em", _) => out.push_str(if closing { "</i>" } else { "<i>" }),
+            ("u", _) => out.push_str(if closing { "</u>" } else { "<u>" }),
+            ("s" | "strike" | "del", _) => out.push_str(if closing { "</s>" } else { "<s>" }),
+            ("span", false) => {
+                let mut opened = Vec::new();
+                let weight = style
+                    .split(';')
+                    .find_map(|d| d.strip_prefix("font-weight:"))
+                    .and_then(|w| w.parse::<u32>().ok())
+                    .unwrap_or(400);
+                if weight >= 600 || style.contains("font-weight:bold") {
+                    opened.push("b");
+                }
+                if style.contains("font-style:italic") {
+                    opened.push("i");
+                }
+                if style.contains("underline") {
+                    opened.push("u");
+                }
+                if style.contains("line-through") {
+                    opened.push("s");
+                }
+                for t in &opened {
+                    out.push('<');
+                    out.push_str(t);
+                    out.push('>');
+                }
+                spans.push(opened);
+            }
+            ("span", true) => {
+                for t in spans.pop().unwrap_or_default().iter().rev() {
+                    out.push_str("</");
+                    out.push_str(t);
+                    out.push('>');
+                }
+            }
+            ("a", false) => match editor_attr(tag, "href")
+                .filter(|h| h.starts_with("https://") || h.starts_with("http://"))
+            {
+                Some(href) => {
+                    out.push_str("<a href=\"");
+                    out.push_str(&href.replace('"', "&quot;"));
+                    out.push_str("\">");
+                }
+                None => out.push_str("<a>"),
+            },
+            ("a", true) => out.push_str("</a>"),
+            _ => {}
+        }
+    }
+    out.push_str(&rest.replace(['\n', '\r'], ""));
+    out.replace("<p></p>", "")
+        .replace("<p><br></p>", "")
+        .trim()
+        .to_string()
+}
+
+/// An attribute's value from a tag's text (`name="value"`).
+fn editor_attr(tag: &str, name: &str) -> Option<String> {
+    let lower = tag.to_ascii_lowercase();
+    let key = format!("{name}=\"");
+    let i = lower.find(&key)? + key.len();
+    let end = tag[i..].find('"')? + i;
+    Some(tag[i..end].to_string())
+}
+
+/// Whether editor HTML carries any formatting worth sending as rich text.
+pub fn editor_has_formatting(qt: &str) -> bool {
+    let h = teams_html_from_editor(qt);
+    ["<b>", "<i>", "<u>", "<s>", "<ul>", "<ol>", "<a href"]
+        .iter()
+        .any(|t| h.contains(t))
+}
+
 /// Your favourite chats, in Teams' order: the `favorites` user property
 /// (`{"48:notes":1, "19:…":2}`), sorted by its values.
 pub async fn favorites(client: &TeamsClient) -> Result<Vec<String>> {
@@ -804,6 +929,22 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn editor_html_becomes_teams_html() {
+        let qt = r#"<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN"><html><head><meta name="qrichtext" content="1" /><style type="text/css">p, li { white-space: pre-wrap; }</style></head><body style=" font-family:'Selawik'; font-size:14px;">
+<p style=" margin-top:0px;">Hello <span style=" font-weight:700;">bold</span> and <span style=" font-style:italic; text-decoration: underline;">both</span> &lt;tag&gt;</p>
+<ul style="margin-top: 0px;"><li style=" margin-top:0px;">one</li></ul>
+<p><a href="https://example.com/x"><span style=" text-decoration: underline; color:#5b5fc7;">link</span></a> <a href="javascript:alert(1)">bad</a><script>evil()</script></p></body></html>"#;
+        let h = super::teams_html_from_editor(qt);
+        assert_eq!(
+            h,
+            "<p>Hello <b>bold</b> and <i><u>both</u></i> &lt;tag&gt;</p><ul><li>one</li></ul><p><a href=\"https://example.com/x\"><u>link</u></a> <a>bad</a>evil()</p>"
+        );
+        assert!(super::editor_has_formatting(qt));
+        let plain = r#"<html><body><p>just text</p></body></html>"#;
+        assert!(!super::editor_has_formatting(plain));
+    }
+
     #[test]
     fn favorites_come_in_teams_order() {
         let json = r#"{"favorites":"{\"19:b@unq.gbl.spaces\":2,\"48:notes\":1}","locale":"en-us"}"#;

@@ -265,6 +265,31 @@ pub async fn send_message_with_client(
     Ok(())
 }
 
+/// Send a formatted message: `html` is what the compose editor produced
+/// (converted to Teams' safe HTML here).
+pub async fn send_html_with_client(
+    client: &TeamsClient,
+    chat_id: &str,
+    editor_html: &str,
+) -> Result<()> {
+    let html = super::messages::teams_html_from_editor(editor_html);
+    if html.trim().is_empty() {
+        return Ok(());
+    }
+    let base = client.chat_service_url();
+    let url = format!("{}/v1/users/ME/conversations/{}/messages", base, chat_id);
+    let mut body = serde_json::json!({
+        "content": html,
+        "messagetype": "RichText/Html",
+        "contenttype": "text"
+    });
+    if let Some(name) = client.display_name() {
+        body["imdisplayname"] = serde_json::Value::String(name);
+    }
+    client.chat_post(&url, &body).await?;
+    Ok(())
+}
+
 /// Tell the chat's other members you are typing (Teams clients send this
 /// every few seconds while the compose box changes).
 pub async fn send_typing(client: &TeamsClient, chat_id: &str) -> Result<()> {

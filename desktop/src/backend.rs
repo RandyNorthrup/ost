@@ -234,6 +234,10 @@ pub mod qobject {
         /// Save an attachment into the Downloads folder.
         #[qinvokable]
         fn download_file(self: Pin<&mut Backend>, file_json: &QString);
+
+        /// Send a formatted message (the compose editor's rich text).
+        #[qinvokable]
+        fn send_rich(self: Pin<&mut Backend>, editor_html: &QString);
     }
 
     impl cxx_qt::Threading for Backend {}
@@ -2027,6 +2031,37 @@ impl qobject::Backend {
                     Ok(()) => {
                         this.as_mut().set_status_text(QString::default());
                         this.as_mut().reload_messages();
+                    }
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
+        });
+    }
+
+    pub fn send_rich(mut self: Pin<&mut Self>, editor_html: &QString) {
+        let html = editor_html.to_string();
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() || html.trim().is_empty() {
+            return;
+        }
+        self.as_mut().set_busy(true);
+        let qt = self.qt_thread();
+        let sent_chat = chat_id.clone();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::send_html_with_client(&client, &chat_id, &html).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_busy(false);
+                match result {
+                    Ok(()) => {
+                        this.as_mut()
+                            .set_draft(&QString::from(sent_chat.as_str()), &QString::default());
+                        this.as_mut().reload_messages()
                     }
                     Err(e) => this
                         .as_mut()

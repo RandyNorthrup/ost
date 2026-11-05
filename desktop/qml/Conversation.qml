@@ -21,21 +21,28 @@ Rectangle {
     property string chatId: ""
     property string draftChat: ""
     // Test hooks for the compose box.
-    function setComposeText(t) { input.text = t }
-    function composeText() { return input.text }
+    function setComposeText(t) { root.setPlain(t) }
+    function composeText() { return root.plainText() }
+    // The compose box is rich text (Teams formats as you type); these read
+    // and write it as plain text.
+    function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
+    function plainText() { return input.getText(0, input.length) }
+    function setPlain(t) { input.clear(); if (t) input.insert(0, root.escapeHtml(t)) }
     function attachForTest(paths) { root.pendingFiles = paths }
+    function openEmojiForTest() { emojiPicker.open() }
+    function formatForTest(a, b, tag) { input.select(a, b); root.wrapSelection(tag) }
     function sendForTest() { root.sendCompose() }
     onChatIdChanged: {
-        if (draftChat && !editingId) backend.setDraft(draftChat, input.text)
+        if (draftChat && !editingId) backend.setDraft(draftChat, root.plainText())
         editingId = ""
-        input.text = chatId ? backend.draftFor(chatId) : ""
+        root.setPlain(chatId ? backend.draftFor(chatId) : "")
         draftChat = chatId
     }
     // Keep the draft current while typing (so it survives a quit).
     Timer {
         id: draftSave
         interval: 1000
-        onTriggered: if (root.draftChat && !root.editingId) backend.setDraft(root.draftChat, input.text)
+        onTriggered: if (root.draftChat && !root.editingId) backend.setDraft(root.draftChat, root.plainText())
     }
     /// Your own notes chat: Teams drops the call and people buttons and
     /// shows only the Chat, Shared and Storyline tabs.
@@ -577,7 +584,7 @@ Rectangle {
                     y: actions.height
                     MenuItem {
                         text: "Edit"
-                        onTriggered: { root.editingId = msg.modelData.id; input.text = msg.modelData.text; input.forceActiveFocus() }
+                        onTriggered: { root.editingId = msg.modelData.id; root.setPlain(msg.modelData.text); input.forceActiveFocus() }
                     }
                     MenuItem {
                         text: "Delete"
@@ -646,6 +653,18 @@ Rectangle {
         }
     }
 
+    // Format (Teams' format bar): wrap the selection in a style or a list.
+    property bool formatting: false
+    function wrapSelection(tag) {
+        const a = input.selectionStart, b = input.selectionEnd
+        if (a === b) return
+        const sel = root.escapeHtml(input.getText(a, b))
+        input.remove(a, b)
+        const html = tag === "ul" || tag === "ol" ? "<" + tag + "><li>" + sel.replace(/<br>/g, "</li><li>") + "</li></" + tag + ">"
+            : "<" + tag + ">" + sel + "</" + tag + ">"
+        input.insert(a, html)
+        input.forceActiveFocus()
+    }
     // Files picked to send with the next message (local paths).
     property var pendingFiles: []
     function addFiles(urls) {
@@ -655,12 +674,22 @@ Rectangle {
     // Send what's in the compose box: text, files, or both.
     function sendCompose() {
         if (root.pendingFiles.length > 0) {
-            backend.sendFiles(root.pendingFiles.join("\n"), input.text)
+            backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []
-        } else if (input.text.trim().length > 0) {
-            root.send(input.text)
+        } else if (root.plainText().trim().length > 0) {
+            // Formatted text goes as Teams HTML; plain text as before.
+            const html = input.getFormattedText(0, input.length)
+            if (/font-weight:\s*[6-9]00|font-style:\s*italic|text-decoration:[^;"]*(underline|line-through)|<ul|<ol/.test(html)) backend.sendRich(html)
+            else root.send(root.plainText())
         }
-        input.text = ""
+        input.clear()
+        root.formatting = false
+    }
+    EmojiPicker {
+        id: emojiPicker
+        parent: compose
+        x: compose.width - width; y: -height - 8
+        onPicked: e => { input.insert(input.cursorPosition, e); close(); input.forceActiveFocus() }
     }
     FileDialog {
         id: filePicker
@@ -676,11 +705,38 @@ Rectangle {
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: 72; anchors.rightMargin: 72; anchors.bottomMargin: 24
         height: Math.max(44, input.contentHeight + 24) + (root.pendingFiles.length > 0 ? pendingRow.height + 8 : 0)
+            + (root.formatting ? 40 : 0)
+        // The format bar: bold, italic, underline, strikethrough, lists.
+        Row {
+            visible: root.formatting
+            x: 8; y: 4
+            spacing: 2
+            Repeater {
+                model: [
+                    { icon: "text-bold-20", tag: "b", label: "Bold (Ctrl+B)" },
+                    { icon: "text-italic-20", tag: "i", label: "Italic (Ctrl+I)" },
+                    { icon: "text-underline-20", tag: "u", label: "Underline (Ctrl+U)" },
+                    { icon: "text-strike-20", tag: "s", label: "Strikethrough" },
+                    { icon: "text-bullets-20", tag: "ul", label: "Bulleted list" },
+                    { icon: "text-numbers-20", tag: "ol", label: "Numbered list" },
+                ]
+                Rectangle {
+                    required property var modelData
+                    width: 32; height: 32; radius: theme.radius
+                    color: fbh.hovered ? theme.rowHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.textStrong }
+                    HoverHandler { id: fbh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.wrapSelection(parent.modelData.tag) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.label
+                }
+            }
+        }
         // Files waiting to be sent, as removable chips above the text.
         Flow {
             id: pendingRow
             visible: root.pendingFiles.length > 0
-            x: 12; y: 8; width: parent.width - 24
+            x: 12; y: root.formatting ? 44 : 8; width: parent.width - 24
             spacing: 8
             Repeater {
                 model: root.pendingFiles
@@ -727,9 +783,16 @@ Rectangle {
             color: theme.text
             wrapMode: TextArea.Wrap
             background: null
+            textFormat: TextEdit.RichText
+            Keys.onPressed: event => {
+                if (!(event.modifiers & Qt.ControlModifier)) return
+                if (event.key === Qt.Key_B) { root.wrapSelection("b"); event.accepted = true }
+                else if (event.key === Qt.Key_I) { root.wrapSelection("i"); event.accepted = true }
+                else if (event.key === Qt.Key_U) { root.wrapSelection("u"); event.accepted = true }
+            }
             onActiveFocusChanged: if (activeFocus) enterKey = backend.setting("enterKey") || "send"
             onTextChanged: {
-                if (text.length > 0) root.typing()
+                if (length > 0) root.typing()
                 draftSave.restart()
             }
             // Settings > Chats and channels: Enter sends (Shift+Enter breaks the
@@ -738,18 +801,32 @@ Rectangle {
             Keys.onReturnPressed: event => {
                 const sendKey = enterKey === "newline" ? (event.modifiers & Qt.ControlModifier) : !(event.modifiers & Qt.ShiftModifier)
                 if (!sendKey) { event.accepted = false; return }
-                if (root.editingId) { root.editMessage(root.editingId, input.text); root.editingId = ""; input.text = "" }
+                if (root.editingId) { root.editMessage(root.editingId, root.plainText()); root.editingId = ""; input.clear() }
                 else root.sendCompose()
             }
-            Keys.onEscapePressed: if (root.editingId) { root.editingId = ""; input.text = "" }
+            Keys.onEscapePressed: if (root.editingId) { root.editingId = ""; input.clear() }
         }
         Row {
             id: tools
             anchors.right: parent.right; anchors.rightMargin: 12
             anchors.bottom: parent.bottom; anchors.bottomMargin: 12
             spacing: 12
-            FluentIcon { name: "format-20" }
-            FluentIcon { name: "emoji-20" }
+            FluentIcon {
+                name: "format-20"
+                color: root.formatting ? theme.brand : theme.icon
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.formatting = !root.formatting }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Format"
+            }
+            FluentIcon {
+                id: emojiButton
+                name: "emoji-20"
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: emojiPicker.open() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Emoji"
+            }
             FluentIcon {
                 name: "attach-20"
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -760,7 +837,7 @@ Rectangle {
             FluentIcon { name: "add-20" }
             Rectangle { width: 1; height: 20; color: theme.divider }
             FluentIcon {
-                readonly property bool ready: input.text.length > 0 || root.pendingFiles.length > 0
+                readonly property bool ready: input.length > 0 || root.pendingFiles.length > 0
                 name: ready ? "send-20-filled" : "send-20"
                 color: ready ? theme.brand : theme.icon
                 TapHandler { onTapped: root.sendCompose() }

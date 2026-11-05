@@ -190,6 +190,46 @@ Window {
         }
     }
 
+    // --format-test: send "OST test 26: bold and plain" with "bold" in
+    // bold, then report how the sent message came back.
+    Timer {
+        running: Qt.application.arguments.indexOf("--format-test") >= 0 && chatList.chats.length > 1
+        interval: 2500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const want = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            if (step === 0) { const c = chatList.chats.find(c => c.id === want) || chatList.chats[1]; backend.selectChat(c.id, c.name) }
+            else if (step === 1) {
+                conversation.setComposeText("OST test 26: bold and plain")
+                conversation.formatForTest(13, 17, "b")
+                conversation.sendForTest()
+            } else if (step === 3) {
+                const msgs = JSON.parse(backend.messagesJson)
+                const m = msgs.filter(m => m.mine).pop()
+                console.warn("FORMAT", m ? m.text : "none", "html", m ? m.html : "")
+                Qt.quit()
+            }
+            step++
+        }
+    }
+
+    // --emoji-test: open the emoji picker in the open chat and capture it.
+    Timer {
+        running: Qt.application.arguments.indexOf("--emoji-test") >= 0 && chatList.chats.length > 1
+        interval: 2000
+        property bool opened: false
+        repeat: true
+        onTriggered: {
+            if (!backend.currentChatId) { backend.selectChat(chatList.chats[1].id, chatList.chats[1].name); return }
+            if (opened) return
+            opened = true
+            conversation.openEmojiForTest()
+            capEmoji.start()
+        }
+    }
+    Timer { id: capEmoji; interval: 1500; onTriggered: window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-emoji.png")); Qt.quit() }) }
+
     // --settings-test: switch the theme and back, read the receipts
     // setting from Teams, list audio devices.
     Timer {
@@ -282,7 +322,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
