@@ -467,6 +467,18 @@ pub fn data_frame_event(payload: &str) -> Option<String> {
 /// another call-controller callback) into its JSON body.
 pub fn data_frame_call(payload: &str) -> Option<String> {
     let (url, body) = data_frame_body(payload)?;
+    // Callbacks we registered for a call (`…/callAgent/<ep>/<id>/call/end/`
+    // and friends) carry call-state changes; tag them with their path.
+    if let Some(i) = url.find("/callAgent/") {
+        let path = url[i + "/callAgent/".len()..]
+            .splitn(3, '/')
+            .nth(2)
+            .unwrap_or_default()
+            .to_string();
+        let body: serde_json::Value =
+            serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+        return Some(serde_json::json!({ "callAgentPath": path, "body": body }).to_string());
+    }
     let is_call = url.contains("NGCallManagerWin") || body.contains("\"callInvitation\"");
     is_call.then_some(body)
 }
@@ -715,5 +727,17 @@ mod data_frame_tests {
             serde_json::json!({"callId": "c", "callerId": "8:x", "evt": 107, "cp": cp}).to_string();
         assert_eq!(unwrap_call_payload(&wrapped), inv);
         assert_eq!(unwrap_call_payload(inv), inv);
+    }
+
+    #[test]
+    fn call_agent_callbacks_are_tagged_with_their_path() {
+        use super::data_frame_call;
+        let f = serde_json::json!({"id": 4, "method": "POST",
+            "url": "/v4/f/abc/callAgent/ep-1/0a1b2c3d/call/end/", "headers": {},
+            "body": r#"{"callEnd":{"code":0}}"#})
+        .to_string();
+        let v: serde_json::Value = serde_json::from_str(&data_frame_call(&f).unwrap()).unwrap();
+        assert_eq!(v["callAgentPath"], "call/end/");
+        assert_eq!(v["body"]["callEnd"]["code"], 0);
     }
 }

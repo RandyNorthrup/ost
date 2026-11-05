@@ -1,12 +1,14 @@
 import QtQuick
 import QtQuick.Window
 
-// A 1:1 call: dark stage with the other person's tile, and the Teams
-// meeting bar (timer left; People, Raise, React, View, More, Camera, Mic,
-// Share and Leave right).
+// A 1:1 call, laid out as the Teams call screen (light theme, measured
+// from the Teams client at 1x): a 60 px meeting bar with the timer on the
+// left and icon-over-label controls on the right, then the stage with the
+// other person's avatar, their name chip and your own tile.
 Window {
     id: win
     property string peer
+    property string selfName
     property string state       // "connecting" | "connected" | "ended"
     property bool muted
     property bool hasAudio: true
@@ -15,8 +17,8 @@ Window {
     signal toggleMute()
 
     width: 1024; height: 640
-    minimumWidth: 640; minimumHeight: 400
-    color: theme.stage
+    minimumWidth: 720; minimumHeight: 420
+    color: theme.surface
     title: peer + " | OST"
 
     property int seconds: 0
@@ -33,114 +35,138 @@ Window {
         return (h > 0 ? h + ":" + two(m) : two(m)) + ":" + two(sec)
     }
 
+    Rectangle { anchors.fill: parent; color: theme.surface }
+
     // Meeting bar
     Rectangle {
         id: bar
-        width: parent.width; height: 64
-        color: theme.stageBar
-        Row {
+        width: parent.width; height: 60
+        color: theme.surface
+        Text {
             x: 16; anchors.verticalCenter: parent.verticalCenter
-            spacing: 8
-            FluentIcon { name: "people"; size: 20; color: theme.stageTextSecondary; anchors.verticalCenter: parent.verticalCenter }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: win.state === "connected" ? win.clock(win.seconds)
-                    : win.state === "ended" ? "Call ended" : "Connecting…"
-                color: theme.stageText
-                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
-            }
+            text: win.state === "connected" ? win.clock(win.seconds) : "--:--"
+            color: theme.text
+            font.family: theme.font; font.pixelSize: 14
         }
         Row {
-            anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
-            spacing: 4
-            BarButton { icon: "people"; label: "People" }
-            BarButton { icon: "hand"; label: "Raise" }
-            BarButton { icon: "emoji"; label: "React" }
-            BarButton { icon: "grid"; label: "View" }
-            BarButton { icon: "more"; label: "More" }
-            Rectangle { width: 1; height: 32; color: "#3D3D3D"; anchors.verticalCenter: parent.verticalCenter }
-            BarButton { icon: "video-off"; label: "Camera" }
+            anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+            spacing: 0
+            BarButton { icon: "call-transfer"; label: "Transfer"; enabled: false }
+            BarButton { icon: "consult"; label: "Consult"; enabled: false }
+            Divider {}
+            BarButton { icon: "dialpad"; label: "Dial pad"; enabled: false }
+            BarButton { icon: "pause"; label: "Hold"; enabled: false }
+            Divider {}
+            BarButton { icon: "chat-24"; label: "Chat"; enabled: false }
+            BarButton { icon: "people"; label: "People"; enabled: false }
+            BarButton { icon: "grid"; label: "View"; enabled: false }
+            BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
+            BarButton { icon: "more-24"; label: "More"; enabled: false }
+            Divider {}
+            BarButton { icon: "video-off"; label: "Camera"; enabled: false }
             BarButton {
-                icon: win.muted ? "mic-off" : "mic"; label: "Mic"
+                icon: win.muted ? "mic-off-24" : "mic-24"; label: "Mic"
                 enabled: win.hasAudio
+                checked: !win.muted
                 onClicked: win.toggleMute()
             }
-            BarButton { icon: "share-screen"; label: "Share" }
-            Rectangle {
-                id: leaveBtn
-                width: 96; height: 32; radius: theme.radius
-                anchors.verticalCenter: parent.verticalCenter
-                color: leaveHover.hovered ? theme.leaveHover : theme.leave
-                Row {
-                    anchors.centerIn: parent; spacing: 6
-                    FluentIcon { name: "call-end-filled"; size: 20; color: "white"; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Leave"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; anchors.verticalCenter: parent.verticalCenter }
-                }
-                HoverHandler { id: leaveHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: win.leave() }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Leave"
+            BarButton { icon: "share-screen"; label: "Share"; enabled: false }
+            Divider {}
+            BarButton {
+                icon: "call-end-24"; label: "Leave"
+                iconColor: theme.leave
+                onClicked: win.leave()
             }
         }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
     }
 
-    // Stage: the other person's tile
+    // Stage
     Rectangle {
-        anchors { top: bar.bottom; left: parent.left; right: parent.right; bottom: parent.bottom; margins: 8 }
-        radius: 8
-        color: theme.stageTile
+        id: stage
+        anchors { top: bar.bottom; left: parent.left; right: parent.right; bottom: parent.bottom; margins: 6 }
+        radius: 6
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#F2F1F8" }
+            GradientStop { position: 1.0; color: "#EEF6F6" }
+        }
         Column {
             anchors.centerIn: parent
-            spacing: 16
-            Avatar { size: 96; name: win.peer; anchors.horizontalCenter: parent.horizontalCenter }
+            spacing: 24
+            Avatar { size: 144; name: win.peer; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: win.peer
-                color: theme.stageText
-                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+                text: win.state === "connecting" ? "Connecting…"
+                    : win.state === "ended" ? "Call ended"
+                    : !win.hasAudio ? "Connected without audio" : ""
+                visible: text.length > 0
+                color: theme.text
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
             }
+        }
+        // Their name chip, bottom left
+        Rectangle {
+            anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
+            width: nameText.implicitWidth + 12; height: 24; radius: 4
+            color: "#99000000"
             Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                visible: win.state === "connected" && !win.hasAudio
-                text: "Connected without audio"
-                color: theme.stageTextSecondary
+                id: nameText
+                anchors.centerIn: parent
+                text: win.peer
+                color: "white"
                 font.family: theme.font; font.pixelSize: theme.small
             }
         }
         // Your own tile, bottom right
         Rectangle {
-            anchors { right: parent.right; bottom: parent.bottom; margins: 12 }
-            width: 192; height: 108; radius: 8
-            color: "#383838"
-            Text {
-                anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
-                text: "You"
-                color: theme.stageText
-                font.family: theme.font; font.pixelSize: theme.small
+            anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
+            width: 240; height: 134; radius: 6
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#F6EEF2" }
+                GradientStop { position: 1.0; color: "#EEF0F8" }
             }
-            FluentIcon {
-                visible: win.muted
-                anchors { right: parent.right; bottom: parent.bottom; margins: 8 }
-                name: "mic-off"; size: 16; color: theme.stageText
+            border.color: theme.dividerSoft
+            Avatar { anchors.centerIn: parent; size: 64; name: win.selfName || "You" }
+            Rectangle {
+                visible: win.muted || !win.hasAudio
+                anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
+                width: 28; height: 24; radius: 4
+                color: "#99000000"
+                FluentIcon { anchors.centerIn: parent; name: "mic-off-24"; size: 16; color: "white" }
             }
         }
+    }
+
+    component Divider: Rectangle {
+        width: 17; height: 32
+        color: "transparent"
+        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+        Rectangle { anchors.centerIn: parent; width: 1; height: 32; color: theme.divider }
     }
 
     component BarButton: Rectangle {
         id: bb
         property string icon
         property string label
+        property bool checked: false
+        property color iconColor: theme.text
         signal clicked()
         width: 56; height: 52; radius: theme.radius
-        color: bbHover.hovered && enabled ? theme.stageControlHover : "transparent"
-        opacity: enabled ? 1 : 0.5
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+        color: bb.checked ? theme.pane : (bbHover.hovered && bb.enabled ? theme.pane : "transparent")
         Column {
-            anchors.centerIn: parent; spacing: 2
-            FluentIcon { name: bb.icon; size: 20; color: theme.stageText; anchors.horizontalCenter: parent.horizontalCenter }
-            Text { text: bb.label; color: theme.stageText; font.family: theme.font; font.pixelSize: theme.caption; anchors.horizontalCenter: parent.horizontalCenter }
+            anchors.centerIn: parent; spacing: 3
+            opacity: bb.enabled ? 1 : 0.45
+            FluentIcon { name: bb.icon; size: 20; color: bb.iconColor; anchors.horizontalCenter: parent.horizontalCenter }
+            Text {
+                text: bb.label
+                color: theme.text
+                font.family: theme.font; font.pixelSize: theme.small
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
         }
-        HoverHandler { id: bbHover }
+        HoverHandler { id: bbHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { onTapped: if (bb.enabled) bb.clicked() }
         Accessible.role: Accessible.Button
         Accessible.name: bb.label

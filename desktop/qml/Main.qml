@@ -100,6 +100,7 @@ Window {
         id: callWindow
         visible: ["connecting", "connected", "ended"].indexOf(backend.callState) >= 0
         peer: backend.callPeer
+        selfName: backend.userName
         state: backend.callState
         muted: backend.callMuted
         hasAudio: backend.callHasAudio
@@ -116,6 +117,8 @@ Window {
 
     // --call-test: capture the toast, answer, capture the call, hang up.
     readonly property bool callTest: Qt.application.arguments.indexOf("--call-test") >= 0
+    // --remote-hangup: stay in the call until the caller ends it.
+    readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0
     Connections {
         target: backend
         enabled: window.callTest
@@ -124,7 +127,9 @@ Window {
             if (backend.callState === "ringing") {
                 callTestTimer.step = "ring"; callTestTimer.restart()
             } else if (backend.callState === "connected") {
-                callTestTimer.step = "talk"; callTestTimer.interval = 12000; callTestTimer.restart()
+                callTestTimer.step = "talk"; callTestTimer.interval = 8000; callTestTimer.restart()
+            } else if (backend.callState === "ended" && window.remoteHangup) {
+                quitTimer.start()
             }
         }
     }
@@ -141,8 +146,10 @@ Window {
             } else if (step === "talk") {
                 callWindow.contentItem.grabToImage(r => {
                     r.saveToFile(window.shotPath.replace(".png", "-call.png"))
-                    backend.hangUp()
-                    quitTimer.start()
+                    if (!window.remoteHangup) {
+                        backend.hangUp()
+                        quitTimer.start()
+                    }
                 })
             }
         }

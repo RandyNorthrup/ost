@@ -50,6 +50,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Config/storage
 directories = "5"
 toml = "0.8"
+# DTLS-SRTP for WebRTC call media (already in the tree via native-tls)
+openssl = "0.10"
+openssl-sys = "0.9"
+foreign-types = "0.3"
 # Desktop keyring (Secret Service on Linux) for tokens
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 

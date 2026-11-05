@@ -23,6 +23,7 @@ pub mod signaling;
 pub mod srtp;
 pub mod test_tone;
 pub mod turn;
+pub mod webrtc_audio;
 pub mod video;
 
 use serde::Deserialize;

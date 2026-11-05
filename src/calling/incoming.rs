@@ -9,7 +9,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 
 use super::media::{MediaSession, MediaStats, VideoMediaSession};
-use super::{ice, sdp, signaling, srtp, turn, CallNotification};
+use super::{ice, sdp, signaling, srtp, turn, webrtc_audio, CallNotification};
 
 /// A call invitation pushed over Trouter, not yet answered.
 ///
@@ -272,6 +272,8 @@ pub struct ActiveCall {
     call_leg: Option<String>,
     keep_alive: Option<tokio::task::JoinHandle<()>>,
     audio: Option<MediaSession>,
+    /// Audio with a WebRTC (DTLS-SRTP) caller.
+    webrtc: Option<webrtc_audio::WebRtcAudioSession>,
     video: Option<VideoMediaSession>,
     started: Instant,
 }
@@ -292,20 +294,33 @@ impl ActiveCall {
 
     /// Whether audio media is flowing (ICE and SRTP were set up).
     pub fn has_audio(&self) -> bool {
-        self.audio.is_some()
+        self.audio.is_some() || self.webrtc.is_some()
     }
 
     pub fn set_muted(&self, muted: bool) {
         if let Some(a) = &self.audio {
             a.set_muted(muted);
         }
+        if let Some(w) = &self.webrtc {
+            w.set_muted(muted);
+        }
     }
 
     pub fn is_muted(&self) -> bool {
         self.audio.as_ref().is_some_and(|a| a.is_muted())
+            || self.webrtc.as_ref().is_some_and(|w| w.is_muted())
     }
 
     pub async fn audio_stats(&self) -> Option<MediaStats> {
+        if let Some(w) = &self.webrtc {
+            let s = w.stats().await;
+            return Some(MediaStats {
+                packets_sent: s.packets_sent,
+                packets_received: s.packets_received,
+                bytes_received: s.bytes_received,
+                ..Default::default()
+            });
+        }
         match &self.audio {
             Some(a) => Some(a.stats().await),
             None => None,
@@ -327,6 +342,7 @@ impl ActiveCall {
         if let Some(v) = self.video.as_mut() {
             v.stop().await;
         }
+        self.webrtc = None;
         if let Some(k) = self.keep_alive.take() {
             k.abort();
         }
@@ -398,6 +414,12 @@ pub async fn answer(
         .as_ref()
         .and_then(|inv| inv.media_content.as_ref())
         .and_then(|mc| mc.blob.clone());
+
+    // WebRTC callers (Teams web) secure media with DTLS-SRTP.
+    if let Some(offer) = blob.as_deref().and_then(webrtc_audio::WebRtcOffer::parse) {
+        debug_dump("sdp-offer", blob.as_deref().unwrap_or_default());
+        return answer_webrtc(http, skype_token, notification, me, offer, microphone_on).await;
+    }
 
     // TURN relay credentials are best-effort: without them we offer only
     // direct and server-reflexive candidates.
@@ -515,10 +537,114 @@ pub async fn answer(
         }
     }
 
-    let leg = match &me {
-        Some(me) => accept_v2(http, skype_token, &notification, me, with_video).await,
+    let (leg, keep_alive) = accept_with_keep_alive(
+        http,
+        skype_token,
+        &notification,
+        me.as_ref(),
+        with_video,
+        microphone_on,
+    )
+    .await?;
+
+    let audio = match audio_task {
+        Some(task) => match task.await {
+            Ok(Ok(session)) => {
+                session.set_muted(!microphone_on);
+                Some(session)
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("Audio session failed: {:#}", e);
+                None
+            }
+            Err(e) => {
+                tracing::warn!("Audio session task failed: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+
+    Ok(ActiveCall {
+        notification,
+        forked,
+        call_leg: leg.url,
+        keep_alive,
+        audio,
+        webrtc: None,
+        video,
+        started: Instant::now(),
+    })
+}
+
+/// Answer a DTLS-SRTP (WebRTC) offer: bundled audio only, PCMU.
+async fn answer_webrtc(
+    http: &reqwest::Client,
+    skype_token: &str,
+    notification: CallNotification,
+    me: Option<LocalParticipant>,
+    offer: webrtc_audio::WebRtcOffer,
+    microphone_on: bool,
+) -> Result<ActiveCall> {
+    let local = webrtc_audio::LocalAudio::prepare().await?;
+    let sdp = local.answer_sdp(&offer);
+    debug_dump("sdp-answer", &sdp);
+    match &me {
+        Some(me) => send_media_answer_v2(http, skype_token, &notification, me, &sdp, false).await,
+        None => signaling::send_media_answer(http, skype_token, &notification, &sdp).await,
+    }
+    .context("Media answer failed")?;
+    // ICE and DTLS run while we accept: the caller starts its checks once
+    // the call is accepted.
+    let media = tokio::spawn(webrtc_audio::WebRtcAudioSession::start(local, offer));
+    let (leg, keep_alive) = accept_with_keep_alive(
+        http,
+        skype_token,
+        &notification,
+        me.as_ref(),
+        false,
+        microphone_on,
+    )
+    .await?;
+    let webrtc = match media.await {
+        Ok(Ok(session)) => {
+            session.set_muted(!microphone_on);
+            Some(session)
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("WebRTC audio failed: {:#}", e);
+            None
+        }
+        Err(e) => {
+            tracing::warn!("WebRTC audio task failed: {e}");
+            None
+        }
+    };
+    Ok(ActiveCall {
+        notification,
+        forked: me.is_some(),
+        call_leg: leg.url,
+        keep_alive,
+        audio: None,
+        webrtc,
+        video: None,
+        started: Instant::now(),
+    })
+}
+
+/// Accept the call and, for forked calls, keep the accepted leg alive.
+async fn accept_with_keep_alive(
+    http: &reqwest::Client,
+    skype_token: &str,
+    notification: &CallNotification,
+    me: Option<&LocalParticipant>,
+    with_video: bool,
+    microphone_on: bool,
+) -> Result<(CallLeg, Option<tokio::task::JoinHandle<()>>)> {
+    let leg = match me {
+        Some(me) => accept_v2(http, skype_token, notification, me, with_video).await,
         None => {
-            signaling::accept_call_with(http, skype_token, &notification, with_video, microphone_on)
+            signaling::accept_call_with(http, skype_token, notification, with_video, microphone_on)
                 .await
                 .map(|()| CallLeg::default())
         }
@@ -550,33 +676,7 @@ pub async fn answer(
         })
     });
 
-    let audio = match audio_task {
-        Some(task) => match task.await {
-            Ok(Ok(session)) => {
-                session.set_muted(!microphone_on);
-                Some(session)
-            }
-            Ok(Err(e)) => {
-                tracing::warn!("Audio session failed: {:#}", e);
-                None
-            }
-            Err(e) => {
-                tracing::warn!("Audio session task failed: {e}");
-                None
-            }
-        },
-        None => None,
-    };
-
-    Ok(ActiveCall {
-        notification,
-        forked,
-        call_leg: leg.url,
-        keep_alive,
-        audio,
-        video,
-        started: Instant::now(),
-    })
+    Ok((leg, keep_alive))
 }
 
 fn modalities(video: bool) -> serde_json::Value {
@@ -701,6 +801,22 @@ struct CallLeg {
 /// Keep-alive period when the service does not name one.
 const DEFAULT_KEEP_ALIVE_SECS: u64 = 45;
 
+/// Whether a call event says the call is over (remote hang-up, cancel
+/// while ringing, or the conversation ending).
+pub fn is_call_end_event(json: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return false;
+    };
+    let path = v
+        .get("callAgentPath")
+        .and_then(|p| p.as_str())
+        .unwrap_or_default();
+    path.starts_with("call/end")
+        || path.starts_with("conversation/conversationEnd")
+        || v.get("callEnd").is_some()
+        || v.pointer("/body/callEnd").is_some()
+}
+
 /// The HTTP client and Skype token call signalling needs, loaded (and
 /// renewed when expired) from the stored sign-in.
 pub struct CallAuth {
@@ -712,7 +828,7 @@ impl CallAuth {
     pub async fn load() -> Result<Self> {
         use crate::config::Config;
         let mut config = Config::load()?;
-        if config.get_skype_token().map_or(true, |t| t.is_expired()) {
+        if config.get_skype_token().is_none_or(|t| t.is_expired()) {
             crate::auth::oauth::refresh()
                 .await
                 .context("Token refresh failed")?;
@@ -786,6 +902,21 @@ mod tests {
         assert_eq!(call.caller_id().as_deref(), Some("8:orgid:abc"));
         assert_eq!(call.call_id().as_deref(), Some("call-2"));
         assert!(!call.has_video());
+    }
+
+    #[test]
+    fn recognises_call_end_events() {
+        assert!(is_call_end_event(
+            r#"{"callAgentPath":"call/end/","body":{}}"#
+        ));
+        assert!(is_call_end_event(
+            r#"{"callAgentPath":"conversation/conversationEnd/","body":null}"#
+        ));
+        assert!(is_call_end_event(r#"{"callEnd":{"code":487}}"#));
+        assert!(!is_call_end_event(
+            r#"{"callAgentPath":"call/mediaAcknowledgement/","body":{}}"#
+        ));
+        assert!(!is_call_end_event("nope"));
     }
 
     #[test]

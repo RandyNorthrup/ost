@@ -230,10 +230,26 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         });
         return;
     }
+    if teams_cli::calling::incoming::is_call_end_event(json) {
+        let mut slot = call_slot().lock().await;
+        let was_ringing = slot.ringing.take().is_some();
+        // The other side ended it: drop media without signalling an end.
+        let was_active = slot.active.take().is_some();
+        drop(slot);
+        if was_ringing || was_active {
+            tracing::info!(was_ringing, was_active, "call ended by the other side");
+            let _ = qt.queue(|mut this| this.as_mut().end_call_ui());
+        }
+        return;
+    }
     fn keys(v: &serde_json::Value, prefix: &str, depth: usize, out: &mut Vec<String>) {
         if let Some(o) = v.as_object() {
             for (k, child) in o {
-                let path = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+                let path = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
                 out.push(path.clone());
                 if depth > 0 {
                     keys(child, &path, depth - 1, out);
@@ -405,7 +421,9 @@ impl qobject::Backend {
                         loop {
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                             let slot = call_slot().lock().await;
-                            let Some(call) = slot.active.as_ref() else { return };
+                            let Some(call) = slot.active.as_ref() else {
+                                return;
+                            };
                             if let Some(s) = call.audio_stats().await {
                                 tracing::info!(
                                     sent = s.packets_sent,
