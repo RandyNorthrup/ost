@@ -121,6 +121,8 @@ pub struct BackendRust {
     unread: HashSet<String>,
     /// The chat list as loaded, before unread flags are applied.
     chats: Vec<serde_json::Value>,
+    /// Availability by MRI for the other members of 1:1 chats.
+    presence: std::collections::HashMap<String, String>,
 }
 
 /// The call this app is ringing for or in. Lives on the engine side so the
@@ -198,6 +200,7 @@ fn short_error(e: &anyhow::Error) -> String {
 
 async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let client = TeamsClient::new().await?;
+    let my_oid = client.object_id().unwrap_or_default();
     let me = api::whoami_data(&client).await?;
     let chats = api::list_chats_data(&client, CHAT_LIMIT).await?;
     let list: Vec<_> = chats
@@ -213,6 +216,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "time": c.last_message_time,
                 "sender": c.last_message_sender,
                 "preview": c.last_message_preview,
+                "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
             })
         })
         .collect();
@@ -386,6 +390,11 @@ impl qobject::Backend {
                 let mut c = c.clone();
                 let id = c["id"].as_str().unwrap_or_default().to_string();
                 c["unread"] = json!(unread.contains(&id));
+                if let Some(mri) = c["peerMri"].as_str() {
+                    if let Some(p) = self.rust().presence.get(mri) {
+                        c["presence"] = json!(p);
+                    }
+                }
                 c
             })
             .collect();
@@ -597,6 +606,47 @@ impl qobject::Backend {
         }
     }
 
+    /// Poll the presence of 1:1 chat partners every minute (Teams shows a
+    /// badge on each avatar).
+    fn start_presence(self: Pin<&mut Self>) {
+        static STARTED: AtomicBool = AtomicBool::new(false);
+        if STARTED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let http = reqwest::Client::new();
+            loop {
+                let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
+                let _ = qt.queue(move |this| {
+                    let mris: Vec<String> = this
+                        .rust()
+                        .chats
+                        .iter()
+                        .filter_map(|c| c["peerMri"].as_str().map(str::to_string))
+                        .collect();
+                    let _ = tx.send(mris);
+                });
+                let mris = rx.await.unwrap_or_default();
+                match teams_cli::api::presence::get_presences(&http, &mris).await {
+                    Ok(list) => {
+                        let _ = qt.queue(move |mut this| {
+                            for p in list {
+                                this.as_mut()
+                                    .rust_mut()
+                                    .presence
+                                    .insert(p.mri, p.availability);
+                            }
+                            this.as_mut().publish_chats();
+                        });
+                    }
+                    Err(e) => tracing::warn!("presence lookup failed: {}", short_error(&e)),
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+    }
+
     fn on_chat_push(mut self: Pin<&mut Self>, ids: Vec<String>) {
         let current = self.rust().current_chat_id.to_string();
         let mut list_changed = false;
@@ -661,6 +711,7 @@ impl qobject::Backend {
                         this.as_mut().publish_chats();
                         this.as_mut().set_status_text(QString::default());
                         this.as_mut().start_push();
+                        this.as_mut().start_presence();
                     }
                     Err(e) => {
                         this.as_mut().set_signed_in(false);

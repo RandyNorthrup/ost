@@ -108,3 +108,69 @@ pub async fn publish_endpoint(http: &reqwest::Client, epid: &str) -> Result<()> 
     tracing::debug!("Presence endpoint published ({status})");
     Ok(())
 }
+
+/// Someone's presence as the presence service reports it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UserPresence {
+    pub mri: String,
+    /// Available, Busy, DoNotDisturb, BeRightBack, Away, Offline, …
+    pub availability: String,
+    pub activity: String,
+}
+
+/// Look up several users' presence by MRI (`8:orgid:<oid>`).
+pub async fn get_presences(http: &reqwest::Client, mris: &[String]) -> Result<Vec<UserPresence>> {
+    if mris.is_empty() {
+        return Ok(Vec::new());
+    }
+    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
+    let body: Vec<serde_json::Value> = mris.iter().map(|m| serde_json::json!({ "mri": m })).collect();
+    let resp = http
+        .post(format!("{PRESENCE_URL}/v1/presence/getpresence/"))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await
+        .context("Presence lookup failed to send")?;
+    let status = resp.status();
+    if !status.is_success() {
+        bail!("Presence lookup failed: HTTP {status}");
+    }
+    let v: serde_json::Value = resp.json().await.context("Presence lookup reply")?;
+    Ok(parse_presences(&v))
+}
+
+fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let mri = e.get("mri")?.as_str()?.to_string();
+            let p = e.get("presence").unwrap_or(e);
+            let field = |k: &str| p.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            Some(UserPresence {
+                mri,
+                availability: field("availability"),
+                activity: field("activity"),
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod presence_tests {
+    use super::*;
+
+    #[test]
+    fn parses_presence_service_reply() {
+        let v = serde_json::json!([
+            {"mri": "8:orgid:a", "presence": {"availability": "Available", "activity": "Available"}},
+            {"mri": "8:orgid:b", "presence": {"availability": "Busy", "activity": "InACall"}},
+            {"nomri": true}
+        ]);
+        let p = parse_presences(&v);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[1].availability, "Busy");
+        assert_eq!(p[1].activity, "InACall");
+    }
+}

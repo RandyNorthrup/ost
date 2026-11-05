@@ -83,7 +83,11 @@ Rectangle {
                 x: 16; width: parent.width - 32; height: 32; radius: theme.radius
                 color: row.selected ? theme.surface : (hover.hovered ? "#EBEBEB" : "transparent")
             }
-            Avatar { x: 32; anchors.verticalCenter: parent.verticalCenter; size: 20; name: row.modelData.name }
+            Avatar {
+                x: 32; anchors.verticalCenter: parent.verticalCenter
+                size: 20; name: row.modelData.name
+                presence: row.modelData.presence || ""
+            }
             Text {
                 x: 64; width: parent.width - 64 - 40
                 anchors.verticalCenter: parent.verticalCenter

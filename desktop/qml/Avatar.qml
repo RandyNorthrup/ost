@@ -5,6 +5,9 @@ Rectangle {
     id: root
     property string name
     property int size: 32
+    /// Presence availability (Available, Busy, DoNotDisturb, Away,
+    /// BeRightBack, Offline…); empty hides the badge.
+    property string presence: ""
     width: size
     height: size
     radius: size / 2
@@ -31,5 +34,33 @@ Rectangle {
         font.family: theme.font
         font.pixelSize: Math.round(root.size * 0.38)
         font.weight: Font.DemiBold
+    }
+
+    // Presence badge, bottom right, with the surface-coloured ring Teams uses.
+    Rectangle {
+        readonly property int d: root.size <= 24 ? 8 : (root.size <= 40 ? 10 : Math.round(root.size * 0.22))
+        readonly property string p: root.presence.toLowerCase()
+        visible: root.presence.length > 0
+        width: d + 2; height: d + 2; radius: width / 2
+        x: root.width - d + 1; y: root.height - d + 1
+        color: theme.surface
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.d; height: parent.d; radius: width / 2
+            readonly property bool offline: parent.p === "offline" || parent.p === "presenceunknown" || parent.p === ""
+            color: offline ? "transparent"
+                : parent.p === "available" ? "#13A10E"
+                : (parent.p === "busy" || parent.p === "donotdisturb") ? "#C4314B"
+                : "#EAA300"
+            border.width: offline ? 1.5 : 0
+            border.color: "#8A8886"
+            // Do not disturb: a white bar across the red dot.
+            Rectangle {
+                visible: parent.parent.p === "donotdisturb"
+                anchors.centerIn: parent
+                width: parent.width * 0.55; height: Math.max(1, parent.height * 0.18)
+                color: "white"
+            }
+        }
     }
 }

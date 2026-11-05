@@ -205,6 +205,10 @@ Window {
     Conversation {
         anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         chatName: backend.currentChatName
+        chatPresence: {
+            const c = chatList.chats.find(c => c.id === backend.currentChatId)
+            return c && c.presence ? c.presence : ""
+        }
         messages: backend.messagesJson ? JSON.parse(backend.messagesJson) : []
         busy: backend.busy
         onSend: text => backend.sendMessage(text)

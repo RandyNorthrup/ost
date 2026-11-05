@@ -9,6 +9,7 @@ Rectangle {
     property bool busy
     signal send(string text)
     signal call()
+    property string chatPresence: ""
 
     // Newest first (the list grows upward), with Teams' grouping: a message
     // joins the previous one when the same person sent it under 5 minutes
@@ -32,7 +33,7 @@ Rectangle {
         id: header
         width: parent.width; height: theme.headerHeight
         visible: root.chatName.length > 0
-        Avatar { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.chatName }
+        Avatar { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.chatName; presence: root.chatPresence }
         Text {
             id: title
             x: 64; anchors.verticalCenter: parent.verticalCenter
