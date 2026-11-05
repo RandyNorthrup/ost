@@ -209,8 +209,8 @@ struct CallSlot {
     ringing: Option<IncomingCall>,
     active: Option<ActiveCall>,
     outgoing: Option<OutgoingCall>,
-    /// The call being placed (still ringing the callee).
-    placing: Option<tokio::task::JoinHandle<()>>,
+    /// Withdraws the call being placed (still ringing the callee).
+    cancel_placing: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
@@ -634,15 +634,6 @@ impl qobject::Backend {
         if !self.rust().call_state.is_empty() {
             return;
         }
-        // Placing calls currently joins a server-hosted conversation that does
-        // not ring the callee like a Teams 1:1 call (TASK-0020); keep it
-        // behind a flag until it does.
-        if std::env::var_os("OST_EXPERIMENTAL_OUTGOING_CALLS").is_none() {
-            self.as_mut().set_status_text(QString::from(
-                "Starting calls from OST isn't available yet. You can receive calls.",
-            ));
-            return;
-        }
         let chat_id = self.rust().current_chat_id.to_string();
         let peer = self.rust().current_chat_name.clone();
         let my_oid = teams_cli::config::Config::load()
@@ -660,10 +651,12 @@ impl qobject::Backend {
         self.as_mut().set_call_muted(false);
         self.as_mut().set_call_state(QString::from("calling"));
         let qt = self.qt_thread();
-        let task = runtime().spawn(async move {
-            let result = outgoing::place_call(&chat_id, &callee).await;
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
+        runtime().spawn(async move {
+            let result = outgoing::place_call(&chat_id, &callee, cancel_rx).await;
             let mut slot = call_slot().lock().await;
-            slot.placing = None;
+            slot.cancel_placing = None;
             match result {
                 Ok(call) => {
                     let has_audio = call.has_audio();
@@ -687,16 +680,16 @@ impl qobject::Backend {
                 }
             }
         });
-        runtime().block_on(async { call_slot().lock().await.placing = Some(task) });
     }
 
     pub fn hang_up(mut self: Pin<&mut Self>) {
         self.as_mut().end_call_ui();
         runtime().spawn(async {
             let mut slot = call_slot().lock().await;
-            if let Some(task) = slot.placing.take() {
-                task.abort();
+            if let Some(cancel) = slot.cancel_placing.take() {
+                let _ = cancel.send(());
                 tracing::info!("outgoing call cancelled");
+                return;
             }
             if let Some(call) = slot.outgoing.take() {
                 drop(slot);

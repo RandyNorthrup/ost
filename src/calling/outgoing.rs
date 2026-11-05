@@ -101,6 +101,15 @@ pub fn callee_mri_for_chat(chat_id: &str, my_oid: &str) -> Option<String> {
     Some(format!("8:orgid:{other}"))
 }
 
+/// The conversation's `leave` link from the create response.
+fn leave_link(create_response: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(create_response).ok()?;
+    v.pointer("/links/leave")
+        .or_else(|| v.pointer("/conversationResponse/links/leave"))
+        .and_then(|u| u.as_str())
+        .map(str::to_string)
+}
+
 /// What the callee's answer told us.
 struct Acceptance {
     sdp: String,
@@ -156,7 +165,13 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
 
 /// Call a Teams user. Resolves once the callee answers and audio is set
 /// up, or fails if they decline, do not answer, or the call fails.
-pub async fn place_call(thread_id: &str, callee_mri: &str) -> Result<OutgoingCall> {
+/// Sending on (or dropping) `cancel` while the callee is still ringing
+/// withdraws the call, so their ringing stops.
+pub async fn place_call(
+    thread_id: &str,
+    callee_mri: &str,
+    mut cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
     let mut config = Config::load()?;
     if config.get_skype_token().is_none_or(|t| t.is_expired())
         || config.get_ic3_token().is_none_or(|t| t.is_expired())
@@ -205,12 +220,13 @@ pub async fn place_call(thread_id: &str, callee_mri: &str) -> Result<OutgoingCal
 
     // Listen before placing the call so the answer cannot be missed.
     let mut events = event_hub::subscribe();
-    let (_created, _joined) =
+    let (created, _joined) =
         signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee_mri))
             .await?;
+    let leave_url = leave_link(&created.response_body);
     tracing::info!("call placed; ringing");
 
-    let acceptance = tokio::time::timeout(RING_TIMEOUT, async {
+    let wait_answer = async {
         loop {
             let ev = match events.recv().await {
                 Ok(ev) => ev,
@@ -226,9 +242,28 @@ pub async fn place_call(thread_id: &str, callee_mri: &str) -> Result<OutgoingCal
                 None => continue,
             }
         }
-    })
-    .await
-    .map_err(|_| anyhow::anyhow!("No answer"))??;
+    };
+    // Withdrawn before an answer: leave the conversation as Teams does, so
+    // the callee stops ringing.
+    let withdraw = |code: u16, reason: &'static str| {
+        let (http, params, leave_url) = (&http, &params, leave_url.as_deref());
+        async move {
+            match leave_url {
+                Some(url) => {
+                    if let Err(e) = signaling::leave_conversation(http, url, params, code).await {
+                        tracing::warn!("Withdrawing the call failed: {:#}", e);
+                    }
+                }
+                None => tracing::warn!("No leave link; the callee may keep ringing"),
+            }
+            anyhow::anyhow!(reason)
+        }
+    };
+    let acceptance = tokio::select! {
+        answer = wait_answer => answer?,
+        _ = tokio::time::sleep(RING_TIMEOUT) => return Err(withdraw(408, "No answer").await),
+        _ = &mut cancel => return Err(withdraw(487, "Call cancelled").await),
+    };
     tracing::info!("callee answered");
 
     if let Some(ack) = &acceptance.acknowledgement {
@@ -236,11 +271,9 @@ pub async fn place_call(thread_id: &str, callee_mri: &str) -> Result<OutgoingCal
             tracing::warn!("Acceptance acknowledgement failed: {:#}", e);
         }
     }
-    if let Some(leg) = &acceptance.call_leg {
-        if let Err(e) = signaling::register_cc_callbacks(&http, leg, &params).await {
-            tracing::warn!("Call callback registration failed: {:#}", e);
-        }
-    }
+    // Teams posts nothing else to the call leg here (it is for keep-alives
+    // and hang-up); a callback re-registration on it is not something the
+    // web client does.
 
     let media = match WebRtcOffer::parse(&acceptance.sdp) {
         Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer).await {
@@ -294,5 +327,14 @@ mod tests {
             r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":603,"phrase":"Declined"}}}"#;
         assert_eq!(read_answer(end).unwrap().err().unwrap(), "Declined (603)");
         assert!(read_answer(r#"{"callAgentPath":"call/progress/","body":{}}"#).is_none());
+    }
+
+    #[test]
+    fn finds_the_leave_link() {
+        assert_eq!(
+            leave_link(r#"{"links":{"leave":"https://conv/leave"}}"#).as_deref(),
+            Some("https://conv/leave")
+        );
+        assert!(leave_link(r#"{"links":{}}"#).is_none());
     }
 }

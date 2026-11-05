@@ -21,7 +21,10 @@ fn main() {
     for dir in ["assets/icons", "assets/fonts"] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();
-            if matches!(path.extension().and_then(|e| e.to_str()), Some("svg" | "ttf")) {
+            if matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("svg" | "ttf")
+            ) {
                 resources.push(path.to_string_lossy().into_owned());
             }
         }

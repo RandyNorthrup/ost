@@ -15,9 +15,9 @@ pub mod ice;
 pub mod incoming;
 pub mod media;
 pub mod outgoing;
+pub mod recording;
 #[cfg(feature = "audio")]
 pub mod ringtone;
-pub mod recording;
 pub mod rtcp;
 pub mod rtp;
 pub mod sdp;
@@ -26,8 +26,8 @@ pub mod signaling;
 pub mod srtp;
 pub mod test_tone;
 pub mod turn;
-pub mod webrtc_audio;
 pub mod video;
+pub mod webrtc_audio;
 
 use serde::Deserialize;
 

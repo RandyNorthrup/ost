@@ -508,6 +508,42 @@ pub fn unwrap_call_payload(json: &str) -> String {
     json.to_string()
 }
 
+/// The body the Teams client returns in its Trouter reply to a pushed
+/// call acceptance (its "synchronous Trouter response"). The Call
+/// Controller waits for this acknowledgement in the reply itself and ends
+/// the call with 408/10056 after 30 s without it, even when the same
+/// acknowledgement is also POSTed to the acceptance's link.
+pub(crate) fn sync_reply_body(frame: &str) -> Option<String> {
+    let payload = frame.strip_prefix("3:::")?;
+    let (url, body) = data_frame_body(payload)?;
+    if !url.trim_end_matches('/').ends_with("call/acceptance") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    v.get("callAcceptance")?;
+    let endpoint_id = url.split("/callAgent/").nth(1)?.split('/').next()?;
+    let (surl, _) = current_endpoint()?;
+    Some(acceptance_ack_body(&surl, endpoint_id).to_string())
+}
+
+/// `callAcceptanceAcknowledgement` with the links Teams sends back.
+pub(crate) fn acceptance_ack_body(surl: &str, endpoint_id: &str) -> serde_json::Value {
+    let tc = |path: &str| crate::calling::signaling::trouter_callback(surl, endpoint_id, path);
+    serde_json::json!({
+        "callAcceptanceAcknowledgement": {
+            "links": {
+                "mediaRenegotiation": tc("call/mediaRenegotiation/"),
+                "transfer": tc("call/transfer/"),
+                "replacement": tc("call/replacement/"),
+                "balanceUpdate": tc("call/balanceUpdate/"),
+                "retargetCompletion": tc("call/retargetCompletion/"),
+                "controlVideoStreaming": tc("call/controlVideoStreaming/"),
+                "updateMediaDescriptions": tc("call/updateMediaDescriptions")
+            }
+        }
+    })
+}
+
 /// The request URL and decoded body text of a `3:::` data frame. `body`
 /// sits top-level or under `data` depending on the Trouter version; it is
 /// an object, plain JSON text, or base64 + gzip
@@ -630,7 +666,7 @@ async fn handle_call_event(json_str: &str, http: &reqwest::Client, skype_token: 
 
 #[cfg(test)]
 mod data_frame_tests {
-    use super::data_frame_event;
+    use super::{acceptance_ack_body, data_frame_event, sync_reply_body};
 
     fn frame(body: &str, headers: serde_json::Value) -> String {
         serde_json::json!({"id": 7, "method": "POST", "url": "/v4/f/x/messaging",
@@ -699,6 +735,20 @@ mod data_frame_tests {
         );
         assert!(data_frame_event("not json").is_none());
         assert!(data_frame_event(r#"{"id":1,"status":200}"#).is_none());
+    }
+
+    #[test]
+    fn acceptance_ack_links_point_back_at_us() {
+        let b = acceptance_ack_body("https://t.example/v4/f/abc/", "ep-1");
+        let link = b
+            .pointer("/callAcceptanceAcknowledgement/links/mediaRenegotiation")
+            .and_then(|l| l.as_str())
+            .unwrap();
+        assert!(link.starts_with("https://t.example/v4/f/abc/callAgent/ep-1/"));
+        assert!(link.ends_with("/call/mediaRenegotiation/"));
+        // Only call acceptances get a reply body.
+        let other = r#"3:::{"id":3,"url":"/v4/f/abc/callAgent/ep-1/h/call/progress/","body":"{}"}"#;
+        assert!(sync_reply_body(other).is_none());
     }
 
     #[test]

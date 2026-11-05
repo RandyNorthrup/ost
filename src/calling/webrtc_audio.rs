@@ -940,7 +940,10 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         let offer = local.offer_sdp();
         assert!(offer.contains("a=setup:actpass"));
         // Every line is a valid "<type>=<value>" SDP line.
-        assert!(offer.lines().all(|l| l.len() > 2 && &l[1..2] == "="), "{offer}");
+        assert!(
+            offer.lines().all(|l| l.len() > 2 && &l[1..2] == "="),
+            "{offer}"
+        );
         assert!(offer.contains("a=group:BUNDLE 0"));
         assert_eq!(offer.matches("m=").count(), 1);
         let parsed = WebRtcOffer::parse(&offer).unwrap();

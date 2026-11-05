@@ -130,7 +130,9 @@ impl Config {
                 match entry.set_password(&json) {
                     Ok(()) => on_disk.tokens_in_keyring = true,
                     Err(e) => {
-                        tracing::warn!("Keyring unavailable ({e}); storing tokens in the config file");
+                        tracing::warn!(
+                            "Keyring unavailable ({e}); storing tokens in the config file"
+                        );
                         on_disk.apply_secrets(secrets);
                     }
                 }

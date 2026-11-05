@@ -59,7 +59,18 @@ impl TrouterSocket {
 
                     // Auto-respond to Trouter data frame deliveries (3::: HTTP-over-WS)
                     if let Some(req_id) = extract_trouter_request_id(&text) {
-                        let resp = format!("3:::{{\"id\":{},\"status\":200}}", req_id);
+                        let resp = match super::sync_reply_body(&text) {
+                            Some(body) => format!(
+                                "3:::{}",
+                                serde_json::json!({
+                                    "id": req_id,
+                                    "status": 200,
+                                    "headers": { "Content-Type": "application/json" },
+                                    "body": body
+                                })
+                            ),
+                            None => format!("3:::{{\"id\":{},\"status\":200}}", req_id),
+                        };
                         tracing::debug!("Trouter response: {}", resp);
                         if let Err(e) = self.stream.send(Message::Text(resp)).await {
                             tracing::warn!("Failed to send Trouter response: {:#}", e);

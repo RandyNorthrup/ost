@@ -55,6 +55,24 @@ pub struct ConversationCallParams<'a> {
 ///
 /// Each callback gets a unique 8-hex-char hash (matches Teams web client pattern).
 /// Pattern: `{trouter_surl}callAgent/{endpoint_id}/{hash}/{path}`
+/// Every `…/links/<name>` path in a response, for diagnostics.
+fn link_names(v: &serde_json::Value) -> Vec<String> {
+    fn walk(v: &serde_json::Value, path: &str, out: &mut Vec<String>) {
+        if let Some(o) = v.as_object() {
+            for (k, c) in o {
+                let p = format!("{path}/{k}");
+                if path.ends_with("/links") {
+                    out.push(p.clone());
+                }
+                walk(c, &p, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(v, "", &mut out);
+    out
+}
+
 pub(crate) fn trouter_callback(trouter_surl: &str, endpoint_id: &str, path: &str) -> String {
     let hash = format!("{:08x}", {
         // Simple hash from endpoint_id + path to produce unique per-path values
@@ -948,6 +966,11 @@ pub async fn create_1to1_call_to(
     sdp_offer: &str,
     callee_mri: Option<&str>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
+    let group_chat = if callee_mri.is_some() {
+        serde_json::Value::Null
+    } else {
+        serde_json::json!({ "threadId": params.thread_id, "messageId": null })
+    };
     let to: Vec<serde_json::Value> = callee_mri
         .map(|id| serde_json::json!({ "id": id }))
         .into_iter()
@@ -983,10 +1006,9 @@ pub async fn create_1to1_call_to(
             }
         },
         "groupContext": null,
-        "groupChat": {
-            "threadId": params.thread_id,
-            "messageId": null
-        },
+        // A 1:1 call to a named callee is peer to peer, like Teams'; tying
+        // it to the chat thread makes it a chat-hosted meeting instead.
+        "groupChat": group_chat,
         "participants": {
             "from": {
                 "id": params.caller_mri,
@@ -1097,6 +1119,7 @@ pub async fn create_1to1_call_to(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    tracing::debug!("1:1 call response links: {:?}", link_names(&resp_json));
     tracing::info!(
         "1:1 call: conversationController = {}, addParticipant link = {:?}",
         conv_controller,
@@ -1230,6 +1253,68 @@ pub async fn invite_user(
     }
 
     Ok(())
+}
+
+/// Leave a conversation we created, as the Teams client does to cancel an
+/// outgoing call that is still ringing (`code` 487) or has gone
+/// unanswered (408). The callee's ringing stops at once.
+pub async fn leave_conversation(
+    http: &reqwest::Client,
+    leave_url: &str,
+    params: &ConversationCallParams<'_>,
+    code: u16,
+) -> Result<()> {
+    let payload = leave_payload(params, code);
+    let resp = http
+        .post(leave_url)
+        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .header("Content-Type", "application/json")
+        .header("x-microsoft-skype-chain-id", params.chain_id)
+        .header(
+            "x-microsoft-skype-message-id",
+            uuid::Uuid::new_v4().to_string(),
+        )
+        .header("x-microsoft-skype-client", SKYPE_CLIENT_HEADER)
+        .header("Referer", "https://teams.microsoft.com/")
+        .header("ms-teams-partition", TEAMS_PARTITION)
+        .header("ms-teams-region", TEAMS_REGION)
+        .header("ms-teams-ring", TEAMS_RING)
+        .header("x-ms-migration", "True")
+        .json(&payload)
+        .send()
+        .await
+        .context("Failed to leave the conversation")?;
+    let status = resp.status();
+    tracing::info!("Leave conversation: {}", status);
+    if !status.is_success() {
+        anyhow::bail!("Leaving the conversation failed ({status})");
+    }
+    Ok(())
+}
+
+fn leave_payload(params: &ConversationCallParams<'_>, code: u16) -> serde_json::Value {
+    serde_json::json!({
+        "participants": {
+            "from": {
+                "id": params.caller_mri,
+                "displayName": params.caller_display_name,
+                "endpointId": params.endpoint_id,
+                "participantId": params.participant_id,
+                "languageId": "en-US"
+            }
+        },
+        "conversationTransactionEnd": {
+            "reason": "noError",
+            "code": 0,
+            "phrase": "ConversationEndNoModalityConnected"
+        },
+        "callTransactionEnd": {
+            "code": code,
+            "subCode": 0,
+            "phrase": "CallEndReasonLocalUserInitiated",
+            "resultCategories": ["Success"]
+        }
+    })
 }
 
 /// End a call by POSTing to the end URL.

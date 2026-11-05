@@ -1,12 +1,12 @@
 //! API client module for Microsoft Teams
 
 pub mod calendar;
-pub mod directory;
-pub mod messages;
 mod chat;
 pub mod client;
+pub mod directory;
 mod graph;
 mod me;
+pub mod messages;
 pub mod presence;
 mod teams;
 

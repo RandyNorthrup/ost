@@ -178,9 +178,13 @@ Window {
             window.outStarted = true
             backend.startCall()
             callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-calling.png")))
+            if (window.cancelRing) cancelRingTimer.start()
         }
     }
     property bool outStarted: false
+    // --cancel-ring: with --call-out, hang up while the callee is still ringing.
+    readonly property bool cancelRing: Qt.application.arguments.indexOf("--cancel-ring") >= 0
+    Timer { id: cancelRingTimer; interval: 8000; onTriggered: backend.hangUp() }
 
     // --edit-test: send two messages, edit the first and delete the second,
     // capture when both show.
