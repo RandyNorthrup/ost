@@ -168,6 +168,28 @@ Window {
         }
     }
 
+    // --filter-test: try each chip and a name filter, logging what shows.
+    Timer {
+        running: Qt.application.arguments.indexOf("--filter-test") >= 0 && chatList.chats.length > 0 && chatList.teams.length > 0
+        interval: 800
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const log = tag => console.warn("FILTER", tag, "fav", chatList.favorites.length, "chats", chatList.others.length, "teams", chatList.shownTeams.length,
+                                             "channels", chatList.shownTeams.reduce((n, t) => n + t.channels.length, 0))
+            const steps = [
+                () => log("none"),
+                () => { chatList.chipFilter = "unread"; log("unread") },
+                () => { chatList.chipFilter = "channels"; log("channels") },
+                () => { chatList.chipFilter = "chats"; log("chats") },
+                () => { chatList.chipFilter = ""; chatList.nameFilter = "ost test team"; log("name=ost test team") },
+                () => { chatList.nameFilter = "randy"; log("name=randy") },
+                () => { chatList.nameFilter = ""; log("cleared"); Qt.quit() },
+            ]
+            steps[step++]()
+        }
+    }
+
     // --settings-test: switch the theme and back, read the receipts
     // setting from Teams, list audio devices.
     Timer {

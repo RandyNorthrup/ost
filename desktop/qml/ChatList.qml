@@ -18,9 +18,25 @@ Rectangle {
     color: theme.pane
     width: theme.listWidth
 
-    readonly property var favorites: chats.filter(c => c.favorite)
+    // Filters: a chip ("unread", "channels", "chats") and/or a name filter.
+    property string chipFilter: ""
+    property string nameFilter: ""
+    property bool filtering: false
+    readonly property bool filtered: chipFilter.length > 0 || nameFilter.length > 0
+    function nameMatches(n) { return !nameFilter || (n || "").toLowerCase().indexOf(nameFilter) >= 0 }
+    function chatShown(c) {
+        if (chipFilter === "channels") return false
+        if (chipFilter === "unread" && !c.unread) return false
+        return nameMatches(c.name)
+    }
+    readonly property var favorites: chats.filter(c => c.favorite && chatShown(c))
         .sort((a, b) => (a.favoriteRank ?? 1e9) - (b.favoriteRank ?? 1e9))
-    readonly property var others: chats.filter(c => !c.favorite)
+    readonly property var others: chats.filter(c => !c.favorite && chatShown(c))
+    // Teams with the channels that pass the filters.
+    readonly property var shownTeams: (chipFilter === "chats" || chipFilter === "unread") ? []
+        : teams.map(t => ({ id: t.id, name: t.name,
+                            channels: nameMatches(t.name) ? t.channels : t.channels.filter(ch => nameMatches(ch.name)) }))
+               .filter(t => nameMatches(t.name) || t.channels.length > 0)
     property bool quickOpen: true
     property bool favOpen: true
     property bool chatsOpen: true
@@ -51,7 +67,10 @@ Rectangle {
             color: theme.text
         }
         HeaderButton { x: 194; y: 15; icon: "more-20"; Accessible.name: "More list options" }
-        HeaderButton { x: 226; y: 15; icon: "search-20"; Accessible.name: "Show filter text box" }
+        HeaderButton {
+            x: 226; y: 15; icon: "search-20"; Accessible.name: "Show filter text box"
+            onClicked: { root.filtering = !root.filtering; if (root.filtering) filterField.forceActiveFocus(); else { filterField.text = "" } }
+        }
         HeaderButton {
             x: 258; y: 14; width: 26; icon: "compose-20"
             Accessible.name: "New message"
@@ -63,25 +82,64 @@ Rectangle {
     // Filter chips: 24 px pills with a 1 px neutral border, 4 px apart.
     Row {
         id: chips
+        visible: !root.filtering
         x: 32; y: 69
         spacing: 4
         Repeater {
             model: ["Unread", "Channels", "Chats"]
             delegate: Rectangle {
+                id: chip
                 required property string modelData
+                readonly property bool on: root.chipFilter === modelData.toLowerCase()
                 height: 24; radius: 12
                 width: chipText.implicitWidth + 16
-                color: chipHover.hovered ? theme.rowHover : "transparent"
-                border.color: chipHover.hovered ? theme.strokeHover : theme.stroke
-                HoverHandler { id: chipHover }
+                // An active chip takes the brand tint, as Fluent's toggles do.
+                color: on ? theme.brandTint : (chipHover.hovered ? theme.rowHover : "transparent")
+                border.color: on ? theme.brand : (chipHover.hovered ? theme.strokeHover : theme.stroke)
+                HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.chipFilter = chip.on ? "" : chip.modelData.toLowerCase() }
                 Text {
                     id: chipText
                     anchors.centerIn: parent
                     text: modelData
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: theme.textStrong
+                    color: chip.on ? theme.brand : theme.textStrong
                 }
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: modelData
+                Accessible.checked: on
             }
+        }
+    }
+    // "Show filter text box": filter the list by name.
+    Rectangle {
+        visible: root.filtering
+        x: 32; y: 65; width: 272; height: 32; radius: theme.radius
+        color: theme.input
+        border.color: filterField.activeFocus ? theme.brand : theme.stroke
+        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
+        TextInput {
+            id: filterField
+            x: 32; width: parent.width - 64
+            anchors.verticalCenter: parent.verticalCenter
+            font.family: theme.font; font.pixelSize: theme.base
+            color: theme.text
+            clip: true
+            onTextChanged: root.nameFilter = text.trim().toLowerCase()
+            Keys.onEscapePressed: { text = ""; root.filtering = false }
+            Text { visible: !filterField.text; text: "Filter by name"; color: theme.textTertiary; font: filterField.font }
+            Accessible.name: "Filter by name"
+        }
+        Rectangle {
+            anchors.right: parent.right; anchors.rightMargin: 4
+            anchors.verticalCenter: parent.verticalCenter
+            width: 24; height: 24; radius: theme.radius
+            color: clh.hovered ? theme.rowHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.textStrong }
+            HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { filterField.text = ""; root.filtering = false } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close filter"
         }
     }
     HeaderButton { x: 282; y: 65; width: 24; height: 24; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "More filters" }
@@ -97,38 +155,38 @@ Rectangle {
         header: Column {
             width: list.width
             // Quick views > Drafts
-            SectionHeader { label: "Quick views"; open: root.quickOpen; onToggled: root.quickOpen = !root.quickOpen }
-            Item { width: 1; height: root.quickOpen ? 4 : 0 }
+            SectionHeader { visible: !root.filtered; label: "Quick views"; open: root.quickOpen; onToggled: root.quickOpen = !root.quickOpen }
+            Item { width: 1; height: root.quickOpen && !root.filtered ? 4 : 0 }
             ListRow {
-                visible: root.quickOpen
+                visible: root.quickOpen && !root.filtered
                 label: "Drafts"; icon: "drafts-20"
                 selected: root.draftsOpen
                 onClicked: root.openDrafts()
             }
             // A hairline 12 px below, then the next group 4.6 px after it.
-            Item { width: 1; height: 12 }
-            Rectangle { x: 16; width: list.width - 32; height: 1; color: theme.divider }
-            Item { width: 1; height: 4 }
-            SectionHeader { label: "Favorites"; open: root.favOpen; onToggled: root.favOpen = !root.favOpen }
+            Item { width: 1; height: root.filtered ? 0 : 12 }
+            Rectangle { visible: !root.filtered; x: 16; width: list.width - 32; height: 1; color: theme.divider }
+            Item { width: 1; height: root.filtered ? 0 : 4 }
+            SectionHeader { visible: root.favorites.length > 0 || !root.filtered; label: "Favorites"; open: root.favOpen; onToggled: root.favOpen = !root.favOpen }
             Item { width: 1; height: root.favOpen && root.favorites.length > 0 ? 4 : 0 }
             Repeater {
                 model: root.favOpen ? root.favorites : []
                 ChatRow { required property var modelData; chat: modelData }
             }
             Item { width: 1; height: 8 }
-            SectionHeader { label: "Chats"; open: root.chatsOpen; onToggled: root.chatsOpen = !root.chatsOpen }
+            SectionHeader { visible: root.others.length > 0 || !root.filtered; label: "Chats"; open: root.chatsOpen; onToggled: root.chatsOpen = !root.chatsOpen }
             Item { width: 1; height: root.chatsOpen && root.others.length > 0 ? 4 : 0 }
         }
         model: root.chatsOpen ? root.others : []
         delegate: ChatRow { required property var modelData; chat: modelData }
         footer: Column {
             width: list.width
-            visible: root.teams.length > 0
+            visible: root.shownTeams.length > 0
             Item { width: 1; height: 8 }
             SectionHeader { label: "Teams and channels"; open: root.teamsOpen; onToggled: root.teamsOpen = !root.teamsOpen }
             Item { width: 1; height: root.teamsOpen ? 4 : 0 }
             Repeater {
-                model: root.teamsOpen ? root.teams : []
+                model: root.teamsOpen ? root.shownTeams : []
                 Column {
                     id: team
                     required property var modelData
