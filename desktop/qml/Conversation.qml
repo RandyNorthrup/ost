@@ -11,6 +11,9 @@ Rectangle {
     signal call()
     property string chatPresence: ""
     property string typingText: ""
+    /// Channel conversations (posts) look different from chats in Teams.
+    property bool isChannel: false
+    property string teamName: ""
     signal typing()
     signal react(string messageId, string key, bool on)
     signal editMessage(string messageId, string text)
@@ -26,7 +29,8 @@ Rectangle {
         for (let i = 1; i < out.length; i++) {
             const prev = out[i - 1], cur = out[i]
             const gap = new Date(cur.time) - new Date(prev.time)
-            cur.grouped = cur.kind !== "call" && prev.kind !== "call"
+            // Channel posts each get their own card and header.
+            cur.grouped = !root.isChannel && cur.kind !== "call" && prev.kind !== "call"
                 && cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
         }
         for (let i = out.length - 1; i >= 0; i--) {
@@ -41,20 +45,44 @@ Rectangle {
         id: header
         width: parent.width; height: theme.headerHeight
         visible: root.chatName.length > 0
-        Avatar { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.chatName; presence: root.chatPresence }
+        Avatar {
+            visible: !root.isChannel
+            x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32
+            name: root.chatName; presence: root.chatPresence
+        }
+        Rectangle {
+            visible: root.isChannel
+            x: 20; anchors.verticalCenter: parent.verticalCenter
+            width: 32; height: 32; radius: theme.radius
+            readonly property var colors: ["#C43E1C", "#0F6CBD", "#107C10", "#8764B8", "#038387", "#CA5010"]
+            color: {
+                let h = 0
+                for (let i = 0; i < root.teamName.length; i++) h = (h * 31 + root.teamName.charCodeAt(i)) % 997
+                return colors[h % colors.length]
+            }
+            Text {
+                anchors.centerIn: parent
+                text: root.teamName.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+                color: "white"
+                font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+            }
+        }
         Text {
             id: title
             x: 64; anchors.verticalCenter: parent.verticalCenter
+            // Long names elide so the tabs and actions keep their place.
+            width: Math.min(implicitWidth, parent.width * 0.35)
+            elide: Text.ElideRight
             text: root.chatName
             font.family: theme.font; font.pixelSize: theme.title; font.weight: Font.Bold
             color: theme.text
         }
         Row {
-            x: title.x + title.implicitWidth + 10
+            x: title.x + title.width + 10
             height: parent.height
             spacing: 16
             Repeater {
-                model: ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+                model: root.isChannel ? ["Posts", "Files"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
                 delegate: Item {
                     required property string modelData
                     required property int index
@@ -119,7 +147,8 @@ Rectangle {
         delegate: Item {
             id: msg
             required property var modelData
-            readonly property bool mine: modelData.mine
+            // In channels every post is a left-aligned card, yours included.
+            readonly property bool mine: modelData.mine && !root.isChannel
             readonly property bool isCall: modelData.kind === "call"
             readonly property var reactions: modelData.reactions || []
             width: list.width
@@ -130,7 +159,7 @@ Rectangle {
             readonly property int bubbleY: topPad + (grouped || isCall ? 0 : meta.height + 2)
             height: isCall ? topPad + callRow.height
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height + 4 : 0)
-            readonly property int maxBubble: Math.min(640, list.width * 0.7)
+            readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : Math.min(640, list.width * 0.7)
 
             // Call events: an icon, the time and "Call ended 3m 9s" / "Call missed".
             Row {
@@ -183,10 +212,12 @@ Rectangle {
                 y: msg.bubbleY
                 readonly property var imgs: msg.modelData.images || []
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
-                width: Math.min(msg.maxBubble, Math.max(imageOnly ? 0 : body.implicitWidth, pics.implicitWidth) + 32)
+                width: root.isChannel ? msg.maxBubble
+                    : Math.min(msg.maxBubble, Math.max(imageOnly ? 0 : body.implicitWidth, pics.implicitWidth) + 32)
                 height: (imageOnly ? 0 : body.implicitHeight) + (imgs.length > 0 ? pics.implicitHeight + (imageOnly ? 0 : 8) : 0) + 16
                 radius: theme.radius
-                color: msg.mine ? theme.brandTint : theme.pane
+                color: root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.pane)
+                border.color: root.isChannel ? theme.dividerSoft : "transparent"
                 x: msg.mine ? parent.width - 72 - width : 72
                 // Inline pictures, scaled to fit the bubble (as in Teams).
                 Column {
@@ -391,7 +422,7 @@ Rectangle {
             id: input
             anchors { left: parent.left; right: tools.left; verticalCenter: parent.verticalCenter }
             anchors.leftMargin: 4
-            placeholderText: "Type a message"
+            placeholderText: root.isChannel ? "Start a post" : "Type a message"
             placeholderTextColor: theme.textSecondary
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.text

@@ -36,7 +36,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -247,6 +247,25 @@ Window {
         }
     }
 
+    // --channel-test: open OST Test Team > General, post, capture when shown.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+            const team = teams.find(t => t.name === "OST Test Team")
+            if (!team) return
+            const ch = team.channels.find(c => c.name === "General")
+            if (step === 0) { backend.selectChat(ch.id, ch.name); step = 1; return }
+            if (step === 1) { backend.sendMessage("OST channel test 1: first post from OST"); step = 2; return }
+            if (backend.messagesJson.indexOf("OST channel test 1") >= 0) {
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+                stop()
+            }
+        }
+    }
+
     // --react-test: open the first chat, add a heart to the newest message
     // from someone else, capture once it shows.
     readonly property bool reactTest: Qt.application.arguments.indexOf("--react-test") >= 0
@@ -377,6 +396,7 @@ Window {
         visible: rail.current === "chat"
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+        teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
         onChatSelected: (id, name) => { window.composing = false; backend.selectChat(id, name) }
         onNewChat: window.composing = true
@@ -385,6 +405,12 @@ Window {
         visible: rail.current === "chat"
         anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         chatName: backend.currentChatName
+        isChannel: backend.currentChatId.endsWith("@thread.tacv2")
+        teamName: {
+            const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+            const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
+            return t ? t.name : ""
+        }
         chatPresence: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId)
             return c && c.presence ? c.presence : ""

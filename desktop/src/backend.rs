@@ -56,6 +56,8 @@ pub mod qobject {
         #[qproperty(QString, calendar_json)]
         /// People search results for the new-chat picker, as JSON.
         #[qproperty(QString, people_json)]
+        /// Joined teams and their channels, as JSON.
+        #[qproperty(QString, teams_json)]
         type Backend = super::BackendRust;
     }
 
@@ -181,6 +183,7 @@ pub struct BackendRust {
     calls_json: QString,
     calendar_json: QString,
     people_json: QString,
+    teams_json: QString,
     people_query_generation: u64,
     /// Bumped on every typing change so a stale clear timer does nothing.
     typing_generation: u64,
@@ -293,6 +296,9 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
         // 48:… threads are system streams (call logs, notifications,
         // mentions), not chats; Teams does not list them.
         .filter(|c| !c.id.starts_with("48:"))
+        // Channels (…@thread.tacv2 / @thread.skype) are listed under their
+        // team, not with the chats.
+        .filter(|c| !c.id.ends_with("@thread.tacv2") && !c.id.ends_with("@thread.skype"))
         .map(|c| {
             json!({
                 "id": c.id,
@@ -1130,6 +1136,7 @@ impl qobject::Backend {
                         this.as_mut().start_push();
                         this.as_mut().start_presence();
                         this.as_mut().load_server_unread();
+                        this.as_mut().load_teams();
                     }
                     Err(e) => {
                         this.as_mut().set_signed_in(false);
@@ -1206,6 +1213,35 @@ impl qobject::Backend {
                         .set_status_text(QString::from(short_error(&e).as_str())),
                 }
             });
+        });
+    }
+
+    /// Joined teams with their channels, for the chat pane.
+    fn load_teams(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::list_teams_data(&client).await
+            }
+            .await;
+            match result {
+                Ok(teams) => {
+                    let list: Vec<_> = teams
+                        .iter()
+                        .map(|t| {
+                            json!({
+                                "id": t.id,
+                                "name": t.name,
+                                "channels": t.channels.iter().map(|c| json!({"id": c.id, "name": c.name})).collect::<Vec<_>>(),
+                            })
+                        })
+                        .collect();
+                    let text = serde_json::to_string(&list).unwrap_or_else(|_| "[]".into());
+                    let _ = qt.queue(move |mut this| this.as_mut().set_teams_json(QString::from(text.as_str())));
+                }
+                Err(e) => tracing::warn!("teams failed: {}", short_error(&e)),
+            }
         });
     }
 

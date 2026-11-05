@@ -5,6 +5,7 @@ import QtQuick.Controls.Basic
 Rectangle {
     id: root
     property var chats: []
+    property var teams: []
     property string currentId
     signal chatSelected(string id, string name)
     signal newChat()
@@ -80,6 +81,95 @@ Rectangle {
             SectionHeader { label: "Chats" }
         }
         model: root.chats
+        footer: Column {
+            width: list.width
+            topPadding: 8
+            visible: root.teams.length > 0
+            SectionHeader { label: "Teams and channels" }
+            Repeater {
+                model: root.teams
+                Column {
+                    id: team
+                    required property var modelData
+                    property bool open: true
+                    width: list.width
+                    // Team row: chevron, coloured square initials, name.
+                    Item {
+                        width: list.width; height: 32
+                        Rectangle {
+                            x: 16; width: parent.width - 32; height: 32; radius: theme.radius
+                            color: teamHover.hovered ? "#EBEBEB" : "transparent"
+                        }
+                        FluentIcon {
+                            x: 18; anchors.verticalCenter: parent.verticalCenter
+                            name: team.open ? "chevron-down-12" : "chevron-right-12"; size: 12
+                        }
+                        Rectangle {
+                            id: teamAvatar
+                            x: 36; anchors.verticalCenter: parent.verticalCenter
+                            width: 20; height: 20; radius: 4
+                            readonly property var colors: ["#C43E1C", "#0F6CBD", "#107C10", "#8764B8", "#038387", "#CA5010"]
+                            color: {
+                                let h = 0
+                                for (let i = 0; i < team.modelData.name.length; i++) h = (h * 31 + team.modelData.name.charCodeAt(i)) % 997
+                                return colors[h % colors.length]
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                text: team.modelData.name.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+                                color: "white"
+                                font.family: theme.font; font.pixelSize: 8; font.weight: Font.DemiBold
+                            }
+                        }
+                        Text {
+                            x: 64; width: parent.width - 64 - 24
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: team.modelData.name
+                            elide: Text.ElideRight
+                            font.family: theme.font; font.pixelSize: theme.base
+                            color: theme.text
+                        }
+                        HoverHandler { id: teamHover }
+                        TapHandler { onTapped: team.open = !team.open }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Team " + team.modelData.name + (team.open ? ", expanded" : ", collapsed")
+                    }
+                    Repeater {
+                        model: team.open ? team.modelData.channels : []
+                        Item {
+                            id: channel
+                            required property var modelData
+                            readonly property bool selected: modelData.id === root.currentId
+                            width: list.width; height: 32
+                            Rectangle {
+                                x: 16; width: parent.width - 32; height: 32; radius: theme.radius
+                                color: channel.selected ? theme.surface : (chHover.hovered ? "#EBEBEB" : "transparent")
+                            }
+                            Text {
+                                x: 64; width: parent.width - 64 - 24
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: channel.modelData.name
+                                elide: Text.ElideRight
+                                font.family: theme.font; font.pixelSize: theme.base
+                                font.weight: channel.selected ? Font.DemiBold : Font.Normal
+                                color: theme.text
+                            }
+                            HoverHandler { id: chHover }
+                            TapHandler { onTapped: root.chatSelected(channel.modelData.id, channel.modelData.name) }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Channel " + channel.modelData.name + " in " + team.modelData.name
+                        }
+                    }
+                }
+            }
+            Text {
+                x: 36; height: 32
+                verticalAlignment: Text.AlignVCenter
+                text: "See all your teams"
+                font.family: theme.font; font.pixelSize: theme.base
+                color: theme.brand
+            }
+        }
         delegate: Item {
             id: row
             required property var modelData
