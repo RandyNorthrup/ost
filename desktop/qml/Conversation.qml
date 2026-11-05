@@ -13,6 +13,10 @@ Rectangle {
     property string typingText: ""
     signal typing()
     signal react(string messageId, string key, bool on)
+    signal editMessage(string messageId, string text)
+    signal deleteMessage(string messageId)
+    // Set while the compose box edits an existing message.
+    property string editingId: ""
 
     // Newest first (the list grows upward), with Teams' grouping: a message
     // joins the previous one when the same person sent it under 5 minutes
@@ -235,6 +239,61 @@ Rectangle {
                     }
                 }
             }
+            HoverHandler { id: msgHover }
+            // Hover bar: quick reactions and More, at the bubble's top edge.
+            Rectangle {
+                id: actions
+                readonly property bool can: !msg.isCall && !msg.modelData.deleted
+                visible: can && (msgHover.hovered || barHover.hovered || menu.visible)
+                z: 5
+                height: 32; width: actionRow.implicitWidth + 8; radius: theme.radius
+                color: theme.surface
+                border.color: theme.dividerSoft
+                y: bubble.y - 22
+                x: msg.mine ? bubble.x : Math.max(72, bubble.x + bubble.width - width)
+                HoverHandler { id: barHover }
+                Row {
+                    id: actionRow
+                    x: 4; anchors.verticalCenter: parent.verticalCenter
+                    Repeater {
+                        model: [["like", "👍"], ["heart", "❤️"], ["laugh", "😆"], ["surprised", "😮"], ["sad", "😢"]]
+                        Rectangle {
+                            required property var modelData
+                            readonly property bool mineAlready: msg.reactions.some(r => r.key === modelData[0] && r.mine)
+                            width: 30; height: 28; radius: theme.radius
+                            color: emojiHover.hovered ? theme.pane : "transparent"
+                            Text { anchors.centerIn: parent; text: parent.modelData[1]; font.pixelSize: 16 }
+                            HoverHandler { id: emojiHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.react(msg.modelData.id, parent.modelData[0], !parent.mineAlready) }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "React with " + modelData[0]
+                        }
+                    }
+                    Rectangle { width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
+                    Rectangle {
+                        visible: msg.mine
+                        width: 30; height: 28; radius: theme.radius
+                        color: moreHover.hovered ? theme.pane : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "more-20"; size: 16 }
+                        HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: menu.open() }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "More options"
+                    }
+                }
+                Menu {
+                    id: menu
+                    y: actions.height
+                    MenuItem {
+                        text: "Edit"
+                        onTriggered: { root.editingId = msg.modelData.id; input.text = msg.modelData.text; input.forceActiveFocus() }
+                    }
+                    MenuItem {
+                        text: "Delete"
+                        onTriggered: root.deleteMessage(msg.modelData.id)
+                    }
+                }
+            }
             // Teams shows the sent/read tick on your latest message only.
             FluentIcon {
                 visible: msg.mine && msg.modelData.latestMine === true && !msg.isCall
@@ -279,6 +338,20 @@ Rectangle {
         }
     }
 
+    // "Editing" strip above the compose box while editing a message.
+    Rectangle {
+        visible: root.editingId.length > 0
+        anchors { left: compose.left; right: compose.right; bottom: compose.top; bottomMargin: 2 }
+        height: 28; radius: theme.radius
+        color: theme.brandTint
+        Text {
+            x: 12; anchors.verticalCenter: parent.verticalCenter
+            text: "Editing message — Enter to save, Esc to cancel"
+            font.family: theme.font; font.pixelSize: theme.small
+            color: theme.text
+        }
+    }
+
     // Compose box
     Rectangle {
         id: compose
@@ -302,8 +375,11 @@ Rectangle {
             onTextChanged: if (text.length > 0) root.typing()
             Keys.onReturnPressed: event => {
                 if (event.modifiers & Qt.ShiftModifier) { event.accepted = false; return }
-                root.send(input.text); input.text = ""
+                if (root.editingId) { root.editMessage(root.editingId, input.text); root.editingId = "" }
+                else root.send(input.text)
+                input.text = ""
             }
+            Keys.onEscapePressed: if (root.editingId) { root.editingId = ""; input.text = "" }
         }
         Row {
             id: tools

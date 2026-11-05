@@ -33,7 +33,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -179,6 +179,29 @@ Window {
     }
     property bool outStarted: false
 
+    // --edit-test: send two messages, edit the first and delete the second,
+    // capture when both show.
+    readonly property bool editTest: Qt.application.arguments.indexOf("--edit-test") >= 0
+    property int editStep: 0
+    Timer {
+        running: window.editTest && backend.signedIn
+        interval: 3000; repeat: true
+        onTriggered: {
+            const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+            if (!backend.currentChatId && chats.length > 0) { backend.selectChat(chats[0].id, chats[0].name); return }
+            const msgs = backend.messagesJson ? JSON.parse(backend.messagesJson) : []
+            const find = t => msgs.filter(m => m.mine && m.text.indexOf(t) >= 0).pop()
+            if (window.editStep === 0) { backend.sendMessage("OST test 14: this will be edited"); window.editStep = 1; return }
+            if (window.editStep === 1) { const m = find("OST test 14"); if (m) { backend.editMessage(m.id, "OST test 14: edited from OST"); window.editStep = 2 } return }
+            if (window.editStep === 2) { backend.sendMessage("OST test 15: this will be deleted"); window.editStep = 3; return }
+            if (window.editStep === 3) { const m = find("OST test 15"); if (m) { backend.deleteMessage(m.id); window.editStep = 4 } return }
+            const edited = msgs.find(m => m.mine && m.edited && m.text.indexOf("edited from OST") >= 0)
+            const deleted = msgs.find(m => m.mine && m.deleted)
+            console.warn("EDIT-STATE", !!edited, !!deleted)
+            if (edited && deleted) { window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() }); stop() }
+        }
+    }
+
     // --react-test: open the first chat, add a heart to the newest message
     // from someone else, capture once it shows.
     readonly property bool reactTest: Qt.application.arguments.indexOf("--react-test") >= 0
@@ -310,6 +333,8 @@ Window {
         onCall: backend.startCall()
         onTyping: backend.userTyping()
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
+        onEditMessage: (id, text) => backend.editMessage(id, text)
+        onDeleteMessage: id => backend.deleteMessage(id)
         typingText: backend.typingText
     }
 

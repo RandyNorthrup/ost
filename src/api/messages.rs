@@ -166,7 +166,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         .map(|e| reactions_of(e, me))
         .unwrap_or_default();
     let text = super::strip_html(&content).trim().to_string();
-    if !deleted && text.is_empty() {
+    // Teams shows "This message has been deleted" to its sender only; for
+    // everyone else the message just disappears.
+    if (deleted && !mine) || (!deleted && text.is_empty()) {
         return None;
     }
     Some(MessageView {
@@ -402,6 +404,53 @@ pub async fn set_reaction(
     Ok(())
 }
 
+/// Replace the text of one of our messages.
+pub async fn edit_message(
+    client: &TeamsClient,
+    chat_id: &str,
+    message_id: &str,
+    text: &str,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages/{}",
+        client.chat_service_url(),
+        chat_id,
+        message_id
+    );
+    let body = serde_json::json!({
+        "content": format!("<p>{}</p>", html_escape(text)),
+        "messagetype": "RichText/Html",
+        "contenttype": "text",
+    });
+    client
+        .chat_request(reqwest::Method::PUT, &url, &body)
+        .await?;
+    Ok(())
+}
+
+/// Delete one of our messages.
+pub async fn delete_message(client: &TeamsClient, chat_id: &str, message_id: &str) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages/{}",
+        client.chat_service_url(),
+        chat_id,
+        message_id
+    );
+    client
+        .chat_request(reqwest::Method::DELETE, &url, &serde_json::json!({}))
+        .await?;
+    Ok(())
+}
+
+/// Escape plain text for a message body (line breaks become <br>).
+fn html_escape(t: &str) -> String {
+    t.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\n', "<br>")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,6 +476,14 @@ mod tests {
             "<p>🎉</p>"
         );
         assert_eq!(sanitize_html("line<br>two"), "line<br />two");
+    }
+
+    #[test]
+    fn edit_text_is_escaped() {
+        assert_eq!(
+            html_escape("a < b & \"c\"\nd"),
+            "a &lt; b &amp; &quot;c&quot;<br>d"
+        );
     }
 
     #[test]

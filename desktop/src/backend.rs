@@ -112,6 +112,14 @@ pub mod qobject {
         #[qinvokable]
         fn toggle_reaction(self: Pin<&mut Backend>, message_id: &QString, key: &QString, on: bool);
 
+        /// Replace the text of one of our messages in the open chat.
+        #[qinvokable]
+        fn edit_message(self: Pin<&mut Backend>, message_id: &QString, text: &QString);
+
+        /// Delete one of our messages in the open chat.
+        #[qinvokable]
+        fn delete_message(self: Pin<&mut Backend>, message_id: &QString);
+
         /// Ring (or stop ringing) for an incoming call.
         #[qinvokable]
         fn set_ringer(self: Pin<&mut Backend>, on: bool);
@@ -832,6 +840,53 @@ impl qobject::Backend {
                 }
                 Err(e) => tracing::warn!("call history failed: {}", short_error(&e)),
             }
+        });
+    }
+
+    pub fn edit_message(self: Pin<&mut Self>, message_id: &QString, text: &QString) {
+        let (id, text) = (message_id.to_string(), text.to_string());
+        if text.trim().is_empty() {
+            return;
+        }
+        self.message_action(move |client, chat| {
+            Box::pin(async move { api::messages::edit_message(&client, &chat, &id, &text).await })
+        });
+    }
+
+    pub fn delete_message(self: Pin<&mut Self>, message_id: &QString) {
+        let id = message_id.to_string();
+        self.message_action(move |client, chat| {
+            Box::pin(async move { api::messages::delete_message(&client, &chat, &id).await })
+        });
+    }
+
+    /// Run a message change in the open chat, then reload it.
+    fn message_action<F>(self: Pin<&mut Self>, act: F)
+    where
+        F: FnOnce(
+                TeamsClient,
+                String,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>,
+            > + Send
+            + 'static,
+    {
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = match TeamsClient::new().await {
+                Ok(client) => act(client, chat_id).await,
+                Err(e) => Err(e),
+            };
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().reload_messages(),
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
+            });
         });
     }
 
