@@ -468,6 +468,20 @@ Window {
         onLeave: backend.hangUp()
         onToggleMute: backend.toggleMute()
         onClosing: if (backend.callState !== "ended") backend.hangUp()
+        // Chat: the 1:1 chat with the person in the call.
+        onOpenChat: {
+            const oid = backend.callPeerId.replace(/^8:orgid:/, "")
+            if (oid) backend.openChatWith(oid, backend.callPeer)
+        }
+        chatPane.chatName: backend.currentChatName
+        chatPane.chatId: backend.currentChatId
+        chatPane.myName: backend.userName
+        chatPane.messages: conversation.messages
+        chatPane.busy: backend.busy
+        chatPane.typingText: backend.typingText
+        chatPane.onSend: text => backend.sendMessage(text)
+        chatPane.onTyping: backend.userTyping()
+        chatPane.onReact: (id, key, on) => backend.toggleReaction(id, key, on)
     }
     // Ring while a call is incoming.
     Connections {
@@ -484,7 +498,8 @@ Window {
 
     // --call-test: capture the toast, answer, capture the call, hang up.
     readonly property bool callOut: Qt.application.arguments.indexOf("--call-out") >= 0
-    readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0
+    readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0 || Qt.application.arguments.indexOf("--call-panes") >= 0
+    readonly property bool callPanes: Qt.application.arguments.indexOf("--call-panes") >= 0
     // --remote-hangup: stay in the call until the caller ends it.
     readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0
     Connections {
@@ -510,6 +525,23 @@ Window {
                 incomingCall.contentItem.grabToImage(r => {
                     r.saveToFile(window.shotPath.replace(".png", "-toast.png"))
                     backend.acceptCall(false)
+                })
+            } else if (step === "talk" && window.callPanes) {
+                // --call-panes: open Chat, then People, capturing each.
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-call.png")))
+                callWindow.side = "chat"; callWindow.openChat()
+                step = "chat"; interval = 5000; restart()
+            } else if (step === "chat") {
+                callWindow.contentItem.grabToImage(r => {
+                    r.saveToFile(window.shotPath.replace(".png", "-chatpane.png"))
+                    callWindow.side = "people"
+                    callTestTimer.step = "people"; callTestTimer.interval = 1500; callTestTimer.restart()
+                })
+            } else if (step === "people") {
+                callWindow.contentItem.grabToImage(r => {
+                    r.saveToFile(window.shotPath.replace(".png", "-people.png"))
+                    backend.hangUp()
+                    quitTimer.start()
                 })
             } else if (step === "talk") {
                 callWindow.contentItem.grabToImage(r => {

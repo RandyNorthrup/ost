@@ -22,6 +22,10 @@ Rectangle {
     /// The open chat's id; unsent text is kept per chat as a draft.
     property string chatId: ""
     property string draftChat: ""
+    /// Shown as a side pane (in the call window): a plain "Chat" header
+    /// with a close button instead of the title, tabs and actions.
+    property bool pane: false
+    signal closePane()
     // Test hooks for the compose box.
     function setComposeText(t) { root.setPlain(t) }
     function composeText() { return root.plainText() }
@@ -124,6 +128,21 @@ Rectangle {
         id: header
         width: parent.width; height: theme.headerHeight
         visible: root.chatName.length > 0
+        Text {
+            visible: root.pane
+            x: 16; anchors.verticalCenter: parent.verticalCenter
+            text: "Chat"
+            font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+            color: theme.text
+        }
+        HeaderAction {
+            visible: root.pane
+            x: parent.width - 44; icon: "dismiss-20"; Accessible.name: "Close chat"
+            onClicked: root.closePane()
+        }
+        Item {
+        visible: !root.pane
+        anchors.fill: parent
         Avatar {
             visible: !root.isChannel
             x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32
@@ -248,6 +267,7 @@ Rectangle {
         HeaderAction {
             x: parent.width - 75; icon: "panel-left-20"; Accessible.name: "Open chat details"
             onClicked: participants.visible = !participants.visible
+        }
         }
         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: theme.dividerSoft }
     }
@@ -933,7 +953,7 @@ Rectangle {
         id: compose
         visible: root.chatName.length > 0
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        anchors.leftMargin: 72; anchors.rightMargin: 72; anchors.bottomMargin: 24
+        anchors.leftMargin: root.pane ? 12 : 72; anchors.rightMargin: root.pane ? 12 : 72; anchors.bottomMargin: root.pane ? 12 : 24
         height: Math.max(44, input.contentHeight + 24) + (root.pendingFiles.length > 0 ? pendingRow.height + 8 : 0)
             + (root.formatting ? 40 : 0)
         // The format bar: bold, italic, underline, strikethrough, lists.

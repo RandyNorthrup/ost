@@ -15,6 +15,9 @@ Window {
     property real connectedAt: 0
     signal leave()
     signal toggleMute()
+    /// The open side pane: "", "chat" or "people".
+    property string side: ""
+    signal openChat()
 
     width: 1024; height: 640
     minimumWidth: 720; minimumHeight: 420
@@ -57,8 +60,14 @@ Window {
             BarButton { icon: "dialpad"; label: "Dial pad"; enabled: false }
             BarButton { icon: "pause"; label: "Hold"; enabled: false }
             Divider {}
-            BarButton { icon: "chat-24"; label: "Chat"; enabled: false }
-            BarButton { icon: "people"; label: "People"; enabled: false }
+            BarButton {
+                icon: "chat-24"; label: "Chat"; checked: win.side === "chat"
+                onClicked: { win.side = win.side === "chat" ? "" : "chat"; if (win.side === "chat") win.openChat() }
+            }
+            BarButton {
+                icon: "people"; label: "People"; checked: win.side === "people"
+                onClicked: win.side = win.side === "people" ? "" : "people"
+            }
             BarButton { icon: "grid"; label: "View"; enabled: false }
             BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
             BarButton { icon: "more-24"; label: "More"; enabled: false }
@@ -84,7 +93,7 @@ Window {
     // Stage
     Rectangle {
         id: stage
-        anchors { top: bar.bottom; left: parent.left; right: parent.right; bottom: parent.bottom; margins: 6 }
+        anchors { top: bar.bottom; left: parent.left; right: sidePane.visible ? sidePane.left : parent.right; bottom: parent.bottom; margins: 6 }
         radius: 6
         gradient: Gradient {
             orientation: Gradient.Horizontal
@@ -135,6 +144,78 @@ Window {
                 width: 28; height: 24; radius: 4
                 color: "#99000000"
                 FluentIcon { anchors.centerIn: parent; name: "mic-off-24"; size: 16; color: "white" }
+            }
+        }
+    }
+
+    // Side pane: the chat with them, or the people in the call.
+    property alias chatPane: chatPane
+    Rectangle {
+        id: sidePane
+        visible: win.side !== ""
+        anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom; margins: 6 }
+        width: 320; radius: 6
+        color: theme.surface
+        border.color: theme.dividerSoft
+        clip: true
+        Conversation {
+            id: chatPane
+            visible: win.side === "chat"
+            anchors.fill: parent; anchors.margins: 1
+            pane: true
+            onClosePane: win.side = ""
+        }
+        Item {
+            visible: win.side === "people"
+            anchors.fill: parent
+            Text {
+                x: 16; y: 18
+                text: "Participants"
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+                color: theme.text
+            }
+            Rectangle {
+                x: parent.width - 44; y: 12; width: 32; height: 32; radius: theme.radius
+                color: pch.hovered ? theme.hover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                HoverHandler { id: pch; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: win.side = "" }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Close participants"
+            }
+            Text {
+                x: 16; y: 64
+                text: "In this call (2)"
+                font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
+                color: theme.textSecondary
+            }
+            Column {
+                x: 8; y: 88; width: parent.width - 16
+                Repeater {
+                    model: [
+                        { name: win.selfName || "You", id: "me", you: true, mutedNow: win.muted || !win.hasAudio },
+                        { name: win.peer, id: backend.callPeerId, you: false, mutedNow: false }
+                    ]
+                    Item {
+                        required property var modelData
+                        width: parent.width; height: 48
+                        Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 32; name: modelData.name; photoId: modelData.id }
+                        Text {
+                            x: 52; anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 96; elide: Text.ElideRight
+                            text: modelData.name + (modelData.you ? " (You)" : "")
+                            font.family: theme.font; font.pixelSize: theme.base
+                            color: theme.text
+                        }
+                        FluentIcon {
+                            anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+                            name: modelData.mutedNow ? "mic-off-24" : "mic-24"; size: 20
+                            color: theme.textStrong
+                        }
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: modelData.name + (modelData.mutedNow ? ", muted" : "")
+                    }
+                }
             }
         }
     }
