@@ -17,6 +17,8 @@ Rectangle {
     property string teamName: ""
     /// The other person's id in a 1:1 chat, for the header picture.
     property string chatPhotoId: ""
+    /// Your name, for the participants list.
+    property string myName: ""
     /// The open chat's id; unsent text is kept per chat as a draft.
     property string chatId: ""
     property string draftChat: ""
@@ -31,8 +33,11 @@ Rectangle {
     function attachForTest(paths) { root.pendingFiles = paths }
     function openEmojiForTest() { emojiPicker.open() }
     function formatForTest(a, b, tag) { input.select(a, b); root.wrapSelection(tag) }
+    function openParticipantsForTest() { participants.visible = true }
+    function findForTest(q) { root.finding = true; findField.text = q; return root.findHits.length }
     function sendForTest() { root.sendCompose() }
     onChatIdChanged: {
+        tab = ""; finding = false; findField.text = ""; participants.visible = false
         if (draftChat && !editingId) backend.setDraft(draftChat, root.plainText())
         editingId = ""
         root.setPlain(chatId ? backend.draftFor(chatId) : "")
@@ -162,8 +167,10 @@ Rectangle {
                     : root.isSelf ? ["Chat", "Shared", "Storyline"]
                     : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
                 delegate: Item {
+                    id: tabItem
                     required property string modelData
                     required property int index
+                    readonly property bool sel: root.tab === modelData || (index === 0 && root.tab === "")
                     // 6 px padding each side of the label.
                     width: tabText.implicitWidth + 12; height: parent.height
                     Text {
@@ -171,25 +178,22 @@ Rectangle {
                         x: 6; anchors.verticalCenter: parent.verticalCenter
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.base
-                        font.weight: index === 0 ? Font.DemiBold : Font.Normal
-                        color: index === 0 ? theme.text : theme.textStrong
+                        font.weight: tabItem.sel ? Font.DemiBold : Font.Normal
+                        color: tabItem.sel ? theme.text : theme.textStrong
                     }
                     // Selected: a 3 px brand pill, inset 8 px, at the bottom.
                     Rectangle {
-                        visible: index === 0
+                        visible: tabItem.sel
                         x: 8; width: tabText.implicitWidth - 4; height: 3; radius: 1.5
                         anchors.bottom: parent.bottom
                         color: theme.brand
                     }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.tab = tabItem.index === 0 ? "" : tabItem.modelData }
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData
+                    Accessible.selected: sel
                 }
-            }
-            Item {
-                width: 32; height: parent.height
-                FluentIcon { anchors.centerIn: parent; name: "add-square-20"; size: 20; color: theme.textStrong }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Add a tab"
             }
         }
         component HeaderAction: Rectangle {
@@ -221,7 +225,8 @@ Rectangle {
             visible: !root.isSelf
             x: parent.width - 151; width: 28
             icon: "people-add-20"
-            Accessible.name: "View and add participants"
+            Accessible.name: "View participants"
+            onClicked: participants.visible = !participants.visible
         }
         Rectangle {
             visible: !root.isSelf
@@ -229,9 +234,14 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             color: theme.divider
         }
-        HeaderAction { x: parent.width - 107; icon: "search-20"; Accessible.name: "Find in chat" }
-        HeaderAction { x: parent.width - 75; icon: "panel-left-20"; Accessible.name: "Open chat details" }
-        HeaderAction { x: parent.width - 43; icon: "more-20"; Accessible.name: "More chat options" }
+        HeaderAction {
+            x: parent.width - 107; icon: "search-20"; Accessible.name: "Find in chat"
+            onClicked: { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
+        }
+        HeaderAction {
+            x: parent.width - 75; icon: "panel-left-20"; Accessible.name: "Open chat details"
+            onClicked: participants.visible = !participants.visible
+        }
         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: theme.dividerSoft }
     }
 
@@ -245,7 +255,8 @@ Rectangle {
 
     ListView {
         id: list
-        anchors { top: header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
+        visible: root.tab === ""
+        anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
         anchors.bottomMargin: 12
         clip: true
         spacing: 0
@@ -650,6 +661,218 @@ Rectangle {
             text: "Editing message — Enter to save, Esc to cancel"
             font.family: theme.font; font.pixelSize: theme.small
             color: theme.text
+        }
+    }
+
+    // The open tab: "" is Chat (or Posts); others replace the messages.
+    property string tab: ""
+
+    // Find in chat: matches among the loaded messages, newest first.
+    property bool finding: false
+    property int findIndex: 0
+    readonly property var findHits: {
+        const q = findField.text.trim().toLowerCase()
+        if (!q) return []
+        const shown = root.annotate(root.messages)
+        const hits = []
+        for (let i = 0; i < shown.length; i++) if ((shown[i].text || "").toLowerCase().indexOf(q) >= 0) hits.push(i)
+        return hits
+    }
+    onFindHitsChanged: { findIndex = 0; if (findHits.length) list.positionViewAtIndex(findHits[0], ListView.Center) }
+    Rectangle {
+        id: findBar
+        visible: root.finding && root.tab === ""
+        anchors { top: header.bottom; left: parent.left; right: parent.right }
+        height: visible ? 48 : 0
+        color: theme.surface
+        Rectangle {
+            x: 72; anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(420, parent.width - 144); height: 32; radius: theme.radius
+            color: theme.input
+            border.color: findField.activeFocus ? theme.brand : theme.stroke
+            FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
+            TextInput {
+                id: findField
+                x: 32; width: parent.width - 150
+                anchors.verticalCenter: parent.verticalCenter
+                font.family: theme.font; font.pixelSize: theme.base
+                color: theme.text
+                clip: true
+                Keys.onReturnPressed: root.findNext(1)
+                Keys.onEscapePressed: { text = ""; root.finding = false }
+                Text { visible: !findField.text; text: "Find in chat"; color: theme.textTertiary; font: findField.font }
+                Accessible.name: "Find in chat"
+            }
+            Text {
+                anchors.right: findNav.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                visible: findField.text.length > 0
+                text: root.findHits.length ? (root.findIndex + 1) + " of " + root.findHits.length : "No results"
+                font.family: theme.font; font.pixelSize: theme.small
+                color: theme.textSecondary
+            }
+            Row {
+                id: findNav
+                anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
+                Repeater {
+                    model: [{ icon: "chevron-left-20", d: 1, l: "Older match" }, { icon: "chevron-right-20", d: -1, l: "Newer match" }]
+                    Rectangle {
+                        required property var modelData
+                        width: 24; height: 24; radius: theme.radius
+                        color: fnh.hovered ? theme.rowHover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 16; color: theme.textStrong; rotation: 90 }
+                        HoverHandler { id: fnh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.findNext(parent.modelData.d) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: modelData.l
+                    }
+                }
+            }
+        }
+    }
+    function findNext(d) {
+        if (!findHits.length) return
+        findIndex = (findIndex + d + findHits.length) % findHits.length
+        list.positionViewAtIndex(findHits[findIndex], ListView.Center)
+    }
+
+    // Shared: the files and links in this chat.
+    Item {
+        id: sharedPane
+        visible: root.tab === "Shared" || root.tab === "Files"
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        readonly property var files: root.messages.reduce((a, m) => a.concat((m.files || []).map(f => Object.assign({ from: m.sender, time: m.time }, f))), []).reverse()
+        readonly property var links: root.messages.reduce((a, m) => {
+            const found = (m.html || "").match(/href="(https?:[^"]+)"/g) || []
+            return a.concat(found.map(h => ({ url: h.slice(6, -1).replace(/&amp;/g, "&"), from: m.sender, time: m.time })))
+        }, []).reverse()
+        Flickable {
+            anchors.fill: parent
+            contentHeight: sharedCol.implicitHeight + 40
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            Column {
+                id: sharedCol
+                x: 32; y: 20; width: parent.width - 64
+                spacing: 8
+                Text { text: "Files"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text {
+                    visible: sharedPane.files.length === 0
+                    text: "Files shared in this chat appear here."
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
+                }
+                Repeater {
+                    model: sharedPane.files
+                    Rectangle {
+                        required property var modelData
+                        width: sharedCol.width; height: 52; radius: theme.radius
+                        color: sfh.hovered ? theme.rowHover : "transparent"
+                        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "file-32"; size: 32; color: theme.textSecondary }
+                        Column {
+                            x: 52; anchors.verticalCenter: parent.verticalCenter
+                            Text { text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                            Text { text: parent.parent.modelData.from + " · " + root.stamp(parent.parent.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                        }
+                        Rectangle {
+                            anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                            width: 32; height: 32; radius: theme.radius
+                            color: sdh.hovered ? theme.selected : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "download-20"; size: 20; color: theme.textStrong }
+                            HoverHandler { id: sdh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: backend.downloadFile(JSON.stringify(parent.parent.modelData)) }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Download " + parent.modelData.name
+                        }
+                        HoverHandler { id: sfh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Qt.openUrlExternally(modelData.share_url || modelData.object_url) }
+                    }
+                }
+                Item { width: 1; height: 16 }
+                Text { text: "Links"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text {
+                    visible: sharedPane.links.length === 0
+                    text: "Links shared in this chat appear here."
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
+                }
+                Repeater {
+                    model: sharedPane.links
+                    Rectangle {
+                        required property var modelData
+                        width: sharedCol.width; height: 44; radius: theme.radius
+                        color: slh.hovered ? theme.rowHover : "transparent"
+                        Column {
+                            x: 12; anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 24
+                            Text { width: parent.width; text: parent.parent.modelData.url; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand }
+                            Text { text: parent.parent.modelData.from + " · " + root.stamp(parent.parent.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                        }
+                        HoverHandler { id: slh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Qt.openUrlExternally(modelData.url) }
+                    }
+                }
+            }
+        }
+    }
+    // Tabs OST can't offer say so.
+    Column {
+        visible: ["Notes", "Recap", "Storyline"].indexOf(root.tab) >= 0
+        anchors.centerIn: parent
+        spacing: 8
+        FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "info-16"; size: 32; color: theme.textSecondary }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: root.tab + " isn't available in OST yet."
+            font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
+        }
+    }
+
+    // Participants: who is in this chat.
+    Rectangle {
+        id: participants
+        visible: false
+        z: 50
+        anchors { top: header.bottom; right: parent.right; topMargin: 4; rightMargin: 16 }
+        width: 300; height: Math.min(400, partCol.implicitHeight + 24)
+        radius: 8
+        color: theme.menu
+        border.color: theme.dividerSoft
+        readonly property var members: {
+            const seen = {}, out = []
+            if (root.myName) { out.push({ name: root.myName + " (You)", mri: "me" }); seen.me = true }
+            for (const m of root.messages) {
+                if (m.mine || !m.sender_mri || seen[m.sender_mri]) continue
+                seen[m.sender_mri] = true
+                out.push({ name: m.sender, mri: m.sender_mri })
+            }
+            if (!root.isChannel && root.chatPhotoId && !seen[root.chatPhotoId] && !root.isSelf) out.push({ name: root.chatName, mri: root.chatPhotoId })
+            return out
+        }
+        Column {
+            id: partCol
+            x: 12; y: 12; width: parent.width - 24
+            spacing: 4
+            Text {
+                text: root.isChannel ? "People in this channel" : "People (" + participants.members.length + ")"
+                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+            }
+            Repeater {
+                model: participants.members
+                Item {
+                    required property var modelData
+                    width: partCol.width; height: 40
+                    Avatar {
+                        x: 0; anchors.verticalCenter: parent.verticalCenter; size: 32
+                        name: parent.modelData.name.replace(/ \(You\)$/, "")
+                        photoId: parent.modelData.mri
+                        presence: parent.modelData.mri === root.chatPhotoId ? root.chatPresence : ""
+                    }
+                    Text {
+                        x: 44; anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 44; elide: Text.ElideRight
+                        text: parent.modelData.name
+                        font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                    }
+                }
+            }
         }
     }
 

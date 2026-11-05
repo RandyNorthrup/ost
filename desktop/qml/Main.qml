@@ -190,6 +190,29 @@ Window {
         }
     }
 
+    // --header-test: Shared tab, a placeholder tab, find, participants;
+    // captures each.
+    Timer {
+        running: Qt.application.arguments.indexOf("--header-test") >= 0 && chatList.chats.length > 1
+        interval: 1500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const want = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            if (step === 0) { const c = chatList.chats.find(c => c.id === want) || chatList.chats[1]; backend.selectChat(c.id, c.name) }
+            else if (step === 1) { conversation.tab = "Shared" }
+            else if (step === 2) { cap("shared") }
+            else if (step === 3) { conversation.tab = "Recap" }
+            else if (step === 4) { cap("recap") }
+            else if (step === 5) { conversation.tab = ""; console.warn("HEADER find 'OST test'", conversation.findForTest("ost test")) }
+            else if (step === 6) { cap("find") }
+            else if (step === 7) { conversation.finding = false; conversation.openParticipantsForTest() }
+            else if (step === 8) { window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-people.png")); Qt.quit() }) }
+            step++
+        }
+    }
+
     // --format-test: send "OST test 26: bold and plain" with "bold" in
     // bold, then report how the sent message came back.
     Timer {
@@ -322,7 +345,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -775,6 +798,7 @@ Window {
     }
     Conversation {
         id: conversation
+        myName: backend.userName
         visible: (rail.current === "chat" && !chatList.draftsOpen)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
