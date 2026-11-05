@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 
-use super::aad::{AadClient, TokenSet};
+use super::aad::{AadClient, DeviceCode, TokenSet};
 use super::skype::exchange_skype_token;
 use super::{AuthConfig, TokenStore};
 use crate::config::Config;
@@ -184,117 +184,129 @@ pub async fn login(force: bool) -> Result<()> {
         }
     }
 
-    let auth_config = AuthConfig::default();
-    let client = build_client(&auth_config);
+    let pending = begin_sign_in().await?;
 
-    // Use device code flow for CLI
+    println!();
+    println!("To sign in, visit: {}", pending.verification_uri());
+    println!("Enter code:        {}", pending.user_code());
+    println!();
+
+    tracing::info!("Waiting for authentication...");
+    let missing = finish_sign_in(pending).await?;
+    if missing.is_empty() {
+        println!("Login successful.");
+    } else {
+        for what in &missing {
+            eprintln!("Warning: {what} token acquisition failed; some features may not work.");
+        }
+        println!(
+            "Login partially successful (missing: {}).",
+            missing.join(", ")
+        );
+    }
+    Ok(())
+}
+
+/// A device-code sign-in waiting for the user to approve it in a browser.
+pub struct PendingSignIn {
+    client: AadClient,
+    code: DeviceCode,
+}
+
+impl PendingSignIn {
+    /// The code the user types at the verification page.
+    pub fn user_code(&self) -> &str {
+        &self.code.user_code
+    }
+
+    /// The page where the user enters the code.
+    pub fn verification_uri(&self) -> &str {
+        &self.code.verification_uri
+    }
+}
+
+/// Start a device-code sign-in. Show the user its code and page, then call
+/// [`finish_sign_in`].
+pub async fn begin_sign_in() -> Result<PendingSignIn> {
+    let client = build_client(&AuthConfig::default());
     tracing::info!("Initiating device code flow...");
-
-    let device_code = client
+    let code = client
         .request_device_code(SKYPE_SCOPE)
         .await
         .context("Failed to request device code")?;
+    Ok(PendingSignIn { client, code })
+}
 
-    let verification_url = device_code.verification_uri.as_str();
-    let user_code = device_code.user_code.as_str();
-
-    println!();
-    println!("To sign in, visit: {}", verification_url);
-    println!("Enter code:        {}", user_code);
-    println!();
-
-    // Poll for token
-    tracing::info!("Waiting for authentication...");
-
+/// Wait for the user to approve the sign-in, then store every token OST
+/// needs. Returns the names of the secondary tokens that could not be
+/// acquired (empty on full success); fails if sign-in itself failed.
+pub async fn finish_sign_in(pending: PendingSignIn) -> Result<Vec<&'static str>> {
+    let PendingSignIn { client, code } = pending;
     let tokens = client
-        .poll_device_token(&device_code)
+        .poll_device_token(&code)
         .await
         .context("Failed to exchange device code for token")?;
 
-    // Save AAD tokens (single load-mutate-save)
+    // Single load-mutate-save, so a partial failure never leaves half a login.
     let mut config = Config::load()?;
     store_primary(&mut config, &tokens);
+    let mut missing = Vec::new();
 
-    // Exchange for Skype token
-    let mut skype_ok = false;
     match exchange_skype_token(&tokens.access_token, false).await {
         Ok((skype_tok, expires_in, region_gtms)) => {
             config.set_skype_token(skype_tok, expires_in);
             if let Some(gtms) = region_gtms {
                 config.set_region_gtms(gtms);
             }
-            skype_ok = true;
         }
         Err(e) => {
             tracing::warn!("Skype token exchange failed: {:#}", e);
-            eprintln!("Warning: Skype token exchange failed; some operations may not work.");
+            missing.push("Skype");
         }
     }
 
-    // Acquire Graph API token (separate audience from Skype token)
-    let mut graph_ok = false;
-    if let Some(ref rt) = config.get_refresh_token() {
-        match acquire_graph_token(&client, rt).await {
-            Ok((graph_tok, expires_in)) => {
-                config.set_graph_token(graph_tok, expires_in);
-                graph_ok = true;
-            }
+    if let Some(rt) = config.get_refresh_token() {
+        match acquire_graph_token(&client, &rt).await {
+            Ok((tok, exp)) => config.set_graph_token(tok, exp),
             Err(e) => {
                 tracing::warn!("Graph token acquisition failed: {:#}", e);
-                eprintln!("Warning: Graph token acquisition failed; whoami/chats may not work.");
+                missing.push("Graph");
             }
         }
-    }
-
-    // Acquire IC3 token (for Trouter WebSocket auth)
-    let mut ic3_ok = false;
-    if let Some(ref rt) = config.get_refresh_token() {
-        match acquire_ic3_token(&client, rt).await {
-            Ok((ic3_tok, expires_in)) => {
-                config.set_ic3_token(ic3_tok, expires_in);
-                ic3_ok = true;
-            }
+        match acquire_ic3_token(&client, &rt).await {
+            Ok((tok, exp)) => config.set_ic3_token(tok, exp),
             Err(e) => {
                 tracing::warn!("IC3 token acquisition failed: {:#}", e);
-                eprintln!("Warning: IC3 token acquisition failed; trouter may not work.");
+                missing.push("IC3");
             }
         }
-    }
-
-    // Acquire recorder service token (for call recording)
-    let mut recorder_ok = false;
-    if let Some(ref rt) = config.get_refresh_token() {
-        match acquire_recorder_token(&client, rt).await {
-            Ok((rec_tok, expires_in)) => {
-                config.set_recorder_token(rec_tok, expires_in);
-                recorder_ok = true;
-            }
+        match acquire_recorder_token(&client, &rt).await {
+            Ok((tok, exp)) => config.set_recorder_token(tok, exp),
             Err(e) => {
                 tracing::warn!("Recorder token acquisition failed: {:#}", e);
-                eprintln!("Warning: Recorder token acquisition failed; recording may not work.");
+                missing.push("Recorder");
             }
         }
+    } else {
+        missing.extend(["Graph", "IC3", "Recorder"]);
     }
 
     config.save()?;
-    if skype_ok && graph_ok && ic3_ok && recorder_ok {
-        println!("Login successful.");
-    } else {
-        println!(
-            "Login partially successful (missing: {}).",
-            [
-                (!skype_ok).then_some("Skype"),
-                (!graph_ok).then_some("Graph"),
-                (!ic3_ok).then_some("IC3"),
-                (!recorder_ok).then_some("Recorder")
-            ]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(", ")
-        );
-    }
-    Ok(())
+    Ok(missing)
+}
+
+/// Whether credentials are stored (they may still need a refresh).
+pub fn has_credentials() -> bool {
+    Config::load()
+        .map(|c| c.get_refresh_token().is_some())
+        .unwrap_or(false)
+}
+
+/// Forget all stored credentials.
+pub fn sign_out() -> Result<()> {
+    let mut config = Config::load()?;
+    config.clear_tokens();
+    config.save()
 }
 
 /// Clear stored credentials

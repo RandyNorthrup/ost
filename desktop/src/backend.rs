@@ -32,6 +32,9 @@ pub mod qobject {
         #[qproperty(QString, messages_json)]
         #[qproperty(QString, current_chat_id)]
         #[qproperty(QString, current_chat_name)]
+        #[qproperty(bool, has_credentials)]
+        #[qproperty(QString, sign_in_code)]
+        #[qproperty(QString, sign_in_url)]
         type Backend = super::BackendRust;
     }
 
@@ -40,6 +43,19 @@ pub mod qobject {
         /// Load the signed-in user and the chat list.
         #[qinvokable]
         fn refresh(self: Pin<&mut Backend>);
+
+        /// Decide what to show at startup: the app, or the sign-in screen.
+        #[qinvokable]
+        fn start(self: Pin<&mut Backend>);
+
+        /// Begin a device-code sign-in; the code and page appear in
+        /// `signInCode` / `signInUrl`, and the app loads once approved.
+        #[qinvokable]
+        fn begin_sign_in(self: Pin<&mut Backend>);
+
+        /// Forget the stored credentials and return to the sign-in screen.
+        #[qinvokable]
+        fn sign_out(self: Pin<&mut Backend>);
 
         /// Open a chat and load its messages.
         #[qinvokable]
@@ -63,6 +79,9 @@ pub struct BackendRust {
     messages_json: QString,
     current_chat_id: QString,
     current_chat_name: QString,
+    has_credentials: bool,
+    sign_in_code: QString,
+    sign_in_url: QString,
 }
 
 /// How many chats and messages to load per request.
@@ -127,6 +146,72 @@ async fn load_messages(chat_id: String) -> anyhow::Result<String> {
 }
 
 impl qobject::Backend {
+    pub fn start(mut self: Pin<&mut Self>) {
+        let stored = teams_cli::auth::has_credentials();
+        self.as_mut().set_has_credentials(stored);
+        if stored {
+            self.refresh();
+        }
+    }
+
+    pub fn begin_sign_in(mut self: Pin<&mut Self>) {
+        self.as_mut().set_busy(true);
+        self.as_mut().set_status_text(QString::default());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let pending = match teams_cli::auth::begin_sign_in().await {
+                Ok(p) => p,
+                Err(e) => {
+                    let msg = short_error(&e);
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_busy(false);
+                        this.as_mut().set_status_text(QString::from(msg.as_str()));
+                    });
+                    return;
+                }
+            };
+            let code = pending.user_code().to_string();
+            let url = pending.verification_uri().to_string();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_sign_in_code(QString::from(code.as_str()));
+                this.as_mut().set_sign_in_url(QString::from(url.as_str()));
+            });
+            let result = teams_cli::auth::finish_sign_in(pending).await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_busy(false);
+                this.as_mut().set_sign_in_code(QString::default());
+                this.as_mut().set_sign_in_url(QString::default());
+                match result {
+                    Ok(missing) => {
+                        if !missing.is_empty() {
+                            tracing::warn!("signed in without: {}", missing.join(", "));
+                        }
+                        this.as_mut().set_has_credentials(true);
+                        this.as_mut().refresh();
+                    }
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
+        });
+    }
+
+    pub fn sign_out(mut self: Pin<&mut Self>) {
+        if let Err(e) = teams_cli::auth::sign_out() {
+            self.as_mut()
+                .set_status_text(QString::from(short_error(&e).as_str()));
+            return;
+        }
+        self.as_mut().set_has_credentials(false);
+        self.as_mut().set_signed_in(false);
+        self.as_mut().set_user_name(QString::default());
+        self.as_mut().set_chats_json(QString::from("[]"));
+        self.as_mut().set_messages_json(QString::from("[]"));
+        self.as_mut().set_current_chat_id(QString::default());
+        self.as_mut().set_current_chat_name(QString::default());
+    }
+
     pub fn refresh(mut self: Pin<&mut Self>) {
         self.as_mut().set_busy(true);
         self.as_mut().set_status_text(QString::from("Loading…"));
@@ -134,7 +219,9 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = load_overview().await;
             tracing::info!(ok = result.is_ok(), "overview loaded");
-            if let Err(e) = &result { tracing::warn!("overview failed: {}", short_error(e)); }
+            if let Err(e) = &result {
+                tracing::warn!("overview failed: {}", short_error(e));
+            }
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_busy(false);
                 match result {
@@ -203,7 +290,9 @@ impl qobject::Backend {
                     return;
                 }
                 match result {
-                    Ok(json) => this.as_mut().set_messages_json(QString::from(json.as_str())),
+                    Ok(json) => this
+                        .as_mut()
+                        .set_messages_json(QString::from(json.as_str())),
                     Err(e) => this
                         .as_mut()
                         .set_status_text(QString::from(short_error(&e).as_str())),

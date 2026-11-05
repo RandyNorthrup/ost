@@ -10,6 +10,7 @@ fn main() {
         "qml/ChatList.qml",
         "qml/Conversation.qml",
         "qml/Avatar.qml",
+        "qml/SignIn.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts"] {
