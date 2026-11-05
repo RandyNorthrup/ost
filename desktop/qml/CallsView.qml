@@ -142,7 +142,7 @@ Item {
                 color: hover.hovered ? theme.pane : "transparent"
                 Avatar {
                     x: 0; anchors.verticalCenter: parent.verticalCenter
-                    size: 32; name: row.modelData.peer_name || "?"
+                    size: 32; name: row.modelData.peer_name || "?"; photoId: row.modelData.peer_mri || ""
                 }
                 Text {
                     x: 44; width: 300 - 52; anchors.verticalCenter: parent.verticalCenter

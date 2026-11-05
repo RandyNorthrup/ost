@@ -14,6 +14,8 @@ Rectangle {
     /// Channel conversations (posts) look different from chats in Teams.
     property bool isChannel: false
     property string teamName: ""
+    /// The other person's id in a 1:1 chat, for the header picture.
+    property string chatPhotoId: ""
     signal typing()
     signal react(string messageId, string key, bool on)
     signal editMessage(string messageId, string text)
@@ -87,6 +89,7 @@ Rectangle {
             visible: !root.isChannel
             x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32
             name: root.chatName; presence: root.chatPresence
+            photoId: root.chatPhotoId
         }
         Rectangle {
             visible: root.isChannel
@@ -270,6 +273,9 @@ Rectangle {
                 visible: !msg.mine && !msg.grouped && !msg.isCall
                 x: 32; y: msg.bubbleY
                 size: 32; name: msg.modelData.sender
+                photoId: msg.modelData.sender_mri || ""
+                // Teams shows the sender's presence on message avatars too.
+                presence: msg.modelData.sender_mri && msg.modelData.sender_mri === root.chatPhotoId ? root.chatPresence : ""
             }
             Text {
                 id: meta

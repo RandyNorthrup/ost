@@ -433,6 +433,10 @@ Window {
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
             return t ? t.name : ""
         }
+        chatPhotoId: {
+            const c = chatList.chats.find(c => c.id === backend.currentChatId)
+            return c && c.peerMri ? c.peerMri : ""
+        }
         chatPresence: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId)
             return c && c.presence ? c.presence : ""

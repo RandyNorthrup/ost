@@ -77,3 +77,72 @@ mod tests {
         assert_eq!(one_on_one_chat_id(them, me), expected);
     }
 }
+
+/// Whose picture to fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhotoOwner {
+    /// A person, by Entra object id.
+    User,
+    /// A team, by its group id.
+    Team,
+}
+
+/// A middle-tier token (audience api.spaces.skype.com), reused until close
+/// to expiry so pictures don't each mint one.
+async fn middle_tier_token() -> Result<String> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+    if let Some((t, at)) = CACHE.lock().unwrap().as_ref() {
+        if at.elapsed() < Duration::from_secs(45 * 60) {
+            return Ok(t.clone());
+        }
+    }
+    let t = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await?;
+    *CACHE.lock().unwrap() = Some((t.clone(), Instant::now()));
+    Ok(t)
+}
+
+/// A person's or team's picture as Teams shows it, from the Teams
+/// middle-tier picture service: the profile photo, or the initials image
+/// Teams generates (in its own colours) when there is none. `None` when the
+/// service has nothing; the app then draws initials itself.
+pub async fn photo(
+    client: &TeamsClient,
+    owner: PhotoOwner,
+    id: &str,
+    display_name: &str,
+) -> Result<Option<Vec<u8>>> {
+    if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        anyhow::bail!("Not an object id");
+    }
+    let me = client.object_id().context("No signed-in user")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
+    let name: String = url::form_urlencoded::byte_serialize(display_name.as_bytes()).collect();
+    // 196 px is sharp for every avatar size (up to the 144 px call stage at
+    // 1.5x scaling); teams come at one fixed size.
+    let path = match owner {
+        PhotoOwner::User => format!("8:orgid:{id}?displayname={name}&size=HR196x196"),
+        PhotoOwner::Team => format!("teams/{id}?displayName={name}"),
+    };
+    let url = format!("{base}/beta/users/{me}/profilepicturev2/{path}");
+    let token = middle_tier_token().await?;
+    let resp = client
+        .http()
+        .get(&url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("Picture request")?;
+    let status = resp.status();
+    if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::NO_CONTENT {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        anyhow::bail!("Picture request failed: HTTP {}", status.as_u16());
+    }
+    let bytes = resp.bytes().await.context("Picture download")?;
+    Ok((!bytes.is_empty()).then(|| bytes.to_vec()))
+}

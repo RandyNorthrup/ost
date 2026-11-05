@@ -42,6 +42,7 @@ pub mod qobject {
         /// "", "ringing", "connecting", "connected" or "ended".
         #[qproperty(QString, call_state)]
         #[qproperty(QString, call_peer)]
+        #[qproperty(QString, call_peer_id)]
         #[qproperty(bool, call_video_offered)]
         #[qproperty(bool, call_muted)]
         #[qproperty(bool, call_has_audio)]
@@ -160,6 +161,16 @@ pub mod qobject {
         /// A notification was clicked: bring the window forward.
         #[qsignal]
         fn activate_requested(self: Pin<&mut Backend>);
+
+        /// A profile or team picture asked for with photo_for is ready.
+        #[qsignal]
+        fn photo_ready(self: Pin<&mut Backend>, id: QString);
+
+        /// The picture for "me", a user ("8:orgid:<oid>" or "<oid>") or a
+        /// team ("team:<group id>"): a file URL, or "" for initials. Starts
+        /// a download when needed and signals photo_ready when it lands.
+        #[qinvokable]
+        fn photo_for(self: Pin<&mut Backend>, id: &QString, name: &QString) -> QString;
     }
 
     impl cxx_qt::Threading for Backend {}
@@ -180,6 +191,7 @@ pub struct BackendRust {
     sign_in_url: QString,
     call_state: QString,
     call_peer: QString,
+    call_peer_id: QString,
     call_video_offered: bool,
     call_muted: bool,
     call_has_audio: bool,
@@ -205,6 +217,10 @@ pub struct BackendRust {
     my_mri: Option<String>,
     /// Availability by MRI for the other members of 1:1 chats.
     presence: std::collections::HashMap<String, String>,
+    /// Pictures by photo_for id: a file URL, or None for "has none".
+    photos: HashMap<String, Option<String>>,
+    /// Picture downloads in flight.
+    photo_fetching: HashSet<String>,
 }
 
 /// The call this app is ringing for or in. Lives on the engine side so the
@@ -386,6 +402,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             return;
         }
         let peer = call.caller_name();
+        let peer_id = call.caller_id().unwrap_or_default();
         let video = call.has_video();
         let call_id = call.call_id();
         slot.ringing = Some(call);
@@ -393,6 +410,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         tracing::info!(video, "incoming call");
         let _ = qt.queue(move |mut this| {
             this.as_mut().set_call_peer(QString::from(peer.as_str()));
+            this.as_mut()
+                .set_call_peer_id(QString::from(peer_id.as_str()));
             this.as_mut().set_call_video_offered(video);
             this.as_mut().set_call_state(QString::from("ringing"));
         });
@@ -476,6 +495,109 @@ async fn cached_image(
     #[cfg(not(unix))]
     std::fs::write(&path, &bytes)?;
     Ok(path)
+}
+
+/// How long a downloaded picture (or "has none") is trusted before it is
+/// fetched again.
+const PHOTO_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// Where pictures are cached: ~/.cache/ost/photos (owner-only).
+fn photo_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .map(|b| b.join("ost").join("photos"))
+}
+
+/// The owner and object id behind a photo_for id.
+fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::PhotoOwner, String)> {
+    use api::directory::PhotoOwner;
+    let (owner, oid) = if id == "me" {
+        (PhotoOwner::User, my_oid?.to_string())
+    } else if let Some(g) = id.strip_prefix("team:") {
+        (PhotoOwner::Team, g.to_string())
+    } else {
+        (
+            PhotoOwner::User,
+            id.strip_prefix("8:orgid:").unwrap_or(id).to_string(),
+        )
+    };
+    let valid = oid.len() == 36 && oid.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    valid.then_some((owner, oid.to_ascii_lowercase()))
+}
+
+/// A cached picture: Some(Some(url)) when there is one, Some(None) when
+/// the account has none; `fresh` says whether it is within PHOTO_TTL.
+fn photo_from_disk(key: &str) -> (Option<Option<String>>, bool) {
+    let Some(dir) = photo_dir() else {
+        return (None, false);
+    };
+    let fresh = |p: &std::path::Path| {
+        p.metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age < PHOTO_TTL)
+    };
+    let jpg = dir.join(format!("{key}.jpg"));
+    if jpg.exists() {
+        return (Some(Some(format!("file://{}", jpg.display()))), fresh(&jpg));
+    }
+    let none = dir.join(format!("{key}.none"));
+    if none.exists() {
+        return (Some(None), fresh(&none));
+    }
+    (None, false)
+}
+
+/// Download a picture into the cache; returns its file URL, or None when
+/// the account has no picture.
+async fn fetch_photo(
+    owner: api::directory::PhotoOwner,
+    oid: &str,
+    name: &str,
+    key: &str,
+) -> anyhow::Result<Option<String>> {
+    let client = TeamsClient::new().await?;
+    let bytes = api::directory::photo(&client, owner, oid, name).await?;
+    let dir = photo_dir().ok_or_else(|| anyhow::anyhow!("No cache directory"))?;
+    std::fs::create_dir_all(&dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Some(ost) = dir.parent() {
+            std::fs::set_permissions(ost, std::fs::Permissions::from_mode(0o700))?;
+        }
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let jpg = dir.join(format!("{key}.jpg"));
+    let none = dir.join(format!("{key}.none"));
+    match bytes {
+        Some(b) => {
+            let tmp = dir.join(format!("{key}.tmp"));
+            write_private(&tmp, &b)?;
+            std::fs::rename(&tmp, &jpg)?;
+            let _ = std::fs::remove_file(&none);
+            Ok(Some(format!("file://{}", jpg.display())))
+        }
+        None => {
+            write_private(&none, b"")?;
+            let _ = std::fs::remove_file(&jpg);
+            Ok(None)
+        }
+    }
+}
+
+/// Write a file readable only by its owner.
+fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    std::io::Write::write_all(&mut opts.open(path)?, bytes)
 }
 
 impl qobject::Backend {
@@ -691,6 +813,8 @@ impl qobject::Backend {
             return;
         };
         self.as_mut().set_call_peer(peer);
+        self.as_mut()
+            .set_call_peer_id(QString::from(callee.as_str()));
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
         self.as_mut().set_call_state(QString::from("calling"));
@@ -1338,6 +1462,73 @@ impl qobject::Backend {
         });
     }
 
+    pub fn photo_for(mut self: Pin<&mut Self>, id: &QString, name: &QString) -> QString {
+        let id = id.to_string();
+        let name = name.to_string();
+        let id_key = format!("{id}\u{1f}{name}");
+        if let Some(known) = self.rust().photos.get(&id_key) {
+            return QString::from(known.as_deref().unwrap_or(""));
+        }
+        let my_oid = self
+            .rust()
+            .my_mri
+            .as_deref()
+            .and_then(|m| m.strip_prefix("8:orgid:"))
+            .map(str::to_string)
+            .or_else(|| {
+                teams_cli::config::Config::load()
+                    .ok()
+                    .and_then(|c| c.object_id())
+            });
+        let Some((owner, oid)) = photo_target(&id, my_oid.as_deref()) else {
+            self.as_mut().rust_mut().photos.insert(id_key, None);
+            return QString::default();
+        };
+        // The name is part of the key: Teams draws initials pictures from it.
+        let name_hash = name.bytes().fold(0x811c9dc5u32, |h, b| {
+            (h ^ b as u32).wrapping_mul(0x01000193)
+        });
+        let key = format!(
+            "{}-{oid}-{name_hash:08x}",
+            if owner == api::directory::PhotoOwner::Team {
+                "team"
+            } else {
+                "user"
+            }
+        );
+        let (cached, fresh) = photo_from_disk(&key);
+        if let Some(c) = &cached {
+            self.as_mut()
+                .rust_mut()
+                .photos
+                .insert(id_key.clone(), c.clone());
+        }
+        if !fresh
+            && self
+                .as_mut()
+                .rust_mut()
+                .photo_fetching
+                .insert(id_key.clone())
+        {
+            let qt = self.qt_thread();
+            let id2 = id.clone();
+            runtime().spawn(async move {
+                let result = fetch_photo(owner, &oid, &name, &key).await;
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().rust_mut().photo_fetching.remove(&id_key);
+                    match result {
+                        Ok(url) => {
+                            this.as_mut().rust_mut().photos.insert(id_key, url);
+                            this.as_mut().photo_ready(QString::from(id2.as_str()));
+                        }
+                        Err(e) => tracing::debug!("photo unavailable: {}", short_error(&e)),
+                    }
+                });
+            });
+        }
+        QString::from(cached.flatten().as_deref().unwrap_or(""))
+    }
+
     pub fn refresh_receipts(self: Pin<&mut Self>) {
         let chat_id = self.rust().current_chat_id.to_string();
         if chat_id.is_empty() {
@@ -1380,5 +1571,34 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::photo_target;
+    use teams_cli::api::directory::PhotoOwner;
+
+    const OID: &str = "4287e791-1b98-4963-8b94-281c50472683";
+
+    #[test]
+    fn photo_targets_accept_only_object_ids() {
+        assert_eq!(
+            photo_target(&format!("8:orgid:{OID}"), None),
+            Some((PhotoOwner::User, OID.to_string()))
+        );
+        assert_eq!(
+            photo_target(&format!("team:{}", OID.to_uppercase()), None),
+            Some((PhotoOwner::Team, OID.to_string()))
+        );
+        assert_eq!(
+            photo_target("me", Some(OID)),
+            Some((PhotoOwner::User, OID.to_string()))
+        );
+        assert_eq!(photo_target("me", None), None);
+        // Anything that could change the request path is refused.
+        assert_eq!(photo_target("../../me", None), None);
+        assert_eq!(photo_target("8:orgid:abc?x=1", None), None);
+        assert_eq!(photo_target(&format!("{OID}/x"), None), None);
     }
 }

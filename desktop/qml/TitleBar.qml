@@ -122,6 +122,7 @@ Rectangle {
     Avatar {
         id: avatar
         name: root.userName || "?"
+        photoId: "me"
         size: 28
         anchors.right: parent.right; anchors.rightMargin: 16
         anchors.verticalCenter: parent.verticalCenter
@@ -151,7 +152,7 @@ Rectangle {
             spacing: 12
             Row {
                 spacing: 12
-                Avatar { name: root.userName || "?"; size: 48 }
+                Avatar { name: root.userName || "?"; size: 48; photoId: "me" }
                 Column {
                     anchors.verticalCenter: parent.verticalCenter
                     Text { text: root.userName; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }

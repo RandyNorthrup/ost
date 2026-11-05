@@ -104,22 +104,13 @@ Rectangle {
                             x: 18; anchors.verticalCenter: parent.verticalCenter
                             name: team.open ? "chevron-down-12" : "chevron-right-12"; size: 12
                         }
-                        Rectangle {
+                        Avatar {
                             id: teamAvatar
                             x: 36; anchors.verticalCenter: parent.verticalCenter
-                            width: 20; height: 20; radius: 4
-                            readonly property var colors: ["#C43E1C", "#0F6CBD", "#107C10", "#8764B8", "#038387", "#CA5010"]
-                            color: {
-                                let h = 0
-                                for (let i = 0; i < team.modelData.name.length; i++) h = (h * 31 + team.modelData.name.charCodeAt(i)) % 997
-                                return colors[h % colors.length]
-                            }
-                            Text {
-                                anchors.centerIn: parent
-                                text: team.modelData.name.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
-                                color: "white"
-                                font.family: theme.font; font.pixelSize: 8; font.weight: Font.DemiBold
-                            }
+                            size: 20; square: true
+                            name: team.modelData.name
+                            initialsText: team.modelData.name.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+                            photoId: "team:" + team.modelData.id
                         }
                         Text {
                             x: 64; width: parent.width - 64 - 24
@@ -183,6 +174,7 @@ Rectangle {
             Avatar {
                 x: 32; anchors.verticalCenter: parent.verticalCenter
                 size: 20; name: row.modelData.name
+                photoId: row.modelData.peerMri || ""
                 presence: row.modelData.presence || ""
             }
             Text {

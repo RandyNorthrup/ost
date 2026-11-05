@@ -49,7 +49,7 @@ Rectangle {
             required property var modelData
             width: ListView.view.width; height: 52
             color: hover.hovered ? theme.pane : "transparent"
-            Avatar { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: person.modelData.name }
+            Avatar { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: person.modelData.name; photoId: person.modelData.id || "" }
             Column {
                 x: 64; anchors.verticalCenter: parent.verticalCenter
                 Text { text: person.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }

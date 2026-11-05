@@ -27,7 +27,7 @@ Window {
         Avatar {
             id: avatar
             x: 16; anchors.verticalCenter: parent.verticalCenter
-            size: 48; name: toast.peer
+            size: 48; name: toast.peer; photoId: backend.callPeerId
         }
         Column {
             anchors { left: avatar.right; leftMargin: 12; right: buttons.left; rightMargin: 8; verticalCenter: parent.verticalCenter }

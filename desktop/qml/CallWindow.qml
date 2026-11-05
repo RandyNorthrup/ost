@@ -94,7 +94,7 @@ Window {
         Column {
             anchors.centerIn: parent
             spacing: 24
-            Avatar { size: 144; name: win.peer; anchors.horizontalCenter: parent.horizontalCenter }
+            Avatar { size: 144; name: win.peer; photoId: backend.callPeerId; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: win.state === "calling" ? "Calling…"
@@ -128,7 +128,7 @@ Window {
                 GradientStop { position: 1.0; color: "#EEF0F8" }
             }
             border.color: theme.dividerSoft
-            Avatar { anchors.centerIn: parent; size: 64; name: win.selfName || "You" }
+            Avatar { anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
             Rectangle {
                 visible: win.muted || !win.hasAudio
                 anchors { left: parent.left; bottom: parent.bottom; margins: 8 }

@@ -121,6 +121,23 @@ impl TeamsClient {
         check_response(resp, &url).await
     }
 
+    /// GET a Graph resource that may not exist: `Ok(None)` for 404.
+    pub async fn graph_get_opt(&self, path: &str) -> Result<Option<reqwest::Response>> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .with_context(|| format!("Graph GET {} failed", url))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        Ok(Some(check_response(resp, &url).await?))
+    }
+
     pub async fn graph_post(
         &self,
         path: &str,
@@ -189,6 +206,22 @@ impl TeamsClient {
                     .map(String::from)
             })
             .unwrap_or_else(|| DEFAULT_CHAT_SERVICE.to_string())
+    }
+
+    /// The Teams middle-tier base URL (e.g. …/api/mt/part/amer-03) from
+    /// region_gtms, which serves pictures among other things.
+    pub fn middle_tier_url(&self) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get("middleTier")?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
+    /// The shared HTTP client.
+    pub fn http(&self) -> &reqwest::Client {
+        &self.http
     }
 
     /// Chat service aggregator URL from region_gtms, falling back to default.
