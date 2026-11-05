@@ -63,6 +63,9 @@ pub struct MessageView {
     /// Attached files (Teams' file cards).
     #[serde(default)]
     pub files: Vec<super::files::FileAttachment>,
+    /// Whether the message @mentions you (Teams marks it with an "@").
+    #[serde(default)]
+    pub mentions_me: bool,
     /// In a channel, the post this message belongs to: its own id for a
     /// post, the post's id for a reply. Empty in chats.
     #[serde(default)]
@@ -175,6 +178,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         first_unread: false,
         files: Vec::new(),
         root_id: s("/rootMessageId"),
+        mentions_me: false,
     };
     if kind == "Event/Call" {
         let content = s("/content");
@@ -235,13 +239,16 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     } else {
         text
     };
+    // Which mention ids (`itemid`) are you, from properties.mentions.
+    let my_mentions = my_mention_ids(props, me);
     Some(MessageView {
         images,
         files,
+        mentions_me: !my_mentions.is_empty() && !deleted,
         html: if deleted {
             String::new()
         } else {
-            sanitize_html(&content)
+            sanitize_html_marking(&content, &my_mentions)
         },
         text: if deleted { String::new() } else { text },
         edited,
@@ -292,6 +299,40 @@ fn reactions_of(e: &serde_json::Value, me: &str) -> Vec<Reaction> {
 /// images become their alt text, other tags and all attributes except a
 /// link's href are dropped, and bare URLs become links.
 pub fn sanitize_html(html: &str) -> String {
+    sanitize_html_marking(html, &[])
+}
+
+/// The `itemid`s of a message's mentions that name `me`, from
+/// `properties.mentions` (a JSON array, usually sent as a string).
+fn my_mention_ids(props: Option<&serde_json::Value>, me: &str) -> Vec<String> {
+    let Some(raw) = props.and_then(|p| p.get("mentions")) else {
+        return Vec::new();
+    };
+    let list = match raw {
+        serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+        v => v.clone(),
+    };
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| {
+            !me.is_empty()
+                && m.get("mri")
+                    .and_then(|x| x.as_str())
+                    .is_some_and(|x| x.eq_ignore_ascii_case(me))
+        })
+        .filter_map(|m| match m.get("itemid")? {
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            serde_json::Value::String(s) => Some(s.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// As `sanitize_html`, keeping Teams' mention spans as
+/// `<span class="mention">`, or `class="mention-me"` for the `itemid`s in
+/// `mine`, so the client can colour them as Teams does.
+pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
     const KEEP: [&str; 15] = [
         "p",
         "br",
@@ -312,6 +353,8 @@ pub fn sanitize_html(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
     let mut in_link = 0usize;
+    // Open spans, and whether each is a mention (others are dropped).
+    let mut spans: Vec<bool> = Vec::new();
     while let Some(start) = rest.find('<') {
         out.push_str(&linkify(&rest[..start], in_link > 0));
         let Some(end) = rest[start..].find('>') else {
@@ -351,6 +394,26 @@ pub fn sanitize_html(html: &str) -> String {
             }
             continue;
         }
+        if name == "span" {
+            if closing {
+                if spans.pop() == Some(true) {
+                    out.push_str("</span>");
+                }
+            } else if !tag.ends_with('/') {
+                let mention =
+                    attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/Mention"));
+                if mention {
+                    let me = attr(tag, "itemid").is_some_and(|id| mine.contains(&id));
+                    out.push_str(if me {
+                        "<span class=\"mention-me\">"
+                    } else {
+                        "<span class=\"mention\">"
+                    });
+                }
+                spans.push(mention);
+            }
+            continue;
+        }
         if !KEEP.contains(&name.as_str()) {
             continue;
         }
@@ -377,6 +440,11 @@ pub fn sanitize_html(html: &str) -> String {
         out.push('>');
     }
     out.push_str(&linkify(rest, in_link > 0));
+    for open in spans {
+        if open {
+            out.push_str("</span>");
+        }
+    }
     while in_link > 0 {
         out.push_str("</a>");
         in_link -= 1;
@@ -1008,6 +1076,7 @@ mod tests {
             first_unread: false,
             files: vec![],
             root_id: String::new(),
+            mentions_me: false,
         };
         let mut t = vec![
             mk("100", false),
@@ -1127,6 +1196,28 @@ mod tests {
         assert_eq!(
             sanitize_html(r#"<a href="https://a.example">https://a.example</a>"#),
             r#"<a href="https://a.example">https://a.example</a>"#
+        );
+    }
+
+    #[test]
+    fn mentions_are_marked_and_yours_stand_out() {
+        let m = serde_json::json!({
+            "id": "9", "messagetype": "RichText/Html",
+            "content": "<p>hi <span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\">Me</span> and <span itemtype=\"http://schema.skype.com/Mention\" itemid=\"1\">Bo</span> <span style=\"x\">plain</span></p>",
+            "from": "https://x/v1/users/ME/contacts/8:orgid:them",
+            "originalarrivaltime": "2026-11-05T18:58:00Z",
+            "properties": { "mentions": "[{\"itemid\":0,\"mri\":\"8:orgid:ME\"},{\"itemid\":1,\"mri\":\"8:orgid:bo\"}]" }
+        });
+        let v = view_of(&m, "8:orgid:me", "Me").unwrap();
+        assert!(v.mentions_me);
+        assert_eq!(
+            v.html,
+            "<p>hi <span class=\"mention-me\">Me</span> and <span class=\"mention\">Bo</span> plain</p>"
+        );
+        // Unclosed mention spans are closed; stray closings are ignored.
+        assert_eq!(
+            sanitize_html("<span itemtype=\"http://schema.skype.com/Mention\">x</span></span>"),
+            "<span class=\"mention\">x</span>"
         );
     }
 

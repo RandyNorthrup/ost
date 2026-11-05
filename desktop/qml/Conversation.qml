@@ -201,6 +201,12 @@ Rectangle {
                     readonly property bool sel: root.tab === modelData || (index === 0 && root.tab === "")
                     // 6 px padding each side of the label.
                     width: tabText.implicitWidth + 12; height: parent.height
+                    // Tabs that would run under the header actions are hidden
+                    // (opacity, so the row's layout doesn't depend on it).
+                    readonly property bool fits: tabs.x + x + width <= header.width
+                        - (root.pane ? 48 : root.isSelf ? 115 : root.isChannel ? 160 : 207)
+                    opacity: fits ? 1 : 0
+                    enabled: fits
                     Text {
                         id: tabText
                         x: 6; anchors.verticalCenter: parent.verticalCenter
@@ -490,7 +496,9 @@ Rectangle {
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     // Sanitised by the engine to a safe subset.
                     text: msg.modelData.deleted ? "This message has been deleted."
-                        : "<style>a { color: " + theme.brand + "; text-decoration: none; }</style>"
+                        : "<style>a { color: " + theme.brand + "; text-decoration: none; } "
+                          + ".mention { color: " + theme.brand + "; } "
+                          + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; }</style>"
                           + (msg.modelData.html || msg.modelData.text)
                     textFormat: msg.modelData.deleted ? Text.PlainText : Text.RichText
                     wrapMode: Text.Wrap
@@ -562,6 +570,16 @@ Rectangle {
                         }
                     }
                 }
+            }
+            // Teams marks a message that @mentions you with an "@" beside it.
+            Text {
+                visible: msg.modelData.mentions_me === true
+                x: msg.mine ? bubble.x - width - 8 : bubble.x + bubble.width + 8
+                y: bubble.y + (Math.min(bubble.height, 40) - height) / 2
+                text: "@"
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+                color: theme.mentionMe
+                Accessible.name: "Mentions you"
             }
             // Reaction pills under the bubble, as in Teams; yours has a brand
             // outline. Clicking one toggles your reaction.

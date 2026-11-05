@@ -43,7 +43,7 @@ Window {
     Shortcut { sequence: "Ctrl+4"; onActivated: rail.current = "calls" }
     Shortcut { sequence: "Ctrl+5"; onActivated: rail.current = "onedrive" }
     Shortcut { sequence: "Ctrl+,"; onActivated: rail.current = "settings" }
-    Shortcut { sequence: "Ctrl+N"; onActivated: { rail.current = "chat"; chatList.draftsOpen = false; window.composing = true } }
+    Shortcut { sequence: "Ctrl+N"; onActivated: { rail.current = "chat"; chatList.draftsOpen = false; chatList.mentionsOpen = false; window.composing = true } }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
     // The rest of Teams' shortcuts that OST supports (listed by Ctrl+.).
     Shortcut { sequence: "Ctrl+."; onActivated: shortcutsDialog.open() }
@@ -169,7 +169,7 @@ Window {
             }
             else if (step === 4) {
                 window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-drafts.png")))
-                backend.selectChat(a.id, a.name); chatList.draftsOpen = false
+                backend.selectChat(a.id, a.name); chatList.draftsOpen = false; chatList.mentionsOpen = false
             }
             else if (step === 5) {
                 console.warn("DRAFT restored", JSON.stringify(conv.composeText()))
@@ -428,7 +428,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -720,6 +720,21 @@ Window {
         }
     }
 
+    // --mentions-test: open Quick views > Mentions, capture, open the
+    // newest mention, capture.
+    Timer {
+        running: Qt.application.arguments.indexOf("--mentions-test") >= 0 && backend.signedIn && mentionsView.mentions.length > 0 && chatList.chats.length > 0
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            if (step === 0) { chatList.openMentions(); console.warn("MENTIONS", mentionsView.mentions.length, "quick view shown", chatList.hasMentions) }
+            else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-list.png")))
+            else if (step === 2) mentionsView.openMention(mentionsView.shown[0])
+            else if (step === 4) { console.warn("MENTION opened", backend.currentChatId.length > 0, conversation.visible); window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() }); stop() }
+            step++
+        }
+    }
+
     // --search-test: type "Ran" into search and capture the suggestions.
     Timer {
         running: Qt.application.arguments.indexOf("--search-test") >= 0 && backend.signedIn
@@ -926,11 +941,29 @@ Window {
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; backend.selectChat(id, name) }
-        onNewChat: { draftsOpen = false; window.composing = true }
+        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; backend.selectChat(id, name) }
+        onNewChat: { draftsOpen = false; mentionsOpen = false; window.composing = true }
         onMarkAllRead: backend.markAllRead()
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
-        onOpenDrafts: { window.composing = false; draftsOpen = true }
+        onOpenDrafts: { window.composing = false; mentionsOpen = false; draftsOpen = true }
+        hasMentions: mentionsView.mentions.length > 0
+        onOpenMentions: { window.composing = false; draftsOpen = false; mentionsOpen = true; mentionsView.selectedId = "" }
+    }
+    MentionsView {
+        id: mentionsView
+        visible: rail.current === "chat" && chatList.mentionsOpen
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        items: backend.activityJson ? JSON.parse(backend.activityJson) : []
+        myName: backend.userName
+        // A mention opens its chat beside the list.
+        onOpenMention: item => {
+            selectedId = item.id
+            if (item.unread) backend.markActivityItemRead(item.id)
+            if (item.thread_id) {
+                const c = chatList.chats.find(c => c.id === item.thread_id)
+                backend.selectChat(item.thread_id, c ? c.name : (item.context || item.actor_name || "Chat"))
+            }
+        }
     }
     DraftsView {
         id: draftsView
@@ -997,10 +1030,12 @@ Window {
     Conversation {
         id: conversation
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0))
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.current === "activity" ? activityView.right : chatList.right; right: parent.right }
+        anchors { top: titleBar.bottom; bottom: statusBar.top; right: parent.right
+            left: rail.current === "activity" ? activityView.right : chatList.right
+            leftMargin: rail.current === "chat" && chatList.mentionsOpen ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
         isSelf: backend.currentChatId === "48:notes"

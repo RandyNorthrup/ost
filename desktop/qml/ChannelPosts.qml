@@ -352,7 +352,8 @@ Item {
         property var message
         lineHeight: 20; lineHeightMode: Text.FixedHeight
         text: !message ? "" : message.deleted ? "This message has been deleted."
-            : "<style>a { color: " + theme.brand + "; text-decoration: none; }</style>" + (message.html || message.text)
+            : "<style>a { color: " + theme.brand + "; text-decoration: none; } .mention { color: " + theme.brand
+              + "; } .mention-me { color: " + theme.mentionMe + "; font-weight: 700; }</style>" + (message.html || message.text)
         textFormat: message && message.deleted ? Text.PlainText : Text.RichText
         wrapMode: Text.Wrap
         font.family: theme.font; font.pixelSize: theme.base

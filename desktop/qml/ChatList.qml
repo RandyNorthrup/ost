@@ -12,6 +12,10 @@ Rectangle {
     /// Chat ids with an unsent draft (Quick views > Drafts).
     property var draftIds: []
     property bool draftsOpen: false
+    /// Quick views > Mentions: shown once someone has @mentioned you.
+    property bool hasMentions: false
+    property bool mentionsOpen: false
+    signal openMentions()
     signal chatSelected(string id, string name)
     signal newChat()
     signal openDrafts()
@@ -206,6 +210,12 @@ Rectangle {
             SectionHeader { visible: !root.filtered; label: "Quick views"; open: root.quickOpen; onToggled: root.quickOpen = !root.quickOpen }
             Item { width: 1; height: root.quickOpen && !root.filtered ? 4 : 0 }
             ListRow {
+                visible: root.quickOpen && !root.filtered && root.hasMentions
+                label: "Mentions"; icon: "mention-20"
+                selected: root.mentionsOpen
+                onClicked: root.openMentions()
+            }
+            ListRow {
                 visible: root.quickOpen && !root.filtered
                 label: "Drafts"; icon: "drafts-20"
                 selected: root.draftsOpen
@@ -315,7 +325,7 @@ Rectangle {
     component ChatRow: Item {
         id: row
         property var chat
-        readonly property bool selected: !root.draftsOpen && chat.id === root.currentId
+        readonly property bool selected: !root.draftsOpen && !root.mentionsOpen && chat.id === root.currentId
         readonly property bool unread: chat.unread === true && !selected
         width: list.width; height: 32
         Rectangle {

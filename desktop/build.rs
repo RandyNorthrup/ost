@@ -19,6 +19,7 @@ fn main() {
         "qml/ChannelPosts.qml",
         "qml/KeyboardShortcuts.qml",
         "qml/KeysTest.qml",
+        "qml/MentionsView.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
         "qml/ActivityView.qml",
