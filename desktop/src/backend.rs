@@ -243,6 +243,20 @@ pub mod qobject {
             first_message: &QString,
         );
 
+        /// Change an event's title and time (UTC).
+        #[qinvokable]
+        fn update_event(
+            self: Pin<&mut Backend>,
+            id: &QString,
+            subject: &QString,
+            start_utc: &QString,
+            end_utc: &QString,
+        );
+
+        /// Delete an event (cancels a meeting you organise).
+        #[qinvokable]
+        fn delete_event(self: Pin<&mut Backend>, id: &QString);
+
         /// Create a calendar event (UTC times); optionally a Teams meeting.
         /// Attendees: comma- or semicolon-separated e-mail addresses.
         #[qinvokable]
@@ -2317,6 +2331,61 @@ impl qobject::Backend {
                         .as_mut()
                         .set_status_text(QString::from(short_error(&e).as_str())),
                 }
+            });
+        });
+    }
+
+    pub fn update_event(
+        mut self: Pin<&mut Self>,
+        id: &QString,
+        subject: &QString,
+        start_utc: &QString,
+        end_utc: &QString,
+    ) {
+        let (id, subject, start, end) = (
+            id.to_string(),
+            subject.to_string(),
+            start_utc.to_string(),
+            end_utc.to_string(),
+        );
+        self.as_mut().set_status_text(QString::from("Saving…"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::calendar::update_event(&client, &id, &subject, &start, &end).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().set_status_text(QString::default());
+                    this.as_mut().refresh_calendar();
+                }
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
+            });
+        });
+    }
+
+    pub fn delete_event(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        self.as_mut().set_status_text(QString::from("Deleting…"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::calendar::delete_event(&client, &id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().set_status_text(QString::default());
+                    this.as_mut().refresh_calendar();
+                }
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
             });
         });
     }

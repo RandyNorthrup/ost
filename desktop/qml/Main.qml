@@ -428,7 +428,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -766,6 +766,35 @@ Window {
         }
     }
 
+    // --event-card-test: capture the test meeting's card; then create
+    // "OST event test", edit it (title and start) and delete it.
+    Timer {
+        running: Qt.application.arguments.indexOf("--event-card-test") >= 0 && backend.signedIn && backend.calendarJson.indexOf("OST calendar test") >= 0
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const has = t => backend.calendarJson.indexOf(t) >= 0
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            if (step === 0) { rail.current = "calendar"; const s = new Date(); s.setDate(s.getDate() + 1); calendarView.start = calendarView.startFor(s) }
+            else if (step === 1) console.warn("CARD shown", calendarView.cardForTest("OST calendar test: created from OST"))
+            else if (step === 2) cap("card")
+            else if (step === 3) {
+                const s = new Date(); s.setDate(s.getDate() + 1); s.setHours(10, 0, 0, 0)
+                backend.createEvent("OST event test", calendarView.iso(s), calendarView.iso(new Date(s.getTime() + 1800000)), "", false)
+            } else if (step === 5) { console.warn("CARD created", has("\"OST event test\"")); calendarView.cardForTest("OST event test") }
+            else if (step === 6) { calendarView.editForTest("OST event test (edited)") }
+            else if (step === 7) { cap("edit"); calendarView.saveForTest() }
+            else if (step === 9) {
+                const ev = JSON.parse(backend.calendarJson).find(e => e.subject === "OST event test (edited)")
+                console.warn("CARD edited", !!ev, ev ? new Date(ev.start_utc).getHours() + ":" + new Date(ev.start_utc).getMinutes() : "")
+                calendarView.cardForTest("OST event test (edited)")
+            } else if (step === 10) { calendarView.deleteForTest() }
+            else if (step === 11) { cap("delete"); calendarView.confirmDeleteForTest() }
+            else if (step === 13) { console.warn("CARD deleted", !has("OST event test")); Qt.quit() }
+            step++
+        }
+    }
+
     // --search-test: type "Ran" into search and capture the suggestions.
     Timer {
         running: Qt.application.arguments.indexOf("--search-test") >= 0 && backend.signedIn
@@ -951,6 +980,15 @@ Window {
         events: backend.calendarJson ? JSON.parse(backend.calendarJson) : []
         onRangeChanged: (s, e) => backend.loadCalendar(s, e)
         onCreateEvent: (subject, s, e, who, teams) => backend.createEvent(subject, s, e, who, teams)
+        onDeleteEvent: id => backend.deleteEvent(id)
+        onUpdateEvent: (id, subject, s, e) => backend.updateEvent(id, subject, s, e)
+        // Chat: the meeting's chat thread (from its join link).
+        onOpenMeetingChat: (url, subject) => {
+            const m = /meetup-join\/([^/?]+)/.exec(url)
+            if (!m) return
+            rail.current = "chat"
+            backend.selectChat(decodeURIComponent(m[1]), subject)
+        }
         onJoinMeeting: (url, subject) => {
             if (url.indexOf("/l/meetup-join/") >= 0) backend.joinMeeting(url, subject)
             else Qt.openUrlExternally(url)

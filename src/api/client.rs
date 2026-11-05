@@ -159,6 +159,39 @@ impl TeamsClient {
         check_response(resp, &url).await
     }
 
+    /// PATCH a Graph path with a JSON body.
+    pub async fn graph_patch(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&token)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Graph PATCH {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// DELETE a Graph path.
+    pub async fn graph_delete(&self, path: &str) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .delete(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .with_context(|| format!("Graph DELETE {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
     /// PUT raw bytes to a Graph path (small file uploads).
     pub async fn graph_put_bytes(
         &self,

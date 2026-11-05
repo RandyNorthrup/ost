@@ -19,6 +19,10 @@ pub struct CalendarEvent {
     pub join_url: Option<String>,
     /// Free, tentative, busy, oof, workingElsewhere.
     pub show_as: String,
+    /// The start of the description, as plain text.
+    pub preview: String,
+    /// You organise it (you can edit or cancel it).
+    pub is_organizer: bool,
 }
 
 /// Events overlapping `[start, end)` (UTC, `YYYY-MM-DDTHH:MM:SSZ`).
@@ -29,7 +33,7 @@ pub async fn calendar_view(
 ) -> Result<Vec<CalendarEvent>> {
     let path = format!(
         "/me/calendarView?startDateTime={start}&endDateTime={end}&$top=250&$orderby=start/dateTime\
-         &$select=id,subject,start,end,isAllDay,location,organizer,isOnlineMeeting,onlineMeeting,showAs"
+         &$select=id,subject,start,end,isAllDay,location,organizer,isOnlineMeeting,onlineMeeting,showAs,bodyPreview,isOrganizer"
     );
     let v: serde_json::Value = client
         .graph_get(&path)
@@ -62,6 +66,47 @@ pub async fn create_event(
         .into_iter()
         .next()
         .context("Create event reply had no event")
+}
+
+/// Change an event's title and time (UTC). For a meeting you organise,
+/// Outlook sends the attendees the update.
+pub async fn update_event(
+    client: &TeamsClient,
+    id: &str,
+    subject: &str,
+    start: &str,
+    end: &str,
+) -> Result<()> {
+    let mut body = new_event_body(subject, start, end, &[], false)?;
+    // Leave the invitees as they are.
+    if let Some(o) = body.as_object_mut() {
+        o.remove("attendees");
+    }
+    client
+        .graph_patch(&format!("/me/events/{}", event_path_id(id)?), &body)
+        .await?;
+    Ok(())
+}
+
+/// Delete an event; for a meeting you organise this cancels it for
+/// everyone, as Teams' Delete does.
+pub async fn delete_event(client: &TeamsClient, id: &str) -> Result<()> {
+    client
+        .graph_delete(&format!("/me/events/{}", event_path_id(id)?))
+        .await?;
+    Ok(())
+}
+
+/// Graph event ids are base64url-ish; refuse anything else in a path.
+fn event_path_id(id: &str) -> Result<&str> {
+    if id.is_empty()
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_=".contains(&b))
+    {
+        anyhow::bail!("Not an event id");
+    }
+    Ok(id)
 }
 
 fn new_event_body(
@@ -131,12 +176,24 @@ fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 .and_then(|x| x.as_str())
                 .map(str::to_string),
             show_as: s(e, "/showAs"),
+            preview: s(e, "/bodyPreview"),
+            is_organizer: e
+                .get("isOrganizer")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(false),
         })
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn event_ids_are_checked_before_use_in_paths() {
+        assert!(super::event_path_id("AAMkADg0ODhl_-=").is_ok());
+        assert!(super::event_path_id("../me/drive").is_err());
+        assert!(super::event_path_id("").is_err());
+    }
+
     #[test]
     fn new_event_bodies_are_teams_meetings_in_utc() {
         let b = super::new_event_body(

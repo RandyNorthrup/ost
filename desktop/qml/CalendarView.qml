@@ -22,6 +22,19 @@ Item {
     readonly property int gutter: 49
     readonly property int days: view === "day" ? 1 : view === "week" ? 7 : 5
 
+    /// Test harness: open the card for the event with this subject (or
+    /// its edit form); delete it after confirming.
+    function cardForTest(subject) {
+        for (let i = 0; i < eventRepeater.count; i++) {
+            const it = eventRepeater.itemAt(i)
+            if (it && it.modelData.subject === subject) { details.show(it.modelData, it); return true }
+        }
+        return false
+    }
+    function editForTest(newTitle) { newEvent.openForEdit(details.ev); details.close(); title.text = newTitle; startBox.activated(startBox.currentIndex + 1) }
+    function saveForTest() { newEvent.saveNow() }
+    function deleteForTest() { details.confirming = true }
+    function confirmDeleteForTest() { root.deleteEvent(details.ev.id); details.close() }
     /// Alt+N: schedule a meeting.
     function newMeeting() { newEvent.openAt(null) }
     function mondayOf(d) {
@@ -346,6 +359,7 @@ Item {
         }
         // Events
         Repeater {
+            id: eventRepeater
             model: root.showCalendar ? root.events.filter(e => !e.is_all_day) : []
             Rectangle {
                 id: ev
@@ -367,7 +381,7 @@ Item {
                     Text { visible: ev.height > 36; width: parent.width; elide: Text.ElideRight; text: ev.modelData.organizer || ev.modelData.location || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
                 }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: details.show(ev.modelData) }
+                TapHandler { onTapped: details.show(ev.modelData, ev) }
                 Accessible.role: Accessible.Button
                 Accessible.name: (modelData.subject || "Event") + ", " + Qt.formatTime(s, "h:mm AP")
             }
@@ -386,46 +400,188 @@ Item {
         }
     }
 
-    // Event details, with Join for Teams meetings (opens the meeting link).
+    // Event details, as Teams desktop's card (measured at 1x): a 393 px
+    // card beside the event with a brand top edge, the title, Join (in
+    // OST) and Chat for Teams meetings, the time, location and the start of
+    // the description, and Edit / Delete for meetings you organise.
+    signal openMeetingChat(string joinUrl, string subject)
     Popup {
         id: details
         property var ev: ({})
-        function show(e) { ev = e; open() }
-        anchors.centerIn: parent
-        width: 380; padding: 20
-        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+        property bool confirming: false
+        function show(e, item) {
+            ev = e; confirming = false
+            // Beside the event: to its left when there's room, else right.
+            const p = item.mapToItem(root, 0, 0)
+            x = p.x - width - 8 >= 0 ? p.x - width - 8 : Math.min(root.width - width - 8, p.x + item.width + 8)
+            y = Math.max(8, Math.min(root.height - implicitHeight - 8, p.y - 8))
+            open()
+        }
+        width: 393; padding: 0
+        background: Rectangle {
+            radius: 8; color: theme.menu; border.color: theme.dividerSoft
+            Rectangle { x: 8; width: parent.width - 16; height: 3; radius: 1.5; color: theme.brand }
+        }
         contentItem: Column {
-            spacing: 8
-            Text { width: 340; wrapMode: Text.Wrap; text: details.ev.subject || "(No title)"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-            Text {
-                text: details.ev.start_utc ? Qt.formatDateTime(new Date(details.ev.start_utc), "dddd, MMMM d  h:mm AP") + " – " + Qt.formatTime(new Date(details.ev.end_utc), "h:mm AP") : ""
-                font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong
+            topPadding: 18; bottomPadding: 16; leftPadding: 20; rightPadding: 20
+            spacing: 14
+            Item {
+                width: 353; height: titleText.height
+                Text {
+                    id: titleText
+                    width: parent.width - 40; wrapMode: Text.Wrap
+                    text: details.ev.subject || "(No title)"
+                    font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+                    color: theme.text
+                }
+                Rectangle {
+                    anchors.right: parent.right; y: -2
+                    width: 28; height: 28; radius: theme.radius
+                    color: dxh.hovered ? theme.rowHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.textStrong }
+                    HoverHandler { id: dxh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: details.close() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Close"
+                }
             }
-            Text { visible: !!details.ev.location; text: details.ev.location || ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
-            Text { visible: !!details.ev.organizer; text: "Organizer: " + (details.ev.organizer || ""); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
-            Rectangle {
+            Row {
                 visible: !!details.ev.join_url
-                width: 100; height: 32; radius: theme.radius
-                color: jh.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Join"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
-                HoverHandler { id: jh; cursorShape: Qt.PointingHandCursor }
-                // Join in OST; links OST can't join open in the browser.
-                TapHandler { onTapped: { root.joinMeeting(details.ev.join_url, details.ev.subject || "Meeting"); details.close() } }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Join meeting"
+                spacing: 8
+                CardButton {
+                    primary: true; icon: "video-20"; label: "Join"
+                    onClicked: { root.joinMeeting(details.ev.join_url, details.ev.subject || "Meeting"); details.close() }
+                }
+                CardButton {
+                    icon: "chat-20"; label: "Chat"
+                    onClicked: { root.openMeetingChat(details.ev.join_url, details.ev.subject || "Meeting"); details.close() }
+                }
+            }
+            Rectangle { width: 353; height: 1; color: theme.dividerSoft }
+            DetailRow {
+                icon: "clock-20"
+                text: details.ev.start_utc
+                    ? (details.ev.is_all_day ? Qt.formatDate(new Date(details.ev.start_utc), "ddd M/d/yyyy") + "  All day"
+                       : Qt.formatDateTime(new Date(details.ev.start_utc), "ddd M/d/yyyy h:mm AP") + " - " + Qt.formatTime(new Date(details.ev.end_utc), "h:mm AP"))
+                    : ""
+            }
+            // Teams hides the automatic "Microsoft Teams Meeting" location.
+            DetailRow {
+                icon: "location-20"
+                text: details.ev.location && !(details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting")
+                    ? details.ev.location : "No location added"
+            }
+            DetailRow {
+                visible: !!details.ev.organizer && !details.ev.is_organizer
+                icon: "person-20"; text: "Organizer: " + (details.ev.organizer || "")
+            }
+            DetailRow {
+                visible: !!(details.ev.preview || "").trim()
+                icon: "text-description-20"
+                text: (details.ev.preview || "").replace(/_{4,}/g, "").replace(/\s+/g, " ").trim()
+                lines: 4
+            }
+            Row {
+                visible: details.ev.is_organizer === true && !details.confirming
+                spacing: 8
+                CardButton { icon: "edit-20"; label: "Edit"; onClicked: { newEvent.openForEdit(details.ev); details.close() } }
+                CardButton { icon: "calendar-cancel-20"; iconColor: theme.danger; label: "Delete"; onClicked: details.confirming = true }
+            }
+            // Deleting a meeting you organise cancels it for everyone.
+            Column {
+                visible: details.confirming
+                spacing: 10
+                Text {
+                    width: 353; wrapMode: Text.Wrap
+                    text: details.ev.is_online_meeting ? "Cancel this meeting for everyone?" : "Delete this event?"
+                    font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                    color: theme.text
+                }
+                Row {
+                    spacing: 8
+                    CardButton {
+                        danger: true; label: details.ev.is_online_meeting ? "Cancel meeting" : "Delete"
+                        onClicked: { root.deleteEvent(details.ev.id); details.close() }
+                    }
+                    CardButton { label: "Keep it"; onClicked: details.confirming = false }
+                }
             }
         }
+    }
+    signal deleteEvent(string id)
+    signal updateEvent(string id, string subject, string startUtc, string endUtc)
+
+    component DetailRow: Row {
+        property alias icon: drIcon.name
+        property alias text: drText.text
+        property int lines: 2
+        spacing: 12
+        FluentIcon { id: drIcon; size: 20; color: theme.textStrong }
+        Text {
+            id: drText
+            width: 321; wrapMode: Text.Wrap; maximumLineCount: parent.lines; elide: Text.ElideRight
+            font.family: theme.font; font.pixelSize: theme.base
+            color: theme.text
+        }
+    }
+    component CardButton: Rectangle {
+        id: cb
+        property string icon
+        property string label
+        property bool primary: false
+        property bool danger: false
+        property color iconColor: primary || danger ? "white" : theme.textStrong
+        signal clicked()
+        width: cbRow.implicitWidth + 24; height: 32; radius: theme.radius
+        color: primary ? (cbh.hovered ? theme.brandHover : theme.brandFill)
+            : danger ? (cbh.hovered ? "#BC2F32" : "#D13438")
+            : (cbh.hovered ? theme.rowHover : theme.input)
+        border.color: primary || danger ? "transparent" : theme.stroke
+        Row {
+            id: cbRow
+            anchors.centerIn: parent; spacing: 6
+            FluentIcon { visible: !!cb.icon; anchors.verticalCenter: parent.verticalCenter; name: cb.icon; size: 16; color: cb.iconColor }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: cb.label
+                font.family: theme.font; font.pixelSize: theme.base; font.weight: cb.primary || cb.danger ? Font.DemiBold : Font.Normal
+                color: cb.primary || cb.danger ? "white" : theme.text
+            }
+        }
+        HoverHandler { id: cbh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: cb.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: cb.label
     }
 
     // New meeting: title, attendees, start and length, Teams meeting.
     Popup {
         id: newEvent
         property date at: new Date()
+        /// Set when editing an existing event (its id).
+        property string editingId: ""
+        function saveNow() {
+            const mins = [15, 30, 60, 120][length.currentIndex]
+            const end = new Date(at.getTime() + mins * 60000)
+            if (editingId) root.updateEvent(editingId, title.text, root.iso(at), root.iso(end))
+            else root.createEvent(title.text, root.iso(at), root.iso(end), who.text, teamsBox.on)
+            close()
+        }
         function openAt(d) {
             let s = d
             if (!s) { s = new Date(); s.setMinutes(s.getMinutes() < 30 ? 30 : 60, 0, 0) }
-            at = s
+            at = s; editingId = ""
             title.text = ""; who.text = ""; length.currentIndex = 1; teamsBox.on = true
+            open(); title.forceActiveFocus()
+        }
+        function openForEdit(e) {
+            editingId = e.id
+            at = new Date(e.start_utc)
+            const mins = (new Date(e.end_utc) - at) / 60000
+            const opts = [15, 30, 60, 120]
+            let best = 0
+            for (let i = 1; i < opts.length; i++) if (Math.abs(opts[i] - mins) < Math.abs(opts[best] - mins)) best = i
+            title.text = e.subject || ""; who.text = ""; length.currentIndex = best; teamsBox.on = e.is_online_meeting
             open(); title.forceActiveFocus()
         }
         anchors.centerIn: parent
@@ -434,7 +590,7 @@ Item {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         contentItem: Column {
             spacing: 12
-            Text { text: "New meeting"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { text: newEvent.editingId ? "Edit meeting" : "New meeting"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
             component Field: Rectangle {
                 property alias input: fi
                 property string hint
@@ -448,10 +604,23 @@ Item {
                 }
             }
             Field { id: titleField; hint: "Add title"; property alias text: titleField.input.text }
-            Field { id: whoField; hint: "Invite people (e-mail addresses, comma separated)"; property alias text: whoField.input.text }
-            Text {
-                text: Qt.formatDateTime(newEvent.at, "dddd, MMMM d, h:mm AP")
-                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+            Field { id: whoField; visible: !newEvent.editingId; hint: "Invite people (e-mail addresses, comma separated)"; property alias text: whoField.input.text }
+            // The day, and the start in half-hour steps.
+            Row {
+                spacing: 8
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: Qt.formatDate(newEvent.at, "dddd, MMMM d")
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                }
+                ComboBox {
+                    id: startBox
+                    width: 130
+                    model: Array.from({ length: 48 }, (_, i) => Qt.formatTime(new Date(2000, 0, 1, Math.floor(i / 2), (i % 2) * 30), "h:mm AP"))
+                    currentIndex: newEvent.at.getHours() * 2 + (newEvent.at.getMinutes() >= 30 ? 1 : 0)
+                    onActivated: i => { const d = new Date(newEvent.at); d.setHours(Math.floor(i / 2), (i % 2) * 30, 0, 0); newEvent.at = d }
+                    Accessible.name: "Start time"
+                }
             }
             Row {
                 spacing: 8
@@ -459,6 +628,7 @@ Item {
                 ComboBox { id: length; model: ["15 minutes", "30 minutes", "1 hour", "2 hours"]; width: 160 }
             }
             Row {
+                visible: !newEvent.editingId
                 spacing: 8
                 Rectangle {
                     id: teamsBox
@@ -477,14 +647,7 @@ Item {
                     color: sh.hovered ? theme.brandHover : theme.brandFill
                     Text { anchors.centerIn: parent; text: "Save"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
-                    TapHandler {
-                        onTapped: {
-                            const mins = [15, 30, 60, 120][length.currentIndex]
-                            const end = new Date(newEvent.at.getTime() + mins * 60000)
-                            root.createEvent(title.text, root.iso(newEvent.at), root.iso(end), who.text, teamsBox.on)
-                            newEvent.close()
-                        }
-                    }
+                    TapHandler { onTapped: newEvent.saveNow() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Save"
                 }
