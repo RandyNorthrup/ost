@@ -110,6 +110,12 @@ Window {
         onToggleMute: backend.toggleMute()
         onClosing: if (backend.callState !== "ended") backend.hangUp()
     }
+    // Ring while a call is incoming.
+    Connections {
+        target: backend
+        function onCallStateChanged() { backend.setRinger(backend.callState === "ringing") }
+    }
+
     // "Call ended" shows briefly, then the call window closes.
     Timer {
         running: backend.callState === "ended"
@@ -139,7 +145,7 @@ Window {
     Timer {
         id: callTestTimer
         property string step
-        interval: 1500
+        interval: 4000
         onTriggered: {
             if (step === "ring") {
                 incomingCall.contentItem.grabToImage(r => {

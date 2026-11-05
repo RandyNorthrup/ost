@@ -96,6 +96,10 @@ pub mod qobject {
         #[qinvokable]
         fn hang_up(self: Pin<&mut Backend>);
 
+        /// Ring (or stop ringing) for an incoming call.
+        #[qinvokable]
+        fn set_ringer(self: Pin<&mut Backend>, on: bool);
+
         /// The user is typing in the open chat; tells the others (at most
         /// every few seconds).
         #[qinvokable]
@@ -777,6 +781,20 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+
+    pub fn set_ringer(self: Pin<&mut Self>, on: bool) {
+        static RINGER: std::sync::Mutex<Option<teams_cli::calling::ringtone::Ringtone>> =
+            std::sync::Mutex::new(None);
+        let mut ringer = RINGER.lock().unwrap_or_else(|e| e.into_inner());
+        match (on, ringer.is_some()) {
+            (true, false) => {
+                *ringer = teams_cli::calling::ringtone::Ringtone::start();
+                tracing::info!(playing = ringer.is_some(), "ringing");
+            }
+            (false, true) => *ringer = None,
+            _ => {}
+        }
     }
 
     pub fn user_typing(mut self: Pin<&mut Self>) {

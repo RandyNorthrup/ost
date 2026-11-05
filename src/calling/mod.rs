@@ -15,6 +15,8 @@ pub mod ice;
 pub mod incoming;
 pub mod media;
 pub mod outgoing;
+#[cfg(feature = "audio")]
+pub mod ringtone;
 pub mod recording;
 pub mod rtcp;
 pub mod rtp;
