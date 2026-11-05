@@ -18,6 +18,7 @@ Item {
     signal react(string messageId, string key, bool on)
     /// The post whose reply box is open.
     property string replying: ""
+    function toEnd() { list.positionViewAtEnd() }
     /// For the test harness: reply to the newest post.
     function replyToNewestForTest(text) {
         if (root.posts.length === 0) return false

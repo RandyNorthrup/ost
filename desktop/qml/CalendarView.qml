@@ -21,6 +21,8 @@ Item {
     readonly property int gutter: 49
     readonly property int days: view === "day" ? 1 : view === "week" ? 7 : 5
 
+    /// Alt+N: schedule a meeting.
+    function newMeeting() { newEvent.openAt(null) }
     function mondayOf(d) {
         const m = new Date(d.getFullYear(), d.getMonth(), d.getDate())
         m.setDate(m.getDate() - (m.getDay() + 6) % 7)

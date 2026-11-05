@@ -33,6 +33,17 @@ Rectangle {
     /// In a channel: reply to a post, and whether a new post is being written.
     signal sendReply(string rootId, string text)
     property bool posting: false
+    // Keyboard shortcuts (Ctrl+R, Ctrl+F, Ctrl+J, Alt+P, Alt+1-9, Alt+Shift+O).
+    function focusCompose() { if (compose.visible) input.forceActiveFocus() }
+    function openFind() { finding = true; tab = ""; findField.forceActiveFocus() }
+    function jumpToNewest() { tab = ""; list.positionViewAtBeginning(); channelPosts.toEnd() }
+    function toggleDetails() { participants.visible = !participants.visible }
+    readonly property var tabNames: isChannel ? ["Posts", "Shared", "Notes"]
+        : isSelf ? ["Chat", "Shared", "Storyline"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+    function openTab(i) { if (i < tabNames.length) tab = i === 0 ? "" : tabNames[i] }
+    readonly property bool composeFocused: input.activeFocus
+    readonly property bool detailsOpen: participants.visible
+    function attachFile() { if (compose.visible) filePicker.open() }
     function replyForTest(text) { return channelPosts.replyToNewestForTest(text) }
     // Test hooks for the compose box.
     function setComposeText(t) { root.setPlain(t) }
@@ -182,9 +193,7 @@ Rectangle {
             x: title.x + title.width + 2
             y: 2; height: 56
             Repeater {
-                model: root.isChannel ? ["Posts", "Shared", "Notes"]
-                    : root.isSelf ? ["Chat", "Shared", "Storyline"]
-                    : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+                model: root.tabNames
                 delegate: Item {
                     id: tabItem
                     required property string modelData
@@ -1053,6 +1062,7 @@ Rectangle {
                 if (event.key === Qt.Key_B) { root.wrapSelection("b"); event.accepted = true }
                 else if (event.key === Qt.Key_I) { root.wrapSelection("i"); event.accepted = true }
                 else if (event.key === Qt.Key_U) { root.wrapSelection("u"); event.accepted = true }
+                else if (event.key === Qt.Key_X && (event.modifiers & Qt.AltModifier)) { root.wrapSelection("s"); event.accepted = true }
             }
             onActiveFocusChanged: if (activeFocus) enterKey = backend.setting("enterKey") || "send"
             onTextChanged: {

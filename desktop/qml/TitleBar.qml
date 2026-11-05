@@ -26,6 +26,7 @@ Rectangle {
     signal goForward()
     signal toggleRail()
     signal openSettings()
+    signal openShortcuts()
     /// Pin window on top (Ctrl+Shift+T).
     property bool pinned: false
     signal togglePin()
@@ -213,6 +214,7 @@ Rectangle {
             x: 4; y: 4; width: parent.width - 8
             MenuRow { icon: "pin-20"; label: root.pinned ? "Unpin window" : "Pin window on top"; keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
             MenuRow { icon: "settings-20"; label: "Settings"; keys: "Ctrl+,"; onPicked: root.openSettings() }
+            MenuRow { icon: "keyboard-20"; label: "Keyboard shortcuts"; keys: "Ctrl+."; onPicked: root.openShortcuts() }
         }
     }
     // Profile: a 40 px round button around the 28 px avatar.

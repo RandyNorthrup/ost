@@ -24,6 +24,10 @@ Rectangle {
     property string nameFilter: ""
     property bool filtering: false
     readonly property bool filtered: chipFilter.length > 0 || nameFilter.length > 0
+    // Keyboard shortcuts (Ctrl+Shift+F, Ctrl+Alt+U/C/A/Z).
+    function openFilter() { filtering = true; filterField.forceActiveFocus() }
+    function setChip(c) { chipFilter = chipFilter === c ? "" : c }
+    function clearFilters() { chipFilter = ""; nameFilter = ""; filterField.text = ""; filtering = false }
     function nameMatches(n) { return !nameFilter || (n || "").toLowerCase().indexOf(nameFilter) >= 0 }
     function chatShown(c) {
         if (chipFilter === "channels") return false
