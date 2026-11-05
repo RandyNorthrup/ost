@@ -504,6 +504,24 @@ Window {
         // Ignore: stop ringing here; the call isn't declined.
         onIgnore: backend.setRinger(false)
     }
+    PreJoin {
+        id: preJoin
+        onJoin: micOn => {
+            window.muteOnJoin = !micOn
+            backend.joinMeeting(joinUrl, subject)
+        }
+    }
+    // Joining with the mic off (pre-join switch): mute once connected.
+    property bool muteOnJoin: false
+    Connections {
+        target: backend
+        function onCallStateChanged() {
+            if (backend.callState === "connected" && window.muteOnJoin) {
+                window.muteOnJoin = false
+                if (!backend.callMuted) backend.toggleMute()
+            }
+        }
+    }
     CallWindow {
         id: callWindow
         visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0
@@ -752,10 +770,15 @@ Window {
                 const ev = JSON.parse(backend.calendarJson).find(e => e.subject.indexOf("OST calendar test") === 0 && e.join_url)
                 console.warn("JOIN event found", !!ev)
                 calendarView.joinMeeting(ev.join_url, ev.subject)
+            } else if (step === 1) {
+                preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-prejoin.png")))
+            } else if (step === 2) {
+                // --join-muted: switch the mic off in pre-join.
+                preJoin.close(); preJoin.join(Qt.application.arguments.indexOf("--join-muted") < 0)
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
             } else if (step === 12 + window.joinStay) {
-                console.warn("JOIN state", backend.callState, "audio", backend.callHasAudio, "roster", backend.callRosterJson.length, "status", backend.statusText)
+                console.warn("JOIN state", backend.callState, "audio", backend.callHasAudio, "muted", backend.callMuted, "roster", backend.callRosterJson.length, "status", backend.statusText)
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-meeting.png")))
                 callWindow.side = "people"
             } else if (step === 13 + window.joinStay) {
@@ -989,9 +1012,11 @@ Window {
             rail.current = "chat"
             backend.selectChat(decodeURIComponent(m[1]), subject)
         }
+        // Join: Teams' pre-join window first, then the meeting.
         onJoinMeeting: (url, subject) => {
-            if (url.indexOf("/l/meetup-join/") >= 0) backend.joinMeeting(url, subject)
-            else Qt.openUrlExternally(url)
+            if (url.indexOf("/l/meetup-join/") < 0) { Qt.openUrlExternally(url); return }
+            const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url === url)
+            preJoin.openFor(url, subject, ev ? ev.start_utc : "", ev ? ev.end_utc : "")
         }
     }
 

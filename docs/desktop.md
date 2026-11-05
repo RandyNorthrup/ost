@@ -149,7 +149,7 @@ account.
 | `--status-test` | Set Busy from the profile menu, then reset. |
 | `--settings-test` | Switch the theme and read receipts and back. |
 | `--calendar-test` | Schedule a Teams meeting tomorrow at 3 PM. |
-| `--join-test` | Join that meeting, capture the stage and People, leave (`--join-stay=<s>` stays longer). |
+| `--join-test` | Join that meeting through the pre-join window, capture it, the stage and People, leave (`--join-stay=<s>` stays longer, `--join-muted` joins with the mic off). |
 | `--keys-test` | Press the keyboard shortcuts as real key events and check each (needs the QtTest QML module). |
 | `--call-test` | Wait for a call, capture the toast, answer, capture, hang up (`--accept-video` answers with video when offered). |
 | `--call-panes` | As `--call-test`, also opening the Chat and People panes. |

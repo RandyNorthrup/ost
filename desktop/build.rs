@@ -20,6 +20,7 @@ fn main() {
         "qml/KeyboardShortcuts.qml",
         "qml/KeysTest.qml",
         "qml/MentionsView.qml",
+        "qml/PreJoin.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
         "qml/ActivityView.qml",
