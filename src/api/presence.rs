@@ -124,7 +124,10 @@ pub async fn get_presences(http: &reqwest::Client, mris: &[String]) -> Result<Ve
         return Ok(Vec::new());
     }
     let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
-    let body: Vec<serde_json::Value> = mris.iter().map(|m| serde_json::json!({ "mri": m })).collect();
+    let body: Vec<serde_json::Value> = mris
+        .iter()
+        .map(|m| serde_json::json!({ "mri": m }))
+        .collect();
     let resp = http
         .post(format!("{PRESENCE_URL}/v1/presence/getpresence/"))
         .bearer_auth(&token)
@@ -147,7 +150,12 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
         .filter_map(|e| {
             let mri = e.get("mri")?.as_str()?.to_string();
             let p = e.get("presence").unwrap_or(e);
-            let field = |k: &str| p.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            let field = |k: &str| {
+                p.get(k)
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
             Some(UserPresence {
                 mri,
                 availability: field("availability"),

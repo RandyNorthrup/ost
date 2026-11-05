@@ -551,3 +551,110 @@ mod strip_html_tests {
         assert_eq!(strip_html("a&nbsp;&lt;b&gt;"), "a <b>");
     }
 }
+
+/// One entry of the Calls history (from the `48:calllogs` stream).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CallRecord {
+    pub call_id: String,
+    /// "incoming" or "outgoing".
+    pub direction: String,
+    /// "accepted", "missed", "declined", … as the service reports it.
+    pub state: String,
+    pub start_time: String,
+    pub connect_time: Option<String>,
+    pub end_time: Option<String>,
+    /// The other person.
+    pub peer_name: String,
+    pub peer_mri: String,
+}
+
+/// Recent calls, newest first.
+pub async fn call_history(client: &TeamsClient, limit: usize) -> Result<Vec<CallRecord>> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/48:calllogs/messages?pageSize={}&view=msnp24Equivalent",
+        client.chat_service_url(),
+        limit.min(200)
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Call history reply")?;
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    Ok(v.get("messages")
+        .and_then(|m| m.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|m| parse_call_log(m.pointer("/properties/call-log")?.as_str()?, &me))
+        .collect())
+}
+
+fn parse_call_log(json: &str, me: &str) -> Option<CallRecord> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
+    let direction = s("callDirection").unwrap_or_default();
+    // The other side is the originator of incoming calls and the target of
+    // outgoing ones; fall back to whichever is not us.
+    let (peer_key, peer_part) = if direction == "incoming" {
+        ("originator", "originatorParticipant")
+    } else {
+        ("target", "targetParticipant")
+    };
+    let mut peer_mri = s(peer_key).unwrap_or_default();
+    let mut peer_name = v
+        .pointer(&format!("/{peer_part}/displayName"))
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if peer_mri == me {
+        let (k, p) = if peer_key == "originator" {
+            ("target", "targetParticipant")
+        } else {
+            ("originator", "originatorParticipant")
+        };
+        peer_mri = s(k).unwrap_or_default();
+        peer_name = v
+            .pointer(&format!("/{p}/displayName"))
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
+    }
+    Some(CallRecord {
+        call_id: s("callId").unwrap_or_default(),
+        direction,
+        state: s("callState").unwrap_or_default(),
+        start_time: s("startTime")?,
+        connect_time: s("connectTime"),
+        end_time: s("endTime"),
+        peer_name,
+        peer_mri,
+    })
+}
+
+#[cfg(test)]
+mod call_log_tests {
+    use super::parse_call_log;
+
+    #[test]
+    fn parses_incoming_and_outgoing_logs() {
+        let inc = r#"{"startTime":"2026-11-05T05:59:53Z","connectTime":"2026-11-05T05:59:59Z","endTime":"2026-11-05T06:00:08Z",
+            "callDirection":"incoming","callState":"accepted","originator":"8:orgid:them","target":"8:orgid:me",
+            "originatorParticipant":{"displayName":"Randy Northrup"},"targetParticipant":{"displayName":null},"callId":"c1"}"#;
+        let r = parse_call_log(inc, "8:orgid:me").unwrap();
+        assert_eq!(r.peer_name, "Randy Northrup");
+        assert_eq!(r.peer_mri, "8:orgid:them");
+        assert_eq!(r.state, "accepted");
+        assert_eq!(r.connect_time.as_deref(), Some("2026-11-05T05:59:59Z"));
+        let out = inc
+            .replace("\"incoming\"", "\"outgoing\"")
+            .replace("\"missed\"", "x");
+        let r = parse_call_log(&out, "8:orgid:me").unwrap();
+        // Target is us here, so the peer falls back to the originator.
+        assert_eq!(r.peer_mri, "8:orgid:them");
+        assert!(parse_call_log("{}", "x").is_none());
+    }
+}

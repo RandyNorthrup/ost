@@ -13,6 +13,7 @@ fn main() {
         "qml/SignIn.qml",
         "qml/IncomingCall.qml",
         "qml/CallWindow.qml",
+        "qml/CallsView.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts"] {

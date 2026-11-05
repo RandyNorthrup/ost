@@ -50,6 +50,8 @@ pub mod qobject {
         /// Set by QML: whether the main window has focus (Teams only
         /// notifies for the open chat when it does not).
         #[qproperty(bool, window_active)]
+        /// Calls history as JSON (newest first).
+        #[qproperty(QString, calls_json)]
         type Backend = super::BackendRust;
     }
 
@@ -96,6 +98,10 @@ pub mod qobject {
         #[qinvokable]
         fn hang_up(self: Pin<&mut Backend>);
 
+        /// Load the Calls history.
+        #[qinvokable]
+        fn load_calls(self: Pin<&mut Backend>);
+
         /// Ring (or stop ringing) for an incoming call.
         #[qinvokable]
         fn set_ringer(self: Pin<&mut Backend>, on: bool);
@@ -140,6 +146,7 @@ pub struct BackendRust {
     call_has_audio: bool,
     typing_text: QString,
     window_active: bool,
+    calls_json: QString,
     /// Bumped on every typing change so a stale clear timer does nothing.
     typing_generation: u64,
     last_typing_sent: Option<std::time::Instant>,
@@ -199,6 +206,9 @@ fn spawn_call_stats_logger() {
         }
     });
 }
+
+/// How many calls the Calls history shows.
+const CALL_HISTORY_LIMIT: usize = 100;
 
 /// Longest message text shown in a notification.
 const NOTIFICATION_BODY_CHARS: usize = 200;
@@ -780,6 +790,26 @@ impl qobject::Backend {
                     this.as_mut().set_typing_text(QString::default());
                 }
             });
+        });
+    }
+
+    pub fn load_calls(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::call_history(&client, CALL_HISTORY_LIMIT).await
+            }
+            .await;
+            match result {
+                Ok(calls) => {
+                    let text = serde_json::to_string(&calls).unwrap_or_else(|_| "[]".into());
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_calls_json(QString::from(text.as_str()))
+                    });
+                }
+                Err(e) => tracing::warn!("call history failed: {}", short_error(&e)),
+            }
         });
     }
 

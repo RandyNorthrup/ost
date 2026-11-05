@@ -225,15 +225,47 @@ Window {
         id: rail
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: parent.left }
         unreadChats: chatList.chats.filter(c => c.unread).length
+        // --view=<app> opens that rail app (for captures).
+        Component.onCompleted: {
+            const v = Qt.application.arguments.find(a => a.startsWith("--view="))
+            if (v) current = v.substring(7)
+        }
+        onCurrentChanged: if (current === "calls") backend.loadCalls()
+    }
+
+    CallsView {
+        visible: rail.current === "calls"
+        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        calls: backend.callsJson ? JSON.parse(backend.callsJson) : []
+        onOpenChatWith: (mri, name) => {
+            const c = chatList.chats.find(c => c.peerMri === mri)
+            if (c) backend.selectChat(c.id, c.name)
+            rail.current = "chat"
+        }
+    }
+
+    // Apps not built yet: an honest placeholder instead of the chat.
+    Rectangle {
+        visible: ["chat", "calls"].indexOf(rail.current) < 0
+        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        color: theme.surface
+        Text {
+            anchors.centerIn: parent
+            text: "This app isn't available in OST yet."
+            font.family: theme.font; font.pixelSize: theme.base
+            color: theme.textSecondary
+        }
     }
     ChatList {
         id: chatList
+        visible: rail.current === "chat"
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         currentId: backend.currentChatId
         onChatSelected: (id, name) => backend.selectChat(id, name)
     }
     Conversation {
+        visible: rail.current === "chat"
         anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         chatName: backend.currentChatName
         chatPresence: {
