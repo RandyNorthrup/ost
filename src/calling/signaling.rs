@@ -966,10 +966,43 @@ pub async fn create_1to1_call_to(
     sdp_offer: &str,
     callee_mri: Option<&str>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
+    create_call(http, epconv_url, params, sdp_offer, callee_mri, None).await
+}
+
+/// Join a scheduled Teams meeting: the same single-shot call request with
+/// no callee, tied to the meeting's chat thread and its message id (`0`
+/// for scheduled meetings, from the join link), so the conversation
+/// service puts us in the meeting's conversation.
+pub async fn join_meeting(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    sdp_offer: &str,
+    meeting_message_id: &str,
+) -> Result<(ConversationCreated, ConversationJoined)> {
+    create_call(
+        http,
+        epconv_url,
+        params,
+        sdp_offer,
+        None,
+        Some(meeting_message_id),
+    )
+    .await
+}
+
+async fn create_call(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    sdp_offer: &str,
+    callee_mri: Option<&str>,
+    meeting_message_id: Option<&str>,
+) -> Result<(ConversationCreated, ConversationJoined)> {
     let group_chat = if callee_mri.is_some() {
         serde_json::Value::Null
     } else {
-        serde_json::json!({ "threadId": params.thread_id, "messageId": null })
+        serde_json::json!({ "threadId": params.thread_id, "messageId": meeting_message_id })
     };
     let to: Vec<serde_json::Value> = callee_mri
         .map(|id| serde_json::json!({ "id": id }))
@@ -982,7 +1015,8 @@ pub async fn create_1to1_call_to(
         "conversationRequest": {
             "conversationType": null,
             "subject": "",
-            "suppressDialout": false,  // false = ring the callee
+            // false = ring the callee; nobody is rung when joining a meeting.
+            "suppressDialout": meeting_message_id.is_some(),
             "roster": {
                 "type": "Delta",
                 "rosterUpdate": tc("conversation/rosterUpdate/")

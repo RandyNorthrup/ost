@@ -18,6 +18,7 @@ pub mod outgoing;
 pub mod recording;
 #[cfg(feature = "audio")]
 pub mod ringtone;
+pub mod roster;
 pub mod rtcp;
 pub mod rtp;
 pub mod sdp;

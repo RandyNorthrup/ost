@@ -428,7 +428,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -515,8 +515,12 @@ Window {
         onLeave: backend.hangUp()
         onToggleMute: backend.toggleMute()
         onClosing: if (backend.callState !== "ended") backend.hangUp()
-        // Chat: the 1:1 chat with the person in the call.
+        meeting: backend.callMeeting
+        roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
+        selfId: backend.userMri
+        // Chat: the 1:1 chat with the person in the call, or the meeting chat.
         onOpenChat: {
+            if (backend.callMeeting) { backend.selectChat(backend.callThreadId, backend.callPeer); return }
             const oid = backend.callPeerId.replace(/^8:orgid:/, "")
             if (oid) backend.openChatWith(oid, backend.callPeer)
         }
@@ -571,7 +575,8 @@ Window {
             if (step === "ring") {
                 incomingCall.contentItem.grabToImage(r => {
                     r.saveToFile(window.shotPath.replace(".png", "-toast.png"))
-                    backend.acceptCall(false)
+                    // --accept-video: answer with video when it's offered.
+                    backend.acceptCall(Qt.application.arguments.indexOf("--accept-video") >= 0 && backend.callVideoOffered)
                 })
             } else if (step === "talk" && window.callPanes) {
                 // --call-panes: open Chat, then People, capturing each.
@@ -731,6 +736,32 @@ Window {
             else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-list.png")))
             else if (step === 2) mentionsView.openMention(mentionsView.shown[0])
             else if (step === 4) { console.warn("MENTION opened", backend.currentChatId.length > 0, conversation.visible); window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() }); stop() }
+            step++
+        }
+    }
+
+    // --join-test: join the "OST calendar test" meeting from the calendar,
+    // stay 20 s (--join-stay=<s> more), capture the call window, leave.
+    readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
+    Timer {
+        running: Qt.application.arguments.indexOf("--join-test") >= 0 && backend.signedIn && backend.calendarJson.indexOf("OST calendar test") >= 0
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            if (step === 0) {
+                const ev = JSON.parse(backend.calendarJson).find(e => e.subject.indexOf("OST calendar test") === 0 && e.join_url)
+                console.warn("JOIN event found", !!ev)
+                calendarView.joinMeeting(ev.join_url, ev.subject)
+            } else if (step === 6) {
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
+            } else if (step === 12 + window.joinStay) {
+                console.warn("JOIN state", backend.callState, "audio", backend.callHasAudio, "roster", backend.callRosterJson.length, "status", backend.statusText)
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-meeting.png")))
+                callWindow.side = "people"
+            } else if (step === 13 + window.joinStay) {
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-people.png")))
+            } else if (step === 14 + window.joinStay) { backend.hangUp() }
+            else if (step === 16 + window.joinStay) { Qt.quit() }
             step++
         }
     }
@@ -920,6 +951,10 @@ Window {
         events: backend.calendarJson ? JSON.parse(backend.calendarJson) : []
         onRangeChanged: (s, e) => backend.loadCalendar(s, e)
         onCreateEvent: (subject, s, e, who, teams) => backend.createEvent(subject, s, e, who, teams)
+        onJoinMeeting: (url, subject) => {
+            if (url.indexOf("/l/meetup-join/") >= 0) backend.joinMeeting(url, subject)
+            else Qt.openUrlExternally(url)
+        }
     }
 
     // Apps not built yet: an honest placeholder instead of the chat.

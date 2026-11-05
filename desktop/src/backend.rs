@@ -46,6 +46,14 @@ pub mod qobject {
         #[qproperty(QString, call_peer)]
         #[qproperty(QString, call_peer_id)]
         #[qproperty(bool, call_video_offered)]
+        /// The call is a Teams meeting (joined from its link).
+        #[qproperty(bool, call_meeting)]
+        /// The meeting's participants: [{id, name, role, active, server_muted}].
+        #[qproperty(QString, call_roster_json)]
+        /// Your own MRI (`8:orgid:<oid>`, lowercase), once signed in.
+        #[qproperty(QString, user_mri)]
+        /// The meeting's chat thread (for the call window's Chat pane).
+        #[qproperty(QString, call_thread_id)]
         #[qproperty(bool, call_muted)]
         #[qproperty(bool, call_has_audio)]
         /// "Randy Northrup is typing" for the open chat, or "".
@@ -116,6 +124,11 @@ pub mod qobject {
         /// Call the other person in the open 1:1 chat.
         #[qinvokable]
         fn start_call(self: Pin<&mut Backend>);
+
+        /// Join the Teams meeting with this join link; `title` is shown in
+        /// the call window.
+        #[qinvokable]
+        fn join_meeting(self: Pin<&mut Backend>, join_url: &QString, title: &QString);
 
         /// End the current call.
         #[qinvokable]
@@ -299,6 +312,11 @@ pub struct BackendRust {
     call_peer: QString,
     call_peer_id: QString,
     call_video_offered: bool,
+    call_meeting: bool,
+    call_roster_json: QString,
+    call_thread_id: QString,
+    user_mri: QString,
+    roster: Vec<teams_cli::calling::roster::Participant>,
     call_muted: bool,
     call_has_audio: bool,
     typing_text: QString,
@@ -375,6 +393,7 @@ fn spawn_call_stats_logger() {
                     tracing::info!(
                         sent = s.packets_sent,
                         received = s.packets_received,
+                        undecryptable = s.packets_undecryptable,
                         muted = call.is_muted(),
                         "call audio"
                     );
@@ -548,6 +567,21 @@ async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(Strin
 /// the current call is logged by shape (never by content) so call-end
 /// signalling can be recognised.
 async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
+    if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
+        tracing::info!(changes = delta.len(), "roster update");
+        let _ = qt.queue(move |mut this| {
+            if !this.rust().call_meeting {
+                return;
+            }
+            let mut roster = std::mem::take(&mut this.as_mut().rust_mut().roster);
+            teams_cli::calling::roster::apply(&mut roster, delta);
+            let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
+            this.as_mut().rust_mut().roster = roster;
+            this.as_mut()
+                .set_call_roster_json(QString::from(json.as_str()));
+        });
+        return;
+    }
     if let Some(call) = IncomingCall::parse(json) {
         let mut slot = call_slot().lock().await;
         if slot.ringing.is_some() || slot.active.is_some() {
@@ -566,6 +600,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             this.as_mut()
                 .set_call_peer_id(QString::from(peer_id.as_str()));
             this.as_mut().set_call_video_offered(video);
+            this.as_mut().set_call_meeting(false);
             this.as_mut().set_call_state(QString::from("ringing"));
         });
         // Stop ringing if nobody answers.
@@ -1085,6 +1120,7 @@ impl qobject::Backend {
         self.as_mut()
             .set_call_peer_id(QString::from(callee.as_str()));
         self.as_mut().set_call_video_offered(false);
+        self.as_mut().set_call_meeting(false);
         self.as_mut().set_call_muted(false);
         self.as_mut().set_call_state(QString::from("calling"));
         let qt = self.qt_thread();
@@ -1112,6 +1148,66 @@ impl qobject::Backend {
                     tracing::info!("outgoing call ended: {msg}");
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_status_text(QString::from(msg.as_str()));
+                        this.as_mut().end_call_ui();
+                    });
+                }
+            }
+        });
+    }
+
+    pub fn join_meeting(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
+        if !self.rust().call_state.is_empty() {
+            return;
+        }
+        let Some(link) = outgoing::MeetingLink::parse(&join_url.to_string()) else {
+            self.as_mut().set_status_text(QString::from(
+                "That isn't a Teams meeting link OST can join",
+            ));
+            return;
+        };
+        let title = if title.is_empty() {
+            QString::from("Meeting")
+        } else {
+            title.clone()
+        };
+        self.as_mut().set_call_peer(title);
+        self.as_mut().set_call_peer_id(QString::default());
+        self.as_mut().rust_mut().roster.clear();
+        self.as_mut().set_call_roster_json(QString::from("[]"));
+        self.as_mut()
+            .set_call_thread_id(QString::from(link.thread_id.as_str()));
+        self.as_mut().set_call_meeting(true);
+        self.as_mut().set_call_video_offered(false);
+        self.as_mut().set_call_muted(false);
+        self.as_mut().set_call_state(QString::from("connecting"));
+        tracing::info!("join meeting");
+        let qt = self.qt_thread();
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
+        runtime().spawn(async move {
+            let result = outgoing::join_meeting(&link, cancel_rx).await;
+            let mut slot = call_slot().lock().await;
+            slot.cancel_placing = None;
+            match result {
+                Ok(call) => {
+                    let has_audio = call.has_audio();
+                    tracing::info!(has_audio, "meeting joined");
+                    slot.outgoing = Some(call);
+                    drop(slot);
+                    spawn_call_stats_logger();
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_has_audio(has_audio);
+                        this.as_mut().set_call_state(QString::from("connected"));
+                    });
+                }
+                Err(e) => {
+                    drop(slot);
+                    let msg = short_error(&e);
+                    tracing::info!("meeting join ended: {msg}");
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_status_text(QString::from(
+                            format!("Couldn't join the meeting: {msg}").as_str(),
+                        ));
                         this.as_mut().end_call_ui();
                     });
                 }
@@ -1217,7 +1313,11 @@ impl qobject::Backend {
     ) {
         let own = self.rust().user_name.to_string();
         let mine = (!m.sender_name.is_empty() && m.sender_name == own)
-            || self.rust().my_mri.as_deref() == Some(m.sender_mri.as_str());
+            || self
+                .rust()
+                .my_mri
+                .as_deref()
+                .is_some_and(|me| me.eq_ignore_ascii_case(&m.sender_mri));
         let open = self.rust().window_active
             && m.conversation_id == self.rust().current_chat_id.to_string();
         // Settings > Notifications and activity can turn banners off, or
@@ -1655,7 +1755,9 @@ impl qobject::Backend {
                         this.as_mut().rust_mut().my_mri = teams_cli::config::Config::load()
                             .ok()
                             .and_then(|c| c.object_id())
-                            .map(|oid| format!("8:orgid:{oid}"));
+                            .map(|oid| format!("8:orgid:{oid}").to_ascii_lowercase());
+                        let mri = this.rust().my_mri.clone().unwrap_or_default();
+                        this.as_mut().set_user_mri(QString::from(mri.as_str()));
                         this.as_mut().rust_mut().chats = chats;
                         this.as_mut().publish_chats();
                         this.as_mut().set_status_text(QString::default());

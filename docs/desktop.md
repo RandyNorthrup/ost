@@ -24,9 +24,12 @@ Microsoft branding.
 - **Calls**: 1:1 audio calls in and out, with Teams' incoming-call toast,
   ringing, mute, hang-up, decline, and Chat and People panes in the call
   window. Call history in the Calls app.
+- **Meetings**: join Teams meetings from the calendar, with audio both
+  ways, Teams' meeting toolbar, the stage ("Waiting for others to join…"
+  or a tile per person), the roster in People, and the meeting chat.
 - **Calendar**: day, work week and week views of your Outlook calendar,
-  a month picker, event details with Join for Teams meetings (opens the
-  meeting link), and New meeting (optionally a Teams meeting).
+  a month picker, event details with Join, and New meeting (optionally
+  a Teams meeting).
 - **Presence**: your status (set, reset, shown everywhere) and everyone
   else's on their pictures.
 - **Notifications**: desktop notifications for new messages, titled
@@ -37,8 +40,8 @@ Microsoft branding.
   start with the computer.
 - **Search**: people, chats and channels from the title bar.
 
-Not yet: video, screen sharing, joining meetings inside OST (Join opens
-the meeting in the browser), group calls, transfer, hold and the dial
+Not yet: video, screen sharing, raising hands and reactions in
+meetings, group calls started from a chat, transfer, hold and the dial
 pad. Their buttons are shown disabled rather than hidden or faked.
 
 ## Build
@@ -146,8 +149,9 @@ account.
 | `--status-test` | Set Busy from the profile menu, then reset. |
 | `--settings-test` | Switch the theme and read receipts and back. |
 | `--calendar-test` | Schedule a Teams meeting tomorrow at 3 PM. |
+| `--join-test` | Join that meeting, capture the stage and People, leave (`--join-stay=<s>` stays longer). |
 | `--keys-test` | Press the keyboard shortcuts as real key events and check each (needs the QtTest QML module). |
-| `--call-test` | Wait for a call, capture the toast, answer, capture, hang up. |
+| `--call-test` | Wait for a call, capture the toast, answer, capture, hang up (`--accept-video` answers with video when offered). |
 | `--call-panes` | As `--call-test`, also opening the Chat and People panes. |
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |

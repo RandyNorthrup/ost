@@ -15,6 +15,7 @@ Item {
     property bool paneShown: true
     property bool showCalendar: true
     signal rangeChanged(string startUtc, string endUtc)
+    signal joinMeeting(string joinUrl, string subject)
     signal createEvent(string subject, string startUtc, string endUtc, string attendees, bool teamsMeeting)
 
     readonly property int hourHeight: 80
@@ -408,7 +409,8 @@ Item {
                 color: jh.hovered ? theme.brandHover : theme.brandFill
                 Text { anchors.centerIn: parent; text: "Join"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 HoverHandler { id: jh; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: { Qt.openUrlExternally(details.ev.join_url); details.close() } }
+                // Join in OST; links OST can't join open in the browser.
+                TapHandler { onTapped: { root.joinMeeting(details.ev.join_url, details.ev.subject || "Meeting"); details.close() } }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Join meeting"
             }

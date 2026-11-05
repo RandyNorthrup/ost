@@ -284,6 +284,8 @@ pub struct WebRtcStats {
     pub packets_sent: u64,
     pub packets_received: u64,
     pub bytes_received: u64,
+    /// RTP packets that arrived but didn't decrypt (diagnostics).
+    pub packets_undecryptable: u64,
 }
 
 /// A running WebRTC audio session; dropping it stops the media.
@@ -520,7 +522,10 @@ async fn recv_loop(ctx: RecvCtx) {
                         None => None,
                     }
                 };
-                let Some(plain) = plain else { continue };
+                let Some(plain) = plain else {
+                    ctx.stats.lock().await.packets_undecryptable += 1;
+                    continue;
+                };
                 {
                     let mut s = ctx.stats.lock().await;
                     s.packets_received += 1;

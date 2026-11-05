@@ -170,6 +170,81 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
 pub async fn place_call(
     thread_id: &str,
     callee_mri: &str,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    start(thread_id, Target::Person(callee_mri), cancel).await
+}
+
+/// A Teams meeting, from its join link
+/// (`https://teams.microsoft.com/l/meetup-join/<thread>/<message>?context=…`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeetingLink {
+    /// The meeting's chat thread, `19:meeting_…@thread.v2`.
+    pub thread_id: String,
+    /// `0` for scheduled meetings.
+    pub message_id: String,
+}
+
+impl MeetingLink {
+    pub fn parse(url: &str) -> Option<Self> {
+        let rest = url
+            .strip_prefix("https://teams.microsoft.com/l/meetup-join/")
+            .or_else(|| url.strip_prefix("https://teams.live.com/l/meetup-join/"))?;
+        let path = rest.split(['?', '#']).next()?;
+        let (thread, message) = path.split_once('/')?;
+        let thread = percent_decode(thread)?;
+        let message = percent_decode(message.trim_end_matches('/'))?;
+        let valid_thread = thread.starts_with("19:")
+            && thread.ends_with("@thread.v2")
+            && thread[3..thread.len() - 10]
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_-=".contains(c));
+        if !valid_thread || message.is_empty() || !message.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some(Self {
+            thread_id: thread,
+            message_id: message,
+        })
+    }
+}
+
+fn percent_decode(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = std::str::from_utf8(b.get(i + 1..i + 3)?).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// Join a Teams meeting. Resolves once the meeting's conference server
+/// answers and audio is set up; `cancel` withdraws while it connects.
+pub async fn join_meeting(
+    link: &MeetingLink,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    start(&link.thread_id, Target::Meeting(&link.message_id), cancel).await
+}
+
+enum Target<'a> {
+    /// A 1:1 call to this MRI.
+    Person(&'a str),
+    /// The meeting with this message id on the thread.
+    Meeting(&'a str),
+}
+
+async fn start(
+    thread_id: &str,
+    target: Target<'_>,
     mut cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
     let mut config = Config::load()?;
@@ -220,11 +295,17 @@ pub async fn place_call(
 
     // Listen before placing the call so the answer cannot be missed.
     let mut events = event_hub::subscribe();
-    let (created, _joined) =
-        signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee_mri))
-            .await?;
+    let (created, _joined) = match target {
+        Target::Person(callee) => {
+            signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
+                .await?
+        }
+        Target::Meeting(message_id) => {
+            signaling::join_meeting(&http, &epconv_url, &params, &offer, message_id).await?
+        }
+    };
     let leave_url = leave_link(&created.response_body);
-    tracing::info!("call placed; ringing");
+    tracing::info!("call placed; waiting for the answer");
 
     let wait_answer = async {
         loop {
@@ -315,6 +396,30 @@ mod tests {
         );
         assert!(callee_mri_for_chat(chat, "cccc").is_none());
         assert!(callee_mri_for_chat("19:x@thread.v2", "aaaa-1").is_none());
+    }
+
+    #[test]
+    fn meeting_links_name_the_thread_and_message() {
+        let url = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_YTQyMzZlY2ItMDdjNC00MzIzLTg0NTYtMDA1YzA4YjY3MmUy%40thread.v2/0?context=%7b%22Tid%22%3a%22t%22%7d";
+        let m = MeetingLink::parse(url).unwrap();
+        assert_eq!(
+            m.thread_id,
+            "19:meeting_YTQyMzZlY2ItMDdjNC00MzIzLTg0NTYtMDA1YzA4YjY3MmUy@thread.v2"
+        );
+        assert_eq!(m.message_id, "0");
+        assert!(MeetingLink::parse(
+            "https://evil.example/l/meetup-join/19%3ameeting_x%40thread.v2/0"
+        )
+        .is_none());
+        assert!(MeetingLink::parse(
+            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%22%40thread.v2/0"
+        )
+        .is_none());
+        assert!(MeetingLink::parse(
+            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/abc"
+        )
+        .is_none());
+        assert!(MeetingLink::parse("https://teams.microsoft.com/meet/299487569045?p=x").is_none());
     }
 
     #[test]
