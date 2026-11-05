@@ -1007,6 +1007,7 @@ mod tests {
             seen: false,
             first_unread: false,
             files: vec![],
+            root_id: String::new(),
         };
         let mut t = vec![
             mk("100", false),
@@ -1127,6 +1128,25 @@ mod tests {
             sanitize_html(r#"<a href="https://a.example">https://a.example</a>"#),
             r#"<a href="https://a.example">https://a.example</a>"#
         );
+    }
+
+    #[test]
+    fn channel_replies_name_their_post() {
+        let reply = serde_json::json!({
+            "id": "1793905132592", "rootMessageId": "1793889784763",
+            "messagetype": "RichText/Html", "content": "<p>a reply</p>",
+            "from": "https://x/v1/users/ME/contacts/8:orgid:them", "imdisplayname": "Them",
+            "originalarrivaltime": "2026-11-05T18:58:00Z"
+        });
+        let v = view_of(&reply, "8:orgid:me", "me").unwrap();
+        assert_eq!(v.root_id, "1793889784763");
+        assert_ne!(v.root_id, v.id);
+        let chat = serde_json::json!({
+            "id": "5", "messagetype": "Text", "content": "hi",
+            "from": "https://x/v1/users/ME/contacts/8:orgid:them",
+            "originalarrivaltime": "2026-11-05T18:58:00Z"
+        });
+        assert_eq!(view_of(&chat, "8:orgid:me", "me").unwrap().root_id, "");
     }
 
     #[test]
