@@ -14,6 +14,7 @@ fn main() {
         "qml/IncomingCall.qml",
         "qml/CallWindow.qml",
         "qml/CallsView.qml",
+        "qml/CalendarView.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts"] {

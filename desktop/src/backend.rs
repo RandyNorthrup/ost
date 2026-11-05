@@ -52,6 +52,8 @@ pub mod qobject {
         #[qproperty(bool, window_active)]
         /// Calls history as JSON (newest first).
         #[qproperty(QString, calls_json)]
+        /// Calendar events for the shown range, as JSON.
+        #[qproperty(QString, calendar_json)]
         type Backend = super::BackendRust;
     }
 
@@ -97,6 +99,10 @@ pub mod qobject {
         /// End the current call.
         #[qinvokable]
         fn hang_up(self: Pin<&mut Backend>);
+
+        /// Load calendar events between two UTC instants (ISO 8601).
+        #[qinvokable]
+        fn load_calendar(self: Pin<&mut Backend>, start_utc: &QString, end_utc: &QString);
 
         /// Load the Calls history.
         #[qinvokable]
@@ -147,6 +153,7 @@ pub struct BackendRust {
     typing_text: QString,
     window_active: bool,
     calls_json: QString,
+    calendar_json: QString,
     /// Bumped on every typing change so a stale clear timer does nothing.
     typing_generation: u64,
     last_typing_sent: Option<std::time::Instant>,
@@ -790,6 +797,29 @@ impl qobject::Backend {
                     this.as_mut().set_typing_text(QString::default());
                 }
             });
+        });
+    }
+
+    pub fn load_calendar(self: Pin<&mut Self>, start_utc: &QString, end_utc: &QString) {
+        let (start, end) = (start_utc.to_string(), end_utc.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::calendar::calendar_view(&client, &start, &end).await
+            }
+            .await;
+            match result {
+                Ok(events) => {
+                    tracing::info!(events = events.len(), "calendar loaded");
+                    let text = serde_json::to_string(&events).unwrap_or_else(|_| "[]".into());
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_calendar_json(QString::from(text.as_str()))
+                    });
+                }
+                Err(e) => tracing::warn!("calendar failed: {}", short_error(&e)),
+            }
         });
     }
 

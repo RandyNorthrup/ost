@@ -1,5 +1,6 @@
 //! API client module for Microsoft Teams
 
+pub mod calendar;
 mod chat;
 pub mod client;
 mod graph;

@@ -244,9 +244,16 @@ Window {
         }
     }
 
+    CalendarView {
+        visible: rail.current === "calendar"
+        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        events: backend.calendarJson ? JSON.parse(backend.calendarJson) : []
+        onRangeChanged: (s, e) => backend.loadCalendar(s, e)
+    }
+
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar"].indexOf(rail.current) < 0
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
