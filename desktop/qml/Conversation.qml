@@ -24,13 +24,46 @@ Rectangle {
     // Newest first (the list grows upward), with Teams' grouping: a message
     // joins the previous one when the same person sent it under 5 minutes
     // later. latestMine marks your newest message for the sent tick.
+    // Teams' relative dates: the time alone today, then "Yesterday 3:05 PM",
+    // the weekday within a week, and the date beyond that.
+    function daysAgo(d) {
+        const a = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+        const now = new Date()
+        const b = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        return Math.round((b - a) / 86400000)
+    }
+    function stamp(t) {
+        const d = new Date(t), n = daysAgo(d), time = Qt.formatTime(d, "h:mm AP")
+        if (n === 0) return time
+        if (n === 1) return "Yesterday " + time
+        if (n > 1 && n < 7) return Qt.formatDate(d, "dddd") + " " + time
+        if (d.getFullYear() === new Date().getFullYear()) return Qt.formatDate(d, "M/d") + " " + time
+        return Qt.formatDate(d, "M/d/yyyy") + " " + time
+    }
+    function dayLabel(t) {
+        const d = new Date(t), n = daysAgo(d)
+        if (n === 0) return "Today"
+        if (n === 1) return "Yesterday"
+        if (n > 1 && n < 7) return Qt.formatDate(d, "dddd")
+        if (d.getFullYear() === new Date().getFullYear()) return Qt.formatDate(d, "MMMM d")
+        return Qt.formatDate(d, "MMMM d, yyyy")
+    }
+
     function annotate(msgs) {
         const out = msgs.map(m => Object.assign({}, m))
-        for (let i = 1; i < out.length; i++) {
-            const prev = out[i - 1], cur = out[i]
+        for (let i = 0; i < out.length; i++) {
+            const prev = i > 0 ? out[i - 1] : null, cur = out[i]
+            // A day divider where the day changes (not above the very first
+            // message shown), and the "Last read" line where unread begins.
+            const day = new Date(cur.time).toDateString()
+            cur.dayDivider = prev && new Date(prev.time).toDateString() !== day ? root.dayLabel(cur.time) : ""
+            cur.lastRead = cur.first_unread === true && i > 0
+            if (!prev) continue
             const gap = new Date(cur.time) - new Date(prev.time)
-            // Channel posts each get their own card and header.
+            // Channel posts each get their own card and header; a divider
+            // also starts a new group.
             cur.grouped = !root.isChannel && cur.kind !== "call" && prev.kind !== "call"
+                && !cur.dayDivider && !cur.lastRead
                 && cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
         }
         // Teams' receipts: your newest message carries the sent tick until
@@ -160,11 +193,48 @@ Rectangle {
             // Grouped messages (same sender, within minutes) drop the
             // name/time line and avatar, and sit 2 px under the previous.
             readonly property bool grouped: modelData.grouped === true
-            readonly property int topPad: grouped ? 2 : 12
+            // Day divider and "Last read" line sit above the message.
+            readonly property int dividerH: (modelData.dayDivider ? 30 : 0) + (modelData.lastRead ? 36 : 0)
+            readonly property int topPad: dividerH + (grouped ? 2 : 12)
             readonly property int bubbleY: topPad + (grouped || isCall ? 0 : meta.height + 2)
             height: isCall ? topPad + callRow.height
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height + 4 : 0)
             readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : Math.min(640, list.width * 0.7)
+
+            // Measured from Teams: the label's centre 22 px below the
+            // previous message, 28 px above the next header's.
+            Text {
+                visible: !!msg.modelData.dayDivider
+                y: 22 - height / 2
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: msg.modelData.dayDivider || ""
+                font.family: theme.font; font.pixelSize: theme.small
+                color: theme.textSecondary
+                Accessible.role: Accessible.Separator
+            }
+            Item {
+                visible: msg.modelData.lastRead === true
+                y: msg.modelData.dayDivider ? 30 : 0
+                x: 72; width: parent.width - 144; height: 36
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: 0; width: lastReadText.x - 24; height: 1; color: theme.brand
+                }
+                Text {
+                    id: lastReadText
+                    anchors.centerIn: parent
+                    text: "Last read"
+                    font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
+                    color: theme.brand
+                }
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: lastReadText.x + lastReadText.width + 24
+                    width: parent.width - x; height: 1; color: theme.brand
+                }
+                Accessible.role: Accessible.Separator
+                Accessible.name: "Last read"
+            }
 
             // Call events: an icon, the time and "Call ended 3m 9s" / "Call missed".
             Row {
@@ -180,7 +250,7 @@ Rectangle {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: Qt.formatTime(new Date(msg.modelData.time), "h:mm AP")
+                    text: root.stamp(msg.modelData.time)
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                 }
@@ -205,7 +275,7 @@ Rectangle {
                 id: meta
                 visible: !msg.grouped && !msg.isCall
                 y: msg.topPad
-                text: (msg.mine ? "" : msg.modelData.sender + "  ") + Qt.formatTime(new Date(msg.modelData.time), "h:mm AP")
+                text: (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
                     + (msg.modelData.edited ? "   Edited" : "")
                 font.family: theme.font; font.pixelSize: theme.small
                 color: theme.textSecondary
@@ -217,30 +287,42 @@ Rectangle {
                 y: msg.bubbleY
                 readonly property var imgs: msg.modelData.images || []
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
+                // A picture on its own is shown bare, without the bubble.
+                readonly property bool bare: imageOnly && !root.isChannel
+                readonly property int pad: bare ? 0 : 16
                 width: root.isChannel ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(imageOnly ? 0 : body.implicitWidth, pics.implicitWidth) + 32)
-                height: (imageOnly ? 0 : body.implicitHeight) + (imgs.length > 0 ? pics.implicitHeight + (imageOnly ? 0 : 8) : 0) + 16
+                    : Math.min(msg.maxBubble, Math.max(imageOnly ? 0 : body.implicitWidth, pics.implicitWidth) + 2 * pad)
+                height: (imageOnly ? 0 : body.implicitHeight) + (imgs.length > 0 ? pics.implicitHeight + (imageOnly ? 0 : 8) : 0) + (bare ? 0 : 16)
                 radius: theme.radius
-                color: root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.pane)
+                color: bare ? "transparent" : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.pane)
                 border.color: root.isChannel ? theme.dividerSoft : "transparent"
                 x: msg.mine ? parent.width - 72 - width : 72
                 // Inline pictures, scaled to fit the bubble (as in Teams).
                 Column {
                     id: pics
-                    x: 16; y: bubble.imageOnly ? 8 : body.y + body.implicitHeight + 8
+                    x: bubble.pad; y: bubble.bare ? 0 : bubble.imageOnly ? 8 : body.y + body.implicitHeight + 8
                     spacing: 4
                     Repeater {
                         model: bubble.imgs
-                        Image {
+                        // Rounded 4 px with a hairline border, as Teams draws them.
+                        Item {
                             required property var modelData
-                            readonly property real maxW: msg.maxBubble - 32
+                            readonly property real maxW: msg.maxBubble - 2 * bubble.pad
                             readonly property real w0: modelData.width > 0 ? modelData.width : 240
                             readonly property real h0: modelData.height > 0 ? modelData.height : 160
                             width: Math.min(maxW, w0); height: width * h0 / w0
-                            source: modelData.local_path || ""
-                            fillMode: Image.PreserveAspectFit
-                            asynchronous: true
-                            Rectangle { anchors.fill: parent; color: "transparent"; border.color: theme.dividerSoft; radius: 2 }
+                            Image {
+                                anchors.fill: parent
+                                source: parent.modelData.local_path || ""
+                                fillMode: Image.PreserveAspectFit
+                                asynchronous: true
+                            }
+                            RoundedCorners {
+                                anchors.fill: parent
+                                radius: theme.radius
+                                background: bubble.bare ? root.color : bubble.color
+                            }
+                            Rectangle { anchors.fill: parent; color: "transparent"; border.color: theme.dividerSoft; radius: theme.radius }
                             Accessible.role: Accessible.Graphic
                             Accessible.name: "Image"
                         }

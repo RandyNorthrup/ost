@@ -1,9 +1,11 @@
 ---
 id: TASK-0021
 title: Send read receipts that Teams shows as Seen
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-05T06:25:00Z'
+updated_date: '2026-11-05T16:04:00Z'
 labels:
   - chat
 dependencies: []
@@ -20,5 +22,13 @@ Findings (2026-11-05): OST sets the consumption horizon (PUT …/conversations/{
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 A message from Teams web shows as Seen in Teams after OST displays it in a focused window
-- [ ] #2 OST shows Seen on its own messages once the other person has read them
+- [x] #2 OST shows Seen on its own messages once the other person has read them
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Captured Teams desktop (WebView2 CDP on winpc): reading a chat sends exactly our consumptionhorizon PUT; the read-receipts setting is PUT /v1/users/ME/properties?name=readReceiptsEnabled {"readReceiptsEnabled":"true"}.
+- Even with the real Teams client reading as ost-test1 (setting on, Global messaging policy for both users), /threads/{id}/consumptionhorizons lists only Randy, so Randy never sees Seen. Server side, not OST; re-check later in case of propagation delay.
+- AC2 done: OST shows the Seen eye from the peer horizon (verified vs Teams desktop).
+<!-- SECTION:NOTES:END -->

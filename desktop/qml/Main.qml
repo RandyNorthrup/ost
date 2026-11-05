@@ -4,10 +4,17 @@ import com.ost.desktop
 
 Window {
     id: window
-    width: 1280
-    height: 800
-    minimumWidth: 960
-    minimumHeight: 600
+    // --size=WxH (test harness): start at that size, e.g. to line up with a
+    // reference capture of Teams.
+    readonly property var startSize: {
+        const a = Qt.application.arguments.find(x => x.startsWith("--size="))
+        const m = a ? a.slice(7).match(/^(\d+)x(\d+)$/) : null
+        return m ? [parseInt(m[1]), parseInt(m[2])] : [1280, 800]
+    }
+    width: startSize[0]
+    height: startSize[1]
+    minimumWidth: Math.min(960, startSize[0])
+    minimumHeight: Math.min(600, startSize[1])
     visible: true
     title: backend.currentChatName ? backend.currentChatName + " | OST" : "OST"
     color: theme.surface

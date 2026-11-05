@@ -56,6 +56,10 @@ pub struct MessageView {
     pub call_seconds: u64,
     /// Your message, and the other person has read up to it (Teams' "Seen").
     pub seen: bool,
+    /// The first message that arrived after you last read the chat (Teams
+    /// draws its "Last read" line above it).
+    #[serde(default)]
+    pub first_unread: bool,
 }
 
 /// Teams' reaction keys and their emoji.
@@ -157,6 +161,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         call_state: String::new(),
         call_seconds: 0,
         seen: false,
+        first_unread: false,
     };
     if kind == "Event/Call" {
         let content = s("/content");
@@ -611,6 +616,40 @@ pub fn peer_horizon(json: &str, me: &str) -> Option<u64> {
         .max()
 }
 
+/// How far you had read a chat: the message id in your consumption horizon.
+pub async fn my_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Option<u64>> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        chat_id
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Conversation reply")?;
+    Ok(v.pointer("/properties/consumptionhorizon")
+        .and_then(|h| h.as_str())
+        .and_then(|h| h.split(';').next())
+        .and_then(|h| h.parse().ok()))
+}
+
+/// Flag the first message from someone else after `horizon` (your read
+/// position when the chat was opened).
+pub fn mark_first_unread(timeline: &mut [MessageView], horizon: Option<u64>) {
+    for m in timeline.iter_mut() {
+        m.first_unread = false;
+    }
+    let Some(h) = horizon else { return };
+    if let Some(m) = timeline
+        .iter_mut()
+        .find(|m| !m.mine && m.id.parse::<u64>().is_ok_and(|id| id > h))
+    {
+        m.first_unread = true;
+    }
+}
+
 /// Mark your messages up to `horizon` as seen.
 pub fn apply_seen(timeline: &mut [MessageView], horizon: Option<u64>) {
     let Some(h) = horizon else { return };
@@ -682,6 +721,44 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn first_unread_is_the_first_message_from_others_after_the_horizon() {
+        let mk = |id: &str, mine: bool| super::MessageView {
+            id: id.into(),
+            client_message_id: String::new(),
+            kind: "message".into(),
+            sender: String::new(),
+            sender_mri: String::new(),
+            time: String::new(),
+            mine,
+            html: String::new(),
+            text: String::new(),
+            edited: false,
+            deleted: false,
+            reactions: vec![],
+            images: vec![],
+            call_state: String::new(),
+            call_seconds: 0,
+            seen: false,
+            first_unread: false,
+        };
+        let mut t = vec![
+            mk("100", false),
+            mk("200", true),
+            mk("300", false),
+            mk("400", false),
+        ];
+        super::mark_first_unread(&mut t, Some(150));
+        assert_eq!(
+            t.iter().map(|m| m.first_unread).collect::<Vec<_>>(),
+            [false, false, true, false]
+        );
+        super::mark_first_unread(&mut t, Some(400));
+        assert!(t.iter().all(|m| !m.first_unread));
+        super::mark_first_unread(&mut t, None);
+        assert!(t.iter().all(|m| !m.first_unread));
+    }
+
     #[test]
     fn peer_horizon_ignores_my_own_entry() {
         let json = r#"{"consumptionhorizons":[

@@ -5,7 +5,7 @@
 //! only ever written on the Qt thread. Lists cross to QML as JSON strings,
 //! which QML parses into its own models; this keeps the bridge small.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
@@ -327,9 +327,32 @@ fn deleted_here() -> &'static std::sync::Mutex<std::collections::HashSet<String>
     SET.get_or_init(Default::default)
 }
 
+/// Where you had read each chat up to when you opened it. Teams keeps its
+/// "Last read" line there for as long as the chat stays open, even after
+/// the chat is marked read.
+fn read_at_open() -> &'static std::sync::Mutex<HashMap<String, Option<u64>>> {
+    static MAP: OnceLock<std::sync::Mutex<HashMap<String, Option<u64>>>> = OnceLock::new();
+    MAP.get_or_init(Default::default)
+}
+
 async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(String, String)>)> {
     let client = TeamsClient::new().await?;
+    let known = read_at_open().lock().unwrap().get(&chat_id).copied();
+    let opened_at = match known {
+        Some(h) => h,
+        None => {
+            let h = api::messages::my_read_horizon(&client, &chat_id)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::debug!("read horizon unavailable: {}", short_error(&e));
+                    None
+                });
+            read_at_open().lock().unwrap().insert(chat_id.clone(), h);
+            h
+        }
+    };
     let mut timeline = api::messages::read_timeline(&client, &chat_id, MESSAGE_LIMIT).await?;
+    api::messages::mark_first_unread(&mut timeline, opened_at);
     {
         let here = deleted_here().lock().unwrap();
         timeline.retain(|m| !m.deleted || here.contains(&m.id));
@@ -1169,6 +1192,7 @@ impl qobject::Backend {
         }
         self.as_mut().set_typing_text(QString::default());
         self.as_mut().rust_mut().newest_message_id = None;
+        read_at_open().lock().unwrap().remove(&chat_id.to_string());
         self.as_mut().set_current_chat_id(chat_id.clone());
         self.as_mut().set_current_chat_name(chat_name.clone());
         self.as_mut().set_messages_json(QString::from("[]"));
