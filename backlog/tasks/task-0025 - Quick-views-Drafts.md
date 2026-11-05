@@ -1,11 +1,11 @@
 ---
 id: TASK-0025
 title: 'Quick views: Drafts'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-05T16:07:00Z'
-updated_date: '2026-11-05T17:03:00Z'
+updated_date: '2026-11-05T17:07:00Z'
 labels:
   - desktop
   - ui
@@ -21,6 +21,12 @@ Teams keeps an unsent message per chat as a draft and lists chats with drafts un
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Text typed but not sent in a chat is kept when switching chats and restored when returning
-- [ ] #2 Quick views > Drafts lists chats with drafts and opens them
+- [x] #1 Text typed but not sent in a chat is kept when switching chats and restored when returning
+- [x] #2 Quick views > Drafts lists chats with drafts and opens them
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Per-chat drafts kept locally (owner-only), restored on return, cleared on send; Quick views > Drafts view as in Teams. Tested with --draft-test (listed, restored, cleared).
+<!-- SECTION:FINAL_SUMMARY:END -->
