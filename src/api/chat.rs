@@ -238,6 +238,101 @@ pub(crate) fn html_escape(text: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// Start a group chat with `members` (MRIs such as `8:orgid:<oid>`, you
+/// included) and an optional name; returns the new chat's id. This is the
+/// chat service call Teams makes when you send the first message of a new
+/// group chat.
+pub async fn create_group_chat(
+    client: &TeamsClient,
+    members: &[String],
+    topic: &str,
+) -> Result<String> {
+    let body = group_chat_body(members, topic)?;
+    let url = format!("{}/v1/threads", client.chat_service_url());
+    let resp = client.chat_post(&url, &body).await?;
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let text = resp.text().await.unwrap_or_default();
+    thread_id_from_reply(location.as_deref(), &text)
+        .context("The chat service didn't say which chat it created")
+}
+
+fn group_chat_body(members: &[String], topic: &str) -> Result<serde_json::Value> {
+    let mut seen = std::collections::HashSet::new();
+    let members: Vec<_> = members
+        .iter()
+        .map(|m| m.trim().to_ascii_lowercase())
+        .filter(|m| m.starts_with("8:orgid:") && m.len() > 8 && seen.insert(m.clone()))
+        .map(|m| serde_json::json!({ "id": m, "role": "Admin" }))
+        .collect();
+    if members.len() < 2 {
+        anyhow::bail!("A group chat needs at least one other person");
+    }
+    let mut properties = serde_json::json!({
+        "threadType": "chat",
+        "fixedRoster": "false",
+        "uniquerosterthread": "false",
+    });
+    if !topic.trim().is_empty() {
+        properties["topic"] = serde_json::Value::String(topic.trim().to_string());
+    }
+    Ok(serde_json::json!({ "members": members, "properties": properties }))
+}
+
+/// The new thread's id, from the reply's Location header
+/// (`…/v1/threads/19:…@thread.v2`) or its JSON body (`{"id": …}`).
+fn thread_id_from_reply(location: Option<&str>, body: &str) -> Option<String> {
+    let valid = |id: &str| id.starts_with("19:") && id.contains("@thread");
+    if let Some(id) = location.and_then(|l| l.rsplit("/threads/").next()) {
+        let id = id.split(['?', '/']).next().unwrap_or_default();
+        if valid(id) {
+            return Some(id.to_string());
+        }
+    }
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let id = v.get("id")?.as_str()?;
+    valid(id).then(|| id.to_string())
+}
+
+#[cfg(test)]
+mod group_chat_tests {
+    use super::*;
+
+    #[test]
+    fn group_chats_need_two_distinct_members() {
+        let me = "8:orgid:aaaa".to_string();
+        assert!(group_chat_body(&[me.clone(), me.clone()], "").is_err());
+        let b = group_chat_body(
+            &[me.clone(), "8:orgid:BBBB".into(), "bogus".into()],
+            " Team ",
+        )
+        .unwrap();
+        assert_eq!(b["members"].as_array().unwrap().len(), 2);
+        assert_eq!(b["members"][1]["id"], "8:orgid:bbbb");
+        assert_eq!(b["properties"]["topic"], "Team");
+        assert_eq!(b["properties"]["threadType"], "chat");
+    }
+
+    #[test]
+    fn new_thread_ids_come_from_location_or_body() {
+        assert_eq!(
+            thread_id_from_reply(Some("https://x/v1/threads/19:abc@thread.v2"), "").as_deref(),
+            Some("19:abc@thread.v2")
+        );
+        assert_eq!(
+            thread_id_from_reply(None, r#"{"id":"19:def@thread.v2"}"#).as_deref(),
+            Some("19:def@thread.v2")
+        );
+        assert_eq!(
+            thread_id_from_reply(Some("https://x/v1/threads/evil"), "{}"),
+            None
+        );
+    }
+}
+
 /// Send a message using an existing client (shared helper).
 pub async fn send_message_with_client(
     client: &TeamsClient,

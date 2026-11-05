@@ -17,6 +17,8 @@ Rectangle {
     property string teamName: ""
     /// The other person's id in a 1:1 chat, for the header picture.
     property string chatPhotoId: ""
+    /// A group chat (a grey people picture, as in Teams).
+    property bool isGroup: false
     /// Your name, for the participants list.
     property string myName: ""
     /// The open chat's id; unsent text is kept per chat as a draft.
@@ -148,6 +150,7 @@ Rectangle {
             x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32
             name: root.chatName; presence: root.chatPresence
             photoId: root.chatPhotoId
+            group: root.isGroup && !root.chatPhotoId
         }
         Rectangle {
             visible: root.isChannel

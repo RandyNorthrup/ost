@@ -322,6 +322,7 @@ Rectangle {
             x: 32; y: 6
             size: 20; name: row.chat.name
             photoId: row.chat.peerMri || ""
+            group: row.chat.isGroup === true && !row.chat.peerMri
             presence: row.chat.presence || ""
         }
         Text {

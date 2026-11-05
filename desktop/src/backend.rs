@@ -216,6 +216,16 @@ pub mod qobject {
         #[qinvokable]
         fn set_setting(self: Pin<&mut Backend>, name: &QString, value: &QString);
 
+        /// Start a group chat with these people (comma-separated object
+        /// ids), optionally named, and send its first message.
+        #[qinvokable]
+        fn create_group_chat(
+            self: Pin<&mut Backend>,
+            oids: &QString,
+            topic: &QString,
+            first_message: &QString,
+        );
+
         /// Create a calendar event (UTC times); optionally a Teams meeting.
         /// Attendees: comma- or semicolon-separated e-mail addresses.
         #[qinvokable]
@@ -2050,6 +2060,63 @@ impl qobject::Backend {
                     this.as_mut().set_org_name(QString::from(org.as_str()));
                 });
             }
+        });
+    }
+
+    pub fn create_group_chat(
+        mut self: Pin<&mut Self>,
+        oids: &QString,
+        topic: &QString,
+        first_message: &QString,
+    ) {
+        let Some(me) = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.object_id())
+        else {
+            return;
+        };
+        let mut members = vec![format!("8:orgid:{me}")];
+        members.extend(
+            oids.to_string()
+                .split(',')
+                .map(str::trim)
+                .filter(|o| !o.is_empty())
+                .map(|o| format!("8:orgid:{}", o.trim_start_matches("8:orgid:"))),
+        );
+        let (topic, text) = (topic.to_string(), first_message.to_string());
+        self.as_mut().set_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let id = api::create_group_chat(&client, &members, &topic).await?;
+                if !text.trim().is_empty() {
+                    api::send_message_with_client(&client, &id, &text).await?;
+                }
+                anyhow::Ok(id)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_busy(false);
+                match result {
+                    Ok(id) => {
+                        tracing::info!("group chat created");
+                        let name = if topic.trim().is_empty() {
+                            "New group chat".to_string()
+                        } else {
+                            topic
+                        };
+                        this.as_mut().select_chat(
+                            &QString::from(id.as_str()),
+                            &QString::from(name.as_str()),
+                        );
+                        this.as_mut().reload_chats();
+                    }
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
         });
     }
 

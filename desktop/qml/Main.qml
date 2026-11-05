@@ -387,7 +387,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -625,6 +625,37 @@ Window {
         }
     }
 
+    // --group-test: pick Randy in New chat, name the group, send a first
+    // message; capture the form and the new group chat.
+    Timer {
+        running: Qt.application.arguments.indexOf("--group-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            if (step === 0) { window.composing = true; backend.searchPeople("Randy"); step = 1; return }
+            const people = backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+            if (step === 1 && people.length > 0) {
+                const p = people.find(p => (p.mail || "").toLowerCase() === "randy@scnetsolutions.com") || people[0]
+                newChat.pick(p)
+                newChat.naming = true
+                newChat.nameText = "OST group test"
+                newChat.messageText = "OST test 27: group chat started from OST"
+                step = 2
+                return
+            }
+            if (step === 2) {
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-form.png")); newChat.submit() })
+                step = 3
+                return
+            }
+            if (step === 3 && backend.currentChatId.indexOf("@thread") >= 0 && backend.messagesJson.indexOf("OST test 27") >= 0) {
+                console.warn("GROUP", backend.currentChatId.length > 0, backend.currentChatName)
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+                stop()
+            }
+        }
+    }
+
     // --search-test: type "Ran" into search and capture the suggestions.
     Timer {
         running: Qt.application.arguments.indexOf("--search-test") >= 0 && backend.signedIn
@@ -766,12 +797,18 @@ Window {
 
     property bool composing: Qt.application.arguments.indexOf("--new-chat") >= 0
     NewChat {
+        id: newChat
         visible: window.composing && rail.current === "chat"
         z: 3
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: chatList.right; right: parent.right }
         people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
         onSearch: q => backend.searchPeople(q)
-        onChosen: (oid, name) => { window.composing = false; backend.openChatWith(oid, name) }
+        onChosen: (oid, name, text) => {
+            window.composing = false
+            backend.openChatWith(oid, name)
+            if (text) backend.sendMessage(text)
+        }
+        onGroup: (oids, topic, text) => { window.composing = false; backend.createGroupChat(oids, topic, text) }
         onCancelled: window.composing = false
     }
 
@@ -902,6 +939,7 @@ Window {
         chatName: backend.currentChatName
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
         isSelf: backend.currentChatId === "48:notes"
+        isGroup: backend.currentChatId.endsWith("@thread.v2") || backend.currentChatId.indexOf("meeting_") >= 0
         teamName: {
             const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))

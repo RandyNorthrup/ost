@@ -12,6 +12,8 @@ Rectangle {
     property string photoId: ""
     /// Teams draw teams as rounded squares, people as circles.
     property bool square: false
+    /// A group chat without a picture: Teams' grey circle with people.
+    property bool group: false
     /// Teams take initials from the first two words of a team's name.
     property string initialsText: ""
     // Ask only once the name is known: Teams draws the initials picture
@@ -39,7 +41,7 @@ Rectangle {
         for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997
         return h % swatches.length
     }
-    color: pic.visible ? "transparent" : swatches[hue]
+    color: pic.visible ? "transparent" : group ? "#949494" : swatches[hue]
 
     function initials(n) {
         const words = n.trim().split(/\s+/).filter(w => w.length > 0)
@@ -84,8 +86,15 @@ Rectangle {
         }
     }
 
+    FluentIcon {
+        visible: root.group && !pic.visible
+        anchors.centerIn: parent
+        name: root.size > 24 ? "people-team-20" : "people-team-16"
+        size: Math.round(root.size * 0.55)
+        color: "white"
+    }
     Text {
-        visible: !pic.visible
+        visible: !pic.visible && !root.group
         anchors.centerIn: parent
         text: root.initialsText || root.initials(root.name)
         color: root.inks[root.hue]
