@@ -22,6 +22,7 @@ fn main() {
         "qml/SettingsView.qml",
         "qml/EmojiPicker.qml",
         "qml/PresenceBadge.qml",
+        "qml/MenuPopup.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts"] {

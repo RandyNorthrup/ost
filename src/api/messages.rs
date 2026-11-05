@@ -676,6 +676,31 @@ pub fn apply_seen(timeline: &mut [MessageView], horizon: Option<u64>) {
     }
 }
 
+/// Mark a chat read up to its newest message (for "Mark all as read").
+pub async fn mark_chat_read_to_latest(client: &TeamsClient, chat_id: &str) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        chat_id
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Conversation reply")?;
+    let last = v.get("lastMessage").context("Chat has no messages")?;
+    let id = last
+        .get("id")
+        .and_then(|i| i.as_str())
+        .context("No message id")?;
+    let client_id = last
+        .get("clientmessageid")
+        .and_then(|i| i.as_str())
+        .unwrap_or(id);
+    mark_read(client, chat_id, id, client_id).await
+}
+
 /// Whether read receipts are on (the `readReceiptsEnabled` user property;
 /// Teams treats a missing value as on).
 pub async fn read_receipts_enabled(client: &TeamsClient) -> Result<bool> {

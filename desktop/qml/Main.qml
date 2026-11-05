@@ -43,6 +43,7 @@ Window {
     Shortcut { sequence: "Ctrl+4"; onActivated: rail.current = "calls" }
     Shortcut { sequence: "Ctrl+5"; onActivated: rail.current = "onedrive" }
     Shortcut { sequence: "Ctrl+,"; onActivated: rail.current = "settings" }
+    Shortcut { sequence: "Ctrl+N"; onActivated: { rail.current = "chat"; chatList.draftsOpen = false; window.composing = true } }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
     // Pin window on top.
     property bool pinned: false
@@ -755,6 +756,7 @@ Window {
         currentId: backend.currentChatId
         onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; backend.selectChat(id, name) }
         onNewChat: { draftsOpen = false; window.composing = true }
+        onMarkAllRead: backend.markAllRead()
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
         onOpenDrafts: { window.composing = false; draftsOpen = true }
     }
@@ -785,6 +787,10 @@ Window {
         visible: rail.current === "activity"
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         items: backend.activityJson ? JSON.parse(backend.activityJson) : []
+        onMarkAllRead: {
+            for (const it of items) if (it.unread) backend.markActivityItemRead(it.id)
+            backend.markActivityRead()
+        }
         // An item opens its chat or channel beside the feed.
         onOpenItem: item => {
             selectedId = item.id

@@ -9,6 +9,16 @@ Rectangle {
     /// ActivityItem list, newest first.
     property var items: []
     property string selectedId: ""
+    // Chips and the filter box.
+    property string chip: ""
+    property string nameFilter: ""
+    property bool filtering: false
+    signal markAllRead()
+    readonly property var shown: items.filter(it =>
+        (chip !== "unread" || it.unread)
+        && (chip !== "mentions" || it.kind === "mention")
+        && (chip !== "tags" || it.kind === "tagMention")
+        && (!nameFilter || (it.title + " " + it.preview).toLowerCase().indexOf(nameFilter) >= 0))
     signal openItem(var item)
     signal callBack(var item)
     signal chatWith(var item)
@@ -31,34 +41,74 @@ Rectangle {
             model: [{ icon: "more-20", label: "More options" }, { icon: "search-20", label: "Filter" }]
             Rectangle {
                 required property var modelData
+                required property int index
                 width: 32; height: 32; radius: theme.radius
                 color: hh.hovered ? theme.hover : "transparent"
-                HoverHandler { id: hh }
+                HoverHandler { id: hh; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: {
+                        if (parent.index === 0) actMenu.open()
+                        else { root.filtering = !root.filtering; if (!root.filtering) actFilter.text = ""; else actFilter.forceActiveFocus() }
+                    }
+                }
                 FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.textStrong }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.label
+                MenuPopup {
+                    id: actMenu
+                    x: -200; y: parent.height + 4
+                    items: [{ label: "Mark all as read", icon: "checkmark-12" }]
+                    onPicked: root.markAllRead()
+                }
             }
         }
     }
     Row {
+        visible: !root.filtering
         x: 16; y: 78
         spacing: 8
         Repeater {
-            model: ["Unread", "@Mentions", "Tag mentions"]
+            model: [{ l: "Unread", k: "unread" }, { l: "@Mentions", k: "mentions" }, { l: "Tag mentions", k: "tags" }]
             delegate: Rectangle {
-                required property string modelData
+                id: chipRect
+                required property var modelData
+                readonly property bool on: root.chip === modelData.k
                 height: 24; radius: 12
                 width: chip.implicitWidth + 16
-                color: "transparent"
-                border.color: theme.stroke
+                color: on ? theme.brandTint : (ach.hovered ? theme.rowHover : "transparent")
+                border.color: on ? theme.brand : theme.stroke
+                HoverHandler { id: ach; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.chip = chipRect.on ? "" : chipRect.modelData.k }
                 Text {
                     id: chip
                     anchors.centerIn: parent
-                    text: modelData
+                    text: chipRect.modelData.l
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: theme.textStrong
+                    color: chipRect.on ? theme.brand : theme.textStrong
                 }
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: modelData.l
+                Accessible.checked: on
             }
+        }
+    }
+    Rectangle {
+        visible: root.filtering
+        x: 16; y: 74; width: parent.width - 32; height: 32; radius: theme.radius
+        color: theme.input
+        border.color: actFilter.activeFocus ? theme.brand : theme.stroke
+        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
+        TextInput {
+            id: actFilter
+            x: 32; width: parent.width - 40
+            anchors.verticalCenter: parent.verticalCenter
+            font.family: theme.font; font.pixelSize: theme.base
+            color: theme.text
+            clip: true
+            onTextChanged: root.nameFilter = text.trim().toLowerCase()
+            Keys.onEscapePressed: { text = ""; root.filtering = false }
+            Text { visible: !actFilter.text; text: "Filter"; color: theme.textTertiary; font: actFilter.font }
+            Accessible.name: "Filter activity"
         }
     }
 
@@ -75,7 +125,7 @@ Rectangle {
         width: parent.width - 1; height: parent.height - y
         clip: true
         spacing: 0
-        model: root.items
+        model: root.shown
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         delegate: Item {
@@ -200,9 +250,9 @@ Rectangle {
             Accessible.name: it.modelData.title
         }
         Text {
-            visible: root.items.length === 0
+            visible: root.shown.length === 0
             x: 20; y: 8
-            text: "Nothing new yet"
+            text: root.items.length === 0 ? "Nothing new yet" : "Nothing matches"
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.textSecondary
         }

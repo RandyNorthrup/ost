@@ -216,6 +216,10 @@ pub mod qobject {
         #[qinvokable]
         fn set_setting(self: Pin<&mut Backend>, name: &QString, value: &QString);
 
+        /// Mark every unread chat read (chat pane > More list options).
+        #[qinvokable]
+        fn mark_all_read(self: Pin<&mut Backend>);
+
         /// Set your status ("Available", "Busy", "DoNotDisturb",
         /// "BeRightBack", "Away", "Offline"), or "Reset".
         #[qinvokable]
@@ -1991,6 +1995,25 @@ impl qobject::Backend {
                     this.as_mut().set_org_name(QString::from(org.as_str()));
                 });
             }
+        });
+    }
+
+    pub fn mark_all_read(mut self: Pin<&mut Self>) {
+        let ids: Vec<String> = self.as_mut().rust_mut().unread.drain().collect();
+        self.as_mut().publish_chats();
+        if ids.is_empty() {
+            return;
+        }
+        runtime().spawn(async move {
+            let Ok(client) = TeamsClient::new().await else {
+                return;
+            };
+            for id in ids {
+                if let Err(e) = api::messages::mark_chat_read_to_latest(&client, &id).await {
+                    tracing::debug!("mark read failed: {}", short_error(&e));
+                }
+            }
+            tracing::info!("marked all read");
         });
     }
 

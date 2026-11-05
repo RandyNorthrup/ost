@@ -8,6 +8,9 @@ Rectangle {
     /// [{id, name, peerMri, text, time}], newest first.
     property var drafts: []
     signal openDraft(string id, string name)
+    property string chip: ""
+    readonly property var shown: drafts.filter(d => !chip
+        || (chip === "channels" ? d.id.endsWith("@thread.tacv2") : !d.id.endsWith("@thread.tacv2")))
     color: theme.surface
 
     Rectangle {
@@ -28,18 +31,25 @@ Rectangle {
             Repeater {
                 model: ["Channels", "Chats"]
                 delegate: Rectangle {
+                    id: dchip
                     required property string modelData
+                    readonly property bool on: root.chip === modelData.toLowerCase()
                     height: 24; radius: 12
                     width: chipText.implicitWidth + 16
-                    color: "transparent"
-                    border.color: theme.stroke
+                    color: on ? theme.brandTint : (dch.hovered ? theme.rowHover : "transparent")
+                    border.color: on ? theme.brand : theme.stroke
+                    HoverHandler { id: dch; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.chip = dchip.on ? "" : dchip.modelData.toLowerCase() }
                     Text {
                         id: chipText
                         anchors.centerIn: parent
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.small
-                        color: theme.textStrong
+                        color: dchip.on ? theme.brand : theme.textStrong
                     }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: modelData
+                    Accessible.checked: on
                 }
             }
         }
@@ -49,7 +59,7 @@ Rectangle {
             y: 106
             width: parent.width - 1; height: parent.height - y
             clip: true
-            model: root.drafts
+            model: root.shown
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             delegate: Item {

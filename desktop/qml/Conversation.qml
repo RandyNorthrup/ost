@@ -220,6 +220,13 @@ Rectangle {
             x: parent.width - 175; width: 24
             icon: "chevron-down-16"; iconSize: 16
             Accessible.name: "More call options"
+            onClicked: callMenu.open()
+            MenuPopup {
+                id: callMenu
+                x: -200; y: parent.height + 4
+                items: [{ label: "Audio call", icon: "call-20" }]
+                onPicked: root.call()
+            }
         }
         HeaderAction {
             visible: !root.isSelf
@@ -1057,7 +1064,19 @@ Rectangle {
                 Accessible.role: Accessible.Button
                 Accessible.name: "Attach files"
             }
-            FluentIcon { name: "add-20" }
+            FluentIcon {
+                name: "add-20"
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: actionsMenu.open() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Actions and apps"
+                MenuPopup {
+                    id: actionsMenu
+                    x: -width + 20; y: -height - 12
+                    items: [{ label: "Upload from this device", icon: "attach-20" }, { label: "Emoji", icon: "emoji-20" }]
+                    onPicked: i => i === 0 ? filePicker.open() : emojiPicker.open()
+                }
+            }
             Rectangle { width: 1; height: 20; color: theme.divider }
             FluentIcon {
                 readonly property bool ready: input.length > 0 || root.pendingFiles.length > 0

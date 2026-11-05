@@ -15,6 +15,7 @@ Rectangle {
     signal chatSelected(string id, string name)
     signal newChat()
     signal openDrafts()
+    signal markAllRead()
     color: theme.pane
     width: theme.listWidth
 
@@ -66,7 +67,22 @@ Rectangle {
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             color: theme.text
         }
-        HeaderButton { x: 194; y: 15; icon: "more-20"; Accessible.name: "More list options" }
+        HeaderButton {
+            id: moreList
+            x: 194; y: 15; icon: "more-20"; Accessible.name: "More list options"
+            onClicked: listMenu.open()
+            MenuPopup {
+                id: listMenu
+                y: parent.height + 4
+                items: [{ label: "Mark all as read", icon: "checkmark-12" }, { separator: true },
+                        { label: "Collapse all groups" }, { label: "Expand all groups" }]
+                onPicked: i => {
+                    if (i === 0) root.markAllRead()
+                    else if (i === 2) { root.quickOpen = false; root.favOpen = false; root.chatsOpen = false; root.teamsOpen = false }
+                    else if (i === 3) { root.quickOpen = true; root.favOpen = true; root.chatsOpen = true; root.teamsOpen = true }
+                }
+            }
+        }
         HeaderButton {
             x: 226; y: 15; icon: "search-20"; Accessible.name: "Show filter text box"
             onClicked: { root.filtering = !root.filtering; if (root.filtering) filterField.forceActiveFocus(); else { filterField.text = "" } }
@@ -76,7 +92,16 @@ Rectangle {
             Accessible.name: "New message"
             onClicked: root.newChat()
         }
-        HeaderButton { x: 284; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "New items" }
+        HeaderButton {
+            x: 284; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "New items"
+            onClicked: newMenu.open()
+            MenuPopup {
+                id: newMenu
+                x: -200; y: parent.height + 4
+                items: [{ label: "New chat", icon: "compose-20", keys: "Ctrl+N" }]
+                onPicked: root.newChat()
+            }
+        }
     }
 
     // Filter chips: 24 px pills with a 1 px neutral border, 4 px apart.
@@ -142,7 +167,26 @@ Rectangle {
             Accessible.name: "Close filter"
         }
     }
-    HeaderButton { x: 282; y: 65; width: 24; height: 24; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "More filters" }
+    HeaderButton {
+        x: 282; y: 65; width: 24; height: 24; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "More filters"
+        onClicked: filterMenu.open()
+        MenuPopup {
+            id: filterMenu
+            x: -220; y: parent.height + 4
+            items: [
+                { label: "Unread", checked: root.chipFilter === "unread" },
+                { label: "Channels", checked: root.chipFilter === "channels" },
+                { label: "Chats", checked: root.chipFilter === "chats" },
+                { separator: true },
+                { label: "Clear filters" },
+            ]
+            onPicked: i => {
+                const keys = ["unread", "channels", "chats"]
+                if (i < 3) root.chipFilter = root.chipFilter === keys[i] ? "" : keys[i]
+                else { root.chipFilter = ""; root.nameFilter = ""; root.filtering = false }
+            }
+        }
+    }
 
     ListView {
         id: list
