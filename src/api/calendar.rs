@@ -40,6 +40,60 @@ pub async fn calendar_view(
     Ok(parse_events(&v))
 }
 
+/// Create an event in your calendar (`start`/`end` in UTC,
+/// `YYYY-MM-DDTHH:MM:SSZ`); with `teams_meeting` it gets a Teams meeting
+/// link, as Teams' New meeting does. Attendees are e-mail addresses.
+pub async fn create_event(
+    client: &TeamsClient,
+    subject: &str,
+    start: &str,
+    end: &str,
+    attendees: &[String],
+    teams_meeting: bool,
+) -> Result<CalendarEvent> {
+    let body = new_event_body(subject, start, end, attendees, teams_meeting)?;
+    let v: serde_json::Value = client
+        .graph_post("/me/events", &body)
+        .await?
+        .json()
+        .await
+        .context("Create event reply")?;
+    parse_events(&serde_json::json!({ "value": [v] }))
+        .into_iter()
+        .next()
+        .context("Create event reply had no event")
+}
+
+fn new_event_body(
+    subject: &str,
+    start: &str,
+    end: &str,
+    attendees: &[String],
+    teams_meeting: bool,
+) -> Result<serde_json::Value> {
+    let bare = |t: &str| -> Result<String> {
+        let t = t.trim_end_matches('Z');
+        if t.len() < 16 || !t.as_bytes()[..4].iter().all(u8::is_ascii_digit) {
+            anyhow::bail!("Not a UTC time: {t}");
+        }
+        Ok(t.to_string())
+    };
+    let mut body = serde_json::json!({
+        "subject": if subject.trim().is_empty() { "New meeting" } else { subject.trim() },
+        "start": { "dateTime": bare(start)?, "timeZone": "UTC" },
+        "end": { "dateTime": bare(end)?, "timeZone": "UTC" },
+        "attendees": attendees.iter().filter(|a| a.contains('@')).map(|a| serde_json::json!({
+            "emailAddress": { "address": a },
+            "type": "required"
+        })).collect::<Vec<_>>(),
+    });
+    if teams_meeting {
+        body["isOnlineMeeting"] = serde_json::json!(true);
+        body["onlineMeetingProvider"] = serde_json::json!("teamsForBusiness");
+    }
+    Ok(body)
+}
+
 fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
     let s = |e: &serde_json::Value, p: &str| {
         e.pointer(p)
@@ -83,6 +137,23 @@ fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn new_event_bodies_are_teams_meetings_in_utc() {
+        let b = super::new_event_body(
+            "Sync",
+            "2026-11-06T15:00:00Z",
+            "2026-11-06T15:30:00Z",
+            &["a@example.com".into(), "nonsense".into()],
+            true,
+        )
+        .unwrap();
+        assert_eq!(b["start"]["dateTime"], "2026-11-06T15:00:00");
+        assert_eq!(b["start"]["timeZone"], "UTC");
+        assert_eq!(b["isOnlineMeeting"], true);
+        assert_eq!(b["attendees"].as_array().unwrap().len(), 1);
+        assert!(super::new_event_body("x", "garbage", "2026-11-06T15:30:00Z", &[], false).is_err());
+    }
+
     use super::*;
 
     #[test]

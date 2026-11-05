@@ -208,6 +208,30 @@ Window {
         }
     }
 
+    // --calendar-test: schedule a Teams meeting tomorrow 3 PM in the test
+    // account's calendar, then report whether it came back with a link.
+    Timer {
+        running: Qt.application.arguments.indexOf("--calendar-test") >= 0 && backend.signedIn
+        interval: 4000
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            if (step === 0) {
+                rail.current = "calendar"
+                const s = new Date(); s.setDate(s.getDate() + 1); s.setHours(15, 0, 0, 0)
+                const e = new Date(s.getTime() + 30 * 60000)
+                calendarView.start = calendarView.startFor(s)
+                backend.createEvent("OST calendar test: created from OST", s.toISOString().replace(/\.\d+Z$/, "Z"), e.toISOString().replace(/\.\d+Z$/, "Z"), "", true)
+            } else if (step === 2) {
+                const evs = JSON.parse(backend.calendarJson || "[]")
+                const ev = evs.find(e => e.subject === "OST calendar test: created from OST")
+                console.warn("CALENDAR created", !!ev, "teams link", !!(ev && ev.join_url), "status", backend.statusText)
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-cal.png")); Qt.quit() })
+            }
+            step++
+        }
+    }
+
     // --header-test: Shared tab, a placeholder tab, find, participants;
     // captures each.
     Timer {
@@ -363,7 +387,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -739,10 +763,12 @@ Window {
     }
 
     CalendarView {
+        id: calendarView
         visible: rail.current === "calendar"
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         events: backend.calendarJson ? JSON.parse(backend.calendarJson) : []
         onRangeChanged: (s, e) => backend.loadCalendar(s, e)
+        onCreateEvent: (subject, s, e, who, teams) => backend.createEvent(subject, s, e, who, teams)
     }
 
     // Apps not built yet: an honest placeholder instead of the chat.

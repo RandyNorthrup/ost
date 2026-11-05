@@ -216,6 +216,18 @@ pub mod qobject {
         #[qinvokable]
         fn set_setting(self: Pin<&mut Backend>, name: &QString, value: &QString);
 
+        /// Create a calendar event (UTC times); optionally a Teams meeting.
+        /// Attendees: comma- or semicolon-separated e-mail addresses.
+        #[qinvokable]
+        fn create_event(
+            self: Pin<&mut Backend>,
+            subject: &QString,
+            start_utc: &QString,
+            end_utc: &QString,
+            attendees: &QString,
+            teams_meeting: bool,
+        );
+
         /// Mark every unread chat read (chat pane > More list options).
         #[qinvokable]
         fn mark_all_read(self: Pin<&mut Backend>);
@@ -307,6 +319,8 @@ pub struct BackendRust {
     photos: HashMap<String, Option<String>>,
     /// Picture downloads in flight.
     photo_fetching: HashSet<String>,
+    /// The calendar range last shown (UTC start, end), for refreshing.
+    calendar_range: Option<(String, String)>,
     /// Unsent drafts by chat id: (text, unix ms when last edited).
     drafts: Option<HashMap<String, (String, u64)>>,
 }
@@ -1259,8 +1273,17 @@ impl qobject::Backend {
         });
     }
 
-    pub fn load_calendar(self: Pin<&mut Self>, start_utc: &QString, end_utc: &QString) {
+    /// Reload the calendar range last shown (after scheduling something).
+    fn refresh_calendar(mut self: Pin<&mut Self>) {
+        if let Some((a, b)) = self.rust().calendar_range.clone() {
+            self.as_mut()
+                .load_calendar(&QString::from(a.as_str()), &QString::from(b.as_str()));
+        }
+    }
+
+    pub fn load_calendar(mut self: Pin<&mut Self>, start_utc: &QString, end_utc: &QString) {
         let (start, end) = (start_utc.to_string(), end_utc.to_string());
+        self.as_mut().rust_mut().calendar_range = Some((start.clone(), end.clone()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -2027,6 +2050,55 @@ impl qobject::Backend {
                     this.as_mut().set_org_name(QString::from(org.as_str()));
                 });
             }
+        });
+    }
+
+    pub fn create_event(
+        mut self: Pin<&mut Self>,
+        subject: &QString,
+        start_utc: &QString,
+        end_utc: &QString,
+        attendees: &QString,
+        teams_meeting: bool,
+    ) {
+        let (subject, start, end) = (
+            subject.to_string(),
+            start_utc.to_string(),
+            end_utc.to_string(),
+        );
+        let attendees: Vec<String> = attendees
+            .to_string()
+            .split([',', ';'])
+            .map(|a| a.trim().to_string())
+            .filter(|a| !a.is_empty())
+            .collect();
+        self.as_mut().set_status_text(QString::from("Scheduling…"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::calendar::create_event(
+                    &client,
+                    &subject,
+                    &start,
+                    &end,
+                    &attendees,
+                    teams_meeting,
+                )
+                .await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(ev) => {
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Scheduled {}", ev.subject).as_str(),
+                    ));
+                    this.as_mut().refresh_calendar();
+                }
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
+            });
         });
     }
 
