@@ -310,7 +310,13 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
 
 async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(String, String)>)> {
     let client = TeamsClient::new().await?;
-    let timeline = api::messages::read_timeline(&client, &chat_id, MESSAGE_LIMIT).await?;
+    let mut timeline = api::messages::read_timeline(&client, &chat_id, MESSAGE_LIMIT).await?;
+    for img in timeline.iter_mut().flat_map(|m| m.images.iter_mut()) {
+        match cached_image(&client, img).await {
+            Ok(path) => img.local_path = format!("file://{}", path.display()),
+            Err(e) => tracing::warn!("image download failed: {}", short_error(&e)),
+        }
+    }
     let last_id = timeline
         .iter()
         .rev()
@@ -386,6 +392,40 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         keys(&v, "", 4, &mut shape);
     }
     tracing::info!(?shape, "call event");
+}
+
+/// Keep inline images in a private cache (~/.cache/ost/images, 0700/0600)
+/// so they are fetched once.
+async fn cached_image(
+    client: &TeamsClient,
+    img: &api::messages::InlineImage,
+) -> anyhow::Result<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .ok_or_else(|| anyhow::anyhow!("No cache directory"))?;
+    let dir = base.join("ost").join("images");
+    let path = dir.join(&img.id);
+    if path.exists() {
+        return Ok(path);
+    }
+    let bytes = api::messages::fetch_image(client, &img.url).await?;
+    std::fs::create_dir_all(&dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        std::fs::set_permissions(base.join("ost"), std::fs::Permissions::from_mode(0o700))?;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)?;
+        std::io::Write::write_all(&mut f, &bytes)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(&path, &bytes)?;
+    Ok(path)
 }
 
 impl qobject::Backend {

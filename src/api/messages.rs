@@ -17,6 +17,19 @@ pub struct Reaction {
     pub mine: bool,
 }
 
+/// An inline image in a message.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct InlineImage {
+    /// AMS object id (safe for a file name).
+    pub id: String,
+    /// The AMS view URL (needs the Skype token).
+    pub url: String,
+    pub width: u32,
+    pub height: u32,
+    /// Filled in by the client once cached locally.
+    pub local_path: String,
+}
+
 /// A timeline item.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MessageView {
@@ -36,6 +49,8 @@ pub struct MessageView {
     pub edited: bool,
     pub deleted: bool,
     pub reactions: Vec<Reaction>,
+    /// Inline images (Teams' AMS objects), in order.
+    pub images: Vec<InlineImage>,
     /// For call events: "ended" (with duration) or "missed".
     pub call_state: String,
     pub call_seconds: u64,
@@ -136,6 +151,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         edited: false,
         deleted: false,
         reactions: Vec::new(),
+        images: Vec::new(),
         call_state: String::new(),
         call_seconds: 0,
     };
@@ -175,10 +191,21 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let text = super::strip_html(&content).trim().to_string();
     // Teams shows "This message has been deleted" to its sender only; for
     // everyone else the message just disappears.
-    if (deleted && !mine) || (!deleted && text.is_empty()) {
+    let images = if deleted {
+        Vec::new()
+    } else {
+        inline_images(&content)
+    };
+    if (deleted && !mine) || (!deleted && text.is_empty() && images.is_empty()) {
         return None;
     }
+    let text = if text.is_empty() && !images.is_empty() {
+        "Image".to_string()
+    } else {
+        text
+    };
     Some(MessageView {
+        images,
         html: if deleted {
             String::new()
         } else {
@@ -283,6 +310,10 @@ pub fn sanitize_html(html: &str) -> String {
             continue;
         }
         if name == "img" {
+            // Inline pictures are shown by the client from `images`.
+            if tag.contains("AMSImage") {
+                continue;
+            }
             if let Some(alt) = attr(tag, "alt") {
                 out.push_str(&escape(&alt));
             }
@@ -319,6 +350,53 @@ pub fn sanitize_html(html: &str) -> String {
         in_link -= 1;
     }
     out
+}
+
+/// Teams inline images: `<img itemtype="…/AMSImage" src="https://*.asm.skype.com/…">`.
+/// Only AMS hosts are accepted, since fetching them sends our token.
+fn inline_images(html: &str) -> Vec<InlineImage> {
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find("<img") {
+        let end = rest[i..].find('>').map(|e| i + e).unwrap_or(rest.len());
+        let tag = &rest[i..end];
+        rest = &rest[end..];
+        if !tag.contains("AMSImage") {
+            continue;
+        }
+        let Some(url) = attr(tag, "src") else {
+            continue;
+        };
+        if !is_ams_url(&url) {
+            continue;
+        }
+        let id = attr(tag, "itemid").unwrap_or_default();
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            continue;
+        }
+        let num = |k: &str| attr(tag, k).and_then(|v| v.parse().ok()).unwrap_or(0);
+        out.push(InlineImage {
+            id,
+            url,
+            width: num("width"),
+            height: num("height"),
+            local_path: String::new(),
+        });
+    }
+    out
+}
+
+/// Whether a URL is on Teams' media store (where our token may go).
+pub fn is_ams_url(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|u| {
+        u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".asm.skype.com"))
+    })
+}
+
+/// Download an inline image (AMS object view).
+pub async fn fetch_image(client: &TeamsClient, url: &str) -> Result<Vec<u8>> {
+    anyhow::ensure!(is_ams_url(url), "Not a Teams media URL");
+    client.ams_get(url).await
 }
 
 fn safe_url(u: &str) -> bool {
@@ -596,6 +674,22 @@ mod tests {
             "8:orgid:me"
         ));
         assert!(is_unread(&conv("8:orgid:them", "200", None), "8:orgid:me"));
+    }
+
+    #[test]
+    fn inline_images_only_from_teams_media() {
+        let html = r#"<p><img src="https://us-api.asm.skype.com/v1/objects/0-wus-d5-02b/views/imgo" itemtype="http://schema.skype.com/AMSImage" width="320" height="180" alt="image" itemid="0-wus-d5-02b"></p>"#;
+        let imgs = inline_images(html);
+        assert_eq!(imgs.len(), 1);
+        assert_eq!((imgs[0].width, imgs[0].height), (320, 180));
+        assert_eq!(imgs[0].id, "0-wus-d5-02b");
+        // Dropped from the HTML (rendered separately).
+        assert_eq!(sanitize_html(html), "<p></p>");
+        let evil = html.replace("us-api.asm.skype.com", "evil.example");
+        assert!(inline_images(&evil).is_empty());
+        let traversal = html.replace(r#"itemid="0-wus-d5-02b""#, r#"itemid="../../x""#);
+        assert!(inline_images(&traversal).is_empty());
+        assert!(!is_ams_url("https://asm.skype.com.evil.example/x"));
     }
 
     #[test]

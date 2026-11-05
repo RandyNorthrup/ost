@@ -257,6 +257,20 @@ impl TeamsClient {
         check_response(resp, url).await
     }
 
+    /// GET from Teams' media store (AMS), which wants `skype_token`.
+    pub async fn ams_get(&self, url: &str) -> Result<Vec<u8>> {
+        let token = self.skype_token()?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", format!("skype_token {}", token))
+            .send()
+            .await
+            .context("Media GET failed")?;
+        let resp = check_response(resp, url).await?;
+        Ok(resp.bytes().await.context("Media body")?.to_vec())
+    }
+
     /// Any method with `Authentication: skypetoken=...` (native chat API).
     pub async fn chat_request(
         &self,

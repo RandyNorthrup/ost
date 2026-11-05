@@ -181,13 +181,38 @@ Rectangle {
                 id: bubble
                 visible: !msg.isCall
                 y: msg.bubbleY
-                width: Math.min(msg.maxBubble, body.implicitWidth + 32)
-                height: body.implicitHeight + 16
+                readonly property var imgs: msg.modelData.images || []
+                readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
+                width: Math.min(msg.maxBubble, Math.max(imageOnly ? 0 : body.implicitWidth, pics.implicitWidth) + 32)
+                height: (imageOnly ? 0 : body.implicitHeight) + (imgs.length > 0 ? pics.implicitHeight + (imageOnly ? 0 : 8) : 0) + 16
                 radius: theme.radius
                 color: msg.mine ? theme.brandTint : theme.pane
                 x: msg.mine ? parent.width - 72 - width : 72
+                // Inline pictures, scaled to fit the bubble (as in Teams).
+                Column {
+                    id: pics
+                    x: 16; y: bubble.imageOnly ? 8 : body.y + body.implicitHeight + 8
+                    spacing: 4
+                    Repeater {
+                        model: bubble.imgs
+                        Image {
+                            required property var modelData
+                            readonly property real maxW: msg.maxBubble - 32
+                            readonly property real w0: modelData.width > 0 ? modelData.width : 240
+                            readonly property real h0: modelData.height > 0 ? modelData.height : 160
+                            width: Math.min(maxW, w0); height: width * h0 / w0
+                            source: modelData.local_path || ""
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                            Rectangle { anchors.fill: parent; color: "transparent"; border.color: theme.dividerSoft; radius: 2 }
+                            Accessible.role: Accessible.Graphic
+                            Accessible.name: "Image"
+                        }
+                    }
+                }
                 Text {
                     id: body
+                    visible: !bubble.imageOnly
                     x: 16; y: 8
                     width: Math.min(msg.maxBubble - 32, implicitWidth)
                     // Sanitised by the engine to a safe subset.
