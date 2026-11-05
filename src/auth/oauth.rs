@@ -1,100 +1,62 @@
 //! OAuth2 device code flow for Azure AD, plus Skype token exchange
 
 use anyhow::{Context, Result};
-use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, DeviceAuthorizationUrl, RefreshToken, Scope,
-    StandardDeviceAuthorizationResponse, TokenResponse, TokenUrl,
-};
 
+use super::aad::{AadClient, TokenSet};
 use super::skype::exchange_skype_token;
 use super::{AuthConfig, TokenStore};
 use crate::config::Config;
 
-/// Build the OAuth2 client from an AuthConfig
-fn build_client(auth_config: &AuthConfig) -> Result<BasicClient> {
-    let auth_url = AuthUrl::new(format!(
-        "https://login.microsoftonline.com/{}/oauth2/v2.0/authorize",
-        auth_config.tenant
-    ))?;
-    let token_url = TokenUrl::new(format!(
-        "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
-        auth_config.tenant
-    ))?;
-    let device_url = DeviceAuthorizationUrl::new(format!(
-        "https://login.microsoftonline.com/{}/oauth2/v2.0/devicecode",
-        auth_config.tenant
-    ))?;
+/// Audience scopes, each paired with `offline_access` so a refresh token is kept.
+const SKYPE_SCOPE: &str = "https://api.spaces.skype.com/.default offline_access";
+const GRAPH_SCOPE: &str = "https://graph.microsoft.com/.default offline_access";
+const IC3_SCOPE: &str = "https://ic3.teams.office.com/.default offline_access";
+const RECORDER_SCOPE: &str = "4580fd1d-e5a3-4f56-9ad1-aab0e3bf8f76/.default offline_access";
 
-    Ok(BasicClient::new(
-        ClientId::new(auth_config.client_id.to_string()),
-        None,
-        auth_url,
-        Some(token_url),
+/// Build the Azure AD client from an AuthConfig
+fn build_client(auth_config: &AuthConfig) -> AadClient {
+    AadClient::new(
+        reqwest::Client::new(),
+        auth_config.client_id,
+        auth_config.tenant,
     )
-    .set_device_authorization_url(device_url))
+}
+
+/// Mint a token for another audience from the refresh token.
+async fn acquire_token(
+    client: &AadClient,
+    refresh_token_str: &str,
+    scope: &str,
+    what: &str,
+) -> Result<(String, Option<u64>)> {
+    let tokens = client
+        .refresh(refresh_token_str, scope)
+        .await
+        .with_context(|| format!("Failed to acquire {what} token"))?;
+    Ok((tokens.access_token, tokens.expires_in))
 }
 
 /// Acquire an IC3 token by exchanging the refresh token with IC3 scope.
-async fn acquire_ic3_token(
-    client: &BasicClient,
-    refresh_token_str: &str,
-) -> Result<(String, Option<u64>)> {
-    let token_response = client
-        .exchange_refresh_token(&RefreshToken::new(refresh_token_str.to_string()))
-        .add_scope(Scope::new(
-            "https://ic3.teams.office.com/.default".to_string(),
-        ))
-        .add_scope(Scope::new("offline_access".to_string()))
-        .request_async(oauth2::reqwest::async_http_client)
-        .await
-        .context("Failed to acquire IC3 token")?;
-
-    Ok((
-        token_response.access_token().secret().to_string(),
-        token_response.expires_in().map(|d| d.as_secs()),
-    ))
+async fn acquire_ic3_token(client: &AadClient, rt: &str) -> Result<(String, Option<u64>)> {
+    acquire_token(client, rt, IC3_SCOPE, "IC3").await
 }
 
 /// Acquire a recorder service AAD token (audience: 4580fd1d-e5a3-4f56-9ad1-aab0e3bf8f76).
-async fn acquire_recorder_token(
-    client: &BasicClient,
-    refresh_token_str: &str,
-) -> Result<(String, Option<u64>)> {
-    let token_response = client
-        .exchange_refresh_token(&RefreshToken::new(refresh_token_str.to_string()))
-        .add_scope(Scope::new(
-            "4580fd1d-e5a3-4f56-9ad1-aab0e3bf8f76/.default".to_string(),
-        ))
-        .add_scope(Scope::new("offline_access".to_string()))
-        .request_async(oauth2::reqwest::async_http_client)
-        .await
-        .context("Failed to acquire recorder token")?;
-
-    Ok((
-        token_response.access_token().secret().to_string(),
-        token_response.expires_in().map(|d| d.as_secs()),
-    ))
+async fn acquire_recorder_token(client: &AadClient, rt: &str) -> Result<(String, Option<u64>)> {
+    acquire_token(client, rt, RECORDER_SCOPE, "recorder").await
 }
 
 /// Acquire a Graph API token by exchanging the refresh token with Graph scope.
-async fn acquire_graph_token(
-    client: &BasicClient,
-    refresh_token_str: &str,
-) -> Result<(String, Option<u64>)> {
-    let token_response = client
-        .exchange_refresh_token(&RefreshToken::new(refresh_token_str.to_string()))
-        .add_scope(Scope::new(
-            "https://graph.microsoft.com/.default".to_string(),
-        ))
-        .add_scope(Scope::new("offline_access".to_string()))
-        .request_async(oauth2::reqwest::async_http_client)
-        .await
-        .context("Failed to acquire Graph token")?;
+async fn acquire_graph_token(client: &AadClient, rt: &str) -> Result<(String, Option<u64>)> {
+    acquire_token(client, rt, GRAPH_SCOPE, "Graph").await
+}
 
-    Ok((
-        token_response.access_token().secret().to_string(),
-        token_response.expires_in().map(|d| d.as_secs()),
-    ))
+/// Store the primary (Skype-audience) AAD tokens.
+fn store_primary(config: &mut Config, tokens: &TokenSet) {
+    config.set_access_token(tokens.access_token.clone(), tokens.expires_in);
+    if let Some(rt) = &tokens.refresh_token {
+        config.set_refresh_token(rt.clone());
+    }
 }
 
 /// Refresh the AAD access token using a stored refresh_token, then
@@ -107,32 +69,18 @@ pub async fn refresh() -> Result<bool> {
     };
 
     let auth_config = AuthConfig::default();
-    let client = build_client(&auth_config)?;
+    let client = build_client(&auth_config);
 
     tracing::info!("Refreshing AAD token...");
 
-    let token_response = client
-        .exchange_refresh_token(&RefreshToken::new(refresh_token_str))
-        .add_scope(Scope::new(
-            "https://api.spaces.skype.com/.default".to_string(),
-        ))
-        .add_scope(Scope::new("offline_access".to_string()))
-        .request_async(oauth2::reqwest::async_http_client)
+    let tokens = client
+        .refresh(&refresh_token_str, SKYPE_SCOPE)
         .await
         .context("Failed to refresh AAD token")?;
-
-    config.set_access_token(
-        token_response.access_token().secret().to_string(),
-        token_response.expires_in().map(|d| d.as_secs()),
-    );
-
-    if let Some(new_rt) = token_response.refresh_token() {
-        config.set_refresh_token(new_rt.secret().to_string());
-    }
+    store_primary(&mut config, &tokens);
 
     // Exchange for Skype token
-    let aad_token = token_response.access_token().secret();
-    match exchange_skype_token(aad_token, false).await {
+    match exchange_skype_token(&tokens.access_token, false).await {
         Ok((skype_tok, expires_in, region_gtms)) => {
             config.set_skype_token(skype_tok, expires_in);
             if let Some(gtms) = region_gtms {
@@ -237,23 +185,18 @@ pub async fn login(force: bool) -> Result<()> {
     }
 
     let auth_config = AuthConfig::default();
-    let client = build_client(&auth_config)?;
+    let client = build_client(&auth_config);
 
     // Use device code flow for CLI
     tracing::info!("Initiating device code flow...");
 
-    let device_auth_response: StandardDeviceAuthorizationResponse = client
-        .exchange_device_code()?
-        .add_scope(Scope::new(
-            "https://api.spaces.skype.com/.default".to_string(),
-        ))
-        .add_scope(Scope::new("offline_access".to_string()))
-        .request_async(oauth2::reqwest::async_http_client)
+    let device_code = client
+        .request_device_code(SKYPE_SCOPE)
         .await
         .context("Failed to request device code")?;
 
-    let verification_url = device_auth_response.verification_uri().as_str();
-    let user_code = device_auth_response.user_code().secret();
+    let verification_url = device_code.verification_uri.as_str();
+    let user_code = device_code.user_code.as_str();
 
     println!();
     println!("To sign in, visit: {}", verification_url);
@@ -263,27 +206,18 @@ pub async fn login(force: bool) -> Result<()> {
     // Poll for token
     tracing::info!("Waiting for authentication...");
 
-    let token_response = client
-        .exchange_device_access_token(&device_auth_response)
-        .request_async(oauth2::reqwest::async_http_client, tokio::time::sleep, None)
+    let tokens = client
+        .poll_device_token(&device_code)
         .await
         .context("Failed to exchange device code for token")?;
 
     // Save AAD tokens (single load-mutate-save)
     let mut config = Config::load()?;
-    config.set_access_token(
-        token_response.access_token().secret().to_string(),
-        token_response.expires_in().map(|d| d.as_secs()),
-    );
-
-    if let Some(refresh_token) = token_response.refresh_token() {
-        config.set_refresh_token(refresh_token.secret().to_string());
-    }
+    store_primary(&mut config, &tokens);
 
     // Exchange for Skype token
-    let aad_token = token_response.access_token().secret();
     let mut skype_ok = false;
-    match exchange_skype_token(aad_token, false).await {
+    match exchange_skype_token(&tokens.access_token, false).await {
         Ok((skype_tok, expires_in, region_gtms)) => {
             config.set_skype_token(skype_tok, expires_in);
             if let Some(gtms) = region_gtms {
@@ -300,8 +234,6 @@ pub async fn login(force: bool) -> Result<()> {
     // Acquire Graph API token (separate audience from Skype token)
     let mut graph_ok = false;
     if let Some(ref rt) = config.get_refresh_token() {
-        let auth_config = AuthConfig::default();
-        let client = build_client(&auth_config)?;
         match acquire_graph_token(&client, rt).await {
             Ok((graph_tok, expires_in)) => {
                 config.set_graph_token(graph_tok, expires_in);
@@ -317,8 +249,6 @@ pub async fn login(force: bool) -> Result<()> {
     // Acquire IC3 token (for Trouter WebSocket auth)
     let mut ic3_ok = false;
     if let Some(ref rt) = config.get_refresh_token() {
-        let auth_config = AuthConfig::default();
-        let client = build_client(&auth_config)?;
         match acquire_ic3_token(&client, rt).await {
             Ok((ic3_tok, expires_in)) => {
                 config.set_ic3_token(ic3_tok, expires_in);
@@ -334,8 +264,6 @@ pub async fn login(force: bool) -> Result<()> {
     // Acquire recorder service token (for call recording)
     let mut recorder_ok = false;
     if let Some(ref rt) = config.get_refresh_token() {
-        let auth_config = AuthConfig::default();
-        let client = build_client(&auth_config)?;
         match acquire_recorder_token(&client, rt).await {
             Ok((rec_tok, expires_in)) => {
                 config.set_recorder_token(rec_tok, expires_in);

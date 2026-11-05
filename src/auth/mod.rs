@@ -3,6 +3,7 @@
 //! Implements OAuth2 device code flow for Azure AD authentication,
 //! then exchanges the AAD token for a Skype token.
 
+pub mod aad;
 pub mod oauth;
 pub mod skype;
 pub mod tokens;
