@@ -12,6 +12,7 @@ Rectangle {
     property string chatPresence: ""
     property string typingText: ""
     signal typing()
+    signal react(string messageId, string key, bool on)
 
     // Newest first (the list grows upward), with Teams' grouping: a message
     // joins the previous one when the same person sent it under 5 minutes
@@ -21,10 +22,11 @@ Rectangle {
         for (let i = 1; i < out.length; i++) {
             const prev = out[i - 1], cur = out[i]
             const gap = new Date(cur.time) - new Date(prev.time)
-            cur.grouped = cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
+            cur.grouped = cur.kind !== "call" && prev.kind !== "call"
+                && cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
         }
         for (let i = out.length - 1; i >= 0; i--) {
-            if (out[i].mine) { out[i].latestMine = true; break }
+            if (out[i].mine && out[i].kind !== "call") { out[i].latestMine = true; break }
         }
         return out.reverse()
     }
@@ -114,31 +116,66 @@ Rectangle {
             id: msg
             required property var modelData
             readonly property bool mine: modelData.mine
+            readonly property bool isCall: modelData.kind === "call"
+            readonly property var reactions: modelData.reactions || []
             width: list.width
             // Grouped messages (same sender, within minutes) drop the
             // name/time line and avatar, and sit 2 px under the previous.
             readonly property bool grouped: modelData.grouped === true
             readonly property int topPad: grouped ? 2 : 12
-            readonly property int bubbleY: topPad + (grouped ? 0 : meta.height + 2)
-            height: bubbleY + bubble.height
+            readonly property int bubbleY: topPad + (grouped || isCall ? 0 : meta.height + 2)
+            height: isCall ? topPad + callRow.height
+                : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height + 4 : 0)
             readonly property int maxBubble: Math.min(640, list.width * 0.7)
 
+            // Call events: an icon, the time and "Call ended 3m 9s" / "Call missed".
+            Row {
+                id: callRow
+                visible: msg.isCall
+                x: 72; y: msg.topPad
+                height: 24; spacing: 12
+                FluentIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: msg.modelData.call_state === "missed" ? "call-missed-16" : "call-20"
+                    size: 16
+                    color: msg.modelData.call_state === "missed" ? theme.danger : theme.icon
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: Qt.formatTime(new Date(msg.modelData.time), "h:mm AP")
+                    font.family: theme.font; font.pixelSize: theme.small
+                    color: theme.textSecondary
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: {
+                        if (msg.modelData.call_state === "missed") return "Call missed"
+                        const s = msg.modelData.call_seconds, m = Math.floor(s / 60)
+                        return "Call ended  " + (m > 0 ? m + "m " : "") + (s % 60) + "s"
+                    }
+                    font.family: theme.font; font.pixelSize: theme.small
+                    color: theme.text
+                }
+            }
+
             Avatar {
-                visible: !msg.mine && !msg.grouped
+                visible: !msg.mine && !msg.grouped && !msg.isCall
                 x: 32; y: msg.bubbleY
                 size: 32; name: msg.modelData.sender
             }
             Text {
                 id: meta
-                visible: !msg.grouped
+                visible: !msg.grouped && !msg.isCall
                 y: msg.topPad
                 text: (msg.mine ? "" : msg.modelData.sender + "  ") + Qt.formatTime(new Date(msg.modelData.time), "h:mm AP")
+                    + (msg.modelData.edited ? "   Edited" : "")
                 font.family: theme.font; font.pixelSize: theme.small
                 color: theme.textSecondary
                 x: msg.mine ? parent.width - 72 - implicitWidth : 72
             }
             Rectangle {
                 id: bubble
+                visible: !msg.isCall
                 y: msg.bubbleY
                 width: Math.min(msg.maxBubble, body.implicitWidth + 32)
                 height: body.implicitHeight + 16
@@ -149,16 +186,58 @@ Rectangle {
                     id: body
                     x: 16; y: 8
                     width: Math.min(msg.maxBubble - 32, implicitWidth)
-                    text: msg.modelData.text
+                    // Sanitised by the engine to a safe subset.
+                    text: msg.modelData.deleted ? "This message has been deleted."
+                        : "<style>a { color: " + theme.brand + "; text-decoration: none; }</style>"
+                          + (msg.modelData.html || msg.modelData.text)
+                    textFormat: msg.modelData.deleted ? Text.PlainText : Text.RichText
                     wrapMode: Text.Wrap
                     font.family: theme.font; font.pixelSize: theme.base
-                    color: theme.text
-                    textFormat: Text.PlainText
+                    font.italic: msg.modelData.deleted === true
+                    color: msg.modelData.deleted ? theme.textSecondary : theme.text
+                    linkColor: theme.brand
+                    onLinkActivated: link => Qt.openUrlExternally(link)
+                    HoverHandler { cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
+                    Accessible.name: msg.modelData.text
+                }
+            }
+            // Reaction pills under the bubble, as in Teams; yours has a brand
+            // outline. Clicking one toggles your reaction.
+            Row {
+                id: reactionRow
+                visible: msg.reactions.length > 0
+                y: bubble.y + bubble.height + 4
+                x: msg.mine ? parent.width - 72 - width : 72 + 8
+                spacing: 4
+                Repeater {
+                    model: msg.reactions
+                    Rectangle {
+                        required property var modelData
+                        width: pill.implicitWidth + 16; height: 24; radius: 12
+                        color: modelData.mine ? theme.brandTint : theme.surface
+                        border.color: modelData.mine ? theme.brand : theme.stroke
+                        Row {
+                            id: pill
+                            anchors.centerIn: parent; spacing: 4
+                            Text { text: parent.parent.modelData.emoji; font.pixelSize: 14 }
+                            Text {
+                                visible: parent.parent.modelData.count > 1
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: parent.parent.modelData.count
+                                font.family: theme.font; font.pixelSize: theme.small
+                                color: theme.text
+                            }
+                        }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.react(msg.modelData.id, modelData.key, !modelData.mine) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: modelData.count + " " + modelData.key + " reaction" + (modelData.mine ? ", including yours" : "")
+                    }
                 }
             }
             // Teams shows the sent/read tick on your latest message only.
             FluentIcon {
-                visible: msg.mine && msg.modelData.latestMine === true
+                visible: msg.mine && msg.modelData.latestMine === true && !msg.isCall
                 name: "sent-12"; size: 12; color: theme.brand
                 x: bubble.x + bubble.width + 8
                 y: bubble.y + bubble.height - 14

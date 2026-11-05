@@ -236,6 +236,26 @@ impl TeamsClient {
 
         check_response(resp, url).await
     }
+
+    /// Any method with `Authentication: skypetoken=...` (native chat API).
+    pub async fn chat_request(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat {} {}", method, url);
+        let resp = self
+            .http
+            .request(method.clone(), url)
+            .header("Authentication", format!("skypetoken={}", token))
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Chat {} {} failed", method, url))?;
+        check_response(resp, url).await
+    }
 }
 
 /// Check HTTP response status code and return a clear error on failure.

@@ -108,6 +108,10 @@ pub mod qobject {
         #[qinvokable]
         fn load_calls(self: Pin<&mut Backend>);
 
+        /// Add or remove our reaction on a message in the open chat.
+        #[qinvokable]
+        fn toggle_reaction(self: Pin<&mut Backend>, message_id: &QString, key: &QString, on: bool);
+
         /// Ring (or stop ringing) for an incoming call.
         #[qinvokable]
         fn set_ringer(self: Pin<&mut Backend>, on: bool);
@@ -278,20 +282,8 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
 
 async fn load_messages(chat_id: String) -> anyhow::Result<String> {
     let client = TeamsClient::new().await?;
-    let own = client.display_name().unwrap_or_default();
-    let messages = api::read_messages_data(&client, &chat_id, MESSAGE_LIMIT).await?;
-    let list: Vec<_> = messages
-        .iter()
-        .map(|m| {
-            json!({
-                "sender": m.sender,
-                "time": m.timestamp,
-                "text": m.content,
-                "mine": !own.is_empty() && m.sender == own,
-            })
-        })
-        .collect();
-    Ok(serde_json::to_string(&list)?)
+    let timeline = api::messages::read_timeline(&client, &chat_id, MESSAGE_LIMIT).await?;
+    Ok(serde_json::to_string(&timeline)?)
 }
 
 /// A call event arrived: ring for a new invitation; anything else about
@@ -840,6 +832,28 @@ impl qobject::Backend {
                 }
                 Err(e) => tracing::warn!("call history failed: {}", short_error(&e)),
             }
+        });
+    }
+
+    pub fn toggle_reaction(self: Pin<&mut Self>, message_id: &QString, key: &QString, on: bool) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let (message_id, key) = (message_id.to_string(), key.to_string());
+        if chat_id.is_empty() || message_id.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::messages::set_reaction(&client, &chat_id, &message_id, &key, on).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().reload_messages(),
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
+            });
         });
     }
 

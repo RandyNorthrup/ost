@@ -33,7 +33,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -179,6 +179,31 @@ Window {
     }
     property bool outStarted: false
 
+    // --react-test: open the first chat, add a heart to the newest message
+    // from someone else, capture once it shows.
+    readonly property bool reactTest: Qt.application.arguments.indexOf("--react-test") >= 0
+    property bool reacted: false
+    Timer {
+        running: window.reactTest && backend.signedIn
+        interval: 3000; repeat: true
+        onTriggered: {
+            const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+            if (!backend.currentChatId && chats.length > 0) { backend.selectChat(chats[0].id, chats[0].name); return }
+            const msgs = backend.messagesJson ? JSON.parse(backend.messagesJson) : []
+            const target = msgs.filter(m => !m.mine && m.kind === "message").pop()
+            if (!target) return
+            const heart = (target.reactions || []).find(r => r.key === "heart" && r.mine)
+            if (heart) {
+                console.warn("REACT-SHOWN", target.text)
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+                stop()
+            } else if (!window.reacted) {
+                window.reacted = true
+                backend.toggleReaction(target.id, "heart", true)
+            }
+        }
+    }
+
     // --typing-test: open the first chat, send typing for 12 s, then
     // capture the first incoming typing indicator.
     readonly property bool typingTest: Qt.application.arguments.indexOf("--typing-test") >= 0
@@ -284,6 +309,7 @@ Window {
         onSend: text => backend.sendMessage(text)
         onCall: backend.startCall()
         onTyping: backend.userTyping()
+        onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         typingText: backend.typingText
     }
 
