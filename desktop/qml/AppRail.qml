@@ -5,9 +5,13 @@ import QtQuick
 Rectangle {
     id: root
     property string current: "chat"
+    /// "Collapse app bar": the rail folds away, as in Teams.
+    property bool collapsed: false
     property int unreadChats: 0
     color: theme.chrome
-    width: theme.railWidth
+    width: collapsed ? 0 : theme.railWidth
+    visible: !collapsed
+    clip: true
 
     readonly property var apps: [
         { key: "activity", icon: "alert", label: "Activity" },

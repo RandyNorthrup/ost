@@ -51,6 +51,9 @@ pub mod qobject {
         /// Set by QML: whether the main window has focus (Teams only
         /// notifies for the open chat when it does not).
         #[qproperty(bool, window_active)]
+        /// OST_SYSTEM_FRAME=1 keeps the desktop's own window frame instead
+        /// of drawing Teams' title bar buttons.
+        #[qproperty(bool, system_frame)]
         /// Calls history as JSON (newest first).
         #[qproperty(QString, calls_json)]
         /// Calendar events for the shown range, as JSON.
@@ -197,6 +200,7 @@ pub struct BackendRust {
     call_has_audio: bool,
     typing_text: QString,
     window_active: bool,
+    system_frame: bool,
     calls_json: QString,
     calendar_json: QString,
     people_json: QString,
@@ -602,6 +606,8 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
 
 impl qobject::Backend {
     pub fn start(mut self: Pin<&mut Self>) {
+        let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
+        self.as_mut().set_system_frame(frame);
         let stored = teams_cli::auth::has_credentials();
         self.as_mut().set_has_credentials(stored);
         if stored {

@@ -1,6 +1,9 @@
 import QtQuick
+import QtQuick.Window
 
-// Top bar: app launcher, sidebar toggle, search, more, profile.
+// Top bar, laid out as Teams desktop's (measured from its DOM at 1x):
+// sidebar toggle, back/forward, search, settings-and-more, profile, and the
+// window buttons. Empty areas drag the window; double-click maximises.
 Rectangle {
     id: root
     property string userName
@@ -8,10 +11,18 @@ Rectangle {
     /// directory (set by Main).
     property var chats: []
     property var people: []
+    /// History navigation (Main keeps the stack).
+    property bool canGoBack: false
+    property bool canGoForward: false
+    /// Draw our own minimise/maximise/close (frameless window).
+    property bool windowButtons: true
     signal signOut()
     signal searchPeople(string query)
     signal openChat(string id, string name)
     signal openPerson(string oid, string name)
+    signal goBack()
+    signal goForward()
+    signal toggleRail()
     function focusSearch() { field.forceActiveFocus() }
     // Test hook: type into search and keep the suggestions open offscreen,
     // where the window never has focus.
@@ -20,28 +31,64 @@ Rectangle {
     color: theme.chrome
     height: theme.titleBarHeight
 
+    // Drag the window by its title bar, as on every desktop app.
+    DragHandler {
+        target: null
+        grabPermissions: PointerHandler.CanTakeOverFromAnything
+        onActiveChanged: if (active && root.Window.window) root.Window.window.startSystemMove()
+    }
+    TapHandler {
+        onDoubleTapped: {
+            const w = root.Window.window
+            if (w) w.visibility = w.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
+        }
+    }
+    // Hairline under the bar (rgba(0,0,0,0.06) on the chrome colour).
+    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#DDDDDD" }
+
     component BarButton: Rectangle {
+        id: btn
         property alias icon: glyph.name
+        property bool enabled: true
+        signal clicked()
         width: 32; height: 32; radius: theme.radius
-        color: hover.hovered ? theme.hover : "transparent"
+        color: hover.hovered && btn.enabled ? theme.hover : "transparent"
         HoverHandler { id: hover }
-        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20 }
+        TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }
+        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20; color: btn.enabled ? theme.icon : "#BDBDBD" }
     }
 
-    BarButton { icon: "waffle-20"; x: 18; anchors.verticalCenter: parent.verticalCenter }
-    BarButton { icon: "panel-left-20"; x: 70; anchors.verticalCenter: parent.verticalCenter }
+    BarButton {
+        icon: "panel-left-text-20-filled"; x: 18; anchors.verticalCenter: parent.verticalCenter
+        Accessible.name: "Collapse app bar"
+        onClicked: root.toggleRail()
+    }
+    BarButton {
+        icon: "chevron-left-20"; x: search.x - 70; anchors.verticalCenter: parent.verticalCenter
+        enabled: root.canGoBack
+        Accessible.name: "Back"
+        onClicked: root.goBack()
+    }
+    BarButton {
+        icon: "chevron-right-20"; x: search.x - 38; anchors.verticalCenter: parent.verticalCenter
+        enabled: root.canGoForward
+        Accessible.name: "Forward"
+        onClicked: root.goForward()
+    }
 
     Rectangle {
         id: search
-        x: 327; width: Math.min(623, parent.width - 327 - 140)
+        // Teams: 624 x 32 at x 326.5, shrinking on narrow windows.
+        x: 327; width: Math.max(200, Math.min(624, parent.width - 327 - 330))
         height: 32; radius: theme.radius
         anchors.verticalCenter: parent.verticalCenter
         color: theme.searchFill
-        border.color: field.activeFocus ? theme.brand : theme.dividerSoft
-        FluentIcon { name: "search-20"; size: 16; x: 28; anchors.verticalCenter: parent.verticalCenter; color: theme.textSecondary }
+        border.color: field.activeFocus ? theme.brand : "transparent"
+        FluentIcon { name: "search-20"; size: 16; x: 25; anchors.verticalCenter: parent.verticalCenter; color: theme.icon }
         TextInput {
             id: field
-            x: 59; width: parent.width - 70
+            // The input starts at 51 px with 8.5 px of padding, as in Teams.
+            x: 60; width: parent.width - 70
             anchors.verticalCenter: parent.verticalCenter
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.text
@@ -53,11 +100,12 @@ Rectangle {
                 if (first) suggestions.choose(first)
             }
             Text {
-                visible: !field.text && !field.activeFocus
-                text: "Press Ctrl+Alt+G to go right to a chat or channel"
-                color: theme.textSecondary
+                visible: !field.text
+                text: field.activeFocus ? "Press Ctrl+G to go right to a chat or channel" : "Search (Ctrl+E)"
+                color: theme.textTertiary
                 font: field.font
             }
+            Accessible.name: "Search"
         }
     }
 
@@ -118,21 +166,96 @@ Rectangle {
         }
     }
 
-    BarButton { icon: "more-20"; anchors.right: avatar.left; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter }
-    Avatar {
-        id: avatar
-        name: root.userName || "?"
-        photoId: "me"
-        size: 28
-        anchors.right: parent.right; anchors.rightMargin: 16
+    BarButton {
+        icon: "more-20"
+        anchors.right: profile.left; anchors.rightMargin: 5
         anchors.verticalCenter: parent.verticalCenter
-        Rectangle {
-            width: 10; height: 10; radius: 5
-            color: "#6BB700"; border.color: theme.chrome; border.width: 2
-            anchors.right: parent.right; anchors.bottom: parent.bottom
-            anchors.rightMargin: -2; anchors.bottomMargin: -2
-        }
+        Accessible.name: "Settings and more"
+    }
+    // Profile: a 40 px round button around the 28 px avatar.
+    Rectangle {
+        id: profile
+        width: 40; height: 40; radius: 20
+        anchors.right: controls.left; anchors.rightMargin: root.windowButtons ? 8 : 0
+        anchors.verticalCenter: parent.verticalCenter
+        color: profileHover.hovered ? theme.hover : "transparent"
+        HoverHandler { id: profileHover }
         TapHandler { onTapped: menu.visible = !menu.visible }
+        Accessible.name: "Your profile"
+        Avatar {
+            id: avatar
+            anchors.centerIn: parent
+            name: root.userName || "?"
+            photoId: "me"
+            size: 28
+            presence: "Available"
+        }
+    }
+
+    // Window buttons: 44 px columns (measured), glyphs drawn like the
+    // system ones.
+    Row {
+        id: controls
+        anchors.right: parent.right
+        height: parent.height
+        width: root.windowButtons ? 132 : 6
+        visible: root.windowButtons
+        component CaptionButton: Rectangle {
+            id: cap
+            property string kind
+            property bool danger: false
+            signal clicked()
+            width: 44; height: parent.height
+            color: capHover.hovered ? (danger ? "#C42B1C" : theme.hover) : "transparent"
+            HoverHandler { id: capHover }
+            TapHandler { onTapped: cap.clicked() }
+            Canvas {
+                id: glyphs
+                anchors.centerIn: parent
+                width: 12; height: 12
+                property color ink: capHover.hovered && cap.danger ? "white" : theme.icon
+                property bool maximized: root.Window.window ? root.Window.window.visibility === Window.Maximized : false
+                onInkChanged: requestPaint()
+                onMaximizedChanged: requestPaint()
+                onPaint: {
+                    const c = getContext("2d")
+                    c.reset()
+                    c.strokeStyle = ink
+                    c.lineWidth = 1
+                    c.beginPath()
+                    if (cap.kind === "min") {
+                        c.moveTo(1, 6.5); c.lineTo(11, 6.5)
+                    } else if (cap.kind === "max") {
+                        if (maximized) {
+                            c.roundedRect(1.5, 3.5, 7, 7, 1.5, 1.5)
+                            c.moveTo(3.5, 1.5); c.lineTo(9, 1.5)
+                            c.arcTo(10.5, 1.5, 10.5, 3, 1.5); c.lineTo(10.5, 8.5)
+                        } else {
+                            c.roundedRect(1.5, 1.5, 9, 9, 1.5, 1.5)
+                        }
+                    } else {
+                        c.moveTo(1.5, 1.5); c.lineTo(10.5, 10.5)
+                        c.moveTo(10.5, 1.5); c.lineTo(1.5, 10.5)
+                    }
+                    c.stroke()
+                }
+            }
+        }
+        CaptionButton {
+            kind: "min"; Accessible.name: "Minimize"
+            onClicked: if (root.Window.window) root.Window.window.showMinimized()
+        }
+        CaptionButton {
+            kind: "max"; Accessible.name: "Maximize"
+            onClicked: {
+                const w = root.Window.window
+                if (w) w.visibility = w.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
+            }
+        }
+        CaptionButton {
+            kind: "close"; danger: true; Accessible.name: "Close"
+            onClicked: if (root.Window.window) root.Window.window.close()
+        }
     }
 
     // Account flyout, as in Teams: name, status, and sign out.

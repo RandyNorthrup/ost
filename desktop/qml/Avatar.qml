@@ -94,31 +94,38 @@ Rectangle {
         font.weight: Font.DemiBold
     }
 
-    // Presence badge, bottom right, with the surface-coloured ring Teams uses.
-    Rectangle {
-        readonly property int d: root.size <= 24 ? 8 : (root.size <= 40 ? 10 : Math.round(root.size * 0.22))
+    // Presence badge, as Fluent draws it in Teams: the presence icon at the
+    // badge size, flush with the avatar's bottom-right corner, on a white
+    // disc (which shows through the icon's glyph).
+    Item {
+        id: badge
+        readonly property int total: root.size >= 96 ? 28 : root.size >= 64 ? 20 : root.size >= 56 ? 16
+            : root.size >= 40 ? 12 : root.size >= 28 ? 10 : 6
         readonly property string p: root.presence.toLowerCase()
+        readonly property string kind: (p === "available" || p === "availableidle") ? "available"
+            : (p === "away" || p === "berightback") ? "away"
+            : (p === "busy" || p === "busyidle" || p === "inacall" || p === "inameeting" || p === "inaconferencecall") ? "busy"
+            : (p === "donotdisturb" || p === "presenting" || p === "focusing" || p === "urgentinterruptionsonly") ? "dnd"
+            : p === "outofoffice" ? "oof"
+            : p === "offline" ? "offline"
+            : "unknown"
+        // Fluent's palette for each state.
+        readonly property color ink: kind === "available" ? "#13A10E" : kind === "away" ? "#EAA300"
+            : (kind === "busy" || kind === "dnd") ? "#D13438" : kind === "oof" ? "#C239B3" : "#616161"
         visible: root.presence.length > 0
-        width: d + 2; height: d + 2; radius: width / 2
-        x: root.width - d + 1; y: root.height - d + 1
-        color: theme.surface
+        width: total; height: total
+        x: root.width - total; y: root.height - total
         Rectangle {
             anchors.centerIn: parent
-            width: parent.d; height: parent.d; radius: width / 2
-            readonly property bool offline: parent.p === "offline" || parent.p === "presenceunknown" || parent.p === ""
-            color: offline ? "transparent"
-                : parent.p === "available" ? "#13A10E"
-                : (parent.p === "busy" || parent.p === "donotdisturb") ? "#C4314B"
-                : "#EAA300"
-            border.width: offline ? 1.5 : 0
-            border.color: "#8A8886"
-            // Do not disturb: a white bar across the red dot.
-            Rectangle {
-                visible: parent.parent.p === "donotdisturb"
-                anchors.centerIn: parent
-                width: parent.width * 0.55; height: Math.max(1, parent.height * 0.18)
-                color: "white"
-            }
+            width: badge.total; height: width; radius: width / 2
+            color: theme.surface
         }
+        FluentIcon {
+            anchors.fill: parent
+            size: badge.total
+            name: "presence-" + badge.kind + "-" + (badge.total <= 10 ? 10 : badge.total <= 12 ? 12 : badge.total <= 16 ? 16 : 20)
+            color: badge.ink
+        }
+        Accessible.name: root.presence
     }
 }

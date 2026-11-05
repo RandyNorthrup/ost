@@ -1,9 +1,11 @@
 ---
 id: TASK-0026
 title: Title bar like Teams desktop
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-05T16:07:00Z'
+updated_date: '2026-11-05T16:43:00Z'
 labels:
   - desktop
   - ui

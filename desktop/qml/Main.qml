@@ -18,9 +18,85 @@ Window {
     visible: true
     title: backend.currentChatName ? backend.currentChatName + " | OST" : "OST"
     color: theme.surface
+    // Teams desktop draws its own title bar and window buttons.
+    flags: backend.systemFrame ? Qt.Window : (Qt.Window | Qt.FramelessWindowHint)
 
     Theme { id: theme }
-    Shortcut { sequence: "Ctrl+Alt+G"; onActivated: titleBar.focusSearch() }
+    // Teams desktop's shortcuts: Ctrl+E search, Ctrl+G go to a chat.
+    Shortcut { sequence: "Ctrl+E"; onActivated: titleBar.focusSearch() }
+    Shortcut { sequence: "Ctrl+G"; onActivated: titleBar.focusSearch() }
+    Shortcut { sequence: "Alt+Left"; onActivated: window.goBack() }
+    Shortcut { sequence: "Alt+Right"; onActivated: window.goForward() }
+
+    // Back/forward through the apps and chats you visited, as Teams does.
+    property var navStack: []
+    property int navIndex: -1
+    property bool navApplying: false
+    function navCurrent() {
+        return { view: rail.current, chatId: backend.currentChatId, chatName: backend.currentChatName }
+    }
+    function navRecord() {
+        if (navApplying) return
+        const cur = navCurrent()
+        const top = navIndex >= 0 ? navStack[navIndex] : null
+        if (top && top.view === cur.view && (cur.view !== "chat" || top.chatId === cur.chatId)) return
+        const stack = navStack.slice(0, navIndex + 1)
+        stack.push(cur)
+        navStack = stack.slice(-50)
+        navIndex = navStack.length - 1
+    }
+    function navApply(i) {
+        const e = navStack[i]
+        if (!e) return
+        navApplying = true
+        navIndex = i
+        rail.current = e.view
+        if (e.view === "chat" && e.chatId && e.chatId !== backend.currentChatId) backend.selectChat(e.chatId, e.chatName)
+        navApplying = false
+    }
+    function goBack() { if (navIndex > 0) navApply(navIndex - 1) }
+    function goForward() { if (navIndex < navStack.length - 1) navApply(navIndex + 1) }
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() { window.navRecord() }
+    }
+
+    // --nav-test: visit calls, calendar, then go back twice and forward
+    // once, logging each step (checks the history stack).
+    Timer {
+        running: Qt.application.arguments.indexOf("--nav-test") >= 0 && backend.signedIn
+        interval: 1500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const steps = [
+                () => rail.current = "calls",
+                () => rail.current = "calendar",
+                () => window.goBack(),
+                () => window.goBack(),
+                () => window.goForward(),
+            ]
+            if (step < steps.length) { steps[step](); console.warn("NAV", step, rail.current, window.navIndex, window.navStack.length, titleBar.canGoBack, titleBar.canGoForward); step++ }
+            else Qt.quit()
+        }
+    }
+
+    // Resize from the edges when we draw our own frame.
+    component Edge: MouseArea {
+        property int edges
+        enabled: !backend.systemFrame && window.visibility !== Window.Maximized
+        z: 1000
+        hoverEnabled: true
+        onPressed: window.startSystemResize(edges)
+    }
+    Edge { edges: Qt.LeftEdge; x: 0; y: 6; width: 4; height: parent.height - 12; cursorShape: Qt.SizeHorCursor }
+    Edge { edges: Qt.RightEdge; x: parent.width - 4; y: 6; width: 4; height: parent.height - 12; cursorShape: Qt.SizeHorCursor }
+    Edge { edges: Qt.TopEdge; x: 6; y: 0; width: parent.width - 12; height: 4; cursorShape: Qt.SizeVerCursor }
+    Edge { edges: Qt.BottomEdge; x: 6; y: parent.height - 4; width: parent.width - 12; height: 4; cursorShape: Qt.SizeVerCursor }
+    Edge { edges: Qt.TopEdge | Qt.LeftEdge; x: 0; y: 0; width: 6; height: 6; cursorShape: Qt.SizeFDiagCursor }
+    Edge { edges: Qt.TopEdge | Qt.RightEdge; x: parent.width - 6; y: 0; width: 6; height: 6; cursorShape: Qt.SizeBDiagCursor }
+    Edge { edges: Qt.BottomEdge | Qt.LeftEdge; x: 0; y: parent.height - 6; width: 6; height: 6; cursorShape: Qt.SizeBDiagCursor }
+    Edge { edges: Qt.BottomEdge | Qt.RightEdge; x: parent.width - 6; y: parent.height - 6; width: 6; height: 6; cursorShape: Qt.SizeFDiagCursor }
     FontLoader { source: "../assets/fonts/selawk.ttf" }
     FontLoader { source: "../assets/fonts/selawksb.ttf" }
     FontLoader { source: "../assets/fonts/selawkb.ttf" }
@@ -336,6 +412,12 @@ Window {
         onSearchPeople: q => backend.searchPeople(q)
         onOpenChat: (id, name) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, name) }
         onOpenPerson: (oid, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(oid, name) }
+        canGoBack: window.navIndex > 0
+        canGoForward: window.navIndex < window.navStack.length - 1
+        onGoBack: window.goBack()
+        onGoForward: window.goForward()
+        onToggleRail: rail.collapsed = !rail.collapsed
+        windowButtons: !backend.systemFrame
     }
 
     SignIn {
@@ -357,8 +439,12 @@ Window {
         Component.onCompleted: {
             const v = Qt.application.arguments.find(a => a.startsWith("--view="))
             if (v) current = v.substring(7)
+            window.navRecord()
         }
-        onCurrentChanged: if (current === "calls") backend.loadCalls()
+        onCurrentChanged: {
+            window.navRecord()
+            if (current === "calls") backend.loadCalls()
+        }
     }
 
     property bool composing: Qt.application.arguments.indexOf("--new-chat") >= 0
