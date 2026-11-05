@@ -1730,9 +1730,10 @@ impl qobject::Backend {
                         .count() as i32;
                     let json = serde_json::to_string(&items).unwrap_or_else(|_| "[]".into());
                     let _ = qt.queue(move |mut this| {
+                        // Count first, so anything reacting to the feed sees it.
+                        this.as_mut().set_activity_unread(unread);
                         this.as_mut()
                             .set_activity_json(QString::from(json.as_str()));
-                        this.as_mut().set_activity_unread(unread);
                     });
                 }
                 Err(e) => tracing::warn!("activity failed: {}", short_error(&e)),
