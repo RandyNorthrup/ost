@@ -54,6 +54,8 @@ pub mod qobject {
         /// OST_SYSTEM_FRAME=1 keeps the desktop's own window frame instead
         /// of drawing Teams' title bar buttons.
         #[qproperty(bool, system_frame)]
+        /// Unsent drafts, newest first: [{id, name, text, time, peerMri}].
+        #[qproperty(QString, drafts_json)]
         /// Calls history as JSON (newest first).
         #[qproperty(QString, calls_json)]
         /// Calendar events for the shown range, as JSON.
@@ -174,6 +176,14 @@ pub mod qobject {
         /// a download when needed and signals photo_ready when it lands.
         #[qinvokable]
         fn photo_for(self: Pin<&mut Backend>, id: &QString, name: &QString) -> QString;
+
+        /// Keep (or, when empty, drop) the unsent text for a chat.
+        #[qinvokable]
+        fn set_draft(self: Pin<&mut Backend>, chat_id: &QString, text: &QString);
+
+        /// The unsent text kept for a chat, or "".
+        #[qinvokable]
+        fn draft_for(self: Pin<&mut Backend>, chat_id: &QString) -> QString;
     }
 
     impl cxx_qt::Threading for Backend {}
@@ -201,6 +211,7 @@ pub struct BackendRust {
     typing_text: QString,
     window_active: bool,
     system_frame: bool,
+    drafts_json: QString,
     calls_json: QString,
     calendar_json: QString,
     people_json: QString,
@@ -225,6 +236,8 @@ pub struct BackendRust {
     photos: HashMap<String, Option<String>>,
     /// Picture downloads in flight.
     photo_fetching: HashSet<String>,
+    /// Unsent drafts by chat id: (text, unix ms when last edited).
+    drafts: Option<HashMap<String, (String, u64)>>,
 }
 
 /// The call this app is ringing for or in. Lives on the engine side so the
@@ -316,7 +329,22 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let my_oid = client.object_id().unwrap_or_default();
     let me = api::whoami_data(&client).await?;
     let chats = api::list_chats_data(&client, CHAT_LIMIT).await?;
-    let list: Vec<_> = chats
+    let favorites = api::messages::favorites(&client).await.unwrap_or_else(|e| {
+        tracing::debug!("favorites unavailable: {}", short_error(&e));
+        Vec::new()
+    });
+    let fav_rank = |id: &str| favorites.iter().position(|f| f == id);
+    // Your own chat (Teams' "notes" thread), listed as "<you> (You)".
+    let mut list: Vec<serde_json::Value> = vec![json!({
+        "id": "48:notes",
+        "name": format!("{} (You)", me.display_name),
+        "isGroup": false,
+        "isSelf": true,
+        "peerMri": format!("8:orgid:{my_oid}"),
+        "favorite": fav_rank("48:notes").is_some(),
+        "favoriteRank": fav_rank("48:notes"),
+    })];
+    let rest: Vec<_> = chats
         .iter()
         // 48:… threads are system streams (call logs, notifications,
         // mentions), not chats; Teams does not list them.
@@ -333,9 +361,12 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "sender": c.last_message_sender,
                 "preview": c.last_message_preview,
                 "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
+                "favorite": fav_rank(&c.id).is_some(),
+                "favoriteRank": fav_rank(&c.id),
             })
         })
         .collect();
+    list.extend(rest);
     Ok((me.display_name, list))
 }
 
@@ -501,6 +532,39 @@ async fn cached_image(
     Ok(path)
 }
 
+/// Where drafts are kept: $XDG_STATE_HOME/ost/drafts.json (owner-only).
+/// Teams keeps drafts on the device too; they are not sent anywhere.
+fn drafts_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })
+        .map(|b| b.join("ost").join("drafts.json"))
+}
+
+fn load_drafts() -> HashMap<String, (String, u64)> {
+    drafts_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn save_drafts(drafts: &HashMap<String, (String, u64)>) -> anyhow::Result<()> {
+    let path = drafts_path().ok_or_else(|| anyhow::anyhow!("No state directory"))?;
+    let dir = path.parent().expect("drafts file has a directory");
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let tmp = path.with_extension("tmp");
+    write_private(&tmp, serde_json::to_string(drafts)?.as_bytes())?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
 /// How long a downloaded picture (or "has none") is trusted before it is
 /// fetched again.
 const PHOTO_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
@@ -608,6 +672,7 @@ impl qobject::Backend {
     pub fn start(mut self: Pin<&mut Self>) {
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
         self.as_mut().set_system_frame(frame);
+        self.as_mut().publish_drafts();
         let stored = teams_cli::auth::has_credentials();
         self.as_mut().set_has_credentials(stored);
         if stored {
@@ -696,6 +761,8 @@ impl qobject::Backend {
             .collect();
         let text = serde_json::to_string(&list).unwrap_or_else(|_| "[]".into());
         self.as_mut().set_chats_json(QString::from(text.as_str()));
+        // Draft names come from the chat list.
+        self.as_mut().publish_drafts();
     }
 
     /// Connect to Trouter once per process and react to pushed chat events:
@@ -1337,6 +1404,7 @@ impl qobject::Backend {
         }
         self.as_mut().set_busy(true);
         let qt = self.qt_thread();
+        let sent_chat = chat_id.clone();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -1346,7 +1414,12 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_busy(false);
                 match result {
-                    Ok(()) => this.as_mut().reload_messages(),
+                    Ok(()) => {
+                        // Sent: the draft for this chat is done.
+                        this.as_mut()
+                            .set_draft(&QString::from(sent_chat.as_str()), &QString::default());
+                        this.as_mut().reload_messages()
+                    }
                     Err(e) => this
                         .as_mut()
                         .set_status_text(QString::from(short_error(&e).as_str())),
@@ -1533,6 +1606,78 @@ impl qobject::Backend {
             });
         }
         QString::from(cached.flatten().as_deref().unwrap_or(""))
+    }
+
+    fn drafts_mut(self: Pin<&mut Self>) -> &mut HashMap<String, (String, u64)> {
+        self.rust_mut()
+            .get_mut()
+            .drafts
+            .get_or_insert_with(load_drafts)
+    }
+
+    pub fn set_draft(mut self: Pin<&mut Self>, chat_id: &QString, text: &QString) {
+        let id = chat_id.to_string();
+        let text = text.to_string();
+        if id.is_empty() {
+            return;
+        }
+        let drafts = self.as_mut().drafts_mut();
+        let changed = if text.trim().is_empty() {
+            drafts.remove(&id).is_some()
+        } else if drafts.get(&id).map(|d| &d.0) != Some(&text) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or_default();
+            drafts.insert(id, (text, now));
+            true
+        } else {
+            false
+        };
+        if changed {
+            if let Err(e) = save_drafts(self.as_mut().drafts_mut()) {
+                tracing::warn!("saving drafts failed: {}", short_error(&e));
+            }
+            self.as_mut().publish_drafts();
+        }
+    }
+
+    pub fn draft_for(mut self: Pin<&mut Self>, chat_id: &QString) -> QString {
+        let id = chat_id.to_string();
+        let text = self
+            .as_mut()
+            .drafts_mut()
+            .get(&id)
+            .map(|d| d.0.clone())
+            .unwrap_or_default();
+        QString::from(text.as_str())
+    }
+
+    /// The drafts list for Quick views > Drafts, newest first.
+    fn publish_drafts(mut self: Pin<&mut Self>) {
+        let mut list: Vec<(String, String, u64)> = self
+            .as_mut()
+            .drafts_mut()
+            .iter()
+            .map(|(id, (text, t))| (id.clone(), text.clone(), *t))
+            .collect();
+        list.sort_by(|a, b| b.2.cmp(&a.2));
+        let chats = &self.rust().chats;
+        let json: Vec<serde_json::Value> = list
+            .into_iter()
+            .map(|(id, text, t)| {
+                let chat = chats.iter().find(|c| c["id"].as_str() == Some(id.as_str()));
+                json!({
+                    "id": id,
+                    "name": chat.and_then(|c| c["name"].as_str()).unwrap_or(""),
+                    "peerMri": chat.and_then(|c| c["peerMri"].as_str()).unwrap_or(""),
+                    "text": text,
+                    "time": t,
+                })
+            })
+            .collect();
+        let text = serde_json::to_string(&json).unwrap_or_else(|_| "[]".into());
+        self.as_mut().set_drafts_json(QString::from(text.as_str()));
     }
 
     pub fn refresh_receipts(self: Pin<&mut Self>) {

@@ -89,9 +89,13 @@ pub async fn read_timeline(
     );
     let resp = match client.chat_get(&url).await {
         Ok(r) => r,
-        // A 1:1 chat nobody has written in yet does not exist; the first
-        // message creates it, so it opens empty.
-        Err(e) if e.to_string().contains("HTTP 404") && chat_id.ends_with("@unq.gbl.spaces") => {
+        // A 1:1 chat nobody has written in yet, or your own notes chat
+        // before its first note, does not exist; the first message creates
+        // it, so it opens empty.
+        Err(e)
+            if e.to_string().contains("HTTP 404")
+                && (chat_id.ends_with("@unq.gbl.spaces") || chat_id == "48:notes") =>
+        {
             return Ok(Vec::new())
         }
         Err(e) => return Err(e),
@@ -658,6 +662,40 @@ pub fn apply_seen(timeline: &mut [MessageView], horizon: Option<u64>) {
     }
 }
 
+/// Your favourite chats, in Teams' order: the `favorites` user property
+/// (`{"48:notes":1, "19:…":2}`), sorted by its values.
+pub async fn favorites(client: &TeamsClient) -> Result<Vec<String>> {
+    let url = format!("{}/v1/users/ME/properties", client.chat_service_url());
+    let text = client
+        .chat_get(&url)
+        .await?
+        .text()
+        .await
+        .context("User properties reply")?;
+    Ok(favorites_from_properties(&text))
+}
+
+/// The favourites list from a `/users/ME/properties` reply; its
+/// `favorites` value is itself JSON text.
+pub fn favorites_from_properties(json: &str) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let Some(map) = v
+        .get("favorites")
+        .and_then(|f| f.as_str())
+        .and_then(|f| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(f).ok())
+    else {
+        return Vec::new();
+    };
+    let mut list: Vec<(f64, String)> = map
+        .into_iter()
+        .map(|(id, order)| (order.as_f64().unwrap_or(f64::MAX), id))
+        .collect();
+    list.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    list.into_iter().map(|(_, id)| id).collect()
+}
+
 /// Chats with messages from someone else newer than our read horizon.
 pub async fn unread_chat_ids(client: &TeamsClient) -> Result<Vec<String>> {
     let url = format!(
@@ -721,6 +759,17 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn favorites_come_in_teams_order() {
+        let json = r#"{"favorites":"{\"19:b@unq.gbl.spaces\":2,\"48:notes\":1}","locale":"en-us"}"#;
+        assert_eq!(
+            super::favorites_from_properties(json),
+            ["48:notes", "19:b@unq.gbl.spaces"]
+        );
+        assert!(super::favorites_from_properties(r#"{"locale":"en-us"}"#).is_empty());
+        assert!(super::favorites_from_properties("nope").is_empty());
+    }
+
     #[test]
     fn first_unread_is_the_first_message_from_others_after_the_horizon() {
         let mk = |id: &str, mine: bool| super::MessageView {

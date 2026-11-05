@@ -7,6 +7,8 @@ import QtQuick.Window
 Rectangle {
     id: root
     property string userName
+    /// Your own availability (from the presence service).
+    property string presence: "Available"
     /// Suggestions while searching: chats from the list, people from the
     /// directory (set by Main).
     property var chats: []
@@ -188,7 +190,7 @@ Rectangle {
             name: root.userName || "?"
             photoId: "me"
             size: 28
-            presence: "Available"
+            presence: root.presence
         }
     }
 

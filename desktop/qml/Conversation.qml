@@ -16,6 +16,27 @@ Rectangle {
     property string teamName: ""
     /// The other person's id in a 1:1 chat, for the header picture.
     property string chatPhotoId: ""
+    /// The open chat's id; unsent text is kept per chat as a draft.
+    property string chatId: ""
+    property string draftChat: ""
+    // Test hooks for the compose box.
+    function setComposeText(t) { input.text = t }
+    function composeText() { return input.text }
+    onChatIdChanged: {
+        if (draftChat && !editingId) backend.setDraft(draftChat, input.text)
+        editingId = ""
+        input.text = chatId ? backend.draftFor(chatId) : ""
+        draftChat = chatId
+    }
+    // Keep the draft current while typing (so it survives a quit).
+    Timer {
+        id: draftSave
+        interval: 1000
+        onTriggered: if (root.draftChat && !root.editingId) backend.setDraft(root.draftChat, input.text)
+    }
+    /// Your own notes chat: Teams drops the call and people buttons and
+    /// shows only the Chat, Shared and Storyline tabs.
+    property bool isSelf: false
     signal typing()
     signal react(string messageId, string key, bool on)
     signal editMessage(string messageId, string text)
@@ -123,7 +144,9 @@ Rectangle {
             height: parent.height
             spacing: 16
             Repeater {
-                model: root.isChannel ? ["Posts", "Files"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+                model: root.isChannel ? ["Posts", "Files"]
+                    : root.isSelf ? ["Chat", "Shared", "Storyline"]
+                    : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
                 delegate: Item {
                     required property string modelData
                     required property int index
@@ -151,15 +174,16 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 14
             FluentIcon {
+                visible: !root.isSelf
                 name: "call-20"
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.call() }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Audio call"
             }
-            FluentIcon { name: "chevron-down-12"; size: 12; anchors.verticalCenter: parent.verticalCenter }
-            FluentIcon { name: "people-add-20" }
-            Rectangle { width: 1; height: 20; color: theme.divider }
+            FluentIcon { visible: !root.isSelf; name: "chevron-down-12"; size: 12; anchors.verticalCenter: parent.verticalCenter }
+            FluentIcon { visible: !root.isSelf; name: "people-add-20" }
+            Rectangle { visible: !root.isSelf; width: 1; height: 20; color: theme.divider }
             FluentIcon { name: "search-20" }
             FluentIcon { name: "panel-left-20" }
             FluentIcon { name: "more-20" }
@@ -524,7 +548,10 @@ Rectangle {
             color: theme.text
             wrapMode: TextArea.Wrap
             background: null
-            onTextChanged: if (text.length > 0) root.typing()
+            onTextChanged: {
+                if (text.length > 0) root.typing()
+                draftSave.restart()
+            }
             Keys.onReturnPressed: event => {
                 if (event.modifiers & Qt.ShiftModifier) { event.accepted = false; return }
                 if (root.editingId) { root.editMessage(root.editingId, input.text); root.editingId = "" }

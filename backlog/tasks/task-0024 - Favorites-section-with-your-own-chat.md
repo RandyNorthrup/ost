@@ -1,9 +1,11 @@
 ---
 id: TASK-0024
 title: Favorites section with your own chat
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-05T16:07:00Z'
+updated_date: '2026-11-05T16:54:00Z'
 labels:
   - desktop
   - ui

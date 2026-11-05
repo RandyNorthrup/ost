@@ -81,6 +81,38 @@ Window {
         }
     }
 
+    // --draft-test: type into the first chat, switch to the second, check
+    // the draft is listed, switch back and check the text came back; then
+    // clear it again.
+    Timer {
+        running: Qt.application.arguments.indexOf("--draft-test") >= 0 && backend.signedIn && chatList.chats.length > 1
+        interval: 2000
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const a = chatList.chats[0], b = chatList.chats[1]
+            const conv = conversation
+            if (step === 0) { backend.selectChat(a.id, a.name) }
+            else if (step === 1) { conv.setComposeText("OST draft test") }
+            else if (step === 2) { backend.selectChat(b.id, b.name) }
+            else if (step === 3) {
+                const d = backend.draftsJson ? JSON.parse(backend.draftsJson) : []
+                console.warn("DRAFT listed", d.some(x => x.id === a.id && x.text === "OST draft test"), "compose now", JSON.stringify(conv.composeText()))
+                chatList.openDrafts()
+            }
+            else if (step === 4) {
+                window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-drafts.png")))
+                backend.selectChat(a.id, a.name); chatList.draftsOpen = false
+            }
+            else if (step === 5) {
+                console.warn("DRAFT restored", JSON.stringify(conv.composeText()))
+                conv.setComposeText(""); backend.setDraft(a.id, "")
+            }
+            else { console.warn("DRAFT cleared", backend.draftsJson); Qt.quit() }
+            step++
+        }
+    }
+
     // Resize from the edges when we draw our own frame.
     component Edge: MouseArea {
         property int edges
@@ -406,6 +438,10 @@ Window {
         width: parent.width
         z: 10
         userName: backend.userName
+        presence: {
+            const me = chatList.chats.find(c => c.isSelf)
+            return me && me.presence ? me.presence : "Available"
+        }
         onSignOut: backend.signOut()
         chats: chatList.chats
         people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
@@ -495,8 +531,17 @@ Window {
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; backend.selectChat(id, name) }
-        onNewChat: window.composing = true
+        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; backend.selectChat(id, name) }
+        onNewChat: { draftsOpen = false; window.composing = true }
+        draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
+        onOpenDrafts: { window.composing = false; draftsOpen = true }
+    }
+    DraftsView {
+        id: draftsView
+        visible: rail.current === "chat" && chatList.draftsOpen
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        drafts: backend.draftsJson ? JSON.parse(backend.draftsJson) : []
+        onOpenDraft: (id, name) => { chatList.draftsOpen = false; backend.selectChat(id, name) }
     }
     // While your newest message in the open chat is still unread, re-check
     // the other person's read horizon now and then (push covers most cases).
@@ -510,10 +555,13 @@ Window {
         onTriggered: backend.refreshReceipts()
     }
     Conversation {
-        visible: rail.current === "chat"
+        id: conversation
+        visible: rail.current === "chat" && !chatList.draftsOpen
+        chatId: backend.currentChatId
         anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         chatName: backend.currentChatName
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
+        isSelf: backend.currentChatId === "48:notes"
         teamName: {
             const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
