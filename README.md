@@ -79,6 +79,16 @@ For full A/V support:
 cargo build --features "audio,video-capture"
 ```
 
+## Desktop app
+
+`ost-desktop` is a native Qt 6 client laid out and behaving like the
+Teams desktop app: chats, channels, activity, 1:1 calls, calendar,
+presence and notifications. Build it with
+`cargo build --release -p ost-desktop` (Qt 6.8+ and CMake needed), install
+it with `desktop/packaging/install-user.sh`. See
+[docs/desktop.md](docs/desktop.md) for features, requirements,
+environment variables, keyboard shortcuts and the built-in test harness.
+
 ## Usage
 
 ### TUI (Terminal User Interface)
