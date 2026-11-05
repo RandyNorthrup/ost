@@ -33,8 +33,13 @@ Rectangle {
             cur.grouped = !root.isChannel && cur.kind !== "call" && prev.kind !== "call"
                 && cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
         }
+        // Teams' receipts: your newest message carries the sent tick until
+        // it is read; the newest one the other person has read gets the eye.
         for (let i = out.length - 1; i >= 0; i--) {
             if (out[i].mine && out[i].kind !== "call") { out[i].latestMine = true; break }
+        }
+        for (let i = out.length - 1; i >= 0; i--) {
+            if (out[i].mine && out[i].kind !== "call" && out[i].seen) { out[i].latestSeen = true; break }
         }
         return out.reverse()
     }
@@ -350,12 +355,15 @@ Rectangle {
                     }
                 }
             }
-            // Teams shows the sent/read tick on your latest message only.
+            // Sent tick on your newest message, "Seen" eye on the newest one
+            // the other person has read.
             FluentIcon {
-                visible: msg.mine && msg.modelData.latestMine === true && !msg.isCall
-                name: "sent-12"; size: 12; color: theme.brand
+                readonly property bool seen: msg.modelData.latestSeen === true
+                visible: msg.mine && !msg.isCall && (seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
+                name: seen ? "seen-12" : "sent-12"; size: 12; color: theme.brand
                 x: bubble.x + bubble.width + 8
                 y: bubble.y + bubble.height - 14
+                Accessible.name: seen ? "Seen" : "Sent"
             }
         }
     }

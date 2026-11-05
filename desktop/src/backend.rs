@@ -112,6 +112,11 @@ pub mod qobject {
         #[qinvokable]
         fn mark_current_read(self: Pin<&mut Backend>);
 
+        /// Re-check how far the other person has read the open chat, and
+        /// update the Seen marks.
+        #[qinvokable]
+        fn refresh_receipts(self: Pin<&mut Backend>);
+
         /// Search the directory for the new-chat picker.
         #[qinvokable]
         fn search_people(self: Pin<&mut Backend>, query: &QString);
@@ -314,9 +319,25 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     Ok((me.display_name, list))
 }
 
+/// Messages deleted from this app since it started. Teams shows its
+/// "This message has been deleted" placeholder only to the person who just
+/// deleted it; once reloaded, deleted messages are simply gone.
+fn deleted_here() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    static SET: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(Default::default)
+}
+
 async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(String, String)>)> {
     let client = TeamsClient::new().await?;
     let mut timeline = api::messages::read_timeline(&client, &chat_id, MESSAGE_LIMIT).await?;
+    {
+        let here = deleted_here().lock().unwrap();
+        timeline.retain(|m| !m.deleted || here.contains(&m.id));
+    }
+    match api::messages::peer_read_horizon(&client, &chat_id).await {
+        Ok(h) => api::messages::apply_seen(&mut timeline, h),
+        Err(e) => tracing::debug!("read horizons unavailable: {}", short_error(&e)),
+    }
     for img in timeline.iter_mut().flat_map(|m| m.images.iter_mut()) {
         match cached_image(&client, img).await {
             Ok(path) => img.local_path = format!("file://{}", path.display()),
@@ -961,6 +982,7 @@ impl qobject::Backend {
 
     pub fn delete_message(self: Pin<&mut Self>, message_id: &QString) {
         let id = message_id.to_string();
+        deleted_here().lock().unwrap().insert(id.clone());
         self.message_action(move |client, chat| {
             Box::pin(async move { api::messages::delete_message(&client, &chat, &id).await })
         });
@@ -1289,6 +1311,50 @@ impl qobject::Backend {
                 Ok(()) => tracing::info!("marked read"),
                 Err(e) => tracing::warn!("mark read failed: {}", short_error(&e)),
             }
+        });
+    }
+
+    pub fn refresh_receipts(self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() {
+            return;
+        }
+        let shown = self.rust().messages_json.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let horizon = async {
+                let client = TeamsClient::new().await?;
+                api::messages::peer_read_horizon(&client, &chat_id).await
+            }
+            .await;
+            let horizon = match horizon {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::debug!("read horizons unavailable: {}", short_error(&e));
+                    return;
+                }
+            };
+            let Ok(mut timeline) = serde_json::from_str::<Vec<api::messages::MessageView>>(&shown)
+            else {
+                return;
+            };
+            api::messages::apply_seen(&mut timeline, horizon);
+            let Ok(json) = serde_json::to_string(&timeline) else {
+                return;
+            };
+            if json == shown {
+                return;
+            }
+            tracing::info!("read receipts changed");
+            let _ = qt.queue(move |mut this| {
+                // Only if the same chat is still open and unchanged meanwhile.
+                if this.rust().current_chat_id.to_string() == chat_id
+                    && this.rust().messages_json.to_string() == shown
+                {
+                    this.as_mut()
+                        .set_messages_json(QString::from(json.as_str()));
+                }
+            });
         });
     }
 }

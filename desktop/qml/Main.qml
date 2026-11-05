@@ -405,6 +405,17 @@ Window {
         onChatSelected: (id, name) => { window.composing = false; backend.selectChat(id, name) }
         onNewChat: window.composing = true
     }
+    // While your newest message in the open chat is still unread, re-check
+    // the other person's read horizon now and then (push covers most cases).
+    Timer {
+        interval: 20000; repeat: true
+        running: backend.windowActive && backend.currentChatId.length > 0 && rail.current === "chat" && (() => {
+            const msgs = backend.messagesJson ? JSON.parse(backend.messagesJson) : []
+            const mine = msgs.filter(m => m.mine && m.kind === "message")
+            return mine.length > 0 && !mine[mine.length - 1].seen
+        })()
+        onTriggered: backend.refreshReceipts()
+    }
     Conversation {
         visible: rail.current === "chat"
         anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }

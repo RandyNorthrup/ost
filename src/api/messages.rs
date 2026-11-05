@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use super::client::TeamsClient;
 
 /// One reaction on a message.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Reaction {
     /// Teams' key, e.g. `like`, `heart`.
     pub key: String,
@@ -18,7 +18,7 @@ pub struct Reaction {
 }
 
 /// An inline image in a message.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InlineImage {
     /// AMS object id (safe for a file name).
     pub id: String,
@@ -31,7 +31,7 @@ pub struct InlineImage {
 }
 
 /// A timeline item.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MessageView {
     pub id: String,
     /// The sender's own id for the message (read receipts refer to it).
@@ -54,6 +54,8 @@ pub struct MessageView {
     /// For call events: "ended" (with duration) or "missed".
     pub call_state: String,
     pub call_seconds: u64,
+    /// Your message, and the other person has read up to it (Teams' "Seen").
+    pub seen: bool,
 }
 
 /// Teams' reaction keys and their emoji.
@@ -154,6 +156,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         images: Vec::new(),
         call_state: String::new(),
         call_seconds: 0,
+        seen: false,
     };
     if kind == "Event/Call" {
         let content = s("/content");
@@ -189,8 +192,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         .map(|e| reactions_of(e, me))
         .unwrap_or_default();
     let text = super::strip_html(&content).trim().to_string();
-    // Teams shows "This message has been deleted" to its sender only; for
-    // everyone else the message just disappears.
+    // Teams shows "This message has been deleted" to its sender only (and
+    // only right after deleting; the app decides that); for everyone else
+    // the message just disappears.
     let images = if deleted {
         Vec::new()
     } else {
@@ -562,6 +566,59 @@ pub async fn mark_read(
     Ok(())
 }
 
+/// How far the other members of a chat have read: the highest message id
+/// in anyone else's consumption horizon. Teams only publishes horizons for
+/// members who have read receipts on, so `None` also means "not shared".
+pub async fn peer_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Option<u64>> {
+    let url = format!(
+        "{}/v1/threads/{}/consumptionhorizons",
+        client.chat_service_url(),
+        chat_id
+    );
+    let text = client
+        .chat_get(&url)
+        .await?
+        .text()
+        .await
+        .context("Consumption horizons reply")?;
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    Ok(peer_horizon(&text, &me))
+}
+
+/// The highest read message id among members other than `me` in a
+/// `/threads/{id}/consumptionhorizons` reply ("msgId;time;clientMsgId").
+pub fn peer_horizon(json: &str, me: &str) -> Option<u64> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    v.get("consumptionhorizons")?
+        .as_array()?
+        .iter()
+        .filter(|h| {
+            h.get("id")
+                .and_then(|i| i.as_str())
+                .is_some_and(|i| !i.eq_ignore_ascii_case(me))
+        })
+        .filter_map(|h| {
+            h.get("consumptionhorizon")?
+                .as_str()?
+                .split(';')
+                .next()?
+                .parse()
+                .ok()
+        })
+        .max()
+}
+
+/// Mark your messages up to `horizon` as seen.
+pub fn apply_seen(timeline: &mut [MessageView], horizon: Option<u64>) {
+    let Some(h) = horizon else { return };
+    for m in timeline.iter_mut().filter(|m| m.mine) {
+        m.seen = m.id.parse::<u64>().is_ok_and(|id| id <= h);
+    }
+}
+
 /// Chats with messages from someone else newer than our read horizon.
 pub async fn unread_chat_ids(client: &TeamsClient) -> Result<Vec<String>> {
     let url = format!(
@@ -625,6 +682,22 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn peer_horizon_ignores_my_own_entry() {
+        let json = r#"{"consumptionhorizons":[
+            {"id":"8:orgid:me","consumptionhorizon":"900;1;a"},
+            {"id":"8:orgid:peer","consumptionhorizon":"500;1;b"}]}"#;
+        assert_eq!(super::peer_horizon(json, "8:orgid:me"), Some(500));
+        assert_eq!(
+            super::peer_horizon(
+                r#"{"consumptionhorizons":[{"id":"8:orgid:me","consumptionhorizon":"900;1;a"}]}"#,
+                "8:orgid:me"
+            ),
+            None
+        );
+        assert_eq!(super::peer_horizon("nonsense", "8:orgid:me"), None);
+    }
+
     use super::*;
 
     #[test]

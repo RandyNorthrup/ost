@@ -66,10 +66,14 @@ pub fn conversation_ids(json: &str) -> Vec<String> {
         if is_control {
             continue;
         }
+        // Messages link to …/conversations/<id>; thread changes (members,
+        // read horizons) to …/threads/<id>.
         let from_link = |link: Option<&serde_json::Value>| {
-            link.and_then(|l| l.as_str())
-                .and_then(|l| l.split("/conversations/").nth(1))
-                .map(|rest| rest.split('/').next().unwrap_or(rest).to_string())
+            let l = link.and_then(|l| l.as_str())?;
+            l.split("/conversations/")
+                .nth(1)
+                .or_else(|| l.split("/threads/").nth(1))
+                .map(|rest| rest.split(['/', '?']).next().unwrap_or(rest).to_string())
         };
         let id = from_link(resource.and_then(|r| r.get("conversationLink")))
             .or_else(|| from_link(ev.get("resourceLink")))
@@ -278,6 +282,15 @@ mod tests {
         let stop = start.replace("Control/Typing", "Control/ClearTyping");
         assert!(typing_events(&stop)[0].stopped);
         assert!(typing_events(r#"{"resource":{"messagetype":"RichText/Html"}}"#).is_empty());
+    }
+
+    #[test]
+    fn conversation_ids_from_thread_updates() {
+        let ev = r#"{"resourceType":"ThreadUpdate","resourceLink":"https://x/v1/threads/19:abc_def@unq.gbl.spaces?view=x","resource":{}}"#;
+        assert_eq!(
+            conversation_ids(ev),
+            vec!["19:abc_def@unq.gbl.spaces".to_string()]
+        );
     }
 
     #[test]
