@@ -89,6 +89,9 @@ Rectangle {
                 && !cur.dayDivider && !cur.lastRead
                 && cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
         }
+        // Whether the next message continues this one's group (Teams squares
+        // the corners where grouped bubbles meet).
+        for (let i = 0; i < out.length; i++) out[i].groupNext = i + 1 < out.length && out[i + 1].grouped === true
         // Teams' receipts: your newest message carries the sent tick until
         // it is read; the newest one the other person has read gets the eye.
         for (let i = out.length - 1; i >= 0; i--) {
@@ -129,9 +132,10 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
             }
         }
+        // Title, tabs and actions at Teams desktop's measured positions.
         Text {
             id: title
-            x: 64; anchors.verticalCenter: parent.verticalCenter
+            x: 61; anchors.verticalCenter: parent.verticalCenter
             // Long names elide so the tabs and actions keep their place.
             width: Math.min(implicitWidth, parent.width * 0.35)
             elide: Text.ElideRight
@@ -140,9 +144,9 @@ Rectangle {
             color: theme.text
         }
         Row {
-            x: title.x + title.width + 10
-            height: parent.height
-            spacing: 16
+            id: tabs
+            x: title.x + title.width + 2
+            y: 2; height: 56
             Repeater {
                 model: root.isChannel ? ["Posts", "Files"]
                     : root.isSelf ? ["Chat", "Shared", "Storyline"]
@@ -150,44 +154,74 @@ Rectangle {
                 delegate: Item {
                     required property string modelData
                     required property int index
-                    width: tabText.implicitWidth; height: parent.height
+                    // 6 px padding each side of the label.
+                    width: tabText.implicitWidth + 12; height: parent.height
                     Text {
                         id: tabText
-                        anchors.verticalCenter: parent.verticalCenter
+                        x: 6; anchors.verticalCenter: parent.verticalCenter
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.base
                         font.weight: index === 0 ? Font.DemiBold : Font.Normal
-                        color: index === 0 ? theme.text : theme.textSecondary
+                        color: index === 0 ? theme.text : "#424242"
                     }
+                    // Selected: a 3 px brand pill, inset 8 px, at the bottom.
                     Rectangle {
                         visible: index === 0
-                        width: parent.width; height: 3; radius: 2
+                        x: 8; width: tabText.implicitWidth - 4; height: 3; radius: 1.5
                         anchors.bottom: parent.bottom
                         color: theme.brand
                     }
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: modelData
                 }
             }
-            FluentIcon { name: "add-square-20"; size: 16; anchors.verticalCenter: parent.verticalCenter }
-        }
-        Row {
-            anchors.right: parent.right; anchors.rightMargin: 18
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 14
-            FluentIcon {
-                visible: !root.isSelf
-                name: "call-20"
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.call() }
+            Item {
+                width: 32; height: parent.height
+                FluentIcon { anchors.centerIn: parent; name: "add-square-20"; size: 20; color: "#424242" }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Audio call"
+                Accessible.name: "Add a tab"
             }
-            FluentIcon { visible: !root.isSelf; name: "chevron-down-12"; size: 12; anchors.verticalCenter: parent.verticalCenter }
-            FluentIcon { visible: !root.isSelf; name: "people-add-20" }
-            Rectangle { visible: !root.isSelf; width: 1; height: 20; color: theme.divider }
-            FluentIcon { name: "search-20" }
-            FluentIcon { name: "panel-left-20" }
-            FluentIcon { name: "more-20" }
         }
+        component HeaderAction: Rectangle {
+            id: ha
+            property alias icon: haIcon.name
+            property int iconSize: 20
+            signal clicked()
+            width: 32; height: 32; radius: theme.radius
+            anchors.verticalCenter: parent.verticalCenter
+            color: haHover.hovered ? theme.hover : "transparent"
+            HoverHandler { id: haHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: ha.clicked() }
+            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: "#424242" }
+        }
+        HeaderAction {
+            visible: !root.isSelf && !root.isChannel
+            x: parent.width - 199; width: 24
+            icon: "call-20"
+            onClicked: root.call()
+            Accessible.name: "Audio call"
+        }
+        HeaderAction {
+            visible: !root.isSelf && !root.isChannel
+            x: parent.width - 175; width: 24
+            icon: "chevron-down-16"; iconSize: 16
+            Accessible.name: "More call options"
+        }
+        HeaderAction {
+            visible: !root.isSelf
+            x: parent.width - 151; width: 28
+            icon: "people-add-20"
+            Accessible.name: "View and add participants"
+        }
+        Rectangle {
+            visible: !root.isSelf
+            x: parent.width - 116; width: 1; height: 20
+            anchors.verticalCenter: parent.verticalCenter
+            color: theme.divider
+        }
+        HeaderAction { x: parent.width - 107; icon: "search-20"; Accessible.name: "Find in chat" }
+        HeaderAction { x: parent.width - 75; icon: "panel-left-20"; Accessible.name: "Open chat details" }
+        HeaderAction { x: parent.width - 43; icon: "more-20"; Accessible.name: "More chat options" }
         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: theme.dividerSoft }
     }
 
@@ -319,11 +353,20 @@ Rectangle {
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
                 // A picture on its own is shown bare, without the bubble.
                 readonly property bool bare: imageOnly && !root.isChannel
-                readonly property int pad: bare ? 0 : 16
+                readonly property real pad: bare ? 0 : 15.7
                 width: root.isChannel ? msg.maxBubble
                     : Math.min(msg.maxBubble, Math.max(imageOnly ? 0 : body.implicitWidth, pics.implicitWidth) + 2 * pad)
-                height: (imageOnly ? 0 : body.implicitHeight) + (imgs.length > 0 ? pics.implicitHeight + (imageOnly ? 0 : 8) : 0) + (bare ? 0 : 16)
-                radius: theme.radius
+                height: (imageOnly ? 0 : body.implicitHeight) + (imgs.length > 0 ? pics.implicitHeight + (imageOnly ? 0 : 8) : 0) + (bare ? 0 : 15.3)
+                // Teams: 6 px corners, squared on the inner side where a
+                // group's bubbles meet (bottom of the first, top of the rest).
+                readonly property real r: root.isChannel ? theme.radius : 6
+                readonly property bool joinUp: !root.isChannel && msg.grouped
+                readonly property bool joinDown: !root.isChannel && msg.modelData.groupNext === true
+                radius: r
+                topLeftRadius: !msg.mine && joinUp ? 0 : r
+                bottomLeftRadius: !msg.mine && joinDown ? 0 : r
+                topRightRadius: msg.mine && joinUp ? 0 : r
+                bottomRightRadius: msg.mine && joinDown ? 0 : r
                 color: bare ? "transparent" : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.pane)
                 border.color: root.isChannel ? theme.dividerSoft : "transparent"
                 x: msg.mine ? parent.width - 72 - width : 72
@@ -361,8 +404,10 @@ Rectangle {
                 Text {
                     id: body
                     visible: !bubble.imageOnly
-                    x: 16; y: 8
-                    width: Math.min(msg.maxBubble - 32, implicitWidth)
+                    x: bubble.pad; y: 6.7
+                    width: Math.min(msg.maxBubble - 2 * bubble.pad, implicitWidth)
+                    // Teams' 14/20 text.
+                    lineHeight: 20; lineHeightMode: Text.FixedHeight
                     // Sanitised by the engine to a safe subset.
                     text: msg.modelData.deleted ? "This message has been deleted."
                         : "<style>a { color: " + theme.brand + "; text-decoration: none; }</style>"

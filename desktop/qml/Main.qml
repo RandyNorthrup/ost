@@ -191,7 +191,10 @@ Window {
                 return
             }
             if (chats.length > 0 && !backend.currentChatId) {
-                backend.selectChat(chats[0].id, chats[0].name)
+                // --open-chat=<id> picks the chat to capture; else the first.
+                const want = Qt.application.arguments.find(a => a.startsWith("--open-chat="))
+                const pick = want ? (chats.find(c => c.id === want.slice(12)) || chats[0]) : chats[0]
+                backend.selectChat(pick.id, pick.name)
                 restart()
                 return
             }
