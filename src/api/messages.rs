@@ -66,12 +66,16 @@ pub async fn read_timeline(
         chat_id,
         limit
     );
-    let v: serde_json::Value = client
-        .chat_get(&url)
-        .await?
-        .json()
-        .await
-        .context("Messages reply")?;
+    let resp = match client.chat_get(&url).await {
+        Ok(r) => r,
+        // A 1:1 chat nobody has written in yet does not exist; the first
+        // message creates it, so it opens empty.
+        Err(e) if e.to_string().contains("HTTP 404") && chat_id.ends_with("@unq.gbl.spaces") => {
+            return Ok(Vec::new())
+        }
+        Err(e) => return Err(e),
+    };
+    let v: serde_json::Value = resp.json().await.context("Messages reply")?;
     let me = client
         .object_id()
         .map(|o| format!("8:orgid:{o}"))

@@ -54,6 +54,8 @@ pub mod qobject {
         #[qproperty(QString, calls_json)]
         /// Calendar events for the shown range, as JSON.
         #[qproperty(QString, calendar_json)]
+        /// People search results for the new-chat picker, as JSON.
+        #[qproperty(QString, people_json)]
         type Backend = super::BackendRust;
     }
 
@@ -107,6 +109,14 @@ pub mod qobject {
         /// The window gained focus: mark the open chat read.
         #[qinvokable]
         fn mark_current_read(self: Pin<&mut Backend>);
+
+        /// Search the directory for the new-chat picker.
+        #[qinvokable]
+        fn search_people(self: Pin<&mut Backend>, query: &QString);
+
+        /// Open (or start) the 1:1 chat with a person by object id.
+        #[qinvokable]
+        fn open_chat_with(self: Pin<&mut Backend>, oid: &QString, name: &QString);
 
         /// Load the Calls history.
         #[qinvokable]
@@ -170,6 +180,8 @@ pub struct BackendRust {
     window_active: bool,
     calls_json: QString,
     calendar_json: QString,
+    people_json: QString,
+    people_query_generation: u64,
     /// Bumped on every typing change so a stale clear timer does nothing.
     typing_generation: u64,
     last_typing_sent: Option<std::time::Instant>,
@@ -834,6 +846,48 @@ impl qobject::Backend {
                 Err(e) => tracing::warn!("calendar failed: {}", short_error(&e)),
             }
         });
+    }
+
+    pub fn search_people(mut self: Pin<&mut Self>, query: &QString) {
+        let q = query.to_string();
+        let generation = self.rust().people_query_generation + 1;
+        self.as_mut().rust_mut().people_query_generation = generation;
+        if q.trim().len() < 2 {
+            self.as_mut().set_people_json(QString::from("[]"));
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::directory::search_people(&client, &q).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                // A newer query has been typed since.
+                if this.rust().people_query_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(people) => {
+                        let text = serde_json::to_string(&people).unwrap_or_else(|_| "[]".into());
+                        this.as_mut().set_people_json(QString::from(text.as_str()));
+                    }
+                    Err(e) => tracing::warn!("people search failed: {}", short_error(&e)),
+                }
+            });
+        });
+    }
+
+    pub fn open_chat_with(self: Pin<&mut Self>, oid: &QString, name: &QString) {
+        let Some(me) = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.object_id())
+        else {
+            return;
+        };
+        let id = api::directory::one_on_one_chat_id(&me, &oid.to_string());
+        self.select_chat(&QString::from(id.as_str()), name);
     }
 
     pub fn load_calls(self: Pin<&mut Self>) {

@@ -101,6 +101,26 @@ impl TeamsClient {
     }
 
     /// POST request to Microsoft Graph API (bearer auth with Graph token).
+    /// GET with extra request headers (e.g. `ConsistencyLevel` for $search).
+    pub async fn graph_get_with(
+        &self,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        tracing::debug!("Graph GET {}", url);
+        let mut req = self.http.get(&url).bearer_auth(token);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let resp = req
+            .send()
+            .await
+            .with_context(|| format!("Graph GET {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
     pub async fn graph_post(
         &self,
         path: &str,

@@ -7,6 +7,7 @@ Rectangle {
     property var chats: []
     property string currentId
     signal chatSelected(string id, string name)
+    signal newChat()
     color: theme.pane
     width: theme.listWidth
 
@@ -28,7 +29,13 @@ Rectangle {
             spacing: 8
             FluentIcon { name: "more-20"; size: 20 }
             FluentIcon { name: "search-20"; size: 20 }
-            FluentIcon { name: "compose-20"; size: 20 }
+            FluentIcon {
+                name: "compose-20"; size: 20
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.newChat() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "New chat"
+            }
             FluentIcon { name: "chevron-down-12"; size: 12; anchors.verticalCenter: parent.verticalCenter }
         }
     }

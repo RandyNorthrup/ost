@@ -35,7 +35,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -204,6 +204,34 @@ Window {
         }
     }
 
+    // --new-chat-test: search "Randy", capture the picker, open the chat.
+    readonly property bool newChatTest: Qt.application.arguments.indexOf("--new-chat-test") >= 0
+    property int newChatStep: 0
+    Timer {
+        running: window.newChatTest && backend.signedIn
+        interval: 3000; repeat: true
+        onTriggered: {
+            if (window.newChatStep === 0) { window.composing = true; backend.searchPeople("Randy"); window.newChatStep = 1; return }
+            const people = backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+            if (window.newChatStep === 1 && people.length > 0) {
+                console.warn("PEOPLE", people.map(p => p.name + " <" + p.mail + ">").join(", "))
+                const p = people.find(p => (p.mail || "").toLowerCase() === "randy@scnetsolutions.com") || people[0]
+                window.newChatStep = 2
+                window.contentItem.grabToImage(r => {
+                    r.saveToFile(window.shotPath.replace(".png", "-picker.png"))
+                    window.composing = false
+                    backend.openChatWith(p.id, p.name)
+                })
+                return
+            }
+            if (window.newChatStep === 2 && backend.messagesJson && backend.messagesJson.length > 2) {
+                console.warn("OPENED", backend.currentChatId)
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+                stop()
+            }
+        }
+    }
+
     // --react-test: open the first chat, add a heart to the newest message
     // from someone else, capture once it shows.
     readonly property bool reactTest: Qt.application.arguments.indexOf("--react-test") >= 0
@@ -283,6 +311,17 @@ Window {
         onCurrentChanged: if (current === "calls") backend.loadCalls()
     }
 
+    property bool composing: Qt.application.arguments.indexOf("--new-chat") >= 0
+    NewChat {
+        visible: window.composing && rail.current === "chat"
+        z: 3
+        anchors { top: titleBar.bottom; bottom: parent.bottom; left: chatList.right; right: parent.right }
+        people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+        onSearch: q => backend.searchPeople(q)
+        onChosen: (oid, name) => { window.composing = false; backend.openChatWith(oid, name) }
+        onCancelled: window.composing = false
+    }
+
     CallsView {
         visible: rail.current === "calls"
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
@@ -319,7 +358,8 @@ Window {
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         currentId: backend.currentChatId
-        onChatSelected: (id, name) => backend.selectChat(id, name)
+        onChatSelected: (id, name) => { window.composing = false; backend.selectChat(id, name) }
+        onNewChat: window.composing = true
     }
     Conversation {
         visible: rail.current === "chat"
