@@ -230,7 +230,7 @@ pub async fn send_message(chat_id: &str, message: &str) -> Result<()> {
 }
 
 /// HTML-escape text for embedding in Teams RichText/Html messages.
-fn html_escape(text: &str) -> String {
+pub(crate) fn html_escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")

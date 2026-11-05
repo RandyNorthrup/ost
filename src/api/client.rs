@@ -159,6 +159,27 @@ impl TeamsClient {
         check_response(resp, &url).await
     }
 
+    /// PUT raw bytes to a Graph path (small file uploads).
+    pub async fn graph_put_bytes(
+        &self,
+        path: &str,
+        bytes: Vec<u8>,
+        content_type: &str,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .put(&url)
+            .bearer_auth(&token)
+            .header("Content-Type", content_type)
+            .body(bytes)
+            .send()
+            .await
+            .with_context(|| format!("Graph PUT {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
     /// GET request to Teams/Skype API (X-SkypeToken header).
     pub async fn teams_get(&self, url: &str) -> Result<reqwest::Response> {
         let token = self.skype_token()?;

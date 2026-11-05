@@ -60,6 +60,9 @@ pub struct MessageView {
     /// draws its "Last read" line above it).
     #[serde(default)]
     pub first_unread: bool,
+    /// Attached files (Teams' file cards).
+    #[serde(default)]
+    pub files: Vec<super::files::FileAttachment>,
 }
 
 /// Teams' reaction keys and their emoji.
@@ -166,6 +169,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         call_seconds: 0,
         seen: false,
         first_unread: false,
+        files: Vec::new(),
     };
     if kind == "Event/Call" {
         let content = s("/content");
@@ -209,7 +213,16 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     } else {
         inline_images(&content)
     };
-    if (deleted && !mine) || (!deleted && text.is_empty() && images.is_empty()) {
+    let files = if deleted {
+        Vec::new()
+    } else {
+        props
+            .and_then(|p| p.get("files"))
+            .map(super::files::parse_files)
+            .unwrap_or_default()
+    };
+    if (deleted && !mine) || (!deleted && text.is_empty() && images.is_empty() && files.is_empty())
+    {
         return None;
     }
     let text = if text.is_empty() && !images.is_empty() {
@@ -219,6 +232,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     };
     Some(MessageView {
         images,
+        files,
         html: if deleted {
             String::new()
         } else {
@@ -821,6 +835,7 @@ mod tests {
             call_seconds: 0,
             seen: false,
             first_unread: false,
+            files: vec![],
         };
         let mut t = vec![
             mk("100", false),

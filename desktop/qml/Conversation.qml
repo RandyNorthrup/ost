@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 
 // The open chat: header with tabs and actions, message list, compose box.
 Rectangle {
@@ -22,6 +23,8 @@ Rectangle {
     // Test hooks for the compose box.
     function setComposeText(t) { input.text = t }
     function composeText() { return input.text }
+    function attachForTest(paths) { root.pendingFiles = paths }
+    function sendForTest() { root.sendCompose() }
     onChatIdChanged: {
         if (draftChat && !editingId) backend.setDraft(draftChat, input.text)
         editingId = ""
@@ -354,9 +357,19 @@ Rectangle {
                 // A picture on its own is shown bare, without the bubble.
                 readonly property bool bare: imageOnly && !root.isChannel
                 readonly property real pad: bare ? 0 : 15.7
+                readonly property var files: msg.modelData.files || []
+                // Text shows unless the message is only a picture or only files.
+                readonly property bool showBody: !imageOnly && (msg.modelData.deleted || (msg.modelData.text || "").length > 0)
+                readonly property real bodyH: showBody ? body.implicitHeight : 0
+                readonly property real picsTop: showBody ? body.y + body.implicitHeight + 8 : (bare ? 0 : 8)
+                readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
+                readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + body.implicitHeight + 8 : 8)
                 width: root.isChannel ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(imageOnly ? 0 : body.implicitWidth, pics.implicitWidth) + 2 * pad)
-                height: (imageOnly ? 0 : body.implicitHeight) + (imgs.length > 0 ? pics.implicitHeight + (imageOnly ? 0 : 8) : 0) + (bare ? 0 : 15.3)
+                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0) + 2 * pad)
+                height: bare && files.length === 0 ? picsH
+                    : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
+                    : imgs.length > 0 ? picsTop + picsH + (showBody ? 8.6 : 8)
+                    : bodyH + 15.3
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
                 readonly property real r: root.isChannel ? theme.radius : 6
@@ -373,7 +386,7 @@ Rectangle {
                 // Inline pictures, scaled to fit the bubble (as in Teams).
                 Column {
                     id: pics
-                    x: bubble.pad; y: bubble.bare ? 0 : bubble.imageOnly ? 8 : body.y + body.implicitHeight + 8
+                    x: bubble.pad; y: bubble.picsTop
                     spacing: 4
                     Repeater {
                         model: bubble.imgs
@@ -403,7 +416,7 @@ Rectangle {
                 }
                 Text {
                     id: body
-                    visible: !bubble.imageOnly
+                    visible: bubble.showBody
                     x: bubble.pad; y: 6.7
                     width: Math.min(msg.maxBubble - 2 * bubble.pad, implicitWidth)
                     // Teams' 14/20 text.
@@ -421,6 +434,66 @@ Rectangle {
                     onLinkActivated: link => Qt.openUrlExternally(link)
                     HoverHandler { cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
                     Accessible.name: msg.modelData.text
+                }
+                // File cards, as Teams draws them: type icon, name, and
+                // share/download actions in a 48 px header.
+                Column {
+                    id: fileCol
+                    x: bubble.pad; y: bubble.filesTop
+                    spacing: 8
+                    Repeater {
+                        model: bubble.files
+                        Rectangle {
+                            id: fc
+                            required property var modelData
+                            readonly property string t: (modelData.file_type || "").toLowerCase()
+                            width: Math.min(318, msg.maxBubble - 2 * bubble.pad); height: 48
+                            radius: 8
+                            color: theme.searchFill
+                            border.color: theme.divider
+                            FluentIcon {
+                                x: 13; anchors.verticalCenter: parent.verticalCenter; size: 32
+                                name: ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(fc.t) >= 0 ? "file-image-32"
+                                    : ["mp4", "mov", "avi", "mkv", "webm"].indexOf(fc.t) >= 0 ? "file-video-32"
+                                    : ["txt", "md", "log", "csv", "json", "xml"].indexOf(fc.t) >= 0 ? "file-text-32"
+                                    : "file-32"
+                                color: theme.textSecondary
+                            }
+                            Text {
+                                x: 52; anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 52 - 80
+                                text: fc.modelData.name
+                                elide: Text.ElideMiddle
+                                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                                color: theme.text
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: Qt.openUrlExternally(fc.modelData.share_url || fc.modelData.object_url) }
+                            }
+                            Row {
+                                anchors.right: parent.right; anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                Repeater {
+                                    model: [{ icon: "share-20", label: "Open in browser" }, { icon: "download-20", label: "Download" }]
+                                    Rectangle {
+                                        required property var modelData
+                                        width: 32; height: 32; radius: theme.radius
+                                        color: fah.hovered ? theme.rowHover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.textStrong }
+                                        HoverHandler { id: fah; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler {
+                                            onTapped: parent.modelData.icon === "download-20"
+                                                ? backend.downloadFile(JSON.stringify(fc.modelData))
+                                                : Qt.openUrlExternally(fc.modelData.share_url || fc.modelData.object_url)
+                                        }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: modelData.label + " " + fc.modelData.name
+                                    }
+                                }
+                            }
+                            Accessible.role: Accessible.Link
+                            Accessible.name: "File " + modelData.name
+                        }
+                    }
                 }
             }
             // Reaction pills under the bubble, as in Teams; yours has a brand
@@ -573,19 +646,80 @@ Rectangle {
         }
     }
 
+    // Files picked to send with the next message (local paths).
+    property var pendingFiles: []
+    function addFiles(urls) {
+        const paths = urls.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, "")))
+        pendingFiles = pendingFiles.concat(paths.filter(p => pendingFiles.indexOf(p) < 0))
+    }
+    // Send what's in the compose box: text, files, or both.
+    function sendCompose() {
+        if (root.pendingFiles.length > 0) {
+            backend.sendFiles(root.pendingFiles.join("\n"), input.text)
+            root.pendingFiles = []
+        } else if (input.text.trim().length > 0) {
+            root.send(input.text)
+        }
+        input.text = ""
+    }
+    FileDialog {
+        id: filePicker
+        title: "Upload from this device"
+        fileMode: FileDialog.OpenFiles
+        onAccepted: root.addFiles(selectedFiles)
+    }
+
     // Compose box
     Rectangle {
         id: compose
         visible: root.chatName.length > 0
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: 72; anchors.rightMargin: 72; anchors.bottomMargin: 24
-        height: Math.max(44, input.contentHeight + 24)
+        height: Math.max(44, input.contentHeight + 24) + (root.pendingFiles.length > 0 ? pendingRow.height + 8 : 0)
+        // Files waiting to be sent, as removable chips above the text.
+        Flow {
+            id: pendingRow
+            visible: root.pendingFiles.length > 0
+            x: 12; y: 8; width: parent.width - 24
+            spacing: 8
+            Repeater {
+                model: root.pendingFiles
+                Rectangle {
+                    required property string modelData
+                    height: 40; width: Math.min(300, nameText.implicitWidth + 80)
+                    radius: 8
+                    color: theme.searchFill
+                    border.color: theme.divider
+                    FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "file-32"; size: 24; color: theme.textSecondary }
+                    Text {
+                        id: nameText
+                        x: 40; anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 76
+                        text: parent.modelData.split("/").pop()
+                        elide: Text.ElideMiddle
+                        font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                        color: theme.text
+                    }
+                    Rectangle {
+                        anchors.right: parent.right; anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 24; height: 24; radius: theme.radius
+                        color: rmh.hovered ? theme.rowHover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.textStrong }
+                        HoverHandler { id: rmh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.pendingFiles = root.pendingFiles.filter(p => p !== parent.parent.modelData) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Remove " + parent.modelData.split("/").pop()
+                    }
+                }
+            }
+        }
         radius: theme.radius
         color: theme.input
         border.color: input.activeFocus ? theme.brand : theme.divider
         TextArea {
             id: input
-            anchors { left: parent.left; right: tools.left; verticalCenter: parent.verticalCenter }
+            anchors { left: parent.left; right: tools.left; bottom: parent.bottom; bottomMargin: (44 - 32) / 2 }
             anchors.leftMargin: 4
             placeholderText: root.isChannel ? "Start a post" : "Type a message"
             placeholderTextColor: theme.textSecondary
@@ -604,26 +738,34 @@ Rectangle {
             Keys.onReturnPressed: event => {
                 const sendKey = enterKey === "newline" ? (event.modifiers & Qt.ControlModifier) : !(event.modifiers & Qt.ShiftModifier)
                 if (!sendKey) { event.accepted = false; return }
-                if (root.editingId) { root.editMessage(root.editingId, input.text); root.editingId = "" }
-                else root.send(input.text)
-                input.text = ""
+                if (root.editingId) { root.editMessage(root.editingId, input.text); root.editingId = ""; input.text = "" }
+                else root.sendCompose()
             }
             Keys.onEscapePressed: if (root.editingId) { root.editingId = ""; input.text = "" }
         }
         Row {
             id: tools
             anchors.right: parent.right; anchors.rightMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.bottom: parent.bottom; anchors.bottomMargin: 12
             spacing: 12
             FluentIcon { name: "format-20" }
             FluentIcon { name: "emoji-20" }
-            FluentIcon { name: "attach-20" }
+            FluentIcon {
+                name: "attach-20"
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: filePicker.open() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Attach files"
+            }
             FluentIcon { name: "add-20" }
             Rectangle { width: 1; height: 20; color: theme.divider }
             FluentIcon {
-                name: input.text.length > 0 ? "send-20-filled" : "send-20"
-                color: input.text.length > 0 ? theme.brand : theme.icon
-                TapHandler { onTapped: { root.send(input.text); input.text = "" } }
+                readonly property bool ready: input.text.length > 0 || root.pendingFiles.length > 0
+                name: ready ? "send-20-filled" : "send-20"
+                color: ready ? theme.brand : theme.icon
+                TapHandler { onTapped: root.sendCompose() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Send"
             }
         }
     }

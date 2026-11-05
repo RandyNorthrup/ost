@@ -138,6 +138,36 @@ Window {
         }
     }
 
+    // --send-file=<path>: attach a file in the open chat and send it, then
+    // download the newest received attachment (end-to-end files check).
+    Timer {
+        readonly property string path: (Qt.application.arguments.find(a => a.startsWith("--send-file=")) || "").slice(12)
+        running: path.length > 0 && backend.signedIn && chatList.chats.length > 0
+        interval: 3000
+        property int step: -1
+        repeat: true
+        onTriggered: {
+            if (step === -1) {
+                const want = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+                const c = chatList.chats.find(c => c.id === want) || chatList.chats[0]
+                backend.selectChat(c.id, c.name)
+            } else if (step === 0) {
+                conversation.attachForTest([path]); conversation.setComposeText("OST test 24: file sent from OST")
+                conversation.sendForTest()
+            } else if (step === 4) {
+                const msgs = JSON.parse(backend.messagesJson)
+                const withFile = msgs.filter(m => (m.files || []).length > 0)
+                const last = withFile[withFile.length - 1]
+                console.warn("FILES sent", last ? last.text : "none", last ? JSON.stringify(last.files.map(f => f.name)) : "", "status", backend.statusText)
+                if (last) backend.downloadFile(JSON.stringify(last.files[0]))
+            } else if (step === 6) {
+                console.warn("FILES download", backend.statusText)
+                Qt.quit()
+            }
+            step++
+        }
+    }
+
     // --settings-test: switch the theme and back, read the receipts
     // setting from Teams, list audio devices.
     Timer {

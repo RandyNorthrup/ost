@@ -225,6 +225,15 @@ pub mod qobject {
         /// Turn read receipts on or off in Teams.
         #[qinvokable]
         fn change_read_receipts(self: Pin<&mut Backend>, on: bool);
+
+        /// Send files (newline-separated paths or file:// URLs) to the open
+        /// chat, with optional text, the way Teams does.
+        #[qinvokable]
+        fn send_files(self: Pin<&mut Backend>, paths: &QString, text: &QString);
+
+        /// Save an attachment into the Downloads folder.
+        #[qinvokable]
+        fn download_file(self: Pin<&mut Backend>, file_json: &QString);
     }
 
     impl cxx_qt::Threading for Backend {}
@@ -1976,6 +1985,90 @@ impl qobject::Backend {
             if let Err(e) = result {
                 tracing::warn!("saving read receipts failed: {}", short_error(&e));
             }
+        });
+    }
+
+    pub fn send_files(mut self: Pin<&mut Self>, paths: &QString, text: &QString) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let text = text.to_string();
+        let paths: Vec<std::path::PathBuf> = paths
+            .to_string()
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            // QML hands over decoded local paths (file:// is tolerated).
+            .map(|l| std::path::PathBuf::from(l.strip_prefix("file://").unwrap_or(l)))
+            .collect();
+        if chat_id.is_empty() || paths.is_empty() {
+            return;
+        }
+        self.as_mut().set_busy(true);
+        let names: Vec<String> = paths
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
+            .collect();
+        self.as_mut().set_status_text(QString::from(
+            format!("Uploading {}…", names.join(", ")).as_str(),
+        ));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let mut files = Vec::new();
+                for p in &paths {
+                    files.push(api::files::upload_for_chat(&client, &chat_id, p).await?);
+                }
+                api::files::send_with_files(&client, &chat_id, &text, files).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_busy(false);
+                match result {
+                    Ok(()) => {
+                        this.as_mut().set_status_text(QString::default());
+                        this.as_mut().reload_messages();
+                    }
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
+        });
+    }
+
+    pub fn download_file(mut self: Pin<&mut Self>, file_json: &QString) {
+        let Ok(file) = serde_json::from_str::<api::files::FileAttachment>(&file_json.to_string())
+        else {
+            return;
+        };
+        let dir = std::env::var_os("XDG_DOWNLOAD_DIR")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Downloads"))
+            });
+        let Some(dir) = dir else { return };
+        self.as_mut().set_status_text(QString::from(
+            format!("Downloading {}…", file.name).as_str(),
+        ));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::files::download(&client, &file, &dir).await
+            }
+            .await;
+            let msg = match result {
+                Ok(path) => format!(
+                    "Saved {} to {}",
+                    file.name,
+                    path.parent()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default()
+                ),
+                Err(e) => short_error(&e),
+            };
+            let _ = qt
+                .queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
         });
     }
 
