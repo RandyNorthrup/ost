@@ -9,7 +9,7 @@ Window {
     id: win
     property string peer
     property string selfName
-    property string state       // "connecting" | "connected" | "ended"
+    property string state       // "calling" | "connecting" | "connected" | "ended"
     property bool muted
     property bool hasAudio: true
     property real connectedAt: 0
@@ -97,7 +97,8 @@ Window {
             Avatar { size: 144; name: win.peer; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: win.state === "connecting" ? "Connecting…"
+                text: win.state === "calling" ? "Calling…"
+                    : win.state === "connecting" ? "Connecting…"
                     : win.state === "ended" ? "Call ended"
                     : !win.hasAudio ? "Connected without audio" : ""
                 visible: text.length > 0

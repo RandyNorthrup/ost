@@ -98,6 +98,8 @@ pub struct WebRtcOffer {
     pub sections: Vec<(String, String, String)>,
     /// mid of the audio m-line.
     pub audio_mid: String,
+    /// The peer's `a=setup` role: `actpass`, `active` or `passive`.
+    pub setup: String,
 }
 
 impl WebRtcOffer {
@@ -140,6 +142,7 @@ impl WebRtcOffer {
             candidates,
             sections,
             audio_mid,
+            setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
         })
     }
 
@@ -200,17 +203,58 @@ impl LocalAudio {
         })
     }
 
-    /// The SDP answer: audio (PCMU, DTLS active) bundled alone; every other
-    /// offered m-line is rejected with port 0.
-    pub fn answer_sdp(&self, offer: &WebRtcOffer) -> String {
+    /// An audio-only offer (PCMU, DTLS actpass) for placing a call.
+    pub fn offer_sdp(&self) -> String {
         let port = self.socket.local_addr().map(|a| a.port()).unwrap_or(9);
-        let addr = self
-            .candidates
+        let addr = self.public_address();
+        let session_id = u64::from(self.ssrc) << 16 | 1;
+        let mut s = String::new();
+        s.push_str("v=0\r\n");
+        s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
+        s.push_str("s=-\r\nt=0 0\r\n");
+        s.push_str("a=group:BUNDLE 0\r\n");
+        s.push_str("a=msid-semantic: WMS ost\r\n");
+        s.push_str(&self.audio_section(port, &addr, "0", "actpass"));
+        s
+    }
+
+    fn public_address(&self) -> String {
+        self.candidates
             .iter()
             .find(|c| c.candidate_type == ice::CandidateType::ServerReflexive)
             .or(self.candidates.first())
             .map(|c| c.address.clone())
-            .unwrap_or_else(|| "0.0.0.0".into());
+            .unwrap_or_else(|| "0.0.0.0".into())
+    }
+
+    fn audio_section(&self, port: u16, addr: &str, mid: &str, setup: &str) -> String {
+        let mut s = String::new();
+        s.push_str(&format!("m=audio {port} RTP/SAVP {PT_PCMU}\r\n"));
+        s.push_str(&format!("c=IN IP4 {addr}\r\n"));
+        for c in &self.candidates {
+            // to_sdp_line() omits the "a=" prefix.
+            s.push_str("a=");
+            s.push_str(&c.to_sdp_line());
+            s.push_str("\r\n");
+        }
+        s.push_str(&format!("a=ice-ufrag:{}\r\n", self.ufrag));
+        s.push_str(&format!("a=ice-pwd:{}\r\n", self.pwd));
+        s.push_str(&format!("a=fingerprint:{}\r\n", self.identity.fingerprint));
+        s.push_str(&format!("a=setup:{setup}\r\n"));
+        s.push_str(&format!("a=mid:{mid}\r\n"));
+        s.push_str("a=sendrecv\r\n");
+        s.push_str("a=rtcp-mux\r\n");
+        s.push_str(&format!("a=rtpmap:{PT_PCMU} PCMU/8000\r\n"));
+        s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", self.ssrc));
+        s.push_str(&format!("a=ssrc:{} cname:ost\r\n", self.ssrc));
+        s
+    }
+
+    /// The SDP answer: audio (PCMU, DTLS active) bundled alone; every other
+    /// offered m-line is rejected with port 0.
+    pub fn answer_sdp(&self, offer: &WebRtcOffer) -> String {
+        let port = self.socket.local_addr().map(|a| a.port()).unwrap_or(9);
+        let addr = self.public_address();
         let session_id = u64::from(self.ssrc) << 16 | 1;
         let mut s = String::new();
         s.push_str("v=0\r\n");
@@ -220,22 +264,7 @@ impl LocalAudio {
         s.push_str("a=msid-semantic: WMS ost\r\n");
         for (mid, kind, proto_fmts) in &offer.sections {
             if *mid == offer.audio_mid {
-                s.push_str(&format!("m=audio {port} RTP/SAVP {PT_PCMU}\r\n"));
-                s.push_str(&format!("c=IN IP4 {addr}\r\n"));
-                for c in &self.candidates {
-                    s.push_str(&c.to_sdp_line());
-                    s.push_str("\r\n");
-                }
-                s.push_str(&format!("a=ice-ufrag:{}\r\n", self.ufrag));
-                s.push_str(&format!("a=ice-pwd:{}\r\n", self.pwd));
-                s.push_str(&format!("a=fingerprint:{}\r\n", self.identity.fingerprint));
-                s.push_str("a=setup:active\r\n");
-                s.push_str(&format!("a=mid:{mid}\r\n"));
-                s.push_str("a=sendrecv\r\n");
-                s.push_str("a=rtcp-mux\r\n");
-                s.push_str(&format!("a=rtpmap:{PT_PCMU} PCMU/8000\r\n"));
-                s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", self.ssrc));
-                s.push_str(&format!("a=ssrc:{} cname:ost\r\n", self.ssrc));
+                s.push_str(&self.audio_section(port, &addr, mid, "active"));
             } else {
                 let fmt = proto_fmts.split_whitespace().nth(1).unwrap_or("0");
                 let proto = proto_fmts.split_whitespace().next().unwrap_or("RTP/SAVP");
@@ -289,8 +318,25 @@ impl WebRtcAudioSession {
         *self.stats.lock().await
     }
 
-    /// Find the peer with ICE, run DTLS, and start sending and receiving.
+    /// Answerer side: ICE controlled, DTLS client (we answered `active`).
     pub async fn start(local: LocalAudio, offer: WebRtcOffer) -> Result<Self> {
+        Self::start_with_role(local, offer, false, true).await
+    }
+
+    /// Offerer side: ICE controlling; DTLS role from the peer's answer
+    /// (`active` makes us the server, `passive` the client).
+    pub async fn start_as_offerer(local: LocalAudio, answer: WebRtcOffer) -> Result<Self> {
+        let dtls_client = answer.setup.eq_ignore_ascii_case("passive");
+        Self::start_with_role(local, answer, true, dtls_client).await
+    }
+
+    /// Find the peer with ICE, run DTLS, and start sending and receiving.
+    async fn start_with_role(
+        local: LocalAudio,
+        offer: WebRtcOffer,
+        controlling: bool,
+        dtls_client: bool,
+    ) -> Result<Self> {
         let socket = local.socket.clone();
         let (dtls_tx, dtls_rx) = std::sync::mpsc::channel::<Vec<u8>>();
         let (peer_tx, mut peer_rx) = mpsc::channel::<SocketAddr>(8);
@@ -347,7 +393,7 @@ impl WebRtcAudioSession {
                             &username,
                             pwd.as_bytes(),
                             1694498815,
-                            false,
+                            controlling,
                             tie_breaker,
                         );
                         let _ = socket.send_to(&req, t).await;
@@ -371,7 +417,7 @@ impl WebRtcAudioSession {
             let identity = local.identity;
             let expected = offer.fingerprint.clone();
             tokio::task::spawn_blocking(move || {
-                dtls_handshake(socket, peer, dtls_rx, &identity, &expected)
+                dtls_handshake(socket, peer, dtls_rx, &identity, &expected, dtls_client)
             })
             .await
             .context("DTLS task failed")??
@@ -404,7 +450,7 @@ impl WebRtcAudioSession {
                         &username,
                         pwd.as_bytes(),
                         1694498815,
-                        false,
+                        controlling,
                         tie_breaker,
                     );
                     let _ = socket.send_to(&req, peer).await;
@@ -580,11 +626,13 @@ fn dtls_handshake(
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
     identity: &DtlsIdentity,
     expected_fingerprint: &str,
+    client: bool,
 ) -> Result<(srtp::SrtpKeyingMaterial, srtp::SrtpKeyingMaterial)> {
     let mut ctx = SslContext::builder(SslMethod::dtls())?;
     ctx.set_certificate(&identity.cert)?;
     ctx.set_private_key(&identity.key)?;
     ctx.set_tlsext_use_srtp(SRTP_PROFILE)?;
+    // PEER also makes a server request the client's certificate.
     // WebRTC peers use self-signed certificates; trust comes from the SDP
     // fingerprint, checked below against the certificate actually presented.
     ctx.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
@@ -593,7 +641,11 @@ fn dtls_handshake(
 
     let io = DtlsIo { socket, peer, rx };
     let deadline = std::time::Instant::now() + DTLS_TIMEOUT;
-    let mut attempt = ssl.connect(io);
+    let mut attempt = if client {
+        ssl.connect(io)
+    } else {
+        ssl.accept(io)
+    };
     let stream = loop {
         match attempt {
             Ok(s) => break s,
@@ -639,7 +691,7 @@ fn dtls_handshake(
     }
     let mut km = [0u8; SRTP_KEYING_LEN];
     ssl.export_keying_material(&mut km, "EXTRACTOR-dtls_srtp", None)?;
-    Ok(split_srtp_keys(&km, true))
+    Ok(split_srtp_keys(&km, client))
 }
 
 /// The raw `SSL*` behind an `SslRef`.
@@ -758,7 +810,9 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             ctx.set_private_key(&server_id.key).unwrap();
             ctx.set_tlsext_use_srtp(SRTP_PROFILE).unwrap();
             let ssl = openssl::ssl::Ssl::new(&ctx.build()).unwrap();
-            let s = ssl.accept(Io(b)).unwrap_or_else(|_| panic!("server DTLS handshake failed"));
+            let s = ssl
+                .accept(Io(b))
+                .unwrap_or_else(|_| panic!("server DTLS handshake failed"));
             let mut km = [0u8; SRTP_KEYING_LEN];
             s.ssl()
                 .export_keying_material(&mut km, "EXTRACTOR-dtls_srtp", None)
@@ -781,7 +835,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         };
         let client_id = DtlsIdentity::generate().unwrap();
         let (local, remote) = tokio::task::spawn_blocking(move || {
-            dtls_handshake(a, b_addr, rx, &client_id, &server_fp)
+            dtls_handshake(a, b_addr, rx, &client_id, &server_fp, true)
         })
         .await
         .unwrap()
@@ -792,5 +846,105 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert_eq!(local.master_key, server_remote.master_key);
         assert_eq!(remote.master_key, server_local.master_key);
         assert_eq!(local.master_salt, server_remote.master_salt);
+    }
+
+    #[tokio::test]
+    async fn dtls_server_role_against_an_openssl_client() {
+        let a = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let b = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (a_addr, b_addr) = (a.local_addr().unwrap(), b.local_addr().unwrap());
+        let client_id = DtlsIdentity::generate().unwrap();
+        let client_fp = client_id.fingerprint.clone();
+        let client = std::thread::spawn(move || {
+            b.connect(a_addr).unwrap();
+            b.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            struct Io(std::net::UdpSocket);
+            impl std::io::Read for Io {
+                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                    self.0.recv(buf)
+                }
+            }
+            impl std::io::Write for Io {
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                    self.0.send(buf)
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+            let mut ctx = SslContext::builder(SslMethod::dtls()).unwrap();
+            ctx.set_certificate(&client_id.cert).unwrap();
+            ctx.set_private_key(&client_id.key).unwrap();
+            ctx.set_tlsext_use_srtp(SRTP_PROFILE).unwrap();
+            ctx.set_verify(SslVerifyMode::NONE);
+            let ssl = openssl::ssl::Ssl::new(&ctx.build()).unwrap();
+            let s = ssl
+                .connect(Io(b))
+                .unwrap_or_else(|_| panic!("client DTLS handshake failed"));
+            let mut km = [0u8; SRTP_KEYING_LEN];
+            s.ssl()
+                .export_keying_material(&mut km, "EXTRACTOR-dtls_srtp", None)
+                .unwrap();
+            km
+        });
+        let (tx, rx) = std::sync::mpsc::channel();
+        let reader = {
+            let a = a.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 2048];
+                while let Ok((n, _)) = a.recv_from(&mut buf).await {
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+            })
+        };
+        let server_id = DtlsIdentity::generate().unwrap();
+        let (local, remote) = tokio::task::spawn_blocking(move || {
+            dtls_handshake(a, b_addr, rx, &server_id, &client_fp, false)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        reader.abort();
+        let client_km = client.join().unwrap();
+        let (client_local, client_remote) = split_srtp_keys(&client_km, true);
+        assert_eq!(local.master_key, client_remote.master_key);
+        assert_eq!(remote.master_key, client_local.master_key);
+    }
+
+    #[test]
+    fn offer_is_audio_only_actpass() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let local = rt.block_on(async {
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            LocalAudio {
+                socket: Arc::new(socket),
+                ufrag: "abcd".into(),
+                pwd: "p".repeat(24),
+                ssrc: 42,
+                candidates: vec![ice::IceCandidate {
+                    foundation: "1".into(),
+                    component: 1,
+                    transport: ice::Transport::Udp,
+                    priority: 2130706431,
+                    address: "192.0.2.1".into(),
+                    port: 5000,
+                    candidate_type: ice::CandidateType::Host,
+                    raddr: None,
+                    rport: None,
+                }],
+                identity: DtlsIdentity::generate().unwrap(),
+            }
+        });
+        let offer = local.offer_sdp();
+        assert!(offer.contains("a=setup:actpass"));
+        // Every line is a valid "<type>=<value>" SDP line.
+        assert!(offer.lines().all(|l| l.len() > 2 && &l[1..2] == "="), "{offer}");
+        assert!(offer.contains("a=group:BUNDLE 0"));
+        assert_eq!(offer.matches("m=").count(), 1);
+        let parsed = WebRtcOffer::parse(&offer).unwrap();
+        assert_eq!(parsed.setup, "actpass");
+        assert_eq!(parsed.ice_ufrag, "abcd");
     }
 }

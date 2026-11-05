@@ -14,6 +14,7 @@ pub mod display;
 pub mod ice;
 pub mod incoming;
 pub mod media;
+pub mod outgoing;
 pub mod recording;
 pub mod rtcp;
 pub mod rtp;

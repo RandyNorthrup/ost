@@ -8,6 +8,23 @@ Rectangle {
     property var messages: []
     property bool busy
     signal send(string text)
+    signal call()
+
+    // Newest first (the list grows upward), with Teams' grouping: a message
+    // joins the previous one when the same person sent it under 5 minutes
+    // later. latestMine marks your newest message for the sent tick.
+    function annotate(msgs) {
+        const out = msgs.map(m => Object.assign({}, m))
+        for (let i = 1; i < out.length; i++) {
+            const prev = out[i - 1], cur = out[i]
+            const gap = new Date(cur.time) - new Date(prev.time)
+            cur.grouped = cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
+        }
+        for (let i = out.length - 1; i >= 0; i--) {
+            if (out[i].mine) { out[i].latestMine = true; break }
+        }
+        return out.reverse()
+    }
     color: theme.surface
 
     // Header
@@ -55,7 +72,13 @@ Rectangle {
             anchors.right: parent.right; anchors.rightMargin: 18
             anchors.verticalCenter: parent.verticalCenter
             spacing: 14
-            FluentIcon { name: "call-20" }
+            FluentIcon {
+                name: "call-20"
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.call() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Audio call"
+            }
             FluentIcon { name: "chevron-down-12"; size: 12; anchors.verticalCenter: parent.verticalCenter }
             FluentIcon { name: "people-add-20" }
             Rectangle { width: 1; height: 20; color: theme.divider }
@@ -79,9 +102,9 @@ Rectangle {
         anchors { top: header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
         anchors.bottomMargin: 12
         clip: true
-        spacing: 8
+        spacing: 0
         verticalLayoutDirection: ListView.BottomToTop
-        model: root.messages.slice().reverse()
+        model: root.annotate(root.messages)
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         delegate: Item {
@@ -89,16 +112,23 @@ Rectangle {
             required property var modelData
             readonly property bool mine: modelData.mine
             width: list.width
-            height: bubble.height + meta.height + 4
+            // Grouped messages (same sender, within minutes) drop the
+            // name/time line and avatar, and sit 2 px under the previous.
+            readonly property bool grouped: modelData.grouped === true
+            readonly property int topPad: grouped ? 2 : 12
+            readonly property int bubbleY: topPad + (grouped ? 0 : meta.height + 2)
+            height: bubbleY + bubble.height
             readonly property int maxBubble: Math.min(640, list.width * 0.7)
 
             Avatar {
-                visible: !msg.mine
-                x: 32; y: meta.height + 2
+                visible: !msg.mine && !msg.grouped
+                x: 32; y: msg.bubbleY
                 size: 32; name: msg.modelData.sender
             }
             Text {
                 id: meta
+                visible: !msg.grouped
+                y: msg.topPad
                 text: (msg.mine ? "" : msg.modelData.sender + "  ") + Qt.formatTime(new Date(msg.modelData.time), "h:mm AP")
                 font.family: theme.font; font.pixelSize: theme.small
                 color: theme.textSecondary
@@ -106,7 +136,7 @@ Rectangle {
             }
             Rectangle {
                 id: bubble
-                y: meta.height + 2
+                y: msg.bubbleY
                 width: Math.min(msg.maxBubble, body.implicitWidth + 32)
                 height: body.implicitHeight + 16
                 radius: theme.radius
@@ -123,8 +153,9 @@ Rectangle {
                     textFormat: Text.PlainText
                 }
             }
+            // Teams shows the sent/read tick on your latest message only.
             FluentIcon {
-                visible: msg.mine
+                visible: msg.mine && msg.modelData.latestMine === true
                 name: "sent-12"; size: 12; color: theme.brand
                 x: bubble.x + bubble.width + 8
                 y: bubble.y + bubble.height - 14

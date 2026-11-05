@@ -98,7 +98,7 @@ Window {
     }
     CallWindow {
         id: callWindow
-        visible: ["connecting", "connected", "ended"].indexOf(backend.callState) >= 0
+        visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0
         peer: backend.callPeer
         selfName: backend.userName
         state: backend.callState
@@ -116,7 +116,8 @@ Window {
     }
 
     // --call-test: capture the toast, answer, capture the call, hang up.
-    readonly property bool callTest: Qt.application.arguments.indexOf("--call-test") >= 0
+    readonly property bool callOut: Qt.application.arguments.indexOf("--call-out") >= 0
+    readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0
     // --remote-hangup: stay in the call until the caller ends it.
     readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0
     Connections {
@@ -128,7 +129,7 @@ Window {
                 callTestTimer.step = "ring"; callTestTimer.restart()
             } else if (backend.callState === "connected") {
                 callTestTimer.step = "talk"; callTestTimer.interval = 8000; callTestTimer.restart()
-            } else if (backend.callState === "ended" && window.remoteHangup) {
+            } else if (backend.callState === "ended" && (window.remoteHangup || window.callOut)) {
                 quitTimer.start()
             }
         }
@@ -155,6 +156,20 @@ Window {
         }
     }
     Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
+    // --call-out: open the first chat and call it.
+    Timer {
+        running: window.callOut && backend.signedIn && !backend.callState
+        interval: 4000
+        onTriggered: {
+            const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+            if (!backend.currentChatId && chats.length > 0) { backend.selectChat(chats[0].id, chats[0].name); restart(); return }
+            if (window.outStarted) return
+            window.outStarted = true
+            backend.startCall()
+            callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-calling.png")))
+        }
+    }
+    property bool outStarted: false
 
     TitleBar {
         id: titleBar
@@ -193,6 +208,7 @@ Window {
         messages: backend.messagesJson ? JSON.parse(backend.messagesJson) : []
         busy: backend.busy
         onSend: text => backend.sendMessage(text)
+        onCall: backend.startCall()
     }
 
     Rectangle {

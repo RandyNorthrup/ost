@@ -935,6 +935,23 @@ pub async fn create_1to1_call(
     params: &ConversationCallParams<'_>,
     sdp_offer: &str,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
+    create_1to1_call_to(http, epconv_url, params, sdp_offer, None).await
+}
+
+/// Like [`create_1to1_call`], naming the callee in `participants.to` so the
+/// conversation service dials them out (as the Teams clients do), instead
+/// of inviting them in a second request.
+pub async fn create_1to1_call_to(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    sdp_offer: &str,
+    callee_mri: Option<&str>,
+) -> Result<(ConversationCreated, ConversationJoined)> {
+    let to: Vec<serde_json::Value> = callee_mri
+        .map(|id| serde_json::json!({ "id": id }))
+        .into_iter()
+        .collect();
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
     let cause_id = &params.message_id[..8.min(params.message_id.len())];
 
@@ -978,7 +995,7 @@ pub async fn create_1to1_call(
                 "participantId": params.participant_id,
                 "languageId": "en-US"
             },
-            "to": []
+            "to": to
         },
         "capabilities": null,
         "endpointCapabilities": 73463,

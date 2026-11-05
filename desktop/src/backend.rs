@@ -15,6 +15,7 @@ use cxx_qt_lib::QString;
 use serde_json::json;
 use teams_cli::api::{self, client::TeamsClient};
 use teams_cli::calling::incoming::{ActiveCall, CallAuth, IncomingCall};
+use teams_cli::calling::outgoing::{self, OutgoingCall};
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -82,6 +83,10 @@ pub mod qobject {
         #[qinvokable]
         fn decline_call(self: Pin<&mut Backend>);
 
+        /// Call the other person in the open 1:1 chat.
+        #[qinvokable]
+        fn start_call(self: Pin<&mut Backend>);
+
         /// End the current call.
         #[qinvokable]
         fn hang_up(self: Pin<&mut Backend>);
@@ -124,11 +129,45 @@ pub struct BackendRust {
 struct CallSlot {
     ringing: Option<IncomingCall>,
     active: Option<ActiveCall>,
+    outgoing: Option<OutgoingCall>,
+    /// The call being placed (still ringing the callee).
+    placing: Option<tokio::task::JoinHandle<()>>,
 }
 
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
     static SLOT: OnceLock<tokio::sync::Mutex<CallSlot>> = OnceLock::new();
     SLOT.get_or_init(Default::default)
+}
+
+/// Log media health every 5 s while a call lasts.
+fn spawn_call_stats_logger() {
+    runtime().spawn(async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let slot = call_slot().lock().await;
+            if let Some(call) = slot.active.as_ref() {
+                if let Some(s) = call.audio_stats().await {
+                    tracing::info!(
+                        sent = s.packets_sent,
+                        received = s.packets_received,
+                        muted = call.is_muted(),
+                        "call audio"
+                    );
+                }
+            } else if let Some(call) = slot.outgoing.as_ref() {
+                if let Some(s) = call.stats().await {
+                    tracing::info!(
+                        sent = s.packets_sent,
+                        received = s.packets_received,
+                        muted = call.is_muted(),
+                        "call audio"
+                    );
+                }
+            } else {
+                return;
+            }
+        }
+    });
 }
 
 /// How long an unanswered call rings before it counts as missed.
@@ -163,6 +202,9 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let chats = api::list_chats_data(&client, CHAT_LIMIT).await?;
     let list: Vec<_> = chats
         .iter()
+        // 48:… threads are system streams (call logs, notifications,
+        // mentions), not chats; Teams does not list them.
+        .filter(|c| !c.id.starts_with("48:"))
         .map(|c| {
             json!({
                 "id": c.id,
@@ -234,7 +276,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let mut slot = call_slot().lock().await;
         let was_ringing = slot.ringing.take().is_some();
         // The other side ended it: drop media without signalling an end.
-        let was_active = slot.active.take().is_some();
+        let was_active = slot.active.take().is_some() || slot.outgoing.take().is_some();
         drop(slot);
         if was_ringing || was_active {
             tracing::info!(was_ringing, was_active, "call ended by the other side");
@@ -416,24 +458,7 @@ impl qobject::Backend {
                     let has_audio = active.has_audio();
                     tracing::info!(has_audio, "call answered");
                     call_slot().lock().await.active = Some(active);
-                    // Log media health while the call lasts.
-                    runtime().spawn(async {
-                        loop {
-                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                            let slot = call_slot().lock().await;
-                            let Some(call) = slot.active.as_ref() else {
-                                return;
-                            };
-                            if let Some(s) = call.audio_stats().await {
-                                tracing::info!(
-                                    sent = s.packets_sent,
-                                    received = s.packets_received,
-                                    muted = call.is_muted(),
-                                    "call audio"
-                                );
-                            }
-                        }
-                    });
+                    spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_muted(false);
@@ -465,12 +490,85 @@ impl qobject::Backend {
         });
     }
 
+    pub fn start_call(mut self: Pin<&mut Self>) {
+        if !self.rust().call_state.is_empty() {
+            return;
+        }
+        // Placing calls currently joins a server-hosted conversation that does
+        // not ring the callee like a Teams 1:1 call (TASK-0020); keep it
+        // behind a flag until it does.
+        if std::env::var_os("OST_EXPERIMENTAL_OUTGOING_CALLS").is_none() {
+            self.as_mut().set_status_text(QString::from(
+                "Starting calls from OST isn't available yet. You can receive calls.",
+            ));
+            return;
+        }
+        let chat_id = self.rust().current_chat_id.to_string();
+        let peer = self.rust().current_chat_name.clone();
+        let my_oid = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.object_id())
+            .unwrap_or_default();
+        tracing::info!(chat = %chat_id, has_oid = !my_oid.is_empty(), "start call");
+        let Some(callee) = outgoing::callee_mri_for_chat(&chat_id, &my_oid) else {
+            self.as_mut()
+                .set_status_text(QString::from("Calls are available in 1:1 chats"));
+            return;
+        };
+        self.as_mut().set_call_peer(peer);
+        self.as_mut().set_call_video_offered(false);
+        self.as_mut().set_call_muted(false);
+        self.as_mut().set_call_state(QString::from("calling"));
+        let qt = self.qt_thread();
+        let task = runtime().spawn(async move {
+            let result = outgoing::place_call(&chat_id, &callee).await;
+            let mut slot = call_slot().lock().await;
+            slot.placing = None;
+            match result {
+                Ok(call) => {
+                    let has_audio = call.has_audio();
+                    tracing::info!(has_audio, "outgoing call connected");
+                    slot.outgoing = Some(call);
+                    drop(slot);
+                    spawn_call_stats_logger();
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_has_audio(has_audio);
+                        this.as_mut().set_call_state(QString::from("connected"));
+                    });
+                }
+                Err(e) => {
+                    drop(slot);
+                    let msg = short_error(&e);
+                    tracing::info!("outgoing call ended: {msg}");
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_status_text(QString::from(msg.as_str()));
+                        this.as_mut().end_call_ui();
+                    });
+                }
+            }
+        });
+        runtime().block_on(async { call_slot().lock().await.placing = Some(task) });
+    }
+
     pub fn hang_up(mut self: Pin<&mut Self>) {
         self.as_mut().end_call_ui();
         runtime().spawn(async {
-            let Some(call) = call_slot().lock().await.active.take() else {
+            let mut slot = call_slot().lock().await;
+            if let Some(task) = slot.placing.take() {
+                task.abort();
+                tracing::info!("outgoing call cancelled");
+            }
+            if let Some(call) = slot.outgoing.take() {
+                drop(slot);
+                if let Err(e) = call.hang_up().await {
+                    tracing::warn!("hang up failed: {}", short_error(&e));
+                }
+                return;
+            }
+            let Some(call) = slot.active.take() else {
                 return;
             };
+            drop(slot);
             let result = async { CallAuth::load().await?.hang_up(call).await }.await;
             if let Err(e) = result {
                 tracing::warn!("hang up failed: {}", short_error(&e));
@@ -482,7 +580,11 @@ impl qobject::Backend {
         let muted = !self.rust().call_muted;
         self.as_mut().set_call_muted(muted);
         runtime().spawn(async move {
-            if let Some(call) = call_slot().lock().await.active.as_ref() {
+            let slot = call_slot().lock().await;
+            if let Some(call) = slot.active.as_ref() {
+                call.set_muted(muted);
+            }
+            if let Some(call) = slot.outgoing.as_ref() {
                 call.set_muted(muted);
             }
         });

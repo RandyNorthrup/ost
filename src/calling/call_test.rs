@@ -646,7 +646,7 @@ pub async fn run_call_test(
 ///
 /// Uses calling_conversationServiceUrl directly if available,
 /// otherwise falls back to extracting the regional base from potentialCallRequestUrl.
-fn derive_epconv_url(region_gtms: &serde_json::Value) -> Option<String> {
+pub(crate) fn derive_epconv_url(region_gtms: &serde_json::Value) -> Option<String> {
     // Allow env var override for testing different regions
     if let Ok(url) = std::env::var("TEAMS_EPCONV_URL") {
         return Some(url);
