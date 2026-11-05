@@ -2,13 +2,7 @@
 //!
 //! A terminal-based Teams client for Linux.
 
-mod api;
-mod auth;
-mod calling;
-mod config;
-mod models;
-mod trouter;
-mod tui;
+use teams_cli::{api, auth, calling, trouter, tui};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

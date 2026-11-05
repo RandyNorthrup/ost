@@ -75,3 +75,6 @@ video-capture = ["v4l", "openh264", "sdl2"]
 
 [dev-dependencies]
 tokio-test = "0.4"
+
+[workspace]
+members = [".", "desktop"]

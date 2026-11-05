@@ -115,6 +115,62 @@ fn conversation_name(conv: &Conversation) -> String {
     conv.id.as_deref().unwrap_or("[unknown]").to_string()
 }
 
+fn has_topic(conv: &Conversation) -> bool {
+    conv.thread_properties
+        .as_ref()
+        .and_then(|p| p.topic.as_deref())
+        .is_some_and(|t| !t.is_empty())
+}
+
+/// The other participant of a 1:1 chat, from its id
+/// `19:<oid>_<oid>@unq.gbl.spaces`. None if the id is not that shape or
+/// does not include `me`.
+fn other_member_oid(chat_id: &str, me: &str) -> Option<String> {
+    let inner = chat_id
+        .strip_prefix("19:")?
+        .strip_suffix("@unq.gbl.spaces")?;
+    let (a, b) = inner.split_once('_')?;
+    let valid = |s: &str| s.len() == 36 && s.chars().all(|c| c == '-' || c.is_ascii_hexdigit());
+    if !valid(a) || !valid(b) {
+        return None;
+    }
+    if a.eq_ignore_ascii_case(me) {
+        Some(b.to_string())
+    } else if b.eq_ignore_ascii_case(me) {
+        Some(a.to_string())
+    } else {
+        None
+    }
+}
+
+/// Look up a user's display name in Graph, once per oid per listing.
+async fn resolve_user_name(
+    client: &TeamsClient,
+    oid: &str,
+    cache: &mut std::collections::HashMap<String, Option<String>>,
+) -> Option<String> {
+    if let Some(hit) = cache.get(oid) {
+        return hit.clone();
+    }
+    #[derive(Deserialize)]
+    struct User {
+        #[serde(rename = "displayName")]
+        display_name: Option<String>,
+    }
+    let name = match client
+        .graph_get(&format!("/users/{oid}?$select=displayName"))
+        .await
+    {
+        Ok(resp) => resp.json::<User>().await.ok().and_then(|u| u.display_name),
+        Err(e) => {
+            tracing::debug!("Could not resolve user {oid}: {e:#}");
+            None
+        }
+    };
+    cache.insert(oid.to_string(), name.clone());
+    name
+}
+
 /// List recent chats using the native Teams API (prints to stdout).
 pub async fn list_chats(limit: usize) -> Result<()> {
     let client = TeamsClient::new().await?;
@@ -273,6 +329,8 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
 
     let conversations = body.conversations.unwrap_or_default();
 
+    let own_oid = client.object_id();
+    let mut names: std::collections::HashMap<String, Option<String>> = Default::default();
     let mut chats = Vec::new();
     for conv in &conversations {
         let id = conv.id.as_deref().unwrap_or("").to_string();
@@ -280,8 +338,17 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             continue;
         }
 
-        let name = conversation_name(conv);
         let is_group = id.contains("thread") || id.contains("meeting");
+        let mut name = conversation_name(conv);
+        // A 1:1 chat has no topic, and its last sender may be the signed-in
+        // user; name it after the other person instead.
+        if !is_group && !has_topic(conv) {
+            if let Some(other) = own_oid.as_deref().and_then(|me| other_member_oid(&id, me)) {
+                if let Some(display) = resolve_user_name(client, &other, &mut names).await {
+                    name = display;
+                }
+            }
+        }
 
         let (last_time, last_sender, last_preview) = if let Some(ref msg) = conv.last_message {
             let time = msg
@@ -379,6 +446,31 @@ pub async fn read_messages_data(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod chat_name_tests {
+    use super::other_member_oid;
+
+    const ME: &str = "4287e791-1b98-4963-8b94-281c50472683";
+    const THEM: &str = "5050c9d6-b8a7-41f2-830a-0c51777b7dc3";
+
+    #[test]
+    fn finds_the_other_member_in_either_position() {
+        let id = format!("19:{ME}_{THEM}@unq.gbl.spaces");
+        assert_eq!(other_member_oid(&id, ME).as_deref(), Some(THEM));
+        let id = format!("19:{THEM}_{ME}@unq.gbl.spaces");
+        assert_eq!(other_member_oid(&id, ME).as_deref(), Some(THEM));
+    }
+
+    #[test]
+    fn rejects_other_shapes() {
+        assert_eq!(other_member_oid("19:abc@thread.v2", ME), None);
+        let id = format!("19:{THEM}_{THEM}@unq.gbl.spaces");
+        assert_eq!(other_member_oid(&id, ME), None);
+        let id = format!("19:{ME}_../users@unq.gbl.spaces");
+        assert_eq!(other_member_oid(&id, ME), None);
+    }
 }
 
 #[cfg(test)]
