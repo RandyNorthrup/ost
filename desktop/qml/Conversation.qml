@@ -15,6 +15,8 @@ Rectangle {
     /// Channel conversations (posts) look different from chats in Teams.
     property bool isChannel: false
     property string teamName: ""
+    /// The channel's team (its picture is the header's).
+    property string teamId: ""
     /// The other person's id in a 1:1 chat, for the header picture.
     property string chatPhotoId: ""
     /// A group chat (a grey people picture, as in Teams).
@@ -28,6 +30,10 @@ Rectangle {
     /// with a close button instead of the title, tabs and actions.
     property bool pane: false
     signal closePane()
+    /// In a channel: reply to a post, and whether a new post is being written.
+    signal sendReply(string rootId, string text)
+    property bool posting: false
+    function replyForTest(text) { return channelPosts.replyToNewestForTest(text) }
     // Test hooks for the compose box.
     function setComposeText(t) { root.setPlain(t) }
     function composeText() { return root.plainText() }
@@ -43,7 +49,7 @@ Rectangle {
     function findForTest(q) { root.finding = true; findField.text = q; return root.findHits.length }
     function sendForTest() { root.sendCompose() }
     onChatIdChanged: {
-        tab = ""; finding = false; findField.text = ""; participants.visible = false
+        tab = ""; finding = false; findField.text = ""; participants.visible = false; posting = false
         if (draftChat && !editingId) backend.setDraft(draftChat, root.plainText())
         editingId = ""
         root.setPlain(chatId ? backend.draftFor(chatId) : "")
@@ -152,22 +158,13 @@ Rectangle {
             photoId: root.chatPhotoId
             group: root.isGroup && !root.chatPhotoId
         }
-        Rectangle {
+        Avatar {
             visible: root.isChannel
             x: 20; anchors.verticalCenter: parent.verticalCenter
-            width: 32; height: 32; radius: theme.radius
-            readonly property var colors: ["#C43E1C", "#0F6CBD", "#107C10", "#8764B8", "#038387", "#CA5010"]
-            color: {
-                let h = 0
-                for (let i = 0; i < root.teamName.length; i++) h = (h * 31 + root.teamName.charCodeAt(i)) % 997
-                return colors[h % colors.length]
-            }
-            Text {
-                anchors.centerIn: parent
-                text: root.teamName.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
-                color: "white"
-                font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
-            }
+            size: 32; square: true
+            name: root.teamName
+            initialsText: root.teamName.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+            photoId: root.teamId ? "team:" + root.teamId : ""
         }
         // Title, tabs and actions at Teams desktop's measured positions.
         Text {
@@ -185,7 +182,7 @@ Rectangle {
             x: title.x + title.width + 2
             y: 2; height: 56
             Repeater {
-                model: root.isChannel ? ["Posts", "Files"]
+                model: root.isChannel ? ["Posts", "Shared", "Notes"]
                     : root.isSelf ? ["Chat", "Shared", "Storyline"]
                     : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
                 delegate: Item {
@@ -283,9 +280,22 @@ Rectangle {
         color: theme.textSecondary
     }
 
+    ChannelPosts {
+        id: channelPosts
+        visible: root.isChannel && root.tab === ""
+        anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: root.posting ? compose.top : parent.bottom; left: parent.left; right: parent.right }
+        anchors.bottomMargin: root.posting ? 12 : 0
+        messages: root.isChannel ? root.messages : []
+        myName: root.myName
+        busy: root.busy
+        onReply: (id, text) => root.sendReply(id, text)
+        onReact: (id, key, on) => root.react(id, key, on)
+        onStartPost: { root.posting = true; input.forceActiveFocus() }
+    }
+
     ListView {
         id: list
-        visible: root.tab === ""
+        visible: root.tab === "" && !root.isChannel
         anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
         anchors.bottomMargin: 12
         clip: true
@@ -937,6 +947,7 @@ Rectangle {
         }
         input.clear()
         root.formatting = false
+        root.posting = false
     }
     EmojiPicker {
         id: emojiPicker
@@ -954,7 +965,7 @@ Rectangle {
     // Compose box
     Rectangle {
         id: compose
-        visible: root.chatName.length > 0
+        visible: root.chatName.length > 0 && (!root.isChannel || root.posting)
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: root.pane ? 12 : 72; anchors.rightMargin: root.pane ? 12 : 72; anchors.bottomMargin: root.pane ? 12 : 24
         height: Math.max(44, input.contentHeight + 24) + (root.pendingFiles.length > 0 ? pendingRow.height + 8 : 0)
@@ -1057,7 +1068,10 @@ Rectangle {
                 if (root.editingId) { root.editMessage(root.editingId, root.plainText()); root.editingId = ""; input.clear() }
                 else root.sendCompose()
             }
-            Keys.onEscapePressed: if (root.editingId) { root.editingId = ""; input.clear() }
+            Keys.onEscapePressed: {
+                if (root.editingId) { root.editingId = ""; input.clear() }
+                else if (root.posting) root.posting = false
+            }
         }
         Row {
             id: tools

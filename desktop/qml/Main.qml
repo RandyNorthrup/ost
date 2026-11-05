@@ -429,7 +429,11 @@ Window {
             if (chats.length > 0 && !backend.currentChatId) {
                 // --open-chat=<id> picks the chat to capture; else the first.
                 const want = Qt.application.arguments.find(a => a.startsWith("--open-chat="))
-                const pick = want ? (chats.find(c => c.id === want.slice(12)) || chats[0]) : chats[0]
+                // Channels are picked by id too (named "General" etc.).
+                const id = want ? want.slice(12) : ""
+                const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+                const ch = id.endsWith("@thread.tacv2") ? teams.reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id) : null
+                const pick = ch ? ch : want ? (chats.find(c => c.id === id) || chats[0]) : chats[0]
                 backend.selectChat(pick.id, pick.name)
                 restart()
                 return
@@ -441,6 +445,8 @@ Window {
                 restart()
                 return
             }
+            // --reply-test takes over once the channel is open.
+            if (Qt.application.arguments.indexOf("--reply-test") >= 0) return
             console.warn("shot: signedIn", backend.signedIn, "chats", backend.chatsJson.length, "status", backend.statusText)
             window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
         }
@@ -650,6 +656,23 @@ Window {
             }
             if (step === 3 && backend.currentChatId.indexOf("@thread") >= 0 && backend.messagesJson.indexOf("OST test 27") >= 0) {
                 console.warn("GROUP", backend.currentChatId.length > 0, backend.currentChatName)
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+                stop()
+            }
+        }
+    }
+
+    // --reply-test (with --open-chat=<channel>): reply in the newest
+    // post's thread, capture once the reply shows.
+    Timer {
+        running: Qt.application.arguments.indexOf("--reply-test") >= 0 && backend.signedIn && backend.currentChatId.endsWith("@thread.tacv2")
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            if (step === 0 && backend.messagesJson.length > 2) { console.warn("REPLY sent", conversation.replyForTest("OST channel test 3: reply from OST")); step = 1; return }
+            if (step === 1 && backend.messagesJson.indexOf("OST channel test 3") >= 0) {
+                const m = JSON.parse(backend.messagesJson).find(m => m.text.indexOf("OST channel test 3") >= 0)
+                console.warn("REPLY shown, is a reply:", m.root_id !== m.id)
                 window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
                 stop()
             }
@@ -945,6 +968,11 @@ Window {
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
             return t ? t.name : ""
         }
+        teamId: {
+            const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+            const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
+            return t ? t.id : ""
+        }
         chatPhotoId: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId)
             return c && c.peerMri ? c.peerMri : ""
@@ -961,6 +989,7 @@ Window {
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onEditMessage: (id, text) => backend.editMessage(id, text)
         onDeleteMessage: id => backend.deleteMessage(id)
+        onSendReply: (id, text) => backend.sendReply(id, text)
         typingText: backend.typingText
     }
 

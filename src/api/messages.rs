@@ -63,6 +63,10 @@ pub struct MessageView {
     /// Attached files (Teams' file cards).
     #[serde(default)]
     pub files: Vec<super::files::FileAttachment>,
+    /// In a channel, the post this message belongs to: its own id for a
+    /// post, the post's id for a reply. Empty in chats.
+    #[serde(default)]
+    pub root_id: String,
 }
 
 /// Teams' reaction keys and their emoji.
@@ -170,6 +174,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         seen: false,
         first_unread: false,
         files: Vec::new(),
+        root_id: s("/rootMessageId"),
     };
     if kind == "Event/Call" {
         let content = s("/content");

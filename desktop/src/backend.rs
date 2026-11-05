@@ -216,6 +216,10 @@ pub mod qobject {
         #[qinvokable]
         fn set_setting(self: Pin<&mut Backend>, name: &QString, value: &QString);
 
+        /// Reply to a post in the open channel (`root_id` is the post's id).
+        #[qinvokable]
+        fn send_reply(self: Pin<&mut Backend>, root_id: &QString, text: &QString);
+
         /// Start a group chat with these people (comma-separated object
         /// ids), optionally named, and send its first message.
         #[qinvokable]
@@ -1645,6 +1649,38 @@ impl qobject::Backend {
                             .set_draft(&QString::from(sent_chat.as_str()), &QString::default());
                         this.as_mut().reload_messages()
                     }
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
+        });
+    }
+
+    pub fn send_reply(mut self: Pin<&mut Self>, root_id: &QString, text: &QString) {
+        let (root, body) = (root_id.to_string(), text.to_string());
+        let channel = self.rust().current_chat_id.to_string();
+        // Replies go to "<channel>;messageid=<post>"; post ids are digits.
+        if body.trim().is_empty()
+            || !channel.ends_with("@thread.tacv2")
+            || root.is_empty()
+            || !root.bytes().all(|b| b.is_ascii_digit())
+        {
+            return;
+        }
+        self.as_mut().set_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let thread = format!("{channel};messageid={root}");
+                api::send_message_with_client(&client, &thread, &body).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_busy(false);
+                match result {
+                    Ok(()) => this.as_mut().reload_messages(),
                     Err(e) => this
                         .as_mut()
                         .set_status_text(QString::from(short_error(&e).as_str())),

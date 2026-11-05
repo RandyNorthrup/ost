@@ -18,6 +18,8 @@ QtObject {
     readonly property color chrome: pick("#EBEBEB", "#0A0A0A")         // title bar, app rail
     readonly property color pane: pick("#F5F5F5", "#1A1A1A")           // list panes
     readonly property color surface: pick("#FFFFFF", "#1F1F1F")        // conversation, cards
+    readonly property color channelPage: pick("#FAFAFA", "#141414")    // behind channel post cards
+    readonly property color cardEdge: pick("#E3E3E3", "#383838")       // channel post card outline
     readonly property color bubble: pick("#F5F5F5", "#292929")         // others' bubbles
     readonly property color input: pick("#FFFFFF", "#292929")          // compose box
     readonly property color selected: pick("#FFFFFF", "#242424")       // the open row in a pane
