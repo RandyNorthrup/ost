@@ -7,6 +7,7 @@ pub mod api;
 pub mod auth;
 pub mod calling;
 pub mod config;
+pub mod event_hub;
 pub mod models;
 pub mod trouter;
 pub mod tui;

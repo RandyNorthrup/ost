@@ -48,6 +48,28 @@ Window {
             if (!backend.signedIn) { interval = 2000; restart(); return }
             interval = 15000
             const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+            // Push test: wait (unselected) for a chat to turn unread, capture
+            // it, then open it and capture once the awaited text is shown.
+            const waitText = Qt.application.arguments.length > 3 ? Qt.application.arguments[3] : ""
+            if (waitText) {
+                interval = 1000
+                if (!backend.currentChatId) {
+                    const hit = chats.find(c => c.unread)
+                    if (hit) {
+                        console.warn("PUSH-UNREAD", hit.name)
+                        window.contentItem.grabToImage(r => {
+                            r.saveToFile(window.shotPath.replace(".png", "-unread.png"))
+                            backend.selectChat(hit.id, hit.name)
+                        })
+                    }
+                    restart()
+                    return
+                }
+                if (backend.messagesJson.indexOf(waitText) < 0) { restart(); return }
+                console.warn("PUSH-SHOWN")
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+                return
+            }
             if (chats.length > 0 && !backend.currentChatId) {
                 backend.selectChat(chats[0].id, chats[0].name)
                 restart()
@@ -87,6 +109,7 @@ Window {
     AppRail {
         id: rail
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: parent.left }
+        unreadChats: chatList.chats.filter(c => c.unread).length
     }
     ChatList {
         id: chatList

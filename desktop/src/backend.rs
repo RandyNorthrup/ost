@@ -5,7 +5,9 @@
 //! only ever written on the Qt thread. Lists cross to QML as JSON strings,
 //! which QML parses into its own models; this keeps the bridge small.
 
+use std::collections::HashSet;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use cxx_qt::{CxxQtType, Threading};
@@ -82,6 +84,10 @@ pub struct BackendRust {
     has_credentials: bool,
     sign_in_code: QString,
     sign_in_url: QString,
+    /// Chats with messages pushed since the user last opened them.
+    unread: HashSet<String>,
+    /// The chat list as loaded, before unread flags are applied.
+    chats: Vec<serde_json::Value>,
 }
 
 /// How many chats and messages to load per request.
@@ -107,7 +113,7 @@ fn short_error(e: &anyhow::Error) -> String {
     line.chars().take(200).collect()
 }
 
-async fn load_overview() -> anyhow::Result<(String, String)> {
+async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let client = TeamsClient::new().await?;
     let me = api::whoami_data(&client).await?;
     let chats = api::list_chats_data(&client, CHAT_LIMIT).await?;
@@ -124,7 +130,7 @@ async fn load_overview() -> anyhow::Result<(String, String)> {
             })
         })
         .collect();
-    Ok((me.display_name, serde_json::to_string(&list)?))
+    Ok((me.display_name, list))
 }
 
 async fn load_messages(chat_id: String) -> anyhow::Result<String> {
@@ -210,6 +216,114 @@ impl qobject::Backend {
         self.as_mut().set_messages_json(QString::from("[]"));
         self.as_mut().set_current_chat_id(QString::default());
         self.as_mut().set_current_chat_name(QString::default());
+        self.as_mut().rust_mut().unread.clear();
+        self.as_mut().rust_mut().chats.clear();
+    }
+
+    /// Hand the chat list, with unread flags, to QML.
+    fn publish_chats(mut self: Pin<&mut Self>) {
+        let unread = &self.rust().unread;
+        let list: Vec<_> = self
+            .rust()
+            .chats
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                let id = c["id"].as_str().unwrap_or_default().to_string();
+                c["unread"] = json!(unread.contains(&id));
+                c
+            })
+            .collect();
+        let text = serde_json::to_string(&list).unwrap_or_else(|_| "[]".into());
+        self.as_mut().set_chats_json(QString::from(text.as_str()));
+    }
+
+    /// Connect to Trouter once per process and react to pushed chat events:
+    /// reload the open chat, mark others unread, and refresh the list order.
+    fn start_push(self: Pin<&mut Self>) {
+        static STARTED: AtomicBool = AtomicBool::new(false);
+        if STARTED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let mut events = teams_cli::event_hub::subscribe();
+        runtime().spawn(async {
+            let opts = teams_cli::trouter::ListenOptions::EMBEDDED;
+            if let Err(e) = teams_cli::trouter::listen(opts, std::future::pending).await {
+                tracing::warn!("push channel stopped: {}", short_error(&e));
+            }
+        });
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            use teams_cli::event_hub::EventKind;
+            use tokio::sync::broadcast::error::RecvError;
+            loop {
+                let ev = match events.recv().await {
+                    Ok(ev) => ev,
+                    Err(RecvError::Lagged(n)) => {
+                        tracing::warn!("missed {n} push events; reloading");
+                        let _ = qt.queue(|mut this| {
+                            this.as_mut().reload_messages();
+                            this.as_mut().reload_chats();
+                        });
+                        continue;
+                    }
+                    Err(RecvError::Closed) => return,
+                };
+                if ev.kind != EventKind::Chat {
+                    continue;
+                }
+                let ids = teams_cli::event_hub::conversation_ids(&ev.json);
+                if ids.is_empty() {
+                    continue;
+                }
+                tracing::info!(chats = ids.len(), "chat push");
+                let _ = qt.queue(move |mut this| this.as_mut().on_chat_push(ids));
+            }
+        });
+    }
+
+    fn on_chat_push(mut self: Pin<&mut Self>, ids: Vec<String>) {
+        let current = self.rust().current_chat_id.to_string();
+        let mut list_changed = false;
+        for id in ids {
+            if id == current {
+                self.as_mut().reload_messages();
+            } else {
+                list_changed |= self.as_mut().rust_mut().unread.insert(id);
+            }
+        }
+        if list_changed {
+            self.as_mut().publish_chats();
+        }
+        self.as_mut().reload_chats();
+    }
+
+    /// Reload the chat list quietly (new chats, new order), keeping unread
+    /// flags. Pushes arriving while a reload runs are folded into it.
+    fn reload_chats(self: Pin<&mut Self>) {
+        static RUNNING: AtomicBool = AtomicBool::new(false);
+        static AGAIN: AtomicBool = AtomicBool::new(false);
+        if RUNNING.swap(true, Ordering::SeqCst) {
+            AGAIN.store(true, Ordering::SeqCst);
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = load_overview().await;
+            let _ = qt.queue(move |mut this| {
+                RUNNING.store(false, Ordering::SeqCst);
+                match result {
+                    Ok((_, chats)) => {
+                        this.as_mut().rust_mut().chats = chats;
+                        this.as_mut().publish_chats();
+                    }
+                    Err(e) => tracing::warn!("chat list reload failed: {}", short_error(&e)),
+                }
+                if AGAIN.swap(false, Ordering::SeqCst) {
+                    this.as_mut().reload_chats();
+                }
+            });
+        });
     }
 
     pub fn refresh(mut self: Pin<&mut Self>) {
@@ -228,8 +342,10 @@ impl qobject::Backend {
                     Ok((name, chats)) => {
                         this.as_mut().set_signed_in(true);
                         this.as_mut().set_user_name(QString::from(name.as_str()));
-                        this.as_mut().set_chats_json(QString::from(chats.as_str()));
+                        this.as_mut().rust_mut().chats = chats;
+                        this.as_mut().publish_chats();
                         this.as_mut().set_status_text(QString::default());
+                        this.as_mut().start_push();
                     }
                     Err(e) => {
                         this.as_mut().set_signed_in(false);
@@ -242,6 +358,9 @@ impl qobject::Backend {
     }
 
     pub fn select_chat(mut self: Pin<&mut Self>, chat_id: &QString, chat_name: &QString) {
+        if self.as_mut().rust_mut().unread.remove(&chat_id.to_string()) {
+            self.as_mut().publish_chats();
+        }
         self.as_mut().set_current_chat_id(chat_id.clone());
         self.as_mut().set_current_chat_name(chat_name.clone());
         self.as_mut().set_messages_json(QString::from("[]"));

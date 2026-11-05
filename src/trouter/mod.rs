@@ -11,8 +11,32 @@ use anyhow::{Context, Result};
 use std::time::{Duration, Instant};
 use tokio::time;
 
+use crate::auth::tokens::TokenStore;
 use crate::calling;
 use crate::config::Config;
+
+/// How a Trouter session behaves for its host.
+#[derive(Debug, Clone, Copy)]
+pub struct ListenOptions {
+    /// Print frames and status to stdout (the CLI's `trouter` command).
+    pub console: bool,
+    /// Answer incoming calls automatically (the CLI's echo-test mode).
+    /// Embedders that show an incoming-call UI leave this off.
+    pub auto_answer: bool,
+}
+
+impl ListenOptions {
+    /// The CLI: print everything, auto-answer calls.
+    pub const CLI: Self = Self {
+        console: true,
+        auto_answer: true,
+    };
+    /// A library host: quiet, events only via [`crate::event_hub`].
+    pub const EMBEDDED: Self = Self {
+        console: false,
+        auto_answer: false,
+    };
+}
 
 /// Reason the inner connection loop exited.
 enum DisconnectReason {
@@ -28,10 +52,24 @@ enum DisconnectReason {
 /// exponential backoff (1s, 2s, 4s, ... capped at 64s). On clean shutdown
 /// (Ctrl+C), exits immediately.
 pub async fn connect_and_run() -> Result<()> {
+    listen(ListenOptions::CLI, || async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await
+}
+
+/// Run Trouter until `shutdown()` resolves, reconnecting with backoff.
+/// Every chat and call event is published to [`crate::event_hub`].
+/// `shutdown` is called once per wait, so it must build a fresh future.
+pub async fn listen<S, F>(opts: ListenOptions, shutdown: S) -> Result<()>
+where
+    S: Fn() -> F,
+    F: std::future::Future<Output = ()>,
+{
     let mut backoff = 1u64;
 
     loop {
-        match connect_and_run_inner().await {
+        match connect_and_run_inner(opts, &shutdown).await {
             Ok(DisconnectReason::Shutdown) => {
                 return Ok(());
             }
@@ -45,8 +83,8 @@ pub async fn connect_and_run() -> Result<()> {
 
                 tokio::select! {
                     _ = time::sleep(Duration::from_secs(1)) => {}
-                    _ = tokio::signal::ctrl_c() => {
-                        println!("Shutting down...");
+                    _ = shutdown() => {
+                        if opts.console { println!("Shutting down..."); }
                         return Ok(());
                     }
                 }
@@ -60,8 +98,8 @@ pub async fn connect_and_run() -> Result<()> {
 
                 tokio::select! {
                     _ = time::sleep(Duration::from_secs(backoff)) => {}
-                    _ = tokio::signal::ctrl_c() => {
-                        println!("Shutting down...");
+                    _ = shutdown() => {
+                        if opts.console { println!("Shutting down..."); }
                         return Ok(());
                     }
                 }
@@ -76,9 +114,23 @@ pub async fn connect_and_run() -> Result<()> {
 ///
 /// Returns `DisconnectReason::Shutdown` on clean Ctrl+C, or
 /// `DisconnectReason::Error` when the connection should be retried.
-async fn connect_and_run_inner() -> Result<DisconnectReason> {
-    // Reload config each attempt so we pick up refreshed tokens.
-    let config = Config::load().context("Failed to load config")?;
+async fn connect_and_run_inner<S, F>(opts: ListenOptions, shutdown: &S) -> Result<DisconnectReason>
+where
+    S: Fn() -> F,
+    F: std::future::Future<Output = ()>,
+{
+    // Reload config each attempt so we pick up refreshed tokens; renew them
+    // first if the Skype token has lapsed (long-running hosts outlive it).
+    let mut config = Config::load().context("Failed to load config")?;
+    if config.get_skype_token().is_some_and(|t| t.is_expired())
+        && config.get_refresh_token().is_some()
+    {
+        tracing::info!("Skype token expired; refreshing before reconnecting");
+        crate::auth::oauth::refresh()
+            .await
+            .context("Token refresh failed")?;
+        config = Config::load().context("Failed to load config")?;
+    }
 
     let skype_token = config
         .get_skype_token()
@@ -115,9 +167,26 @@ async fn connect_and_run_inner() -> Result<DisconnectReason> {
     // 5. Register with registrar
     let registrar_ttl_secs: u64 = 86400;
     if let Some(ref reg_url) = session.registrar_url {
-        if let Err(e) = registrar::register(&http, skype_token_str, reg_url, &session.surl).await {
+        if let Err(e) = registrar::register_with_endpoint(
+            &http,
+            skype_token_str,
+            reg_url,
+            &session.surl,
+            Some(&epid),
+        )
+        .await
+        {
             tracing::warn!("Initial registrar registration failed: {:#}", e);
         }
+    }
+    // Mark the endpoint active, as Teams clients do right after the
+    // handshake; chat pushes only flow to active endpoints. (eisbaw/ost#88)
+    let activity = serde_json::json!({
+        "name": "user.activity",
+        "args": [{"state": "active", "cv": format!("{}.0.1", uuid::Uuid::new_v4().simple())}],
+    });
+    if let Err(e) = ws.send_text(&format!("5:1+::{}", activity)).await {
+        tracing::warn!("user.activity send failed: {:#}", e);
     }
 
     // 6. Event loop: recv frames, send heartbeat, re-register before TTL,
@@ -140,13 +209,44 @@ async fn connect_and_run_inner() -> Result<DisconnectReason> {
     // We communicate this via the return value — the caller checks timing.
     let stability_threshold = Duration::from_secs(60);
 
-    println!("Trouter connected. Listening for events... (Ctrl-C to stop)");
+    if opts.console {
+        println!("Trouter connected. Listening for events... (Ctrl-C to stop)");
+    } else {
+        tracing::info!("Trouter connected");
+    }
 
+    let mut cdl_reregistered = false;
     let disconnect_reason = loop {
         tokio::select! {
             frame = ws.recv_frame() => {
                 match frame {
-                    Ok(Some(text)) => handle_frame(&text, &http, skype_token_str).await,
+                    Ok(Some(text)) => {
+                        // On the first message_loss after connect, re-register
+                        // the chat (CDL) entry with the 1.9 template, as the
+                        // Teams clients do. (eisbaw/ost#88)
+                        if !cdl_reregistered && text.contains("trouter.message_loss") {
+                            cdl_reregistered = true;
+                            if let Some(ref reg_url) = session.registrar_url {
+                                let (h, tok, reg, surl, ep) = (
+                                    http.clone(),
+                                    skype_token_str.to_string(),
+                                    reg_url.clone(),
+                                    session.surl.clone(),
+                                    epid.clone(),
+                                );
+                                tokio::spawn(async move {
+                                    if let Err(e) = registrar::register_cdl(
+                                        &h, &tok, &reg, &surl, &ep, "TeamsCDLWebWorker_1.9",
+                                    )
+                                    .await
+                                    {
+                                        tracing::warn!("CDL re-registration failed: {:#}", e);
+                                    }
+                                });
+                            }
+                        }
+                        handle_frame(&text, &http, skype_token_str, opts).await
+                    }
                     Ok(None) => {
                         break DisconnectReason::Error(anyhow::anyhow!("WebSocket closed by server"));
                     }
@@ -167,8 +267,9 @@ async fn connect_and_run_inner() -> Result<DisconnectReason> {
                     let tok = skype_token_str.to_string();
                     let surl = session.surl.clone();
                     let reg = reg_url.clone();
+                    let ep = epid.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = registrar::register(&http2, &tok, &reg, &surl).await {
+                        if let Err(e) = registrar::register_with_endpoint(&http2, &tok, &reg, &surl, Some(&ep)).await {
                             tracing::warn!("Re-registration failed: {:#}", e);
                         }
                     });
@@ -180,8 +281,8 @@ async fn connect_and_run_inner() -> Result<DisconnectReason> {
                 tracing::info!("Session max age reached (1h), forcing reconnect for fresh session");
                 break DisconnectReason::Error(anyhow::anyhow!("Session max age reached"));
             }
-            _ = tokio::signal::ctrl_c() => {
-                println!("Shutting down...");
+            _ = shutdown() => {
+                if opts.console { println!("Shutting down..."); }
                 break DisconnectReason::Shutdown;
             }
         }
@@ -203,7 +304,12 @@ async fn connect_and_run_inner() -> Result<DisconnectReason> {
 }
 
 /// Handle an incoming socket.io frame.
-async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str) {
+async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, opts: ListenOptions) {
+    use crate::event_hub::{publish, EventKind};
+    // Stdout output belongs to the CLI only.
+    macro_rules! say {
+        ($($t:tt)*) => { if opts.console { println!($($t)*); } };
+    }
     // socket.io framing:
     // 1:: — handshake (handled above)
     // 2:: — heartbeat ping (server)
@@ -235,14 +341,18 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str) {
             } else {
                 "[MSG]"
             };
-            println!("{} Event: {}", prefix, json_str);
+            say!("{} Event: {}", prefix, json_str);
 
-            // If this is a call event, try to parse and auto-answer.
             if is_call {
-                handle_call_event(json_str, http, skype_token).await;
+                publish(EventKind::Call, json_str.to_string());
+                if opts.auto_answer {
+                    handle_call_event(json_str, http, skype_token).await;
+                }
+            } else if let Some(ev) = chat_event_json(json_str) {
+                publish(EventKind::Chat, ev);
             }
         } else {
-            println!("Frame: {}", frame);
+            say!("Frame: {}", frame);
         }
         return;
     }
@@ -250,14 +360,106 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str) {
     if frame.starts_with("6:") {
         if let Some(json_start) = frame.find(":::{") {
             let json_str = &frame[json_start + 3..];
-            println!("Ack: {}", json_str);
+            say!("Ack: {}", json_str);
         } else {
-            println!("Ack frame: {}", frame);
+            say!("Ack frame: {}", frame);
         }
         return;
     }
 
-    println!("Frame: {}", frame);
+    // Chat-service pushes arrive as HTTP-over-WebSocket data frames.
+    if let Some(payload) = frame.strip_prefix("3:::") {
+        if let Some(ev) = data_frame_event(payload) {
+            say!("[CHAT] Event: {}", ev);
+            publish(EventKind::Chat, ev);
+            return;
+        }
+    }
+
+    say!("Frame: {}", frame);
+}
+
+/// Decode one Trouter `3:::` data frame payload
+/// (`{id, method, url, headers, body}`) into the pushed chat-service
+/// event JSON. `body` is the event itself, or base64 + gzip
+/// (`X-Microsoft-Skype-Content-Encoding: gzip`, also tried when the
+/// plain body isn't JSON). Only chat-service events (`resourceType` /
+/// `resource` / `eventMessages`) are returned; anything else (calls,
+/// other services) is None and keeps its existing path.
+pub fn data_frame_event(payload: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let obj = v.as_object()?;
+    // `body` sits top-level or under `data` depending on the Trouter
+    // version (same two shapes the call path reads); an object body is
+    // the event itself.
+    let find_body = |m: &serde_json::Map<String, serde_json::Value>| {
+        m.iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("body"))
+            .map(|(_, v)| v.clone())
+    };
+    let body_val = find_body(obj).or_else(|| {
+        obj.iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("data"))
+            .and_then(|(_, d)| d.as_object())
+            .and_then(|d| find_body(d))
+    })?;
+    if body_val.is_object() {
+        return chat_event_json(&body_val.to_string());
+    }
+    let body = body_val.as_str()?;
+    let gzip_header = obj
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("headers"))
+        .and_then(|(_, h)| h.as_object())
+        .map(|h| {
+            h.iter().any(|(k, v)| {
+                k.eq_ignore_ascii_case("X-Microsoft-Skype-Content-Encoding")
+                    && v.as_str()
+                        .map_or(false, |s| s.to_ascii_lowercase().contains("gzip"))
+            })
+        })
+        .unwrap_or(false);
+    let plain = if gzip_header {
+        None
+    } else {
+        chat_event_json(body)
+    };
+    plain.or_else(|| gunzip_base64(body).and_then(|t| chat_event_json(&t)))
+}
+
+fn chat_event_json(text: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    // Wrapped payloads (as the Teams clients unwrap them): `cp` = base64 +
+    // gzip JSON, `gp` = base64 JSON.
+    if let Some(cp) = v.get("cp").and_then(|c| c.as_str()) {
+        return gunzip_base64(cp).and_then(|t| chat_event_json(&t));
+    }
+    if let Some(gp) = v.get("gp").and_then(|c| c.as_str()) {
+        use base64::Engine;
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(gp.trim())
+            .ok()?;
+        return chat_event_json(&String::from_utf8(raw).ok()?);
+    }
+    let is_chat = v.as_object()?.keys().any(|k| {
+        k.eq_ignore_ascii_case("resourceType")
+            || k.eq_ignore_ascii_case("resource")
+            || k.eq_ignore_ascii_case("eventMessages")
+    });
+    is_chat.then(|| text.to_string())
+}
+
+fn gunzip_base64(body: &str) -> Option<String> {
+    use base64::Engine;
+    use std::io::Read;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(body.trim())
+        .ok()?;
+    let mut out = String::new();
+    flate2::read::GzDecoder::new(&raw[..])
+        .read_to_string(&mut out)
+        .ok()?;
+    Some(out)
 }
 
 /// Handle a call event from Trouter — parse invitation and auto-answer.
@@ -549,5 +751,79 @@ async fn handle_call_event(json_str: &str, http: &reqwest::Client, skype_token: 
     // Send acceptance.
     if let Err(e) = calling::signaling::accept_call(http, skype_token, &notification).await {
         tracing::warn!("Failed to accept call: {:#}", e);
+    }
+}
+
+#[cfg(test)]
+mod data_frame_tests {
+    use super::data_frame_event;
+
+    fn frame(body: &str, headers: serde_json::Value) -> String {
+        serde_json::json!({"id": 7, "method": "POST", "url": "/v4/f/x/messaging",
+            "headers": headers, "body": body})
+        .to_string()
+    }
+
+    #[test]
+    fn data_frame_plain_chat_event_is_published() {
+        let ev = r#"{"resourceType":"NewMessage","resource":{"id":"1","clientmessageid":"9"}}"#;
+        let got = data_frame_event(&frame(ev, serde_json::json!({}))).unwrap();
+        assert_eq!(got, ev);
+    }
+
+    #[test]
+    fn data_frame_gzip_body_is_decoded() {
+        use base64::Engine;
+        use std::io::Write;
+        let ev = r#"{"eventMessages":[{"resourceType":"NewMessage","resource":{"id":"2"}}]}"#;
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(ev.as_bytes()).unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+        let hdr = serde_json::json!({"X-Microsoft-Skype-Content-Encoding": "gzip"});
+        assert_eq!(data_frame_event(&frame(&b64, hdr)).as_deref(), Some(ev));
+        // Header missing: the base64+gzip fallback still decodes.
+        assert_eq!(
+            data_frame_event(&frame(&b64, serde_json::json!({}))).as_deref(),
+            Some(ev)
+        );
+    }
+
+    #[test]
+    fn data_frame_body_under_data_or_as_object() {
+        let ev = r#"{"resourceType":"NewMessage","resource":{"id":"3"}}"#;
+        let nested = serde_json::json!({"id": 9, "data": {"body": ev}}).to_string();
+        assert_eq!(data_frame_event(&nested).as_deref(), Some(ev));
+        let obj = serde_json::json!({"id": 9, "body": {"resourceType": "NewMessage"}}).to_string();
+        assert!(data_frame_event(&obj).unwrap().contains("NewMessage"));
+    }
+
+    #[test]
+    fn data_frame_cp_and_gp_wrappers_are_unwrapped() {
+        use base64::Engine;
+        use std::io::Write;
+        let ev = r#"{"type":"EventMessage","resourceType":"NewMessage","resource":{"id":"4"}}"#;
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(ev.as_bytes()).unwrap();
+        let cp = base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+        let body = serde_json::json!({"cp": cp}).to_string();
+        assert_eq!(
+            data_frame_event(&frame(&body, serde_json::json!({}))).as_deref(),
+            Some(ev)
+        );
+        let gp = base64::engine::general_purpose::STANDARD.encode(ev);
+        let body = serde_json::json!({"gp": gp}).to_string();
+        assert_eq!(
+            data_frame_event(&frame(&body, serde_json::json!({}))).as_deref(),
+            Some(ev)
+        );
+    }
+
+    #[test]
+    fn data_frame_non_chat_payloads_are_skipped() {
+        assert!(
+            data_frame_event(&frame(r#"{"callNotification":{}}"#, serde_json::json!({}))).is_none()
+        );
+        assert!(data_frame_event("not json").is_none());
+        assert!(data_frame_event(r#"{"id":1,"status":200}"#).is_none());
     }
 }

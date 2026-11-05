@@ -77,6 +77,7 @@ Rectangle {
             id: row
             required property var modelData
             readonly property bool selected: modelData.id === root.currentId
+            readonly property bool unread: modelData.unread === true && !selected
             width: list.width; height: 32
             Rectangle {
                 x: 16; width: parent.width - 32; height: 32; radius: theme.radius
@@ -89,8 +90,16 @@ Rectangle {
                 text: row.modelData.name
                 elide: Text.ElideRight
                 font.family: theme.font; font.pixelSize: theme.base
-                font.weight: row.selected ? Font.DemiBold : Font.Normal
+                font.weight: row.selected || row.unread ? Font.DemiBold : Font.Normal
                 color: theme.text
+            }
+            // Unread: bold name plus a brand dot, as in Teams.
+            Rectangle {
+                visible: row.unread
+                width: 8; height: 8; radius: 4
+                x: parent.width - 16 - 8 - 12
+                anchors.verticalCenter: parent.verticalCenter
+                color: theme.brand
             }
             HoverHandler { id: hover }
             TapHandler { onTapped: root.chatSelected(row.modelData.id, row.modelData.name) }
