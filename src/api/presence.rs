@@ -82,6 +82,39 @@ pub async fn set_presence(status: &str) -> Result<()> {
 const PRESENCE_SCOPE: &str = "https://presence.teams.microsoft.com/.default";
 const PRESENCE_URL: &str = "https://presence.teams.microsoft.com";
 
+/// Set your status as Teams' profile menu does ("Available", "Busy",
+/// "DoNotDisturb", "BeRightBack", "Away", "Offline"), or `None` to reset it
+/// to what your activity says (PUT …/v1/me/forceavailability/).
+pub async fn force_availability(http: &reqwest::Client, availability: Option<&str>) -> Result<()> {
+    if let Some(a) = availability {
+        if ![
+            "Available",
+            "Busy",
+            "DoNotDisturb",
+            "BeRightBack",
+            "Away",
+            "Offline",
+        ]
+        .contains(&a)
+        {
+            bail!("Unknown status: {a}");
+        }
+    }
+    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
+    let mut req = http
+        .put(format!("{PRESENCE_URL}/v1/me/forceavailability/"))
+        .bearer_auth(token);
+    req = match availability {
+        Some(a) => req.json(&serde_json::json!({ "availability": a })),
+        None => req.header("Content-Length", "0"),
+    };
+    let resp = req.send().await.context("Status request failed")?;
+    if !resp.status().is_success() {
+        bail!("Setting status failed: HTTP {}", resp.status().as_u16());
+    }
+    Ok(())
+}
+
 /// Tell the presence service this endpoint (the Trouter `epid`) is online
 /// and active. Without an active endpoint the user shows as Offline and
 /// incoming calls are not offered to it; they go straight to voicemail.

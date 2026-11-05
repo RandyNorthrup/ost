@@ -30,6 +30,7 @@ Rectangle {
     property bool pinned: false
     signal togglePin()
     function focusSearch() { field.forceActiveFocus() }
+    function openProfileForTest() { menu.visible = true; statusMenu.visible = true }
     // Test hook: type into search and keep the suggestions open offscreen,
     // where the window never has focus.
     property bool keepSuggestionsOpen: false
@@ -300,37 +301,124 @@ Rectangle {
         }
     }
 
-    // Account flyout, as in Teams: name, status, and sign out.
+    // Account flyout, as Teams lays it out: organisation and Sign out, your
+    // picture, name and e-mail, then your status with its choices.
+    property string userMail: ""
+    property string orgName: ""
+    signal setStatus(string status)
+    readonly property var statuses: [
+        { key: "Available", label: "Available" },
+        { key: "Busy", label: "Busy" },
+        { key: "DoNotDisturb", label: "Do not disturb" },
+        { key: "BeRightBack", label: "Be right back" },
+        { key: "Away", label: "Appear away" },
+        { key: "Offline", label: "Appear offline" },
+    ]
+    function statusLabel(p) {
+        const k = (p || "Available").toLowerCase()
+        const s = statuses.find(s => s.key.toLowerCase() === k)
+        return s ? s.label : (k === "inacall" || k === "inameeting" || k === "busyidle" ? "Busy" : k === "availableidle" ? "Available" : p)
+    }
     Rectangle {
         id: menu
         visible: false
         z: 100
-        width: 280; height: menuCol.implicitHeight + 24
+        width: 360; height: menuCol.implicitHeight + 8
         anchors.right: parent.right; anchors.rightMargin: 8
         y: parent.height + 4
         radius: 8
         color: theme.menu
         border.color: theme.dividerSoft
+        onVisibleChanged: if (!visible) statusMenu.visible = false
         Column {
             id: menuCol
-            x: 16; y: 12; width: parent.width - 32
-            spacing: 12
-            Row {
-                spacing: 12
-                Avatar { name: root.userName || "?"; size: 48; photoId: "me" }
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-                    Text { text: root.userName; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                    Text { text: "Available"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+            width: parent.width
+            Item {
+                width: parent.width; height: 48
+                Text {
+                    x: 18; anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - 120; elide: Text.ElideRight
+                    text: root.orgName || "Signed in"
+                    font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                    color: theme.text
+                }
+                Text {
+                    anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter
+                    text: "Sign out"
+                    font.family: theme.font; font.pixelSize: theme.small
+                    color: theme.textStrong
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { menu.visible = false; root.signOut() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Sign out"
                 }
             }
-            Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
-            Text {
-                text: "Sign out"
-                font.family: theme.font; font.pixelSize: theme.base
-                color: theme.text
-                TapHandler { onTapped: { menu.visible = false; root.signOut() } }
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            Item {
+                width: parent.width; height: 72
+                Avatar { x: 18; anchors.verticalCenter: parent.verticalCenter; name: root.userName || "?"; size: 56; photoId: "me" }
+                Column {
+                    x: 88; anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - 100
+                    Text { width: parent.width; elide: Text.ElideRight; text: root.userName; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                    Text { visible: root.userMail.length > 0; width: parent.width; elide: Text.ElideRight; text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+                }
+            }
+            // Your status: opens the choices.
+            Rectangle {
+                id: statusRow
+                width: parent.width - 8; x: 4; height: 36; radius: theme.radius
+                color: srh.hovered || statusMenu.visible ? theme.rowHover : "transparent"
+                PresenceBadge { x: 86; anchors.verticalCenter: parent.verticalCenter; total: 16; presence: root.presence || "Available" }
+                Text {
+                    x: 112; anchors.verticalCenter: parent.verticalCenter
+                    text: root.statusLabel(root.presence)
+                    font.family: theme.font; font.pixelSize: theme.base
+                    color: theme.text
+                }
+                FluentIcon { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.textStrong }
+                HoverHandler { id: srh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: statusMenu.visible = !statusMenu.visible }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Status: " + root.statusLabel(root.presence)
+            }
+            Item { width: 1; height: 8 }
+        }
+        // The status choices, beside the menu as in Teams.
+        Rectangle {
+            id: statusMenu
+            visible: false
+            x: 80; y: statusRow.y + statusRow.height + 2
+            width: 220; height: statusCol.implicitHeight + 8
+            radius: 8
+            color: theme.menu
+            border.color: theme.dividerSoft
+            Column {
+                id: statusCol
+                x: 4; y: 4; width: parent.width - 8
+                Repeater {
+                    model: root.statuses
+                    Rectangle {
+                        required property var modelData
+                        width: statusCol.width; height: 36; radius: theme.radius
+                        color: sth.hovered ? theme.rowHover : "transparent"
+                        PresenceBadge { x: 12; anchors.verticalCenter: parent.verticalCenter; total: 16; presence: parent.modelData.key }
+                        Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                        HoverHandler { id: sth; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { menu.visible = false; root.setStatus(parent.modelData.key) } }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: modelData.label
+                    }
+                }
+                Rectangle { width: statusCol.width; height: 1; color: theme.dividerSoft }
+                Rectangle {
+                    width: statusCol.width; height: 36; radius: theme.radius
+                    color: rsh.hovered ? theme.rowHover : "transparent"
+                    Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: "Reset status"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    HoverHandler { id: rsh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { menu.visible = false; root.setStatus("Reset") } }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: "Reset status"
+                }
             }
         }
     }

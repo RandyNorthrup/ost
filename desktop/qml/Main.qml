@@ -190,6 +190,23 @@ Window {
         }
     }
 
+    // --status-test: open the profile menu and its status choices, set Busy,
+    // then reset (capturing the menu).
+    Timer {
+        running: Qt.application.arguments.indexOf("--status-test") >= 0 && backend.signedIn && backend.userMail.length > 0
+        interval: 1500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            if (step === 0) titleBar.openProfileForTest()
+            else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-profile.png")))
+            else if (step === 2) { backend.setMyStatus("Busy") }
+            else if (step === 4) { console.warn("STATUS after busy", titleBar.presence); backend.setMyStatus("Reset") }
+            else if (step === 6) { console.warn("STATUS reset"); Qt.quit() }
+            step++
+        }
+    }
+
     // --header-test: Shared tab, a placeholder tab, find, participants;
     // captures each.
     Timer {
@@ -345,7 +362,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -651,6 +668,9 @@ Window {
         onGoForward: window.goForward()
         onToggleRail: rail.collapsed = !rail.collapsed
         onOpenSettings: rail.current = "settings"
+        userMail: backend.userMail
+        orgName: backend.orgName
+        onSetStatus: st => backend.setMyStatus(st)
         pinned: window.pinned
         onTogglePin: window.pinned = !window.pinned
         windowButtons: !backend.systemFrame

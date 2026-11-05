@@ -31,6 +31,8 @@ pub mod qobject {
         #[qproperty(bool, busy)]
         #[qproperty(bool, signed_in)]
         #[qproperty(QString, user_name)]
+        #[qproperty(QString, user_mail)]
+        #[qproperty(QString, org_name)]
         #[qproperty(QString, status_text)]
         #[qproperty(QString, chats_json)]
         #[qproperty(QString, messages_json)]
@@ -214,6 +216,11 @@ pub mod qobject {
         #[qinvokable]
         fn set_setting(self: Pin<&mut Backend>, name: &QString, value: &QString);
 
+        /// Set your status ("Available", "Busy", "DoNotDisturb",
+        /// "BeRightBack", "Away", "Offline"), or "Reset".
+        #[qinvokable]
+        fn set_my_status(self: Pin<&mut Backend>, status: &QString);
+
         /// Microphones and speakers: {"inputs": [...], "outputs": [...]}.
         #[qinvokable]
         fn audio_devices(self: Pin<&mut Backend>) -> QString;
@@ -248,6 +255,8 @@ pub struct BackendRust {
     busy: bool,
     signed_in: bool,
     user_name: QString,
+    user_mail: QString,
+    org_name: QString,
     status_text: QString,
     chats_json: QString,
     messages_json: QString,
@@ -1506,6 +1515,7 @@ impl qobject::Backend {
                     Ok((name, chats)) => {
                         this.as_mut().set_signed_in(true);
                         this.as_mut().set_user_name(QString::from(name.as_str()));
+                        this.as_mut().load_profile();
                         this.as_mut().rust_mut().my_mri = teams_cli::config::Config::load()
                             .ok()
                             .and_then(|c| c.object_id())
@@ -1950,6 +1960,56 @@ impl qobject::Backend {
                 tracing::warn!("auto-start: {}", short_error(&e));
             }
         }
+    }
+
+    /// Your e-mail and organisation name, for the profile menu.
+    fn load_profile(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let me = api::whoami_data(&client).await?;
+                let org = match client.graph_get("/organization?$select=displayName").await {
+                    Ok(r) => r
+                        .json::<serde_json::Value>()
+                        .await
+                        .ok()
+                        .and_then(|v| {
+                            v.pointer("/value/0/displayName")
+                                .and_then(|n| n.as_str())
+                                .map(str::to_string)
+                        })
+                        .unwrap_or_default(),
+                    Err(_) => String::new(),
+                };
+                anyhow::Ok((me.mail.unwrap_or_default(), org))
+            }
+            .await;
+            if let Ok((mail, org)) = result {
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_user_mail(QString::from(mail.as_str()));
+                    this.as_mut().set_org_name(QString::from(org.as_str()));
+                });
+            }
+        });
+    }
+
+    pub fn set_my_status(mut self: Pin<&mut Self>, status: &QString) {
+        let status = status.to_string();
+        let forced = (status != "Reset").then(|| status.clone());
+        // Show it at once; the presence service confirms on the next poll.
+        if let (Some(f), Some(me)) = (forced.clone(), self.rust().my_mri.clone()) {
+            self.as_mut().rust_mut().presence.insert(me, f);
+            self.as_mut().publish_chats();
+        }
+        runtime().spawn(async move {
+            let http = reqwest::Client::new();
+            if let Err(e) =
+                teams_cli::api::presence::force_availability(&http, forced.as_deref()).await
+            {
+                tracing::warn!("set status failed: {}", short_error(&e));
+            }
+        });
     }
 
     pub fn audio_devices(self: Pin<&mut Self>) -> QString {
