@@ -47,6 +47,9 @@ pub mod qobject {
         #[qproperty(bool, call_has_audio)]
         /// "Randy Northrup is typing" for the open chat, or "".
         #[qproperty(QString, typing_text)]
+        /// Set by QML: whether the main window has focus (Teams only
+        /// notifies for the open chat when it does not).
+        #[qproperty(bool, window_active)]
         type Backend = super::BackendRust;
     }
 
@@ -103,6 +106,13 @@ pub mod qobject {
         fn toggle_mute(self: Pin<&mut Backend>);
     }
 
+    #[auto_cxx_name]
+    extern "RustQt" {
+        /// A notification was clicked: bring the window forward.
+        #[qsignal]
+        fn activate_requested(self: Pin<&mut Backend>);
+    }
+
     impl cxx_qt::Threading for Backend {}
 }
 
@@ -125,6 +135,7 @@ pub struct BackendRust {
     call_muted: bool,
     call_has_audio: bool,
     typing_text: QString,
+    window_active: bool,
     /// Bumped on every typing change so a stale clear timer does nothing.
     typing_generation: u64,
     last_typing_sent: Option<std::time::Instant>,
@@ -132,6 +143,8 @@ pub struct BackendRust {
     unread: HashSet<String>,
     /// The chat list as loaded, before unread flags are applied.
     chats: Vec<serde_json::Value>,
+    /// Our own MRI, to tell our messages apart in pushes.
+    my_mri: Option<String>,
     /// Availability by MRI for the other members of 1:1 chats.
     presence: std::collections::HashMap<String, String>,
 }
@@ -182,6 +195,9 @@ fn spawn_call_stats_logger() {
         }
     });
 }
+
+/// Longest message text shown in a notification.
+const NOTIFICATION_BODY_CHARS: usize = 200;
 
 /// A typing indicator disappears this long after the last typing event.
 const TYPING_TTL_SECS: u64 = 6;
@@ -453,6 +469,10 @@ impl qobject::Backend {
                     on_call_event(&qt, &ev.json).await;
                     continue;
                 }
+                for m in teams_cli::event_hub::message_events(&ev.json) {
+                    let qt2 = qt.clone();
+                    let _ = qt.queue(move |mut this| this.as_mut().maybe_notify(m, qt2));
+                }
                 for t in teams_cli::event_hub::typing_events(&ev.json) {
                     let _ = qt.queue(move |mut this| this.as_mut().on_typing(t));
                 }
@@ -666,8 +686,67 @@ impl qobject::Backend {
         });
     }
 
+    /// Show a desktop notification for someone else's message, unless its
+    /// chat is open in the focused window.
+    fn maybe_notify(
+        self: Pin<&mut Self>,
+        m: teams_cli::event_hub::PushedMessage,
+        qt: cxx_qt::CxxQtThread<qobject::Backend>,
+    ) {
+        let own = self.rust().user_name.to_string();
+        let mine = (!m.sender_name.is_empty() && m.sender_name == own)
+            || self.rust().my_mri.as_deref() == Some(m.sender_mri.as_str());
+        let open = self.rust().window_active
+            && m.conversation_id == self.rust().current_chat_id.to_string();
+        if mine || open || m.text.is_empty() {
+            return;
+        }
+        let chat_name = self
+            .rust()
+            .chats
+            .iter()
+            .find(|c| c["id"].as_str() == Some(m.conversation_id.as_str()))
+            .and_then(|c| c["name"].as_str().map(str::to_string))
+            .unwrap_or_default();
+        let title = if m.sender_name.is_empty() {
+            chat_name.clone()
+        } else {
+            m.sender_name.clone()
+        };
+        let body: String = m.text.chars().take(NOTIFICATION_BODY_CHARS).collect();
+        let chat_id = m.conversation_id.clone();
+        std::thread::spawn(move || {
+            let shown = notify_rust::Notification::new()
+                .appname("OST")
+                .summary(&title)
+                .body(&body)
+                .icon("ost-desktop")
+                .action("default", "Open")
+                .hint(notify_rust::Hint::Category("im.received".into()))
+                .show();
+            match shown {
+                Ok(handle) => handle.wait_for_action(|action| {
+                    if action == "default" {
+                        let _ = qt.queue(move |mut this| {
+                            this.as_mut().select_chat(
+                                &QString::from(chat_id.as_str()),
+                                &QString::from(chat_name.as_str()),
+                            );
+                            this.as_mut().activate_requested();
+                        });
+                    }
+                }),
+                Err(e) => tracing::warn!("notification failed: {e}"),
+            }
+        });
+    }
+
     fn on_typing(mut self: Pin<&mut Self>, t: teams_cli::event_hub::Typing) {
-        tracing::info!(stopped = t.stopped, named = !t.sender_name.is_empty(), "typing event");
+        tracing::info!(
+            stopped = t.stopped,
+            named = !t.sender_name.is_empty(),
+            "typing event"
+        );
         if t.conversation_id != self.rust().current_chat_id.to_string()
             || t.sender_name == self.rust().user_name.to_string()
         {
@@ -787,6 +866,10 @@ impl qobject::Backend {
                     Ok((name, chats)) => {
                         this.as_mut().set_signed_in(true);
                         this.as_mut().set_user_name(QString::from(name.as_str()));
+                        this.as_mut().rust_mut().my_mri = teams_cli::config::Config::load()
+                            .ok()
+                            .and_then(|c| c.object_id())
+                            .map(|oid| format!("8:orgid:{oid}"));
                         this.as_mut().rust_mut().chats = chats;
                         this.as_mut().publish_chats();
                         this.as_mut().set_status_text(QString::default());

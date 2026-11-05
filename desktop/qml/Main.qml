@@ -20,7 +20,9 @@ Window {
 
     Backend {
         id: backend
+        windowActive: window.active
         Component.onCompleted: start()
+        onActivateRequested: { window.show(); window.raise(); window.requestActivate() }
     }
 
     // OST_SCREENSHOT=<file.png>: render, optionally open a chat, save, quit.

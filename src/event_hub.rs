@@ -94,6 +94,75 @@ pub fn conversation_ids(json: &str) -> Vec<String> {
     ids
 }
 
+/// A chat message pushed to us.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushedMessage {
+    pub conversation_id: String,
+    pub sender_name: String,
+    /// Sender MRI, e.g. `8:orgid:<oid>`.
+    pub sender_mri: String,
+    /// Plain text of the message.
+    pub text: String,
+}
+
+/// New user messages (text and rich text) in a chat-service event; typing
+/// and other control messages, edits and system events are skipped.
+pub fn message_events(json: &str) -> Vec<PushedMessage> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let events: Vec<&serde_json::Value> = match v.get("eventMessages").and_then(|e| e.as_array()) {
+        Some(list) => list.iter().collect(),
+        None => vec![&v],
+    };
+    events
+        .into_iter()
+        .filter_map(|ev| {
+            if ev.get("resourceType")?.as_str()? != "NewMessage" {
+                return None;
+            }
+            let r = ev.get("resource")?;
+            let kind = r.get("messagetype")?.as_str()?;
+            if !(kind == "Text" || kind.starts_with("RichText")) {
+                return None;
+            }
+            if r.get("skypeeditedid").is_some() || r.get("deletetime").is_some() {
+                return None;
+            }
+            let link = r
+                .get("conversationLink")
+                .or_else(|| ev.get("resourceLink"))?
+                .as_str()?;
+            let conversation_id = link
+                .split("/conversations/")
+                .nth(1)?
+                .split('/')
+                .next()?
+                .to_string();
+            let text = crate::api::strip_html(r.get("content")?.as_str()?)
+                .trim()
+                .to_string();
+            let sender_mri = r
+                .get("from")
+                .and_then(|f| f.as_str())
+                .and_then(|f| f.rsplit("/contacts/").next())
+                .unwrap_or_default()
+                .to_string();
+            let sender_name = r
+                .get("imdisplayname")
+                .and_then(|n| n.as_str())
+                .unwrap_or_default()
+                .to_string();
+            Some(PushedMessage {
+                conversation_id,
+                sender_name,
+                sender_mri,
+                text,
+            })
+        })
+        .collect()
+}
+
 /// A typing change pushed for a chat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Typing {
@@ -181,6 +250,18 @@ mod tests {
         assert!(conversation_ids(typing).is_empty());
         let text = r#"{"resourceType":"NewMessage","resourceLink":"https://x/v1/users/ME/conversations/19:a@thread.v2/messages/2","resource":{"messagetype":"RichText/Html","content":"<p>hi</p>"}}"#;
         assert_eq!(conversation_ids(text), vec!["19:a@thread.v2"]);
+    }
+
+    #[test]
+    fn message_events_extract_sender_and_text() {
+        let m = r#"{"resourceType":"NewMessage","resource":{"messagetype":"RichText/Html","content":"<p>Hi &amp; bye</p>","imdisplayname":"Randy Northrup","from":"https://amer.ng.msg.teams.microsoft.com/v1/users/ME/contacts/8:orgid:abc","conversationLink":"https://x/v1/users/ME/conversations/19:a_b@unq.gbl.spaces"}}"#;
+        let got = message_events(m);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].text, "Hi & bye");
+        assert_eq!(got[0].sender_mri, "8:orgid:abc");
+        assert_eq!(got[0].conversation_id, "19:a_b@unq.gbl.spaces");
+        let typing = m.replace("RichText/Html", "Control/Typing");
+        assert!(message_events(&typing).is_empty());
     }
 
     #[test]

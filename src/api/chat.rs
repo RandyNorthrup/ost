@@ -73,8 +73,9 @@ fn sender_name(msg: &NativeMessage, own_oid: Option<&str>, own_name: Option<&str
     }
 }
 
-/// Strip HTML tags from content for CLI display.
-fn strip_html(html: &str) -> String {
+/// Strip HTML tags from message content and decode the common entities.
+/// `&amp;` is decoded last so `&amp;lt;` stays the text `&lt;`.
+pub fn strip_html(html: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let mut in_tag = false;
     for ch in html.chars() {
@@ -85,14 +86,13 @@ fn strip_html(html: &str) -> String {
             _ => {}
         }
     }
-    // Decode common HTML entities
     result
-        .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
 }
 
 /// Display name for a conversation.
@@ -534,5 +534,20 @@ mod sender_name_tests {
             sender_name(&msg(Some(" "), Some(&other)), Some(OID), Some("OST Test 1")),
             "Unknown"
         );
+    }
+}
+
+#[cfg(test)]
+mod strip_html_tests {
+    use super::strip_html;
+
+    #[test]
+    fn strips_tags_and_decodes_entities_once() {
+        assert_eq!(strip_html("<p>Tom &amp; Jerry</p>"), "Tom & Jerry");
+        assert_eq!(
+            strip_html("<p>write &amp;lt;b&amp;gt;</p>"),
+            "write &lt;b&gt;"
+        );
+        assert_eq!(strip_html("a&nbsp;&lt;b&gt;"), "a <b>");
     }
 }
