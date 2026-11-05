@@ -18,6 +18,7 @@ fn main() {
         "qml/NewChat.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
+        "qml/ActivityView.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts"] {

@@ -27,6 +27,12 @@ Window {
     Shortcut { sequence: "Ctrl+G"; onActivated: titleBar.focusSearch() }
     Shortcut { sequence: "Alt+Left"; onActivated: window.goBack() }
     Shortcut { sequence: "Alt+Right"; onActivated: window.goForward() }
+    // Rail apps, as in Teams desktop.
+    Shortcut { sequence: "Ctrl+1"; onActivated: rail.current = "activity" }
+    Shortcut { sequence: "Ctrl+2"; onActivated: rail.current = "chat" }
+    Shortcut { sequence: "Ctrl+3"; onActivated: rail.current = "calendar" }
+    Shortcut { sequence: "Ctrl+4"; onActivated: rail.current = "calls" }
+    Shortcut { sequence: "Ctrl+5"; onActivated: rail.current = "onedrive" }
 
     // Back/forward through the apps and chats you visited, as Teams does.
     property var navStack: []
@@ -109,6 +115,37 @@ Window {
                 conv.setComposeText(""); backend.setDraft(a.id, "")
             }
             else { console.warn("DRAFT cleared", backend.draftsJson); Qt.quit() }
+            step++
+        }
+    }
+
+    // --activity-watch: log each change to the feed (live-update check).
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.indexOf("--activity-watch") >= 0
+        function onActivityJsonChanged() {
+            const items = backend.activityJson ? JSON.parse(backend.activityJson) : []
+            console.warn("ACTIVITY-FEED", items.length, items.length ? items[0].title : "", "badge", backend.activityUnread)
+        }
+    }
+
+    // --activity-test: open the reaction item, capture, report.
+    Timer {
+        running: Qt.application.arguments.indexOf("--activity-test") >= 0 && backend.activityJson.length > 2
+        interval: 3000
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const items = JSON.parse(backend.activityJson)
+            if (step === 0) {
+                rail.current = "activity"
+                const r = items.find(i => i.kind === "reaction")
+                if (r) activityView.openItem(r)
+            } else if (step === 1) {
+                const r = JSON.parse(backend.activityJson).find(i => i.kind === "reaction")
+                console.warn("ACTIVITY open", activityView.selectedId === (r ? r.id : "?"), "chat", backend.currentChatId, "unread now", r ? r.unread : "?", "badge", backend.activityUnread)
+                window.contentItem.grabToImage(g => { g.saveToFile(window.shotPath.replace(".png", "-open.png")); Qt.quit() })
+            }
             step++
         }
     }
@@ -474,6 +511,7 @@ Window {
         id: rail
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: parent.left }
         unreadChats: chatList.chats.filter(c => c.unread).length
+        unreadActivity: backend.activityUnread
         // --view=<app> opens that rail app (for captures).
         Component.onCompleted: {
             const v = Qt.application.arguments.find(a => a.startsWith("--view="))
@@ -483,6 +521,7 @@ Window {
         onCurrentChanged: {
             window.navRecord()
             if (current === "calls") backend.loadCalls()
+            if (current === "activity") backend.markActivityRead()
         }
     }
 
@@ -517,7 +556,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity"].indexOf(rail.current) < 0
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -557,11 +596,48 @@ Window {
         })()
         onTriggered: backend.refreshReceipts()
     }
+    ActivityView {
+        id: activityView
+        visible: rail.current === "activity"
+        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
+        items: backend.activityJson ? JSON.parse(backend.activityJson) : []
+        // An item opens its chat or channel beside the feed.
+        onOpenItem: item => {
+            selectedId = item.id
+            backend.markActivityItemRead(item.id)
+            if (item.thread_id) {
+                const c = chatList.chats.find(c => c.id === item.thread_id)
+                backend.selectChat(item.thread_id, c ? c.name : (item.actor_name || "Chat"))
+            } else if ((item.actor_mri || "").startsWith("8:orgid:")) {
+                backend.openChatWith(item.actor_mri.slice(8), item.actor_name)
+            }
+        }
+        onChatWith: item => {
+            if (!(item.actor_mri || "").startsWith("8:orgid:")) return
+            rail.current = "chat"
+            backend.openChatWith(item.actor_mri.slice(8), item.actor_name)
+        }
+        onCallBack: item => {
+            if (!(item.actor_mri || "").startsWith("8:orgid:")) return
+            rail.current = "chat"
+            backend.openChatWith(item.actor_mri.slice(8), item.actor_name)
+            window.callAfterOpen = true
+        }
+    }
+    // "Call" from a missed call: place the call once the chat is open.
+    property bool callAfterOpen: false
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() {
+            if (window.callAfterOpen && backend.currentChatId) { window.callAfterOpen = false; backend.startCall() }
+        }
+    }
     Conversation {
         id: conversation
-        visible: rail.current === "chat" && !chatList.draftsOpen
+        visible: (rail.current === "chat" && !chatList.draftsOpen)
+            || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.current === "activity" ? activityView.right : chatList.right; right: parent.right }
         chatName: backend.currentChatName
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
         isSelf: backend.currentChatId === "48:notes"

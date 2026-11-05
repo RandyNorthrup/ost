@@ -8,20 +8,21 @@ Rectangle {
     /// "Collapse app bar": the rail folds away, as in Teams.
     property bool collapsed: false
     property int unreadChats: 0
+    property int unreadActivity: 0
     color: theme.chrome
     width: collapsed ? 0 : theme.railWidth
     visible: !collapsed
     clip: true
 
+    // Teams desktop's rail, with its labels and shortcuts (Copilot left out).
     readonly property var apps: [
-        { key: "activity", icon: "alert", label: "Activity" },
-        { key: "chat", icon: "chat", label: "Chat" },
-        { key: "calendar", icon: "calendar", label: "Calendar" },
-        { key: "calls", icon: "call", label: "Calls" },
-        { key: "onedrive", icon: "onedrive", label: "OneDrive" },
-        { key: "apps", icon: "apps", label: "Apps" },
-        { key: "add", icon: "add-app", label: "Add apps" },
-        { key: "more", icon: "more", label: "More apps" },
+        { key: "activity", icon: "alert", label: "Activity", keys: "Ctrl+1" },
+        { key: "chat", icon: "chat", label: "Chat", keys: "Ctrl+2" },
+        { key: "calendar", icon: "calendar", label: "Calendar", keys: "Ctrl+3" },
+        { key: "calls", icon: "call", label: "Calls", keys: "Ctrl+4" },
+        { key: "onedrive", icon: "onedrive", label: "OneDrive", keys: "Ctrl+5" },
+        { key: "add", icon: "add-app", label: "Store", keys: "" },
+        { key: "more", icon: "more", label: "View more apps", keys: "" },
     ]
 
     Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: "#E6E6E6" }
@@ -54,7 +55,9 @@ Rectangle {
                     color: parent.selected ? theme.brand : theme.icon
                 }
                 Rectangle {
-                    visible: modelData.key === "chat" && root.unreadChats > 0
+                    readonly property int count: modelData.key === "chat" ? root.unreadChats
+                        : modelData.key === "activity" ? root.unreadActivity : 0
+                    visible: count > 0
                     x: parent.width / 2 + 4; y: 6
                     width: Math.max(16, badgeText.implicitWidth + 8); height: 16; radius: 8
                     color: theme.badge
@@ -62,25 +65,29 @@ Rectangle {
                     Text {
                         id: badgeText
                         anchors.centerIn: parent
-                        text: root.unreadChats
+                        text: parent.count
                         color: "white"
                         font.family: theme.font; font.pixelSize: theme.caption; font.weight: Font.DemiBold
                     }
                 }
                 HoverHandler { id: hover }
                 TapHandler { onTapped: root.current = modelData.key }
-                ToolTipLabel { text: modelData.label; shown: hover.hovered }
+                ToolTipLabel { text: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label; shown: hover.hovered }
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label
             }
         }
     }
 
+    // Teams' tooltip: white, hairline border, 12 px text, beside the button.
     component ToolTipLabel: Rectangle {
         property string text
         property bool shown
         visible: shown
-        x: parent.width - 4; anchors.verticalCenter: parent.verticalCenter
-        width: tip.implicitWidth + 16; height: 26; radius: theme.radius
-        color: "#242424"; z: 10
-        Text { id: tip; anchors.centerIn: parent; text: parent.text; color: "white"; font.family: theme.font; font.pixelSize: theme.small }
+        x: parent.width - 6; y: parent.height / 2 - height / 2 - 14
+        width: tip.implicitWidth + 22; height: 26; radius: theme.radius
+        color: theme.surface; z: 10
+        border.color: theme.divider
+        Text { id: tip; anchors.centerIn: parent; text: parent.text; color: theme.text; font.family: theme.font; font.pixelSize: theme.small }
     }
 }

@@ -56,6 +56,10 @@ pub mod qobject {
         #[qproperty(bool, system_frame)]
         /// Unsent drafts, newest first: [{id, name, text, time, peerMri}].
         #[qproperty(QString, drafts_json)]
+        /// The Activity feed (ActivityItem list, newest first).
+        #[qproperty(QString, activity_json)]
+        /// Unread Activity items, for the rail badge.
+        #[qproperty(i32, activity_unread)]
         /// Calls history as JSON (newest first).
         #[qproperty(QString, calls_json)]
         /// Calendar events for the shown range, as JSON.
@@ -184,6 +188,18 @@ pub mod qobject {
         /// The unsent text kept for a chat, or "".
         #[qinvokable]
         fn draft_for(self: Pin<&mut Backend>, chat_id: &QString) -> QString;
+
+        /// Load the Activity feed.
+        #[qinvokable]
+        fn load_activity(self: Pin<&mut Backend>);
+
+        /// The Activity view is showing: mark the feed read, as Teams does.
+        #[qinvokable]
+        fn mark_activity_read(self: Pin<&mut Backend>);
+
+        /// An Activity item was opened: it stops being bold.
+        #[qinvokable]
+        fn mark_activity_item_read(self: Pin<&mut Backend>, id: &QString);
     }
 
     impl cxx_qt::Threading for Backend {}
@@ -212,6 +228,8 @@ pub struct BackendRust {
     window_active: bool,
     system_frame: bool,
     drafts_json: QString,
+    activity_json: QString,
+    activity_unread: i32,
     calls_json: QString,
     calendar_json: QString,
     people_json: QString,
@@ -564,6 +582,9 @@ fn save_drafts(drafts: &HashMap<String, (String, u64)>) -> anyhow::Result<()> {
     std::fs::rename(&tmp, &path)?;
     Ok(())
 }
+
+/// How many notifications the Activity feed shows.
+const ACTIVITY_LIMIT: usize = 50;
 
 /// How long a downloaded picture (or "has none") is trusted before it is
 /// fetched again.
@@ -1303,7 +1324,11 @@ impl qobject::Backend {
     fn on_chat_push(mut self: Pin<&mut Self>, ids: Vec<String>) {
         let current = self.rust().current_chat_id.to_string();
         let mut list_changed = false;
-        for id in ids {
+        // New notifications: refresh Activity (and its badge).
+        if ids.iter().any(|i| i == "48:notifications") {
+            self.as_mut().load_activity();
+        }
+        for id in ids.into_iter().filter(|i| !i.starts_with("48:")) {
             if id == current {
                 self.as_mut().set_typing_text(QString::default());
                 self.as_mut().reload_messages();
@@ -1372,6 +1397,7 @@ impl qobject::Backend {
                         this.as_mut().start_presence();
                         this.as_mut().load_server_unread();
                         this.as_mut().load_teams();
+                        this.as_mut().load_activity();
                     }
                     Err(e) => {
                         this.as_mut().set_signed_in(false);
@@ -1678,6 +1704,99 @@ impl qobject::Backend {
             .collect();
         let text = serde_json::to_string(&json).unwrap_or_else(|_| "[]".into());
         self.as_mut().set_drafts_json(QString::from(text.as_str()));
+    }
+
+    pub fn load_activity(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let items = api::activity::feed(&client, ACTIVITY_LIMIT).await?;
+                // The badge counts what arrived since Activity was last
+                // opened (the feed's read position), as in Teams; each
+                // item's own bold state is separate.
+                let seen = api::messages::my_read_horizon(&client, "48:notifications")
+                    .await
+                    .unwrap_or(None)
+                    .unwrap_or(0);
+                anyhow::Ok((items, seen))
+            }
+            .await;
+            match result {
+                Ok((items, seen)) => {
+                    let unread = items
+                        .iter()
+                        .filter(|i| i.id.parse::<u64>().is_ok_and(|id| id > seen))
+                        .count() as i32;
+                    let json = serde_json::to_string(&items).unwrap_or_else(|_| "[]".into());
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_activity_json(QString::from(json.as_str()));
+                        this.as_mut().set_activity_unread(unread);
+                    });
+                }
+                Err(e) => tracing::warn!("activity failed: {}", short_error(&e)),
+            }
+        });
+    }
+
+    pub fn mark_activity_read(mut self: Pin<&mut Self>) {
+        let json = self.rust().activity_json.to_string();
+        let Ok(mut items) = serde_json::from_str::<Vec<serde_json::Value>>(&json) else {
+            return;
+        };
+        if self.rust().activity_unread == 0 {
+            return;
+        }
+        // Teams clears the badge when Activity opens; the items stay bold
+        // until each is opened, so only the count goes.
+        self.as_mut().set_activity_unread(0);
+        let newest = items
+            .iter_mut()
+            .filter_map(|i| i["id"].as_str().map(str::to_string))
+            .max_by_key(|id| id.parse::<u64>().unwrap_or(0));
+        let Some(newest) = newest else { return };
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::activity::mark_read(&client, &newest).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("activity mark read failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn mark_activity_item_read(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let json = self.rust().activity_json.to_string();
+        let Ok(mut items) = serde_json::from_str::<Vec<serde_json::Value>>(&json) else {
+            return;
+        };
+        let Some(item) = items
+            .iter_mut()
+            .find(|i| i["id"].as_str() == Some(id.as_str()))
+        else {
+            return;
+        };
+        if item["unread"] != json!(true) {
+            return;
+        }
+        item["unread"] = json!(false);
+        let text = serde_json::to_string(&items).unwrap_or_else(|_| "[]".into());
+        self.as_mut()
+            .set_activity_json(QString::from(text.as_str()));
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::activity::mark_item_read(&client, &id).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("activity item read failed: {}", short_error(&e));
+            }
+        });
     }
 
     pub fn refresh_receipts(self: Pin<&mut Self>) {
