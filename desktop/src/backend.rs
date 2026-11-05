@@ -389,6 +389,25 @@ fn spawn_call_stats_logger() {
 /// How many calls the Calls history shows.
 const CALL_HISTORY_LIMIT: usize = 100;
 
+/// Whether a pushed message gets a desktop notification, as Teams decides
+/// by default: never your own, nor in the chat you're looking at; chat
+/// messages unless you asked for mentions only; channel posts only when
+/// they mention you.
+fn should_notify(
+    mine: bool,
+    open: bool,
+    empty: bool,
+    banners_on: bool,
+    mentions_only: bool,
+    channel: bool,
+    mentioned: bool,
+) -> bool {
+    if mine || open || empty || !banners_on {
+        return false;
+    }
+    mentioned || !(channel || mentions_only)
+}
+
 /// Longest message text shown in a notification.
 const NOTIFICATION_BODY_CHARS: usize = 200;
 
@@ -1201,27 +1220,52 @@ impl qobject::Backend {
             || self.rust().my_mri.as_deref() == Some(m.sender_mri.as_str());
         let open = self.rust().window_active
             && m.conversation_id == self.rust().current_chat_id.to_string();
-        // Settings > Notifications and activity can turn banners off.
-        let banners_on = load_settings()
-            .get("notifications")
-            .and_then(|v| v.as_str())
-            != Some("off");
-        if mine || open || m.text.is_empty() || !banners_on {
+        // Settings > Notifications and activity can turn banners off, or
+        // keep only mentions.
+        let settings = load_settings();
+        let setting = |k: &str| settings.get(k).and_then(|v| v.as_str()).map(str::to_string);
+        let banners_on = setting("notifications").as_deref() != Some("off");
+        let mentions_only = setting("notify_mentions_only").as_deref() == Some("on");
+        let mentioned = self
+            .rust()
+            .my_mri
+            .as_deref()
+            .is_some_and(|me| m.mentions.iter().any(|x| x.eq_ignore_ascii_case(me)));
+        let channel = m.conversation_id.ends_with("@thread.tacv2");
+        if !should_notify(
+            mine,
+            open,
+            m.text.is_empty(),
+            banners_on,
+            mentions_only,
+            channel,
+            mentioned,
+        ) {
             return;
         }
-        let chat_name = self
-            .rust()
-            .chats
-            .iter()
-            .find(|c| c["id"].as_str() == Some(m.conversation_id.as_str()))
-            .and_then(|c| c["name"].as_str().map(str::to_string))
-            .unwrap_or_default();
-        let title = if m.sender_name.is_empty() {
-            chat_name.clone()
+        let chat_name = if channel {
+            self.channel_label(&m.conversation_id)
         } else {
-            m.sender_name.clone()
+            self.rust()
+                .chats
+                .iter()
+                .find(|c| c["id"].as_str() == Some(m.conversation_id.as_str()))
+                .and_then(|c| c["name"].as_str().map(str::to_string))
+                .unwrap_or_default()
         };
-        let body: String = m.text.chars().take(NOTIFICATION_BODY_CHARS).collect();
+        // Teams: "<name> mentioned you" for mentions, else the sender.
+        let title = match (m.sender_name.is_empty(), mentioned) {
+            (false, true) => format!("{} mentioned you", m.sender_name),
+            (false, false) => m.sender_name.clone(),
+            (true, _) => chat_name.clone(),
+        };
+        let text: String = m.text.chars().take(NOTIFICATION_BODY_CHARS).collect();
+        // Where it was said, for channels and named chats.
+        let body = if channel && !chat_name.is_empty() {
+            format!("{chat_name}\n{text}")
+        } else {
+            text
+        };
         let chat_id = m.conversation_id.clone();
         std::thread::spawn(move || {
             let shown = notify_rust::Notification::new()
@@ -1247,6 +1291,25 @@ impl qobject::Backend {
                 Err(e) => tracing::warn!("notification failed: {e}"),
             }
         });
+    }
+
+    /// "Team > Channel" for a channel id, from the teams list.
+    fn channel_label(&self, id: &str) -> String {
+        let teams: serde_json::Value =
+            serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        teams
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find_map(|t| {
+                let ch = t["channels"].as_array()?.iter().find(|c| c["id"] == id)?;
+                Some(format!(
+                    "{} > {}",
+                    t["name"].as_str().unwrap_or_default(),
+                    ch["name"].as_str().unwrap_or_default()
+                ))
+            })
+            .unwrap_or_default()
     }
 
     fn on_typing(mut self: Pin<&mut Self>, t: teams_cli::event_hub::Typing) {
@@ -2444,10 +2507,33 @@ impl qobject::Backend {
 
 #[cfg(test)]
 mod tests {
-    use super::photo_target;
+    use super::{photo_target, should_notify};
     use teams_cli::api::directory::PhotoOwner;
 
     const OID: &str = "4287e791-1b98-4963-8b94-281c50472683";
+
+    #[test]
+    fn notifications_follow_teams_defaults() {
+        // (mine, open, empty, banners, mentions_only, channel, mentioned)
+        assert!(should_notify(
+            false, false, false, true, false, false, false
+        ));
+        assert!(!should_notify(true, false, false, true, false, false, true));
+        assert!(!should_notify(false, true, false, true, false, false, true));
+        assert!(!should_notify(
+            false, false, false, false, false, false, true
+        ));
+        // Channel posts: mentions only.
+        assert!(!should_notify(
+            false, false, false, true, false, true, false
+        ));
+        assert!(should_notify(false, false, false, true, false, true, true));
+        // "Only mentions" setting.
+        assert!(!should_notify(
+            false, false, false, true, true, false, false
+        ));
+        assert!(should_notify(false, false, false, true, true, false, true));
+    }
 
     #[test]
     fn photo_targets_accept_only_object_ids() {

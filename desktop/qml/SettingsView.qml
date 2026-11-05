@@ -334,8 +334,18 @@ Rectangle {
                 title: "Notifications"; icon: "alert"
                 subtitle: "Show a desktop notification for new messages when OST isn't the window you're using."
                 Switch2 {
+                    id: notifySwitch
                     on: backend.setting("notifications") !== "off"
                     onToggled: v => { backend.setSetting("notifications", v ? "on" : "off"); on = v }
+                }
+            }
+            Card {
+                visible: root.page === "notifications" && notifySwitch.on
+                title: "Only mentions"; icon: "mention-20"
+                subtitle: "Notify me only when someone @mentions me. Channel posts notify only for mentions either way."
+                Switch2 {
+                    on: backend.setting("notify_mentions_only") === "on"
+                    onToggled: v => { backend.setSetting("notify_mentions_only", v ? "on" : "off"); on = v }
                 }
             }
 

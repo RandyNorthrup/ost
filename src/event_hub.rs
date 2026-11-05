@@ -107,6 +107,26 @@ pub struct PushedMessage {
     pub sender_mri: String,
     /// Plain text of the message.
     pub text: String,
+    /// Who the message @mentions (MRIs, lowercase).
+    pub mentions: Vec<String>,
+}
+
+/// The MRIs a message mentions, from `properties.mentions` (a JSON array,
+/// usually sent as a string holding one).
+fn mentions_of(props: Option<&serde_json::Value>) -> Vec<String> {
+    let Some(raw) = props.and_then(|p| p.get("mentions")) else {
+        return Vec::new();
+    };
+    let list = match raw {
+        serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+        v => v.clone(),
+    };
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.get("mri")?.as_str())
+        .map(str::to_ascii_lowercase)
+        .collect()
 }
 
 /// New user messages (text and rich text) in a chat-service event; typing
@@ -137,10 +157,13 @@ pub fn message_events(json: &str) -> Vec<PushedMessage> {
                 .get("conversationLink")
                 .or_else(|| ev.get("resourceLink"))?
                 .as_str()?;
+            // A channel reply's link names its post too
+            // ("…@thread.tacv2;messageid=<post>"); the conversation is the
+            // channel.
             let conversation_id = link
                 .split("/conversations/")
                 .nth(1)?
-                .split('/')
+                .split(['/', ';'])
                 .next()?
                 .to_string();
             let text = crate::api::strip_html(r.get("content")?.as_str()?)
@@ -157,11 +180,13 @@ pub fn message_events(json: &str) -> Vec<PushedMessage> {
                 .and_then(|n| n.as_str())
                 .unwrap_or_default()
                 .to_string();
+            let mentions = mentions_of(r.get("properties"));
             Some(PushedMessage {
                 conversation_id,
                 sender_name,
                 sender_mri,
                 text,
+                mentions,
             })
         })
         .collect()
@@ -223,6 +248,29 @@ pub fn typing_events(json: &str) -> Vec<Typing> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn mentions_and_channel_replies() {
+        // Shaped like a real push for an @mention (content trimmed).
+        let ev = serde_json::json!({ "eventMessages": [{
+            "resourceType": "NewMessage",
+            "resource": {
+                "messagetype": "RichText/Html",
+                "conversationLink": "https://x/v1/users/ME/conversations/19:abc@thread.tacv2;messageid=1793889784763",
+                "from": "https://x/v1/users/ME/contacts/8:orgid:them",
+                "imdisplayname": "Them",
+                "content": "<p>hello <span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\">OST Test 1</span></p>",
+                "properties": { "mentions": "[{\"@type\":\"http://schema.skype.com/Mention\",\"itemid\":0,\"mri\":\"8:orgid:ME-OID\",\"mentionType\":\"person\",\"displayName\":\"OST Test 1\"}]" }
+            }
+        }]});
+        let m = &message_events(&ev.to_string())[0];
+        assert_eq!(m.conversation_id, "19:abc@thread.tacv2");
+        assert_eq!(m.mentions, vec!["8:orgid:me-oid".to_string()]);
+        assert_eq!(m.text, "hello OST Test 1");
+        assert!(mentions_of(None).is_empty());
+        assert!(mentions_of(Some(&serde_json::json!({ "mentions": "not json" }))).is_empty());
+    }
+
     use super::*;
 
     #[test]
