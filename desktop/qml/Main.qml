@@ -13,6 +13,7 @@ Window {
     color: theme.surface
 
     Theme { id: theme }
+    Shortcut { sequence: "Ctrl+Alt+G"; onActivated: titleBar.focusSearch() }
     FontLoader { source: "../assets/fonts/selawk.ttf" }
     FontLoader { source: "../assets/fonts/selawksb.ttf" }
     FontLoader { source: "../assets/fonts/selawkb.ttf" }
@@ -35,7 +36,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -232,6 +233,20 @@ Window {
         }
     }
 
+    // --search-test: type "Ran" into search and capture the suggestions.
+    Timer {
+        running: Qt.application.arguments.indexOf("--search-test") >= 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int n: 0
+        onTriggered: {
+            if (n++ === 0) { titleBar.typeSearch("Ran"); return }
+            if (backend.peopleJson && backend.peopleJson.length > 2) {
+                window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+                stop()
+            }
+        }
+    }
+
     // --react-test: open the first chat, add a heart to the newest message
     // from someone else, capture once it shows.
     readonly property bool reactTest: Qt.application.arguments.indexOf("--react-test") >= 0
@@ -286,6 +301,11 @@ Window {
         z: 10
         userName: backend.userName
         onSignOut: backend.signOut()
+        chats: chatList.chats
+        people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+        onSearchPeople: q => backend.searchPeople(q)
+        onOpenChat: (id, name) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, name) }
+        onOpenPerson: (oid, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(oid, name) }
     }
 
     SignIn {
