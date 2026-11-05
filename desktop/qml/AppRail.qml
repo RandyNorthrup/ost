@@ -25,7 +25,7 @@ Rectangle {
         { key: "more", icon: "more", label: "View more apps", keys: "" },
     ]
 
-    Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: "#E6E6E6" }
+    Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: theme.edge }
 
     Column {
         y: 0
@@ -86,7 +86,7 @@ Rectangle {
         visible: shown
         x: parent.width - 6; y: parent.height / 2 - height / 2 - 14
         width: tip.implicitWidth + 22; height: 26; radius: theme.radius
-        color: theme.surface; z: 10
+        color: theme.menu; z: 10
         border.color: theme.divider
         Text { id: tip; anchors.centerIn: parent; text: parent.text; color: theme.text; font.family: theme.font; font.pixelSize: theme.small }
     }

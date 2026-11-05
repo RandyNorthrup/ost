@@ -60,6 +60,11 @@ pub mod qobject {
         #[qproperty(QString, activity_json)]
         /// Unread Activity items, for the rail badge.
         #[qproperty(i32, activity_unread)]
+        /// Settings > Appearance > Theme: "system", "light" or "dark".
+        #[qproperty(QString, theme_mode)]
+        /// Settings > Chats and channels > Read receipts (Teams' own
+        /// per-user setting).
+        #[qproperty(bool, read_receipts)]
         /// Calls history as JSON (newest first).
         #[qproperty(QString, calls_json)]
         /// Calendar events for the shown range, as JSON.
@@ -200,6 +205,26 @@ pub mod qobject {
         /// An Activity item was opened: it stops being bold.
         #[qinvokable]
         fn mark_activity_item_read(self: Pin<&mut Backend>, id: &QString);
+
+        /// A saved app setting ("" when unset).
+        #[qinvokable]
+        fn setting(self: Pin<&mut Backend>, name: &QString) -> QString;
+
+        /// Save an app setting.
+        #[qinvokable]
+        fn set_setting(self: Pin<&mut Backend>, name: &QString, value: &QString);
+
+        /// Microphones and speakers: {"inputs": [...], "outputs": [...]}.
+        #[qinvokable]
+        fn audio_devices(self: Pin<&mut Backend>) -> QString;
+
+        /// Load the read receipts setting from Teams (into read_receipts).
+        #[qinvokable]
+        fn load_read_receipts(self: Pin<&mut Backend>);
+
+        /// Turn read receipts on or off in Teams.
+        #[qinvokable]
+        fn change_read_receipts(self: Pin<&mut Backend>, on: bool);
     }
 
     impl cxx_qt::Threading for Backend {}
@@ -230,6 +255,8 @@ pub struct BackendRust {
     drafts_json: QString,
     activity_json: QString,
     activity_unread: i32,
+    theme_mode: QString,
+    read_receipts: bool,
     calls_json: QString,
     calendar_json: QString,
     people_json: QString,
@@ -583,6 +610,72 @@ fn save_drafts(drafts: &HashMap<String, (String, u64)>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// App settings (theme and the like): $XDG_CONFIG_HOME/ost/desktop.json,
+/// owner-only. Teams keeps these per user; OST keeps them per device.
+fn settings_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+        .map(|b| b.join("ost").join("desktop.json"))
+}
+
+fn load_settings() -> serde_json::Map<String, serde_json::Value> {
+    settings_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn save_settings(map: &serde_json::Map<String, serde_json::Value>) -> anyhow::Result<()> {
+    let path = settings_path().ok_or_else(|| anyhow::anyhow!("No config directory"))?;
+    let dir = path.parent().expect("settings file has a directory");
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let tmp = path.with_extension("tmp");
+    write_private(&tmp, serde_json::to_string_pretty(map)?.as_bytes())?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}
+
+/// Hand the chosen microphone and speaker to the call engine.
+fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
+    let get = |k: &str| {
+        map.get(k)
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty() && *v != "default")
+            .map(str::to_string)
+    };
+    teams_cli::calling::audio::set_preferred_devices(get("micDevice"), get("speakerDevice"));
+}
+
+/// Start OST when you sign in to the desktop (an XDG autostart entry).
+fn set_autostart(on: bool) -> anyhow::Result<()> {
+    let dir = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))
+        .ok_or_else(|| anyhow::anyhow!("No config directory"))?
+        .join("autostart");
+    let file = dir.join("ost-desktop.desktop");
+    if !on {
+        match std::fs::remove_file(&file) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => return Ok(()),
+        }
+    }
+    let exe = std::env::current_exe()?;
+    std::fs::create_dir_all(&dir)?;
+    let entry = format!(
+        "[Desktop Entry]\nType=Application\nName=OST\nComment=Teams client\nExec=\"{}\"\nIcon=ost\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+        exe.display()
+    );
+    std::fs::write(&file, entry)?;
+    Ok(())
+}
+
 /// How many notifications the Activity feed shows.
 const ACTIVITY_LIMIT: usize = 50;
 
@@ -693,6 +786,15 @@ impl qobject::Backend {
     pub fn start(mut self: Pin<&mut Self>) {
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
         self.as_mut().set_system_frame(frame);
+        // Teams' default theme is "Follow operating system theme".
+        let theme = load_settings()
+            .get("theme")
+            .and_then(|t| t.as_str())
+            .filter(|t| ["system", "light", "dark"].contains(t))
+            .unwrap_or("system")
+            .to_string();
+        self.as_mut().set_theme_mode(QString::from(theme.as_str()));
+        apply_audio_devices(&load_settings());
         self.as_mut().publish_drafts();
         let stored = teams_cli::auth::has_credentials();
         self.as_mut().set_has_credentials(stored);
@@ -1045,7 +1147,12 @@ impl qobject::Backend {
             || self.rust().my_mri.as_deref() == Some(m.sender_mri.as_str());
         let open = self.rust().window_active
             && m.conversation_id == self.rust().current_chat_id.to_string();
-        if mine || open || m.text.is_empty() {
+        // Settings > Notifications and activity can turn banners off.
+        let banners_on = load_settings()
+            .get("notifications")
+            .and_then(|v| v.as_str())
+            != Some("off");
+        if mine || open || m.text.is_empty() || !banners_on {
             return;
         }
         let chat_name = self
@@ -1796,6 +1903,78 @@ impl qobject::Backend {
             .await;
             if let Err(e) = result {
                 tracing::warn!("activity item read failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn setting(self: Pin<&mut Self>, name: &QString) -> QString {
+        let value = load_settings()
+            .get(&name.to_string())
+            .map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            })
+            .unwrap_or_default();
+        QString::from(value.as_str())
+    }
+
+    pub fn set_setting(mut self: Pin<&mut Self>, name: &QString, value: &QString) {
+        let name = name.to_string();
+        let value = value.to_string();
+        let mut map = load_settings();
+        map.insert(name.clone(), serde_json::Value::String(value.clone()));
+        if let Err(e) = save_settings(&map) {
+            tracing::warn!("saving settings failed: {}", short_error(&e));
+        }
+        if name == "theme" {
+            self.as_mut().set_theme_mode(QString::from(value.as_str()));
+        }
+        if name == "micDevice" || name == "speakerDevice" {
+            apply_audio_devices(&map);
+        }
+        if name == "autoStart" {
+            if let Err(e) = set_autostart(value == "true") {
+                tracing::warn!("auto-start: {}", short_error(&e));
+            }
+        }
+    }
+
+    pub fn audio_devices(self: Pin<&mut Self>) -> QString {
+        let (inputs, outputs) = teams_cli::calling::audio::list_devices();
+        QString::from(
+            json!({ "inputs": inputs, "outputs": outputs })
+                .to_string()
+                .as_str(),
+        )
+    }
+
+    pub fn load_read_receipts(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::messages::read_receipts_enabled(&client).await
+            }
+            .await;
+            match result {
+                Ok(on) => {
+                    let _ = qt.queue(move |mut this| this.as_mut().set_read_receipts(on));
+                }
+                Err(e) => tracing::warn!("read receipts setting: {}", short_error(&e)),
+            }
+        });
+    }
+
+    pub fn change_read_receipts(mut self: Pin<&mut Self>, on: bool) {
+        self.as_mut().set_read_receipts(on);
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::messages::set_read_receipts_enabled(&client, on).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("saving read receipts failed: {}", short_error(&e));
             }
         });
     }

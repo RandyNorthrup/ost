@@ -26,7 +26,7 @@ Rectangle {
     property bool chatsOpen: true
     property bool teamsOpen: true
 
-    Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: "#EFEFEF" }
+    Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: theme.edge }
 
     component HeaderButton: Rectangle {
         id: hb
@@ -37,7 +37,7 @@ Rectangle {
         color: hbHover.hovered ? theme.hover : "transparent"
         HoverHandler { id: hbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }
-        FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: "#424242" }
+        FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: theme.textStrong }
     }
 
     // Header: "Chat", then more / filter / new message (with its menu).
@@ -71,15 +71,15 @@ Rectangle {
                 required property string modelData
                 height: 24; radius: 12
                 width: chipText.implicitWidth + 16
-                color: chipHover.hovered ? "#EBEBEB" : "transparent"
-                border.color: chipHover.hovered ? "#C7C7C7" : theme.stroke
+                color: chipHover.hovered ? theme.rowHover : "transparent"
+                border.color: chipHover.hovered ? theme.strokeHover : theme.stroke
                 HoverHandler { id: chipHover }
                 Text {
                     id: chipText
                     anchors.centerIn: parent
                     text: modelData
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: "#424242"
+                    color: theme.textStrong
                 }
             }
         }
@@ -139,7 +139,7 @@ Rectangle {
                         width: list.width; height: 32
                         Rectangle {
                             x: 16; width: parent.width - 32; height: 32; radius: theme.radius
-                            color: teamHover.hovered ? "#EBEBEB" : "transparent"
+                            color: teamHover.hovered ? theme.rowHover : "transparent"
                         }
                         FluentIcon {
                             x: 18; y: 10
@@ -174,7 +174,7 @@ Rectangle {
                             width: list.width; height: 28
                             Rectangle {
                                 x: 16; width: parent.width - 32; height: 28; radius: theme.radius
-                                color: channel.selected ? theme.surface : (chHover.hovered ? "#EBEBEB" : "transparent")
+                                color: channel.selected ? theme.selected : (chHover.hovered ? theme.rowHover : "transparent")
                             }
                             Text {
                                 x: 64; width: parent.width - 64 - 24; y: 4
@@ -214,7 +214,7 @@ Rectangle {
         width: list.width; height: 32
         Rectangle {
             x: 16; width: parent.width - 32; height: 32; radius: theme.radius
-            color: row.selected ? theme.surface : (hover.hovered ? "#EBEBEB" : "transparent")
+            color: row.selected ? theme.selected : (hover.hovered ? theme.rowHover : "transparent")
         }
         Avatar {
             x: 32; y: 6
@@ -255,7 +255,7 @@ Rectangle {
         width: list.width; height: 32
         Rectangle {
             x: 16; width: parent.width - 32; height: 32; radius: theme.radius
-            color: lr.selected ? theme.surface : (lrHover.hovered ? "#EBEBEB" : "transparent")
+            color: lr.selected ? theme.selected : (lrHover.hovered ? theme.rowHover : "transparent")
         }
         FluentIcon { x: 32; y: 6; name: lr.icon; size: 20; color: theme.textSecondary }
         Text {

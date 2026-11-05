@@ -25,6 +25,10 @@ Rectangle {
     signal goBack()
     signal goForward()
     signal toggleRail()
+    signal openSettings()
+    /// Pin window on top (Ctrl+Shift+T).
+    property bool pinned: false
+    signal togglePin()
     function focusSearch() { field.forceActiveFocus() }
     // Test hook: type into search and keep the suggestions open offscreen,
     // where the window never has focus.
@@ -46,18 +50,18 @@ Rectangle {
         }
     }
     // Hairline under the bar (rgba(0,0,0,0.06) on the chrome colour).
-    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#DDDDDD" }
+    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.titleHairline }
 
     component BarButton: Rectangle {
         id: btn
         property alias icon: glyph.name
-        property bool enabled: true
+        property bool usable: true
         signal clicked()
         width: 32; height: 32; radius: theme.radius
-        color: hover.hovered && btn.enabled ? theme.hover : "transparent"
+        color: hover.hovered && btn.usable ? theme.hover : "transparent"
         HoverHandler { id: hover }
-        TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }
-        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20; color: btn.enabled ? theme.icon : "#BDBDBD" }
+        TapHandler { enabled: btn.usable; onTapped: btn.clicked() }
+        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20; color: btn.usable ? theme.icon : theme.disabled }
     }
 
     BarButton {
@@ -67,13 +71,13 @@ Rectangle {
     }
     BarButton {
         icon: "chevron-left-20"; x: search.x - 70; anchors.verticalCenter: parent.verticalCenter
-        enabled: root.canGoBack
+        usable: root.canGoBack
         Accessible.name: "Back"
         onClicked: root.goBack()
     }
     BarButton {
         icon: "chevron-right-20"; x: search.x - 38; anchors.verticalCenter: parent.verticalCenter
-        enabled: root.canGoForward
+        usable: root.canGoForward
         Accessible.name: "Forward"
         onClicked: root.goForward()
     }
@@ -136,7 +140,7 @@ Rectangle {
         x: search.x; y: search.y + search.height + 4
         width: search.width; height: Math.max(48, col.implicitHeight + 8)
         radius: 8
-        color: theme.surface
+        color: theme.menu
         border.color: theme.dividerSoft
         Column {
             id: col
@@ -169,10 +173,46 @@ Rectangle {
     }
 
     BarButton {
+        id: moreButton
         icon: "more-20"
         anchors.right: profile.left; anchors.rightMargin: 5
         anchors.verticalCenter: parent.verticalCenter
         Accessible.name: "Settings and more"
+        onClicked: moreMenu.visible = !moreMenu.visible
+    }
+    // "Settings and more", as Teams lists it (the parts OST offers).
+    Rectangle {
+        id: moreMenu
+        visible: false
+        z: 100
+        width: 360; height: moreCol.implicitHeight + 8
+        x: moreButton.x + moreButton.width - width; y: parent.height + 4
+        radius: 8
+        color: theme.menu
+        border.color: theme.dividerSoft
+        component MenuRow: Rectangle {
+            id: mr
+            property string icon
+            property string label
+            property string keys
+            property bool checked: false
+            signal picked()
+            width: moreCol.width; height: 36; radius: theme.radius
+            color: mrh.hovered ? theme.rowHover : "transparent"
+            FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: mr.icon; size: 20; color: mr.checked ? theme.brand : theme.textStrong }
+            Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: mr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: mr.keys; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+            HoverHandler { id: mrh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { moreMenu.visible = false; mr.picked() } }
+            Accessible.role: Accessible.MenuItem
+            Accessible.name: mr.label
+        }
+        Column {
+            id: moreCol
+            x: 4; y: 4; width: parent.width - 8
+            MenuRow { icon: "pin-20"; label: root.pinned ? "Unpin window" : "Pin window on top"; keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
+            MenuRow { icon: "settings-20"; label: "Settings"; keys: "Ctrl+,"; onPicked: root.openSettings() }
+        }
     }
     // Profile: a 40 px round button around the 28 px avatar.
     Rectangle {
@@ -269,7 +309,7 @@ Rectangle {
         anchors.right: parent.right; anchors.rightMargin: 8
         y: parent.height + 4
         radius: 8
-        color: theme.surface
+        color: theme.menu
         border.color: theme.dividerSoft
         Column {
             id: menuCol

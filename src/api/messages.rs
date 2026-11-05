@@ -662,6 +662,37 @@ pub fn apply_seen(timeline: &mut [MessageView], horizon: Option<u64>) {
     }
 }
 
+/// Whether read receipts are on (the `readReceiptsEnabled` user property;
+/// Teams treats a missing value as on).
+pub async fn read_receipts_enabled(client: &TeamsClient) -> Result<bool> {
+    let url = format!("{}/v1/users/ME/properties", client.chat_service_url());
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("User properties reply")?;
+    Ok(v.get("readReceiptsEnabled")
+        .and_then(|r| r.as_str())
+        .is_none_or(|r| !r.eq_ignore_ascii_case("false")))
+}
+
+/// Turn read receipts on or off, as Teams' Settings toggle does.
+pub async fn set_read_receipts_enabled(client: &TeamsClient, on: bool) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/properties?name=readReceiptsEnabled",
+        client.chat_service_url()
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "readReceiptsEnabled": if on { "true" } else { "false" } }),
+        )
+        .await?;
+    Ok(())
+}
+
 /// Your favourite chats, in Teams' order: the `favorites` user property
 /// (`{"48:notes":1, "19:…":2}`), sorted by its values.
 pub async fn favorites(client: &TeamsClient) -> Result<Vec<String>> {

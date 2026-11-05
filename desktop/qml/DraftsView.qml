@@ -38,7 +38,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.small
-                        color: "#424242"
+                        color: theme.textStrong
                     }
                 }
             }

@@ -19,8 +19,10 @@ fn main() {
     // Wayland compositors match windows to ost-desktop.desktop by app id,
     // which is how the window gets the OST cheese icon.
     QGuiApplication::set_desktop_file_name(&QString::from("ost-desktop"));
-    if let Some(app) = app.as_mut() {
-        app.set_application_name(&QString::from("OST"));
+    if let Some(mut app) = app.as_mut() {
+        app.as_mut().set_application_name(&QString::from("OST"));
+        app.as_mut()
+            .set_application_version(&QString::from(env!("CARGO_PKG_VERSION")));
     }
     let mut engine = QQmlApplicationEngine::new();
     if let Some(engine) = engine.as_mut() {

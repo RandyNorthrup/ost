@@ -19,9 +19,18 @@ Window {
     title: backend.currentChatName ? backend.currentChatName + " | OST" : "OST"
     color: theme.surface
     // Teams desktop draws its own title bar and window buttons.
-    flags: backend.systemFrame ? Qt.Window : (Qt.Window | Qt.FramelessWindowHint)
+    flags: (backend.systemFrame ? Qt.Window : (Qt.Window | Qt.FramelessWindowHint))
+        | (pinned ? Qt.WindowStaysOnTopHint : 0)
 
-    Theme { id: theme }
+    // Light or dark, as chosen in Settings > Appearance (default: the
+    // system's, like Teams' "Follow operating system theme"). --theme=dark
+    // forces one for captures.
+    Theme {
+        id: theme
+        readonly property string forced: (Qt.application.arguments.find(a => a.startsWith("--theme=")) || "").slice(8)
+        readonly property string mode: forced || backend.themeMode
+        dark: mode === "dark" || (mode === "system" && Qt.styleHints.colorScheme === Qt.ColorScheme.Dark)
+    }
     // Teams desktop's shortcuts: Ctrl+E search, Ctrl+G go to a chat.
     Shortcut { sequence: "Ctrl+E"; onActivated: titleBar.focusSearch() }
     Shortcut { sequence: "Ctrl+G"; onActivated: titleBar.focusSearch() }
@@ -33,6 +42,16 @@ Window {
     Shortcut { sequence: "Ctrl+3"; onActivated: rail.current = "calendar" }
     Shortcut { sequence: "Ctrl+4"; onActivated: rail.current = "calls" }
     Shortcut { sequence: "Ctrl+5"; onActivated: rail.current = "onedrive" }
+    Shortcut { sequence: "Ctrl+,"; onActivated: rail.current = "settings" }
+    Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
+    // Pin window on top.
+    property bool pinned: false
+    // Settings > General > On close, keep the application running: closing
+    // only hides the window; opening OST again brings it back.
+    onClosing: close => {
+        if (backend.setting("keepRunning") !== "false" && !window.reallyQuit) { close.accepted = false; window.hide() }
+    }
+    property bool reallyQuit: Qt.application.arguments.length > 1
 
     // Back/forward through the apps and chats you visited, as Teams does.
     property var navStack: []
@@ -115,6 +134,29 @@ Window {
                 conv.setComposeText(""); backend.setDraft(a.id, "")
             }
             else { console.warn("DRAFT cleared", backend.draftsJson); Qt.quit() }
+            step++
+        }
+    }
+
+    // --settings-test: switch the theme and back, read the receipts
+    // setting from Teams, list audio devices.
+    Timer {
+        running: Qt.application.arguments.indexOf("--settings-test") >= 0 && backend.signedIn
+        interval: 1500
+        property int step: 0
+        property string before: ""
+        repeat: true
+        onTriggered: {
+            if (step === 0) { before = backend.themeMode; backend.setSetting("theme", "dark") }
+            else if (step === 1) {
+                console.warn("SETTINGS theme", backend.themeMode, "dark", theme.dark, "saved", backend.setting("theme"))
+                backend.setSetting("theme", before)
+                backend.loadReadReceipts()
+            } else if (step === 2) {
+                const d = JSON.parse(backend.audioDevices())
+                console.warn("SETTINGS restored", backend.themeMode, "receipts", backend.readReceipts, "mics", d.inputs.length, "speakers", d.outputs.length)
+                Qt.quit()
+            }
             step++
         }
     }
@@ -493,6 +535,9 @@ Window {
         onGoBack: window.goBack()
         onGoForward: window.goForward()
         onToggleRail: rail.collapsed = !rail.collapsed
+        onOpenSettings: rail.current = "settings"
+        pinned: window.pinned
+        onTogglePin: window.pinned = !window.pinned
         windowButtons: !backend.systemFrame
     }
 
@@ -556,7 +601,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity", "settings"].indexOf(rail.current) < 0
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -595,6 +640,10 @@ Window {
             return mine.length > 0 && !mine[mine.length - 1].seen
         })()
         onTriggered: backend.refreshReceipts()
+    }
+    SettingsView {
+        visible: rail.current === "settings"
+        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
     }
     ActivityView {
         id: activityView
@@ -670,7 +719,7 @@ Window {
         anchors { left: chatList.right; right: parent.right; bottom: parent.bottom }
         height: backend.statusText ? 24 : 0
         visible: height > 0
-        color: "#FDF3F4"
+        color: theme.unreadTint
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             text: backend.statusText

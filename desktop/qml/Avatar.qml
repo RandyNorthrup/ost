@@ -111,7 +111,7 @@ Rectangle {
             : "unknown"
         // Fluent's palette for each state.
         readonly property color ink: kind === "available" ? "#13A10E" : kind === "away" ? "#EAA300"
-            : (kind === "busy" || kind === "dnd") ? "#D13438" : kind === "oof" ? "#C239B3" : "#616161"
+            : (kind === "busy" || kind === "dnd") ? "#D13438" : kind === "oof" ? "#C239B3" : theme.textSecondary
         visible: root.presence.length > 0
         width: total; height: total
         x: root.width - total; y: root.height - total

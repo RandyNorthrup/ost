@@ -1,6 +1,7 @@
 //! Audio capture and playback using cpal.
 //!
-//! Opens the default input/output devices at 8000 Hz mono i16 (PCMU native rate).
+//! Opens the chosen (else default) input/output devices at 8000 Hz mono
+//! i16 (PCMU native rate).
 //! If the device doesn't support 8000 Hz, captures/plays at the device's native
 //! rate and resamples with simple linear interpolation.
 //!
@@ -12,6 +13,63 @@ use std::thread;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, SampleRate, StreamConfig};
+
+/// Devices chosen in the app's settings (by name); `None` = the system's
+/// default. Calls opened afterwards use them.
+static PREFERRED: std::sync::RwLock<(Option<String>, Option<String>)> =
+    std::sync::RwLock::new((None, None));
+
+/// Use these devices (by the names `list_devices` reports) for calls;
+/// `None` (or a name no longer present) means the system default.
+pub fn set_preferred_devices(input: Option<String>, output: Option<String>) {
+    *PREFERRED.write().unwrap() = (input, output);
+}
+
+/// The names of the audio devices: (microphones, speakers).
+pub fn list_devices() -> (Vec<String>, Vec<String>) {
+    let host = cpal::default_host();
+    let inputs = host
+        .input_devices()
+        .map(|it| it.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default();
+    let outputs = host
+        .output_devices()
+        .map(|it| it.filter_map(|d| d.name().ok()).collect())
+        .unwrap_or_default();
+    (inputs, outputs)
+}
+
+/// The preferred device of a kind if it is present, else the default.
+fn pick_device(host: &cpal::Host, input: bool) -> Option<Device> {
+    let wanted = {
+        let p = PREFERRED.read().unwrap();
+        if input {
+            p.0.clone()
+        } else {
+            p.1.clone()
+        }
+    };
+    if let Some(name) = wanted {
+        let found = if input {
+            host.input_devices()
+                .ok()
+                .and_then(|mut it| it.find(|d| d.name().ok().as_deref() == Some(name.as_str())))
+        } else {
+            host.output_devices()
+                .ok()
+                .and_then(|mut it| it.find(|d| d.name().ok().as_deref() == Some(name.as_str())))
+        };
+        if found.is_some() {
+            return found;
+        }
+        tracing::info!("Chosen audio device is gone; using the default");
+    }
+    if input {
+        host.default_input_device()
+    } else {
+        host.default_output_device()
+    }
+}
 
 /// Number of PCM samples per 20ms frame at 8000 Hz.
 const FRAME_SAMPLES: usize = 160;
@@ -78,7 +136,7 @@ impl AudioCapture {
 
         thread::spawn(move || {
             let host = cpal::default_host();
-            let device = match host.default_input_device() {
+            let device = match pick_device(&host, true) {
                 Some(d) => d,
                 None => {
                     tracing::warn!("No audio input device found — mic capture disabled");
@@ -192,7 +250,7 @@ impl AudioPlayback {
 
         thread::spawn(move || {
             let host = cpal::default_host();
-            let device = match host.default_output_device() {
+            let device = match pick_device(&host, false) {
                 Some(d) => d,
                 None => {
                     tracing::warn!("No audio output device found — speaker playback disabled");

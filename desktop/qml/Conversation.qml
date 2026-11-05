@@ -162,7 +162,7 @@ Rectangle {
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.base
                         font.weight: index === 0 ? Font.DemiBold : Font.Normal
-                        color: index === 0 ? theme.text : "#424242"
+                        color: index === 0 ? theme.text : theme.textStrong
                     }
                     // Selected: a 3 px brand pill, inset 8 px, at the bottom.
                     Rectangle {
@@ -177,7 +177,7 @@ Rectangle {
             }
             Item {
                 width: 32; height: parent.height
-                FluentIcon { anchors.centerIn: parent; name: "add-square-20"; size: 20; color: "#424242" }
+                FluentIcon { anchors.centerIn: parent; name: "add-square-20"; size: 20; color: theme.textStrong }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Add a tab"
             }
@@ -192,7 +192,7 @@ Rectangle {
             color: haHover.hovered ? theme.hover : "transparent"
             HoverHandler { id: haHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: ha.clicked() }
-            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: "#424242" }
+            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: theme.textStrong }
         }
         HeaderAction {
             visible: !root.isSelf && !root.isChannel
@@ -367,7 +367,7 @@ Rectangle {
                 bottomLeftRadius: !msg.mine && joinDown ? 0 : r
                 topRightRadius: msg.mine && joinUp ? 0 : r
                 bottomRightRadius: msg.mine && joinDown ? 0 : r
-                color: bare ? "transparent" : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.pane)
+                color: bare ? "transparent" : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
                 border.color: root.isChannel ? theme.dividerSoft : "transparent"
                 x: msg.mine ? parent.width - 72 - width : 72
                 // Inline pictures, scaled to fit the bubble (as in Teams).
@@ -581,7 +581,7 @@ Rectangle {
         anchors.leftMargin: 72; anchors.rightMargin: 72; anchors.bottomMargin: 24
         height: Math.max(44, input.contentHeight + 24)
         radius: theme.radius
-        color: theme.surface
+        color: theme.input
         border.color: input.activeFocus ? theme.brand : theme.divider
         TextArea {
             id: input
@@ -593,12 +593,17 @@ Rectangle {
             color: theme.text
             wrapMode: TextArea.Wrap
             background: null
+            onActiveFocusChanged: if (activeFocus) enterKey = backend.setting("enterKey") || "send"
             onTextChanged: {
                 if (text.length > 0) root.typing()
                 draftSave.restart()
             }
+            // Settings > Chats and channels: Enter sends (Shift+Enter breaks the
+            // line), or Enter breaks the line and Ctrl+Enter sends.
+            property string enterKey: backend.setting("enterKey") || "send"
             Keys.onReturnPressed: event => {
-                if (event.modifiers & Qt.ShiftModifier) { event.accepted = false; return }
+                const sendKey = enterKey === "newline" ? (event.modifiers & Qt.ControlModifier) : !(event.modifiers & Qt.ShiftModifier)
+                if (!sendKey) { event.accepted = false; return }
                 if (root.editingId) { root.editMessage(root.editingId, input.text); root.editingId = "" }
                 else root.send(input.text)
                 input.text = ""

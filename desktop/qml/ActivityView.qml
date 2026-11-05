@@ -15,7 +15,7 @@ Rectangle {
     color: theme.pane
     width: 379
 
-    Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: "#EFEFEF" }
+    Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.edge }
 
     Text {
         x: 20; y: 17
@@ -34,7 +34,7 @@ Rectangle {
                 width: 32; height: 32; radius: theme.radius
                 color: hh.hovered ? theme.hover : "transparent"
                 HoverHandler { id: hh }
-                FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: "#424242" }
+                FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.textStrong }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.label
             }
@@ -56,7 +56,7 @@ Rectangle {
                     anchors.centerIn: parent
                     text: modelData
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: "#424242"
+                    color: theme.textStrong
                 }
             }
         }
@@ -87,7 +87,7 @@ Rectangle {
             height: Math.max(64, body.y + body.height + (call ? 34 : 0) + 10)
             Rectangle {
                 x: 4; width: 358; height: parent.height; radius: theme.radius
-                color: it.selected ? theme.surface : (hov.hovered ? "#EBEBEB" : "transparent")
+                color: it.selected ? theme.selected : (hov.hovered ? theme.rowHover : "transparent")
             }
             // Unread: a small dot left of the picture.
             Rectangle {
@@ -160,14 +160,14 @@ Rectangle {
                     text: it.modelData.context
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: "#424242"
+                    color: theme.textStrong
                 }
             }
             Text {
                 x: 345.5 - implicitWidth; y: 6.7
                 text: root.when(it.modelData.time)
                 font.family: theme.font; font.pixelSize: theme.small
-                color: "#424242"
+                color: theme.textStrong
             }
             // Missed calls: call back or chat, as in Teams.
             Row {
