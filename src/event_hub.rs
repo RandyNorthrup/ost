@@ -94,6 +94,60 @@ pub fn conversation_ids(json: &str) -> Vec<String> {
     ids
 }
 
+/// A typing change pushed for a chat.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Typing {
+    pub conversation_id: String,
+    /// The typist's display name, if the event carries it.
+    pub sender_name: String,
+    /// `Control/ClearTyping`: they stopped.
+    pub stopped: bool,
+}
+
+/// Typing indicators in a chat-service event (`Control/Typing` and
+/// `Control/ClearTyping` messages).
+pub fn typing_events(json: &str) -> Vec<Typing> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let events: Vec<&serde_json::Value> = match v.get("eventMessages").and_then(|e| e.as_array()) {
+        Some(list) => list.iter().collect(),
+        None => vec![&v],
+    };
+    events
+        .into_iter()
+        .filter_map(|ev| {
+            let r = ev.get("resource")?;
+            let kind = r.get("messagetype")?.as_str()?;
+            let stopped = match kind {
+                "Control/Typing" => false,
+                "Control/ClearTyping" => true,
+                _ => return None,
+            };
+            let link = r
+                .get("conversationLink")
+                .or_else(|| ev.get("resourceLink"))?
+                .as_str()?;
+            let conversation_id = link
+                .split("/conversations/")
+                .nth(1)?
+                .split('/')
+                .next()?
+                .to_string();
+            let sender_name = r
+                .get("imdisplayname")
+                .and_then(|n| n.as_str())
+                .unwrap_or_default()
+                .to_string();
+            Some(Typing {
+                conversation_id,
+                sender_name,
+                stopped,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +181,22 @@ mod tests {
         assert!(conversation_ids(typing).is_empty());
         let text = r#"{"resourceType":"NewMessage","resourceLink":"https://x/v1/users/ME/conversations/19:a@thread.v2/messages/2","resource":{"messagetype":"RichText/Html","content":"<p>hi</p>"}}"#;
         assert_eq!(conversation_ids(text), vec!["19:a@thread.v2"]);
+    }
+
+    #[test]
+    fn typing_events_start_and_stop() {
+        let start = r#"{"resourceType":"NewMessage","resource":{"messagetype":"Control/Typing","imdisplayname":"Randy Northrup","conversationLink":"https://x/v1/users/ME/conversations/19:a_b@unq.gbl.spaces"}}"#;
+        assert_eq!(
+            typing_events(start),
+            vec![Typing {
+                conversation_id: "19:a_b@unq.gbl.spaces".into(),
+                sender_name: "Randy Northrup".into(),
+                stopped: false
+            }]
+        );
+        let stop = start.replace("Control/Typing", "Control/ClearTyping");
+        assert!(typing_events(&stop)[0].stopped);
+        assert!(typing_events(r#"{"resource":{"messagetype":"RichText/Html"}}"#).is_empty());
     }
 
     #[test]

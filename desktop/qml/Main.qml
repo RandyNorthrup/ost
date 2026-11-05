@@ -31,7 +31,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -171,6 +171,29 @@ Window {
     }
     property bool outStarted: false
 
+    // --typing-test: open the first chat, send typing for 12 s, then
+    // capture the first incoming typing indicator.
+    readonly property bool typingTest: Qt.application.arguments.indexOf("--typing-test") >= 0
+    property int typingTicks: 0
+    Timer {
+        running: window.typingTest && backend.signedIn
+        interval: 2000; repeat: true
+        onTriggered: {
+            const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+            if (!backend.currentChatId && chats.length > 0) { backend.selectChat(chats[0].id, chats[0].name); return }
+            if (window.typingTicks++ < 6) { backend.userTyping(); console.warn("TYPING-SENT") }
+        }
+    }
+    Connections {
+        target: backend
+        enabled: window.typingTest
+        function onTypingTextChanged() {
+            if (!backend.typingText) return
+            console.warn("TYPING-SHOWN", backend.typingText)
+            window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
+        }
+    }
+
     TitleBar {
         id: titleBar
         width: parent.width
@@ -213,6 +236,8 @@ Window {
         busy: backend.busy
         onSend: text => backend.sendMessage(text)
         onCall: backend.startCall()
+        onTyping: backend.userTyping()
+        typingText: backend.typingText
     }
 
     Rectangle {

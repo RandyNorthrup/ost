@@ -45,6 +45,8 @@ pub mod qobject {
         #[qproperty(bool, call_video_offered)]
         #[qproperty(bool, call_muted)]
         #[qproperty(bool, call_has_audio)]
+        /// "Randy Northrup is typing" for the open chat, or "".
+        #[qproperty(QString, typing_text)]
         type Backend = super::BackendRust;
     }
 
@@ -91,6 +93,11 @@ pub mod qobject {
         #[qinvokable]
         fn hang_up(self: Pin<&mut Backend>);
 
+        /// The user is typing in the open chat; tells the others (at most
+        /// every few seconds).
+        #[qinvokable]
+        fn user_typing(self: Pin<&mut Backend>);
+
         /// Mute or unmute the microphone in the current call.
         #[qinvokable]
         fn toggle_mute(self: Pin<&mut Backend>);
@@ -117,6 +124,10 @@ pub struct BackendRust {
     call_video_offered: bool,
     call_muted: bool,
     call_has_audio: bool,
+    typing_text: QString,
+    /// Bumped on every typing change so a stale clear timer does nothing.
+    typing_generation: u64,
+    last_typing_sent: Option<std::time::Instant>,
     /// Chats with messages pushed since the user last opened them.
     unread: HashSet<String>,
     /// The chat list as loaded, before unread flags are applied.
@@ -171,6 +182,11 @@ fn spawn_call_stats_logger() {
         }
     });
 }
+
+/// A typing indicator disappears this long after the last typing event.
+const TYPING_TTL_SECS: u64 = 6;
+/// Send our own typing indicator at most this often.
+const TYPING_SEND_INTERVAL_SECS: u64 = 3;
 
 /// How long an unanswered call rings before it counts as missed.
 const RING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
@@ -437,6 +453,9 @@ impl qobject::Backend {
                     on_call_event(&qt, &ev.json).await;
                     continue;
                 }
+                for t in teams_cli::event_hub::typing_events(&ev.json) {
+                    let _ = qt.queue(move |mut this| this.as_mut().on_typing(t));
+                }
                 let ids = teams_cli::event_hub::conversation_ids(&ev.json);
                 if ids.is_empty() {
                     continue;
@@ -647,11 +666,72 @@ impl qobject::Backend {
         });
     }
 
+    fn on_typing(mut self: Pin<&mut Self>, t: teams_cli::event_hub::Typing) {
+        tracing::info!(stopped = t.stopped, named = !t.sender_name.is_empty(), "typing event");
+        if t.conversation_id != self.rust().current_chat_id.to_string()
+            || t.sender_name == self.rust().user_name.to_string()
+        {
+            return;
+        }
+        let generation = self.rust().typing_generation + 1;
+        self.as_mut().rust_mut().typing_generation = generation;
+        if t.stopped {
+            self.as_mut().set_typing_text(QString::default());
+            return;
+        }
+        // Typing events often omit the name; in a 1:1 chat it is the other
+        // member, whose name is the chat's.
+        let name = if t.sender_name.is_empty() {
+            self.rust().current_chat_name.to_string()
+        } else {
+            t.sender_name.clone()
+        };
+        let text = format!("{name} is typing");
+        self.as_mut().set_typing_text(QString::from(text.as_str()));
+        // Teams clears the indicator if no new typing event comes in.
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(TYPING_TTL_SECS)).await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().typing_generation == generation {
+                    this.as_mut().set_typing_text(QString::default());
+                }
+            });
+        });
+    }
+
+    pub fn user_typing(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if self
+            .rust()
+            .last_typing_sent
+            .is_some_and(|t| now.duration_since(t).as_secs() < TYPING_SEND_INTERVAL_SECS)
+        {
+            return;
+        }
+        self.as_mut().rust_mut().last_typing_sent = Some(now);
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::send_typing(&client, &chat_id).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::debug!("typing indicator failed: {}", short_error(&e));
+            }
+        });
+    }
+
     fn on_chat_push(mut self: Pin<&mut Self>, ids: Vec<String>) {
         let current = self.rust().current_chat_id.to_string();
         let mut list_changed = false;
         for id in ids {
             if id == current {
+                self.as_mut().set_typing_text(QString::default());
                 self.as_mut().reload_messages();
             } else {
                 list_changed |= self.as_mut().rust_mut().unread.insert(id);
@@ -727,6 +807,7 @@ impl qobject::Backend {
         if self.as_mut().rust_mut().unread.remove(&chat_id.to_string()) {
             self.as_mut().publish_chats();
         }
+        self.as_mut().set_typing_text(QString::default());
         self.as_mut().set_current_chat_id(chat_id.clone());
         self.as_mut().set_current_chat_name(chat_name.clone());
         self.as_mut().set_messages_json(QString::from("[]"));

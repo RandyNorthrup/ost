@@ -265,6 +265,23 @@ pub async fn send_message_with_client(
     Ok(())
 }
 
+/// Tell the chat's other members you are typing (Teams clients send this
+/// every few seconds while the compose box changes).
+pub async fn send_typing(client: &TeamsClient, chat_id: &str) -> Result<()> {
+    let base = client.chat_service_url();
+    let url = format!("{}/v1/users/ME/conversations/{}/messages", base, chat_id);
+    let mut body = serde_json::json!({
+        "content": "",
+        "messagetype": "Control/Typing",
+        "contenttype": "text",
+    });
+    if let Some(name) = client.display_name() {
+        body["imdisplayname"] = serde_json::Value::String(name);
+    }
+    client.chat_post(&url, &body).await?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Data-returning API functions for TUI integration
 // ---------------------------------------------------------------------------

@@ -10,6 +10,8 @@ Rectangle {
     signal send(string text)
     signal call()
     property string chatPresence: ""
+    property string typingText: ""
+    signal typing()
 
     // Newest first (the list grows upward), with Teams' grouping: a message
     // joins the previous one when the same person sent it under 5 minutes
@@ -164,6 +166,40 @@ Rectangle {
         }
     }
 
+    // Typing indicator, as Teams draws it: the typist's avatar overlapping
+    // the compose box's top-left edge with three pulsing dots (the text is
+    // the accessible name).
+    Item {
+        id: typingRow
+        visible: root.typingText.length > 0
+        z: 2
+        x: compose.x + 16; y: compose.y - 24
+        width: 32 + 6 + 3 * 6 + 2 * 3; height: 32
+        Accessible.role: Accessible.StaticText
+        Accessible.name: root.typingText
+        Avatar { size: 32; name: root.typingText.replace(/ is typing$/, "") }
+        Row {
+            x: 38; anchors.verticalCenter: parent.verticalCenter
+            spacing: 3
+            Repeater {
+                model: 3
+                Rectangle {
+                    required property int index
+                    width: 6; height: 6; radius: 3
+                    color: "#C8C6C4"
+                    SequentialAnimation on color {
+                        running: typingRow.visible
+                        loops: Animation.Infinite
+                        PauseAnimation { duration: index * 200 }
+                        ColorAnimation { to: theme.brand; duration: 200 }
+                        ColorAnimation { to: "#C8C6C4"; duration: 200 }
+                        PauseAnimation { duration: (2 - index) * 200 + 200 }
+                    }
+                }
+            }
+        }
+    }
+
     // Compose box
     Rectangle {
         id: compose
@@ -184,6 +220,7 @@ Rectangle {
             color: theme.text
             wrapMode: TextArea.Wrap
             background: null
+            onTextChanged: if (text.length > 0) root.typing()
             Keys.onReturnPressed: event => {
                 if (event.modifiers & Qt.ShiftModifier) { event.accepted = false; return }
                 root.send(input.text); input.text = ""
