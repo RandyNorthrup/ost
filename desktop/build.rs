@@ -56,6 +56,7 @@ fn main() {
     let builder = CxxQtBuilder::new_qml_module(module)
         .file("src/backend.rs")
         .file("src/video_item.rs")
+        .file("src/key_typer.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
         .qt_module("WebEngineQuick")

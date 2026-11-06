@@ -916,7 +916,7 @@ Rectangle {
         active: !!root.webTab
         visible: active
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
-        sourceComponent: WebApp { showHeader: false; appName: root.webTab ? root.webTab.name : ""; home: root.webTab ? root.webTab.url : "" }
+        sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; home: root.webTab ? root.webTab.url : "" }
     }
     // Tabs OST can't offer say so.
     Column {

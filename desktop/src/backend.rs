@@ -3249,7 +3249,8 @@ impl qobject::Backend {
                     Ok(tabs) => json!({ "channel": channel, "tabs": tabs }).to_string(),
                     Err(e) => json!({ "channel": channel, "error": short_error(&e) }).to_string(),
                 };
-                this.as_mut().set_channel_tabs_json(QString::from(text.as_str()));
+                this.as_mut()
+                    .set_channel_tabs_json(QString::from(text.as_str()));
             });
         });
     }

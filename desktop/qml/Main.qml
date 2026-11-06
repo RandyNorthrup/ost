@@ -439,7 +439,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -714,6 +714,39 @@ Window {
             opened = true
         }
     }
+    // --loop-test --loop-steps=<file>: a Page view (Loop, page only), run
+    // through the steps in the file, to test the Page tab's insert row on
+    // a scratch page of the test account's own.
+    Loader {
+        id: loopTest
+        active: Qt.application.arguments.indexOf("--loop-test") >= 0 && backend.signedIn
+        z: 100
+        anchors.fill: parent
+        sourceComponent: WebApp { pageOnly: true; showHeader: false; home: "https://loop.cloud.microsoft/" }
+    }
+    function loopJs(code) { loopTest.item.view.runJavaScript(code, r => console.warn("LOOP", JSON.stringify(r))) }
+    // Steps from the file OST_LOOP_STEPS names: one JS snippet a line, or
+    // "SHOT name", or "INSERT command"; one every 5 s.
+    Timer {
+        running: loopTest.status === Loader.Ready
+        interval: 5000; repeat: true
+        property var steps: null
+        property int i: 0
+        onTriggered: {
+            if (!steps) {
+                const x = new XMLHttpRequest(); x.open("GET", "file://" + Qt.application.arguments.find(a => a.startsWith("--loop-steps=")).slice(13), false); x.send()
+                steps = x.responseText.split("\n").filter(l => l.trim())
+            }
+            if (i >= steps.length) { Qt.quit(); return }
+            const st = steps[i++]
+            console.warn("LOOP step", st.slice(0, 80))
+            if (st.startsWith("SHOT ")) window.loopShot(st.slice(5))
+            else if (st.startsWith("INSERT ")) loopTest.item.insertOnPage(st.slice(7))
+            else if (st.startsWith("TYPE ")) { loopTest.item.view.forceActiveFocus(); loopTest.item.typeForTest(st.slice(5).replace("<END>", "\u0001").replace("<RET>", "\n")) }
+            else window.loopJs(st)
+        }
+    }
+    function loopShot(name) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + name + ".png"))) }
     // --share-test: once connected, share a screen (the desktop's picker
     // asks what), keep it up for 30 s, then stop.
     readonly property bool shareTest: Qt.application.arguments.indexOf("--share-test") >= 0

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-06T04:53:00Z'
-updated_date: '2026-11-06T16:28:00Z'
+updated_date: '2026-11-06T18:06:00Z'
 labels:
   - desktop
 dependencies: []
@@ -28,4 +28,8 @@ Teams channels have a Page tab (after Shared) that OST doesn't show yet.
 - Channel tabs now come from Graph (/teams/{id}/channels/{id}/tabs?$expand=teamsApp): Posts, Shared, then Page (pinned after Shared, as Teams does), Notes and any app tabs.
 - Page shows the tab's Loop page (its SharePoint .loop link, https and Microsoft hosts only) in place with OST's web profile, without the app header. It reaches Microsoft's sign-in, a one-time step for the user in OST's web profile (shared with Whiteboard and Clipchamp).
 - Checked with --open-chat=<General of Secure Coast> --tab=Page.
+
+- 1:1 pass: Teams renders the Page with Loop component code inside its own window (no URL), which OST can't host. OST shows Loop's real page with Loop's app frame hidden (top bar, side panel, tour, template gallery), edge to edge, and draws Teams' parts natively: the header row (page icon from its favicon, name, Shared locations, Copy component, See who has access) and the insert row (Table, Bulleted list, Checklist, Task list, Voting table, ...).
+- The insert row types Loop's "/" commands as real key presses through a native KeyTyper item (Qt key events to OST's own window); synthetic page events don't open Loop's menu. Tested on scratch copies in the test account's OneDrive (since recycled): each button inserts its block.
+- See who has access opens Loop's sharing menu; Loop's own toolbar stays laid out (invisible) so its menus anchor.
 <!-- SECTION:NOTES:END -->

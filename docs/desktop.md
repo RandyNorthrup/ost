@@ -77,8 +77,13 @@ Microsoft branding.
   (installing needs a permission OST's sign-in doesn't have); Planner,
   OneNote and People open in OST.
 - **Channel tabs** come from the channel itself (Graph): Posts, Shared,
-  then the channel's Page (its Loop page, shown in place with OST's web
-  profile; sign in there once), Notes and any apps, in Teams' order.
+  then the channel's Page, Notes and any apps, in Teams' order. Page
+  is drawn as Teams draws it: its header row (the page's icon and name,
+  Shared locations, Copy component, See who has access), the live Loop
+  page edge to edge (Loop's own app frame hidden), and Teams' insert row
+  (Table, Bulleted list, Checklist, Task list, Voting table, and more),
+  which types Loop's own "/" commands. It uses OST's web profile; sign
+  in there once.
 - **Channel Shared tab**: the channel's folder in the team's SharePoint
   library, as Teams shows it: breadcrumb, Share, Copy link, Add shortcut
   to OneDrive, Create or upload (folder, files), Name / Modified /
@@ -228,6 +233,7 @@ account.
 | `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |
 | `--share-test` | In a call (with `--call-test --remote-hangup`): share a screen once connected (the portal's picker asks what), capture it after 30 s, then stop. |
 | `--tab=<name>` | With `--open-chat`, open that tab of the chat or channel before capturing. |
+| `--loop-test --loop-steps=<file>` | A Page view (Loop, page only) driven by the file's steps, one every 5 s: a JavaScript line, `SHOT <name>`, `INSERT <command>` (the insert row) or `TYPE <keys>` (`<END>` is Ctrl+End, `<RET>` Return). Needs `QML_XHR_ALLOW_FILE_READ=1`. Use a scratch page of the test account's own. |
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
 | `--webapp-test` | Open Whiteboard (`--webapp-help`: Help) from View more apps and capture it once loaded. |
 | `--store-test` | Open the Store, capture Home, search "planner", open Whiteboard's details. |

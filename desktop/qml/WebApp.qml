@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls.Basic
 import QtWebEngine
+import com.ost.desktop
 
 // A web app Teams embeds (Whiteboard, Clipchamp, Help), shown in place as
 // Teams shows it: the app's header (icon and name, Open in browser), then
@@ -16,6 +18,9 @@ Item {
     /// The app's own header (icon, name, Reload, Open in browser); off for
     /// a channel tab, which Teams shows bare under the channel's tabs.
     property bool showHeader: true
+    /// A channel's Page: show only the Loop page itself (its toolbar and
+    /// canvas), as Teams draws it, without the Loop app around it.
+    property bool pageOnly: false
     readonly property alias view: web
 
     Rectangle { anchors.fill: parent; color: theme.surface }
@@ -39,6 +44,63 @@ Item {
     }
 
     property bool ready: false
+    // Page tabs: hide the Loop app's frame (its top bar, side panel, help
+    // button and first-run tour) on Loop's own pages only, so the page
+    // shows as Teams draws it.
+    readonly property string pageOnlyScript: "if (location.hostname === 'loop.cloud.microsoft') {"
+        + " const s = document.createElement('style');"
+        + " s.textContent = 'header:not(main header), aside, [role=\"banner\"], [role=\"complementary\"], button[aria-label=\"Help\"],"
+        + " [role=\"dialog\"][aria-label=\"Loop Introductory Tour\"] { display: none !important }"
+        // The page's own toolbar stays laid out but unseen (a strip at
+        // the top right), so its panels (sharing) still have an anchor.
+        + " main header { position: absolute !important; top: 0 !important; right: 0 !important; height: 1px !important;"
+        + " overflow: hidden !important; opacity: 0 !important; pointer-events: none !important }"
+        // The page fills the tab, edge to edge, as in Teams.
+        + " main, [role=\"main\"] { position: fixed !important; inset: 0 !important; margin: 0 !important; width: auto !important;"
+        + " max-width: none !important; height: auto !important; border-radius: 0 !important; box-shadow: none !important; border: 0 !important; z-index: 10 }';"
+        + " document.documentElement.appendChild(s);"
+        // Close the recent-pages panel and the first-run tour as a person
+        // would (Loop keeps both closed afterwards), and hide Loop's
+        // template gallery (Teams offers its insert row instead).
+        + " const hideUp = (el, keep) => { let a = el; while (a.parentElement && !a.parentElement.contains(keep)) a = a.parentElement; a.style.display = 'none'; };"
+        + " let n = 0; const t = setInterval(() => {"
+        + "  document.querySelector('button[aria-label=\"Close sidebar\"][aria-expanded=\"true\"]')?.click();"
+        + "  document.querySelector('[role=\"dialog\"] button[aria-label=\"Close Dialog\"]')?.click();"
+        + "  const canvas = document.querySelector('[role=\"textbox\"][aria-label=\"Canvas\"]');"
+        + "  if (canvas) for (const b of document.querySelectorAll('button')) {"
+        + "   const label = b.textContent.trim();"
+        + "   if (label === 'Template Gallery' || label.startsWith('Blank page')) hideUp(b, canvas); }"
+        + "  if (++n > 40) clearInterval(t); }, 500); }"
+    // Insert at the end of the page what Teams' row offers, through
+    // Loop's own "/" commands, typed as real keys (Loop answers only
+    // real typing). The "..." button just opens Loop's insert menu.
+    function insertOnPage(command) {
+        web.runJavaScript("(() => { const c = document.querySelector('[role=\"textbox\"][aria-label=\"Canvas\"]');"
+            + " if (!c) return false; c.focus(); return true; })()", ok => {
+                if (!ok) return
+                web.forceActiveFocus()
+                // To the end of the page, a new line, and Loop's insert menu.
+                typer.typeText("\u0001\n/")
+                insertTimer.command = command
+                insertTimer.step = 0
+                insertTimer.restart()
+            })
+    }
+    KeyTyper { id: typer }
+    function typeForTest(t) { typer.typeText(t) }
+    Timer {
+        id: insertTimer
+        property string command
+        property int step: 0
+        interval: 600
+        onTriggered: {
+            if (!command) return
+            if (step === 0) { typer.typeText(command); step = 1; restart() }
+            else { typer.typeText("\n"); step = 0 }
+        }
+    }
+    /// Where the page is shared (for Shared locations), e.g. "General · Team".
+    property string location: ""
     Component.onCompleted: {
         web.profile = webAppsProfile.instance()
         web.url = root.home
@@ -47,14 +109,71 @@ Item {
     // Another page for the same view (a different channel's Page).
     onHomeChanged: if (ready) web.url = root.home
 
+    // A channel's Page, as Teams heads it: the Loop page's icon and name
+    // (which opens it in Loop), then Shared locations, Copy component and
+    // See who has access.
+    Rectangle {
+        id: pageHeader
+        visible: root.pageOnly
+        anchors { top: header.bottom; left: parent.left; right: parent.right }
+        height: root.pageOnly ? 48 : 0; color: theme.surface
+        Row {
+            x: 20; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+            Image { anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; source: web.icon; sourceSize: Qt.size(40, 40) }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: web.title && web.title !== "Microsoft Loop" ? web.title.replace(/ - Loop$/, "") : root.appName
+                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: Qt.openUrlExternally(root.home) }
+            }
+        }
+        Row {
+            anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
+            spacing: 4
+            PageButton { icon: "apps"; tip: "Shared locations"; onClicked: locations.open() }
+            PageButton { icon: "select-object-20"; tip: "Copy component"; onClicked: { copier.text = root.home; copier.selectAll(); copier.copy() } }
+            PageButton { icon: "people-checkmark-20"; tip: "See who has access"
+                onClicked: web.runJavaScript("[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Share' || b.textContent.trim() === 'Share')?.click()") }
+        }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
+        TextEdit { id: copier; visible: false }
+        Popup {
+            id: locations
+            x: parent.width - width - 16; y: parent.height
+            padding: 12
+            background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+            contentItem: Column {
+                spacing: 6
+                Text { text: "Shared locations"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: root.location; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
+            }
+        }
+    }
+    // Teams' insert row at the foot of a Page.
+    Row {
+        visible: root.pageOnly && web.loadProgress === 100
+        z: 2
+        anchors { left: parent.left; leftMargin: 40; bottom: parent.bottom; bottomMargin: 24 }
+        spacing: 12
+        InsertButton { icon: "table-20"; label: "Table"; onClicked: root.insertOnPage("table") }
+        InsertButton { icon: "text-bullets-20"; label: "Bulleted list"; onClicked: root.insertOnPage("bulleted list") }
+        InsertButton { icon: "task-list-square-20"; label: "Checklist"; onClicked: root.insertOnPage("checklist") }
+        InsertButton { icon: "checkmark-circle-20"; label: "Task list"; onClicked: root.insertOnPage("task list") }
+        InsertButton { icon: "vote-20"; label: "Voting table"; onClicked: root.insertOnPage("voting table") }
+        InsertButton { icon: "more-20"; label: ""; onClicked: root.insertOnPage("") }
+    }
     WebEngineView {
         id: web
-        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        anchors { top: pageHeader.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
         // The profile and first page are set once everything is complete:
         // the prototype's instance() isn't ready while bindings first run.
         settings.javascriptCanOpenWindows: true
         settings.localContentCanAccessRemoteUrls: false
         settings.localContentCanAccessFileUrls: false
+        onLoadingChanged: req => {
+            if (root.pageOnly && req.status === WebEngineView.LoadSucceededStatus) web.runJavaScript(root.pageOnlyScript)
+        }
         // https only.
         onNavigationRequested: req => {
             if (req.url.toString().indexOf("https://") !== 0 && req.url.toString() !== "about:blank") req.reject()
@@ -91,6 +210,36 @@ Item {
         }
     }
 
+    component PageButton: Rectangle {
+        id: pb
+        property string icon
+        property string tip
+        signal clicked()
+        width: 32; height: 32; radius: theme.radius
+        color: pbh.hovered ? theme.rowHover : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: pb.icon; size: 20; color: theme.textStrong }
+        HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: pb.clicked() }
+        ToolTip.visible: pbh.hovered; ToolTip.text: tip; ToolTip.delay: 500
+        Accessible.role: Accessible.Button
+        Accessible.name: tip
+    }
+    component InsertButton: Rectangle {
+        id: ib
+        property string icon
+        property string label
+        signal clicked()
+        width: ibRow.implicitWidth + 32; height: 40; radius: 6
+        color: ibh.hovered ? theme.rowHover : theme.surface; border.color: theme.stroke
+        Row { id: ibRow; anchors.centerIn: parent; spacing: 8
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: ib.icon; size: 20; color: theme.textStrong }
+            Text { visible: !!ib.label; anchors.verticalCenter: parent.verticalCenter; text: ib.label; font.family: theme.font; font.pixelSize: theme.base + 1; color: theme.text }
+        }
+        HoverHandler { id: ibh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: ib.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: label || "More"
+    }
     component HeaderButton: Rectangle {
         id: hb
         property string icon
