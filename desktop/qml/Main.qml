@@ -429,7 +429,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -1002,6 +1002,31 @@ Window {
         }
     }
 
+    // --apps-test: People (add a contact, favorite it, delete it) and
+    // OneNote (open the first notebook, add a page, delete it), capturing.
+    Timer {
+        running: Qt.application.arguments.indexOf("--apps-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const people = peopleApp.data_.contacts || []
+            if (step === 0) rail.openApp("people")
+            else if (step === 2) { console.warn("APPS contacts", people.length, peopleApp.data_.error || "", "busy", peopleApp.busy); cap("people-empty") }
+            else if (step === 3) { peopleApp.addForTest("OST", "People test", "ost-people-test@example.com") }
+            else if (step === 5) { const c = peopleApp.find("OST People test"); console.warn("APPS contact added", !!c); if (c) peopleApp.favorite(c.id, true) }
+            else if (step === 7) { const c = peopleApp.find("OST People test"); console.warn("APPS favorite", !!c && c.favorite); peopleApp.view = "favorites"; cap("people-favorites") }
+            else if (step === 8) { peopleApp.view = "all"; cap("people-all"); const c = peopleApp.find("OST People test"); if (c) peopleApp.remove(c.id) }
+            else if (step === 10) { console.warn("APPS contact deleted", !peopleApp.find("OST People test"), "rail extras", rail.opened.join(",")); rail.openApp("onenote") }
+            else if (step === 12) { console.warn("APPS notebooks", oneNote.notebooks.map(n => n.name).join(", "), oneNote.error); cap("onenote"); if (oneNote.notebooks.length) oneNote.openNotebook(oneNote.notebooks[0]) }
+            else if (step === 15) { console.warn("APPS sections", oneNote.sections.map(s => s.name).join(", ")); if (oneNote.section) oneNote.newPageForTest("OST OneNote page", "Written from OST.\nSecond line.") }
+            else if (step === 19) { console.warn("APPS page shown", !!oneNote.page && oneNote.page.title, "html", oneNote.html.indexOf("Written from OST") >= 0); cap("onenote-page") }
+            else if (step === 20) { if (oneNote.page) oneNote.removePage(oneNote.page.id) }
+            else if (step === 22) { console.warn("APPS page deleted", !oneNote.pages.some(p => p.title === "OST OneNote page")); Qt.quit() }
+            step++
+        }
+    }
+
     // --planner-test: open Planner from View more apps; add a private task,
     // complete it; create a plan in OST Test Team, add a task, delete the
     // plan; capturing along the way.
@@ -1245,7 +1270,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote"].indexOf(rail.current) < 0
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -1254,6 +1279,27 @@ Window {
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.textSecondary
         }
+    }
+    PeopleView {
+        id: peopleApp
+        visible: rail.current === "people"
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        data_: backend.contactsJson ? JSON.parse(backend.contactsJson) : ({})
+        busy: backend.contactsBusy
+        onLoad: backend.contactsLoad()
+        onAdd: json => backend.contactsAdd(json)
+        onFavorite: (id, on) => backend.contactsFavorite(id, on)
+        onRemove: id => backend.contactsDelete(id)
+    }
+    OneNoteView {
+        id: oneNote
+        visible: rail.current === "onenote"
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        reply: backend.onenoteJson ? JSON.parse(backend.onenoteJson) : ({})
+        busy: backend.onenoteBusy
+        onLoad: (v, id) => backend.onenoteLoad(v, id)
+        onCreate: (kind, parent, name, text) => backend.onenoteCreate(kind, parent, name, text)
+        onRemovePage: id => backend.onenoteDeletePage(id)
     }
     PlannerView {
         id: planner

@@ -19,7 +19,9 @@ Rectangle {
     // Apps opened from "View more apps" join the rail, as in Teams.
     property var opened: []
     readonly property var extraApps: [
-        { key: "planner", icon: "clipboard-task-list-ltr-24", label: "Planner", keys: "" }
+        { key: "planner", icon: "clipboard-task-list-ltr-24", label: "Planner", keys: "" },
+        { key: "people", icon: "people-20", label: "People", keys: "" },
+        { key: "onenote", icon: "notebook-20", label: "OneNote", keys: "" }
     ]
     // Teams desktop's rail, with its labels and shortcuts (Copilot left out).
     readonly property var apps: [
@@ -32,8 +34,10 @@ Rectangle {
         { key: "add", icon: "add-app", label: "Store", keys: "" },
         { key: "more", icon: "more", label: "View more apps", keys: "" },
     ])
+    // Teams keeps one slot for an app opened from View more apps: the
+    // newest replaces the last.
     function openApp(key) {
-        if (opened.indexOf(key) < 0) opened = opened.concat([key])
+        opened = [key]
         current = key
     }
 
@@ -101,11 +105,18 @@ Rectangle {
         width: 300; padding: 8
         onOpened: { appSearch.text = ""; appSearch.forceActiveFocus() }
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+        // Teams' list and order for this account. Shifts, Clipchamp,
+        // Whiteboard and Events are web apps Teams embeds (and Shifts
+        // needs a scope OST's sign-in doesn't have), so they open on the web.
         readonly property var all: [
+            { url: "https://teams.microsoft.com/l/app/42f6c1da-a241-483a-a3cc-4f5be9185951", label: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7" },
             { key: "planner", label: "Planner", icon: "clipboard-task-list-ltr-24-filled", color: theme.brand },
-            { url: "https://whiteboard.cloud.microsoft/", label: "Whiteboard", icon: "board-20", color: "#0F6CBD" },
+            { key: "onenote", label: "OneNote", icon: "notebook-20", color: "#7719AA" },
+            { url: "https://support.microsoft.com/teams", label: "Help", icon: "question-circle-20", color: theme.textStrong },
             { url: "https://app.clipchamp.com/", label: "Clipchamp", icon: "video", color: "#8764B8" },
-            { url: "https://support.microsoft.com/teams", label: "Help", icon: "question-circle-20", color: theme.textStrong }
+            { url: "https://whiteboard.cloud.microsoft/", label: "Whiteboard", icon: "board-20", color: "#0F6CBD" },
+            { url: "https://teams.cloud.microsoft/", label: "Events", icon: "ticket-diagonal-20", color: theme.textStrong },
+            { key: "people", label: "People", icon: "people-20", color: theme.textStrong }
         ]
         contentItem: Column {
             spacing: 2

@@ -180,6 +180,46 @@ impl TeamsClient {
         check_response(resp, &url).await
     }
 
+    /// POST a raw body with its content type (OneNote takes XHTML).
+    pub async fn graph_post_raw(
+        &self,
+        path: &str,
+        content_type: &str,
+        body: String,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&token)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body)
+            .send()
+            .await
+            .with_context(|| format!("Graph {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// PATCH on Graph's beta endpoint.
+    pub async fn graph_beta_patch(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("https://graph.microsoft.com/beta{}", path);
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&token)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Graph beta {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
     /// PATCH a Graph path with a JSON body.
     pub async fn graph_patch(
         &self,

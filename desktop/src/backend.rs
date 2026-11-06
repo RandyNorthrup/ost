@@ -47,6 +47,10 @@ pub mod qobject {
         #[qproperty(QString, call_peer_id)]
         #[qproperty(bool, call_video_offered)]
         /// The Planner view last loaded: {view, plan, tasks, plans, error}.
+        #[qproperty(QString, onenote_json)]
+        #[qproperty(bool, onenote_busy)]
+        #[qproperty(QString, contacts_json)]
+        #[qproperty(bool, contacts_busy)]
         #[qproperty(QString, planner_json)]
         #[qproperty(bool, planner_busy)]
         /// The OneDrive view last loaded: {view, drive_id, item_id, items, libraries, error}.
@@ -280,6 +284,44 @@ pub mod qobject {
             first_message: &QString,
         );
 
+        /// OneNote: load "notebooks", "sections" (of notebook `id`),
+        /// "pages" (of section `id`) or "page" (`id`'s content) into
+        /// onenote_json.
+        #[qinvokable]
+        fn onenote_load(self: Pin<&mut Backend>, view: &QString, id: &QString);
+
+        /// OneNote: create a notebook, a section in notebook `parent`, or a
+        /// page (title, text) in section `parent`. kind: "notebook" |
+        /// "section" | "page".
+        #[qinvokable]
+        fn onenote_create(
+            self: Pin<&mut Backend>,
+            kind: &QString,
+            parent: &QString,
+            name: &QString,
+            text: &QString,
+        );
+
+        /// OneNote: delete a page.
+        #[qinvokable]
+        fn onenote_delete_page(self: Pin<&mut Backend>, id: &QString);
+
+        /// People: load your contacts and categories into contacts_json.
+        #[qinvokable]
+        fn contacts_load(self: Pin<&mut Backend>);
+
+        /// People: add a contact (NewContact as JSON).
+        #[qinvokable]
+        fn contacts_add(self: Pin<&mut Backend>, contact_json: &QString);
+
+        /// People: mark a contact as a favorite, or not.
+        #[qinvokable]
+        fn contacts_favorite(self: Pin<&mut Backend>, id: &QString, on: bool);
+
+        /// People: delete a contact.
+        #[qinvokable]
+        fn contacts_delete(self: Pin<&mut Backend>, id: &QString);
+
         /// Planner: load "mytasks", "plans" or "plan" (`plan_json` is a
         /// Plan) into planner_json.
         #[qinvokable]
@@ -449,6 +491,10 @@ pub struct BackendRust {
     call_meeting: bool,
     drive_json: QString,
     drive_busy: bool,
+    onenote_json: QString,
+    onenote_busy: bool,
+    contacts_json: QString,
+    contacts_busy: bool,
     planner_json: QString,
     planner_busy: bool,
     /// The Planner view last asked for (view, plan json), to reload.
@@ -2830,6 +2876,157 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+
+    pub fn onenote_load(mut self: Pin<&mut Self>, view: &QString, id: &QString) {
+        let (view, id) = (view.to_string(), id.to_string());
+        self.as_mut().set_onenote_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let c = TeamsClient::new().await?;
+                let mut out = json!({ "view": view, "id": id });
+                match view.as_str() {
+                    "sections" => out["sections"] = json!(api::onenote::sections(&c, &id).await?),
+                    "pages" => out["pages"] = json!(api::onenote::pages(&c, &id).await?),
+                    "page" => out["html"] = json!(api::onenote::page_html(&c, &id).await?),
+                    _ => out["notebooks"] = json!(api::onenote::notebooks(&c).await?),
+                }
+                anyhow::Ok(out)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_onenote_busy(false);
+                let text = match result {
+                    Ok(v) => v.to_string(),
+                    Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_onenote_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn onenote_create(
+        mut self: Pin<&mut Self>,
+        kind: &QString,
+        parent: &QString,
+        name: &QString,
+        text: &QString,
+    ) {
+        let (kind, parent, name, text) = (
+            kind.to_string(),
+            parent.to_string(),
+            name.to_string(),
+            text.to_string(),
+        );
+        self.as_mut().set_onenote_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let c = TeamsClient::new().await?;
+                let made = match kind.as_str() {
+                    "notebook" => json!({ "view": "created", "kind": kind, "item": api::onenote::create_notebook(&c, &name).await? }),
+                    "section" => json!({ "view": "created", "kind": kind, "parent": parent, "item": api::onenote::create_section(&c, &parent, &name).await? }),
+                    _ => json!({ "view": "created", "kind": "page", "parent": parent, "item": api::onenote::create_page(&c, &parent, &name, &text).await? }),
+                };
+                anyhow::Ok(made)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_onenote_busy(false);
+                match result {
+                    // The view reloads what it shows from "created".
+                    Ok(v) => this.as_mut().set_onenote_json(QString::from(v.to_string().as_str())),
+                    Err(e) => this.as_mut().set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
+        });
+    }
+
+    pub fn onenote_delete_page(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        self.as_mut().set_onenote_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result =
+                async { api::onenote::delete_page(&TeamsClient::new().await?, &id).await }.await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_onenote_busy(false);
+                match result {
+                    Ok(()) => this.as_mut().set_onenote_json(QString::from(
+                        json!({ "view": "deleted", "id": id }).to_string().as_str(),
+                    )),
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
+        });
+    }
+
+    pub fn contacts_load(mut self: Pin<&mut Self>) {
+        self.as_mut().set_contacts_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let contacts = api::contacts::list(&client).await?;
+                // Categories are a nicety; a mailbox without them still lists contacts.
+                let categories = api::contacts::categories(&client).await.unwrap_or_default();
+                anyhow::Ok(json!({ "contacts": contacts, "categories": categories }))
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_contacts_busy(false);
+                let text = match result {
+                    Ok(v) => v.to_string(),
+                    Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut()
+                    .set_contacts_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    /// Run a contacts change, then reload.
+    fn contacts_change<F, Fut>(mut self: Pin<&mut Self>, f: F)
+    where
+        F: FnOnce(TeamsClient) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
+    {
+        self.as_mut().set_contacts_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { f(TeamsClient::new().await?).await }.await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().contacts_load(),
+                Err(e) => {
+                    this.as_mut().set_contacts_busy(false);
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()));
+                }
+            });
+        });
+    }
+
+    pub fn contacts_add(self: Pin<&mut Self>, contact_json: &QString) {
+        let text = contact_json.to_string();
+        self.contacts_change(move |c| async move {
+            let new: api::contacts::NewContact = serde_json::from_str(&text)?;
+            api::contacts::create(&c, &new).await.map(|_| ())
+        });
+    }
+
+    pub fn contacts_favorite(self: Pin<&mut Self>, id: &QString, on: bool) {
+        let id = id.to_string();
+        self.contacts_change(
+            move |c| async move { api::contacts::set_favorite(&c, &id, on).await },
+        );
+    }
+
+    pub fn contacts_delete(self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        self.contacts_change(move |c| async move { api::contacts::delete(&c, &id).await });
     }
 
     pub fn planner_load(mut self: Pin<&mut Self>, view: &QString, plan_json: &QString) {

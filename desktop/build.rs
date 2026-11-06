@@ -23,6 +23,8 @@ fn main() {
         "qml/PreJoin.qml",
         "qml/OneDriveView.qml",
         "qml/PlannerView.qml",
+        "qml/PeopleView.qml",
+        "qml/OneNoteView.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
         "qml/ActivityView.qml",
