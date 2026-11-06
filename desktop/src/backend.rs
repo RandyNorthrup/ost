@@ -314,6 +314,18 @@ pub mod qobject {
             paths: &QString,
         );
 
+        /// OneDrive: add an item to favorites, or take it off.
+        #[qinvokable]
+        fn drive_favorite(self: Pin<&mut Backend>, drive_id: &QString, item_id: &QString, on: bool);
+
+        /// OneDrive: restore recycle-bin items (comma-separated ids).
+        #[qinvokable]
+        fn drive_restore(self: Pin<&mut Backend>, ids: &QString);
+
+        /// OneDrive: delete recycle-bin items for good (comma-separated ids).
+        #[qinvokable]
+        fn drive_purge(self: Pin<&mut Backend>, ids: &QString);
+
         /// OneDrive: make a folder.
         #[qinvokable]
         fn drive_new_folder(
@@ -2695,6 +2707,17 @@ impl qobject::Backend {
                     "recent" => out["items"] = json!(api::drive::recent(&client).await?),
                     "shared" => out["items"] = json!(api::drive::shared_with_me(&client).await?),
                     "libraries" => out["libraries"] = json!(api::drive::libraries(&client).await?),
+                    "favorites" => out["items"] = json!(api::drive::favorites(&client).await?),
+                    "media" => out["items"] = json!(api::drive::media(&client).await?),
+                    "meetings" => out["items"] = json!(api::drive::meetings(&client).await?),
+                    "recycle" => out["deleted"] = json!(api::drive::recycle_bin(&client).await?),
+                    "people" => {
+                        out["people"] = json!(api::drive::by_people(&client)
+                            .await?
+                            .into_iter()
+                            .map(|(name, items)| json!({ "name": name, "items": items }))
+                            .collect::<Vec<_>>())
+                    }
                     _ => {
                         out["items"] =
                             json!(api::drive::children(&client, &drive_id, &item_id).await?)
@@ -2795,6 +2818,52 @@ impl qobject::Backend {
                     .set_status_text(QString::from(short_error(&e).as_str())),
             });
         });
+    }
+
+    /// Run a OneDrive change, then reload the view shown.
+    fn drive_change<F, Fut>(mut self: Pin<&mut Self>, f: F)
+    where
+        F: FnOnce(TeamsClient) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
+    {
+        self.as_mut().set_drive_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { f(TeamsClient::new().await?).await }.await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().drive_reload(),
+                Err(e) => {
+                    this.as_mut().set_drive_busy(false);
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()));
+                }
+            });
+        });
+    }
+
+    pub fn drive_favorite(self: Pin<&mut Self>, drive_id: &QString, item_id: &QString, on: bool) {
+        let (d, i) = (drive_id.to_string(), item_id.to_string());
+        self.drive_change(move |c| async move { api::drive::set_favorite(&c, &d, &i, on).await });
+    }
+
+    pub fn drive_restore(self: Pin<&mut Self>, ids: &QString) {
+        let ids: Vec<String> = ids
+            .to_string()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        self.drive_change(move |c| async move { api::drive::restore(&c, &ids).await });
+    }
+
+    pub fn drive_purge(self: Pin<&mut Self>, ids: &QString) {
+        let ids: Vec<String> = ids
+            .to_string()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        self.drive_change(move |c| async move { api::drive::purge(&c, &ids).await });
     }
 
     pub fn drive_new_folder(

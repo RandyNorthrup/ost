@@ -572,6 +572,7 @@ Window {
     // --call-test: capture the toast, answer, capture the call, hang up.
     readonly property bool callOut: Qt.application.arguments.indexOf("--call-out") >= 0
     readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0 || Qt.application.arguments.indexOf("--call-panes") >= 0
+    property string favName: ""
     readonly property bool callPanes: Qt.application.arguments.indexOf("--call-panes") >= 0
     // --remote-hangup: stay in the call until the caller ends it.
     readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0
@@ -870,11 +871,34 @@ Window {
             }
             else if (step === 8) { console.warn("DRIVE inside", (d.items || []).map(i => i.name).join(", ")); cap("inside"); oneDrive.open("shared") }
             else if (step === 9) { console.warn("DRIVE shared", (d.items || []).length, d.error || ""); cap("shared"); oneDrive.open("libraries") }
+            else if (step === 14) { oneDrive.open("recycle") }
+            else if (step === 15) { console.warn("DRIVE recycle", d.deleted ? d.deleted.length : -1, d.error || ""); cap("recycle"); console.warn("DRIVE restore one test folder", oneDrive.restoreTestFolders()) }
+            else if (step === 17) { oneDrive.open("myfiles") }
+            else if (step === 18) {
+                console.warn("DRIVE restored into My files", (d.items || []).some(i => i.name === "OST drive test"))
+                const f = (d.items || []).find(i => i.name === "Microsoft Teams Chat Files"); if (f) oneDrive.openFolder(f.name, f.drive_id, f.id)
+            }
+            else if (step === 19) { const f = (d.items || []).find(i => !i.is_folder); window.favName = f ? f.name : ""; if (f) oneDrive.favorite(f.drive_id, f.id, true) }
+            else if (step === 20) { oneDrive.open("favorites") }
+            else if (step === 21) {
+                const f = (d.items || []).find(i => i.name === window.favName)
+                console.warn("DRIVE favorite shown", !!f, d.error || ""); cap("favorites")
+                if (f) oneDrive.favorite(f.drive_id, f.id, false)
+            }
+            else if (step === 23) { oneDrive.open("myfiles") }
+            else if (step === 24) { const n = oneDrive.deleteForTest("OST drive test"); console.warn("DRIVE delete restored folder", n) }
+            else if (step === 26) { oneDrive.open("recycle") }
+            else if (step === 27) { console.warn("DRIVE purge test folders", oneDrive.purgeTestFolders()) }
+            else if (step === 29) { oneDrive.open("recycle") }
+            else if (step === 30) { console.warn("DRIVE test folders left in recycle bin", (d.deleted || []).filter(x => x.name === "OST drive test").length, d.error || ""); oneDrive.open("media") }
+            else if (step === 31) { console.warn("DRIVE media", (d.items || []).length, d.error || ""); oneDrive.open("people") }
+            else if (step === 32) { console.warn("DRIVE people", (d.people || []).map(p => p.name + ":" + p.items.length).join(", "), d.error || ""); cap("people"); oneDrive.open("meetings") }
+            else if (step === 33) { console.warn("DRIVE meetings", (d.items || []).length, d.error || ""); Qt.quit() }
             else if (step === 11) {
                 console.warn("DRIVE libraries", (d.libraries || []).map(l => l.site + "/" + l.name).join(", "), d.error || ""); cap("libraries")
                 const l = (d.libraries || []).find(l => l.site === "OST Test Team"); if (l) { oneDrive.trail = []; oneDrive.openFolder(l.site + " · " + l.name, l.drive_id, "") }
             }
-            else if (step === 13) { console.warn("DRIVE library", (d.items || []).map(i => i.name).join(", "), d.error || ""); cap("library"); Qt.quit() }
+            else if (step === 13) { console.warn("DRIVE library", (d.items || []).map(i => i.name).join(", "), d.error || ""); cap("library") }
             step++
         }
     }
@@ -1159,6 +1183,9 @@ Window {
         onUpload: (d, f, paths) => backend.driveUpload(d, f, paths)
         onNewFolder: (d, p, name) => backend.driveNewFolder(d, p, name)
         onRemove: (d, i) => backend.driveDelete(d, i)
+        onFavorite: (d, i, on) => backend.driveFavorite(d, i, on)
+        onRestore: ids => backend.driveRestore(ids)
+        onPurge: ids => backend.drivePurge(ids)
     }
     ChatList {
         id: chatList

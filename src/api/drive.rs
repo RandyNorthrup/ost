@@ -215,6 +215,190 @@ pub async fn libraries(client: &TeamsClient) -> Result<Vec<Library>> {
     Ok(out)
 }
 
+/// Favorites: the files and folders you follow.
+pub async fn favorites(client: &TeamsClient) -> Result<Vec<DriveItem>> {
+    get_items(client, &format!("/me/drive/following?{SELECT}")).await
+}
+
+/// Add an item to (or take it off) your favorites.
+pub async fn set_favorite(
+    client: &TeamsClient,
+    drive_id: &str,
+    item_id: &str,
+    on: bool,
+) -> Result<()> {
+    let action = if on { "follow" } else { "unfollow" };
+    client
+        .graph_post(
+            &format!("{}/{action}", item_path(drive_id, item_id)?),
+            &serde_json::json!({}),
+        )
+        .await?;
+    Ok(())
+}
+
+/// Photos and videos in the files you can reach (Graph search).
+pub async fn media(client: &TeamsClient) -> Result<Vec<DriveItem>> {
+    let q = serde_json::json!({ "requests": [{
+        "entityTypes": ["driveItem"],
+        "query": { "queryString": "filetype:jpg OR filetype:jpeg OR filetype:png OR filetype:gif OR filetype:heic OR filetype:mp4 OR filetype:mov OR filetype:webm" },
+        "size": 100
+    }]});
+    let v: serde_json::Value = client.graph_post("/search/query", &q).await?.json().await?;
+    Ok(v.pointer("/value/0/hitsContainers/0/hits")
+        .and_then(|h| h.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|h| h.get("resource"))
+        .filter_map(parse_item)
+        .collect())
+}
+
+/// Files shared with you, by who shared them: [(person, files)].
+pub async fn by_people(client: &TeamsClient) -> Result<Vec<(String, Vec<DriveItem>)>> {
+    let v: serde_json::Value = client
+        .graph_get("/me/drive/sharedWithMe?$top=200")
+        .await?
+        .json()
+        .await?;
+    let mut out: Vec<(String, Vec<DriveItem>)> = Vec::new();
+    for raw in v
+        .get("value")
+        .and_then(|x| x.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let Some(item) = parse_item(raw) else {
+            continue;
+        };
+        let who = [
+            "/remoteItem/shared/sharedBy/user/displayName",
+            "/remoteItem/shared/owner/user/displayName",
+            "/remoteItem/createdBy/user/displayName",
+        ]
+        .iter()
+        .find_map(|p| {
+            raw.pointer(p)
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or("Someone")
+        .to_string();
+        match out.iter_mut().find(|(p, _)| *p == who) {
+            Some((_, files)) => files.push(item),
+            None => out.push((who, vec![item])),
+        }
+    }
+    Ok(out)
+}
+
+/// Meeting files: the recordings Teams keeps in your OneDrive's
+/// Recordings folder (empty when there are none).
+pub async fn meetings(client: &TeamsClient) -> Result<Vec<DriveItem>> {
+    match client
+        .graph_get_opt(&format!(
+            "/me/drive/root:/Recordings:/children?$top=200&{SELECT}"
+        ))
+        .await?
+    {
+        Some(r) => Ok(parse_items(&r.json().await?)),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// A deleted item in your OneDrive's recycle bin.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Deleted {
+    pub id: String,
+    pub name: String,
+    pub deleted: String,
+    pub deleted_by: String,
+    /// Where it was.
+    pub from: String,
+    pub size: u64,
+}
+
+async fn my_site(client: &TeamsClient) -> Result<String> {
+    let d: serde_json::Value = client
+        .graph_get("/me/drive?$select=sharePointIds")
+        .await?
+        .json()
+        .await?;
+    let site = d
+        .pointer("/sharePointIds/siteId")
+        .and_then(|s| s.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if site.is_empty() || !site.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        bail!("Your OneDrive's site is unknown");
+    }
+    Ok(site)
+}
+
+/// Your OneDrive's recycle bin (Graph beta).
+pub async fn recycle_bin(client: &TeamsClient) -> Result<Vec<Deleted>> {
+    let site = my_site(client).await?;
+    let v: serde_json::Value = client
+        .graph_beta(&format!("/sites/{site}/recycleBin/items?$top=200"), None)
+        .await?
+        .json()
+        .await?;
+    let s = |x: &serde_json::Value, p: &str| {
+        x.pointer(p)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    Ok(v.get("value")
+        .and_then(|x| x.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|i| !s(i, "/id").is_empty())
+        .map(|i| Deleted {
+            id: s(i, "/id"),
+            name: s(i, "/name"),
+            deleted: s(i, "/deletedDateTime"),
+            deleted_by: s(i, "/deletedBy/user/displayName"),
+            from: s(i, "/deletedFromLocation"),
+            size: i.get("size").and_then(|n| n.as_u64()).unwrap_or(0),
+        })
+        .collect())
+}
+
+/// Restore recycle-bin items to where they were (Graph beta).
+pub async fn restore(client: &TeamsClient, ids: &[String]) -> Result<()> {
+    let site = my_site(client).await?;
+    for id in ids {
+        if !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+            bail!("Not a recycle bin item");
+        }
+    }
+    client
+        .graph_beta(
+            &format!("/sites/{site}/recycleBin/items/restore"),
+            Some(&serde_json::json!({ "ids": ids })),
+        )
+        .await?;
+    Ok(())
+}
+
+/// Delete recycle-bin items for good (Graph beta).
+pub async fn purge(client: &TeamsClient, ids: &[String]) -> Result<()> {
+    let site = my_site(client).await?;
+    for id in ids {
+        if !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+            bail!("Not a recycle bin item");
+        }
+    }
+    client
+        .graph_beta(
+            &format!("/sites/{site}/recycleBin/items/delete"),
+            Some(&serde_json::json!({ "ids": ids })),
+        )
+        .await?;
+    Ok(())
+}
+
 /// Download a file into `dir` (a free name is chosen if it exists).
 pub async fn download(client: &TeamsClient, item: &DriveItem, dir: &Path) -> Result<PathBuf> {
     if item.is_folder {

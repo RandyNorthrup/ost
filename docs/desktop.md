@@ -36,6 +36,10 @@ Microsoft branding.
 - **OneDrive**: Home (recent files), My files with folders, Shared with
   you, and Libraries (each team's SharePoint document library); open in
   the browser, download, upload, new folder and delete.
+- **OneDrive extras**: Favorites (add or remove files), Recycle bin
+  (Restore, Delete permanently), Browse files by People, Meetings
+  (recordings) and Media (photos and videos); Create or upload works
+  from every view (into My files when you're not in a folder).
 - **Planner** (from View more apps): My tasks (private To Do tasks and
   the Planner tasks assigned to you, with All / Private tasks / Assigned
   to me), My day, My plans (your teams' plans), Grid and Board, adding

@@ -159,6 +159,27 @@ impl TeamsClient {
         check_response(resp, &url).await
     }
 
+    /// GET or POST on Graph's beta endpoint (features v1.0 lacks, such as
+    /// a site's recycle bin). `body` None is a GET.
+    pub async fn graph_beta(
+        &self,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("https://graph.microsoft.com/beta{}", path);
+        let req = match body {
+            Some(b) => self.http.post(&url).json(b),
+            None => self.http.get(&url),
+        }
+        .bearer_auth(&token);
+        let resp = req
+            .send()
+            .await
+            .with_context(|| format!("Graph beta {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
     /// PATCH a Graph path with a JSON body.
     pub async fn graph_patch(
         &self,

@@ -4,7 +4,8 @@ import QtQuick.Dialogs
 
 // The OneDrive app, laid out as Teams desktop's (measured at 1x): a
 // 280 px pane with "OneDrive", Create or upload, and the views (Home,
-// My files, Shared, Favorites, Libraries, Recycle bin, Browse files by);
+// My files, Shared, Favorites, Libraries, Recycle bin, Browse files by
+// People / Meetings / Media);
 // the content shows the view's title and a white card with the files
 // table (Name, Modified, Modified By, File size, Sharing). Libraries are
 // your teams' SharePoint document libraries.
@@ -19,17 +20,26 @@ Item {
     signal upload(string driveId, string folderId, string paths)
     signal newFolder(string driveId, string parentId, string name)
     signal remove(string driveId, string itemId)
+    signal favorite(string driveId, string itemId, bool on)
+    signal restore(string ids)
+    signal purge(string ids)
+    /// Browse files by People: the person picked.
+    property string person: ""
 
     property string view: "recent"
     /// Folders opened from My files or a library: [{name, drive_id, item_id}].
     property var trail: []
     readonly property var here: trail.length ? trail[trail.length - 1] : { name: "", drive_id: "", item_id: "" }
-    readonly property var items: driveData.items || []
+    readonly property var items: view === "people"
+        ? ((driveData.people || []).find(p => p.name === person) || { items: [] }).items
+        : driveData.items || []
+    readonly property var deleted: driveData.deleted || []
+    readonly property var people: driveData.people || []
     readonly property var libraries: driveData.libraries || []
     readonly property bool canWrite: view === "folder"
 
     function open(v) {
-        view = v; trail = []
+        view = v; trail = []; person = ""
         load(v === "myfiles" ? "folder" : v, "", "")
         if (v === "myfiles") { view = "folder"; trail = [{ name: "My files", drive_id: "", item_id: "" }] }
     }
@@ -42,8 +52,9 @@ Item {
         trail = trail.slice(0, i + 1)
         load("folder", here.drive_id, here.item_id)
     }
-    readonly property string title: view === "recent" ? "Home" : view === "shared" ? "Shared"
-        : view === "libraries" ? "Libraries" : (trail.length ? trail[0].name : "My files")
+    readonly property string title: ({ recent: "Home", shared: "Shared", libraries: "Libraries", favorites: "Favorites",
+        recycle: "Recycle bin", meetings: "Meetings", media: "Media", people: person || "People" })[view]
+        || (trail.length ? trail[0].name : "My files")
     Component.onCompleted: open("recent")
 
     function size(n) {
@@ -83,22 +94,25 @@ Item {
         Rectangle {
             id: createButton
             x: 16; y: 80; width: 157; height: 32; radius: theme.radius
-            color: root.canWrite ? (cbh.hovered ? theme.brandHover : theme.brandFill) : theme.brandFill
-            opacity: root.canWrite ? 1 : 0.5
+            color: cbh.hovered ? theme.brandHover : theme.brandFill
             Row {
                 anchors.centerIn: parent; spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: "white" }
                 Text { anchors.verticalCenter: parent.verticalCenter; text: "Create or upload"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             }
-            HoverHandler { id: cbh; cursorShape: root.canWrite ? Qt.PointingHandCursor : Qt.ArrowCursor }
-            TapHandler { enabled: root.canWrite; onTapped: createMenu.open() }
+            HoverHandler { id: cbh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: createMenu.open() }
             Accessible.role: Accessible.Button
             Accessible.name: "Create or upload"
             MenuPopup {
                 id: createMenu
                 y: parent.height + 4; width: 220
                 items: [{ label: "Folder", icon: "folder-add-20" }, { separator: true }, { label: "Files upload", icon: "arrow-upload-20" }]
-                onPicked: i => i === 0 ? folderDialog.open() : uploadPicker.open()
+                // Outside a folder (Home, Shared, ...) it goes into My files, as in Teams.
+                onPicked: i => {
+                    if (!root.canWrite) root.open("myfiles")
+                    i === 0 ? folderDialog.open() : uploadPicker.open()
+                }
             }
         }
         Column {
@@ -108,9 +122,9 @@ Item {
                     { key: "recent", label: "Home", icon: "home-20" },
                     { key: "myfiles", label: "My files", icon: "folder-20" },
                     { key: "shared", label: "Shared", icon: "people-20" },
-                    { key: "favorites", label: "Favorites", icon: "star-20", off: true },
+                    { key: "favorites", label: "Favorites", icon: "star-20" },
                     { key: "libraries", label: "Libraries", icon: "library-20" },
-                    { key: "recycle", label: "Recycle bin", icon: "delete-20", off: true }
+                    { key: "recycle", label: "Recycle bin", icon: "delete-20" }
                 ]
                 NavRow {}
             }
@@ -118,9 +132,9 @@ Item {
             Text { x: 16; height: 36; verticalAlignment: Text.AlignVCenter; text: "Browse files by"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
             Repeater {
                 model: [
-                    { key: "people", label: "People", icon: "people-20", off: true },
-                    { key: "meetings", label: "Meetings", icon: "calendar-ltr-20", off: true },
-                    { key: "media", label: "Media", icon: "image-20", off: true }
+                    { key: "people", label: "People", icon: "people-20" },
+                    { key: "meetings", label: "Meetings", icon: "calendar-ltr-20" },
+                    { key: "media", label: "Media", icon: "image-20" }
                 ]
                 NavRow {}
             }
@@ -184,6 +198,81 @@ Item {
             radius: 4
             color: theme.surface
             clip: true
+            // People: who shared files with you; pick one to see them.
+            ListView {
+                visible: root.view === "people" && !root.person
+                anchors.fill: parent; anchors.margins: 8
+                model: root.people
+                delegate: Rectangle {
+                    required property var modelData
+                    width: ListView.view.width; height: 52; radius: theme.radius
+                    color: pph.hovered ? theme.rowHover : "transparent"
+                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: modelData.name }
+                    Column {
+                        x: 56; anchors.verticalCenter: parent.verticalCenter
+                        Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                        Text { text: modelData.items.length + (modelData.items.length === 1 ? " file" : " files"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                    }
+                    HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.person = modelData.name }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Files from " + modelData.name
+                }
+            }
+            // Recycle bin: Name, Date deleted, Deleted by, Original location.
+            Item {
+                visible: root.view === "recycle"
+                anchors.fill: parent
+                Row {
+                    id: rhead
+                    x: 0; y: 13; height: 36
+                    Item { width: 77; height: 36 }
+                    HeadCell { label: "Name"; width: Math.max(200, parent.parent.width * 0.3) }
+                    HeadCell { label: "Date deleted"; width: 150 }
+                    HeadCell { label: "Deleted by"; width: 150 }
+                    HeadCell { label: "Original location"; width: 220 }
+                }
+                ListView {
+                    anchors { top: rhead.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+                    clip: true
+                    model: root.deleted
+                    delegate: Rectangle {
+                        id: drow
+                        required property var modelData
+                        width: ListView.view.width; height: 48
+                        color: dh.hovered ? theme.rowHover : "transparent"
+                        Rectangle { x: 16; width: parent.width - 32; height: 1; color: theme.dividerSoft }
+                        Row {
+                            height: parent.height
+                            Item { width: 77; height: parent.height; FluentIcon { anchors.centerIn: parent; name: "document-20"; size: 20; color: theme.textSecondary } }
+                            Cell { width: Math.max(200, drow.width * 0.3); text: drow.modelData.name; strong: true }
+                            Cell { width: 150; text: root.ago(drow.modelData.deleted) }
+                            Cell { width: 150; text: drow.modelData.deleted_by }
+                            Cell { width: 220; text: drow.modelData.from }
+                        }
+                        Rectangle {
+                            visible: dh.hovered || dmenu.visible
+                            anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                            width: 32; height: 32; radius: theme.radius
+                            color: dmh.hovered ? theme.pane : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+                            HoverHandler { id: dmh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: dmenu.open() }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "More options for " + drow.modelData.name
+                            MenuPopup {
+                                id: dmenu
+                                x: -200; y: parent.height; width: 220
+                                items: [{ label: "Restore", icon: "arrow-upload-20" }, { label: "Delete permanently", icon: "delete-20" }]
+                                onPicked: i => i === 0 ? root.restore(drow.modelData.id) : root.purge(drow.modelData.id)
+                            }
+                        }
+                        HoverHandler { id: dh }
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: "Deleted " + modelData.name
+                    }
+                }
+            }
             // Libraries: cards to open.
             ListView {
                 visible: root.view === "libraries"
@@ -207,7 +296,7 @@ Item {
             }
             // The files table
             Item {
-                visible: root.view !== "libraries"
+                visible: root.view !== "libraries" && root.view !== "recycle" && (root.view !== "people" || !!root.person)
                 anchors.fill: parent
                 readonly property real wName: Math.max(200, width * 0.32)
                 Row {
@@ -263,6 +352,8 @@ Item {
                                 id: rowMenu
                                 x: -200; y: parent.height; width: 220
                                 items: (frow.modelData.is_folder ? [{ label: "Open", icon: "folder-20" }] : [{ label: "Open in browser", icon: "open-20" }, { label: "Download", icon: "download-20" }])
+                                    // Graph's favorites (followed items) hold files, not folders.
+                                    .concat(frow.modelData.is_folder ? [] : [root.view === "favorites" ? { label: "Remove from favorites", icon: "star-20" } : { label: "Add to favorites", icon: "star-20" }])
                                     .concat(root.canWrite ? [{ separator: true }, { label: "Delete", icon: "delete-20" }] : [])
                                 onPicked: i => {
                                     const label = items[i].label
@@ -270,6 +361,8 @@ Item {
                                     else if (label === "Open in browser") Qt.openUrlExternally(frow.modelData.web_url)
                                     else if (label === "Download") root.download(JSON.stringify(frow.modelData))
                                     else if (label === "Delete") { deleteDialog.item = frow.modelData; deleteDialog.open() }
+                                    else if (label === "Add to favorites") root.favorite(frow.modelData.drive_id, frow.modelData.id, true)
+                                    else if (label === "Remove from favorites") root.favorite(frow.modelData.drive_id, frow.modelData.id, false)
                                 }
                             }
                         }
@@ -286,10 +379,13 @@ Item {
             }
             // Empty states, as Teams words them.
             Text {
-                visible: !root.busy && !root.driveData.error && root.view !== "libraries" && root.items.length === 0
+                visible: !root.busy && !root.driveData.error && root.view !== "libraries"
+                    && (root.view === "recycle" ? root.deleted.length === 0 : root.view === "people" && !root.person ? root.people.length === 0 : root.items.length === 0)
                 anchors.centerIn: parent
-                text: root.view === "recent" ? "Your recent files will show up here"
-                    : root.view === "shared" ? "Files shared with you will show up here" : "This folder is empty"
+                text: ({ recent: "Your recent files will show up here", shared: "Files shared with you will show up here",
+                         favorites: "Your favorite files will show up here", recycle: "Your recycle bin is empty",
+                         meetings: "Files from your meetings will show up here", media: "Your photos and videos will show up here",
+                         people: "Files people share with you will show up here" })[root.view] || "This folder is empty"
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
                 color: theme.text
             }
@@ -412,6 +508,16 @@ Item {
 
     // Test harness hooks
     function newFolderForTest(name) { root.newFolder(root.here.drive_id, root.here.item_id, name) }
+    function restoreTestFolders() {
+        const ids = root.deleted.filter(d => d.name === "OST drive test").map(d => d.id)
+        if (ids.length) root.restore(ids[0])
+        return ids.length
+    }
+    function purgeTestFolders() {
+        const ids = root.deleted.filter(d => d.name === "OST drive test").map(d => d.id)
+        if (ids.length) root.purge(ids.join(","))
+        return ids.length
+    }
     function deleteForTest(name) {
         const it = root.items.find(i => i.name === name)
         if (it) root.remove(it.drive_id, it.id)
