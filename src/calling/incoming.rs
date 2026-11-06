@@ -492,10 +492,9 @@ async fn attach(
         .call_invitation
         .as_mut()
         .and_then(|i| i.links.as_mut())
+        && links.end.is_none()
     {
-        if links.end.is_none() {
-            links.end = str_at(forked, "/callNotification/links/reject");
-        }
+        links.end = str_at(forked, "/callNotification/links/reject");
     }
     Ok(notification)
 }
@@ -878,14 +877,15 @@ pub async fn answer(
                     _ => tracing::warn!("Missing audio SRTP keying material; no audio"),
                 }
 
-                if with_video && offer.video.is_some() {
-                    if let (Some(local), Some(remote)) = (local_video_crypto, remote_video_crypto) {
-                        let cands = ice::parse_candidates_from_sdp_section(&blob, "video");
-                        if let Some(addr) = ice::select_remote_candidate(&cands) {
-                            match VideoMediaSession::start(0, addr, &local, &remote).await {
-                                Ok(v) => video = Some(v),
-                                Err(e) => tracing::warn!("Video session failed: {:#}", e),
-                            }
+                if with_video
+                    && offer.video.is_some()
+                    && let (Some(local), Some(remote)) = (local_video_crypto, remote_video_crypto)
+                {
+                    let cands = ice::parse_candidates_from_sdp_section(&blob, "video");
+                    if let Some(addr) = ice::select_remote_candidate(&cands) {
+                        match VideoMediaSession::start(0, addr, &local, &remote).await {
+                            Ok(v) => video = Some(v),
+                            Err(e) => tracing::warn!("Video session failed: {:#}", e),
                         }
                     }
                 }
@@ -1255,17 +1255,18 @@ impl CallAuth {
     /// rings, as Teams does, so the toast can tell a video call; answering
     /// then reuses it. Returns whether the caller is sending video.
     pub async fn probe_video(&self, call: &mut IncomingCall) -> bool {
-        if call.notification.is_none() && call.attached.is_none() {
-            if let Some(v) = call.forked.clone() {
-                let attached = async {
-                    let me = local_participant(Some(&v))?;
-                    attach(&self.http, &self.skype_token, &v, &me).await
-                }
-                .await;
-                match attached {
-                    Ok(n) => call.attached = Some(n),
-                    Err(e) => tracing::info!("Early attach failed: {:#}", e),
-                }
+        if call.notification.is_none()
+            && call.attached.is_none()
+            && let Some(v) = call.forked.clone()
+        {
+            let attached = async {
+                let me = local_participant(Some(&v))?;
+                attach(&self.http, &self.skype_token, &v, &me).await
+            }
+            .await;
+            match attached {
+                Ok(n) => call.attached = Some(n),
+                Err(e) => tracing::info!("Early attach failed: {:#}", e),
             }
         }
         call.has_video()

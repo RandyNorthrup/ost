@@ -86,8 +86,8 @@ const PRESENCE_URL: &str = "https://presence.teams.microsoft.com";
 /// "DoNotDisturb", "BeRightBack", "Away", "Offline"), or `None` to reset it
 /// to what your activity says (PUT …/v1/me/forceavailability/).
 pub async fn force_availability(http: &reqwest::Client, availability: Option<&str>) -> Result<()> {
-    if let Some(a) = availability {
-        if ![
+    if let Some(a) = availability
+        && ![
             "Available",
             "Busy",
             "DoNotDisturb",
@@ -96,9 +96,8 @@ pub async fn force_availability(http: &reqwest::Client, availability: Option<&st
             "Offline",
         ]
         .contains(&a)
-        {
-            bail!("Unknown status: {a}");
-        }
+    {
+        bail!("Unknown status: {a}");
     }
     let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
     let mut req = http

@@ -407,10 +407,10 @@ impl WebRtcOffer {
                 // m=<kind> <port> <proto> <fmt...>
                 let proto_and_fmts = rest.get(1..).map(|r| r.join(" ")).unwrap_or_default();
                 current = Some((kind, proto_and_fmts));
-            } else if let Some(mid) = l.strip_prefix("a=mid:") {
-                if let Some((kind, fmts)) = current.take() {
-                    sections.push((mid.to_string(), kind, fmts));
-                }
+            } else if let Some(mid) = l.strip_prefix("a=mid:")
+                && let Some((kind, fmts)) = current.take()
+            {
+                sections.push((mid.to_string(), kind, fmts));
             }
         }
         let audio_mid = sections.iter().find(|s| s.1 == "audio")?.0.clone();
@@ -1115,12 +1115,12 @@ async fn recv_loop(ctx: RecvCtx) {
         let data = &buf[..len];
         match data.first().copied().unwrap_or(255) {
             0..=3 => {
-                if ice::is_stun_request(data) {
-                    if let Some(txn) = ice::get_transaction_id(data) {
-                        let resp =
-                            ice::build_binding_response(&txn, from, Some(ctx.local_pwd.as_bytes()));
-                        let _ = ctx.socket.send_to(&resp, from).await;
-                    }
+                if ice::is_stun_request(data)
+                    && let Some(txn) = ice::get_transaction_id(data)
+                {
+                    let resp =
+                        ice::build_binding_response(&txn, from, Some(ctx.local_pwd.as_bytes()));
+                    let _ = ctx.socket.send_to(&resp, from).await;
                 }
                 // Either their check reached us or ours was answered: this
                 // address works.
@@ -1178,28 +1178,29 @@ async fn recv_loop(ctx: RecvCtx) {
                     s.bytes_received += len as u64;
                 }
                 #[cfg(feature = "video")]
-                if let Some((vpt, rx)) = &ctx.video {
-                    if pt == *vpt {
-                        if let Ok(pkt) = rtp::decode(&plain) {
-                            rx.push(super::webrtc_video::VideoPacket {
-                                payload: pkt.payload.to_vec(),
-                                marker: pkt.marker,
-                                seq: pkt.sequence_number,
-                                timestamp: pkt.timestamp,
-                            });
-                        }
-                        continue;
+                if let Some((vpt, rx)) = &ctx.video
+                    && pt == *vpt
+                {
+                    if let Ok(pkt) = rtp::decode(&plain) {
+                        rx.push(super::webrtc_video::VideoPacket {
+                            payload: pkt.payload.to_vec(),
+                            marker: pkt.marker,
+                            seq: pkt.sequence_number,
+                            timestamp: pkt.timestamp,
+                        });
                     }
+                    continue;
                 }
-                if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain)) {
-                    if pkt.payload_type == PT_PCMU && !ctx.held.load(Ordering::Relaxed) {
-                        let pcm: Vec<i16> = pkt
-                            .payload
-                            .iter()
-                            .map(|&b| rtp::ulaw_to_linear(b))
-                            .collect();
-                        let _ = tx.try_send(pcm);
-                    }
+                if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain))
+                    && pkt.payload_type == PT_PCMU
+                    && !ctx.held.load(Ordering::Relaxed)
+                {
+                    let pcm: Vec<i16> = pkt
+                        .payload
+                        .iter()
+                        .map(|&b| rtp::ulaw_to_linear(b))
+                        .collect();
+                    let _ = tx.try_send(pcm);
                 }
             }
             _ => {}
@@ -1250,16 +1251,15 @@ async fn send_loop(mut ctx: SendCtx) {
     loop {
         tick.tick().await;
         let frame = ctx.mic_rx.as_ref().and_then(|rx| rx.try_recv().ok());
-        if tone.is_none() {
-            if let Some((_, rx)) = ctx.dtmf.as_mut() {
-                if let Ok(event) = rx.try_recv() {
-                    tone = Some(Tone {
-                        event,
-                        start_ts: ts,
-                        sent: 0,
-                    });
-                }
-            }
+        if tone.is_none()
+            && let Some((_, rx)) = ctx.dtmf.as_mut()
+            && let Ok(event) = rx.try_recv()
+        {
+            tone = Some(Tone {
+                event,
+                start_ts: ts,
+                sent: 0,
+            });
         }
         let packet = match (tone.as_ref().and_then(tone_packet), ctx.dtmf.as_ref()) {
             (Some((first, payload)), Some((pt, _))) => {
@@ -1295,10 +1295,10 @@ async fn send_loop(mut ctx: SendCtx) {
             guard.as_mut().and_then(|c| c.protect(&packet).ok())
         };
         let target = *ctx.remote.lock().await;
-        if let (Some(p), Some(to)) = (protected, target) {
-            if ctx.socket.send_to(&p, to).await.is_ok() {
-                ctx.stats.lock().await.packets_sent += 1;
-            }
+        if let (Some(p), Some(to)) = (protected, target)
+            && ctx.socket.send_to(&p, to).await.is_ok()
+        {
+            ctx.stats.lock().await.packets_sent += 1;
         }
         seq = seq.wrapping_add(1);
         ts = ts.wrapping_add(rtp::TIMESTAMP_INCREMENT);

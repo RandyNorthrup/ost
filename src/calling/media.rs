@@ -32,9 +32,6 @@ pub struct MediaStats {
 /// A running media session for a single audio stream.
 pub struct MediaSession {
     socket: Arc<UdpSocket>,
-    remote_addr: SocketAddr,
-    srtp_ctx: Arc<Mutex<srtp::SrtpContext>>,
-    ssrc: u32,
     stats: Arc<Mutex<MediaStats>>,
     /// While set, the microphone is captured but silence is sent.
     muted: Arc<AtomicBool>,
@@ -155,9 +152,6 @@ impl MediaSession {
 
         Ok(MediaSession {
             socket,
-            remote_addr,
-            srtp_ctx,
-            ssrc,
             stats,
             muted,
             send_handle: Some(send_handle),
@@ -248,9 +242,6 @@ impl MediaSession {
 
         Ok(MediaSession {
             socket,
-            remote_addr,
-            srtp_ctx,
-            ssrc,
             stats,
             muted,
             send_handle: Some(send_handle),
@@ -404,7 +395,6 @@ pub struct VideoStats {
 /// A running media session for a video stream.
 pub struct VideoMediaSession {
     socket: Arc<UdpSocket>,
-    remote_addr: SocketAddr,
     stats: Arc<Mutex<VideoStats>>,
     send_handle: Option<tokio::task::JoinHandle<()>>,
     recv_handle: Option<tokio::task::JoinHandle<()>>,
@@ -458,7 +448,7 @@ impl VideoMediaSession {
 
         Ok(VideoMediaSession {
             socket,
-            remote_addr,
+
             stats,
             send_handle: Some(send_handle),
             recv_handle: Some(recv_handle),
@@ -794,14 +784,8 @@ mod tests {
     use super::*;
 
     fn test_material() -> srtp::SrtpKeyingMaterial {
-        let mut key = [0u8; 16];
-        let mut salt = [0u8; 14];
-        for i in 0..16 {
-            key[i] = (i + 1) as u8;
-        }
-        for i in 0..14 {
-            salt[i] = (i + 17) as u8;
-        }
+        let key: [u8; 16] = std::array::from_fn(|i| (i + 1) as u8);
+        let salt: [u8; 14] = std::array::from_fn(|i| (i + 17) as u8);
         srtp::SrtpKeyingMaterial {
             master_key: key,
             master_salt: salt,

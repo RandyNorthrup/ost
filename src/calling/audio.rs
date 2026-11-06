@@ -12,12 +12,18 @@ use std::sync::mpsc;
 use std::thread;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, SampleFormat, SampleRate, StreamConfig};
+use cpal::{Device, SampleFormat, StreamConfig};
 
 /// Devices chosen in the app's settings (by name); `None` = the system's
 /// default. Calls opened afterwards use them.
 static PREFERRED: std::sync::RwLock<(Option<String>, Option<String>)> =
     std::sync::RwLock::new((None, None));
+
+/// A device's human-readable name (what the settings store and show).
+fn device_name(d: &cpal::Device) -> Option<String> {
+    use cpal::traits::DeviceTrait;
+    d.description().ok().map(|x| x.name().to_string())
+}
 
 /// Use these devices (by the names `list_devices` reports) for calls;
 /// `None` (or a name no longer present) means the system default.
@@ -30,11 +36,11 @@ pub fn list_devices() -> (Vec<String>, Vec<String>) {
     let host = cpal::default_host();
     let inputs = host
         .input_devices()
-        .map(|it| it.filter_map(|d| d.name().ok()).collect())
+        .map(|it| it.filter_map(|d| device_name(&d)).collect())
         .unwrap_or_default();
     let outputs = host
         .output_devices()
-        .map(|it| it.filter_map(|d| d.name().ok()).collect())
+        .map(|it| it.filter_map(|d| device_name(&d)).collect())
         .unwrap_or_default();
     (inputs, outputs)
 }
@@ -49,11 +55,11 @@ fn pick_device(host: &cpal::Host, input: bool) -> Option<Device> {
         let found = if input {
             host.input_devices()
                 .ok()
-                .and_then(|mut it| it.find(|d| d.name().ok().as_deref() == Some(name.as_str())))
+                .and_then(|mut it| it.find(|d| device_name(d).as_deref() == Some(name.as_str())))
         } else {
             host.output_devices()
                 .ok()
-                .and_then(|mut it| it.find(|d| d.name().ok().as_deref() == Some(name.as_str())))
+                .and_then(|mut it| it.find(|d| device_name(d).as_deref() == Some(name.as_str())))
         };
         if found.is_some() {
             return found;
@@ -66,9 +72,6 @@ fn pick_device(host: &cpal::Host, input: bool) -> Option<Device> {
         host.default_output_device()
     }
 }
-
-/// Number of PCM samples per 20ms frame at 8000 Hz.
-const FRAME_SAMPLES: usize = 160;
 
 /// Target sample rate for PCMU.
 const TARGET_RATE: u32 = 8000;
@@ -140,7 +143,7 @@ impl AudioCapture {
                 }
             };
 
-            let dev_name = device.name().unwrap_or_else(|_| "unknown".into());
+            let dev_name = device_name(&device).unwrap_or_else(|| "unknown".into());
             tracing::info!("Audio input device: {}", dev_name);
 
             let (config, device_rate) = match pick_config(&device, true) {
@@ -160,7 +163,7 @@ impl AudioCapture {
             let buf2 = buf.clone();
 
             let stream = match device.build_input_stream(
-                &config,
+                config,
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
                     let mut acc = buf2.lock().unwrap();
                     acc.extend_from_slice(data);
@@ -254,7 +257,7 @@ impl AudioPlayback {
                 }
             };
 
-            let dev_name = device.name().unwrap_or_else(|_| "unknown".into());
+            let dev_name = device_name(&device).unwrap_or_else(|| "unknown".into());
             tracing::info!("Audio output device: {}", dev_name);
 
             let (config, device_rate) = match pick_config(&device, false) {
@@ -289,7 +292,7 @@ impl AudioPlayback {
             });
 
             let stream = match device.build_output_stream(
-                &config,
+                config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
                     let mut r = ring.lock().unwrap();
                     for sample in data.iter_mut() {
@@ -358,10 +361,10 @@ fn pick_config(device: &Device, input: bool) -> Option<(StreamConfig, u32)> {
     for cfg in &configs {
         if cfg.sample_format() == SampleFormat::I16
             && cfg.channels() == 1
-            && cfg.min_sample_rate() <= SampleRate(TARGET_RATE)
-            && cfg.max_sample_rate() >= SampleRate(TARGET_RATE)
+            && cfg.min_sample_rate() <= TARGET_RATE
+            && cfg.max_sample_rate() >= TARGET_RATE
         {
-            let sc = cfg.clone().with_sample_rate(SampleRate(TARGET_RATE));
+            let sc = (*cfg).with_sample_rate(TARGET_RATE);
             return Some((sc.into(), TARGET_RATE));
         }
     }
@@ -370,18 +373,14 @@ fn pick_config(device: &Device, input: bool) -> Option<(StreamConfig, u32)> {
     for cfg in &configs {
         if cfg.sample_format() == SampleFormat::I16 {
             // Prefer 48000, then 44100, then max.
-            let rate = if cfg.min_sample_rate() <= SampleRate(48000)
-                && cfg.max_sample_rate() >= SampleRate(48000)
-            {
+            let rate = if cfg.min_sample_rate() <= 48000 && cfg.max_sample_rate() >= 48000 {
                 48000
-            } else if cfg.min_sample_rate() <= SampleRate(44100)
-                && cfg.max_sample_rate() >= SampleRate(44100)
-            {
+            } else if cfg.min_sample_rate() <= 44100 && cfg.max_sample_rate() >= 44100 {
                 44100
             } else {
-                cfg.max_sample_rate().0
+                cfg.max_sample_rate()
             };
-            let mut sc: StreamConfig = cfg.clone().with_sample_rate(SampleRate(rate)).into();
+            let mut sc: StreamConfig = (*cfg).with_sample_rate(rate).into();
             sc.channels = 1;
             return Some((sc, rate));
         }
@@ -389,10 +388,10 @@ fn pick_config(device: &Device, input: bool) -> Option<(StreamConfig, u32)> {
 
     // Third pass: any format, we'll force mono i16 and hope for the best.
     if let Some(cfg) = configs.first() {
-        let rate = cfg.max_sample_rate().0.min(48000).max(8000);
+        let rate = cfg.max_sample_rate().clamp(8000, 48000);
         let sc = StreamConfig {
             channels: 1,
-            sample_rate: SampleRate(rate),
+            sample_rate: rate,
             buffer_size: cpal::BufferSize::Default,
         };
         return Some((sc, rate));

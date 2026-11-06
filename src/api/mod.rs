@@ -8,7 +8,6 @@ pub mod contacts;
 pub mod directory;
 pub mod drive;
 pub mod files;
-mod graph;
 mod me;
 pub mod messages;
 pub mod onenote;

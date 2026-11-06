@@ -140,9 +140,11 @@ fn colorize_log_line(line: &str) -> Line<'static> {
         Color::Yellow
     } else if line.contains(" INFO ") || line.contains("INFO:") {
         Color::Green
-    } else if line.contains(" DEBUG ") || line.contains("DEBUG:") {
-        Color::DarkGray
-    } else if line.contains(" TRACE ") || line.contains("TRACE:") {
+    } else if line.contains(" DEBUG ")
+        || line.contains("DEBUG:")
+        || line.contains(" TRACE ")
+        || line.contains("TRACE:")
+    {
         Color::DarkGray
     } else {
         Color::White

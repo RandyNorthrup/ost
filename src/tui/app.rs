@@ -328,12 +328,11 @@ impl App {
                 self.compose.move_end();
             }
             // Regular character input.
-            (KeyCode::Char(c), m) => {
+            (KeyCode::Char(c), m)
                 // Only insert if no modifiers or just shift (for uppercase).
-                if m.is_empty() || m == KeyModifiers::SHIFT {
+                if (m.is_empty() || m == KeyModifiers::SHIFT) => {
                     self.compose.insert_char(c);
                 }
-            }
             _ => {}
         }
     }
@@ -384,13 +383,12 @@ impl App {
                 self.search.move_end();
             }
             // Regular character input.
-            (KeyCode::Char(c), m) => {
+            (KeyCode::Char(c), m)
                 // Only insert if no modifiers or just shift (for uppercase).
-                if m.is_empty() || m == KeyModifiers::SHIFT {
+                if (m.is_empty() || m == KeyModifiers::SHIFT) => {
                     self.search.insert_char(c);
                     self.search.update_results(&self.sidebar, &self.messages);
                 }
-            }
             _ => {}
         }
     }
@@ -416,11 +414,12 @@ impl App {
                 // Find the flat index of this channel in the sidebar.
                 let items = self.sidebar.flat_items();
                 for (idx, item) in items.iter().enumerate() {
-                    if let super::sidebar::SidebarItem::Channel(ti, ci) = item {
-                        if *ti == team_idx && *ci == channel_idx {
-                            self.sidebar.selected = idx;
-                            break;
-                        }
+                    if let super::sidebar::SidebarItem::Channel(ti, ci) = item
+                        && *ti == team_idx
+                        && *ci == channel_idx
+                    {
+                        self.sidebar.selected = idx;
+                        break;
                     }
                 }
                 self.active_pane = Pane::Sidebar;
@@ -429,11 +428,11 @@ impl App {
                 // Select the chat in the sidebar.
                 let items = self.sidebar.flat_items();
                 for (idx, item) in items.iter().enumerate() {
-                    if let super::sidebar::SidebarItem::Chat(ci) = item {
-                        if *ci == chat_idx {
-                            self.sidebar.selected = idx;
-                            break;
-                        }
+                    if let super::sidebar::SidebarItem::Chat(ci) = item
+                        && *ci == chat_idx
+                    {
+                        self.sidebar.selected = idx;
+                        break;
                     }
                 }
                 self.active_pane = Pane::Sidebar;

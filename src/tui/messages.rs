@@ -280,20 +280,32 @@ fn build_message_lines(
         render_message_card(
             &mut lines,
             msg,
-            width,
-            is_selected,
-            false,
-            0,
-            msg_idx,
-            today,
-            user_name,
+            &CardLayout {
+                width,
+                is_selected,
+                is_reply: false,
+                indent: 0,
+                msg_idx,
+                today,
+                user_name,
+            },
         );
 
         // Render thread replies if expanded.
         if thread_expanded && !msg.replies.is_empty() {
             for reply in &msg.replies {
                 render_message_card(
-                    &mut lines, reply, width, false, true, 4, msg_idx, today, user_name,
+                    &mut lines,
+                    reply,
+                    &CardLayout {
+                        width,
+                        is_selected: false,
+                        is_reply: true,
+                        indent: 4,
+                        msg_idx,
+                        today,
+                        user_name,
+                    },
                 );
             }
         } else if msg.reply_count > 0 && !thread_expanded {
@@ -321,17 +333,27 @@ fn build_message_lines(
 ///
 /// Uses colored backgrounds instead of ASCII borders. Even/odd `msg_idx`
 /// alternates between two subtle background shades for visual separation.
-fn render_message_card(
-    lines: &mut Vec<Line<'static>>,
-    msg: &Message,
+/// How a message card is laid out.
+struct CardLayout<'a> {
     width: usize,
     is_selected: bool,
     is_reply: bool,
     indent: usize,
     msg_idx: usize,
     today: NaiveDate,
-    user_name: &str,
-) {
+    user_name: &'a str,
+}
+
+fn render_message_card(lines: &mut Vec<Line<'static>>, msg: &Message, layout: &CardLayout<'_>) {
+    let CardLayout {
+        width,
+        is_selected,
+        is_reply,
+        indent,
+        msg_idx,
+        today,
+        user_name,
+    } = *layout;
     let is_own = msg.sender == user_name;
     let indent_str: String = " ".repeat(indent);
     let reply_prefix = if is_reply { " -> " } else { "" };
@@ -363,7 +385,7 @@ fn render_message_card(
         Color::Rgb(30, 30, 38)
     } else if is_own {
         Color::Rgb(30, 38, 50)
-    } else if msg_idx % 2 == 0 {
+    } else if msg_idx.is_multiple_of(2) {
         Color::Rgb(35, 35, 45)
     } else {
         Color::Rgb(42, 42, 52)

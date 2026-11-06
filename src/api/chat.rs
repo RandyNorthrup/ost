@@ -27,15 +27,10 @@ struct Conversation {
 #[derive(Debug, Deserialize)]
 struct ThreadProperties {
     topic: Option<String>,
-    #[serde(rename = "lastjoinat")]
-    last_join_at: Option<String>,
-    /// For 1:1 chats, contains member MRIs
-    members: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct NativeMessage {
-    id: Option<String>,
     #[serde(rename = "composetime")]
     compose_time: Option<String>,
     #[serde(rename = "originalarrivaltime")]
@@ -97,20 +92,18 @@ pub fn strip_html(html: &str) -> String {
 
 /// Display name for a conversation.
 fn conversation_name(conv: &Conversation) -> String {
-    if let Some(ref props) = conv.thread_properties {
-        if let Some(ref topic) = props.topic {
-            if !topic.is_empty() {
-                return topic.clone();
-            }
-        }
+    if let Some(ref props) = conv.thread_properties
+        && let Some(ref topic) = props.topic
+        && !topic.is_empty()
+    {
+        return topic.clone();
     }
     // Fall back to last message sender or the thread ID
-    if let Some(ref msg) = conv.last_message {
-        if let Some(ref name) = msg.im_display_name {
-            if !name.is_empty() {
-                return name.clone();
-            }
-        }
+    if let Some(ref msg) = conv.last_message
+        && let Some(ref name) = msg.im_display_name
+        && !name.is_empty()
+    {
+        return name.clone();
     }
     conv.id.as_deref().unwrap_or("[unknown]").to_string()
 }
@@ -191,11 +184,11 @@ pub async fn list_chats(limit: usize) -> Result<()> {
         if let Some(ref time) = chat.last_message_time {
             println!("  Last: {}", time);
         }
-        if let Some(ref preview) = chat.last_message_preview {
-            if !preview.trim().is_empty() {
-                let sender = chat.last_message_sender.as_deref().unwrap_or("?");
-                println!("  [{}]: {}", sender, preview.trim());
-            }
+        if let Some(ref preview) = chat.last_message_preview
+            && !preview.trim().is_empty()
+        {
+            let sender = chat.last_message_sender.as_deref().unwrap_or("?");
+            println!("  [{}]: {}", sender, preview.trim());
         }
 
         println!();
@@ -479,12 +472,12 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         let mut name = conversation_name(conv);
         // A 1:1 chat has no topic, and its last sender may be the signed-in
         // user; name it after the other person instead.
-        if !is_group && !has_topic(conv) {
-            if let Some(other) = own_oid.as_deref().and_then(|me| other_member_oid(&id, me)) {
-                if let Some(display) = resolve_user_name(client, &other, &mut names).await {
-                    name = display;
-                }
-            }
+        if !is_group
+            && !has_topic(conv)
+            && let Some(other) = own_oid.as_deref().and_then(|me| other_member_oid(&id, me))
+            && let Some(display) = resolve_user_name(client, &other, &mut names).await
+        {
+            name = display;
         }
 
         let (last_time, last_sender, last_preview) = if let Some(ref msg) = conv.last_message {
@@ -616,7 +609,6 @@ mod sender_name_tests {
 
     fn msg(name: Option<&str>, from: Option<&str>) -> NativeMessage {
         NativeMessage {
-            id: None,
             compose_time: None,
             original_arrival_time: None,
             im_display_name: name.map(String::from),

@@ -37,6 +37,12 @@ impl ToneGenerator {
     }
 }
 
+impl Default for ToneGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Records received audio samples for later analysis.
 pub struct AudioRecorder {
     samples: Vec<i16>,

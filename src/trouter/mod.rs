@@ -161,7 +161,7 @@ where
         Some((session.surl.clone(), epid.clone()));
 
     // 2. Get socket.io session ID (authenticated via X-Skypetoken header)
-    let session_id = session::get_session_id(&http, &session, skype_token_str, &epid).await?;
+    let session_id = session::get_session_id(&session, skype_token_str, &epid).await?;
 
     // 3. Connect WebSocket (auth is via session ID in URL, no headers needed)
     let mut ws = websocket::TrouterSocket::connect(&session, &session_id, &epid).await?;
@@ -180,8 +180,8 @@ where
 
     // 5. Register with registrar
     let registrar_ttl_secs: u64 = 86400;
-    if let Some(ref reg_url) = session.registrar_url {
-        if let Err(e) = registrar::register_with_endpoint(
+    if let Some(ref reg_url) = session.registrar_url
+        && let Err(e) = registrar::register_with_endpoint(
             &http,
             skype_token_str,
             reg_url,
@@ -189,9 +189,8 @@ where
             Some(&epid),
         )
         .await
-        {
-            tracing::warn!("Initial registrar registration failed: {:#}", e);
-        }
+    {
+        tracing::warn!("Initial registrar registration failed: {:#}", e);
     }
     // Publish the endpoint to the presence service: users with no active
     // endpoint show as Offline and are never rung.
@@ -490,10 +489,10 @@ pub fn unwrap_call_payload(json: &str) -> String {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
         return json.to_string();
     };
-    if let Some(cp) = v.get("cp").and_then(|c| c.as_str()) {
-        if let Some(inner) = gunzip_base64(cp) {
-            return inner;
-        }
+    if let Some(cp) = v.get("cp").and_then(|c| c.as_str())
+        && let Some(inner) = gunzip_base64(cp)
+    {
+        return inner;
     }
     if let Some(gp) = v.get("gp").and_then(|c| c.as_str()) {
         use base64::Engine;

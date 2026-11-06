@@ -51,7 +51,7 @@ pub fn decompress_sdp(blob: &str) -> Result<String> {
 
     // Try with the preset dictionary
     match raw_inflate(&raw, Some(SDP_DICTIONARY)) {
-        Ok(sdp) if sdp.starts_with("v=") => return Ok(sdp),
+        Ok(sdp) if sdp.starts_with("v=") => Ok(sdp),
         Ok(sdp) => anyhow::bail!(
             "Decompressed data does not look like SDP (starts with {:?})",
             &sdp[..sdp.len().min(20)]

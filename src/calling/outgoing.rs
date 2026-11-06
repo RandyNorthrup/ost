@@ -704,10 +704,10 @@ async fn start(
     };
     tracing::info!("callee answered");
 
-    if let Some(ack) = &acceptance.acknowledgement {
-        if let Err(e) = signaling::acknowledge_call_acceptance(&http, ack, &params).await {
-            tracing::warn!("Acceptance acknowledgement failed: {:#}", e);
-        }
+    if let Some(ack) = &acceptance.acknowledgement
+        && let Err(e) = signaling::acknowledge_call_acceptance(&http, ack, &params).await
+    {
+        tracing::warn!("Acceptance acknowledgement failed: {:#}", e);
     }
     // Teams posts nothing else to the call leg here (it is for keep-alives
     // and hang-up); a callback re-registration on it is not something the

@@ -1336,10 +1336,10 @@ impl qobject::Backend {
                 let mut c = c.clone();
                 let id = c["id"].as_str().unwrap_or_default().to_string();
                 c["unread"] = json!(unread.contains(&id));
-                if let Some(mri) = c["peerMri"].as_str() {
-                    if let Some(p) = self.rust().presence.get(mri) {
-                        c["presence"] = json!(p);
-                    }
+                if let Some(mri) = c["peerMri"].as_str()
+                    && let Some(p) = self.rust().presence.get(mri)
+                {
+                    c["presence"] = json!(p);
                 }
                 c
             })
@@ -2828,10 +2828,10 @@ impl qobject::Backend {
         if name == "micDevice" || name == "speakerDevice" {
             apply_audio_devices(&map);
         }
-        if name == "autoStart" {
-            if let Err(e) = set_autostart(value == "true") {
-                tracing::warn!("auto-start: {}", short_error(&e));
-            }
+        if name == "autoStart"
+            && let Err(e) = set_autostart(value == "true")
+        {
+            tracing::warn!("auto-start: {}", short_error(&e));
         }
     }
 

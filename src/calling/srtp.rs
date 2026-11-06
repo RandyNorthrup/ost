@@ -6,7 +6,7 @@
 use aes::cipher::{KeyIvInit, StreamCipher};
 use anyhow::{Context, Result, bail};
 use base64::Engine;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 
 use super::rtp;
@@ -168,12 +168,10 @@ pub fn parse_crypto_line(line: &str) -> Result<SrtpKeyingMaterial> {
     let line = line.trim();
 
     // Extract the tag number and find the inline key
-    let tag = if line.starts_with("a=crypto:") {
-        let rest = &line["a=crypto:".len()..];
+    let tag = if let Some(rest) = line.strip_prefix("a=crypto:") {
         let tag_end = rest.find(' ').context("malformed crypto line")?;
         rest[..tag_end].parse::<u32>().context("bad crypto tag")?
-    } else if line.starts_with("a=cryptoscale:") {
-        let rest = &line["a=cryptoscale:".len()..];
+    } else if let Some(rest) = line.strip_prefix("a=cryptoscale:") {
         let tag_end = rest.find(' ').context("malformed cryptoscale line")?;
         rest[..tag_end]
             .parse::<u32>()
@@ -678,14 +676,8 @@ mod tests {
 
     fn make_test_material() -> SrtpKeyingMaterial {
         // 30 bytes of deterministic test data
-        let mut key = [0u8; 16];
-        let mut salt = [0u8; 14];
-        for i in 0..16 {
-            key[i] = i as u8;
-        }
-        for i in 0..14 {
-            salt[i] = (16 + i) as u8;
-        }
+        let key: [u8; 16] = std::array::from_fn(|i| i as u8);
+        let salt: [u8; 14] = std::array::from_fn(|i| (16 + i) as u8);
         SrtpKeyingMaterial {
             master_key: key,
             master_salt: salt,

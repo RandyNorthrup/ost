@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 use tokio::net::UdpSocket;
 
@@ -29,7 +29,6 @@ const MAGIC_COOKIE: u32 = 0x2112A442;
 /// STUN message types.
 const BINDING_REQUEST: u16 = 0x0001;
 const BINDING_RESPONSE: u16 = 0x0101;
-const BINDING_ERROR_RESPONSE: u16 = 0x0111;
 
 /// STUN attribute types.
 const ATTR_MAPPED_ADDRESS: u16 = 0x0001;
@@ -171,11 +170,10 @@ pub struct IceCredentials {
 /// Parse an `a=candidate:` line from SDP into an IceCandidate.
 pub fn parse_candidate(line: &str) -> Result<IceCandidate> {
     let line = line.trim();
-    let content = if line.starts_with("a=candidate:") {
-        &line["a=candidate:".len()..]
-    } else if line.starts_with("candidate:") {
-        &line["candidate:".len()..]
-    } else {
+    let Some(content) = line
+        .strip_prefix("a=candidate:")
+        .or_else(|| line.strip_prefix("candidate:"))
+    else {
         bail!("not a candidate line: {}", line);
     };
 
@@ -264,10 +262,11 @@ pub fn parse_candidates_from_sdp_section(sdp: &str, section_type: &str) -> Vec<I
             in_target = false;
         }
 
-        if in_target && line.starts_with("a=candidate:") {
-            if let Ok(c) = parse_candidate(line) {
-                candidates.push(c);
-            }
+        if in_target
+            && line.starts_with("a=candidate:")
+            && let Ok(c) = parse_candidate(line)
+        {
+            candidates.push(c);
         }
     }
 
@@ -281,7 +280,7 @@ pub fn select_remote_candidate(candidates: &[IceCandidate]) -> Option<SocketAddr
         .filter(|c| c.transport == Transport::Udp && c.component == 1)
         .collect();
 
-    udp_rtp.sort_by(|a, b| b.priority.cmp(&a.priority));
+    udp_rtp.sort_by_key(|c| std::cmp::Reverse(c.priority));
 
     for candidate in udp_rtp {
         if let Ok(addr) = format!("{}:{}", candidate.address, candidate.port).parse() {
@@ -679,23 +678,22 @@ pub fn gather_host_candidates(local_addr: SocketAddr) -> Vec<IceCandidate> {
     if local_addr.ip().is_unspecified() {
         // Bound to 0.0.0.0 — enumerate local interfaces.
         // Use the "connect to 8.8.8.8" trick to find the default outbound IP.
-        if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-            if socket.connect("8.8.8.8:80").is_ok() {
-                if let Ok(addr) = socket.local_addr() {
-                    let ip = addr.ip().to_string();
-                    candidates.push(IceCandidate {
-                        foundation: "1".into(),
-                        component: 1,
-                        transport: Transport::Udp,
-                        priority: compute_priority(CandidateType::Host, 1, 1),
-                        address: ip,
-                        port,
-                        candidate_type: CandidateType::Host,
-                        raddr: None,
-                        rport: None,
-                    });
-                }
-            }
+        if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0")
+            && socket.connect("8.8.8.8:80").is_ok()
+            && let Ok(addr) = socket.local_addr()
+        {
+            let ip = addr.ip().to_string();
+            candidates.push(IceCandidate {
+                foundation: "1".into(),
+                component: 1,
+                transport: Transport::Udp,
+                priority: compute_priority(CandidateType::Host, 1, 1),
+                address: ip,
+                port,
+                candidate_type: CandidateType::Host,
+                raddr: None,
+                rport: None,
+            });
         }
     } else {
         candidates.push(IceCandidate {
@@ -742,27 +740,22 @@ pub async fn gather_srflx_candidate(socket: &UdpSocket, stun_server: &str) -> Op
                 let data = &buf[..len];
                 if is_stun_response(data) {
                     // Verify transaction ID matches
-                    if let Some(resp_txn) = get_transaction_id(data) {
-                        if resp_txn == txn_id {
-                            if let Some(mapped_addr) = parse_binding_response(data) {
-                                let local_addr = socket.local_addr().ok()?;
-                                return Some(IceCandidate {
-                                    foundation: "2".into(),
-                                    component: 1,
-                                    transport: Transport::Udp,
-                                    priority: compute_priority(
-                                        CandidateType::ServerReflexive,
-                                        1,
-                                        1,
-                                    ),
-                                    address: mapped_addr.ip().to_string(),
-                                    port: mapped_addr.port(),
-                                    candidate_type: CandidateType::ServerReflexive,
-                                    raddr: Some(local_addr.ip().to_string()),
-                                    rport: Some(local_addr.port()),
-                                });
-                            }
-                        }
+                    if let Some(resp_txn) = get_transaction_id(data)
+                        && resp_txn == txn_id
+                        && let Some(mapped_addr) = parse_binding_response(data)
+                    {
+                        let local_addr = socket.local_addr().ok()?;
+                        return Some(IceCandidate {
+                            foundation: "2".into(),
+                            component: 1,
+                            transport: Transport::Udp,
+                            priority: compute_priority(CandidateType::ServerReflexive, 1, 1),
+                            address: mapped_addr.ip().to_string(),
+                            port: mapped_addr.port(),
+                            candidate_type: CandidateType::ServerReflexive,
+                            raddr: Some(local_addr.ip().to_string()),
+                            rport: Some(local_addr.port()),
+                        });
                     }
                 }
             }
@@ -849,22 +842,20 @@ pub async fn check_candidate(
             }
 
             match tokio::time::timeout(remaining, socket.recv_from(&mut buf)).await {
-                Ok(Ok((len, from))) => {
+                Ok(Ok((len, _))) => {
                     let data = &buf[..len];
 
-                    if is_stun_response(data) {
-                        if let Some(resp_txn) = get_transaction_id(data) {
-                            if resp_txn == txn_id {
-                                if let Some(mapped) = parse_binding_response(data) {
-                                    tracing::debug!(
-                                        "ICE check success: {} -> mapped {}",
-                                        candidate_addr,
-                                        mapped
-                                    );
-                                    return Ok(mapped);
-                                }
-                            }
-                        }
+                    if is_stun_response(data)
+                        && let Some(resp_txn) = get_transaction_id(data)
+                        && resp_txn == txn_id
+                        && let Some(mapped) = parse_binding_response(data)
+                    {
+                        tracing::debug!(
+                            "ICE check success: {} -> mapped {}",
+                            candidate_addr,
+                            mapped
+                        );
+                        return Ok(mapped);
                     }
 
                     // Could be a STUN request from peer (they check us too) — ignore for now,
@@ -942,7 +933,7 @@ impl IceAgent {
             .iter()
             .filter(|c| c.transport == Transport::Udp && c.component == 1)
             .collect();
-        candidates.sort_by(|a, b| b.priority.cmp(&a.priority));
+        candidates.sort_by_key(|c| std::cmp::Reverse(c.priority));
 
         if candidates.is_empty() {
             bail!("No UDP candidates to check");
@@ -1062,13 +1053,13 @@ async fn stun_responder_loop(
         match socket.recv_from(&mut buf).await {
             Ok((len, from)) => {
                 let data = &buf[..len];
-                if is_stun_request(data) {
-                    if let Some(txn_id) = get_transaction_id(data) {
-                        let response =
-                            build_binding_response(&txn_id, from, Some(local_pwd.as_bytes()));
-                        let _ = socket.send_to(&response, from).await;
-                        tracing::debug!("Responded to STUN request from {}", from);
-                    }
+                if is_stun_request(data)
+                    && let Some(txn_id) = get_transaction_id(data)
+                {
+                    let response =
+                        build_binding_response(&txn_id, from, Some(local_pwd.as_bytes()));
+                    let _ = socket.send_to(&response, from).await;
+                    tracing::debug!("Responded to STUN request from {}", from);
                 }
                 // Ignore non-STUN packets (they'll be consumed by check_candidate)
             }

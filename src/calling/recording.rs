@@ -302,23 +302,44 @@ async fn start_recording_at(
 /// After adding the recorder bot, waits for the `addParticipantSuccess` Trouter
 /// callback which contains the recorder service URL and recording session ID.
 /// These are dynamically assigned per call and cannot be hardcoded.
+/// The call a recording is started in, and the tokens it needs.
+pub struct RecordingRequest<'a> {
+    pub conversation_controller: &'a str,
+    pub caller_mri: &'a str,
+    pub participant_id: &'a str,
+    pub endpoint_id: &'a str,
+    pub chain_id: &'a str,
+    pub message_id: &'a str,
+    pub thread_id: &'a str,
+    pub display_name: &'a str,
+    pub trouter_surl: &'a str,
+    pub ic3_token: &'a str,
+    pub recorder_token: &'a str,
+    pub skype_token: &'a str,
+    /// The epconv response's exact addParticipant URL, when it gave one.
+    pub add_participant_url_override: Option<&'a str>,
+}
+
 pub async fn start_call_recording(
     http: &reqwest::Client,
     ws: &mut TrouterSocket,
-    conversation_controller: &str,
-    caller_mri: &str,
-    participant_id: &str,
-    endpoint_id: &str,
-    chain_id: &str,
-    message_id: &str,
-    thread_id: &str,
-    display_name: &str,
-    trouter_surl: &str,
-    ic3_token: &str,
-    recorder_token: &str,
-    skype_token: &str,
-    add_participant_url_override: Option<&str>,
+    req: &RecordingRequest<'_>,
 ) -> Result<RecordingSession> {
+    let RecordingRequest {
+        conversation_controller,
+        caller_mri,
+        participant_id,
+        endpoint_id,
+        chain_id,
+        message_id,
+        thread_id,
+        display_name,
+        trouter_surl,
+        ic3_token,
+        recorder_token,
+        skype_token,
+        add_participant_url_override,
+    } = *req;
     // Use the exact addParticipant URL from the epconv response if available,
     // otherwise derive it from conversationController as a fallback.
     let add_url = match add_participant_url_override {
@@ -638,7 +659,7 @@ fn extract_recorder_from_payload(payload: &serde_json::Value) -> Option<(String,
         if let Some(host_start) = before.rfind("aks-prod-") {
             let after = &payload_str[idx..];
             // Find end of port (next / or " or space)
-            if let Some(port_end) = after.find(|c: char| c == '/' || c == '"' || c == ' ') {
+            if let Some(port_end) = after.find(['/', '"', ' ']) {
                 let hostname_port = &payload_str[host_start..idx + port_end];
                 let recorder_base = format!(
                     "https://api.flightproxy.teams.microsoft.com/api/v2/ep/{}",
@@ -696,9 +717,7 @@ fn extract_recorder_conv_id(payload: &str) -> Option<String> {
     // Look for /v2/oncommand/{uuid} pattern
     if let Some(idx) = payload.find("/v2/oncommand/") {
         let after = &payload[idx + "/v2/oncommand/".len()..];
-        let end = after
-            .find(|c: char| c == '"' || c == '/' || c == '?' || c == ' ')
-            .unwrap_or(after.len());
+        let end = after.find(['"', '/', '?', ' ']).unwrap_or(after.len());
         let conv_id = &after[..end];
         if !conv_id.is_empty() {
             tracing::debug!("Found recorder conv ID from oncommand URL: {}", conv_id);
@@ -747,9 +766,7 @@ fn extract_conversation_id(url: &str) -> Option<String> {
     let idx = url.find(conv_marker)?;
     let after = &url[idx + conv_marker.len()..];
     // Take until next '/' or '?' or end
-    let end = after
-        .find(|c: char| c == '/' || c == '?')
-        .unwrap_or(after.len());
+    let end = after.find(['/', '?']).unwrap_or(after.len());
     let b64_id = &after[..end];
     if b64_id.is_empty() {
         return None;

@@ -28,14 +28,16 @@ pub const VIDEO_SSRC_RANGE_SIZE: u32 = 100;
 /// Generate a random SSRC via OS CSPRNG.
 pub fn generate_ssrc() -> u32 {
     let mut buf = [0u8; 4];
-    getrandom::getrandom(&mut buf).expect("OS CSPRNG failed");
+    getrandom::fill(&mut buf).expect("OS CSPRNG failed");
     u32::from_be_bytes(buf)
 }
 
 // H.264 NAL unit types
 const NAL_TYPE_SLICE: u8 = 1;
 const NAL_TYPE_IDR: u8 = 5;
+#[cfg(test)]
 const NAL_TYPE_SPS: u8 = 7;
+#[cfg(test)]
 const NAL_TYPE_PPS: u8 = 8;
 const NAL_TYPE_PREFIX: u8 = 14;
 const NAL_TYPE_FU_A: u8 = 28;
@@ -98,8 +100,8 @@ fn build_stream_layout_sei(cfg: &SvcConfig) -> Vec<u8> {
     layer_desc.extend_from_slice(&cfg.display_height.to_be_bytes());
     layer_desc.extend_from_slice(&cfg.bitrate.to_be_bytes());
     // FPSIdx (5 bits) | LT (3 bits) | PRID (6 bits) | CB (1 bit) | R (1 bit) | R2 (2 bytes)
-    let byte12 = (cfg.fps_idx << 3) | 0x00; // FPSIdx in top 5 bits, LT=0 (base) in bottom 3
-    let byte13 = 0x00 | if cfg.constrained_baseline { 0x02 } else { 0x00 };
+    let byte12 = cfg.fps_idx << 3; // FPSIdx in top 5 bits, LT=0 (base) in bottom 3
+    let byte13 = if cfg.constrained_baseline { 0x02 } else { 0x00 };
     // PRID=0 in top 6 bits, CB in bit 1, R=0 in bit 0
     layer_desc.push(byte12);
     layer_desc.push(byte13);
@@ -222,7 +224,7 @@ pub struct VideoPacketizer {
 impl VideoPacketizer {
     pub fn new(ssrc: u32) -> Self {
         let mut buf = [0u8; 1];
-        getrandom::getrandom(&mut buf).expect("OS CSPRNG failed");
+        getrandom::fill(&mut buf).expect("OS CSPRNG failed");
         Self {
             ssrc,
             seq: 0,
@@ -234,7 +236,7 @@ impl VideoPacketizer {
 
     pub fn with_config(ssrc: u32, config: SvcConfig) -> Self {
         let mut buf = [0u8; 1];
-        getrandom::getrandom(&mut buf).expect("OS CSPRNG failed");
+        getrandom::fill(&mut buf).expect("OS CSPRNG failed");
         Self {
             ssrc,
             seq: 0,
@@ -475,6 +477,12 @@ impl VideoDepacketizer {
     }
 }
 
+impl Default for VideoDepacketizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Generate a minimal black H.264 I-frame at 176x144 resolution.
 ///
 /// Returns a list of NAL units: [SPS, PPS, IDR slice].
@@ -523,9 +531,7 @@ pub fn generate_black_iframe() -> Vec<Vec<u8>> {
         0x40, // slice_qp_delta=0, then mb data begins
     ];
 
-    for _ in 0..25 {
-        idr.push(0xFF); // packed bits: mb_type + prediction modes
-    }
+    idr.extend(std::iter::repeat_n(0xFF, 25)); // packed bits: mb_type + prediction modes
     idr.push(0x80); // RBSP stop bit
 
     vec![sps, pps, idr]
@@ -539,7 +545,7 @@ mod tests {
     fn test_packetize_small_nal() {
         let mut p = VideoPacketizer::new(0xAABBCCDD);
         let nal = vec![0x65, 0x00, 0x01, 0x02]; // small IDR
-        let packets = p.packetize_frame(&[nal.clone()]);
+        let packets = p.packetize_frame(std::slice::from_ref(&nal));
 
         // Should have: PACSI + prefix + IDR = 3 packets
         assert_eq!(packets.len(), 3);
@@ -669,8 +675,8 @@ mod tests {
     fn test_sequence_numbers_increment() {
         let mut p = VideoPacketizer::new(0x00000001);
         let nal = vec![0x67, 0x42];
-        let pkts1 = p.packetize_frame(&[nal.clone()]);
-        let pkts2 = p.packetize_frame(&[nal.clone()]);
+        let pkts1 = p.packetize_frame(std::slice::from_ref(&nal));
+        let pkts2 = p.packetize_frame(std::slice::from_ref(&nal));
 
         // First frame: PACSI (seq 0) + SPS (seq 1) -> 2 packets
         // Second frame: PACSI (seq 2) + SPS (seq 3) -> 2 packets
@@ -686,8 +692,8 @@ mod tests {
     fn test_timestamp_increments_per_frame() {
         let mut p = VideoPacketizer::new(0x00000001);
         let nal = vec![0x67, 0x42];
-        let pkts1 = p.packetize_frame(&[nal.clone()]);
-        let pkts2 = p.packetize_frame(&[nal.clone()]);
+        let pkts1 = p.packetize_frame(std::slice::from_ref(&nal));
+        let pkts2 = p.packetize_frame(std::slice::from_ref(&nal));
 
         let ts1 = u32::from_be_bytes([pkts1[0][4], pkts1[0][5], pkts1[0][6], pkts1[0][7]]);
         let ts2 = u32::from_be_bytes([pkts2[0][4], pkts2[0][5], pkts2[0][6], pkts2[0][7]]);
@@ -774,12 +780,12 @@ mod tests {
         // IDR has NRI=3 (reference frame)
         let idr = vec![0x65, 0x88, 0x80, 0x40];
 
-        let pkts1 = p.packetize_frame(&[idr.clone()]);
+        let pkts1 = p.packetize_frame(std::slice::from_ref(&idr));
         let pacsi1 = &pkts1[0][12..]; // skip RTP header
         let bi_offset = 4 + 1 + 44;
         let cnt1 = pacsi1[bi_offset + 18]; // initial random value
 
-        let pkts2 = p.packetize_frame(&[idr.clone()]);
+        let pkts2 = p.packetize_frame(std::slice::from_ref(&idr));
         let pacsi2 = &pkts2[0][12..];
         let cnt2 = pacsi2[bi_offset + 18];
         assert_eq!(cnt2, cnt1.wrapping_add(1)); // incremented by 1

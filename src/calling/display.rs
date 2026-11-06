@@ -90,12 +90,9 @@ fn display_loop(title: &str, rx: mpsc::Receiver<DisplayFrame>) -> Result<()> {
         // Pump SDL events (window close, etc.)
         for event in event_pump.poll_iter() {
             use sdl2::event::Event;
-            match event {
-                Event::Quit { .. } => {
-                    tracing::info!("Video display window closed");
-                    return Ok(());
-                }
-                _ => {}
+            if let Event::Quit { .. } = event {
+                tracing::info!("Video display window closed");
+                return Ok(());
             }
         }
 

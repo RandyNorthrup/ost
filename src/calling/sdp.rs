@@ -174,105 +174,6 @@ pub fn parse_sdp_offer(blob: &str) -> Result<SdpOfferInfo> {
     })
 }
 
-/// Generate a minimal SDP answer for audio-only with PCMU codec.
-///
-/// `local_ip` is the local IP address to put in the SDP.
-/// `local_port` is the actual UDP port we are listening on (0 for placeholder).
-/// `offer` is the parsed offer info (we echo back ICE credentials and crypto).
-pub fn generate_sdp_answer(local_ip: &str, offer: &SdpOfferInfo) -> String {
-    generate_sdp_answer_with_port(local_ip, 20000, offer)
-}
-
-/// Generate SDP answer with a specific local port.
-pub fn generate_sdp_answer_with_port(
-    local_ip: &str,
-    local_port: u16,
-    offer: &SdpOfferInfo,
-) -> String {
-    let our_ufrag = generate_ice_ufrag();
-    let our_pwd = generate_ice_pwd();
-    let our_crypto_key = generate_srtp_key();
-    let port = local_port;
-
-    let mut sdp = String::new();
-
-    // Session level
-    sdp.push_str("v=0\r\n");
-    sdp.push_str(&format!("o=- 0 0 IN IP4 {}\r\n", local_ip));
-    sdp.push_str("s=session\r\n");
-    sdp.push_str(&format!("c=IN IP4 {}\r\n", local_ip));
-    sdp.push_str("t=0 0\r\n");
-
-    // Audio media line — PCMU only (payload type 0)
-    sdp.push_str(&format!("m=audio {} RTP/SAVP 0\r\n", port));
-    sdp.push_str("a=rtpmap:0 PCMU/8000\r\n");
-    sdp.push_str("a=sendrecv\r\n");
-    sdp.push_str("a=rtcp-mux\r\n");
-    sdp.push_str("a=label:main-audio\r\n");
-    sdp.push_str("a=x-source:main-audio\r\n");
-
-    // ICE credentials (our own)
-    sdp.push_str(&format!("a=ice-ufrag:{}\r\n", our_ufrag));
-    sdp.push_str(&format!("a=ice-pwd:{}\r\n", our_pwd));
-
-    // Host candidate
-    sdp.push_str(&format!(
-        "a=candidate:1 1 UDP 2130706431 {} {} typ host\r\n",
-        local_ip, port
-    ));
-
-    // SRTP crypto — use standard crypto line
-    sdp.push_str(&format!(
-        "a=crypto:2 AES_CM_128_HMAC_SHA1_80 inline:{}|2^31\r\n",
-        our_crypto_key
-    ));
-
-    sdp
-}
-
-/// Generate an SDP answer and return it along with the crypto line we included.
-///
-/// This is needed so the caller can extract SRTP keying material for the local side.
-pub fn generate_sdp_answer_with_crypto(
-    local_ip: &str,
-    local_port: u16,
-    offer: &SdpOfferInfo,
-) -> (String, String) {
-    let our_ufrag = generate_ice_ufrag();
-    let our_pwd = generate_ice_pwd();
-    let our_crypto_key = generate_srtp_key();
-    let port = local_port;
-
-    let crypto_line = format!(
-        "a=crypto:2 AES_CM_128_HMAC_SHA1_80 inline:{}|2^31",
-        our_crypto_key
-    );
-
-    let mut sdp = String::new();
-    sdp.push_str("v=0\r\n");
-    sdp.push_str(&format!("o=- 0 0 IN IP4 {}\r\n", local_ip));
-    sdp.push_str("s=session\r\n");
-    sdp.push_str(&format!("c=IN IP4 {}\r\n", local_ip));
-    sdp.push_str("t=0 0\r\n");
-    sdp.push_str(&format!("m=audio {} RTP/SAVP 0\r\n", port));
-    sdp.push_str("a=rtpmap:0 PCMU/8000\r\n");
-    sdp.push_str("a=ptime:20\r\n");
-    sdp.push_str("a=sendrecv\r\n");
-    sdp.push_str("a=rtcp-mux\r\n");
-    sdp.push_str("a=label:main-audio\r\n");
-    sdp.push_str("a=x-source:main-audio\r\n");
-    sdp.push_str(&format!("a=ice-ufrag:{}\r\n", our_ufrag));
-    sdp.push_str(&format!("a=ice-pwd:{}\r\n", our_pwd));
-    sdp.push_str(&format!(
-        "a=candidate:1 1 UDP 2130706431 {} {} typ host\r\n",
-        local_ip, port
-    ));
-    sdp.push_str(&crypto_line);
-    sdp.push_str("\r\n");
-
-    (sdp, crypto_line)
-}
-
 /// Generate a random 4-character ICE ufrag.
 pub fn generate_ice_ufrag() -> String {
     use std::fmt::Write;
@@ -303,94 +204,8 @@ fn generate_srtp_key() -> String {
 /// Generate cryptographically secure random bytes via OS CSPRNG.
 fn rand_bytes<const N: usize>() -> [u8; N] {
     let mut buf = [0u8; N];
-    getrandom::getrandom(&mut buf).expect("OS CSPRNG failed");
+    getrandom::fill(&mut buf).expect("OS CSPRNG failed");
     buf
-}
-
-/// Generate SDP answer with crypto, including a video section if the offer has video.
-///
-/// Returns (sdp_answer, audio_crypto_line, video_crypto_line).
-/// The video_crypto_line is None if the offer had no video.
-pub fn generate_sdp_answer_with_video(
-    local_ip: &str,
-    audio_port: u16,
-    video_port: u16,
-    offer: &SdpOfferInfo,
-) -> (String, String, Option<String>) {
-    let our_ufrag = generate_ice_ufrag();
-    let our_pwd = generate_ice_pwd();
-    let our_crypto_key = generate_srtp_key();
-
-    let audio_crypto_line = format!(
-        "a=crypto:2 AES_CM_128_HMAC_SHA1_80 inline:{}|2^31",
-        our_crypto_key
-    );
-
-    let mut sdp = String::new();
-    sdp.push_str("v=0\r\n");
-    sdp.push_str(&format!("o=- 0 0 IN IP4 {}\r\n", local_ip));
-    sdp.push_str("s=session\r\n");
-    sdp.push_str(&format!("c=IN IP4 {}\r\n", local_ip));
-    sdp.push_str("t=0 0\r\n");
-
-    // Video bandwidth hint at session level (if video present)
-    if offer.video.is_some() {
-        sdp.push_str("a=x-mediabw:main-video send=2000;recv=2000\r\n");
-    }
-
-    // Audio section
-    sdp.push_str(&format!("m=audio {} RTP/SAVP 0\r\n", audio_port));
-    sdp.push_str("a=rtpmap:0 PCMU/8000\r\n");
-    sdp.push_str("a=ptime:20\r\n");
-    sdp.push_str("a=sendrecv\r\n");
-    sdp.push_str("a=rtcp-mux\r\n");
-    sdp.push_str("a=label:main-audio\r\n");
-    sdp.push_str("a=x-source:main-audio\r\n");
-    sdp.push_str(&format!("a=ice-ufrag:{}\r\n", our_ufrag));
-    sdp.push_str(&format!("a=ice-pwd:{}\r\n", our_pwd));
-    sdp.push_str(&format!(
-        "a=candidate:1 1 UDP 2130706431 {} {} typ host\r\n",
-        local_ip, audio_port
-    ));
-    sdp.push_str(&audio_crypto_line);
-    sdp.push_str("\r\n");
-
-    // Video section (if offer includes video)
-    let video_crypto_line = if offer.video.is_some() {
-        let vid_ufrag = generate_ice_ufrag();
-        let vid_pwd = generate_ice_pwd();
-        let vid_crypto_key = generate_srtp_key();
-        let vid_crypto = format!(
-            "a=crypto:2 AES_CM_128_HMAC_SHA1_80 inline:{}|2^31",
-            vid_crypto_key
-        );
-
-        sdp.push_str(&format!("m=video {} RTP/SAVP 122 121 123\r\n", video_port));
-        sdp.push_str("a=rtpmap:122 X-H264UC/90000\r\n");
-        sdp.push_str("a=fmtp:122 packetization-mode=1;mst-mode=NI-TC\r\n");
-        sdp.push_str("a=rtpmap:121 x-rtvc1/90000\r\n");
-        sdp.push_str("a=rtpmap:123 x-ulpfecuc/90000\r\n");
-        sdp.push_str("a=rtcp-fb:* x-message app send:src,x-pli recv:src,x-pli\r\n");
-        sdp.push_str("a=rtcp-rsize\r\n");
-        sdp.push_str("a=sendrecv\r\n");
-        sdp.push_str("a=rtcp-mux\r\n");
-        sdp.push_str("a=label:main-video\r\n");
-        sdp.push_str("a=x-source:main-video\r\n");
-        sdp.push_str(&format!("a=ice-ufrag:{}\r\n", vid_ufrag));
-        sdp.push_str(&format!("a=ice-pwd:{}\r\n", vid_pwd));
-        sdp.push_str(&format!(
-            "a=candidate:1 1 UDP 2130706431 {} {} typ host\r\n",
-            local_ip, video_port
-        ));
-        sdp.push_str(&vid_crypto);
-        sdp.push_str("\r\n");
-
-        Some(vid_crypto)
-    } else {
-        None
-    };
-
-    (sdp, audio_crypto_line, video_crypto_line)
 }
 
 /// Result of SDP answer generation, including ICE credentials and crypto lines.
@@ -754,12 +569,11 @@ pub fn generate_av_sdp_answer(
 pub fn get_local_ip() -> String {
     // Try to determine local IP by connecting a UDP socket to a public address.
     // This doesn't send any data, just lets the OS pick the outbound interface.
-    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-        if socket.connect("8.8.8.8:80").is_ok() {
-            if let Ok(addr) = socket.local_addr() {
-                return addr.ip().to_string();
-            }
-        }
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0")
+        && socket.connect("8.8.8.8:80").is_ok()
+        && let Ok(addr) = socket.local_addr()
+    {
+        return addr.ip().to_string();
     }
     "127.0.0.1".to_string()
 }
@@ -803,7 +617,7 @@ a=rtpmap:8 PCMA/8000\r\n";
             candidate_port: 21730,
             video: None,
         };
-        let answer = generate_sdp_answer("192.168.1.100", &offer);
+        let answer = generate_sdp_answer_full("192.168.1.100", 20000, 0, &offer, &[], &[]).sdp;
         assert!(answer.contains("v=0"));
         assert!(answer.contains("m=audio"));
         assert!(answer.contains("PCMU/8000"));

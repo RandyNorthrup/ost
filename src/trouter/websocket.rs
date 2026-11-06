@@ -39,7 +39,7 @@ impl TrouterSocket {
     pub async fn send_text(&mut self, msg: &str) -> Result<()> {
         tracing::debug!("WS send: {}", msg);
         self.stream
-            .send(Message::Text(msg.to_string()))
+            .send(Message::text(msg.to_string()))
             .await
             .context("Failed to send WebSocket message")
     }
@@ -72,7 +72,7 @@ impl TrouterSocket {
                             None => format!("3:::{{\"id\":{},\"status\":200}}", req_id),
                         };
                         tracing::debug!("Trouter response: {}", resp);
-                        if let Err(e) = self.stream.send(Message::Text(resp)).await {
+                        if let Err(e) = self.stream.send(Message::Text(resp.into())).await {
                             tracing::warn!("Failed to send Trouter response: {:#}", e);
                         }
                     }
@@ -82,12 +82,12 @@ impl TrouterSocket {
                     if let Some(ack_id) = extract_socketio_ack_id(&text) {
                         let ack = format!("6:{}::", ack_id);
                         tracing::debug!("Socket.IO ack: {}", ack);
-                        if let Err(e) = self.stream.send(Message::Text(ack)).await {
+                        if let Err(e) = self.stream.send(Message::Text(ack.into())).await {
                             tracing::warn!("Failed to send Socket.IO ack: {:#}", e);
                         }
                     }
 
-                    return Ok(Some(text));
+                    return Ok(Some(text.to_string()));
                 }
                 Some(Ok(Message::Ping(data))) => {
                     self.stream

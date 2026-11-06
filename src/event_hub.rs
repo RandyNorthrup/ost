@@ -89,10 +89,9 @@ pub fn conversation_ids(json: &str) -> Vec<String> {
             });
         if let Some(id) =
             id.filter(|i| i.starts_with("19:") || i.starts_with("48:") || i.starts_with("8:"))
+            && !ids.contains(&id)
         {
-            if !ids.contains(&id) {
-                ids.push(id);
-            }
+            ids.push(id);
         }
     }
     ids

@@ -158,38 +158,34 @@ pub async fn login(force: bool) -> Result<()> {
         let config = Config::load()?;
 
         // Check for existing valid token
-        if !force {
-            if let Some(token) = config.get_access_token() {
-                if !token.is_expired() {
-                    // Check if any derived tokens are missing; if so, refresh to acquire them
-                    let missing_tokens =
-                        config.get_recorder_token().is_none() || config.get_ic3_token().is_none();
-                    if missing_tokens && config.get_refresh_token().is_some() {
-                        tracing::info!(
-                            "AAD token valid but some derived tokens missing, refreshing..."
-                        );
-                        if let Ok(true) = refresh().await {
-                            println!("Tokens refreshed (acquired missing derived tokens).");
-                            return Ok(());
-                        }
-                    }
-                    println!(
-                        "Already logged in (AAD token valid). Use --force to re-authenticate."
+        if !force && let Some(token) = config.get_access_token() {
+            if !token.is_expired() {
+                // Check if any derived tokens are missing; if so, refresh to acquire them
+                let missing_tokens =
+                    config.get_recorder_token().is_none() || config.get_ic3_token().is_none();
+                if missing_tokens && config.get_refresh_token().is_some() {
+                    tracing::info!(
+                        "AAD token valid but some derived tokens missing, refreshing..."
                     );
-                    return Ok(());
+                    if let Ok(true) = refresh().await {
+                        println!("Tokens refreshed (acquired missing derived tokens).");
+                        return Ok(());
+                    }
                 }
-                // Try refresh before falling through to device code
-                if config.get_refresh_token().is_some() {
-                    tracing::info!("AAD token expired, attempting refresh...");
-                    match refresh().await {
-                        Ok(true) => {
-                            println!("Token refreshed successfully.");
-                            return Ok(());
-                        }
-                        Ok(false) => {}
-                        Err(e) => {
-                            tracing::warn!("Refresh failed, falling back to device code: {:#}", e);
-                        }
+                println!("Already logged in (AAD token valid). Use --force to re-authenticate.");
+                return Ok(());
+            }
+            // Try refresh before falling through to device code
+            if config.get_refresh_token().is_some() {
+                tracing::info!("AAD token expired, attempting refresh...");
+                match refresh().await {
+                    Ok(true) => {
+                        println!("Token refreshed successfully.");
+                        return Ok(());
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        tracing::warn!("Refresh failed, falling back to device code: {:#}", e);
                     }
                 }
             }

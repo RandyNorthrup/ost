@@ -90,11 +90,11 @@ pub async fn register_with_endpoint(
 
         tracing::info!(
             "Registering {} at {} (appId={}, templateKey={})",
-            entry
-                .path_suffix
-                .is_empty()
-                .then_some("base")
-                .unwrap_or(entry.path_suffix),
+            if entry.path_suffix.is_empty() {
+                "base"
+            } else {
+                entry.path_suffix
+            },
             url,
             entry.app_id,
             entry.template_key,

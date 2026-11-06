@@ -11,8 +11,6 @@ struct MeResponse {
     #[serde(rename = "displayName")]
     display_name: Option<String>,
     mail: Option<String>,
-    #[serde(rename = "userPrincipalName")]
-    user_principal_name: Option<String>,
 }
 
 /// Fetch and display current user info from Graph /me endpoint (prints to stdout).

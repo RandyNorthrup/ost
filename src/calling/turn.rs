@@ -11,7 +11,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 use tokio::net::UdpSocket;
 
@@ -174,10 +174,10 @@ async fn parse_relay_response(resp: reqwest::Response) -> Result<RelayConfig> {
         let mut servers = Vec::new();
         if let Some(urls) = body.get("urls").and_then(|v| v.as_array()) {
             for url in urls {
-                if let Some(url_str) = url.as_str() {
-                    if let Some(server) = parse_turn_url(url_str) {
-                        servers.push(server);
-                    }
+                if let Some(url_str) = url.as_str()
+                    && let Some(server) = parse_turn_url(url_str)
+                {
+                    servers.push(server);
                 }
             }
         }
@@ -200,46 +200,46 @@ async fn parse_relay_response(resp: reqwest::Response) -> Result<RelayConfig> {
     }
 
     // Try shape 3 (Teams-specific)
-    if let Some(creds) = body.get("TurnServerCredentials").and_then(|v| v.as_array()) {
-        if let Some(first) = creds.first() {
-            let username = first
-                .get("username")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let credential = first
-                .get("password")
-                .or_else(|| first.get("credential"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let ttl = first.get("ttl").and_then(|v| v.as_u64()).unwrap_or(3600) as u32;
+    if let Some(creds) = body.get("TurnServerCredentials").and_then(|v| v.as_array())
+        && let Some(first) = creds.first()
+    {
+        let username = first
+            .get("username")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let credential = first
+            .get("password")
+            .or_else(|| first.get("credential"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let ttl = first.get("ttl").and_then(|v| v.as_u64()).unwrap_or(3600) as u32;
 
-            let mut servers = Vec::new();
-            if let Some(urls) = first.get("urls").and_then(|v| v.as_array()) {
-                for url in urls {
-                    if let Some(url_str) = url.as_str() {
-                        if let Some(server) = parse_turn_url(url_str) {
-                            servers.push(server);
-                        }
-                    }
+        let mut servers = Vec::new();
+        if let Some(urls) = first.get("urls").and_then(|v| v.as_array()) {
+            for url in urls {
+                if let Some(url_str) = url.as_str()
+                    && let Some(server) = parse_turn_url(url_str)
+                {
+                    servers.push(server);
                 }
             }
-            if servers.is_empty() {
-                servers.push(TurnServer {
-                    host: "api.flightproxy.teams.microsoft.com".into(),
-                    port: 3478,
-                    transport: TurnTransport::Udp,
-                });
-            }
-
-            return Ok(RelayConfig {
-                servers,
-                username,
-                credential,
-                ttl,
+        }
+        if servers.is_empty() {
+            servers.push(TurnServer {
+                host: "api.flightproxy.teams.microsoft.com".into(),
+                port: 3478,
+                transport: TurnTransport::Udp,
             });
         }
+
+        return Ok(RelayConfig {
+            servers,
+            username,
+            credential,
+            ttl,
+        });
     }
 
     bail!(
@@ -250,12 +250,9 @@ async fn parse_relay_response(resp: reqwest::Response) -> Result<RelayConfig> {
 
 /// Parse a TURN URL like `turn:host:port?transport=udp` or `turns:host:port`.
 fn parse_turn_url(url: &str) -> Option<TurnServer> {
-    let (scheme, rest) = if url.starts_with("turns:") {
-        (TurnTransport::Tls, &url[6..])
-    } else if url.starts_with("turn:") {
-        (TurnTransport::Udp, &url[5..])
-    } else {
-        return None;
+    let (scheme, rest) = match url.strip_prefix("turns:") {
+        Some(rest) => (TurnTransport::Tls, rest),
+        None => (TurnTransport::Udp, url.strip_prefix("turn:")?),
     };
 
     // Split off ?transport=xxx
@@ -352,8 +349,11 @@ impl TurnClient {
         let resp1 = self.recv_turn_response(&txn1).await;
         match resp1 {
             Ok(TurnResponse::Error {
-                code, realm, nonce, ..
-            }) if code == 401 => {
+                code: 401,
+                realm,
+                nonce,
+                ..
+            }) => {
                 // Expected: 401 Unauthorized with realm + nonce
                 self.realm = realm;
                 self.nonce = nonce;
@@ -398,9 +398,13 @@ impl TurnClient {
         match self.recv_turn_response(&txn2).await? {
             TurnResponse::AllocateSuccess {
                 relay_addr,
+                mapped_addr,
                 lifetime,
-                ..
             } => {
+                tracing::debug!(
+                    ?mapped_addr,
+                    "TURN allocation: our address as the server sees it"
+                );
                 self.relay_addr = Some(relay_addr);
                 self.lifetime = lifetime;
                 tracing::info!(
@@ -734,24 +738,12 @@ fn add_message_integrity_and_fingerprint(mut buf: Vec<u8>, key: &[u8]) -> Vec<u8
     buf
 }
 
-/// Compute TURN long-term credential key: MD5(username:realm:password).
+/// The TURN long-term credential key (RFC 5389 15.4):
+/// MD5(username ":" realm ":" password). The password is used as given
+/// (SASLprep is the identity for the ASCII credentials TURN servers issue).
 fn compute_long_term_key(username: &str, realm: &str, password: &str) -> Vec<u8> {
-    use sha2::Digest;
-    // RFC 5389 section 15.4: key = MD5(username ":" realm ":" SASLprep(password))
-    // We use a simple MD5 here (via manual implementation since we don't have md5 crate).
-    // Actually, the standard says MD5 but we can approximate with what we have.
-    // For correctness, let's compute it properly.
-
-    // Since we don't have md5 in deps, use a simple hash. In practice Teams TURN
-    // servers may use a different auth scheme (short-term). We'll use the credential
-    // directly as the HMAC key for short-term auth as a fallback.
-    let input = format!("{}:{}:{}", username, realm, password);
-
-    // Use SHA-1 hash truncated — not ideal but we lack MD5. For Teams' proprietary
-    // auth the credential itself may be the HMAC key.
-    // TODO: Add md5 dependency for proper long-term credential support.
-    // For now, use the credential bytes directly (works for short-term auth).
-    password.as_bytes().to_vec()
+    use md5::{Digest, Md5};
+    Md5::digest(format!("{username}:{realm}:{password}").as_bytes()).to_vec()
 }
 
 fn encode_xor_address(addr: SocketAddr, txn_id: &[u8]) -> Vec<u8> {
@@ -825,7 +817,7 @@ fn decode_xor_address(value: &[u8], txn_id: &[u8]) -> Option<SocketAddr> {
 /// Compute relay candidate priority (lowest preference).
 fn compute_relay_priority(local_preference: u16, component: u8) -> u32 {
     // type_preference for relay = 0 per RFC 8445
-    (0u32 << 24) | ((local_preference as u32) << 8) | (256 - component as u32)
+    ((local_preference as u32) << 8) | (256 - component as u32)
 }
 
 // ---------------------------------------------------------------------------
@@ -1017,6 +1009,13 @@ fn crc32(data: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_term_key_is_md5_of_user_realm_password() {
+        let key = compute_long_term_key("alice", "example.org", "pa55");
+        let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, "88be51cf16421966264ea36d34b4ae1e");
+    }
 
     #[test]
     fn test_parse_turn_url_udp() {

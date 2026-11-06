@@ -10,7 +10,7 @@ license = "MIT"
 tokio = { version = "1", features = ["full"] }
 
 # HTTP client (native-tls: system OpenSSL, avoids the ICU issue)
-reqwest = { version = "0.12", features = ["json", "native-tls", "http2", "charset"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "native-tls", "http2", "charset", "query", "form"], default-features = false }
 
 # JSON serialization
 serde = { version = "1", features = ["derive"] }
@@ -19,59 +19,60 @@ serde_json = "1"
 # OAuth2 / Authentication
 url = "2"
 home = "0.5"
-base64 = "0.22"
-sha1 = "0.10"
-sha2 = "0.10"
+base64 = "0.23"
+sha1 = "0.11"
+sha2 = "0.11"
+md-5 = "0.11"
 flate2 = { version = "1", features = ["zlib-rs"], default-features = false }
 
 # SRTP crypto (AES-128-CM + HMAC-SHA1-80)
-getrandom = "0.2"
-aes = "0.8"
-ctr = "0.9"
-hmac = "0.12"
+getrandom = "0.4"
+aes = "0.9"
+ctr = "0.10"
+hmac = "0.13"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
 
 # TUI (Ratatui)
-ratatui = "0.29"
-crossterm = { version = "0.28", features = ["event-stream"] }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
 tokio-stream = "0.1"
 
 # Error handling
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Config/storage
-directories = "5"
-toml = "0.8"
+directories = "6"
+toml = "1"
 # DTLS-SRTP for WebRTC call media (already in the tree via native-tls)
 openssl = "0.10"
 openssl-sys = "0.9"
 foreign-types = "0.3"
 # Desktop keyring (Secret Service on Linux) for tokens
-keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+keyring = "4"
 
 # Async utilities
 futures = "0.3"
 
 # WebSocket (Trouter)
-tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 unicode-width = "0.2"
 
 # Audio I/O (optional — requires ALSA headers on Linux)
-cpal = { version = "0.15", optional = true }
+cpal = { version = "0.18", optional = true }
 
 # Video capture/display (optional — requires V4L2, SDL2, nasm on Linux)
 v4l = { version = "0.14", optional = true }
 openh264 = { version = "0.9", optional = true }
-sdl2 = { version = "0.37", optional = true }
+sdl2 = { version = "0.38", optional = true }
 
 [features]
 default = []

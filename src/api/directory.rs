@@ -93,10 +93,10 @@ async fn middle_tier_token() -> Result<String> {
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
     static CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
-    if let Some((t, at)) = CACHE.lock().unwrap().as_ref() {
-        if at.elapsed() < Duration::from_secs(45 * 60) {
-            return Ok(t.clone());
-        }
+    if let Some((t, at)) = CACHE.lock().unwrap().as_ref()
+        && at.elapsed() < Duration::from_secs(45 * 60)
+    {
+        return Ok(t.clone());
     }
     let t = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await?;
     *CACHE.lock().unwrap() = Some((t.clone(), Instant::now()));

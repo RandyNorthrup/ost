@@ -64,10 +64,10 @@ impl Depacketizer {
 
     pub fn push(&mut self, p: &VideoPacket) -> Output {
         let mut lost = false;
-        if let Some(last) = self.last_seq {
-            if p.seq != last.wrapping_add(1) {
-                lost = true;
-            }
+        if let Some(last) = self.last_seq
+            && p.seq != last.wrapping_add(1)
+        {
+            lost = true;
         }
         self.last_seq = Some(p.seq);
         // A new timestamp starts a new picture; whatever was pending is
@@ -108,15 +108,15 @@ impl Depacketizer {
                         let mut nal = vec![(ind & 0xe0) | (hdr & 0x1f)];
                         nal.extend_from_slice(&data[2..]);
                         self.fu = Some(nal);
-                    } else if let Some(nal) = self.fu.as_mut() {
-                        if nal.len() + data.len() <= MAX_ACCESS_UNIT {
-                            nal.extend_from_slice(&data[2..]);
-                        }
+                    } else if let Some(nal) = self.fu.as_mut()
+                        && nal.len() + data.len() <= MAX_ACCESS_UNIT
+                    {
+                        nal.extend_from_slice(&data[2..]);
                     }
-                    if hdr & 0x40 != 0 {
-                        if let Some(nal) = self.fu.take() {
-                            self.push_nal(&nal);
-                        }
+                    if hdr & 0x40 != 0
+                        && let Some(nal) = self.fu.take()
+                    {
+                        self.push_nal(&nal);
                     }
                 }
                 _ => {}
@@ -570,7 +570,7 @@ mod tests {
         let mut f = vec![235u8; 8];
         f.extend_from_slice(&[128, 128, 128, 128]);
         let p = preview_rgba(&f, w, h);
-        assert_eq!(p.len(), 2 * 1 * 4);
+        assert_eq!(p.len(), 2 * 4);
         assert!(p[0] > 250 && p[3] == 255);
     }
 
