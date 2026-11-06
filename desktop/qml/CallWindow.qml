@@ -28,6 +28,8 @@ Window {
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
     readonly property var others: roster.filter(p => p.id !== selfId)
+    // Teams shows Controls and Rooms to the meeting's organizer only.
+    readonly property bool organizer: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase() === "organizer"
     readonly property bool remoteVideoShown: remoteVideo.visible
     // People pane rows: you first, then everyone else.
     /// Raise hand: yours, and everyone's in the order they raised.
@@ -51,6 +53,11 @@ Window {
     property string layout: "gallery"
     property bool incomingVideoOff: false
     signal deviceSettings()
+    /// Meetings: Teams' meeting options page (Controls) and the meeting
+    /// chat on the web (Notes), and opening an app from Apps.
+    property string optionsUrl: ""
+    property string chatUrl: ""
+    signal openApp(string key)
     /// Transfer and Consult: the people search, and the person picked.
     property var directory: []
     signal searchPeople(string query)
@@ -138,10 +145,12 @@ Window {
             }
             BarButton { icon: "emoji-24"; label: "React"; enabled: false }
             BarButton { id: viewBtnM; icon: "grid"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtnM; onClicked: { viewMenu.parent = viewBtnM; viewMenu.open() } }
-            BarButton { icon: "shield-task-24"; label: "Controls"; enabled: false }
-            BarButton { icon: "notepad-24"; label: "Notes"; enabled: false }
-            BarButton { icon: "conference-room-24"; label: "Rooms"; enabled: false }
-            BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
+            // Controls: the meeting options (organizers), as Teams opens them.
+            BarButton { visible: win.organizer; icon: "shield-task-24"; label: "Controls"; enabled: win.optionsUrl.length > 0; onClicked: Qt.openUrlExternally(win.optionsUrl) }
+            // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
+            BarButton { icon: "notepad-24"; label: "Notes"; enabled: win.chatUrl.length > 0; onClicked: Qt.openUrlExternally(win.chatUrl) }
+            BarButton { visible: win.organizer; icon: "conference-room-24"; label: "Rooms"; enabled: false }
+            BarButton { id: appsBtnM; icon: "apps-add"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtnM; onClicked: { appsMenu.parent = appsBtnM; appsMenu.open() } }
             BarButton { id: moreBtnM; icon: "more-24"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtnM; onClicked: { moreMenu.parent = moreBtnM; moreMenu.open() } }
             Divider {}
             BarButton {
@@ -224,7 +233,7 @@ Window {
                 onClicked: win.side = win.side === "people" ? "" : "people"
             }
             BarButton { id: viewBtn; icon: "grid"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtn; onClicked: { viewMenu.parent = viewBtn; viewMenu.open() } }
-            BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
+            BarButton { id: appsBtn; icon: "apps-add"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtn; onClicked: { appsMenu.parent = appsBtn; appsMenu.open() } }
             BarButton { id: moreBtn; icon: "more-24"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtn; onClicked: { moreMenu.parent = moreBtn; moreMenu.open() } }
             Divider {}
             BarButton {
@@ -543,6 +552,25 @@ Window {
             else if (l === "Speaker") win.layout = "speaker"
             else if (l.indexOf("full screen") >= 0 || l === "Full screen") win.toggleFullScreen()
             else win.incomingVideoOff = !win.incomingVideoOff
+        }
+    }
+    // Apps: what Teams offers in a call. Planner and OneNote open in the
+    // main window; Whiteboard and Clipchamp are web apps.
+    MenuPopup {
+        id: appsMenu
+        x: parent ? parent.width - width : 0; y: parent ? parent.height + 4 : 0
+        width: 240
+        items: [
+            { label: "Whiteboard", icon: "board-20" },
+            { label: "Planner", icon: "clipboard-task-list-ltr-24" },
+            { label: "OneNote", icon: "notebook-20" },
+            { label: "Clipchamp", icon: "video" }
+        ]
+        onPicked: i => {
+            const l = items[i].label
+            if (l === "Whiteboard") Qt.openUrlExternally("https://whiteboard.cloud.microsoft/")
+            else if (l === "Clipchamp") Qt.openUrlExternally("https://app.clipchamp.com/")
+            else win.openApp(l.toLowerCase())
         }
     }
     // More: settings and window actions.

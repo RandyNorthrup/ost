@@ -72,6 +72,8 @@ pub mod qobject {
         #[qproperty(bool, call_held_by_peer)]
         #[qproperty(bool, call_can_dtmf)]
         #[qproperty(bool, call_hand_raised)]
+        #[qproperty(QString, call_options_url)]
+        #[qproperty(QString, call_chat_url)]
         #[qproperty(bool, call_has_audio)]
         /// "Randy Northrup is typing" for the open chat, or "".
         #[qproperty(QString, typing_text)]
@@ -512,6 +514,8 @@ pub struct BackendRust {
     call_held_by_peer: bool,
     call_can_dtmf: bool,
     call_hand_raised: bool,
+    call_options_url: QString,
+    call_chat_url: QString,
     call_has_audio: bool,
     typing_text: QString,
     window_active: bool,
@@ -1560,6 +1564,11 @@ impl qobject::Backend {
         self.as_mut().set_call_roster_json(QString::from("[]"));
         self.as_mut()
             .set_call_thread_id(QString::from(link.thread_id.as_str()));
+        self.as_mut().set_call_options_url(QString::from(
+            link.options_url().unwrap_or_default().as_str(),
+        ));
+        self.as_mut()
+            .set_call_chat_url(QString::from(link.chat_url().as_str()));
         self.as_mut().set_call_meeting(true);
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);

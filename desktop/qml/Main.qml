@@ -548,6 +548,9 @@ Window {
         onToggleHold: backend.toggleHold()
         handRaised: backend.callHandRaised
         onToggleHand: backend.toggleHand()
+        optionsUrl: backend.callOptionsUrl
+        chatUrl: backend.callChatUrl
+        onOpenApp: key => { rail.openApp(key); window.raise(); window.requestActivate() }
         canDtmf: backend.callCanDtmf
         onDtmf: key => backend.sendDtmf(key)
         onDeviceSettings: { rail.current = "settings"; window.raise(); window.requestActivate() }

@@ -439,6 +439,9 @@ pub struct MeetingLink {
     pub thread_id: String,
     /// `0` for scheduled meetings.
     pub message_id: String,
+    /// From the link's context: the organizer's object id and the tenant.
+    pub organizer_id: Option<String>,
+    pub tenant_id: Option<String>,
 }
 
 impl MeetingLink {
@@ -458,10 +461,44 @@ impl MeetingLink {
         if !valid_thread || message.is_empty() || !message.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
+        // context={"Tid":"…","Oid":"…"}, percent-encoded.
+        let context = url
+            .split_once("context=")
+            .and_then(|(_, c)| percent_decode(c.split('&').next().unwrap_or_default()))
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok());
+        let guid = |k: &str| {
+            context
+                .as_ref()
+                .and_then(|c| c.get(k))
+                .and_then(|v| v.as_str())
+                .filter(|g| uuid::Uuid::parse_str(g).is_ok())
+                .map(str::to_string)
+        };
         Some(Self {
             thread_id: thread,
             message_id: message,
+            organizer_id: guid("Oid"),
+            tenant_id: guid("Tid"),
         })
+    }
+
+    /// Teams' meeting options page (Controls), when the link names the
+    /// organizer and tenant.
+    pub fn options_url(&self) -> Option<String> {
+        let (o, t) = (self.organizer_id.as_ref()?, self.tenant_id.as_ref()?);
+        Some(format!(
+            "https://teams.microsoft.com/meetingOptions/?organizerId={o}&tenantId={t}&threadId={}&messageId={}&language=en-US",
+            self.thread_id.replace(':', "%3A").replace('@', "%40"),
+            self.message_id
+        ))
+    }
+
+    /// The meeting's chat on Teams on the web (its Notes tab is there).
+    pub fn chat_url(&self) -> String {
+        format!(
+            "https://teams.microsoft.com/l/chat/{}/conversations",
+            self.thread_id.replace(':', "%3A").replace('@', "%40")
+        )
     }
 }
 
@@ -765,6 +802,18 @@ mod tests {
             "19:meeting_YTQyMzZlY2ItMDdjNC00MzIzLTg0NTYtMDA1YzA4YjY3MmUy@thread.v2"
         );
         assert_eq!(m.message_id, "0");
+        // "t" isn't a GUID: no organizer or tenant, so no options page.
+        assert!(m.tenant_id.is_none() && m.options_url().is_none());
+        let full = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_YTQy%40thread.v2/0?context=%7b%22Tid%22%3a%222716d134-5614-4856-a48d-2002edd9a570%22%2c%22Oid%22%3a%224287e791-1b98-4963-8b94-281c50472683%22%7d";
+        let f = MeetingLink::parse(full).unwrap();
+        assert_eq!(
+            f.organizer_id.as_deref(),
+            Some("4287e791-1b98-4963-8b94-281c50472683")
+        );
+        assert_eq!(
+            f.options_url().unwrap(),
+            "https://teams.microsoft.com/meetingOptions/?organizerId=4287e791-1b98-4963-8b94-281c50472683&tenantId=2716d134-5614-4856-a48d-2002edd9a570&threadId=19%3Ameeting_YTQy%40thread.v2&messageId=0&language=en-US"
+        );
         assert!(MeetingLink::parse(
             "https://evil.example/l/meetup-join/19%3ameeting_x%40thread.v2/0"
         )
