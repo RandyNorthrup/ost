@@ -178,6 +178,31 @@ impl TeamsClient {
         check_response(resp, &url).await
     }
 
+    /// PATCH or DELETE a Graph path with extra headers (Planner needs
+    /// `If-Match: <etag>`); `body` is None for DELETE.
+    pub async fn graph_change_with(
+        &self,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let mut req = match body {
+            Some(b) => self.http.patch(&url).json(b),
+            None => self.http.delete(&url),
+        }
+        .bearer_auth(&token);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let resp = req
+            .send()
+            .await
+            .with_context(|| format!("Graph change {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
     /// DELETE a Graph path.
     pub async fn graph_delete(&self, path: &str) -> Result<reqwest::Response> {
         let token = self.graph_token()?;

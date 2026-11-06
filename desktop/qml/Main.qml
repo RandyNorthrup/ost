@@ -429,7 +429,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--onedrive-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -879,6 +879,45 @@ Window {
         }
     }
 
+    // --planner-test: open Planner from View more apps; add a private task,
+    // complete it; create a plan in OST Test Team, add a task, delete the
+    // plan; capturing along the way.
+    Timer {
+        running: Qt.application.arguments.indexOf("--planner-test") >= 0 && backend.signedIn && backend.teamsJson.length > 2
+        interval: 3000; repeat: true
+        property int step: 0
+        property var made: null
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const d = planner.plannerData, has = t => (d.tasks || []).some(x => x.title === t)
+            if (step === 0) rail.openApp("planner")
+            else if (step === 1) { console.warn("PLAN mytasks", (d.tasks || []).length, d.error || ""); cap("mytasks"); planner.filter = "all"; planner.addForTest("OST planner test task") }
+            else if (step === 3) { console.warn("PLAN task added", has("OST planner test task")); cap("added"); planner.completeForTest("OST planner test task") }
+            else if (step === 5) { console.warn("PLAN task completed (gone from open tasks)", !has("OST planner test task")); console.warn("PLAN create", planner.createPlanForTest("OST planner test plan")) }
+            else if (step === 7) planner.open("plans")
+            else if (step === 8) {
+                const p = (d.plans || []).find(p => p.title === "OST planner test plan")
+                console.warn("PLAN plans", (d.plans || []).map(p => p.title).join(", "), "made", !!p, "status", backend.statusText, d.error || ""); cap("plans")
+                made = p; if (p) planner.open("plan", p)
+            }
+            else if (step === 10 && made) { planner.addToPlan(JSON.stringify(made), "OST plan task") }
+            else if (step === 12 && made) { console.warn("PLAN plan task", has("OST plan task")); cap("plan"); planner.board = true }
+            else if (step === 13) { cap("board") }
+            else if (step === 14) {
+                // Clean up every test plan (earlier runs' too).
+                planner.open("plans")
+            }
+            else if (step === 16) {
+                const left = (d.plans || []).filter(p => p.title === "OST planner test plan")
+                console.warn("PLAN deleting test plans", left.length)
+                for (const p of left) planner.deletePlan(p.id)
+            }
+            else if (step === 19) { planner.open("plans") }
+            else if (step === 21) { console.warn("PLAN test plans left", (d.plans || []).filter(p => p.title === "OST planner test plan").length); cap("cleaned"); Qt.quit() }
+            step++
+        }
+    }
+
     // --search-test: type "Ran" into search and capture the suggestions.
     Timer {
         running: Qt.application.arguments.indexOf("--search-test") >= 0 && backend.signedIn
@@ -1083,7 +1122,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner"].indexOf(rail.current) < 0
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -1092,6 +1131,21 @@ Window {
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.textSecondary
         }
+    }
+    PlannerView {
+        id: planner
+        visible: rail.current === "planner"
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        plannerData: backend.plannerJson ? JSON.parse(backend.plannerJson) : ({})
+        busy: backend.plannerBusy
+        teams: (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).map(t => ({ id: t.id, name: t.name }))
+        onLoad: (v, p) => backend.plannerLoad(v, p)
+        onAdd: (title, due) => backend.plannerAdd(title, due)
+        onComplete: json => backend.plannerComplete(json)
+        onRemove: json => backend.plannerDelete(json)
+        onCreatePlan: (g, t, title) => backend.plannerCreatePlan(g, t, title)
+        onAddToPlan: (p, title) => backend.plannerAddToPlan(p, title)
+        onDeletePlan: id => backend.plannerDeletePlan(id)
     }
     OneDriveView {
         id: oneDrive

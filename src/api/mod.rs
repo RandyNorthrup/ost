@@ -10,6 +10,7 @@ pub mod files;
 mod graph;
 mod me;
 pub mod messages;
+pub mod planner;
 pub mod presence;
 mod teams;
 

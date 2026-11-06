@@ -36,6 +36,12 @@ Microsoft branding.
 - **OneDrive**: Home (recent files), My files with folders, Shared with
   you, and Libraries (each team's SharePoint document library); open in
   the browser, download, upload, new folder and delete.
+- **Planner** (from View more apps): My tasks (private To Do tasks and
+  the Planner tasks assigned to you, with All / Private tasks / Assigned
+  to me), My day, My plans (your teams' plans), Grid and Board, adding
+  and completing tasks, creating a plan in a team. View more apps also
+  opens Whiteboard, Clipchamp and Help, which are web apps, in the
+  browser.
 - **Presence**: your status (set, reset, shown everywhere) and everyone
   else's on their pictures.
 - **Notifications**: desktop notifications for new messages, titled
@@ -161,6 +167,7 @@ account.
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
+| `--planner-test` | Add and complete a private task; create a plan in OST Test Team, add a task, then delete the test plans. |
 | `--group-call-test` | Start a group call in "OST group test", capture it and People, hang up. |
 | `--cancel-ring` | With `--call-out`, hang up while it rings. |
 

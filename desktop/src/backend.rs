@@ -46,6 +46,9 @@ pub mod qobject {
         #[qproperty(QString, call_peer)]
         #[qproperty(QString, call_peer_id)]
         #[qproperty(bool, call_video_offered)]
+        /// The Planner view last loaded: {view, plan, tasks, plans, error}.
+        #[qproperty(QString, planner_json)]
+        #[qproperty(bool, planner_busy)]
         /// The OneDrive view last loaded: {view, drive_id, item_id, items, libraries, error}.
         #[qproperty(QString, drive_json)]
         #[qproperty(bool, drive_busy)]
@@ -253,6 +256,40 @@ pub mod qobject {
             first_message: &QString,
         );
 
+        /// Planner: load "mytasks", "plans" or "plan" (`plan_json` is a
+        /// Plan) into planner_json.
+        #[qinvokable]
+        fn planner_load(self: Pin<&mut Backend>, view: &QString, plan_json: &QString);
+
+        /// Planner: add a private task (due: YYYY-MM-DD or empty).
+        #[qinvokable]
+        fn planner_add(self: Pin<&mut Backend>, title: &QString, due: &QString);
+
+        /// Planner: create a plan in a team.
+        #[qinvokable]
+        fn planner_create_plan(
+            self: Pin<&mut Backend>,
+            group_id: &QString,
+            team: &QString,
+            title: &QString,
+        );
+
+        /// Planner: add a task to the plan shown (Plan as JSON).
+        #[qinvokable]
+        fn planner_add_to_plan(self: Pin<&mut Backend>, plan_json: &QString, title: &QString);
+
+        /// Planner: delete a plan (test clean-up and the plan menu).
+        #[qinvokable]
+        fn planner_delete_plan(self: Pin<&mut Backend>, plan_id: &QString);
+
+        /// Planner: mark a task (Task as JSON) complete.
+        #[qinvokable]
+        fn planner_complete(self: Pin<&mut Backend>, task_json: &QString);
+
+        /// Planner: delete a private task (Task as JSON).
+        #[qinvokable]
+        fn planner_delete(self: Pin<&mut Backend>, task_json: &QString);
+
         /// OneDrive: load a view into drive_json. `view` is "recent",
         /// "shared", "libraries" or "folder" (with `drive_id` and
         /// `item_id`; both empty for your OneDrive's root).
@@ -376,6 +413,10 @@ pub struct BackendRust {
     call_meeting: bool,
     drive_json: QString,
     drive_busy: bool,
+    planner_json: QString,
+    planner_busy: bool,
+    /// The Planner view last asked for (view, plan json), to reload.
+    planner_view: (String, String),
     /// The OneDrive view last asked for, to reload after a change.
     drive_view: (String, String, String),
     call_can_video: bool,
@@ -2510,6 +2551,129 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+
+    pub fn planner_load(mut self: Pin<&mut Self>, view: &QString, plan_json: &QString) {
+        let (view, plan_json) = (view.to_string(), plan_json.to_string());
+        self.as_mut().rust_mut().planner_view = (view.clone(), plan_json.clone());
+        self.as_mut().set_planner_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let mut out = json!({ "view": view });
+                match view.as_str() {
+                    "plans" => out["plans"] = json!(api::planner::plans(&client).await?),
+                    "plan" => {
+                        let v: serde_json::Value = serde_json::from_str(&plan_json)?;
+                        let plan = api::planner::Plan {
+                            id: v["id"].as_str().unwrap_or_default().to_string(),
+                            title: v["title"].as_str().unwrap_or_default().to_string(),
+                            group_id: v["group_id"].as_str().unwrap_or_default().to_string(),
+                            team: v["team"].as_str().unwrap_or_default().to_string(),
+                        };
+                        out["tasks"] = json!(api::planner::plan_tasks(&client, &plan).await?);
+                        out["plan"] = v;
+                    }
+                    _ => out["tasks"] = json!(api::planner::my_tasks(&client).await?),
+                }
+                anyhow::Ok(out)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_planner_busy(false);
+                let text = match result {
+                    Ok(v) => v.to_string(),
+                    Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_planner_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    fn planner_reload(mut self: Pin<&mut Self>) {
+        let (v, p) = self.rust().planner_view.clone();
+        self.as_mut()
+            .planner_load(&QString::from(v.as_str()), &QString::from(p.as_str()));
+    }
+
+    /// Run a Planner change, then reload the view.
+    fn planner_change<F, Fut>(mut self: Pin<&mut Self>, f: F)
+    where
+        F: FnOnce(TeamsClient) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
+    {
+        self.as_mut().set_planner_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { f(TeamsClient::new().await?).await }.await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().planner_reload(),
+                Err(e) => {
+                    this.as_mut().set_planner_busy(false);
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()));
+                }
+            });
+        });
+    }
+
+    pub fn planner_add(self: Pin<&mut Self>, title: &QString, due: &QString) {
+        let (title, due) = (title.to_string(), due.to_string());
+        self.planner_change(move |c| async move {
+            api::planner::add_private_task(&c, &title, &due)
+                .await
+                .map(|_| ())
+        });
+    }
+
+    pub fn planner_create_plan(
+        self: Pin<&mut Self>,
+        group_id: &QString,
+        team: &QString,
+        title: &QString,
+    ) {
+        let (g, t, title) = (group_id.to_string(), team.to_string(), title.to_string());
+        self.planner_change(move |c| async move {
+            api::planner::create_plan(&c, &g, &t, &title)
+                .await
+                .map(|_| ())
+        });
+    }
+
+    pub fn planner_add_to_plan(self: Pin<&mut Self>, plan_json: &QString, title: &QString) {
+        let (pj, title) = (plan_json.to_string(), title.to_string());
+        self.planner_change(move |c| async move {
+            let v: serde_json::Value = serde_json::from_str(&pj)?;
+            let plan = api::planner::Plan {
+                id: v["id"].as_str().unwrap_or_default().to_string(),
+                title: v["title"].as_str().unwrap_or_default().to_string(),
+                group_id: v["group_id"].as_str().unwrap_or_default().to_string(),
+                team: v["team"].as_str().unwrap_or_default().to_string(),
+            };
+            api::planner::add_plan_task(&c, &plan, &title).await
+        });
+    }
+
+    pub fn planner_delete_plan(self: Pin<&mut Self>, plan_id: &QString) {
+        let id = plan_id.to_string();
+        self.planner_change(move |c| async move { api::planner::delete_plan(&c, &id).await });
+    }
+
+    pub fn planner_complete(self: Pin<&mut Self>, task_json: &QString) {
+        let Ok(task) = serde_json::from_str::<api::planner::Task>(&task_json.to_string()) else {
+            return;
+        };
+        self.planner_change(move |c| async move { api::planner::complete(&c, &task).await });
+    }
+
+    pub fn planner_delete(self: Pin<&mut Self>, task_json: &QString) {
+        let Ok(task) = serde_json::from_str::<api::planner::Task>(&task_json.to_string()) else {
+            return;
+        };
+        self.planner_change(
+            move |c| async move { api::planner::delete_private_task(&c, &task).await },
+        );
     }
 
     pub fn drive_load(
