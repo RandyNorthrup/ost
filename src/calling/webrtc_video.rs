@@ -324,6 +324,35 @@ const SEND_H: u32 = 360;
 const SEND_FPS: u32 = 15;
 const SEND_KBPS: u32 = 600;
 
+/// How one outgoing stream is encoded.
+#[derive(Clone, Copy)]
+struct SendConfig {
+    fps: u32,
+    kbps: u32,
+    /// Publish a preview of what we send under this frame key.
+    preview: Option<&'static str>,
+    /// Resend the last picture this often when nothing new arrives (a
+    /// still screen sends no frames, but viewers joining need one).
+    repeat: Option<std::time::Duration>,
+}
+
+const CAMERA: SendConfig = SendConfig {
+    fps: SEND_FPS,
+    kbps: SEND_KBPS,
+    preview: Some("self"),
+    repeat: None,
+};
+
+/// A shared screen: up to 1280x720 at 10 fps, sharper (more bits a
+/// frame) than the camera, as text has to stay readable.
+#[cfg(feature = "screencast")]
+const SCREEN: SendConfig = SendConfig {
+    fps: 10,
+    kbps: 1500,
+    preview: None,
+    repeat: Some(std::time::Duration::from_secs(1)),
+};
+
 impl VideoSender {
     /// Open the camera (`device`, else /dev/video0) and start sending RTP
     /// packets (payload type `pt`, `ssrc`) to `out`.
@@ -342,10 +371,40 @@ impl VideoSender {
             .name("ost-video-tx".into())
             .spawn(move || {
                 let _camera = camera;
-                send_loop(frames, out, pt, ssrc, &stop2, &key2);
+                send_loop(frames, out, pt, ssrc, &stop2, &key2, CAMERA);
                 super::frames::clear("self");
             })?;
         Ok(Self { stop, keyframe })
+    }
+
+    /// Send a screen capture's frames (payload type `pt`, `ssrc`) to `out`.
+    #[cfg(feature = "screencast")]
+    pub fn start_screen(
+        out: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        pt: u8,
+        ssrc: u32,
+        capture: super::screencast::ScreenCapture,
+        frames: mpsc::Receiver<super::camera::YuvFrame>,
+    ) -> anyhow::Result<Self> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let keyframe = Arc::new(AtomicBool::new(true));
+        let (stop2, key2) = (stop.clone(), keyframe.clone());
+        std::thread::Builder::new()
+            .name("ost-share-tx".into())
+            .spawn(move || {
+                let _capture = capture;
+                send_loop(frames, out, pt, ssrc, &stop2, &key2, SCREEN);
+                // The capture ended (or we were stopped): say so.
+                stop2.store(true, Ordering::Relaxed);
+            })?;
+        Ok(Self { stop, keyframe })
+    }
+}
+
+impl VideoSender {
+    /// Whether sending has ended (stopped, or its source went away).
+    pub fn ended(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
     }
 }
 
@@ -362,17 +421,30 @@ fn send_loop(
     ssrc: u32,
     stop: &AtomicBool,
     keyframe: &AtomicBool,
+    cfg: SendConfig,
 ) {
     let mut encoder: Option<(u32, u32, super::codec::H264Encoder)> = None;
+    let mut last: Option<super::camera::YuvFrame> = None;
+    let mut last_sent = std::time::Instant::now();
     let started = std::time::Instant::now();
     let mut seq: u16 = (ssrc >> 7) as u16;
     let mut sent = 0u64;
     let mut last_frame: Option<std::time::Instant> = None;
     // A little under the frame interval, so 15 fps cameras aren't halved.
-    let min_gap = std::time::Duration::from_millis(1000 / SEND_FPS as u64 * 8 / 10);
+    let min_gap = std::time::Duration::from_millis(1000 / cfg.fps as u64 * 8 / 10);
     while !stop.load(Ordering::Relaxed) {
-        let Ok(f) = frames.recv_timeout(std::time::Duration::from_millis(500)) else {
-            continue;
+        let f = match frames.recv_timeout(std::time::Duration::from_millis(250)) {
+            Ok(f) => f,
+            // Nothing new: resend the last picture now and then, if asked.
+            Err(mpsc::RecvTimeoutError::Timeout) => match (&last, cfg.repeat) {
+                (Some(l), Some(every)) if last_sent.elapsed() >= every => super::camera::YuvFrame {
+                    width: l.width,
+                    height: l.height,
+                    data: l.data.clone(),
+                },
+                _ => continue,
+            },
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
         if f.data.len() < (f.width * f.height * 3 / 2) as usize {
             continue;
@@ -383,12 +455,15 @@ fn send_loop(
             continue;
         }
         last_frame = Some(now);
-        super::frames::publish(
-            "self",
-            f.width / 2,
-            f.height / 2,
-            preview_rgba(&f.data, f.width, f.height),
-        );
+        last_sent = now;
+        if let Some(key) = cfg.preview {
+            super::frames::publish(
+                key,
+                f.width / 2,
+                f.height / 2,
+                preview_rgba(&f.data, f.width, f.height),
+            );
+        }
         if encoder
             .as_ref()
             .is_none_or(|(w, h, _)| (*w, *h) != (f.width, f.height))
@@ -396,9 +471,9 @@ fn send_loop(
             match super::codec::H264Encoder::new_realtime(
                 f.width,
                 f.height,
-                SEND_FPS as f32,
-                SEND_KBPS,
-                SEND_FPS * 2,
+                cfg.fps as f32,
+                cfg.kbps,
+                cfg.fps * 2,
             ) {
                 Ok(e) => encoder = Some((f.width, f.height, e)),
                 Err(e) => {
@@ -433,6 +508,15 @@ fn send_loop(
         sent += 1;
         if sent == 1 || sent.is_multiple_of(300) {
             tracing::info!(sent, w = f.width, h = f.height, "video frames sent");
+        }
+        tracing::debug!(
+            sent,
+            ssrc,
+            nals = ?nals.iter().map(|n| n.first().map(|b| b & 0x1f).unwrap_or(0)).collect::<Vec<_>>(),
+            "video frame sent"
+        );
+        if cfg.repeat.is_some() {
+            last = Some(f);
         }
     }
 }

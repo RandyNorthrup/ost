@@ -543,6 +543,9 @@ Window {
         canVideo: backend.callCanVideo
         cameraOn: backend.callCameraOn
         onToggleCamera: backend.toggleCamera()
+        canShare: backend.callCanShare
+        sharing: backend.callSharing
+        onToggleShare: backend.toggleShare()
         held: backend.callHeld
         heldByPeer: backend.callHeldByPeer
         onToggleHold: backend.toggleHold()
@@ -668,6 +671,27 @@ Window {
         function onShareShownChanged() {
             console.warn("CALL share shown", callWindow.shareShown)
             if (callWindow.shareShown) shareShot.start()
+        }
+    }
+    // --share-test: once connected, share a screen (the desktop's picker
+    // asks what), keep it up for 30 s, then stop.
+    readonly property bool shareTest: Qt.application.arguments.indexOf("--share-test") >= 0
+    Connections {
+        target: backend
+        enabled: window.shareTest
+        function onCallStateChanged() { if (backend.callState === "connected") shareStart.start() }
+        function onCallSharingChanged() {
+            console.warn("CALL sharing", backend.callSharing)
+            if (backend.callSharing) shareStop.start()
+        }
+        function onCallCanShareChanged() { console.warn("CALL can share", backend.callCanShare) }
+    }
+    Timer { id: shareStart; interval: 5000; onTriggered: { console.warn("SHARE start, can share", backend.callCanShare); backend.toggleShare() } }
+    Timer {
+        id: shareStop; interval: 30000
+        onTriggered: {
+            callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-sharing.png")))
+            console.warn("SHARE stop"); backend.toggleShare()
         }
     }
     Timer { id: shareShot; interval: 3000; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-share.png"))) }

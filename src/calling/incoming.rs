@@ -266,6 +266,110 @@ pub(crate) async fn answer_renegotiation(
     Ok(session.as_ref().is_some_and(|s| s.is_held_by_peer()))
 }
 
+/// What a share re-offer says the call carries (Teams' media types).
+pub(crate) fn share_modalities(sharing: bool, camera: bool) -> serde_json::Value {
+    let mut m = vec!["Audio"];
+    if camera {
+        m.push("Video");
+    }
+    m.push(if sharing {
+        "ScreenSharer"
+    } else {
+        "ScreenViewer"
+    });
+    serde_json::json!(m)
+}
+
+/// Offer a change to the call's media ourselves (Teams'
+/// `mediaRenegotiation`), as Teams does to start or stop sharing a screen.
+/// The answer comes back to our `call/mediaAnswer/` callback (or a
+/// refusal to `call/rejection/`).
+pub(crate) async fn request_reoffer(
+    http: &reqwest::Client,
+    skype_token: &str,
+    link: &str,
+    sender: serde_json::Value,
+    cb: impl Fn(&str) -> String,
+    sdp: &str,
+    modalities: serde_json::Value,
+) -> Result<()> {
+    if !is_service_link(link) {
+        anyhow::bail!("The renegotiation link isn't a Teams service");
+    }
+    let body = serde_json::json!({
+        "mediaNegotiation": {
+            "callModalities": modalities,
+            "sender": sender,
+            "links": {
+                "mediaAnswer": cb("call/mediaAnswer/"),
+                "rejection": cb("call/rejection/"),
+            },
+            // Teams' media stack takes offers only in its own content type.
+            "mediaContent": {
+                "blob": sdp,
+                "contentType": "application/sdp-ngc-1.0",
+                "newOffer": false,
+                "escalationOccurring": false,
+            },
+        }
+    });
+    cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        link,
+        &body,
+        "Re-offer",
+    )
+    .await?;
+    Ok(())
+}
+
+/// The other side's answer to our re-offer, and where to acknowledge it
+/// (Teams waits for the acknowledgement before it calls the change done).
+#[derive(Debug, PartialEq)]
+pub struct ReofferAnswer {
+    pub sdp: String,
+    pub ack: Option<String>,
+}
+
+/// The other side's reply to our re-offer: `Some(Ok(answer))`, or
+/// `Some(Err(..))` when it refused; `None` for other events.
+pub fn reoffer_reply(json: &str) -> Option<Result<ReofferAnswer>> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let path = v.get("callAgentPath")?.as_str()?;
+    if path.starts_with("call/mediaAnswer") {
+        let blob = v
+            .pointer("/body/mediaAnswer/mediaContent/blob")
+            .and_then(|b| b.as_str())
+            .map(str::to_string);
+        let ack = str_at(&v, "/body/mediaAnswer/links/mediaAcknowledgement")
+            .filter(|l| is_service_link(l));
+        Some(
+            blob.context("Answer without SDP")
+                .map(|sdp| ReofferAnswer { sdp, ack }),
+        )
+    } else if path.starts_with("call/rejection") {
+        let body = v.get("body").cloned().unwrap_or_default();
+        let why = [
+            "/mediaRejection/phrase",
+            "/rejection/phrase",
+            "/mediaNegotiationFailure/phrase",
+        ]
+        .iter()
+        .find_map(|p| body.pointer(p).and_then(|x| x.as_str()))
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            let mut s = body.to_string();
+            s.truncate(300);
+            format!("refused: {s}")
+        });
+        Some(Err(anyhow::anyhow!("The other side {why}")))
+    } else {
+        None
+    }
+}
+
 /// Put the other person on hold as Teams does (its "serverHoldV2"): the
 /// call controller moves them onto music, and returns the resume link.
 pub(crate) async fn request_hold(
@@ -518,6 +622,8 @@ pub struct ActiveCall {
     hold_link: Option<String>,
     resume_link: Option<String>,
     transfer_link: Option<String>,
+    /// Where our own re-offers go (`links.mediaRenegotiation`).
+    renegotiation_link: Option<String>,
 }
 
 impl Drop for ActiveCall {
@@ -634,6 +740,104 @@ impl ActiveCall {
     /// The call takes dial-pad tones.
     pub fn can_dtmf(&self) -> bool {
         self.webrtc.as_ref().is_some_and(|w| w.can_dtmf())
+    }
+
+    /// We can share our screen in this call (Share usable).
+    pub fn can_share(&self) -> bool {
+        self.me.is_some()
+            && self.renegotiation_link.is_some()
+            && self.webrtc.as_ref().is_some_and(|w| w.can_share())
+    }
+
+    /// Offer to start (or stop) sending our screen; the answer comes back
+    /// as a `call/mediaAnswer/` event for [`Self::take_share_answer`].
+    pub async fn offer_share(&mut self, auth: &CallAuth, on: bool) -> Result<()> {
+        let me = self.me.as_ref().context("Sharing needs a Teams call")?;
+        let link = self
+            .renegotiation_link
+            .as_deref()
+            .context("This call can't renegotiate media")?;
+        let w = self.webrtc.as_ref().context("No media to share on")?;
+        let sdp = w.share_reoffer(on)?;
+        debug_dump("sdp-share-offer", &sdp);
+        request_reoffer(
+            &auth.http,
+            &auth.skype_token,
+            link,
+            me.json(),
+            |p| me.callback(p),
+            &sdp,
+            share_modalities(on, w.camera_on()),
+        )
+        .await
+    }
+
+    /// Acknowledge the other side's answer to our re-offer, as Teams does
+    /// (an empty POST to the answer's `mediaAcknowledgement` link).
+    pub async fn acknowledge_answer(&self, auth: &CallAuth, link: &str) -> Result<()> {
+        cc_request(
+            &auth.http,
+            &auth.skype_token,
+            reqwest::Method::POST,
+            link,
+            &serde_json::Value::Null,
+            "Media acknowledgement",
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// The other side refused our share re-offer.
+    pub fn cancel_share_offer(&self) {
+        if let Some(w) = self.webrtc.as_ref() {
+            w.cancel_share_offer();
+        }
+    }
+
+    /// Whether our share re-offer is waiting for its answer.
+    pub fn share_offer_pending(&self) -> bool {
+        self.webrtc
+            .as_ref()
+            .is_some_and(|w| w.share_offer_pending())
+    }
+
+    /// The answer to our share re-offer: whether it takes our screen.
+    pub fn take_share_answer(&mut self, answer: &str) -> Result<bool> {
+        debug_dump("sdp-share-answer", answer);
+        self.webrtc
+            .as_ref()
+            .context("No media to share on")?
+            .take_share_answer(answer)
+    }
+
+    /// Start sending a screen capture.
+    #[cfg(feature = "screencast")]
+    pub fn start_share(
+        &mut self,
+        capture: super::screencast::ScreenCapture,
+        frames: std::sync::mpsc::Receiver<super::camera::YuvFrame>,
+    ) -> Result<()> {
+        self.webrtc
+            .as_mut()
+            .context("No media to share on")?
+            .start_share(capture, frames)
+    }
+
+    /// Stop sending our screen.
+    pub fn stop_share(&mut self) {
+        if let Some(w) = self.webrtc.as_mut() {
+            w.stop_share();
+        }
+    }
+
+    /// Whether we're sending our screen.
+    pub fn is_sharing(&self) -> bool {
+        self.webrtc.as_ref().is_some_and(|w| w.is_sharing())
+    }
+
+    /// Whether our shared screen went away by itself.
+    pub fn share_ended(&self) -> bool {
+        self.webrtc.as_ref().is_some_and(|w| w.share_ended())
     }
 
     /// Send a dial-pad key as a tone.
@@ -935,6 +1139,7 @@ pub async fn answer(
         hold_link: leg.hold,
         resume_link: None,
         transfer_link: leg.transfer,
+        renegotiation_link: leg.renegotiation,
     })
 }
 
@@ -1003,6 +1208,7 @@ async fn answer_webrtc(
         hold_link: leg.hold,
         resume_link: None,
         transfer_link: leg.transfer,
+        renegotiation_link: leg.renegotiation,
     })
 }
 
@@ -1158,11 +1364,17 @@ async fn accept_v2(
         .as_object()
         .map(|o| o.keys().collect())
         .unwrap_or_default();
-    tracing::info!(?shape, "acceptance reply");
+    let links: Vec<&String> = ack
+        .get("links")
+        .and_then(|l| l.as_object())
+        .map(|o| o.keys().collect())
+        .unwrap_or_default();
+    tracing::info!(?shape, ?links, "acceptance reply");
     Ok(CallLeg {
         url: str_at(ack, "/links/callLeg"),
         hold: str_at(ack, "/links/hold"),
         transfer: str_at(ack, "/links/transfer"),
+        renegotiation: str_at(ack, "/links/mediaRenegotiation").filter(|l| is_service_link(l)),
         keep_alive_secs: ack.get("callKeepAliveInterval").and_then(|v| v.as_u64()),
     })
 }
@@ -1175,6 +1387,8 @@ struct CallLeg {
     hold: Option<String>,
     /// Where Transfer goes (`links.transfer`).
     transfer: Option<String>,
+    /// Where our re-offers go (`links.mediaRenegotiation`).
+    renegotiation: Option<String>,
     keep_alive_secs: Option<u64>,
 }
 
@@ -1287,6 +1501,40 @@ mod tests {
                "participants":{{"from":{{"id":"8:orgid:abc","displayName":"{name}"}}}},
                "debugContent":{{"callId":"call-1"}}}}"#
         )
+    }
+
+    #[test]
+    fn replies_to_our_reoffers_are_recognised() {
+        let ok = r#"{"callAgentPath":"call/mediaAnswer/","body":{"mediaAnswer":{"mediaContent":{"blob":"v=0 answer"},"links":{"mediaAcknowledgement":"https://api.flightproxy.teams.microsoft.com/ack"}}}}"#;
+        assert_eq!(
+            reoffer_reply(ok).unwrap().unwrap(),
+            ReofferAnswer {
+                sdp: "v=0 answer".into(),
+                ack: Some("https://api.flightproxy.teams.microsoft.com/ack".into())
+            }
+        );
+        // An acknowledgement link that isn't Teams' is dropped.
+        let elsewhere = ok.replace("api.flightproxy.teams.microsoft.com", "evil.example");
+        assert_eq!(reoffer_reply(&elsewhere).unwrap().unwrap().ack, None);
+        let no = r#"{"callAgentPath":"call/rejection/","body":{"mediaRejection":{"code":488,"phrase":"declined"}}}"#;
+        assert!(
+            reoffer_reply(no)
+                .unwrap()
+                .unwrap_err()
+                .to_string()
+                .contains("declined")
+        );
+        let empty = r#"{"callAgentPath":"call/mediaAnswer/","body":{}}"#;
+        assert!(reoffer_reply(empty).unwrap().is_err());
+        assert!(reoffer_reply(r#"{"callAgentPath":"call/end/","body":{}}"#).is_none());
+        assert_eq!(
+            share_modalities(true, false),
+            serde_json::json!(["Audio", "ScreenSharer"])
+        );
+        assert_eq!(
+            share_modalities(false, true),
+            serde_json::json!(["Audio", "Video", "ScreenViewer"])
+        );
     }
 
     #[test]

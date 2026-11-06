@@ -22,6 +22,8 @@ pub mod ringtone;
 pub mod roster;
 pub mod rtcp;
 pub mod rtp;
+#[cfg(feature = "screencast")]
+pub mod screencast;
 pub mod sdp;
 pub mod sdp_compress;
 pub mod signaling;

@@ -420,6 +420,67 @@ fn video_line(sdp: &str, mid: &str, avoid: Option<u8>) -> Option<OfferedVideo> {
     })
 }
 
+/// Our re-offer turning our screen share on (the sharing line `sendonly`)
+/// or off (`recvonly`, still taking theirs): our current SDP with that
+/// line's direction changed and the session version set to `version`.
+pub fn share_offer(ours: &str, mid: &str, on: bool, version: u64) -> String {
+    let head_end = ours.find("\nm=").map(|i| i + 1).unwrap_or(ours.len());
+    let mut out = String::new();
+    for l in ours[..head_end].split_inclusive('\n') {
+        match l.strip_prefix("o=") {
+            Some(o) => {
+                let mut f: Vec<&str> = o.trim_end().split(' ').collect();
+                let v = version.to_string();
+                if f.len() > 2 {
+                    f[2] = &v;
+                }
+                out.push_str("o=");
+                out.push_str(&f.join(" "));
+                out.push_str("\r\n");
+            }
+            None => out.push_str(l),
+        }
+    }
+    let dir = if on { "sendonly" } else { "recvonly" };
+    for (m, text) in sections(ours) {
+        if m.as_deref() != Some(mid) {
+            out.push_str(&text);
+            continue;
+        }
+        for l in text.split_inclusive('\n') {
+            if matches!(
+                l.trim_end(),
+                "a=sendrecv" | "a=sendonly" | "a=recvonly" | "a=inactive"
+            ) {
+                out.push_str(&format!("a={dir}\r\n"));
+            } else {
+                out.push_str(l);
+            }
+        }
+    }
+    // An offer leaves the DTLS role to the answerer (RFC 8842), as Teams'
+    // own re-offers do; with the transport unchanged it keeps its role.
+    out.split_inclusive('\n')
+        .map(|l| {
+            if l.starts_with("a=setup:") {
+                "a=setup:actpass\r\n"
+            } else {
+                l
+            }
+        })
+        .collect()
+}
+
+/// Whether an answer takes our screen share on line `mid` (not rejected,
+/// and receiving).
+pub fn answer_takes_share(answer: &str, mid: &str) -> bool {
+    sections(answer).iter().any(|(m, text)| {
+        m.as_deref() == Some(mid)
+            && text.split_whitespace().nth(1) != Some("0")
+            && matches!(section_direction(text), "recvonly" | "sendrecv")
+    })
+}
+
 /// Whether an offer's screen-sharing line is sending (someone presents).
 pub fn offer_shares(offer: &str) -> bool {
     WebRtcOffer::parse(offer)
@@ -627,12 +688,6 @@ impl LocalAudio {
             label,
             ssrc,
         } = line;
-        // One track id per stream (the camera, the shared screen).
-        let track = if label == "applicationsharing-video" {
-            "ost-share"
-        } else {
-            "ost-video"
-        };
         let mut s = String::new();
         s.push_str(&format!("m=video {port} RTP/SAVP {pt}\r\n"));
         s.push_str(&format!("c=IN IP4 {addr}\r\n"));
@@ -655,9 +710,10 @@ impl LocalAudio {
         s.push_str(&format!("a=rtcp-fb:{pt} nack pli\r\n"));
         s.push_str(&format!("a=rtcp-fb:{pt} ccm fir\r\n"));
         s.push_str(&format!("a=label:{label}\r\n"));
+        // Only the SSRC range, as Teams' own clients write it: Teams then
+        // names the stream after the line's label (`applicationsharingVideo-
+        // <ssrc>` for a shared screen), which is how it knows what it is.
         s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", ssrc));
-        s.push_str(&format!("a=ssrc:{} cname:ost\r\n", ssrc));
-        s.push_str(&format!("a=ssrc:{ssrc} msid:ost {track}\r\n"));
         s
     }
 
@@ -796,6 +852,20 @@ pub struct WebRtcAudioSession {
         super::webrtc_video::VideoSender,
         tokio::task::JoinHandle<()>,
     )>,
+    /// What sending our screen needs, and the sharing line's mid.
+    #[cfg(feature = "video")]
+    share_out: Option<(VideoOut, String)>,
+    /// Our screen, while we share it.
+    #[cfg(feature = "video")]
+    share: Option<(
+        super::webrtc_video::VideoSender,
+        tokio::task::JoinHandle<()>,
+    )>,
+    /// The description we last sent (answer, re-answer or accepted
+    /// re-offer): what our own re-offers start from.
+    current_sdp: std::sync::Mutex<String>,
+    /// Our re-offer awaiting the other side's answer, and its version.
+    pending_offer: std::sync::Mutex<Option<(String, u64)>>,
     /// The peer's video, decoded and published as the "remote" frame.
     #[cfg(feature = "video")]
     _video_rx: Vec<Arc<super::webrtc_video::VideoReceiver>>,
@@ -825,7 +895,7 @@ struct VideoOut {
     pt: u8,
     ssrc: u32,
     /// Where the RTCP reader flags keyframe requests for the camera.
-    keyframe_req: Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>,
+    keyframe_req: KeyframeSlot,
 }
 
 impl Drop for WebRtcAudioSession {
@@ -861,6 +931,7 @@ impl WebRtcAudioSession {
     /// Remember the SDP we sent (offer or answer), to answer re-offers.
     pub fn set_local_sdp(&self, sdp: &str) {
         *self.local_sdp.lock().unwrap_or_else(|e| e.into_inner()) = (sdp.to_string(), 2);
+        *self.current_sdp.lock().unwrap_or_else(|e| e.into_inner()) = sdp.to_string();
     }
 
     /// Answer the peer's re-offer, noting whether it holds the call.
@@ -871,6 +942,7 @@ impl WebRtcAudioSession {
         }
         g.1 += 1;
         let sdp = reanswer(&g.0, offer, g.1, self.dtls_role);
+        *self.current_sdp.lock().unwrap_or_else(|e| e.into_inner()) = sdp.clone();
         self.held_by_peer
             .store(offer_holds(offer), Ordering::Relaxed);
         // They stopped presenting: take their last shared frame down.
@@ -954,6 +1026,155 @@ impl WebRtcAudioSession {
         }
     }
 
+    /// Whether this call has a screen-sharing line we can send on.
+    pub fn can_share(&self) -> bool {
+        #[cfg(feature = "screencast")]
+        {
+            let Some((_, mid)) = &self.share_out else {
+                return false;
+            };
+            let g = self.local_sdp.lock().unwrap_or_else(|e| e.into_inner());
+            sections(&g.0).iter().any(|(m, t)| {
+                m.as_deref() == Some(mid.as_str()) && t.split_whitespace().nth(1) != Some("0")
+            })
+        }
+        #[cfg(not(feature = "screencast"))]
+        false
+    }
+
+    /// Our re-offer turning screen sharing on or off; the answer goes to
+    /// [`Self::take_share_answer`].
+    pub fn share_reoffer(&self, on: bool) -> Result<String> {
+        #[cfg(feature = "video")]
+        {
+            let (_, mid) = self
+                .share_out
+                .as_ref()
+                .context("This call has no screen-sharing line")?;
+            let version = self.local_sdp.lock().unwrap_or_else(|e| e.into_inner()).1 + 1;
+            let current = self
+                .current_sdp
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            if current.is_empty() {
+                bail!("No earlier SDP to re-offer");
+            }
+            let sdp = share_offer(&current, mid, on, version);
+            *self.pending_offer.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some((sdp.clone(), version));
+            Ok(sdp)
+        }
+        #[cfg(not(feature = "video"))]
+        {
+            let _ = on;
+            bail!("OST was built without video")
+        }
+    }
+
+    /// The other side's answer to our share re-offer: whether it takes our
+    /// screen. Our offer becomes our current description either way.
+    pub fn take_share_answer(&self, answer: &str) -> Result<bool> {
+        #[cfg(feature = "video")]
+        {
+            let (sdp, version) = self
+                .pending_offer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+                .context("No re-offer is waiting for an answer")?;
+            let mid = self
+                .share_out
+                .as_ref()
+                .map(|s| s.1.as_str())
+                .unwrap_or_default();
+            // Our offer is now the current description (re-answers still
+            // mirror the first answer); the version moves on.
+            self.local_sdp.lock().unwrap_or_else(|e| e.into_inner()).1 = version;
+            *self.current_sdp.lock().unwrap_or_else(|e| e.into_inner()) =
+                sdp.replace("a=setup:actpass", &format!("a=setup:{}", self.dtls_role));
+            Ok(answer_takes_share(answer, mid))
+        }
+        #[cfg(not(feature = "video"))]
+        {
+            let _ = answer;
+            bail!("OST was built without video")
+        }
+    }
+
+    /// Drop our re-offer (the other side refused it); nothing changes.
+    pub fn cancel_share_offer(&self) {
+        *self.pending_offer.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// Whether a share re-offer is waiting for its answer.
+    pub fn share_offer_pending(&self) -> bool {
+        self.pending_offer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+    }
+
+    /// Start sending a screen capture on the sharing line.
+    #[cfg(feature = "screencast")]
+    pub fn start_share(
+        &mut self,
+        capture: super::screencast::ScreenCapture,
+        frames: std::sync::mpsc::Receiver<super::camera::YuvFrame>,
+    ) -> Result<()> {
+        self.stop_share();
+        let (v, _) = self
+            .share_out
+            .as_ref()
+            .context("This call has no screen-sharing line")?;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let sender =
+            super::webrtc_video::VideoSender::start_screen(tx, v.pt, v.ssrc, capture, frames)?;
+        *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender.keyframe.clone());
+        let (socket, peer, srtp) = (v.socket.clone(), v.peer, v.srtp.clone());
+        let fwd = tokio::spawn(async move {
+            while let Some(p) = rx.recv().await {
+                let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect(&p).ok());
+                if let Some(p) = sealed {
+                    let _ = socket.send_to(&p, peer).await;
+                }
+            }
+        });
+        self.share = Some((sender, fwd));
+        Ok(())
+    }
+
+    /// Stop sending our screen (the capture ends with it).
+    pub fn stop_share(&mut self) {
+        #[cfg(feature = "video")]
+        {
+            if let Some((sender, fwd)) = self.share.take() {
+                drop(sender);
+                fwd.abort();
+            }
+            if let Some((v, _)) = &self.share_out {
+                *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            }
+        }
+    }
+
+    /// Whether our shared screen went away by itself (the window closed,
+    /// or sharing was stopped from the desktop).
+    pub fn share_ended(&self) -> bool {
+        #[cfg(feature = "video")]
+        return self.share.as_ref().is_some_and(|(s, _)| s.ended());
+        #[cfg(not(feature = "video"))]
+        false
+    }
+
+    /// Whether we're sending our screen.
+    pub fn is_sharing(&self) -> bool {
+        #[cfg(feature = "video")]
+        return self.share.is_some();
+        #[cfg(not(feature = "video"))]
+        false
+    }
+
     pub fn camera_on(&self) -> bool {
         #[cfg(feature = "video")]
         return self.camera.is_some();
@@ -1006,7 +1227,9 @@ impl WebRtcAudioSession {
         let held = Arc::new(AtomicBool::new(false));
 
         #[cfg(feature = "video")]
-        let keyframe_req: Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>> = Default::default();
+        let keyframe_req: KeyframeSlot = Default::default();
+        #[cfg(feature = "video")]
+        let share_keyframe_req: KeyframeSlot = Default::default();
         // The peer's video, when the answer accepted it.
         #[cfg(feature = "video")]
         // The peer's camera ("remote") and screen share ("share"): each a
@@ -1045,7 +1268,10 @@ impl WebRtcAudioSession {
             #[cfg(feature = "video")]
             video: video_rx.clone(),
             #[cfg(feature = "video")]
-            keyframe_req: (local.video_ssrc, keyframe_req.clone()),
+            keyframe_req: vec![
+                (local.video_ssrc, keyframe_req.clone()),
+                (local.share_ssrc, share_keyframe_req.clone()),
+            ],
         })));
 
         // ICE: check every remote candidate until one answers; the peer's
@@ -1180,6 +1406,17 @@ impl WebRtcAudioSession {
                 ssrc: local.video_ssrc,
                 keyframe_req: keyframe_req.clone(),
             });
+        // The screen-sharing line, for sharing ours later (a re-offer turns
+        // it on).
+        #[cfg(feature = "video")]
+        let share_out = offer.sharing.as_ref().map(|v| VideoOut {
+            socket: socket.clone(),
+            peer,
+            srtp: srtp_ctx.clone(),
+            pt: v.payload_type,
+            ssrc: local.share_ssrc,
+            keyframe_req: share_keyframe_req.clone(),
+        });
         Ok(Self {
             tasks,
             #[cfg(feature = "video")]
@@ -1187,11 +1424,26 @@ impl WebRtcAudioSession {
             #[cfg(feature = "video")]
             camera: None,
             #[cfg(feature = "video")]
+            share_out: share_out.map(|o| {
+                (
+                    o,
+                    offer
+                        .sharing
+                        .as_ref()
+                        .map(|v| v.mid.clone())
+                        .unwrap_or_default(),
+                )
+            }),
+            #[cfg(feature = "video")]
+            share: None,
+            pending_offer: std::sync::Mutex::new(None),
+            #[cfg(feature = "video")]
             _video_rx: video_rx.into_iter().map(|v| v.rx).collect(),
             muted,
             held,
             dtmf_tx,
             local_sdp: std::sync::Mutex::new((String::new(), 2)),
+            current_sdp: std::sync::Mutex::new(String::new()),
             held_by_peer: AtomicBool::new(false),
             dtls_role: if dtls_client { "active" } else { "passive" },
             stats,
@@ -1226,10 +1478,16 @@ struct RecvCtx {
     /// The video payload type and its receiver.
     #[cfg(feature = "video")]
     video: Vec<VideoStream>,
-    /// Our video SSRC and where to flag the peer's keyframe requests.
+    /// For each stream we send (camera, screen): our SSRC and where to
+    /// flag the peer's keyframe requests for it.
     #[cfg(feature = "video")]
-    keyframe_req: (u32, Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>),
+    keyframe_req: Vec<(u32, KeyframeSlot)>,
 }
+
+/// Where the RTCP reader flags a keyframe request for one stream we send
+/// (empty while that stream is off).
+#[cfg(feature = "video")]
+type KeyframeSlot = Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>;
 
 async fn recv_loop(ctx: RecvCtx) {
     let mut buf = vec![0u8; 2048];
@@ -1262,26 +1520,31 @@ async fn recv_loop(ctx: RecvCtx) {
                 // not decoded yet.
                 let pt = data.get(1).map(|b| b & 0x7f).unwrap_or(0);
                 if (72..=76).contains(&pt) {
-                    // RTCP: only keyframe requests for our camera matter.
+                    // RTCP: only keyframe requests for what we send matter.
                     #[cfg(feature = "video")]
                     {
-                        let flag = ctx
+                        let flags: Vec<(u32, Arc<AtomicBool>)> = ctx
                             .keyframe_req
-                            .1
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .clone();
-                        if let Some(flag) = flag {
+                            .iter()
+                            .filter_map(|(ssrc, slot)| {
+                                let f = slot.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                                f.map(|f| (*ssrc, f))
+                            })
+                            .collect();
+                        if !flags.is_empty() {
                             let plain = ctx
                                 .srtp
                                 .lock()
                                 .await
                                 .as_mut()
                                 .and_then(|c| c.unprotect_rtcp(data).ok());
-                            if plain.is_some_and(|p| {
-                                super::webrtc_video::wants_keyframe(&p, ctx.keyframe_req.0)
-                            }) {
-                                flag.store(true, Ordering::Relaxed);
+                            if let Some(p) = plain {
+                                for (ssrc, flag) in flags {
+                                    if super::webrtc_video::wants_keyframe(&p, ssrc) {
+                                        tracing::debug!(ssrc, "keyframe requested");
+                                        flag.store(true, Ordering::Relaxed);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1809,12 +2072,15 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             a.contains("a=mid:2\r\na=sendrecv") && a.contains("a=label:applicationsharing-video")
         );
         assert!(a.contains("a=rtpmap:102 H264/90000"));
-        // Each line echoes the offer's profile for its payload type, and
-        // the two streams have their own track ids.
+        // Each line echoes the offer's profile for its payload type.
         assert!(a.contains(
             "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
         ));
-        assert!(a.contains("msid:ost ost-video") && a.contains("msid:ost ost-share"));
+        // No msid: Teams names each stream after its line's label.
+        assert!(
+            !a.contains("msid:ost ost-") && a.matches("a=x-ssrc-range:").count() == 3,
+            "{a}"
+        );
         let share_off = offer.replacen("a=mid:2\r\na=sendrecv", "a=mid:2\r\na=inactive", 1);
         assert!(offer_shares(offer) && !offer_shares(&share_off));
         let so = local.answer_sdp_with(&WebRtcOffer::parse(&share_off).unwrap(), true);
@@ -1850,6 +2116,34 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert!(!offer_holds(&resume));
         let b = reanswer(ours, &resume, 4, "active");
         assert!(b.contains("a=mid:0\r\na=sendrecv") && b.contains("a=mid:1\r\na=sendrecv"));
+    }
+
+    #[test]
+    fn share_reoffers_flip_only_the_sharing_line() {
+        let ours = "v=0\r\no=- 7 3 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 2\r\n\
+            m=audio 4000 RTP/SAVP 0\r\na=setup:active\r\na=mid:0\r\na=sendrecv\r\n\
+            m=video 0 RTP/SAVP 102\r\nc=IN IP4 0.0.0.0\r\na=mid:1\r\na=inactive\r\n\
+            m=video 4000 RTP/SAVP 102\r\na=setup:active\r\na=mid:2\r\na=inactive\r\na=label:applicationsharing-video\r\n";
+        let on = share_offer(ours, "2", true, 4);
+        assert!(on.contains("o=- 7 4 IN IP4"), "{on}");
+        assert!(on.contains("a=mid:2\r\na=sendonly"));
+        assert!(on.contains("a=mid:0\r\na=sendrecv") && on.contains("a=mid:1\r\na=inactive"));
+        assert!(on.contains("a=setup:actpass") && !on.contains("a=setup:active"));
+        assert_eq!(on.matches("\nm=").count(), 3);
+        let off = share_offer(&on, "2", false, 5);
+        assert!(off.contains("a=mid:2\r\na=recvonly") && off.contains("o=- 7 5 "));
+        // The answer has to take it: receiving, not rejected.
+        let takes = on.replace("a=sendonly", "a=recvonly");
+        assert!(answer_takes_share(&takes, "2"));
+        assert!(!answer_takes_share(
+            &takes.replace("a=recvonly", "a=inactive"),
+            "2"
+        ));
+        assert!(!answer_takes_share(
+            &takes.replace("m=video 4000", "m=video 0"),
+            "2"
+        ));
+        assert!(!answer_takes_share(&takes, "9"));
     }
 
     #[test]

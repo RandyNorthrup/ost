@@ -21,6 +21,10 @@ Window {
     property bool canVideo: false
     property bool cameraOn: false
     signal toggleCamera()
+    /// Sharing your screen: possible in this call, and on.
+    property bool canShare: false
+    property bool sharing: false
+    signal toggleShare()
     /// A Teams meeting: Teams' meeting toolbar, the roster and its stage.
     property bool meeting: false
     /// The meeting's participants (from the roster): [{id, name, role}].
@@ -166,7 +170,13 @@ Window {
                 checked: !win.muted
                 onClicked: win.toggleMute()
             }
-            BarButton { icon: "share-screen"; label: "Share"; enabled: false }
+            BarButton {
+                icon: win.sharing ? "share-screen-stop" : "share-screen"
+                label: win.sharing ? "Stop sharing" : "Share"
+                iconColor: win.sharing ? theme.leave : theme.text
+                enabled: win.canShare || win.sharing
+                onClicked: win.toggleShare()
+            }
             Divider {}
             BarButton {
                 icon: "call-end-24"; label: "Leave"
@@ -249,7 +259,13 @@ Window {
                 checked: !win.muted
                 onClicked: win.toggleMute()
             }
-            BarButton { icon: "share-screen"; label: "Share"; enabled: false }
+            BarButton {
+                icon: win.sharing ? "share-screen-stop" : "share-screen"
+                label: win.sharing ? "Stop sharing" : "Share"
+                iconColor: win.sharing ? theme.leave : theme.text
+                enabled: win.canShare || win.sharing
+                onClicked: win.toggleShare()
+            }
             Divider {}
             BarButton {
                 icon: "call-end-24"; label: "Leave"
@@ -386,6 +402,20 @@ Window {
             interval: 33; repeat: true
             running: win.visible && win.state === "connected"
             onTriggered: { remoteVideo.refresh(); shareVideo.refresh() }
+        }
+        // While you share, as Teams: a red-outlined "You're presenting".
+        Rectangle {
+            visible: win.sharing
+            z: 4
+            anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: 12 }
+            width: presentingRow.implicitWidth + 24; height: 32; radius: 4
+            color: theme.surface; border.color: theme.leave; border.width: 2
+            Row {
+                id: presentingRow
+                anchors.centerIn: parent; spacing: 8
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-screen"; size: 16; color: theme.leave }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "You're presenting"; color: theme.text; font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold }
+            }
         }
         Column {
             visible: !win.meeting && !remoteVideo.visible && !shareVideo.visible
@@ -763,7 +793,7 @@ Window {
         /// Show the count as Teams' red alert badge (raised hands).
         property bool badgeAlert: false
         signal clicked()
-        width: 56; height: 52; radius: theme.radius
+        width: Math.max(56, bbLabel.implicitWidth + 12); height: 52; radius: theme.radius
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
         color: bb.checked ? theme.pane : (bbHover.hovered && bb.enabled ? theme.pane : "transparent")
         Column {
@@ -786,6 +816,7 @@ Window {
                 }
             }
             Text {
+                id: bbLabel
                 text: bb.label
                 color: theme.text
                 font.family: theme.font; font.pixelSize: theme.small

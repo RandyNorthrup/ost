@@ -10,6 +10,7 @@ use std::pin::Pin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use anyhow::Context;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use serde_json::json;
@@ -75,6 +76,9 @@ pub mod qobject {
         #[qproperty(bool, call_held)]
         #[qproperty(bool, call_held_by_peer)]
         #[qproperty(bool, call_can_dtmf)]
+        /// We can share our screen in this call, and whether we are.
+        #[qproperty(bool, call_can_share)]
+        #[qproperty(bool, call_sharing)]
         #[qproperty(bool, call_hand_raised)]
         #[qproperty(QString, call_options_url)]
         #[qproperty(QString, call_chat_url)]
@@ -214,6 +218,10 @@ pub mod qobject {
         /// Put the call on hold, or resume it.
         #[qinvokable]
         fn toggle_hold(self: Pin<&mut Backend>);
+
+        /// Share your screen (the desktop's picker asks what), or stop.
+        #[qinvokable]
+        fn toggle_share(self: Pin<&mut Backend>);
 
         /// "Don't use audio": no sound sent or played in this call.
         #[qinvokable]
@@ -550,6 +558,8 @@ pub struct BackendRust {
     call_held: bool,
     call_held_by_peer: bool,
     call_can_dtmf: bool,
+    call_can_share: bool,
+    call_sharing: bool,
     call_hand_raised: bool,
     call_options_url: QString,
     call_chat_url: QString,
@@ -601,6 +611,122 @@ struct CallSlot {
     outgoing: Option<OutgoingCall>,
     /// Withdraws the call being placed (still ringing the callee).
     cancel_placing: Option<tokio::sync::oneshot::Sender<()>>,
+    /// The screen picked to share, waiting for Teams to take our re-offer.
+    share_pending: Option<(
+        teams_cli::calling::screencast::ScreenCapture,
+        std::sync::mpsc::Receiver<teams_cli::calling::camera::YuvFrame>,
+    )>,
+}
+
+/// Ask the desktop what to share (its picker), then offer it to the call.
+/// Sending starts when Teams answers ([`share_reply`]).
+async fn offer_screen() -> anyhow::Result<()> {
+    let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::start().await?;
+    let auth = CallAuth::load().await?;
+    let mut guard = call_slot().lock().await;
+    let slot = &mut *guard;
+    let call = slot.active.as_mut().context("The call has ended")?;
+    call.offer_share(&auth, true).await?;
+    slot.share_pending = Some((capture, frames));
+    Ok(())
+}
+
+/// Stop sending our screen and tell the call.
+async fn stop_screen() -> anyhow::Result<()> {
+    let auth = CallAuth::load().await?;
+    let mut guard = call_slot().lock().await;
+    let slot = &mut *guard;
+    slot.share_pending = None;
+    let call = slot.active.as_mut().context("The call has ended")?;
+    call.stop_share();
+    call.offer_share(&auth, false).await
+}
+
+/// Teams' reply to our share re-offer. Returns false when it isn't one
+/// (some other mediaAnswer), so the event is handled as before.
+async fn share_reply(
+    qt: &cxx_qt::CxxQtThread<qobject::Backend>,
+    reply: anyhow::Result<teams_cli::calling::incoming::ReofferAnswer>,
+) -> bool {
+    let mut guard = call_slot().lock().await;
+    let slot = &mut *guard;
+    let Some(call) = slot.active.as_mut().filter(|c| c.share_offer_pending()) else {
+        return false;
+    };
+    let pending = slot.share_pending.take();
+    let outcome = match reply {
+        Ok(answer) => {
+            if let Some(link) = &answer.ack {
+                match CallAuth::load().await {
+                    Ok(auth) => {
+                        if let Err(e) = call.acknowledge_answer(&auth, link).await {
+                            tracing::warn!("share: {}", short_error(&e));
+                        }
+                    }
+                    Err(e) => tracing::warn!("share: {}", short_error(&e)),
+                }
+            }
+            call.take_share_answer(&answer.sdp)
+        }
+        Err(e) => {
+            call.cancel_share_offer();
+            Err(e)
+        }
+    };
+    let sharing = match (outcome, pending) {
+        (Ok(true), Some((capture, frames))) => match call.start_share(capture, frames) {
+            Ok(()) => Ok(true),
+            Err(e) => Err(e),
+        },
+        (Ok(false), Some(_)) => Err(anyhow::anyhow!("The call didn't take your screen")),
+        // The answer to stopping.
+        (Ok(_), None) => Ok(false),
+        (Err(e), _) => Err(e),
+    };
+    drop(guard);
+    match sharing {
+        Ok(true) => {
+            tracing::info!("sharing the screen");
+            let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(true));
+            spawn_share_watch(qt.clone());
+        }
+        Ok(false) => tracing::info!("screen sharing stopped"),
+        Err(e) => {
+            tracing::warn!("share: {}", short_error(&e));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_sharing(false);
+                this.as_mut().set_status_text(QString::from(
+                    format!("Share: {}", short_error(&e)).as_str(),
+                ));
+            });
+        }
+    }
+    true
+}
+
+/// While we share: when the shared window goes away (or sharing is
+/// stopped from the desktop), stop and tell the call, as Teams does.
+fn spawn_share_watch(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
+    runtime().spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let slot = call_slot().lock().await;
+            let Some(call) = slot.active.as_ref() else {
+                return;
+            };
+            if !call.is_sharing() {
+                return;
+            }
+            if call.share_ended() {
+                drop(slot);
+                if let Err(e) = stop_screen().await {
+                    tracing::warn!("share: {}", short_error(&e));
+                }
+                let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(false));
+                return;
+            }
+        }
+    });
 }
 
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
@@ -908,6 +1034,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let _ = qt.queue(|mut this| this.as_mut().end_call_ui());
             }
         });
+        return;
+    }
+    if let Some(reply) = teams_cli::calling::incoming::reoffer_reply(json)
+        && share_reply(qt, reply).await
+    {
         return;
     }
     if teams_cli::calling::incoming::is_renegotiation_event(json) {
@@ -1432,13 +1563,15 @@ impl qobject::Backend {
                                 false
                             }
                         };
-                    tracing::info!(has_audio, can_video, camera, "call answered");
+                    let can_share = active.can_share();
+                    tracing::info!(has_audio, can_video, camera, can_share, "call answered");
                     call_slot().lock().await.active = Some(active);
                     spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_video(can_video);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
+                        this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_camera_on(camera);
                         this.as_mut().set_call_muted(false);
                         this.as_mut().set_call_state(QString::from("connected"));
@@ -1759,6 +1892,28 @@ impl qobject::Backend {
         });
     }
 
+    pub fn toggle_share(self: Pin<&mut Self>) {
+        let on = !self.rust().call_sharing;
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = if on {
+                offer_screen().await
+            } else {
+                stop_screen().await
+            };
+            if let Err(e) = result {
+                tracing::warn!("share: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Share: {}", short_error(&e)).as_str(),
+                    ));
+                });
+            } else if !on {
+                let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(false));
+            }
+        });
+    }
+
     pub fn use_no_audio(mut self: Pin<&mut Self>) {
         self.as_mut().set_call_has_audio(false);
         runtime().spawn(async move {
@@ -1864,6 +2019,8 @@ impl qobject::Backend {
         }
         self.as_mut().set_call_camera_on(false);
         self.as_mut().set_call_can_video(false);
+        self.as_mut().set_call_can_share(false);
+        self.as_mut().set_call_sharing(false);
     }
 
     /// Poll the presence of 1:1 chat partners every minute (Teams shows a

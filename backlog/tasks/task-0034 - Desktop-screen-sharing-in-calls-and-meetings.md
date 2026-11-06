@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-06T04:53:00Z'
-updated_date: '2026-11-06T14:58:00Z'
+updated_date: '2026-11-06T15:39:00Z'
 labels:
   - desktop
   - calling
@@ -20,9 +20,9 @@ Share is the last greyed control on the call bar. Teams shares a screen as a sec
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Share in a 1:1 call shows the picked screen or window in Teams web
+- [x] #1 Share in a 1:1 call shows the picked screen or window in Teams web
 - [ ] #2 Share in a meeting shows it to the other participants
-- [ ] #3 Stop sharing ends the stream on both sides
+- [x] #3 Stop sharing ends the stream on both sides
 - [x] #4 A screen shared by the other person in a call shows on OST's stage, and is taken down when they stop
 <!-- AC:END -->
 
@@ -41,4 +41,9 @@ Share is the last greyed control on the call bar. Teams shares a screen as a sec
 - Receive done and tested live: Randy's Teams web shared a tab (example.com) to OST in a 1:1 call; OST showed it with "<name> is presenting", camera moved to a corner tile; Stop sharing cleared it.
 - Root cause of a first failed attempt: the answer's H.264 profile-level-id for PT 102 didn't match the offer's (42001f), so Chrome rejected the answer and DTLS timed out. Each video line now echoes the offer's profile.
 - The share is accepted in audio-only calls too, as Teams allows.
+
+- Send done and tested live in a call Randy placed to OST: OST shared a test window; Randy's Teams web showed it; Stop sharing returned both sides to the call view.
+- What Teams needs (found in its calling bundle and a captured share of its own): the re-offer's mediaContent must be application/sdp-ngc-1.0 (Teams' processOffer refuses plain application/sdp with 488/3102); the answer must be acknowledged (an empty POST to its links.mediaAcknowledgement); and video lines must carry only a=x-ssrc-range (no a=ssrc msid), so Teams names the stream after the label (applicationsharingVideo-<ssrc>). With msid:ost ... its renderer showed "something went wrong".
+- Re-offers start from the description we last sent (re-answers update it) and use setup:actpass, as Teams' do.
+- Still to do: calls OST places (our offer has no sharing line yet) and meetings (AC #2).
 <!-- SECTION:NOTES:END -->

@@ -58,6 +58,11 @@ Microsoft branding.
   or tab, it takes the stage whole (letterboxed) with "<name> is
   presenting", their camera moves to a corner tile, and it's taken down
   when they stop. Works in audio-only calls too, as in Teams.
+- **Share** your own screen or a window in a call: the desktop's
+  ScreenCast portal shows its picker (xdg-desktop-portal: Hyprland,
+  GNOME, KDE and others), OST sends it as Teams' screen-sharing stream
+  (H.264, up to 1280x720), shows "You're presenting", and Share becomes
+  Stop sharing. Closing the shared window stops it too.
 - **View more apps** lists Teams' apps for the account, in Teams'
   order: Shifts, Planner, OneNote, Help, Clipchamp, Whiteboard, Events,
   People. Planner, OneNote and People are native; Whiteboard, Clipchamp
@@ -105,15 +110,18 @@ meetings, transfer, hold and the dial pad. Their buttons are shown disabled rath
 Requirements: Rust (stable), Qt 6.9 or newer (developed on 6.11) with
 Qt Quick, Qt Quick Controls and Qt WebEngine (embedded apps), a C++
 compiler and CMake (for CXX-Qt),
-the ALSA development files (calls), and NASM (openh264, video).
+the ALSA development files (calls), NASM (openh264, video), and the
+PipeWire development files plus clang (screen sharing; at run time an
+xdg-desktop-portal backend for your desktop).
 
 ```bash
 # Arch
-sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-webengine alsa-lib cmake nasm
+sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-webengine alsa-lib cmake nasm \
+  pipewire clang xdg-desktop-portal
 # Debian / Ubuntu
 sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-qtquick-controls \
   qml6-module-qtquick-window libqt6svg6 qt6-webengine-dev qml6-module-qtwebengine \
-  libasound2-dev cmake nasm
+  libasound2-dev cmake nasm libpipewire-0.3-dev clang xdg-desktop-portal
 
 cargo build --release -p ost-desktop
 ```
@@ -215,6 +223,7 @@ account.
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
 | `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |
+| `--share-test` | In a call (with `--call-test --remote-hangup`): share a screen once connected (the portal's picker asks what), capture it after 30 s, then stop. |
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
 | `--webapp-test` | Open Whiteboard (`--webapp-help`: Help) from View more apps and capture it once loaded. |
 | `--store-test` | Open the Store, capture Home, search "planner", open Whiteboard's details. |
