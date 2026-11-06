@@ -28,7 +28,7 @@ Item {
     property bool board: false
     property string search: ""
     readonly property var tasks: (plannerData.tasks || []).filter(t =>
-        (view !== "mytasks" || filter === "all" || (filter === "private" ? t.kind === "todo" : t.kind === "planner"))
+        (view !== "mytasks" || filter === "all" || (filter === "private" ? t.kind === "todo" : filter === "mail" ? t.kind === "mail" : t.kind === "planner"))
         && (!search || t.title.toLowerCase().indexOf(search.toLowerCase()) >= 0))
     readonly property var plans: plannerData.plans || []
 
@@ -155,7 +155,7 @@ Item {
             }
             Rectangle { visible: root.view === "mytasks"; width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
             Repeater {
-                model: root.view === "mytasks" ? [{ key: "all", label: "All" }, { key: "private", label: "Private tasks" }, { key: "assigned", label: "Assigned to me" }] : []
+                model: root.view === "mytasks" ? [{ key: "all", label: "All" }, { key: "private", label: "Private tasks" }, { key: "assigned", label: "Assigned to me" }, { key: "mail", label: "Flagged emails" }] : []
                 Chip {
                     required property var modelData
                     on: root.filter === modelData.key; label: modelData.label

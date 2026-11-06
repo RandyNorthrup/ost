@@ -185,7 +185,56 @@ pub async fn my_tasks(client: &TeamsClient) -> Result<Vec<Task>> {
             .filter_map(|t| planner_task(t, &titles, &HashMap::new()))
             .filter(|t| !t.completed),
     );
+    // Flagged emails are best-effort (a mailbox may be unavailable).
+    match flagged_emails(client).await {
+        Ok(mut m) => tasks.append(&mut m),
+        Err(e) => tracing::info!("flagged emails: {e:#}"),
+    }
     Ok(tasks)
+}
+
+/// Your flagged emails, as Planner lists them (Source "Flagged email").
+pub async fn flagged_emails(client: &TeamsClient) -> Result<Vec<Task>> {
+    let v = json(
+        client,
+        "/me/messages?$filter=flag/flagStatus%20eq%20'flagged'&$select=id,subject,importance,flag&$top=50",
+    )
+    .await?;
+    Ok(v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            let id = s(m, "/id");
+            (!id.is_empty()).then(|| Task {
+                id,
+                title: {
+                    let t = s(m, "/subject");
+                    if t.is_empty() {
+                        "(No subject)".into()
+                    } else {
+                        t
+                    }
+                },
+                kind: "mail".into(),
+                source: "Flagged email".into(),
+                container_id: String::new(),
+                bucket: String::new(),
+                due: s(m, "/flag/dueDateTime/dateTime")
+                    .chars()
+                    .take(10)
+                    .collect(),
+                priority: if s(m, "/importance") == "high" {
+                    "Important"
+                } else {
+                    "Medium"
+                }
+                .into(),
+                completed: false,
+                etag: String::new(),
+            })
+        })
+        .collect())
 }
 
 /// Add a private task (To Do's default list), as "Add new task" does.
@@ -223,6 +272,14 @@ pub async fn complete(client: &TeamsClient, task: &Task) -> Result<()> {
                         check_id(&task.id)?
                     ),
                     &serde_json::json!({ "status": "completed" }),
+                )
+                .await?;
+        }
+        "mail" => {
+            client
+                .graph_patch(
+                    &format!("/me/messages/{}", check_id(&task.id)?),
+                    &serde_json::json!({ "flag": { "flagStatus": "complete" } }),
                 )
                 .await?;
         }
