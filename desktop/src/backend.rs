@@ -46,6 +46,9 @@ pub mod qobject {
         #[qproperty(QString, call_peer)]
         #[qproperty(QString, call_peer_id)]
         #[qproperty(bool, call_video_offered)]
+        /// The OneDrive view last loaded: {view, drive_id, item_id, items, libraries, error}.
+        #[qproperty(QString, drive_json)]
+        #[qproperty(bool, drive_busy)]
         /// The current call can carry our video, and whether the camera is on.
         #[qproperty(bool, call_can_video)]
         #[qproperty(bool, call_camera_on)]
@@ -250,6 +253,43 @@ pub mod qobject {
             first_message: &QString,
         );
 
+        /// OneDrive: load a view into drive_json. `view` is "recent",
+        /// "shared", "libraries" or "folder" (with `drive_id` and
+        /// `item_id`; both empty for your OneDrive's root).
+        #[qinvokable]
+        fn drive_load(
+            self: Pin<&mut Backend>,
+            view: &QString,
+            drive_id: &QString,
+            item_id: &QString,
+        );
+
+        /// OneDrive: download a file (a DriveItem as JSON) to Downloads.
+        #[qinvokable]
+        fn drive_download(self: Pin<&mut Backend>, item_json: &QString);
+
+        /// OneDrive: upload local files (newline-separated paths) to a folder.
+        #[qinvokable]
+        fn drive_upload(
+            self: Pin<&mut Backend>,
+            drive_id: &QString,
+            folder_id: &QString,
+            paths: &QString,
+        );
+
+        /// OneDrive: make a folder.
+        #[qinvokable]
+        fn drive_new_folder(
+            self: Pin<&mut Backend>,
+            drive_id: &QString,
+            parent_id: &QString,
+            name: &QString,
+        );
+
+        /// OneDrive: move an item to the recycle bin.
+        #[qinvokable]
+        fn drive_delete(self: Pin<&mut Backend>, drive_id: &QString, item_id: &QString);
+
         /// Change an event's title and time (UTC).
         #[qinvokable]
         fn update_event(
@@ -334,6 +374,10 @@ pub struct BackendRust {
     call_peer_id: QString,
     call_video_offered: bool,
     call_meeting: bool,
+    drive_json: QString,
+    drive_busy: bool,
+    /// The OneDrive view last asked for, to reload after a change.
+    drive_view: (String, String, String),
     call_can_video: bool,
     call_camera_on: bool,
     call_roster_json: QString,
@@ -430,6 +474,13 @@ fn spawn_call_stats_logger() {
 
 /// How many calls the Calls history shows.
 const CALL_HISTORY_LIMIT: usize = 100;
+
+/// Where downloads go: $XDG_DOWNLOAD_DIR, else ~/Downloads.
+fn download_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("XDG_DOWNLOAD_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Downloads")))
+}
 
 /// The camera chosen in Settings > Devices (a V4L2 path), else the default.
 fn camera_device() -> Option<String> {
@@ -2461,6 +2512,178 @@ impl qobject::Backend {
         });
     }
 
+    pub fn drive_load(
+        mut self: Pin<&mut Self>,
+        view: &QString,
+        drive_id: &QString,
+        item_id: &QString,
+    ) {
+        let (view, drive_id, item_id) =
+            (view.to_string(), drive_id.to_string(), item_id.to_string());
+        self.as_mut().rust_mut().drive_view = (view.clone(), drive_id.clone(), item_id.clone());
+        self.as_mut().set_drive_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let mut out = json!({ "view": view, "drive_id": drive_id, "item_id": item_id });
+                match view.as_str() {
+                    "recent" => out["items"] = json!(api::drive::recent(&client).await?),
+                    "shared" => out["items"] = json!(api::drive::shared_with_me(&client).await?),
+                    "libraries" => out["libraries"] = json!(api::drive::libraries(&client).await?),
+                    _ => {
+                        out["items"] =
+                            json!(api::drive::children(&client, &drive_id, &item_id).await?)
+                    }
+                }
+                anyhow::Ok(out)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_drive_busy(false);
+                let text = match result {
+                    Ok(v) => v.to_string(),
+                    Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_drive_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    /// Reload the OneDrive view shown (after a change).
+    fn drive_reload(mut self: Pin<&mut Self>) {
+        let (v, d, i) = self.rust().drive_view.clone();
+        self.as_mut().drive_load(
+            &QString::from(v.as_str()),
+            &QString::from(d.as_str()),
+            &QString::from(i.as_str()),
+        );
+    }
+
+    pub fn drive_download(mut self: Pin<&mut Self>, item_json: &QString) {
+        let Ok(item) = serde_json::from_str::<api::drive::DriveItem>(&item_json.to_string()) else {
+            return;
+        };
+        let Some(dir) = download_dir() else { return };
+        self.as_mut().set_status_text(QString::from(
+            format!("Downloading {}…", item.name).as_str(),
+        ));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::drive::download(&client, &item, &dir).await
+            }
+            .await;
+            let msg = match result {
+                Ok(path) => format!(
+                    "Saved {} to {}",
+                    item.name,
+                    path.parent()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default()
+                ),
+                Err(e) => short_error(&e),
+            };
+            let _ = qt
+                .queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+        });
+    }
+
+    pub fn drive_upload(
+        mut self: Pin<&mut Self>,
+        drive_id: &QString,
+        folder_id: &QString,
+        paths: &QString,
+    ) {
+        let (drive_id, folder_id) = (drive_id.to_string(), folder_id.to_string());
+        let paths: Vec<std::path::PathBuf> = paths
+            .to_string()
+            .lines()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(std::path::PathBuf::from)
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
+        self.as_mut().set_status_text(QString::from(
+            format!("Uploading {} file(s)…", paths.len()).as_str(),
+        ));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                for p in &paths {
+                    api::drive::upload(&client, &drive_id, &folder_id, p).await?;
+                }
+                anyhow::Ok(paths.len())
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(n) => {
+                    this.as_mut()
+                        .set_status_text(QString::from(format!("Uploaded {n} file(s)").as_str()));
+                    this.as_mut().drive_reload();
+                }
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
+            });
+        });
+    }
+
+    pub fn drive_new_folder(
+        mut self: Pin<&mut Self>,
+        drive_id: &QString,
+        parent_id: &QString,
+        name: &QString,
+    ) {
+        let (drive_id, parent_id, name) = (
+            drive_id.to_string(),
+            parent_id.to_string(),
+            name.to_string(),
+        );
+        let qt = self.qt_thread();
+        self.as_mut().set_drive_busy(true);
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::drive::new_folder(&client, &drive_id, &parent_id, &name).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(_) => this.as_mut().drive_reload(),
+                Err(e) => {
+                    this.as_mut().set_drive_busy(false);
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()));
+                }
+            });
+        });
+    }
+
+    pub fn drive_delete(mut self: Pin<&mut Self>, drive_id: &QString, item_id: &QString) {
+        let (drive_id, item_id) = (drive_id.to_string(), item_id.to_string());
+        let qt = self.qt_thread();
+        self.as_mut().set_drive_busy(true);
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::drive::delete(&client, &drive_id, &item_id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().drive_reload(),
+                Err(e) => {
+                    this.as_mut().set_drive_busy(false);
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()));
+                }
+            });
+        });
+    }
+
     pub fn update_event(
         mut self: Pin<&mut Self>,
         id: &QString,
@@ -2726,12 +2949,7 @@ impl qobject::Backend {
         else {
             return;
         };
-        let dir = std::env::var_os("XDG_DOWNLOAD_DIR")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Downloads"))
-            });
-        let Some(dir) = dir else { return };
+        let Some(dir) = download_dir() else { return };
         self.as_mut().set_status_text(QString::from(
             format!("Downloading {}…", file.name).as_str(),
         ));

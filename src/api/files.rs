@@ -88,7 +88,7 @@ fn ext_of(name: &str) -> String {
 }
 
 /// Percent-encode one path segment for a Graph `root:/…:` path.
-fn seg(s: &str) -> String {
+pub(crate) fn seg(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes())
         .collect::<String>()
         .replace('+', "%20")
@@ -218,7 +218,7 @@ pub async fn upload_for_chat(
 }
 
 /// Upload larger files in chunks through a Graph upload session.
-async fn upload_in_session(
+pub(crate) async fn upload_in_session(
     client: &TeamsClient,
     item_path: &str,
     bytes: Vec<u8>,
@@ -388,9 +388,15 @@ pub async fn download(client: &TeamsClient, file: &FileAttachment, dir: &Path) -
         .graph_get(&format!("/shares/u!{token}/driveItem/content"))
         .await?;
     let bytes = resp.bytes().await.context("Download")?;
+    save_unique(dir, &file.name, &bytes)
+}
+
+/// Save `bytes` as `name` in `dir`, never outside it, adding " (n)" when
+/// the name is taken.
+pub(crate) fn save_unique(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     // Never let a remote name escape the folder.
-    let safe = Path::new(&file.name)
+    let safe = Path::new(name)
         .file_name()
         .and_then(|n| n.to_str())
         .filter(|n| !n.is_empty() && *n != "." && *n != "..")
@@ -412,7 +418,7 @@ pub async fn download(client: &TeamsClient, file: &FileAttachment, dir: &Path) -
         target = dir.join(format!("{stem} ({n}){ext}"));
         n += 1;
     }
-    std::fs::write(&target, &bytes)?;
+    std::fs::write(&target, bytes)?;
     Ok(target)
 }
 

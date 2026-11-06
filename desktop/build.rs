@@ -21,6 +21,7 @@ fn main() {
         "qml/KeysTest.qml",
         "qml/MentionsView.qml",
         "qml/PreJoin.qml",
+        "qml/OneDriveView.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
         "qml/ActivityView.qml",

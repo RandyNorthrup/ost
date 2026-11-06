@@ -5,6 +5,7 @@ pub mod calendar;
 mod chat;
 pub mod client;
 pub mod directory;
+pub mod drive;
 pub mod files;
 mod graph;
 mod me;

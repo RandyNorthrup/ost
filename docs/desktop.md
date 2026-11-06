@@ -33,6 +33,9 @@ Microsoft branding.
 - **Calendar**: day, work week and week views of your Outlook calendar,
   a month picker, event details with Join, and New meeting (optionally
   a Teams meeting).
+- **OneDrive**: Home (recent files), My files with folders, Shared with
+  you, and Libraries (each team's SharePoint document library); open in
+  the browser, download, upload, new folder and delete.
 - **Presence**: your status (set, reset, shown everywhere) and everyone
   else's on their pictures.
 - **Notifications**: desktop notifications for new messages, titled
@@ -157,6 +160,7 @@ account.
 | `--call-panes` | As `--call-test`, also opening the Chat and People panes. |
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
+| `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
 | `--group-call-test` | Start a group call in "OST group test", capture it and People, hang up. |
 | `--cancel-ring` | With `--call-out`, hang up while it rings. |
 
