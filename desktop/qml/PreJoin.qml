@@ -40,7 +40,7 @@ Window {
         spacing: 6
         Image {
             anchors.horizontalCenter: parent.horizontalCenter
-            source: "../assets/logo.jpg"; width: 40; height: 40
+            source: "../assets/logo.png"; width: 40; height: 40
             sourceSize: Qt.size(80, 80); fillMode: Image.PreserveAspectFit; smooth: true
         }
         Item { width: 1; height: 8 }

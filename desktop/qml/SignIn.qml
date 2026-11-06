@@ -27,7 +27,7 @@ Rectangle {
             spacing: 16
 
             Image {
-                source: "../assets/logo.jpg"
+                source: "../assets/logo.png"
                 width: 56; height: 56
                 fillMode: Image.PreserveAspectFit
                 smooth: true

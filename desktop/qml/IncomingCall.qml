@@ -46,7 +46,7 @@ Window {
         // Header: the app, and close (ignore).
         Image {
             x: 16; y: 14; width: 20; height: 20
-            source: "../assets/logo.jpg"
+            source: "../assets/logo.png"
             sourceSize: Qt.size(40, 40)
             smooth: true
             fillMode: Image.PreserveAspectFit

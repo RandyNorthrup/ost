@@ -42,7 +42,7 @@ fn main() {
             }
         }
     }
-    resources.push("assets/logo.jpg".into());
+    resources.push("assets/logo.png".into());
     resources.sort();
     let module = QmlModule::new("com.ost.desktop")
         .qml_files(qml)
