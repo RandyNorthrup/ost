@@ -13,7 +13,9 @@ Window {
     property date startTime
     property date endTime
     property bool micOn: true
-    signal join(bool micOn)
+    /// Teams' audio choices: "computer", "room" or "none" (Don't use audio).
+    property string audio: "computer"
+    signal join(bool micOn, bool withAudio)
     signal cancelled()
 
     width: 1280; height: 680
@@ -25,7 +27,7 @@ Window {
         joinUrl = url; subject = subj
         startTime = start ? new Date(start) : new Date()
         endTime = end ? new Date(end) : new Date()
-        micOn = true
+        micOn = true; audio = "computer"
         show(); raise(); requestActivate()
     }
     readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : "Default microphone" }
@@ -87,9 +89,14 @@ Window {
             width: 449
             spacing: 8
             Rectangle {
-                width: parent.width; height: 185; radius: 4
+                // Teams shows your devices only under Computer audio.
+                width: parent.width; height: win.audio === "computer" ? 185 : 54; radius: 4
+                clip: true
                 color: theme.surface; border.color: theme.dividerSoft
-                Radio { x: 16; y: 18; on: true; label: "Computer audio" }
+                Radio {
+                    x: 16; y: 18; on: win.audio === "computer"; label: "Computer audio"
+                    TapHandler { onTapped: win.audio = "computer" }
+                }
                 Rectangle { y: 54; width: parent.width; height: 1; color: theme.dividerSoft }
                 Rectangle { y: 55; width: parent.width; height: parent.height - 56; color: theme.pane }
                 Row {
@@ -109,20 +116,42 @@ Window {
                     Text { anchors.verticalCenter: parent.verticalCenter; width: 260; elide: Text.ElideRight; text: win.speaker; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 }
             }
+            // Phone audio needs the tenant's Audio Conferencing; Teams greys
+            // it the same way when the meeting has no dial-in.
             Repeater {
-                model: ["Phone audio", "Room audio", "Don't use audio"]
+                model: [
+                    { key: "phone", label: "Phone audio", usable: false },
+                    { key: "room", label: "Room audio", usable: true },
+                    { key: "none", label: "Don't use audio", usable: true }
+                ]
                 Rectangle {
-                    required property string modelData
-                    width: 449; height: 40; radius: 4
+                    required property var modelData
+                    width: 449; height: win.audio === "room" && modelData.key === "room" ? 80 : 40; radius: 4
                     color: theme.surface; border.color: theme.dividerSoft
-                    Radio { x: 16; anchors.verticalCenter: parent.verticalCenter; on: false; label: parent.modelData; opacity: 0.45 }
+                    Radio {
+                        x: 16; y: 10
+                        on: win.audio === parent.modelData.key; label: parent.modelData.label
+                        opacity: parent.modelData.usable ? 1 : 0.45
+                    }
+                    // Room audio: Teams looks for a Teams Room nearby to pair with.
+                    Text {
+                        visible: win.audio === "room" && parent.modelData.key === "room"
+                        x: 48; y: 46; width: parent.width - 64; wrapMode: Text.Wrap
+                        text: "No rooms found nearby. Join with computer audio, or try again when you're in a Teams Room."
+                        font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
+                    }
+                    HoverHandler { cursorShape: parent.modelData.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler { enabled: parent.modelData.usable; onTapped: win.audio = parent.modelData.key }
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: modelData.label
+                    Accessible.checked: win.audio === modelData.key
                 }
             }
         }
     }
 
     Row {
-        anchors.right: panels.right; y: panels.y + 329 + 24
+        anchors.right: panels.right; y: panels.y + Math.max(329, panels.height) + 24
         spacing: 8
         Rectangle {
             width: 96; height: 32; radius: theme.radius
@@ -138,7 +167,8 @@ Window {
             color: jnh.hovered ? theme.brandHover : theme.brandFill
             Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
             HoverHandler { id: jnh; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: { win.close(); win.join(win.micOn) } }
+            // Room audio found no room: Teams then joins with computer audio.
+            TapHandler { onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none") } }
             Accessible.role: Accessible.Button
             Accessible.name: "Join now"
         }

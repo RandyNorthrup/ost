@@ -507,19 +507,26 @@ Window {
     }
     PreJoin {
         id: preJoin
-        onJoin: micOn => {
+        onJoin: (micOn, withAudio) => {
             window.muteOnJoin = !micOn
+            window.noAudioOnJoin = !withAudio
             backend.joinMeeting(joinUrl, subject)
         }
     }
     // Joining with the mic off (pre-join switch): mute once connected.
     property bool muteOnJoin: false
+    // "Don't use audio": no sound either way once connected.
+    property bool noAudioOnJoin: false
     Connections {
         target: backend
         function onCallStateChanged() {
             if (backend.callState === "connected" && window.muteOnJoin) {
                 window.muteOnJoin = false
                 if (!backend.callMuted) backend.toggleMute()
+            }
+            if (backend.callState === "connected" && window.noAudioOnJoin) {
+                window.noAudioOnJoin = false
+                backend.useNoAudio()
             }
         }
     }
@@ -803,10 +810,14 @@ Window {
                 console.warn("JOIN event found", !!ev)
                 calendarView.joinMeeting(ev.join_url, ev.subject)
             } else if (step === 1) {
+                if (Qt.application.arguments.indexOf("--join-noaudio") >= 0) preJoin.audio = "room"
                 preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-prejoin.png")))
             } else if (step === 2) {
+                // --join-noaudio: pick Room audio (capture), then Don't use audio.
+                if (Qt.application.arguments.indexOf("--join-noaudio") >= 0) preJoin.audio = "none"
                 // --join-muted: switch the mic off in pre-join.
-                preJoin.close(); preJoin.join(Qt.application.arguments.indexOf("--join-muted") < 0)
+                const noAudio = preJoin.audio === "none"
+                preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio)
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
             } else if (window.joinRaise && step === 8) {

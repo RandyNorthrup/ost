@@ -205,6 +205,10 @@ pub mod qobject {
         #[qinvokable]
         fn toggle_hold(self: Pin<&mut Backend>);
 
+        /// "Don't use audio": no sound sent or played in this call.
+        #[qinvokable]
+        fn use_no_audio(self: Pin<&mut Backend>);
+
         /// Raise or lower your hand in the meeting.
         #[qinvokable]
         fn toggle_hand(self: Pin<&mut Backend>);
@@ -1655,6 +1659,20 @@ impl qobject::Backend {
                         format!("Hold: {}", short_error(&e)).as_str(),
                     ));
                 });
+            }
+        });
+    }
+
+    pub fn use_no_audio(mut self: Pin<&mut Self>) {
+        self.as_mut().set_call_has_audio(false);
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            // Media only: nothing sent or played, the call stays as it is.
+            if let Some(call) = slot.outgoing.as_ref() {
+                call.set_held(true);
+            }
+            if let Some(call) = slot.active.as_ref() {
+                call.set_held(true);
             }
         });
     }
