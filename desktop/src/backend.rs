@@ -67,6 +67,7 @@ pub mod qobject {
         #[qproperty(bool, call_held)]
         #[qproperty(bool, call_held_by_peer)]
         #[qproperty(bool, call_can_dtmf)]
+        #[qproperty(bool, call_hand_raised)]
         #[qproperty(bool, call_has_audio)]
         /// "Randy Northrup is typing" for the open chat, or "".
         #[qproperty(QString, typing_text)]
@@ -203,6 +204,10 @@ pub mod qobject {
         /// Put the call on hold, or resume it.
         #[qinvokable]
         fn toggle_hold(self: Pin<&mut Backend>);
+
+        /// Raise or lower your hand in the meeting.
+        #[qinvokable]
+        fn toggle_hand(self: Pin<&mut Backend>);
 
         /// Transfer the call to a person (AAD object id).
         #[qinvokable]
@@ -456,6 +461,7 @@ pub struct BackendRust {
     call_held: bool,
     call_held_by_peer: bool,
     call_can_dtmf: bool,
+    call_hand_raised: bool,
     call_has_audio: bool,
     typing_text: QString,
     window_active: bool,
@@ -740,12 +746,21 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 }
                 return;
             }
-            let mut roster = std::mem::take(&mut this.as_mut().rust_mut().roster);
-            teams_cli::calling::roster::apply(&mut roster, delta);
-            let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
-            this.as_mut().rust_mut().roster = roster;
-            this.as_mut()
-                .set_call_roster_json(QString::from(json.as_str()));
+            let me = this.rust().user_mri.to_string().to_ascii_lowercase();
+            // Our own hand as the meeting sees it (also lowered by others).
+            if let Some(p) = delta.iter().find(|p| p.id == me) {
+                let raised = p.hand.is_some();
+                if raised != this.rust().call_hand_raised {
+                    this.as_mut().set_call_hand_raised(raised);
+                }
+                let id = p.hand.clone().filter(|h| h != "raised");
+                runtime().spawn(async move {
+                    if let Some(call) = call_slot().lock().await.outgoing.as_mut() {
+                        call.note_hand(id);
+                    }
+                });
+            }
+            this.as_mut().apply_roster(delta);
         });
         return;
     }
@@ -1510,6 +1525,24 @@ impl qobject::Backend {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
                     tracing::info!(has_audio, can_dtmf, "meeting joined");
+                    // Who was here before us (updates only carry changes).
+                    match call.participants().await {
+                        Ok(people) => {
+                            tracing::info!(count = people.len(), "meeting participants");
+                            // Only people the updates haven't told us about:
+                            // the list carries names, not hands or roles.
+                            let _ = qt.queue(move |mut this| {
+                                let known: Vec<String> =
+                                    this.rust().roster.iter().map(|p| p.id.clone()).collect();
+                                let missing = people
+                                    .into_iter()
+                                    .filter(|p| !known.contains(&p.id))
+                                    .collect();
+                                this.as_mut().apply_roster(missing)
+                            });
+                        }
+                        Err(e) => tracing::info!("participants: {}", short_error(&e)),
+                    }
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
@@ -1626,6 +1659,29 @@ impl qobject::Backend {
         });
     }
 
+    pub fn toggle_hand(mut self: Pin<&mut Self>) {
+        let up = !self.rust().call_hand_raised;
+        self.as_mut().set_call_hand_raised(up);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let result = match slot.outgoing.as_mut() {
+                Some(call) => call.raise_hand(up).await,
+                None => Err(anyhow::anyhow!("Raise hand is for meetings")),
+            };
+            drop(slot);
+            if let Err(e) = result {
+                tracing::warn!("raise hand: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_call_hand_raised(!up);
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Raise: {}", short_error(&e)).as_str(),
+                    ));
+                });
+            }
+        });
+    }
+
     pub fn transfer_call(self: Pin<&mut Self>, oid: &QString) {
         let target = format!("8:orgid:{}", oid.to_string().trim());
         let qt = self.qt_thread();
@@ -1673,11 +1729,22 @@ impl qobject::Backend {
         });
     }
 
+    /// Apply roster changes and publish the roster to QML.
+    fn apply_roster(mut self: Pin<&mut Self>, delta: Vec<teams_cli::calling::roster::Participant>) {
+        let mut roster = std::mem::take(&mut self.as_mut().rust_mut().roster);
+        teams_cli::calling::roster::apply(&mut roster, delta);
+        let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
+        self.as_mut().rust_mut().roster = roster;
+        self.as_mut()
+            .set_call_roster_json(QString::from(json.as_str()));
+    }
+
     /// Show the call as over; the UI fades it out from "ended".
     fn end_call_ui(mut self: Pin<&mut Self>) {
         self.as_mut().set_call_held(false);
         self.as_mut().set_call_held_by_peer(false);
         self.as_mut().set_call_can_dtmf(false);
+        self.as_mut().set_call_hand_raised(false);
         if !self.rust().call_state.is_empty() {
             self.as_mut().set_call_state(QString::from("ended"));
         }

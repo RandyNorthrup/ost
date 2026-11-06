@@ -164,55 +164,91 @@ pub fn offer_holds(offer: &str) -> bool {
         .is_some_and(|(_, b)| matches!(section_direction(b), "sendonly" | "inactive"))
 }
 
-/// Answer a re-offer (hold, resume, a camera turned on) with our earlier
-/// SDP: the same transport and codecs, each accepted section's direction
-/// mirroring the new offer's, and the session version bumped (RFC 3264 8).
-pub fn reanswer(ours: &str, offer: &str, version: u64) -> String {
-    let theirs = sections(offer);
-    let mut out = String::new();
+/// Answer a re-offer (hold, resume, a camera turned on, a media processor
+/// adding streams) from our earlier SDP, following the new offer's m-lines
+/// one for one (RFC 3264 8): a section we already carry keeps our
+/// transport and codecs, with its direction mirroring the offer's and our
+/// established DTLS role (`setup`: "active" or "passive"); any other
+/// section is rejected with port 0. BUNDLE lists what we accept, and the
+/// session version is bumped.
+pub fn reanswer(ours: &str, offer: &str, version: u64, setup: &str) -> String {
+    let mine = sections(ours);
+    let mut head = String::new();
     let head_end = ours.find("\nm=").map(|i| i + 1).unwrap_or(ours.len());
     for l in ours[..head_end].split_inclusive('\n') {
+        if l.starts_with("a=group:BUNDLE") {
+            head.push_str("{BUNDLE}");
+            continue;
+        }
         match l.strip_prefix("o=") {
             Some(o) => {
-                let mut f: Vec<&str> = o.split(' ').collect();
+                let mut f: Vec<&str> = o.trim_end().split(' ').collect();
                 let v = version.to_string();
                 if f.len() > 2 {
                     f[2] = &v;
                 }
-                out.push_str("o=");
-                out.push_str(&f.join(" "));
-                if !out.ends_with('\n') {
-                    out.push_str("\r\n");
-                }
+                head.push_str("o=");
+                head.push_str(&f.join(" "));
+                head.push_str("\r\n");
             }
-            None => out.push_str(l),
+            None => head.push_str(l),
         }
     }
-    for (mid, body) in sections(ours) {
-        let rejected = body.split_whitespace().nth(1) == Some("0");
-        let peer = mid
-            .as_ref()
-            .and_then(|m| theirs.iter().find(|(tm, _)| tm.as_ref() == Some(m)))
-            .map(|(_, b)| section_direction(b));
-        let dir = match (rejected, peer) {
-            (true, _) => None,
-            (false, Some("sendonly")) => Some("recvonly"),
-            (false, Some("recvonly")) => Some("sendonly"),
-            (false, Some("inactive")) => Some("inactive"),
-            (false, _) => Some("sendrecv"),
-        };
-        for l in body.split_inclusive('\n') {
-            let t = l.trim_end();
-            if matches!(t, "a=sendrecv" | "a=sendonly" | "a=recvonly" | "a=inactive") {
-                if let Some(d) = dir {
-                    out.push_str(&format!("a={d}\r\n"));
-                    continue;
+    let mut body = String::new();
+    let mut bundle: Vec<String> = Vec::new();
+    for (mid, theirs) in sections(offer) {
+        let m_line = theirs.lines().next().unwrap_or_default();
+        let mut parts = m_line.trim_start_matches("m=").split_whitespace();
+        let kind = parts.next().unwrap_or("audio");
+        let _port = parts.next();
+        let proto = parts.next().unwrap_or("RTP/SAVP");
+        let fmt = parts.next().unwrap_or("0");
+        let kept = mid.as_ref().and_then(|m| {
+            mine.iter().find(|(om, ob)| {
+                om.as_ref() == Some(m)
+                    && ob.starts_with(&format!("m={kind} "))
+                    && ob.split_whitespace().nth(1) != Some("0")
+            })
+        });
+        let peer_rejected = m_line.split_whitespace().nth(1) == Some("0");
+        match kept.filter(|_| !peer_rejected) {
+            Some((m, ob)) => {
+                let dir = match section_direction(&theirs) {
+                    "sendonly" => "recvonly",
+                    "recvonly" => "sendonly",
+                    "inactive" => "inactive",
+                    _ => "sendrecv",
+                };
+                for l in ob.split_inclusive('\n') {
+                    let t = l.trim_end();
+                    if matches!(t, "a=sendrecv" | "a=sendonly" | "a=recvonly" | "a=inactive") {
+                        body.push_str(&format!("a={dir}\r\n"));
+                    } else if t.starts_with("a=setup:") {
+                        body.push_str(&format!("a=setup:{setup}\r\n"));
+                    } else {
+                        body.push_str(l);
+                    }
+                }
+                if let Some(m) = m {
+                    bundle.push(m.clone());
                 }
             }
-            out.push_str(l);
+            None => {
+                body.push_str(&format!("m={kind} 0 {proto} {fmt}\r\n"));
+                body.push_str("c=IN IP4 0.0.0.0\r\n");
+                if let Some(m) = &mid {
+                    body.push_str(&format!("a=mid:{m}\r\n"));
+                }
+                body.push_str("a=inactive\r\n");
+            }
         }
     }
-    out
+    let group = if bundle.is_empty() {
+        String::new()
+    } else {
+        format!("a=group:BUNDLE {}\r\n", bundle.join(" "))
+    };
+    head.replace("{BUNDLE}", &group) + &body
 }
 
 /// The RFC 4733 event code of a dial-pad key.
@@ -648,6 +684,8 @@ pub struct WebRtcAudioSession {
     local_sdp: std::sync::Mutex<(String, u64)>,
     /// The other side put the call on hold.
     held_by_peer: AtomicBool,
+    /// Our DTLS role, kept in re-answers: "active" (client) or "passive".
+    dtls_role: &'static str,
     stats: Arc<Mutex<WebRtcStats>>,
     #[cfg(feature = "audio")]
     _capture: Option<audio::AudioCapture>,
@@ -708,7 +746,7 @@ impl WebRtcAudioSession {
             bail!("No earlier SDP to answer with");
         }
         g.1 += 1;
-        let sdp = reanswer(&g.0, offer, g.1);
+        let sdp = reanswer(&g.0, offer, g.1, self.dtls_role);
         self.held_by_peer
             .store(offer_holds(offer), Ordering::Relaxed);
         Ok(sdp)
@@ -1015,6 +1053,7 @@ impl WebRtcAudioSession {
             dtmf_tx,
             local_sdp: std::sync::Mutex::new((String::new(), 2)),
             held_by_peer: AtomicBool::new(false),
+            dtls_role: if dtls_client { "active" } else { "passive" },
             stats,
             #[cfg(feature = "audio")]
             _capture: capture,
@@ -1621,21 +1660,39 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
 
     #[test]
     fn reoffers_are_mirrored_and_holds_seen() {
-        let ours = "v=0\r\no=- 77 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1\r\nm=audio 5000 RTP/SAVP 0\r\na=mid:0\r\na=sendrecv\r\nm=video 5000 RTP/SAVP 107\r\na=mid:1\r\na=sendonly\r\nm=video 0 RTP/SAVP 0\r\na=mid:2\r\na=inactive\r\n";
-        let hold = "v=0\r\nm=audio 1 RTP/SAVP 0\r\na=mid:0\r\na=sendonly\r\nm=video 1 RTP/SAVP 107\r\na=mid:1\r\na=inactive\r\nm=video 1 RTP/SAVP 107\r\na=mid:2\r\na=sendrecv\r\n";
+        let ours = "v=0\r\no=- 77 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1\r\nm=audio 5000 RTP/SAVP 0\r\na=setup:active\r\na=mid:0\r\na=sendrecv\r\nm=video 5000 RTP/SAVP 107\r\na=mid:1\r\na=sendonly\r\nm=video 0 RTP/SAVP 0\r\na=mid:2\r\na=inactive\r\n";
+        let hold = "v=0\r\nm=audio 1 RTP/SAVP 0\r\na=setup:actpass\r\na=mid:0\r\na=sendonly\r\nm=video 1 RTP/SAVP 107\r\na=mid:1\r\na=inactive\r\nm=video 1 RTP/SAVP 107\r\na=mid:2\r\na=sendrecv\r\n";
         assert!(offer_holds(hold));
-        let a = reanswer(ours, hold, 3);
+        let a = reanswer(ours, hold, 3, "active");
         assert!(a.contains("o=- 77 3 IN IP4"));
-        assert!(a.contains("a=mid:0\r\na=recvonly"));
+        assert!(a.contains("a=setup:active\r\na=mid:0\r\na=recvonly"), "{a}");
         assert!(a.contains("a=mid:1\r\na=inactive"));
         // A section we rejected stays rejected.
-        assert!(a.contains("m=video 0 RTP/SAVP 0\r\na=mid:2\r\na=inactive"));
+        assert!(a.contains("m=video 0 RTP/SAVP 107\r\nc=IN IP4 0.0.0.0\r\na=mid:2\r\na=inactive"));
+        assert!(a.contains("a=group:BUNDLE 0 1\r\n"));
         let resume = hold
             .replace("a=sendonly", "a=sendrecv")
             .replace("a=mid:1\r\na=inactive", "a=mid:1\r\na=sendrecv");
         assert!(!offer_holds(&resume));
-        let b = reanswer(ours, &resume, 4);
+        let b = reanswer(ours, &resume, 4, "active");
         assert!(b.contains("a=mid:0\r\na=sendrecv") && b.contains("a=mid:1\r\na=sendrecv"));
+    }
+
+    #[test]
+    fn reanswers_follow_a_media_processors_new_m_lines() {
+        // A meeting we joined with an audio offer; the MP re-offers audio
+        // plus a data channel (as when someone else joins).
+        let ours = "v=0\r\no=- 5 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\nm=audio 43044 RTP/SAVP 0 101\r\na=setup:actpass\r\na=mid:0\r\na=sendrecv\r\n";
+        let reoffer = "v=0\r\no=- 239465 1 IN IP4 127.0.0.1\r\na=group:BUNDLE 0 4\r\nm=audio 3478 RTP/SAVP 96 0 101\r\na=setup:passive\r\na=mid:0\r\nm=x-data 3480 RTP/SAVP 127 126\r\na=setup:passive\r\na=mid:4\r\n";
+        let a = reanswer(ours, reoffer, 3, "active");
+        assert_eq!(
+            a.matches("\nm=").count(),
+            2,
+            "one answer m-line per offered one: {a}"
+        );
+        assert!(a.contains("a=setup:active") && !a.contains("actpass"));
+        assert!(a.contains("m=x-data 0 RTP/SAVP 127\r\nc=IN IP4 0.0.0.0\r\na=mid:4\r\na=inactive"));
+        assert!(a.contains("a=group:BUNDLE 0\r\n") && !a.contains("BUNDLE 0 4"));
     }
 
     #[test]

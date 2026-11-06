@@ -30,10 +30,14 @@ Window {
     readonly property var others: roster.filter(p => p.id !== selfId)
     readonly property bool remoteVideoShown: remoteVideo.visible
     // People pane rows: you first, then everyone else.
+    /// Raise hand: yours, and everyone's in the order they raised.
+    property bool handRaised: false
+    signal toggleHand()
+    readonly property var hands: roster.filter(p => !!p.hand).map(p => p.id)
     readonly property var people: meeting
-        ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio,
+        ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
              role: (roster.find(p => p.id === selfId) || {}).role || "" }]
-          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.server_muted, role: p.role })))
+          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.server_muted, role: p.role, hand: !!p.hand })))
         : [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
     /// Hold: you put the call on hold, or the other person did.
@@ -121,10 +125,17 @@ Window {
             }
             BarButton {
                 icon: "people"; label: "People"; checked: win.side === "people"
-                badge: win.roster.length > 1 ? win.roster.length : 0
+                // Teams: raised hands as a red count, else how many are here.
+                badge: win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
+                badgeAlert: win.hands.length > 0
                 onClicked: win.side = win.side === "people" ? "" : "people"
             }
-            BarButton { icon: "hand-left-24"; label: "Raise"; enabled: false }
+            BarButton {
+                icon: "hand-left-24"; label: win.handRaised ? "Lower" : "Raise"
+                enabled: win.live
+                checked: win.handRaised
+                onClicked: win.toggleHand()
+            }
             BarButton { icon: "emoji-24"; label: "React"; enabled: false }
             BarButton { id: viewBtnM; icon: "grid"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtnM; onClicked: { viewMenu.parent = viewBtnM; viewMenu.open() } }
             BarButton { icon: "shield-task-24"; label: "Controls"; enabled: false }
@@ -284,8 +295,25 @@ Window {
                     height: (tiles.height - (tiles.rowsN - 1) * tiles.spacing) / tiles.rowsN
                     radius: 6
                     color: "#FFFFFF"; opacity: 0.9
-                    border.color: theme.dividerSoft
+                    // A raised hand: Teams' gold outline and "1 ✋" badge.
+                    readonly property int handAt: win.hands.indexOf(modelData.id)
+                    border.color: handAt >= 0 ? theme.handRaised : theme.dividerSoft
+                    border.width: handAt >= 0 ? 3 : 1
                     Avatar { anchors.centerIn: parent; size: Math.min(144, parent.height * 0.45); name: parent.modelData.name; photoId: parent.modelData.id }
+                    Rectangle {
+                        visible: parent.handAt >= 0
+                        anchors { left: parent.left; top: parent.top; margins: 10 }
+                        width: handRow.implicitWidth + 12; height: 28; radius: 14
+                        color: "white"; border.color: theme.dividerSoft
+                        Row {
+                            id: handRow
+                            anchors.centerIn: parent; spacing: 4
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.parent.handAt + 1; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "\u270B"; font.pixelSize: 16 }
+                        }
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: "Hand raised"
+                    }
                     Rectangle {
                         anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
                         width: tileName.implicitWidth + 12; height: 24; radius: 4
@@ -472,13 +500,18 @@ Window {
                                 color: theme.textSecondary
                             }
                         }
+                        Text {
+                            visible: !!modelData.hand
+                            anchors.right: parent.right; anchors.rightMargin: 40; anchors.verticalCenter: parent.verticalCenter
+                            text: "\u270B"; font.pixelSize: 16
+                        }
                         FluentIcon {
                             anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
                             name: modelData.mutedNow ? "mic-off-24" : "mic-24"; size: 20
                             color: theme.textStrong
                         }
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: modelData.name + (modelData.mutedNow ? ", muted" : "")
+                        Accessible.name: modelData.name + (modelData.hand ? ", hand raised" : "") + (modelData.mutedNow ? ", muted" : "")
                     }
                 }
             }
@@ -676,6 +709,8 @@ Window {
         property color iconColor: theme.text
         /// A count beside the icon (People: how many are in the meeting).
         property int badge: 0
+        /// Show the count as Teams' red alert badge (raised hands).
+        property bool badgeAlert: false
         signal clicked()
         width: 56; height: 52; radius: theme.radius
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
@@ -685,12 +720,18 @@ Window {
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {
                 name: bb.icon; size: 20; color: bb.iconColor; anchors.horizontalCenter: parent.horizontalCenter
-                Text {
+                Rectangle {
                     visible: bb.badge > 0
-                    x: parent.width + 2; y: -2
-                    text: bb.badge
-                    font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
-                    color: theme.text
+                    x: bb.badgeAlert ? parent.width - 6 : parent.width + 2; y: bb.badgeAlert ? -6 : -2
+                    width: Math.max(16, bbText.implicitWidth + (bb.badgeAlert ? 8 : 0)); height: 16; radius: 8
+                    color: bb.badgeAlert ? theme.danger : "transparent"
+                    Text {
+                        id: bbText
+                        anchors.centerIn: parent
+                        text: bb.badge
+                        font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
+                        color: bb.badgeAlert ? "white" : theme.text
+                    }
                 }
             }
             Text {

@@ -539,6 +539,8 @@ Window {
         held: backend.callHeld
         heldByPeer: backend.callHeldByPeer
         onToggleHold: backend.toggleHold()
+        handRaised: backend.callHandRaised
+        onToggleHand: backend.toggleHand()
         canDtmf: backend.callCanDtmf
         onDtmf: key => backend.sendDtmf(key)
         onDeviceSettings: { rail.current = "settings"; window.raise(); window.requestActivate() }
@@ -789,6 +791,7 @@ Window {
 
     // --join-test: join the "OST calendar test" meeting from the calendar,
     // stay 20 s (--join-stay=<s> more), capture the call window, leave.
+    readonly property bool joinRaise: Qt.application.arguments.indexOf("--join-raise") >= 0
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     Timer {
         running: Qt.application.arguments.indexOf("--join-test") >= 0 && backend.signedIn && backend.calendarJson.indexOf("OST calendar test") >= 0
@@ -806,6 +809,16 @@ Window {
                 preJoin.close(); preJoin.join(Qt.application.arguments.indexOf("--join-muted") < 0)
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
+            } else if (window.joinRaise && step === 8) {
+                // --join-raise: raise your hand, then lower it.
+                backend.toggleHand()
+            } else if (window.joinRaise && step === 11) {
+                console.warn("JOIN hand raised", backend.callHandRaised, "hands", callWindow.hands.length, "status", backend.statusText)
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-raised.png")))
+            } else if (window.joinRaise && step === 16) {
+                backend.toggleHand()
+            } else if (window.joinRaise && step === 19) {
+                console.warn("JOIN hand lowered", !backend.callHandRaised, "hands", callWindow.hands.length, "status", backend.statusText)
             } else if (step === 12 + window.joinStay) {
                 console.warn("JOIN state", backend.callState, "audio", backend.callHasAudio, "muted", backend.callMuted, "roster", backend.callRosterJson.length, "status", backend.statusText)
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-meeting.png")))

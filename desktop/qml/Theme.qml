@@ -48,6 +48,8 @@ QtObject {
     readonly property color icon: pick("#424242", "#D6D6D6")
     readonly property color badge: "#C4314B"
     readonly property color danger: pick("#C4314B", "#E37D80")
+    // Teams' raised-hand outline.
+    readonly property color handRaised: "#EAA300"
     readonly property color unreadTint: pick("#FDF3F4", "#3E1F25")
 
     // Calls use the dark stage in every theme, as in Teams.

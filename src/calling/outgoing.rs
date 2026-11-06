@@ -35,6 +35,13 @@ pub struct OutgoingCall {
     hold_link: Option<String>,
     resume_link: Option<String>,
     transfer_link: Option<String>,
+    /// Meetings: the conversation's publishState / removeState links
+    /// (Raise hand), and the id of our raised hand.
+    state_links: (Option<String>, Option<String>),
+    hand: Option<String>,
+    state_seq: u64,
+    /// The conversation's getAllParticipants link (who's already here).
+    all_participants: Option<String>,
 }
 
 impl OutgoingCall {
@@ -81,6 +88,96 @@ impl OutgoingCall {
         }
         self.set_held(held);
         Ok(())
+    }
+
+    /// Raise or lower your hand in a meeting (Teams' "raiseHands" state).
+    pub async fn raise_hand(&mut self, up: bool) -> Result<()> {
+        self.state_seq += 1;
+        let from = self.me.0.clone();
+        if up {
+            let link = self
+                .state_links
+                .0
+                .clone()
+                .context("This meeting doesn't take raised hands")?;
+            let body = serde_json::json!({
+                "from": from,
+                "publishedState": {
+                    "content": { "skinTone": 0 },
+                    // Teams' publish levels are "user" and "endpoint"; a
+                    // state about yourself has no scope.
+                    "level": "user",
+                    "stateType": "raiseHands",
+                    "sequenceNumber": self.state_seq,
+                },
+            });
+            let reply = cc_post(&self.http, &self.skype_token, &link, &body, "Raise hand").await?;
+            self.hand = reply
+                .pointer("/publishStateResponse/stateId")
+                .or_else(|| reply.pointer("/publishStateResponse/publishedState/stateId"))
+                .or_else(|| reply.pointer("/stateId"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            tracing::info!(has_id = self.hand.is_some(), "hand raised");
+        } else {
+            let link = self
+                .state_links
+                .1
+                .clone()
+                .context("This meeting doesn't take raised hands")?;
+            let body = match self.hand.take() {
+                Some(id) => {
+                    serde_json::json!({ "from": from, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [id] })
+                }
+                None => bail!("Your raised hand isn't known yet"),
+            };
+            cc_post(&self.http, &self.skype_token, &link, &body, "Lower hand").await?;
+        }
+        Ok(())
+    }
+
+    /// Everyone already in the conversation (roster updates only carry
+    /// changes, so people who joined before us need this, as Teams does).
+    pub async fn participants(&self) -> Result<Vec<super::roster::Participant>> {
+        let link = self
+            .all_participants
+            .clone()
+            .context("No participant list for this call")?;
+        let body = serde_json::json!({ "from": self.me.0, "scope": "call", "scenario": 0 });
+        let reply = cc_post(&self.http, &self.skype_token, &link, &body, "Participants").await?;
+        let list = reply
+            .pointer("/response/participants")
+            .or_else(|| reply.get("participants"))
+            .cloned()
+            .unwrap_or_default();
+        // An array of {id, displayName}: put it in roster-update form
+        // (keyed by MRI, with details and state).
+        let by_mri: serde_json::Map<String, serde_json::Value> = list
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|p| {
+                let id = p.get("id")?.as_str()?.to_string();
+                let name = p
+                    .get("displayName")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or_default();
+                Some((
+                    id,
+                    serde_json::json!({ "state": "active", "details": { "displayName": name } }),
+                ))
+            })
+            .collect();
+        let event = serde_json::json!({ "callAgentPath": "conversation/rosterUpdate/", "body": { "participants": by_mri } });
+        Ok(super::roster::roster_delta(&event.to_string()).unwrap_or_default())
+    }
+
+    /// Our raised hand's state id, learned from the roster when the
+    /// publish reply didn't carry it.
+    pub fn note_hand(&mut self, id: Option<String>) {
+        if self.hand.is_none() {
+            self.hand = id;
+        }
     }
 
     /// Transfer the call to `target` (an `8:orgid:` MRI).
@@ -199,6 +296,48 @@ pub fn callee_mri_for_chat(chat_id: &str, my_oid: &str) -> Option<String> {
         return None;
     };
     Some(format!("8:orgid:{other}"))
+}
+
+/// POST JSON to a Teams service link; the JSON reply (Null when empty).
+async fn cc_post(
+    http: &reqwest::Client,
+    skype_token: &str,
+    url: &str,
+    body: &serde_json::Value,
+    what: &str,
+) -> Result<serde_json::Value> {
+    if !super::incoming::is_service_link(url) {
+        bail!("{what}: not a Teams service link");
+    }
+    let resp = http
+        .post(url)
+        .header("X-Skypetoken", skype_token)
+        .json(body)
+        .send()
+        .await
+        .with_context(|| format!("{what} failed to send"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        tracing::info!(
+            "{what}: HTTP {status}: {}",
+            text.chars().take(300).collect::<String>()
+        );
+        bail!("{what} failed: HTTP {status}");
+    }
+    tracing::info!("{what}: HTTP {status}");
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
+/// A conversation link (`leave`, `publishState`, `removeState`…) from the
+/// create response.
+fn conversation_link(create_response: &str, name: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(create_response).ok()?;
+    v.pointer(&format!("/links/{name}"))
+        .or_else(|| v.pointer(&format!("/conversationResponse/links/{name}")))
+        .and_then(|u| u.as_str())
+        .filter(|u| super::incoming::is_service_link(u))
+        .map(str::to_string)
 }
 
 /// The conversation's `leave` link from the create response.
@@ -433,6 +572,12 @@ async fn start(
         }
     };
     let leave_url = leave_link(&created.response_body);
+
+    let state_links = (
+        conversation_link(&created.response_body, "publishState"),
+        conversation_link(&created.response_body, "removeState"),
+    );
+    let all_participants = conversation_link(&created.response_body, "getAllParticipants");
     // A group call rings the chat's members, as Teams' does.
     if matches!(target, Target::Group) {
         match crate::api::client::TeamsClient::new().await {
@@ -554,6 +699,10 @@ async fn start(
         hold_link: acceptance.hold,
         resume_link: None,
         transfer_link: acceptance.transfer,
+        state_links,
+        hand: None,
+        state_seq: 0,
+        all_participants,
     })
 }
 

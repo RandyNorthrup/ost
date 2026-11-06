@@ -20,6 +20,8 @@ pub struct Participant {
     /// Their audio is inactive: they put the call on hold (Teams' Hold
     /// moves the held side to a music bot and makes the holder inactive).
     pub on_hold: bool,
+    /// Their raised hand's state id (Teams' "raiseHands" published state).
+    pub hand: Option<String>,
 }
 
 /// The participants a roster update changes, or `None` for other events.
@@ -66,6 +68,18 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
                         && streams
                             .iter()
                             .all(|m| m.get("serverMuted").and_then(|b| b.as_bool()) == Some(true)),
+                    hand: p
+                        .get("publishedStates")
+                        .and_then(|s| s.as_array())
+                        .into_iter()
+                        .flatten()
+                        .find(|s| s.get("stateType").and_then(|t| t.as_str()) == Some("raiseHands"))
+                        .map(|s| {
+                            s.get("stateId")
+                                .and_then(|i| i.as_str())
+                                .unwrap_or("raised")
+                                .to_string()
+                        }),
                     on_hold: !streams.is_empty()
                         && streams.iter().all(|m| {
                             m.get("direction").and_then(|d| d.as_str()) == Some("inactive")
