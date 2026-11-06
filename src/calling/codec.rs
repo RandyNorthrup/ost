@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use openh264::decoder::{Decoder, DecoderConfig};
-use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate};
+use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate, IntraFramePeriod, Profile};
 use openh264::formats::YUVSource;
 use openh264::OpenH264API;
 
@@ -69,6 +69,37 @@ impl H264Encoder {
             width,
             height,
         })
+    }
+
+    /// An encoder for live calls: constrained baseline (what WebRTC peers
+    /// decode everywhere), a keyframe every `keyframe_every` frames so a
+    /// receiver that lost packets recovers, frame skipping off.
+    pub fn new_realtime(
+        width: u32,
+        height: u32,
+        fps: f32,
+        bitrate_kbps: u32,
+        keyframe_every: u32,
+    ) -> Result<Self> {
+        let api = OpenH264API::from_source();
+        let config = EncoderConfig::new()
+            .max_frame_rate(FrameRate::from_hz(fps))
+            .bitrate(BitRate::from_bps(bitrate_kbps * 1000))
+            .profile(Profile::Baseline)
+            .intra_frame_period(IntraFramePeriod::from_num_frames(keyframe_every))
+            .skip_frames(false);
+        let encoder =
+            Encoder::with_api_config(api, config).context("Failed to create openh264 encoder")?;
+        Ok(Self {
+            encoder,
+            width,
+            height,
+        })
+    }
+
+    /// Make the next frame a keyframe (a receiver asked: RTCP PLI/FIR).
+    pub fn force_keyframe(&mut self) {
+        self.encoder.force_intra_frame();
     }
 
     /// Encode a raw I420 YUV frame into H.264 NAL units.

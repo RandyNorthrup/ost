@@ -16,6 +16,10 @@ Window {
     property real connectedAt: 0
     signal leave()
     signal toggleMute()
+    /// Video: whether the call can carry ours, and whether the camera is on.
+    property bool canVideo: false
+    property bool cameraOn: false
+    signal toggleCamera()
     /// A Teams meeting: Teams' meeting toolbar, the roster and its stage.
     property bool meeting: false
     /// The meeting's participants (from the roster): [{id, name, role}].
@@ -97,7 +101,12 @@ Window {
             BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
             BarButton { icon: "more-24"; label: "More"; enabled: false }
             Divider {}
-            BarButton { icon: "video-off"; label: "Camera"; enabled: false }
+            BarButton {
+                icon: win.cameraOn ? "video" : "video-off"; label: "Camera"
+                enabled: win.canVideo
+                checked: win.cameraOn
+                onClicked: win.toggleCamera()
+            }
             BarButton {
                 icon: win.muted ? "mic-off-24" : "mic-24"; label: "Mic"
                 enabled: win.hasAudio
@@ -134,7 +143,12 @@ Window {
             BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
             BarButton { icon: "more-24"; label: "More"; enabled: false }
             Divider {}
-            BarButton { icon: "video-off"; label: "Camera"; enabled: false }
+            BarButton {
+                icon: win.cameraOn ? "video" : "video-off"; label: "Camera"
+                enabled: win.canVideo
+                checked: win.cameraOn
+                onClicked: win.toggleCamera()
+            }
             BarButton {
                 icon: win.muted ? "mic-off-24" : "mic-24"; label: "Mic"
                 enabled: win.hasAudio
@@ -262,7 +276,20 @@ Window {
                 GradientStop { position: 1.0; color: "#EEF0F8" }
             }
             border.color: theme.dividerSoft
-            Avatar { anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
+            Avatar { visible: !selfVideo.visible; anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
+            // Your camera, mirrored as Teams shows your own video.
+            VideoFrame {
+                id: selfVideo
+                source: "self"
+                anchors.fill: parent; anchors.margins: 1
+                visible: win.cameraOn && hasFrame
+                transform: Scale { origin.x: selfVideo.width / 2; xScale: -1 }
+            }
+            Timer {
+                interval: 66; repeat: true
+                running: win.visible && win.cameraOn
+                onTriggered: selfVideo.refresh()
+            }
             Rectangle {
                 visible: win.muted || !win.hasAudio
                 anchors { left: parent.left; bottom: parent.bottom; margins: 8 }

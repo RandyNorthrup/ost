@@ -114,6 +114,20 @@ pub struct OfferedVideo {
     pub ssrc: Option<u32>,
     /// The peer sends video (`sendrecv` or `sendonly`).
     pub sends: bool,
+    /// The peer takes video (`sendrecv` or `recvonly`): we may send ours.
+    pub receives: bool,
+}
+
+impl OfferedVideo {
+    /// Our answer's direction, mirroring theirs (RFC 3264 6.1).
+    fn answer_direction(&self) -> &'static str {
+        match (self.sends, self.receives) {
+            (true, true) => "sendrecv",
+            (true, false) => "recvonly",
+            (false, true) => "sendonly",
+            (false, false) => "inactive",
+        }
+    }
 }
 
 /// The m-line section of `sdp` whose `a=mid` is `mid`.
@@ -185,14 +199,28 @@ fn offered_video(sdp: &str, sections: &[(String, String, String)]) -> Option<Off
                 .find_map(|l| l.trim_end().strip_prefix("a=ssrc:"))
                 .and_then(|r| r.split_whitespace().next()?.parse().ok())
         });
-    let sends = text
+    let dir = text
         .lines()
-        .any(|l| matches!(l.trim_end(), "a=sendrecv" | "a=sendonly"));
+        .map(str::trim_end)
+        .find(|l| {
+            matches!(
+                *l,
+                "a=sendrecv" | "a=sendonly" | "a=recvonly" | "a=inactive"
+            )
+        })
+        .unwrap_or("a=sendrecv");
+    let sends = matches!(dir, "a=sendrecv" | "a=sendonly");
+    let receives = matches!(dir, "a=sendrecv" | "a=recvonly");
+    // An inactive video line is no video.
+    if !sends && !receives {
+        return None;
+    }
     Some(OfferedVideo {
         mid: main.0.clone(),
         payload_type,
         ssrc,
         sends,
+        receives,
     })
 }
 
@@ -329,7 +357,15 @@ impl LocalAudio {
     }
 
     /// Our main video m-line: receive H.264 with keyframe requests.
-    fn video_section(&self, port: u16, addr: &str, mid: &str, setup: &str, pt: u8) -> String {
+    fn video_section(
+        &self,
+        port: u16,
+        addr: &str,
+        mid: &str,
+        setup: &str,
+        pt: u8,
+        direction: &str,
+    ) -> String {
         let mut s = String::new();
         s.push_str(&format!("m=video {port} RTP/SAVP {pt}\r\n"));
         s.push_str(&format!("c=IN IP4 {addr}\r\n"));
@@ -338,7 +374,10 @@ impl LocalAudio {
         s.push_str(&format!("a=fingerprint:{}\r\n", self.identity.fingerprint));
         s.push_str(&format!("a=setup:{setup}\r\n"));
         s.push_str(&format!("a=mid:{mid}\r\n"));
-        s.push_str("a=recvonly\r\n");
+        // Mirroring their direction; sending (when they take video) is
+        // agreed up front so the camera can go on and off without
+        // renegotiating.
+        s.push_str(&format!("a={direction}\r\n"));
         s.push_str("a=rtcp-mux\r\n");
         s.push_str(&format!("a=rtpmap:{pt} H264/90000\r\n"));
         s.push_str(&format!(
@@ -347,6 +386,12 @@ impl LocalAudio {
         s.push_str(&format!("a=rtcp-fb:{pt} nack pli\r\n"));
         s.push_str(&format!("a=rtcp-fb:{pt} ccm fir\r\n"));
         s.push_str("a=label:main-video\r\n");
+        s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", self.video_ssrc));
+        s.push_str(&format!("a=ssrc:{} cname:ost\r\n", self.video_ssrc));
+        s.push_str(&format!(
+            "a=ssrc:{} msid:ost ost-video\r\n",
+            self.video_ssrc
+        ));
         s
     }
 
@@ -400,7 +445,14 @@ impl LocalAudio {
             if *mid == offer.audio_mid {
                 s.push_str(&self.audio_section(port, &addr, mid, "active"));
             } else if let Some(v) = video.filter(|v| v.mid == *mid) {
-                s.push_str(&self.video_section(port, &addr, mid, "active", v.payload_type));
+                s.push_str(&self.video_section(
+                    port,
+                    &addr,
+                    mid,
+                    "active",
+                    v.payload_type,
+                    v.answer_direction(),
+                ));
             } else {
                 let fmt = proto_fmts.split_whitespace().nth(1).unwrap_or("0");
                 let proto = proto_fmts.split_whitespace().next().unwrap_or("RTP/SAVP");
@@ -427,6 +479,15 @@ pub struct WebRtcStats {
 /// A running WebRTC audio session; dropping it stops the media.
 pub struct WebRtcAudioSession {
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// What sending our camera needs: the socket, the peer, SRTP, and the
+    /// negotiated video payload type and our SSRC.
+    #[cfg(feature = "video")]
+    video_out: Option<VideoOut>,
+    #[cfg(feature = "video")]
+    camera: Option<(
+        super::webrtc_video::VideoSender,
+        tokio::task::JoinHandle<()>,
+    )>,
     /// The peer's video, decoded and published as the "remote" frame.
     #[cfg(feature = "video")]
     _video_rx: Option<Arc<super::webrtc_video::VideoReceiver>>,
@@ -438,10 +499,25 @@ pub struct WebRtcAudioSession {
     _playback: Option<audio::AudioPlayback>,
 }
 
+#[cfg(feature = "video")]
+struct VideoOut {
+    socket: Arc<UdpSocket>,
+    peer: SocketAddr,
+    srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
+    pt: u8,
+    ssrc: u32,
+    /// Where the RTCP reader flags keyframe requests for the camera.
+    keyframe_req: Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>,
+}
+
 impl Drop for WebRtcAudioSession {
     fn drop(&mut self) {
         for t in &self.tasks {
             t.abort();
+        }
+        #[cfg(feature = "video")]
+        if let Some((_, fwd)) = self.camera.take() {
+            fwd.abort();
         }
     }
 }
@@ -457,6 +533,62 @@ impl WebRtcAudioSession {
 
     pub async fn stats(&self) -> WebRtcStats {
         *self.stats.lock().await
+    }
+
+    /// Whether this call negotiated video we can send.
+    pub fn can_send_video(&self) -> bool {
+        #[cfg(feature = "video")]
+        return self.video_out.is_some();
+        #[cfg(not(feature = "video"))]
+        false
+    }
+
+    /// Turn our camera on or off (`device`: a V4L2 path, else the first).
+    pub fn set_camera(&mut self, on: bool, device: Option<String>) -> Result<()> {
+        #[cfg(feature = "video")]
+        {
+            if !on {
+                if let Some((sender, fwd)) = self.camera.take() {
+                    drop(sender);
+                    fwd.abort();
+                }
+                if let Some(v) = &self.video_out {
+                    *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                }
+                return Ok(());
+            }
+            if self.camera.is_some() {
+                return Ok(());
+            }
+            let v = self.video_out.as_ref().context("This call has no video")?;
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+            let sender = super::webrtc_video::VideoSender::start(tx, v.pt, v.ssrc, device)?;
+            *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(sender.keyframe.clone());
+            let (socket, peer, srtp) = (v.socket.clone(), v.peer, v.srtp.clone());
+            let fwd = tokio::spawn(async move {
+                while let Some(p) = rx.recv().await {
+                    let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect(&p).ok());
+                    if let Some(p) = sealed {
+                        let _ = socket.send_to(&p, peer).await;
+                    }
+                }
+            });
+            self.camera = Some((sender, fwd));
+            Ok(())
+        }
+        #[cfg(not(feature = "video"))]
+        {
+            let _ = (on, device);
+            bail!("OST was built without video")
+        }
+    }
+
+    pub fn camera_on(&self) -> bool {
+        #[cfg(feature = "video")]
+        return self.camera.is_some();
+        #[cfg(not(feature = "video"))]
+        false
     }
 
     /// Answerer side: ICE controlled, DTLS client (we answered `active`).
@@ -502,6 +634,8 @@ impl WebRtcAudioSession {
 
         let mut tasks = Vec::new();
 
+        #[cfg(feature = "video")]
+        let keyframe_req: Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>> = Default::default();
         // The peer's video, when the answer accepted it.
         #[cfg(feature = "video")]
         let video_rx = offer
@@ -526,6 +660,8 @@ impl WebRtcAudioSession {
             spk_tx,
             #[cfg(feature = "video")]
             video: video_rx.clone(),
+            #[cfg(feature = "video")]
+            keyframe_req: (local.video_ssrc, keyframe_req.clone()),
         })));
 
         // ICE: check every remote candidate until one answers; the peer's
@@ -641,8 +777,25 @@ impl WebRtcAudioSession {
             }));
         }
 
+        #[cfg(feature = "video")]
+        let video_out = offer
+            .video
+            .as_ref()
+            .filter(|v| local.receive_video && v.receives)
+            .map(|v| VideoOut {
+                socket: socket.clone(),
+                peer,
+                srtp: srtp_ctx.clone(),
+                pt: v.payload_type,
+                ssrc: local.video_ssrc,
+                keyframe_req: keyframe_req.clone(),
+            });
         Ok(Self {
             tasks,
+            #[cfg(feature = "video")]
+            video_out,
+            #[cfg(feature = "video")]
+            camera: None,
             #[cfg(feature = "video")]
             _video_rx: video_rx.map(|(_, rx)| rx),
             muted,
@@ -666,6 +819,9 @@ struct RecvCtx {
     /// The video payload type and its receiver.
     #[cfg(feature = "video")]
     video: Option<(u8, Arc<super::webrtc_video::VideoReceiver>)>,
+    /// Our video SSRC and where to flag the peer's keyframe requests.
+    #[cfg(feature = "video")]
+    keyframe_req: (u32, Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>),
 }
 
 async fn recv_loop(ctx: RecvCtx) {
@@ -699,6 +855,29 @@ async fn recv_loop(ctx: RecvCtx) {
                 // not decoded yet.
                 let pt = data.get(1).map(|b| b & 0x7f).unwrap_or(0);
                 if (72..=76).contains(&pt) {
+                    // RTCP: only keyframe requests for our camera matter.
+                    #[cfg(feature = "video")]
+                    {
+                        let flag = ctx
+                            .keyframe_req
+                            .1
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .clone();
+                        if let Some(flag) = flag {
+                            let plain = ctx
+                                .srtp
+                                .lock()
+                                .await
+                                .as_mut()
+                                .and_then(|c| c.unprotect_rtcp(data).ok());
+                            if plain.is_some_and(|p| {
+                                super::webrtc_video::wants_keyframe(&p, ctx.keyframe_req.0)
+                            }) {
+                                flag.store(true, Ordering::Relaxed);
+                            }
+                        }
+                    }
                     continue;
                 }
                 let plain = {
@@ -1141,9 +1320,16 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
                 mid: "1".into(),
                 payload_type: 108,
                 ssrc: Some(3236),
-                sends: true
+                sends: true,
+                receives: true
             }
         );
+        // A recvonly offer is answered sendonly; an inactive one is no video.
+        let recv_only = offer.replacen("a=mid:1\r\na=sendrecv", "a=mid:1\r\na=recvonly", 1);
+        let ro = WebRtcOffer::parse(&recv_only).unwrap();
+        assert_eq!(ro.video.as_ref().unwrap().answer_direction(), "sendonly");
+        let inactive = offer.replacen("a=mid:1\r\na=sendrecv", "a=mid:1\r\na=inactive", 1);
+        assert!(WebRtcOffer::parse(&inactive).unwrap().video.is_none());
         let rt = tokio::runtime::Runtime::new().unwrap();
         let local = rt.block_on(LocalAudio::prepare()).unwrap();
         let a = local.answer_sdp_with(&o, true);

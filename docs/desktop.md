@@ -21,7 +21,9 @@ Microsoft branding.
 - **Activity**: the Teams activity feed (mentions, reactions, replies,
   missed calls, team changes), live as it changes, with unread state
   synced to Teams.
-- **Calls**: 1:1 audio calls in and out, with Teams' incoming-call toast,
+- **Calls**: 1:1 audio and video calls in and out (your camera on and off
+  mid-call, the other person's video on the stage, your mirrored self
+  view), with Teams' incoming-call toast,
   ringing, mute, hang-up, decline, and Chat and People panes in the call
   window; group calls from a group chat (its members are rung). Call
   history in the Calls app.
@@ -41,21 +43,21 @@ Microsoft branding.
   start with the computer.
 - **Search**: people, chats and channels from the title bar.
 
-Not yet: video, screen sharing, raising hands and reactions in
+Not yet: video in meetings and in calls you place, screen sharing, raising hands and reactions in
 meetings, transfer, hold and the dial pad. Their buttons are shown disabled rather than hidden or faked.
 
 ## Build
 
 Requirements: Rust (stable), Qt 6.8 or newer (developed on 6.11) with
 Qt Quick and Qt Quick Controls, a C++ compiler and CMake (for CXX-Qt),
-and the ALSA development files (calls).
+the ALSA development files (calls), and NASM (openh264, video).
 
 ```bash
 # Arch
-sudo pacman -S qt6-base qt6-declarative qt6-svg alsa-lib cmake
+sudo pacman -S qt6-base qt6-declarative qt6-svg alsa-lib cmake nasm
 # Debian / Ubuntu
 sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-qtquick-controls \
-  qml6-module-qtquick-window libqt6svg6 libasound2-dev cmake
+  qml6-module-qtquick-window libqt6svg6 libasound2-dev cmake nasm
 
 cargo build --release -p ost-desktop
 ```
@@ -103,7 +105,7 @@ Files OST keeps:
 | Navigation | `Ctrl+R` compose box, `Alt+Left` / `Alt+Right` back and forward, `Ctrl+1`–`Ctrl+5` apps |
 | Compose | `Shift+Enter` new line, `Alt+Shift+O` attach file, `Ctrl+B` / `Ctrl+I` / `Ctrl+U` / `Ctrl+Alt+X` bold, italic, underline, strikethrough, plus the usual undo, redo, cut, copy, paste and select all |
 | Messaging | `Ctrl+F` find in chat, `Ctrl+J` newest message, `Shift+Esc` mark all read, `Ctrl+Alt+U` / `C` / `A` unread, chats, channels, `Ctrl+Alt+Z` clear filters, `Alt+P` details pane, `Alt+1`–`Alt+5` header tabs |
-| Calls and calendar | `Ctrl+Shift+M` mute, `Ctrl+Shift+H` leave, `Alt+Shift+A` start an audio call, `Ctrl+Shift+S` / `Ctrl+Shift+A` accept with audio / video, `Ctrl+Shift+D` decline, `Alt+N` schedule a meeting |
+| Calls and calendar | `Ctrl+Shift+M` mute, `Ctrl+Shift+O` camera, `Ctrl+Shift+H` leave, `Alt+Shift+A` start an audio call, `Ctrl+Shift+S` / `Ctrl+Shift+A` accept with audio / video, `Ctrl+Shift+D` decline, `Alt+N` schedule a meeting |
 
 ## Test harness
 
@@ -151,7 +153,7 @@ account.
 | `--calendar-test` | Schedule a Teams meeting tomorrow at 3 PM. |
 | `--join-test` | Join that meeting through the pre-join window, capture it, the stage and People, leave (`--join-stay=<s>` stays longer, `--join-muted` joins with the mic off). |
 | `--keys-test` | Press the keyboard shortcuts as real key events and check each (needs the QtTest QML module). |
-| `--call-test` | Wait for a call, capture the toast, answer, capture, hang up (`--accept-video` answers with video when offered). |
+| `--call-test` | Wait for a call, capture the toast, answer, capture, hang up (`--accept-video` answers with video when offered, `--camera-on` turns the camera on once connected). |
 | `--call-panes` | As `--call-test`, also opening the Chat and People panes. |
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |

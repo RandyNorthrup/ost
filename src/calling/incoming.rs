@@ -333,6 +333,19 @@ impl ActiveCall {
             || self.webrtc.as_ref().is_some_and(|w| w.is_muted())
     }
 
+    /// The call negotiated video we can send (camera button usable).
+    pub fn can_send_video(&self) -> bool {
+        self.webrtc.as_ref().is_some_and(|w| w.can_send_video())
+    }
+
+    /// Turn the camera on or off.
+    pub fn set_camera(&mut self, on: bool, device: Option<String>) -> Result<()> {
+        self.webrtc
+            .as_mut()
+            .context("No video in this call")?
+            .set_camera(on, device)
+    }
+
     pub async fn audio_stats(&self) -> Option<MediaStats> {
         if let Some(w) = &self.webrtc {
             let s = w.stats().await;
@@ -621,8 +634,11 @@ async fn answer_webrtc(
     microphone_on: bool,
 ) -> Result<ActiveCall> {
     let mut local = webrtc_audio::LocalAudio::prepare().await?;
-    // Video only when asked for and the caller offered H.264 we decode.
-    let video = with_video && cfg!(feature = "video") && offer.video.is_some();
+    // Accept the caller's video whenever it's offered (Teams shows it even
+    // to someone who answers with audio, and lets them turn their camera
+    // on later); `with_video` only decides whether our camera starts on.
+    let _ = with_video;
+    let video = cfg!(feature = "video") && offer.video.is_some();
     local.receive_video = video;
     let sdp = local.answer_sdp_with(&offer, video);
     debug_dump("sdp-answer", &sdp);

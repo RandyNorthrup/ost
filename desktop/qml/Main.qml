@@ -73,6 +73,7 @@ Window {
     Shortcut { sequence: "Ctrl+Shift+S"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(false) }
     Shortcut { sequence: "Ctrl+Shift+A"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(backend.callVideoOffered) }
     Shortcut { sequence: "Ctrl+Shift+D"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.declineCall() }
+    Shortcut { sequence: "Ctrl+Shift+O"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected" && backend.callCanVideo) backend.toggleCamera() }
     KeyboardShortcuts { id: shortcutsDialog }
     // For --keys-test (needs access to these by name).
     property alias kShortcuts: shortcutsDialog
@@ -532,6 +533,9 @@ Window {
         hasAudio: backend.callHasAudio
         onLeave: backend.hangUp()
         onToggleMute: backend.toggleMute()
+        canVideo: backend.callCanVideo
+        cameraOn: backend.callCameraOn
+        onToggleCamera: backend.toggleCamera()
         onClosing: if (backend.callState !== "ended") backend.hangUp()
         meeting: backend.callMeeting
         roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
@@ -579,7 +583,9 @@ Window {
             if (backend.callState === "ringing") {
                 callTestTimer.step = "ring"; callTestTimer.restart()
             } else if (backend.callState === "connected") {
-                callTestTimer.step = "talk"; callTestTimer.interval = 8000; callTestTimer.restart()
+                // --camera-on: turn the camera on once connected.
+                if (Qt.application.arguments.indexOf("--camera-on") >= 0 && backend.callCanVideo && !backend.callCameraOn) backend.toggleCamera()
+                callTestTimer.step = "talk"; callTestTimer.interval = Qt.application.arguments.indexOf("--camera-on") >= 0 ? 15000 : 8000; callTestTimer.restart()
             } else if (backend.callState === "ended" && (window.remoteHangup || window.callOut)) {
                 quitTimer.start()
             }
@@ -614,7 +620,7 @@ Window {
                     quitTimer.start()
                 })
             } else if (step === "talk") {
-                console.warn("CALL video frame shown", callWindow.remoteVideoShown)
+                console.warn("CALL video frame shown", callWindow.remoteVideoShown, "can video", backend.callCanVideo, "camera", backend.callCameraOn)
                 callWindow.contentItem.grabToImage(r => {
                     r.saveToFile(window.shotPath.replace(".png", "-call.png"))
                     if (!window.remoteHangup) {

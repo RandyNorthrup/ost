@@ -46,6 +46,9 @@ pub mod qobject {
         #[qproperty(QString, call_peer)]
         #[qproperty(QString, call_peer_id)]
         #[qproperty(bool, call_video_offered)]
+        /// The current call can carry our video, and whether the camera is on.
+        #[qproperty(bool, call_can_video)]
+        #[qproperty(bool, call_camera_on)]
         /// The call is a Teams meeting (joined from its link).
         #[qproperty(bool, call_meeting)]
         /// The meeting's participants: [{id, name, role, active, server_muted}].
@@ -183,6 +186,10 @@ pub mod qobject {
         /// Mute or unmute the microphone in the current call.
         #[qinvokable]
         fn toggle_mute(self: Pin<&mut Backend>);
+
+        /// Turn the camera on or off in the current call.
+        #[qinvokable]
+        fn toggle_camera(self: Pin<&mut Backend>);
     }
 
     #[auto_cxx_name]
@@ -327,6 +334,8 @@ pub struct BackendRust {
     call_peer_id: QString,
     call_video_offered: bool,
     call_meeting: bool,
+    call_can_video: bool,
+    call_camera_on: bool,
     call_roster_json: QString,
     call_thread_id: QString,
     user_mri: QString,
@@ -421,6 +430,15 @@ fn spawn_call_stats_logger() {
 
 /// How many calls the Calls history shows.
 const CALL_HISTORY_LIMIT: usize = 100;
+
+/// The camera chosen in Settings > Devices (a V4L2 path), else the default.
+fn camera_device() -> Option<String> {
+    load_settings()
+        .get("cameraDevice")
+        .and_then(|v| v.as_str())
+        .filter(|d| d.starts_with("/dev/video") && d[10..].bytes().all(|b| b.is_ascii_digit()))
+        .map(str::to_string)
+}
 
 /// Whether a pushed message gets a desktop notification, as Teams decides
 /// by default: never your own, nor in the chat you're looking at; chat
@@ -1098,13 +1116,26 @@ impl qobject::Backend {
             }
             .await;
             match result {
-                Ok(active) => {
+                Ok(mut active) => {
                     let has_audio = active.has_audio();
-                    tracing::info!(has_audio, "call answered");
+                    let can_video = active.can_send_video();
+                    // Accept with video: the camera starts on.
+                    let camera = with_video
+                        && can_video
+                        && match active.set_camera(true, camera_device()) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                tracing::info!("camera: {}", short_error(&e));
+                                false
+                            }
+                        };
+                    tracing::info!(has_audio, can_video, camera, "call answered");
                     call_slot().lock().await.active = Some(active);
                     spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
+                        this.as_mut().set_call_can_video(can_video);
+                        this.as_mut().set_call_camera_on(camera);
                         this.as_mut().set_call_muted(false);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
@@ -1326,6 +1357,29 @@ impl qobject::Backend {
         });
     }
 
+    pub fn toggle_camera(mut self: Pin<&mut Self>) {
+        let on = !self.rust().call_camera_on;
+        let device = camera_device();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let result = match slot.active.as_mut() {
+                Some(call) => call.set_camera(on, device),
+                None => Err(anyhow::anyhow!("Video isn't available in this call")),
+            };
+            drop(slot);
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().set_call_camera_on(on),
+                Err(e) => {
+                    tracing::info!("camera: {}", short_error(&e));
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Camera: {}", short_error(&e)).as_str(),
+                    ));
+                }
+            });
+        });
+    }
+
     pub fn toggle_mute(mut self: Pin<&mut Self>) {
         let muted = !self.rust().call_muted;
         self.as_mut().set_call_muted(muted);
@@ -1345,6 +1399,8 @@ impl qobject::Backend {
         if !self.rust().call_state.is_empty() {
             self.as_mut().set_call_state(QString::from("ended"));
         }
+        self.as_mut().set_call_camera_on(false);
+        self.as_mut().set_call_can_video(false);
     }
 
     /// Poll the presence of 1:1 chat partners every minute (Teams shows a

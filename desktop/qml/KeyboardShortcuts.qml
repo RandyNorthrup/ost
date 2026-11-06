@@ -41,7 +41,7 @@ Popup {
             ["Open 3rd tab on chat header", "Alt+3"], ["Open 4th tab on chat header", "Alt+4"],
             ["Open 5th tab on chat header", "Alt+5"] ] },
         { title: "Meetings, Calls and Calendar", items: [
-            ["Toggle mute", "Ctrl+Shift+M"], ["Leave meeting or call", "Ctrl+Shift+H"],
+            ["Toggle mute", "Ctrl+Shift+M"], ["Toggle video", "Ctrl+Shift+O"], ["Leave meeting or call", "Ctrl+Shift+H"],
             ["Start audio call", "Alt+Shift+A"], ["Accept audio call", "Ctrl+Shift+S"],
             ["Accept video call", "Ctrl+Shift+A"], ["Decline call", "Ctrl+Shift+D"],
             ["Schedule a meeting", "Alt+N"] ] }
