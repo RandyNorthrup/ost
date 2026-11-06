@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtWebEngine
 import com.ost.desktop
 
 Window {
@@ -25,6 +26,15 @@ Window {
     // Light or dark, as chosen in Settings > Appearance (default: the
     // system's, like Teams' "Follow operating system theme"). --theme=dark
     // forces one for captures.
+    // The one web profile every embedded page shares (apps, channel
+    // Pages): signed in once, stored on disk. Qt allows one profile per
+    // storage name, so the views all take this one.
+    WebEngineProfilePrototype {
+        id: webAppsProfile
+        storageName: "ost-apps"
+        persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
+        httpCacheType: WebEngineProfile.DiskHttpCache
+    }
     Theme {
         id: theme
         readonly property string forced: (Qt.application.arguments.find(a => a.startsWith("--theme=")) || "").slice(8)
@@ -681,6 +691,29 @@ Window {
             if (callWindow.shareShown) shareShot.start()
         }
     }
+    // Without a capture path, --open-chat=<id> [--tab=<name>] just opens
+    // that chat or channel (and tab) and leaves OST running.
+    Timer {
+        running: window.shotPath.length === 0 && backend.signedIn && !opened
+            && Qt.application.arguments.some(a => a.startsWith("--open-chat="))
+        property bool opened: false
+        interval: 2000; repeat: true
+        onTriggered: {
+            const id = Qt.application.arguments.find(a => a.startsWith("--open-chat=")).slice(12)
+            if (backend.currentChatId !== id) {
+                const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+                const ch = teams.reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+                const pick = ch || chats.find(c => c.id === id)
+                if (pick) backend.selectChat(pick.id, pick.name)
+                return
+            }
+            const tab = (Qt.application.arguments.find(a => a.startsWith("--tab=")) || "").slice(6)
+            if (tab && conversation.tabNames.indexOf(tab) < 0) return
+            if (tab) conversation.tab = tab
+            opened = true
+        }
+    }
     // --share-test: once connected, share a screen (the desktop's picker
     // asks what), keep it up for 30 s, then stop.
     readonly property bool shareTest: Qt.application.arguments.indexOf("--share-test") >= 0
@@ -1124,7 +1157,9 @@ Window {
         onTriggered: {
             if (step === 0) rail.openApp(Qt.application.arguments.indexOf("--webapp-help") >= 0 ? "help" : "whiteboard")
             else if (step === 5) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-webapp.png")))
-            else if (step === 6) Qt.quit()
+            // A second view (another app) shares the profile.
+            else if (step === 6) rail.openApp("clipchamp")
+            else if (step === 8) { console.warn("WEBAPP second view open"); Qt.quit() }
             step++
         }
     }

@@ -4,8 +4,8 @@ import QtWebEngine
 
 // A web app Teams embeds (Whiteboard, Clipchamp, Help), shown in place as
 // Teams shows it: the app's header (icon and name, Open in browser), then
-// the page. Pages keep their sign-in in OST's own web profile (stored on
-// disk, like Teams'), only https pages load, and pop-ups (sign-in)
+// the page. Pages keep their sign-in in OST's own web profile (one for the
+// whole app, in Main.qml; stored on disk, like Teams'), only https pages load, and pop-ups (sign-in)
 // open in a window of their own.
 Item {
     id: root
@@ -38,16 +38,9 @@ Item {
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
     }
 
-    WebEngineProfilePrototype {
-        id: webProfile
-        storageName: "ost-apps"
-        persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
-        httpCacheType: WebEngineProfile.DiskHttpCache
-    }
-
     property bool ready: false
     Component.onCompleted: {
-        web.profile = webProfile.instance()
+        web.profile = webAppsProfile.instance()
         web.url = root.home
         ready = true
     }
