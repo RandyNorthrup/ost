@@ -127,7 +127,7 @@ fn str_at(v: &serde_json::Value, pointer: &str) -> Option<String> {
 
 /// Developer aid: with `OST_TROUTER_DUMP_DIR` set, keep call SDP for
 /// protocol work (owner-only files; off by default).
-fn debug_dump(kind: &str, text: &str) {
+pub(crate) fn debug_dump(kind: &str, text: &str) {
     let Some(dir) = std::env::var_os("OST_TROUTER_DUMP_DIR") else {
         return;
     };

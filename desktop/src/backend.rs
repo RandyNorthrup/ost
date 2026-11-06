@@ -1420,13 +1420,15 @@ impl qobject::Backend {
                 Ok(call) => {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
-                    tracing::info!(has_audio, can_dtmf, "outgoing call connected");
+                    let can_video = call.can_send_video();
+                    tracing::info!(has_audio, can_dtmf, can_video, "outgoing call connected");
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
+                        this.as_mut().set_call_can_video(can_video);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }
@@ -1603,12 +1605,14 @@ impl qobject::Backend {
         let device = camera_device();
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let mut slot = call_slot().lock().await;
-            let result = match slot.active.as_mut() {
-                Some(call) => call.set_camera(on, device),
-                None => Err(anyhow::anyhow!("Video isn't available in this call")),
+            let mut guard = call_slot().lock().await;
+            let slot = &mut *guard;
+            let result = match (slot.active.as_mut(), slot.outgoing.as_mut()) {
+                (Some(call), _) => call.set_camera(on, device),
+                (None, Some(call)) => call.set_camera(on, device),
+                _ => Err(anyhow::anyhow!("Video isn't available in this call")),
             };
-            drop(slot);
+            drop(guard);
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => this.as_mut().set_call_camera_on(on),
                 Err(e) => {

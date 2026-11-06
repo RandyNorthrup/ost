@@ -667,7 +667,7 @@ Window {
             if (!backend.currentChatId && chats.length > 0) {
                 // --open-chat=<id> picks whom to call; else the first chat.
                 const want = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
-                const c = chats.find(c => c.id === want) || chats[0]
+                const c = chats.find(c => c.id === want || c.name === want) || chats[0]
                 backend.selectChat(c.id, c.name); restart(); return
             }
             if (window.outStarted) return

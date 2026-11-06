@@ -213,6 +213,19 @@ impl OutgoingCall {
         self.media.as_ref().is_some_and(|m| m.can_dtmf())
     }
 
+    /// The call negotiated video we can send (camera button usable).
+    pub fn can_send_video(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.can_send_video())
+    }
+
+    /// Turn the camera on or off.
+    pub fn set_camera(&mut self, on: bool, device: Option<String>) -> Result<()> {
+        self.media
+            .as_mut()
+            .context("No video in this call")?
+            .set_camera(on, device)
+    }
+
     /// Send a dial-pad key as a tone.
     pub fn send_dtmf(&self, key: char) -> Result<()> {
         self.media
@@ -536,8 +549,16 @@ async fn start(
     let (surl, endpoint_id) =
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
 
-    let local = LocalAudio::prepare().await?;
-    let offer = local.offer_sdp();
+    let mut local = LocalAudio::prepare().await?;
+    // 1:1 calls offer video too (Teams' calls do); meetings and group
+    // calls stay audio-only, since a media processor sends video only to
+    // those who subscribe to it.
+    let offer = if matches!(target, Target::Person(_)) && cfg!(feature = "video") {
+        local.receive_video = true;
+        local.offer_sdp_with_video()
+    } else {
+        local.offer_sdp()
+    };
     let caller_mri = format!("8:orgid:{oid}");
     let participant_id = uuid::Uuid::new_v4().to_string();
     let chain_id = uuid::Uuid::new_v4().to_string();
@@ -655,6 +676,8 @@ async fn start(
     // and hang-up); a callback re-registration on it is not something the
     // web client does.
 
+    super::incoming::debug_dump("sdp-call-offer", &offer);
+    super::incoming::debug_dump("sdp-call-answer", &acceptance.sdp);
     let media = match WebRtcOffer::parse(&acceptance.sdp) {
         Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer).await {
             Ok(m) => {

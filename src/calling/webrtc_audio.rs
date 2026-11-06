@@ -34,6 +34,8 @@ use super::audio;
 
 /// RTP payload type for PCMU.
 const PT_PCMU: u8 = 0;
+/// Our H.264 payload type when we offer video.
+const PT_H264_OFFER: u8 = 107;
 /// Our payload type for DTMF (RFC 4733 telephone-event/8000) when we offer.
 const PT_DTMF_DEFAULT: u8 = 101;
 /// How long one dial-pad tone lasts, in 20 ms packets (160 ms).
@@ -515,6 +517,24 @@ impl LocalAudio {
         s
     }
 
+    /// An offer with audio and H.264 video (sendrecv), bundled, for a 1:1
+    /// call: the callee's camera shows when they turn it on, and ours can
+    /// go on and off without renegotiating.
+    pub fn offer_sdp_with_video(&self) -> String {
+        let port = self.socket.local_addr().map(|a| a.port()).unwrap_or(9);
+        let addr = self.public_address();
+        let session_id = u64::from(self.ssrc) << 16 | 1;
+        let mut s = String::new();
+        s.push_str("v=0\r\n");
+        s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
+        s.push_str("s=-\r\nt=0 0\r\n");
+        s.push_str("a=group:BUNDLE 0 1\r\n");
+        s.push_str("a=msid-semantic: WMS ost\r\n");
+        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
+        s.push_str(&self.video_section(port, &addr, "1", "actpass", PT_H264_OFFER, "sendrecv"));
+        s
+    }
+
     fn public_address(&self) -> String {
         self.candidates
             .iter()
@@ -551,6 +571,8 @@ impl LocalAudio {
         s.push_str(&format!(
             "a=fmtp:{pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f\r\n"
         ));
+        s.push_str("a=x-signaling-fb:* x-message app send:src recv:src,vc\r\n");
+        s.push_str("a=rtcp-rsize\r\n");
         s.push_str(&format!("a=rtcp-fb:{pt} nack pli\r\n"));
         s.push_str(&format!("a=rtcp-fb:{pt} ccm fir\r\n"));
         s.push_str("a=label:main-video\r\n");
@@ -598,6 +620,8 @@ impl LocalAudio {
         }
         s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", self.ssrc));
         s.push_str(&format!("a=ssrc:{} cname:ost\r\n", self.ssrc));
+        // Teams pairs streams by label.
+        s.push_str("a=label:main-audio\r\n");
         s
     }
 
