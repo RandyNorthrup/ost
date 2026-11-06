@@ -748,27 +748,60 @@ impl ActiveCall {
             && self.webrtc.as_ref().is_some_and(|w| w.can_share())
     }
 
-    /// Offer to start (or stop) sending our screen; the answer comes back
-    /// as a `call/mediaAnswer/` event for [`Self::take_share_answer`].
-    pub async fn offer_share(&mut self, auth: &CallAuth, on: bool) -> Result<()> {
-        let me = self.me.as_ref().context("Sharing needs a Teams call")?;
+    /// Whether we can change our media with re-offers (camera, screen).
+    pub fn can_reoffer(&self) -> bool {
+        self.me.is_some() && self.renegotiation_link.is_some() && self.webrtc.is_some()
+    }
+
+    /// Offer a change to what we send (camera or screen on or off); the
+    /// answer comes back as a `call/mediaAnswer/` event for
+    /// [`Self::take_reoffer_answer`].
+    pub async fn offer_media(
+        &mut self,
+        auth: &CallAuth,
+        change: webrtc_audio::Reoffer,
+    ) -> Result<()> {
+        let me = self.me.as_ref().context("This needs a Teams call")?;
         let link = self
             .renegotiation_link
             .as_deref()
             .context("This call can't renegotiate media")?;
-        let w = self.webrtc.as_ref().context("No media to share on")?;
-        let sdp = w.share_reoffer(on)?;
-        debug_dump("sdp-share-offer", &sdp);
-        request_reoffer(
+        let w = self.webrtc.as_ref().context("No media to change")?;
+        let sdp = w.reoffer(change)?;
+        let (camera, share) = w.negotiated_after(change);
+        debug_dump("sdp-reoffer-ours", &sdp);
+        let sent = request_reoffer(
             &auth.http,
             &auth.skype_token,
             link,
             me.json(),
             |p| me.callback(p),
             &sdp,
-            share_modalities(on, w.camera_on()),
+            share_modalities(share, camera),
         )
-        .await
+        .await;
+        if sent.is_err() {
+            w.cancel_reoffer();
+        }
+        sent
+    }
+
+    /// Whether a re-offer of ours is waiting for its answer.
+    pub fn reoffer_pending(&self) -> bool {
+        self.webrtc.as_ref().is_some_and(|w| w.reoffer_pending())
+    }
+
+    /// The answer to our re-offer: what it was for, and whether it was
+    /// taken.
+    pub fn take_reoffer_answer(
+        &mut self,
+        answer: &str,
+    ) -> Result<(super::webrtc_audio::Reoffer, bool)> {
+        debug_dump("sdp-reanswer-theirs", answer);
+        self.webrtc
+            .as_ref()
+            .context("No media to change")?
+            .take_reoffer_answer(answer)
     }
 
     /// Acknowledge the other side's answer to our re-offer, as Teams does
@@ -786,27 +819,11 @@ impl ActiveCall {
         Ok(())
     }
 
-    /// The other side refused our share re-offer.
-    pub fn cancel_share_offer(&self) {
+    /// The other side refused our re-offer.
+    pub fn cancel_reoffer(&self) {
         if let Some(w) = self.webrtc.as_ref() {
-            w.cancel_share_offer();
+            w.cancel_reoffer();
         }
-    }
-
-    /// Whether our share re-offer is waiting for its answer.
-    pub fn share_offer_pending(&self) -> bool {
-        self.webrtc
-            .as_ref()
-            .is_some_and(|w| w.share_offer_pending())
-    }
-
-    /// The answer to our share re-offer: whether it takes our screen.
-    pub fn take_share_answer(&mut self, answer: &str) -> Result<bool> {
-        debug_dump("sdp-share-answer", answer);
-        self.webrtc
-            .as_ref()
-            .context("No media to share on")?
-            .take_share_answer(answer)
     }
 
     /// Start sending a screen capture.
@@ -1157,9 +1174,10 @@ async fn answer_webrtc(
     // Accept the caller's video whenever it's offered (Teams shows it even
     // to someone who answers with audio, and lets them turn their camera
     // on later); `with_video` only decides whether our camera starts on.
-    let _ = with_video;
     let video = cfg!(feature = "video") && offer.video.is_some();
     local.receive_video = video;
+    // Our video line sends from the start only when the camera starts on.
+    local.camera_on = video && with_video;
     let sdp = local.answer_sdp_with(&offer, video);
     debug_dump("sdp-answer", &sdp);
     match &me {

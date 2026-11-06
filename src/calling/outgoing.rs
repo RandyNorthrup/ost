@@ -225,41 +225,56 @@ impl OutgoingCall {
         self.renegotiation_link.is_some() && self.media.as_ref().is_some_and(|m| m.can_share())
     }
 
-    /// Offer to start (or stop) sending our screen; the answer comes back
-    /// as a `call/mediaAnswer/` event for [`Self::take_share_answer`].
-    pub async fn offer_share(&mut self, on: bool) -> Result<()> {
+    /// Whether we can change our media with re-offers (camera, screen).
+    pub fn can_reoffer(&self) -> bool {
+        self.renegotiation_link.is_some() && self.media.is_some()
+    }
+
+    /// Offer a change to what we send (camera or screen on or off); the
+    /// answer comes back as a `call/mediaAnswer/` event for
+    /// [`Self::take_reoffer_answer`].
+    pub async fn offer_media(&mut self, change: super::webrtc_audio::Reoffer) -> Result<()> {
         let link = self
             .renegotiation_link
             .clone()
             .context("This call can't renegotiate media")?;
-        let m = self.media.as_ref().context("No media to share on")?;
-        let sdp = m.share_reoffer(on)?;
-        super::incoming::debug_dump("sdp-share-offer", &sdp);
+        let m = self.media.as_ref().context("No media to change")?;
+        let sdp = m.reoffer(change)?;
+        let (camera, share) = m.negotiated_after(change);
+        super::incoming::debug_dump("sdp-reoffer-ours", &sdp);
         let (surl, epid) = self.callbacks.clone();
-        super::incoming::request_reoffer(
+        let sent = super::incoming::request_reoffer(
             &self.http,
             &self.skype_token,
             &link,
             self.me.0.clone(),
             |p| signaling::trouter_callback(&surl, &epid, p),
             &sdp,
-            super::incoming::share_modalities(on, m.camera_on()),
+            super::incoming::share_modalities(share, camera),
         )
-        .await
+        .await;
+        if sent.is_err() {
+            m.cancel_reoffer();
+        }
+        sent
     }
 
-    /// Whether our share re-offer is waiting for its answer.
-    pub fn share_offer_pending(&self) -> bool {
-        self.media.as_ref().is_some_and(|m| m.share_offer_pending())
+    /// Whether a re-offer of ours is waiting for its answer.
+    pub fn reoffer_pending(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.reoffer_pending())
     }
 
-    /// The answer to our share re-offer: whether it takes our screen.
-    pub fn take_share_answer(&mut self, answer: &str) -> Result<bool> {
-        super::incoming::debug_dump("sdp-share-answer", answer);
+    /// The answer to our re-offer: what it was for, and whether it was
+    /// taken.
+    pub fn take_reoffer_answer(
+        &mut self,
+        answer: &str,
+    ) -> Result<(super::webrtc_audio::Reoffer, bool)> {
+        super::incoming::debug_dump("sdp-reanswer-theirs", answer);
         self.media
             .as_ref()
-            .context("No media to share on")?
-            .take_share_answer(answer)
+            .context("No media to change")?
+            .take_reoffer_answer(answer)
     }
 
     /// Acknowledge the answer to our re-offer, as Teams does.
@@ -275,10 +290,10 @@ impl OutgoingCall {
         Ok(())
     }
 
-    /// The other side refused our share re-offer.
-    pub fn cancel_share_offer(&self) {
+    /// The other side refused our re-offer.
+    pub fn cancel_reoffer(&self) {
         if let Some(m) = self.media.as_ref() {
-            m.cancel_share_offer();
+            m.cancel_reoffer();
         }
     }
 

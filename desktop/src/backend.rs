@@ -17,6 +17,7 @@ use serde_json::json;
 use teams_cli::api::{self, client::TeamsClient};
 use teams_cli::calling::incoming::{ActiveCall, CallAuth, IncomingCall};
 use teams_cli::calling::outgoing::{self, OutgoingCall};
+use teams_cli::calling::webrtc_audio::Reoffer;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -618,61 +619,67 @@ struct CallSlot {
     )>,
 }
 
-/// The connected call, answered or placed, for screen sharing.
-enum SharingCall<'a> {
+/// The connected call, answered or placed: what changing our media
+/// (camera, screen) needs from it.
+enum MediaCall<'a> {
     Answered(&'a mut ActiveCall),
     Placed(&'a mut OutgoingCall),
 }
 
-impl SharingCall<'_> {
-    fn of(slot: &mut CallSlot) -> Option<SharingCall<'_>> {
+macro_rules! either {
+    ($self:expr, $c:ident => $e:expr) => {
+        match $self {
+            MediaCall::Answered($c) => $e,
+            MediaCall::Placed($c) => $e,
+        }
+    };
+}
+
+impl MediaCall<'_> {
+    fn of(slot: &mut CallSlot) -> Option<MediaCall<'_>> {
         match (slot.active.as_mut(), slot.outgoing.as_mut()) {
-            (Some(c), _) => Some(SharingCall::Answered(c)),
-            (None, Some(c)) => Some(SharingCall::Placed(c)),
+            (Some(c), _) => Some(MediaCall::Answered(c)),
+            (None, Some(c)) => Some(MediaCall::Placed(c)),
             _ => None,
         }
     }
 
-    async fn offer_share(&mut self, on: bool) -> anyhow::Result<()> {
+    async fn offer_media(&mut self, change: Reoffer) -> anyhow::Result<()> {
         match self {
-            SharingCall::Answered(c) => c.offer_share(&CallAuth::load().await?, on).await,
-            SharingCall::Placed(c) => c.offer_share(on).await,
+            MediaCall::Answered(c) => c.offer_media(&CallAuth::load().await?, change).await,
+            MediaCall::Placed(c) => c.offer_media(change).await,
         }
     }
 
     async fn acknowledge_answer(&self, link: &str) -> anyhow::Result<()> {
         match self {
-            SharingCall::Answered(c) => c.acknowledge_answer(&CallAuth::load().await?, link).await,
-            SharingCall::Placed(c) => c.acknowledge_answer(link).await,
+            MediaCall::Answered(c) => c.acknowledge_answer(&CallAuth::load().await?, link).await,
+            MediaCall::Placed(c) => c.acknowledge_answer(link).await,
         }
+    }
+
+    fn can_reoffer(&self) -> bool {
+        either!(self, c => c.can_reoffer())
     }
 
     fn can_share(&self) -> bool {
-        match self {
-            SharingCall::Answered(c) => c.can_share(),
-            SharingCall::Placed(c) => c.can_share(),
-        }
+        either!(self, c => c.can_share())
     }
 
-    fn share_offer_pending(&self) -> bool {
-        match self {
-            SharingCall::Answered(c) => c.share_offer_pending(),
-            SharingCall::Placed(c) => c.share_offer_pending(),
-        }
+    fn reoffer_pending(&self) -> bool {
+        either!(self, c => c.reoffer_pending())
     }
 
-    fn take_share_answer(&mut self, answer: &str) -> anyhow::Result<bool> {
-        match self {
-            SharingCall::Answered(c) => c.take_share_answer(answer),
-            SharingCall::Placed(c) => c.take_share_answer(answer),
-        }
+    fn take_reoffer_answer(&mut self, answer: &str) -> anyhow::Result<(Reoffer, bool)> {
+        either!(self, c => c.take_reoffer_answer(answer))
     }
 
-    fn cancel_share_offer(&self) {
-        match self {
-            SharingCall::Answered(c) => c.cancel_share_offer(),
-            SharingCall::Placed(c) => c.cancel_share_offer(),
-        }
+    fn cancel_reoffer(&self) {
+        either!(self, c => c.cancel_reoffer())
+    }
+
+    fn set_camera(&mut self, on: bool) -> anyhow::Result<()> {
+        either!(self, c => c.set_camera(on, camera_device()))
     }
 
     fn start_share(
@@ -680,49 +687,37 @@ impl SharingCall<'_> {
         capture: teams_cli::calling::screencast::ScreenCapture,
         frames: std::sync::mpsc::Receiver<teams_cli::calling::camera::YuvFrame>,
     ) -> anyhow::Result<()> {
-        match self {
-            SharingCall::Answered(c) => c.start_share(capture, frames),
-            SharingCall::Placed(c) => c.start_share(capture, frames),
-        }
+        either!(self, c => c.start_share(capture, frames))
     }
 
     fn stop_share(&mut self) {
-        match self {
-            SharingCall::Answered(c) => c.stop_share(),
-            SharingCall::Placed(c) => c.stop_share(),
-        }
+        either!(self, c => c.stop_share())
     }
 
     fn is_sharing(&self) -> bool {
-        match self {
-            SharingCall::Answered(c) => c.is_sharing(),
-            SharingCall::Placed(c) => c.is_sharing(),
-        }
+        either!(self, c => c.is_sharing())
     }
 
     fn share_ended(&self) -> bool {
-        match self {
-            SharingCall::Answered(c) => c.share_ended(),
-            SharingCall::Placed(c) => c.share_ended(),
-        }
+        either!(self, c => c.share_ended())
     }
 }
 
 /// Ask the desktop what to share (its picker), then offer it to the call.
-/// Sending starts when Teams answers ([`share_reply`]).
+/// Sending starts when Teams answers ([`reoffer_reply`]).
 async fn offer_screen() -> anyhow::Result<()> {
     // Only open the desktop's picker when the call can take a screen.
     {
         let mut slot = call_slot().lock().await;
-        let call = SharingCall::of(&mut slot).context("The call has ended")?;
+        let call = MediaCall::of(&mut slot).context("The call has ended")?;
         anyhow::ensure!(call.can_share(), "This call can't take a shared screen");
     }
     let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::start().await?;
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
-    SharingCall::of(slot)
+    MediaCall::of(slot)
         .context("The call has ended")?
-        .offer_share(true)
+        .offer_media(Reoffer::Share(true))
         .await?;
     slot.share_pending = Some((capture, frames));
     Ok(())
@@ -733,21 +728,22 @@ async fn stop_screen() -> anyhow::Result<()> {
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
     slot.share_pending = None;
-    let mut call = SharingCall::of(slot).context("The call has ended")?;
+    let mut call = MediaCall::of(slot).context("The call has ended")?;
     call.stop_share();
-    call.offer_share(false).await
+    call.offer_media(Reoffer::Share(false)).await
 }
 
-/// Teams' reply to our share re-offer. Returns false when it isn't one
-/// (some other mediaAnswer), so the event is handled as before.
-async fn share_reply(
+/// Teams' reply to a re-offer of ours (camera or screen). Returns false
+/// when it isn't one (some other mediaAnswer), so the event is handled as
+/// before.
+async fn reoffer_reply(
     qt: &cxx_qt::CxxQtThread<qobject::Backend>,
     reply: anyhow::Result<teams_cli::calling::incoming::ReofferAnswer>,
 ) -> bool {
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
     let pending = slot.share_pending.take();
-    let Some(mut call) = SharingCall::of(slot).filter(|c| c.share_offer_pending()) else {
+    let Some(mut call) = MediaCall::of(slot).filter(|c| c.reoffer_pending()) else {
         slot.share_pending = pending;
         return false;
     };
@@ -756,37 +752,55 @@ async fn share_reply(
             if let Some(link) = &answer.ack
                 && let Err(e) = call.acknowledge_answer(link).await
             {
-                tracing::warn!("share: {}", short_error(&e));
+                tracing::warn!("re-offer: {}", short_error(&e));
             }
-            call.take_share_answer(&answer.sdp)
+            call.take_reoffer_answer(&answer.sdp)
         }
         Err(e) => {
-            call.cancel_share_offer();
+            call.cancel_reoffer();
             Err(e)
         }
     };
-    let sharing = match (outcome, pending) {
-        (Ok(true), Some((capture, frames))) => call.start_share(capture, frames).map(|()| true),
-        (Ok(false), Some(_)) => Err(anyhow::anyhow!("The call didn't take your screen")),
-        // The answer to stopping.
-        (Ok(_), None) => Ok(false),
+    // What the UI shows afterwards: (camera, sharing), when they change.
+    let result: anyhow::Result<(Option<bool>, Option<bool>)> = match (outcome, pending) {
+        (Ok((Reoffer::Share(true), true)), Some((capture, frames))) => call
+            .start_share(capture, frames)
+            .map(|()| (None, Some(true))),
+        (Ok((Reoffer::Share(true), _)), _) => {
+            Err(anyhow::anyhow!("The call didn't take your screen"))
+        }
+        (Ok((Reoffer::Share(false), _)), _) => Ok((None, Some(false))),
+        (Ok((Reoffer::Camera(true), true)), _) => {
+            call.set_camera(true).map(|()| (Some(true), None))
+        }
+        (Ok((Reoffer::Camera(true), false)), _) => {
+            Err(anyhow::anyhow!("The call didn't take your camera"))
+        }
+        (Ok((Reoffer::Camera(false), _)), _) => Ok((Some(false), None)),
         (Err(e), _) => Err(e),
     };
     drop(guard);
-    match sharing {
-        Ok(true) => {
-            tracing::info!("sharing the screen");
-            let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(true));
-            spawn_share_watch(qt.clone());
+    match result {
+        Ok((camera, sharing)) => {
+            tracing::info!(?camera, ?sharing, "media changed");
+            let _ = qt.queue(move |mut this| {
+                if let Some(c) = camera {
+                    this.as_mut().set_call_camera_on(c);
+                }
+                if let Some(s) = sharing {
+                    this.as_mut().set_call_sharing(s);
+                }
+            });
+            if sharing == Some(true) {
+                spawn_share_watch(qt.clone());
+            }
         }
-        Ok(false) => tracing::info!("screen sharing stopped"),
         Err(e) => {
-            tracing::warn!("share: {}", short_error(&e));
+            tracing::warn!("re-offer: {}", short_error(&e));
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_call_sharing(false);
-                this.as_mut().set_status_text(QString::from(
-                    format!("Share: {}", short_error(&e)).as_str(),
-                ));
+                this.as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str()));
             });
         }
     }
@@ -800,7 +814,7 @@ fn spawn_share_watch(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let mut slot = call_slot().lock().await;
-            let Some(call) = SharingCall::of(&mut slot) else {
+            let Some(call) = MediaCall::of(&mut slot) else {
                 return;
             };
             if !call.is_sharing() {
@@ -1126,7 +1140,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         return;
     }
     if let Some(reply) = teams_cli::calling::incoming::reoffer_reply(json)
-        && share_reply(qt, reply).await
+        && reoffer_reply(qt, reply).await
     {
         return;
     }
@@ -1929,14 +1943,32 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let mut guard = call_slot().lock().await;
             let slot = &mut *guard;
-            let result = match (slot.active.as_mut(), slot.outgoing.as_mut()) {
-                (Some(call), _) => call.set_camera(on, device),
-                (None, Some(call)) => call.set_camera(on, device),
-                _ => Err(anyhow::anyhow!("Video isn't available in this call")),
+            let Some(mut call) = MediaCall::of(slot) else {
+                return;
+            };
+            // As Teams does, the camera line sends only while the camera
+            // is on: turning it on is offered first (it starts once
+            // answered, in reoffer_reply); turning it off stops it, then
+            // tells the call.
+            let result = if call.can_reoffer() {
+                if on {
+                    call.offer_media(Reoffer::Camera(true)).await.map(|()| None)
+                } else {
+                    match call.set_camera(false) {
+                        Ok(()) => call
+                            .offer_media(Reoffer::Camera(false))
+                            .await
+                            .map(|()| Some(false)),
+                        Err(e) => Err(e),
+                    }
+                }
+            } else {
+                either!(&mut call, c => c.set_camera(on, device)).map(|()| Some(on))
             };
             drop(guard);
             let _ = qt.queue(move |mut this| match result {
-                Ok(()) => this.as_mut().set_call_camera_on(on),
+                Ok(Some(c)) => this.as_mut().set_call_camera_on(c),
+                Ok(None) => {}
                 Err(e) => {
                     tracing::info!("camera: {}", short_error(&e));
                     this.as_mut().set_status_text(QString::from(
