@@ -304,10 +304,9 @@ pub(crate) async fn request_reoffer(
                 "mediaAnswer": cb("call/mediaAnswer/"),
                 "rejection": cb("call/rejection/"),
             },
-            // Teams' media stack takes offers only in its own content type.
             "mediaContent": {
                 "blob": sdp,
-                "contentType": "application/sdp-ngc-1.0",
+                "contentType": signaling::OFFER_CONTENT_TYPE,
                 "newOffer": false,
                 "escalationOccurring": false,
             },

@@ -35,6 +35,8 @@ pub struct OutgoingCall {
     hold_link: Option<String>,
     resume_link: Option<String>,
     transfer_link: Option<String>,
+    /// Where our own re-offers go (`links.mediaRenegotiation`).
+    renegotiation_link: Option<String>,
     /// Meetings: the conversation's publishState / removeState links
     /// (Raise hand), and the id of our raised hand.
     state_links: (Option<String>, Option<String>),
@@ -218,6 +220,98 @@ impl OutgoingCall {
         self.media.as_ref().is_some_and(|m| m.can_send_video())
     }
 
+    /// We can share our screen in this call (Share usable).
+    pub fn can_share(&self) -> bool {
+        self.renegotiation_link.is_some() && self.media.as_ref().is_some_and(|m| m.can_share())
+    }
+
+    /// Offer to start (or stop) sending our screen; the answer comes back
+    /// as a `call/mediaAnswer/` event for [`Self::take_share_answer`].
+    pub async fn offer_share(&mut self, on: bool) -> Result<()> {
+        let link = self
+            .renegotiation_link
+            .clone()
+            .context("This call can't renegotiate media")?;
+        let m = self.media.as_ref().context("No media to share on")?;
+        let sdp = m.share_reoffer(on)?;
+        super::incoming::debug_dump("sdp-share-offer", &sdp);
+        let (surl, epid) = self.callbacks.clone();
+        super::incoming::request_reoffer(
+            &self.http,
+            &self.skype_token,
+            &link,
+            self.me.0.clone(),
+            |p| signaling::trouter_callback(&surl, &epid, p),
+            &sdp,
+            super::incoming::share_modalities(on, m.camera_on()),
+        )
+        .await
+    }
+
+    /// Whether our share re-offer is waiting for its answer.
+    pub fn share_offer_pending(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.share_offer_pending())
+    }
+
+    /// The answer to our share re-offer: whether it takes our screen.
+    pub fn take_share_answer(&mut self, answer: &str) -> Result<bool> {
+        super::incoming::debug_dump("sdp-share-answer", answer);
+        self.media
+            .as_ref()
+            .context("No media to share on")?
+            .take_share_answer(answer)
+    }
+
+    /// Acknowledge the answer to our re-offer, as Teams does.
+    pub async fn acknowledge_answer(&self, link: &str) -> Result<()> {
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            link,
+            &serde_json::Value::Null,
+            "Media acknowledgement",
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// The other side refused our share re-offer.
+    pub fn cancel_share_offer(&self) {
+        if let Some(m) = self.media.as_ref() {
+            m.cancel_share_offer();
+        }
+    }
+
+    /// Start sending a screen capture.
+    #[cfg(feature = "screencast")]
+    pub fn start_share(
+        &mut self,
+        capture: super::screencast::ScreenCapture,
+        frames: std::sync::mpsc::Receiver<super::camera::YuvFrame>,
+    ) -> Result<()> {
+        self.media
+            .as_mut()
+            .context("No media to share on")?
+            .start_share(capture, frames)
+    }
+
+    /// Stop sending our screen.
+    pub fn stop_share(&mut self) {
+        if let Some(m) = self.media.as_mut() {
+            m.stop_share();
+        }
+    }
+
+    /// Whether we're sending our screen.
+    pub fn is_sharing(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.is_sharing())
+    }
+
+    /// Whether our shared screen went away by itself.
+    pub fn share_ended(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.share_ended())
+    }
+
     /// Turn the camera on or off.
     pub fn set_camera(&mut self, on: bool, device: Option<String>) -> Result<()> {
         self.media
@@ -369,6 +463,8 @@ struct Acceptance {
     call_leg: Option<String>,
     hold: Option<String>,
     transfer: Option<String>,
+    /// Where our re-offers go (screen sharing).
+    renegotiation: Option<String>,
     end: Option<String>,
 }
 
@@ -415,6 +511,7 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
         call_leg: link("callLeg"),
         hold: link("hold"),
         transfer: link("transfer"),
+        renegotiation: link("mediaRenegotiation"),
         end: link("end"),
     }))
 }
@@ -759,6 +856,9 @@ async fn start(
         hold_link: acceptance.hold,
         resume_link: None,
         transfer_link: acceptance.transfer,
+        renegotiation_link: acceptance
+            .renegotiation
+            .filter(|l| super::incoming::is_service_link(l)),
         state_links,
         hand: None,
         state_seq: 0,

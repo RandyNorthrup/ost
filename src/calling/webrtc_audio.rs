@@ -36,6 +36,11 @@ use super::audio;
 const PT_PCMU: u8 = 0;
 /// Our H.264 payload type when we offer video.
 const PT_H264_OFFER: u8 = 107;
+/// The H.264 payload type we offer for screen sharing (its own, so the
+/// two video streams can be told apart).
+const PT_H264_SHARE_OFFER: u8 = 102;
+/// The mid of the sharing line in our offers.
+const SHARE_MID: &str = "2";
 /// Our payload type for DTMF (RFC 4733 telephone-event/8000) when we offer.
 const PT_DTMF_DEFAULT: u8 = 101;
 /// How long one dial-pad tone lasts, in 20 ms packets (160 ms).
@@ -423,7 +428,12 @@ fn video_line(sdp: &str, mid: &str, avoid: Option<u8>) -> Option<OfferedVideo> {
 /// Our re-offer turning our screen share on (the sharing line `sendonly`)
 /// or off (`recvonly`, still taking theirs): our current SDP with that
 /// line's direction changed and the session version set to `version`.
-pub fn share_offer(ours: &str, mid: &str, on: bool, version: u64) -> String {
+/// When the current SDP has the sharing line turned down (port 0, its mid
+/// gone, as after an audio-only answer), the line comes back whole from
+/// `base`, the description that first had it.
+pub fn share_offer(ours: &str, base: &str, mid: &str, on: bool, version: u64) -> String {
+    let restored = restore_section(ours, base, mid);
+    let ours = restored.as_str();
     let head_end = ours.find("\nm=").map(|i| i + 1).unwrap_or(ours.len());
     let mut out = String::new();
     for l in ours[..head_end].split_inclusive('\n') {
@@ -466,6 +476,45 @@ pub fn share_offer(ours: &str, mid: &str, on: bool, version: u64) -> String {
                 "a=setup:actpass\r\n"
             } else {
                 l
+            }
+        })
+        .collect()
+}
+
+/// `ours` with the m-section at the position `base` has `mid` at put back
+/// from `base` when it was turned down.
+fn restore_section(ours: &str, base: &str, mid: &str) -> String {
+    let base_sections = sections(base);
+    let Some(k) = base_sections
+        .iter()
+        .position(|(m, _)| m.as_deref() == Some(mid))
+    else {
+        return ours.to_string();
+    };
+    let current = sections(ours);
+    let rejected = current.get(k).is_some_and(|(m, t)| {
+        m.as_deref() != Some(mid) || t.split_whitespace().nth(1) == Some("0")
+    });
+    if !rejected {
+        return ours.to_string();
+    }
+    let head_end = ours.find("\nm=").map(|i| i + 1).unwrap_or(ours.len());
+    let mut out = ours[..head_end].to_string();
+    for (i, (_, text)) in current.iter().enumerate() {
+        out.push_str(if i == k { &base_sections[k].1 } else { text });
+    }
+    // The restored line is bundled again.
+    let mids: Vec<String> = sections(&out)
+        .iter()
+        .filter(|(_, t)| t.split_whitespace().nth(1) != Some("0"))
+        .filter_map(|(m, _)| m.clone())
+        .collect();
+    out.split_inclusive('\n')
+        .map(|l| {
+            if l.starts_with("a=group:BUNDLE") {
+                format!("a=group:BUNDLE {}\r\n", mids.join(" "))
+            } else {
+                l.to_string()
             }
         })
         .collect()
@@ -648,7 +697,7 @@ impl LocalAudio {
         s.push_str("v=0\r\n");
         s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
         s.push_str("s=-\r\nt=0 0\r\n");
-        s.push_str("a=group:BUNDLE 0 1\r\n");
+        s.push_str("a=group:BUNDLE 0 1 2\r\n");
         s.push_str("a=msid-semantic: WMS ost\r\n");
         s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
         s.push_str(&self.video_section(
@@ -662,6 +711,21 @@ impl LocalAudio {
                 direction: "sendrecv",
                 label: "main-video",
                 ssrc: self.video_ssrc,
+            },
+        ));
+        // Screen sharing, off until one side re-offers it (as Teams'
+        // own offers have it).
+        s.push_str(&self.video_section(
+            port,
+            &addr,
+            VideoLine {
+                mid: SHARE_MID,
+                setup: "actpass",
+                pt: PT_H264_SHARE_OFFER,
+                profile: "42e01f",
+                direction: "inactive",
+                label: "applicationsharing-video",
+                ssrc: self.share_ssrc,
             },
         ));
         s
@@ -1060,7 +1124,13 @@ impl WebRtcAudioSession {
             if current.is_empty() {
                 bail!("No earlier SDP to re-offer");
             }
-            let sdp = share_offer(&current, mid, on, version);
+            let base = self
+                .local_sdp
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .0
+                .clone();
+            let sdp = share_offer(&current, &base, mid, on, version);
             *self.pending_offer.lock().unwrap_or_else(|e| e.into_inner()) =
                 Some((sdp.clone(), version));
             Ok(sdp)
@@ -1189,8 +1259,21 @@ impl WebRtcAudioSession {
 
     /// Offerer side: ICE controlling; DTLS role from the peer's answer
     /// (`active` makes us the server, `passive` the client).
-    pub async fn start_as_offerer(local: LocalAudio, answer: WebRtcOffer) -> Result<Self> {
+    pub async fn start_as_offerer(local: LocalAudio, mut answer: WebRtcOffer) -> Result<Self> {
         let dtls_client = answer.setup.eq_ignore_ascii_case("passive");
+        // Our video offers carry a sharing line. An answer that turned it
+        // down (an audio-only answer drops its mid) still leaves it ours to
+        // re-offer later, as Teams does when someone shares.
+        if local.receive_video && answer.sharing.is_none() {
+            answer.sharing = Some(OfferedVideo {
+                mid: SHARE_MID.into(),
+                payload_type: PT_H264_SHARE_OFFER,
+                profile: "42e01f".into(),
+                ssrc: None,
+                sends: false,
+                receives: false,
+            });
+        }
         Self::start_with_role(local, answer, true, dtls_client).await
     }
 
@@ -2119,18 +2202,42 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
     }
 
     #[test]
+    fn our_video_offers_carry_an_idle_sharing_line() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let local = rt.block_on(LocalAudio::prepare()).unwrap();
+        let o = local.offer_sdp_with_video();
+        assert!(o.contains("a=group:BUNDLE 0 1 2\r\n"), "{o}");
+        assert!(
+            o.contains("a=mid:2\r\na=inactive") && o.contains("a=label:applicationsharing-video")
+        );
+        assert!(o.contains("a=rtpmap:102 H264/90000") && o.contains("a=rtpmap:107 H264/90000"));
+        assert!(!o.contains("msid:ost ost-"));
+        // An answer that keeps it lets us share later.
+        let answer = o.replace("a=setup:actpass", "a=setup:passive");
+        let parsed = WebRtcOffer::parse(&answer).unwrap();
+        assert_eq!(
+            parsed
+                .sharing
+                .as_ref()
+                .map(|v| (v.mid.as_str(), v.payload_type)),
+            Some(("2", 102))
+        );
+        assert_eq!(parsed.video.as_ref().map(|v| v.payload_type), Some(107));
+    }
+
+    #[test]
     fn share_reoffers_flip_only_the_sharing_line() {
         let ours = "v=0\r\no=- 7 3 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 2\r\n\
             m=audio 4000 RTP/SAVP 0\r\na=setup:active\r\na=mid:0\r\na=sendrecv\r\n\
             m=video 0 RTP/SAVP 102\r\nc=IN IP4 0.0.0.0\r\na=mid:1\r\na=inactive\r\n\
             m=video 4000 RTP/SAVP 102\r\na=setup:active\r\na=mid:2\r\na=inactive\r\na=label:applicationsharing-video\r\n";
-        let on = share_offer(ours, "2", true, 4);
+        let on = share_offer(ours, ours, "2", true, 4);
         assert!(on.contains("o=- 7 4 IN IP4"), "{on}");
         assert!(on.contains("a=mid:2\r\na=sendonly"));
         assert!(on.contains("a=mid:0\r\na=sendrecv") && on.contains("a=mid:1\r\na=inactive"));
         assert!(on.contains("a=setup:actpass") && !on.contains("a=setup:active"));
         assert_eq!(on.matches("\nm=").count(), 3);
-        let off = share_offer(&on, "2", false, 5);
+        let off = share_offer(&on, ours, "2", false, 5);
         assert!(off.contains("a=mid:2\r\na=recvonly") && off.contains("o=- 7 5 "));
         // The answer has to take it: receiving, not rejected.
         let takes = on.replace("a=sendonly", "a=recvonly");
@@ -2144,6 +2251,19 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             "2"
         ));
         assert!(!answer_takes_share(&takes, "9"));
+        // A sharing line an answer turned down comes back from the base.
+        let turned_down = ours.replace(
+            "m=video 4000 RTP/SAVP 102\r\na=setup:active\r\na=mid:2\r\na=inactive\r\na=label:applicationsharing-video\r\n",
+            "m=video 0 RTP/SAVP 34\r\na=inactive\r\n",
+        ).replace("a=group:BUNDLE 0 2", "a=group:BUNDLE 0");
+        assert!(turned_down.contains("m=video 0 RTP/SAVP 34"));
+        let back = share_offer(&turned_down, ours, "2", true, 6);
+        assert!(
+            back.contains("m=video 4000 RTP/SAVP 102") && back.contains("a=mid:2\r\na=sendonly"),
+            "{back}"
+        );
+        assert!(back.contains("a=group:BUNDLE 0 2\r\n") && !back.contains("RTP/SAVP 34"));
+        assert_eq!(back.matches("\nm=").count(), 3);
     }
 
     #[test]

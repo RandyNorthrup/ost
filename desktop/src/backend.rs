@@ -618,28 +618,124 @@ struct CallSlot {
     )>,
 }
 
+/// The connected call, answered or placed, for screen sharing.
+enum SharingCall<'a> {
+    Answered(&'a mut ActiveCall),
+    Placed(&'a mut OutgoingCall),
+}
+
+impl SharingCall<'_> {
+    fn of(slot: &mut CallSlot) -> Option<SharingCall<'_>> {
+        match (slot.active.as_mut(), slot.outgoing.as_mut()) {
+            (Some(c), _) => Some(SharingCall::Answered(c)),
+            (None, Some(c)) => Some(SharingCall::Placed(c)),
+            _ => None,
+        }
+    }
+
+    async fn offer_share(&mut self, on: bool) -> anyhow::Result<()> {
+        match self {
+            SharingCall::Answered(c) => c.offer_share(&CallAuth::load().await?, on).await,
+            SharingCall::Placed(c) => c.offer_share(on).await,
+        }
+    }
+
+    async fn acknowledge_answer(&self, link: &str) -> anyhow::Result<()> {
+        match self {
+            SharingCall::Answered(c) => c.acknowledge_answer(&CallAuth::load().await?, link).await,
+            SharingCall::Placed(c) => c.acknowledge_answer(link).await,
+        }
+    }
+
+    fn can_share(&self) -> bool {
+        match self {
+            SharingCall::Answered(c) => c.can_share(),
+            SharingCall::Placed(c) => c.can_share(),
+        }
+    }
+
+    fn share_offer_pending(&self) -> bool {
+        match self {
+            SharingCall::Answered(c) => c.share_offer_pending(),
+            SharingCall::Placed(c) => c.share_offer_pending(),
+        }
+    }
+
+    fn take_share_answer(&mut self, answer: &str) -> anyhow::Result<bool> {
+        match self {
+            SharingCall::Answered(c) => c.take_share_answer(answer),
+            SharingCall::Placed(c) => c.take_share_answer(answer),
+        }
+    }
+
+    fn cancel_share_offer(&self) {
+        match self {
+            SharingCall::Answered(c) => c.cancel_share_offer(),
+            SharingCall::Placed(c) => c.cancel_share_offer(),
+        }
+    }
+
+    fn start_share(
+        &mut self,
+        capture: teams_cli::calling::screencast::ScreenCapture,
+        frames: std::sync::mpsc::Receiver<teams_cli::calling::camera::YuvFrame>,
+    ) -> anyhow::Result<()> {
+        match self {
+            SharingCall::Answered(c) => c.start_share(capture, frames),
+            SharingCall::Placed(c) => c.start_share(capture, frames),
+        }
+    }
+
+    fn stop_share(&mut self) {
+        match self {
+            SharingCall::Answered(c) => c.stop_share(),
+            SharingCall::Placed(c) => c.stop_share(),
+        }
+    }
+
+    fn is_sharing(&self) -> bool {
+        match self {
+            SharingCall::Answered(c) => c.is_sharing(),
+            SharingCall::Placed(c) => c.is_sharing(),
+        }
+    }
+
+    fn share_ended(&self) -> bool {
+        match self {
+            SharingCall::Answered(c) => c.share_ended(),
+            SharingCall::Placed(c) => c.share_ended(),
+        }
+    }
+}
+
 /// Ask the desktop what to share (its picker), then offer it to the call.
 /// Sending starts when Teams answers ([`share_reply`]).
 async fn offer_screen() -> anyhow::Result<()> {
+    // Only open the desktop's picker when the call can take a screen.
+    {
+        let mut slot = call_slot().lock().await;
+        let call = SharingCall::of(&mut slot).context("The call has ended")?;
+        anyhow::ensure!(call.can_share(), "This call can't take a shared screen");
+    }
     let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::start().await?;
-    let auth = CallAuth::load().await?;
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
-    let call = slot.active.as_mut().context("The call has ended")?;
-    call.offer_share(&auth, true).await?;
+    SharingCall::of(slot)
+        .context("The call has ended")?
+        .offer_share(true)
+        .await?;
     slot.share_pending = Some((capture, frames));
     Ok(())
 }
 
 /// Stop sending our screen and tell the call.
 async fn stop_screen() -> anyhow::Result<()> {
-    let auth = CallAuth::load().await?;
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
     slot.share_pending = None;
-    let call = slot.active.as_mut().context("The call has ended")?;
+    let mut call = SharingCall::of(slot).context("The call has ended")?;
     call.stop_share();
-    call.offer_share(&auth, false).await
+    call.offer_share(false).await
 }
 
 /// Teams' reply to our share re-offer. Returns false when it isn't one
@@ -650,21 +746,17 @@ async fn share_reply(
 ) -> bool {
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
-    let Some(call) = slot.active.as_mut().filter(|c| c.share_offer_pending()) else {
+    let pending = slot.share_pending.take();
+    let Some(mut call) = SharingCall::of(slot).filter(|c| c.share_offer_pending()) else {
+        slot.share_pending = pending;
         return false;
     };
-    let pending = slot.share_pending.take();
     let outcome = match reply {
         Ok(answer) => {
-            if let Some(link) = &answer.ack {
-                match CallAuth::load().await {
-                    Ok(auth) => {
-                        if let Err(e) = call.acknowledge_answer(&auth, link).await {
-                            tracing::warn!("share: {}", short_error(&e));
-                        }
-                    }
-                    Err(e) => tracing::warn!("share: {}", short_error(&e)),
-                }
+            if let Some(link) = &answer.ack
+                && let Err(e) = call.acknowledge_answer(link).await
+            {
+                tracing::warn!("share: {}", short_error(&e));
             }
             call.take_share_answer(&answer.sdp)
         }
@@ -674,10 +766,7 @@ async fn share_reply(
         }
     };
     let sharing = match (outcome, pending) {
-        (Ok(true), Some((capture, frames))) => match call.start_share(capture, frames) {
-            Ok(()) => Ok(true),
-            Err(e) => Err(e),
-        },
+        (Ok(true), Some((capture, frames))) => call.start_share(capture, frames).map(|()| true),
         (Ok(false), Some(_)) => Err(anyhow::anyhow!("The call didn't take your screen")),
         // The answer to stopping.
         (Ok(_), None) => Ok(false),
@@ -710,8 +799,8 @@ fn spawn_share_watch(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
     runtime().spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let slot = call_slot().lock().await;
-            let Some(call) = slot.active.as_ref() else {
+            let mut slot = call_slot().lock().await;
+            let Some(call) = SharingCall::of(&mut slot) else {
                 return;
             };
             if !call.is_sharing() {
@@ -1641,7 +1730,14 @@ impl qobject::Backend {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
                     let can_video = call.can_send_video();
-                    tracing::info!(has_audio, can_dtmf, can_video, "outgoing call connected");
+                    let can_share = call.can_share();
+                    tracing::info!(
+                        has_audio,
+                        can_dtmf,
+                        can_video,
+                        can_share,
+                        "outgoing call connected"
+                    );
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
@@ -1649,6 +1745,7 @@ impl qobject::Backend {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
+                        this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }

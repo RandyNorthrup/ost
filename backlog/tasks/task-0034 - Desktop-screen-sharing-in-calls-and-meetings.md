@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-06T04:53:00Z'
-updated_date: '2026-11-06T15:39:00Z'
+updated_date: '2026-11-06T15:57:00Z'
 labels:
   - desktop
   - calling
@@ -46,4 +46,7 @@ Share is the last greyed control on the call bar. Teams shares a screen as a sec
 - What Teams needs (found in its calling bundle and a captured share of its own): the re-offer's mediaContent must be application/sdp-ngc-1.0 (Teams' processOffer refuses plain application/sdp with 488/3102); the answer must be acknowledged (an empty POST to its links.mediaAcknowledgement); and video lines must carry only a=x-ssrc-range (no a=ssrc msid), so Teams names the stream after the label (applicationsharingVideo-<ssrc>). With msid:ost ... its renderer showed "something went wrong".
 - Re-offers start from the description we last sent (re-answers update it) and use setup:actpass, as Teams' do.
 - Still to do: calls OST places (our offer has no sharing line yet) and meetings (AC #2).
+
+- Calls OST places: our video offer now has a sharing line (mid 2, inactive, as Teams' own). An answer that turns it down (audio-only answers drop its mid) still leaves it ours to re-offer: the re-offer puts the whole section back from our original description and re-bundles it. Tested live (Randy accepted with audio, OST shared, then stopped).
+- Placed calls now offer in application/sdp-ngc-1.0 too: the call controller ended a call whose re-offer changed the content type (OfferContentTypeNotConsistent). This also made Teams accept OST's video line in placed calls (relevant to TASK-0036). Meeting join re-tested with it.
 <!-- SECTION:NOTES:END -->

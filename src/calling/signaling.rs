@@ -15,6 +15,12 @@ pub(crate) const TEAMS_PARTITION: &str = "amer03";
 pub(crate) const TEAMS_REGION: &str = "amer";
 pub(crate) const TEAMS_RING: &str = "general";
 
+/// The content type of the SDP offers Teams' own clients send. A call's
+/// offers must all use the same one: the call controller ends a call whose
+/// re-offer changes it (OfferContentTypeNotConsistent), and Teams' media
+/// stack takes re-offers only in this one.
+pub const OFFER_CONTENT_TYPE: &str = "application/sdp-ngc-1.0";
+
 /// Response from phase 1 (create conversation).
 #[derive(Debug)]
 pub struct ConversationCreated {
@@ -1088,7 +1094,7 @@ async fn create_call(
                 "publicApiCall": false
             },
             "mediaContent": {
-                "contentType": "application/sdp",
+                "contentType": OFFER_CONTENT_TYPE,
                 "blob": sdp_offer
             }
         },
