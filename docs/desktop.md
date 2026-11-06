@@ -60,6 +60,12 @@ Microsoft branding.
   scope OST's sign-in doesn't have), Clipchamp, Whiteboard, Events and
   Help are web apps Teams embeds, so they open on the web. An app opened
   there takes the rail's one extra slot, as in Teams.
+- **Store**: your organization's Teams app catalog, as Teams' Store
+  Home shows it: the "Do more in Teams" banner with Search agents and
+  apps, Added by your org, Apps from Microsoft and All apps as cards,
+  and an app's details. Add installs the app in Teams on the web
+  (installing needs a permission OST's sign-in doesn't have); Planner,
+  OneNote and People open in OST.
 - **Channel Shared tab**: the channel's folder in the team's SharePoint
   library, as Teams shows it: breadcrumb, Share, Copy link, Add shortcut
   to OneDrive, Create or upload (folder, files), Name / Modified /
@@ -203,6 +209,7 @@ account.
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
 | `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
+| `--store-test` | Open the Store, capture Home, search "planner", open Whiteboard's details. |
 | `--channel-files-test` | OST Test Team's General channel, Shared tab: make a folder, capture it, delete it. |
 | `--apps-test` | People: add a contact, favorite it, delete it; OneNote: open the first notebook, add a page, read it, delete it. |
 | `--planner-test` | Add and complete a private task; create a plan in OST Test Team, add a task, then delete the test plans. |

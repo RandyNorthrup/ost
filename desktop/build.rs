@@ -26,6 +26,7 @@ fn main() {
         "qml/PeopleView.qml",
         "qml/OneNoteView.qml",
         "qml/ChannelFiles.qml",
+        "qml/StoreView.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
         "qml/ActivityView.qml",
