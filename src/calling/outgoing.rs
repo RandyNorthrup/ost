@@ -34,6 +34,7 @@ pub struct OutgoingCall {
     callbacks: (String, String),
     hold_link: Option<String>,
     resume_link: Option<String>,
+    transfer_link: Option<String>,
 }
 
 impl OutgoingCall {
@@ -80,6 +81,28 @@ impl OutgoingCall {
         }
         self.set_held(held);
         Ok(())
+    }
+
+    /// Transfer the call to `target` (an `8:orgid:` MRI).
+    pub async fn transfer(&self, target: &str) -> Result<()> {
+        let link = self
+            .transfer_link
+            .as_deref()
+            .context("This call can't be transferred")?;
+        let mut details = self.me.0.clone();
+        if let Some(o) = details.as_object_mut() {
+            o.remove("displayName");
+        }
+        let (surl, epid) = self.callbacks.clone();
+        super::incoming::request_transfer(
+            &self.http,
+            &self.skype_token,
+            link,
+            target,
+            details,
+            |p| signaling::trouter_callback(&surl, &epid, p),
+        )
+        .await
     }
 
     /// Put the call on hold, or resume it (our media only).
@@ -193,6 +216,7 @@ struct Acceptance {
     acknowledgement: Option<String>,
     call_leg: Option<String>,
     hold: Option<String>,
+    transfer: Option<String>,
     end: Option<String>,
 }
 
@@ -238,6 +262,7 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
         acknowledgement: link("acknowledgement"),
         call_leg: link("callLeg"),
         hold: link("hold"),
+        transfer: link("transfer"),
         end: link("end"),
     }))
 }
@@ -528,6 +553,7 @@ async fn start(
         ),
         hold_link: acceptance.hold,
         resume_link: None,
+        transfer_link: acceptance.transfer,
     })
 }
 

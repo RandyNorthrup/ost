@@ -204,6 +204,10 @@ pub mod qobject {
         #[qinvokable]
         fn toggle_hold(self: Pin<&mut Backend>);
 
+        /// Transfer the call to a person (AAD object id).
+        #[qinvokable]
+        fn transfer_call(self: Pin<&mut Backend>, oid: &QString);
+
         /// Send a dial-pad key (0-9, *, #) as a tone in the call.
         #[qinvokable]
         fn send_dtmf(self: Pin<&mut Backend>, key: &QString);
@@ -824,6 +828,32 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let _ = qt.queue(move |mut this| this.as_mut().set_call_held_by_peer(held));
             }
             Err(e) => tracing::warn!("re-offer not answered: {}", short_error(&e)),
+        }
+        return;
+    }
+    if let Some(outcome) = teams_cli::calling::incoming::transfer_outcome(json) {
+        match outcome {
+            Ok(()) => {
+                // They took the call: ours is over.
+                tracing::info!("call transferred");
+                let mut slot = call_slot().lock().await;
+                slot.active = None;
+                slot.outgoing = None;
+                drop(slot);
+                let _ = qt.queue(|mut this| {
+                    this.as_mut()
+                        .set_status_text(QString::from("Call transferred"));
+                    this.as_mut().end_call_ui();
+                });
+            }
+            Err(phrase) => {
+                tracing::info!("transfer failed");
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Transfer failed: {phrase}").as_str(),
+                    ))
+                });
+            }
         }
         return;
     }
@@ -1593,6 +1623,30 @@ impl qobject::Backend {
                     ));
                 });
             }
+        });
+    }
+
+    pub fn transfer_call(self: Pin<&mut Self>, oid: &QString) {
+        let target = format!("8:orgid:{}", oid.to_string().trim());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let result = match (slot.active.as_ref(), slot.outgoing.as_ref()) {
+                (Some(call), _) => match CallAuth::load().await {
+                    Ok(auth) => call.transfer(&auth, &target).await,
+                    Err(e) => Err(e),
+                },
+                (None, Some(call)) => call.transfer(&target).await,
+                _ => Err(anyhow::anyhow!("No call")),
+            };
+            drop(slot);
+            let text = match &result {
+                Ok(()) => "Transferring…".to_string(),
+                Err(e) => format!("Transfer: {}", short_error(e)),
+            };
+            tracing::info!(ok = result.is_ok(), "transfer requested");
+            let _ = qt
+                .queue(move |mut this| this.as_mut().set_status_text(QString::from(text.as_str())));
         });
     }
 

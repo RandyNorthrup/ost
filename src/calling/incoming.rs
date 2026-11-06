@@ -314,6 +314,69 @@ pub(crate) async fn request_resume(
     Ok(())
 }
 
+/// Hand the call to someone else (Teams' Transfer): the call controller
+/// rings `target` (an `8:orgid:` MRI) and connects them in our place.
+/// `transferor`: our participant details; `cb`: makes our callback URLs.
+pub(crate) async fn request_transfer(
+    http: &reqwest::Client,
+    skype_token: &str,
+    transfer_link: &str,
+    target: &str,
+    transferor: serde_json::Value,
+    cb: impl Fn(&str) -> String,
+) -> Result<()> {
+    let oid = target
+        .strip_prefix("8:orgid:")
+        .context("Not a person to transfer to")?;
+    if uuid::Uuid::parse_str(oid).is_err() {
+        anyhow::bail!("Not a person to transfer to");
+    }
+    let body = serde_json::json!({
+        "callTransfer": {
+            "target": { "id": target },
+            "transferor": { "details": transferor, "authorizationToken": null },
+            "links": {
+                "transferAcceptance": cb("call/transferAcceptance/"),
+                "transferCompletion": cb("call/transferCompletion/"),
+            },
+        }
+    });
+    cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        transfer_link,
+        &body,
+        "Transfer",
+    )
+    .await?;
+    Ok(())
+}
+
+/// A transfer's outcome from `call/transferCompletion`: Some(Ok) when the
+/// target took the call, Some(Err(phrase)) when it failed.
+pub fn transfer_outcome(json: &str) -> Option<std::result::Result<(), String>> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let path = v
+        .get("callAgentPath")
+        .and_then(|p| p.as_str())
+        .unwrap_or_default();
+    let t = v
+        .pointer("/body/transferCompletion")
+        .or_else(|| v.get("transferCompletion"))
+        .filter(|_| path.is_empty() || path.starts_with("call/transferCompletion"))?;
+    let code = t.get("code").and_then(|c| c.as_u64()).unwrap_or(0);
+    if code < 300 {
+        Some(Ok(()))
+    } else {
+        Some(Err(t
+            .get("phrase")
+            .and_then(|p| p.as_str())
+            .unwrap_or("Transfer failed")
+            .to_string()))
+    }
+}
+
 /// Teams' Hold moves the held side onto a media processor that plays
 /// music; `call/retargetCompletion` tells which bot it went to. Returns
 /// Some(on hold) for a retarget event.
@@ -455,6 +518,7 @@ pub struct ActiveCall {
     /// Hold's link, and Resume's once on hold.
     hold_link: Option<String>,
     resume_link: Option<String>,
+    transfer_link: Option<String>,
 }
 
 impl Drop for ActiveCall {
@@ -519,6 +583,23 @@ impl ActiveCall {
         }
         self.set_held(held);
         Ok(())
+    }
+
+    /// Transfer the call to `target` (an `8:orgid:` MRI).
+    pub async fn transfer(&self, auth: &CallAuth, target: &str) -> Result<()> {
+        let me = self.me.as_ref().context("Transfer needs a Teams call")?;
+        let link = self
+            .transfer_link
+            .as_deref()
+            .context("This call can't be transferred")?;
+        let details = serde_json::json!({
+            "id": me.id, "endpointId": me.endpoint_id,
+            "participantId": me.participant_id, "languageId": "en-US",
+        });
+        request_transfer(&auth.http, &auth.skype_token, link, target, details, |p| {
+            me.callback(p)
+        })
+        .await
     }
 
     /// Put the call on hold, or resume it (our media only).
@@ -853,6 +934,7 @@ pub async fn answer(
         me,
         hold_link: leg.hold,
         resume_link: None,
+        transfer_link: leg.transfer,
     })
 }
 
@@ -920,6 +1002,7 @@ async fn answer_webrtc(
         me,
         hold_link: leg.hold,
         resume_link: None,
+        transfer_link: leg.transfer,
     })
 }
 
@@ -1079,6 +1162,7 @@ async fn accept_v2(
     Ok(CallLeg {
         url: str_at(ack, "/links/callLeg"),
         hold: str_at(ack, "/links/hold"),
+        transfer: str_at(ack, "/links/transfer"),
         keep_alive_secs: ack.get("callKeepAliveInterval").and_then(|v| v.as_u64()),
     })
 }
@@ -1089,6 +1173,8 @@ struct CallLeg {
     url: Option<String>,
     /// Where Hold goes (`links.hold`).
     hold: Option<String>,
+    /// Where Transfer goes (`links.transfer`).
+    transfer: Option<String>,
     keep_alive_secs: Option<u64>,
 }
 
@@ -1257,6 +1343,22 @@ mod tests {
             Some(false)
         );
         assert_eq!(retarget_hold(r#"{"body":{}}"#), None);
+        assert_eq!(
+            transfer_outcome(
+                r#"{"callAgentPath":"call/transferCompletion/","body":{"transferCompletion":{"code":0}}}"#
+            ),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            transfer_outcome(
+                r#"{"callAgentPath":"call/transferCompletion/","body":{"transferCompletion":{"code":480,"phrase":"No answer"}}}"#
+            ),
+            Some(Err("No answer".into()))
+        );
+        assert_eq!(
+            transfer_outcome(r#"{"callAgentPath":"call/end/","body":{}}"#),
+            None
+        );
         assert!(!is_renegotiation_event(
             r#"{"callAgentPath":"call/end/","body":{}}"#
         ));

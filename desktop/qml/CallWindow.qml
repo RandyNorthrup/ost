@@ -47,6 +47,13 @@ Window {
     property string layout: "gallery"
     property bool incomingVideoOff: false
     signal deviceSettings()
+    /// Transfer and Consult: the people search, and the person picked.
+    property var directory: []
+    signal searchPeople(string query)
+    signal transfer(string oid, string name)
+    signal consult(string oid, string name)
+    /// Consulting someone before transferring (their chat is open).
+    property var consulting: null
     readonly property bool live: state === "connected"
     function toggleFullScreen() { visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
     /// The open side pane: "", "chat" or "people".
@@ -72,7 +79,10 @@ Window {
         running: win.visible && win.state === "connected"
         onTriggered: win.seconds = Math.floor((Date.now() - win.connectedAt) / 1000)
     }
-    onStateChanged: if (state === "connected") { connectedAt = Date.now(); seconds = 0 }
+    onStateChanged: {
+        if (state === "connected") { connectedAt = Date.now(); seconds = 0 }
+        else consulting = null
+    }
 
     function clock(s) {
         const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60
@@ -147,8 +157,20 @@ Window {
             visible: !win.meeting
             anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
             spacing: 0
-            BarButton { icon: "call-transfer"; label: "Transfer"; enabled: false }
-            BarButton { icon: "consult"; label: "Consult"; enabled: false }
+            BarButton {
+                id: transferBtn
+                icon: "call-transfer"; label: "Transfer"
+                enabled: win.live
+                checked: picker.visible && picker.mode === "transfer"
+                onClicked: { picker.mode = "transfer"; picker.parent = transferBtn; picker.open() }
+            }
+            BarButton {
+                id: consultBtn
+                icon: "consult"; label: "Consult"
+                enabled: win.live
+                checked: picker.visible && picker.mode === "consult"
+                onClicked: { picker.mode = "consult"; picker.parent = consultBtn; picker.open() }
+            }
             Divider {}
             BarButton {
                 id: padBtn
@@ -557,6 +579,91 @@ Window {
         function press(k) { dialed += k; win.dtmf(k) }
     }
 
+    // Transfer / Consult: Teams' "Transfer to" picker under the button.
+    Popup {
+        id: picker
+        property string mode: "transfer"
+        x: 0; y: parent ? parent.height + 4 : 0
+        width: 320; padding: 12
+        onOpened: { who.text = ""; who.forceActiveFocus() }
+        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+        contentItem: Column {
+            spacing: 8
+            Text {
+                text: picker.mode === "transfer" ? "Transfer to" : "Consult with"
+                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+            }
+            Rectangle {
+                width: 296; height: 32; radius: theme.radius
+                color: theme.input; border.color: who.activeFocus ? theme.brand : theme.stroke
+                TextInput {
+                    id: who
+                    x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
+                    Text { visible: !who.text; text: "Type a name"; color: theme.textTertiary; font: who.font }
+                    onTextChanged: win.searchPeople(text)
+                    Keys.onEscapePressed: picker.close()
+                    Accessible.name: picker.mode === "transfer" ? "Transfer to" : "Consult with"
+                }
+            }
+            Repeater {
+                model: who.text.trim().length >= 2 ? win.directory.slice(0, 6) : []
+                Rectangle {
+                    required property var modelData
+                    width: 296; height: 44; radius: theme.radius
+                    color: ph.hovered ? theme.rowHover : "transparent"
+                    Avatar { x: 6; anchors.verticalCenter: parent.verticalCenter; size: 28; name: modelData.name; photoId: "8:orgid:" + modelData.id }
+                    Column {
+                        x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52
+                        Text { width: parent.width; elide: Text.ElideRight; text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                        Text { width: parent.width; elide: Text.ElideRight; visible: !!modelData.job_title || !!modelData.mail; text: modelData.job_title || modelData.mail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                    }
+                    HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            picker.close()
+                            if (picker.mode === "transfer") win.transfer(modelData.id, modelData.name)
+                            else { win.consulting = { id: modelData.id, name: modelData.name }; win.consult(modelData.id, modelData.name) }
+                        }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: (picker.mode === "transfer" ? "Transfer to " : "Consult with ") + modelData.name
+                }
+            }
+        }
+    }
+    // Consulting: a banner over the stage with Transfer and Resume.
+    Rectangle {
+        visible: !!win.consulting && win.live
+        z: 5
+        anchors { top: bar.bottom; topMargin: 12; horizontalCenter: stage.horizontalCenter }
+        width: consultRow.implicitWidth + 24; height: 44; radius: 8
+        color: theme.menu; border.color: theme.dividerSoft
+        Row {
+            id: consultRow
+            anchors.centerIn: parent; spacing: 12
+            Text { anchors.verticalCenter: parent.verticalCenter; text: win.consulting ? "Consulting " + win.consulting.name : ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Rectangle {
+                width: 84; height: 28; radius: theme.radius; color: theme.brandFill
+                anchors.verticalCenter: parent.verticalCenter
+                Text { anchors.centerIn: parent; text: "Transfer"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                TapHandler { onTapped: { const c = win.consulting; win.consulting = null; win.transfer(c.id, c.name) } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Transfer to " + (win.consulting ? win.consulting.name : "")
+            }
+            Rectangle {
+                width: 84; height: 28; radius: theme.radius; color: theme.input; border.color: theme.stroke
+                anchors.verticalCenter: parent.verticalCenter
+                Text { anchors.centerIn: parent; text: "Resume"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                TapHandler { onTapped: { win.consulting = null; if (win.held) win.toggleHold() } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Stop consulting and resume"
+            }
+        }
+    }
+
+    function consultForTest(oid, name) { consulting = { id: oid, name: name }; consult(oid, name) }
+    function transferFromConsultForTest() { const c = consulting; consulting = null; transfer(c.id, c.name) }
     function dialPadForTest() { dialPad.open() }
     function closeDialPadForTest() { dialPad.close() }
     function pressForTest(keys) { for (const k of keys) dialPad.press(k) }

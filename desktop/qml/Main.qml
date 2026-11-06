@@ -542,6 +542,16 @@ Window {
         canDtmf: backend.callCanDtmf
         onDtmf: key => backend.sendDtmf(key)
         onDeviceSettings: { rail.current = "settings"; window.raise(); window.requestActivate() }
+        directory: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+        onSearchPeople: q => backend.searchPeople(q)
+        onTransfer: (oid, name) => backend.transferCall(oid)
+        // Consult, as Teams' chat consult: hold the caller and open a chat
+        // with the person in the call's Chat pane; Transfer finishes it.
+        onConsult: (oid, name) => {
+            if (!backend.callHeld) backend.toggleHold()
+            backend.openChatWith(oid, name)
+            callWindow.side = "chat"
+        }
         onClosing: if (backend.callState !== "ended") backend.hangUp()
         meeting: backend.callMeeting
         roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
@@ -577,11 +587,11 @@ Window {
 
     // --call-test: capture the toast, answer, capture the call, hang up.
     readonly property bool callOut: Qt.application.arguments.indexOf("--call-out") >= 0
-    readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0 || Qt.application.arguments.indexOf("--call-panes") >= 0
+    readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0 || Qt.application.arguments.some(a => a.indexOf("--transfer-test=") === 0) || Qt.application.arguments.indexOf("--call-panes") >= 0
     property string favName: ""
     readonly property bool callPanes: Qt.application.arguments.indexOf("--call-panes") >= 0
     // --remote-hangup: stay in the call until the caller ends it.
-    readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0
+    readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0 || Qt.application.arguments.some(a => a.indexOf("--transfer-test=") === 0)
     Connections {
         target: backend
         enabled: window.callTest
@@ -933,6 +943,38 @@ Window {
             else if (step === 9) { callWindow.dialPadForTest(); callWindow.pressForTest("123#") }
             else if (step === 10) { cap("dialpad"); callWindow.closeDialPadForTest(); console.warn("HOLD tones sent") }
             step++
+        }
+    }
+
+    // --transfer-test=<oid>: once a call connects, transfer it to that
+    // person and log what happens; stays until the call ends.
+    readonly property string transferTarget: {
+        const a = Qt.application.arguments.find(x => x.indexOf("--transfer-test=") === 0)
+        return a ? a.split("=")[1] : ""
+    }
+    Connections {
+        target: backend
+        enabled: window.transferTarget.length > 0
+        function onCallStateChanged() {
+            console.warn("XFER state", backend.callState)
+            if (backend.callState === "connected") xferTimer.start()
+            if (backend.callState === "ended") quitTimer.start()
+        }
+        function onStatusTextChanged() { console.warn("XFER status", backend.statusText) }
+    }
+    // --consult: consult first (hold, chat with them), then Transfer from
+    // the consult banner.
+    readonly property bool consultFirst: Qt.application.arguments.indexOf("--consult") >= 0
+    Timer {
+        id: xferTimer
+        interval: 5000
+        property int step: 0
+        onTriggered: {
+            const cap = tag => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            if (!window.consultFirst) { cap("before"); backend.transferCall(window.transferTarget); return }
+            if (step === 0) { callWindow.consultForTest(window.transferTarget, "OST Test 1"); step = 1; restart() }
+            else if (step === 1) { console.warn("XFER consulting", !!callWindow.consulting, "held", backend.callHeld, "chat", backend.currentChatName); cap("consult"); step = 2; restart() }
+            else if (step === 2) { callWindow.transferFromConsultForTest() }
         }
     }
 

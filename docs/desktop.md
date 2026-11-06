@@ -40,6 +40,10 @@ Microsoft branding.
   (Restore, Delete permanently), Browse files by People, Meetings
   (recordings) and Media (photos and videos); Create or upload works
   from every view (into My files when you're not in a folder).
+- **Transfer and Consult**: Transfer hands the call to someone you pick
+  (Teams' blind transfer; if nobody answers it goes to their voicemail,
+  as in Teams). Consult puts the caller on hold and opens a chat with
+  the person; the consult banner then offers Transfer or Resume.
 - **Call controls**: Hold and Resume through Teams' hold service (the
   other person hears Teams' hold music; you see "On hold" when they hold
   you), Dial pad (RFC 4733 tones), View (Gallery / Speaker in meetings,
@@ -177,6 +181,7 @@ account.
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
+| `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
 | `--planner-test` | Add and complete a private task; create a plan in OST Test Team, add a task, then delete the test plans. |
 | `--group-call-test` | Start a group call in "OST group test", capture it and People, hang up. |
