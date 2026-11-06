@@ -8,9 +8,9 @@
 //! (the session turns that into an RTCP PLI) and drops frames until an
 //! IDR picture arrives.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 
 /// One RTP packet's video payload.
 pub struct VideoPacket {
@@ -183,9 +183,9 @@ impl Drop for VideoReceiver {
 }
 
 fn decode_loop(rx: mpsc::Receiver<VideoPacket>, want: Arc<AtomicBool>, key: &str) {
+    use openh264::OpenH264API;
     use openh264::decoder::{Decoder, DecoderConfig};
     use openh264::formats::YUVSource;
-    use openh264::OpenH264API;
     let mut decoder =
         match Decoder::with_api_config(OpenH264API::from_source(), DecoderConfig::new()) {
             Ok(d) => d,

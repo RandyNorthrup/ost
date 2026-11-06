@@ -4,7 +4,7 @@
 //! via the Teams authsvc endpoint. The Skype token is what Teams APIs
 //! actually require for most operations.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 /// Response from Teams authsvc token exchange

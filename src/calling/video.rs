@@ -5,7 +5,7 @@
 //! - Prefix NAL units (type 14) before coded slices
 //! - Single NAL Unit mode and FU-A fragmentation
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// H.264 payload type (dynamic, matching our SDP).
 pub const PT_H264: u8 = 122;

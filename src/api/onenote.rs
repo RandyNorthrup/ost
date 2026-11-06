@@ -2,7 +2,7 @@
 //! a page's content, and new pages. Ids that go into Graph paths are
 //! checked first; page HTML is reduced to what a rich-text view shows.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Serialize;
 
 use super::client::TeamsClient;

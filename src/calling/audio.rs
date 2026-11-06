@@ -43,11 +43,7 @@ pub fn list_devices() -> (Vec<String>, Vec<String>) {
 fn pick_device(host: &cpal::Host, input: bool) -> Option<Device> {
     let wanted = {
         let p = PREFERRED.read().unwrap();
-        if input {
-            p.0.clone()
-        } else {
-            p.1.clone()
-        }
+        if input { p.0.clone() } else { p.1.clone() }
     };
     if let Some(name) = wanted {
         let found = if input {

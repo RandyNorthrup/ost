@@ -3,8 +3,8 @@
 //! Microsoft's ringtone).
 
 use std::f32::consts::TAU;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::audio::AudioPlayback;
 

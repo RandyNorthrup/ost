@@ -6,7 +6,7 @@ mod video_item;
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use tracing_subscriber::EnvFilter;
 
-extern "C" {
+unsafe extern "C" {
     /// QtWebEngineQuick::initialize() (src/webengine.cpp).
     fn ost_webengine_initialize();
 }
@@ -19,7 +19,9 @@ fn main() {
     // FluentIcon reads the bundled SVGs (qrc:/) with XMLHttpRequest to
     // recolour them. All QML here is compiled into the binary, so no
     // untrusted script can use this to read files.
-    std::env::set_var("QML_XHR_ALLOW_FILE_READ", "1");
+    // SAFETY: set before Qt or the Tokio runtime start, while main is the
+    // only thread.
+    unsafe { std::env::set_var("QML_XHR_ALLOW_FILE_READ", "1") };
 
     // Before the application: Teams' web apps (Whiteboard…) are embedded.
     // SAFETY: a plain Qt call with no arguments, made once, before Qt starts.

@@ -9,7 +9,7 @@ pub mod skype;
 pub mod tokens;
 
 pub use oauth::{
-    begin_sign_in, finish_sign_in, has_credentials, login, logout, sign_out, status, PendingSignIn,
+    PendingSignIn, begin_sign_in, finish_sign_in, has_credentials, login, logout, sign_out, status,
 };
 pub use tokens::{StoredToken, TokenStore};
 

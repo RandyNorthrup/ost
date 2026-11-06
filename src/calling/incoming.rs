@@ -9,7 +9,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 
 use super::media::{MediaSession, MediaStats, VideoMediaSession};
-use super::{ice, sdp, signaling, srtp, turn, webrtc_audio, CallNotification};
+use super::{CallNotification, ice, sdp, signaling, srtp, turn, webrtc_audio};
 
 /// A call invitation pushed over Trouter, not yet answered.
 ///

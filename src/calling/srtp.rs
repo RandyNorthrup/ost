@@ -4,7 +4,7 @@
 //! specified in the SDP `a=crypto` line: `AES_CM_128_HMAC_SHA1_80`.
 
 use aes::cipher::{KeyIvInit, StreamCipher};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use base64::Engine;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -771,7 +771,7 @@ mod tests {
         let mut pkt = vec![0u8; 28]; // minimal SR: 8-byte header + 20-byte sender info
         pkt[0] = 0x80; // V=2, P=0, RC=0
         pkt[1] = 200; // PT=200 (SR)
-                      // Length in 32-bit words minus 1: (28/4)-1 = 6
+        // Length in 32-bit words minus 1: (28/4)-1 = 6
         pkt[2] = 0;
         pkt[3] = 6;
         let ssrc_bytes = ssrc.to_be_bytes();

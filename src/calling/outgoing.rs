@@ -6,7 +6,7 @@
 //! (`…/callAgent/…/call/acceptance/`). Callbacks arrive through
 //! [`crate::event_hub`], so the shared push connection must be running.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::time::Duration;
 
 use super::webrtc_audio::{LocalAudio, WebRtcAudioSession, WebRtcOffer, WebRtcStats};
@@ -814,18 +814,22 @@ mod tests {
             f.options_url().unwrap(),
             "https://teams.microsoft.com/meetingOptions/?organizerId=4287e791-1b98-4963-8b94-281c50472683&tenantId=2716d134-5614-4856-a48d-2002edd9a570&threadId=19%3Ameeting_YTQy%40thread.v2&messageId=0&language=en-US"
         );
-        assert!(MeetingLink::parse(
-            "https://evil.example/l/meetup-join/19%3ameeting_x%40thread.v2/0"
-        )
-        .is_none());
-        assert!(MeetingLink::parse(
-            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%22%40thread.v2/0"
-        )
-        .is_none());
-        assert!(MeetingLink::parse(
-            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/abc"
-        )
-        .is_none());
+        assert!(
+            MeetingLink::parse("https://evil.example/l/meetup-join/19%3ameeting_x%40thread.v2/0")
+                .is_none()
+        );
+        assert!(
+            MeetingLink::parse(
+                "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%22%40thread.v2/0"
+            )
+            .is_none()
+        );
+        assert!(
+            MeetingLink::parse(
+                "https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/abc"
+            )
+            .is_none()
+        );
         assert!(MeetingLink::parse("https://teams.microsoft.com/meet/299487569045?p=x").is_none());
     }
 

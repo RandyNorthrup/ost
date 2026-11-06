@@ -1,12 +1,12 @@
 //! UI rendering for the TUI
 
 use ratatui::{
+    Frame,
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget},
-    Frame,
 };
 
 use super::app::{App, Pane};

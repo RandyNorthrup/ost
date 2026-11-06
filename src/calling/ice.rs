@@ -12,7 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use tokio::net::UdpSocket;
@@ -150,7 +150,7 @@ impl IceCandidate {
             self.port,
             type_str
         );
-        if let (Some(ref ra), Some(rp)) = (&self.raddr, self.rport) {
+        if let (Some(ra), Some(rp)) = (&self.raddr, self.rport) {
             line.push_str(&format!(" raddr {} rport {}", ra, rp));
         }
         line

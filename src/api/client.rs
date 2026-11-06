@@ -2,7 +2,7 @@
 //!
 //! Wraps reqwest::Client with automatic token injection and refresh.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::auth::TokenStore;
 use crate::config::Config;

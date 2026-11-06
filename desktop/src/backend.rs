@@ -7,8 +7,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
@@ -3342,11 +3342,13 @@ impl qobject::Backend {
                     "meetings" => out["items"] = json!(api::drive::meetings(&client).await?),
                     "recycle" => out["deleted"] = json!(api::drive::recycle_bin(&client).await?),
                     "people" => {
-                        out["people"] = json!(api::drive::by_people(&client)
-                            .await?
-                            .into_iter()
-                            .map(|(name, items)| json!({ "name": name, "items": items }))
-                            .collect::<Vec<_>>())
+                        out["people"] = json!(
+                            api::drive::by_people(&client)
+                                .await?
+                                .into_iter()
+                                .map(|(name, items)| json!({ "name": name, "items": items }))
+                                .collect::<Vec<_>>()
+                        )
                     }
                     _ => {
                         out["items"] =

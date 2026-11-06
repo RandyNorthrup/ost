@@ -627,8 +627,7 @@ mod sender_name_tests {
     }
 
     const OID: &str = "4287e791-1b98-4963-8b94-281c50472683";
-    const OWN: &str =
-        "https://amer.ng.msg.teams.microsoft.com/v1/users/ME/contacts/8:orgid:4287e791-1b98-4963-8b94-281c50472683";
+    const OWN: &str = "https://amer.ng.msg.teams.microsoft.com/v1/users/ME/contacts/8:orgid:4287e791-1b98-4963-8b94-281c50472683";
 
     #[test]
     fn uses_the_name_the_message_carries() {

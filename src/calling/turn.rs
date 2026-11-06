@@ -10,7 +10,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use tokio::net::UdpSocket;

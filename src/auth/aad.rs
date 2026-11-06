@@ -11,7 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 /// The longest error description we copy into an error message.

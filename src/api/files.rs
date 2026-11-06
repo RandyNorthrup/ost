@@ -3,7 +3,7 @@
 //! members, and posts the message with a `properties.files` record. The
 //! record format here mirrors what the Teams desktop client sends.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 use super::client::TeamsClient;

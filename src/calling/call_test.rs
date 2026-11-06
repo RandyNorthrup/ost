@@ -482,7 +482,9 @@ pub async fn run_call_test(
     #[cfg(not(feature = "video-capture"))]
     {
         if use_camera || use_display {
-            tracing::warn!("Video capture/display requested but binary was not built with --features video-capture");
+            tracing::warn!(
+                "Video capture/display requested but binary was not built with --features video-capture"
+            );
         }
     }
 
@@ -1171,7 +1173,7 @@ fn spawn_media_leg(
     }
 
     // Video send loop
-    if let (Some(ref vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
+    if let (Some(vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
         let socket = leg.video_socket.clone();
         let vid_srtp = vid_srtp.clone();
         let vid_send_stats = video_send_stats.clone();
@@ -1269,7 +1271,7 @@ fn spawn_media_leg(
     }
 
     // Video recv loop
-    if let (Some(ref vid_srtp), Some(_)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
+    if let (Some(vid_srtp), Some(_)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
         let socket = leg.video_socket.clone();
         let vid_srtp = vid_srtp.clone();
         let vid_recv_stats = video_recv_stats.clone();
@@ -1423,7 +1425,7 @@ fn spawn_media_leg(
     }
 
     // Video RTCP send loop
-    if let (Some(ref vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
+    if let (Some(vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
         let socket = leg.video_socket.clone();
         let vid_srtp = vid_srtp.clone();
         let vid_send_stats = video_send_stats.clone();
@@ -1892,7 +1894,7 @@ fn write_wav(path: &str, samples: &[i16], sample_rate: u32) -> anyhow::Result<()
     f.write_all(&byte_rate.to_le_bytes())?; // byte rate
     f.write_all(&2u16.to_le_bytes())?; // block align
     f.write_all(&16u16.to_le_bytes())?; // bits per sample
-                                        // data chunk
+    // data chunk
     f.write_all(b"data")?;
     f.write_all(&data_len.to_le_bytes())?;
     for &s in samples {

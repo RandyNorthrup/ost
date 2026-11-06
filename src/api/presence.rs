@@ -1,6 +1,6 @@
 //! Presence API for Microsoft Teams
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use super::client::TeamsClient;

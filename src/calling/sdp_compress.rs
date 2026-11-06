@@ -204,7 +204,8 @@ mod tests {
     #[test]
     fn test_compress_decompress_roundtrip() {
         // Build a realistic SDP that exceeds the threshold
-        let mut sdp = String::from("v=0\r\n\
+        let mut sdp = String::from(
+            "v=0\r\n\
             o=- 0 0 IN IP4 52.114.0.1\r\n\
             s=session\r\n\
             c=IN IP4 52.114.0.1\r\n\
@@ -223,7 +224,8 @@ mod tests {
             a=sendrecv\r\n\
             a=rtcp-mux\r\n\
             a=label:main-audio\r\n\
-            a=x-source:main-audio\r\n");
+            a=x-source:main-audio\r\n",
+        );
 
         // Pad to exceed threshold
         for i in 0..30 {
@@ -240,9 +242,11 @@ mod tests {
 
         let compressed = compress_sdp(&sdp).unwrap().expect("should compress");
         // Compressed should be base64
-        assert!(base64::engine::general_purpose::STANDARD
-            .decode(&compressed)
-            .is_ok());
+        assert!(
+            base64::engine::general_purpose::STANDARD
+                .decode(&compressed)
+                .is_ok()
+        );
 
         let decompressed = decompress_sdp(&compressed).unwrap();
         assert_eq!(decompressed, sdp);

@@ -106,7 +106,7 @@ pub async fn read_timeline(
             if e.to_string().contains("HTTP 404")
                 && (chat_id.ends_with("@unq.gbl.spaces") || chat_id == "48:notes") =>
         {
-            return Ok(Vec::new())
+            return Ok(Vec::new());
         }
         Err(e) => return Err(e),
     };
@@ -152,11 +152,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     }
     let time = {
         let t = s("/originalarrivaltime");
-        if t.is_empty() {
-            s("/composetime")
-        } else {
-            t
-        }
+        if t.is_empty() { s("/composetime") } else { t }
     };
     let base = MessageView {
         id: s("/id"),

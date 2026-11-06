@@ -5,14 +5,14 @@
 //! 2. Start transcription via call recorder service
 //! 3. Start recording via call recorder service
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use std::time::Duration;
 
 use super::call_test::extract_call_payload;
 use super::signaling::{
-    self, trouter_callback, ConversationCallParams, SKYPE_CLIENT_HEADER, TEAMS_PARTITION,
-    TEAMS_REGION, TEAMS_RING,
+    self, ConversationCallParams, SKYPE_CLIENT_HEADER, TEAMS_PARTITION, TEAMS_REGION, TEAMS_RING,
+    trouter_callback,
 };
 use crate::trouter::websocket::TrouterSocket;
 
@@ -22,8 +22,7 @@ const RECORDER_BOT_MRI: &str = "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5";
 /// FlightProxy recorder service base URL.
 /// Captured from USEA region; other regions use different hostnames
 /// (e.g. aks-prod-euwe-* for West Europe). TODO: derive from region config.
-const RECORDER_SERVICE_BASE: &str =
-    "https://api.flightproxy.teams.microsoft.com/api/v2/ep/aks-prod-usea-p08-api.callrecorder.teams.cloud.microsoft:23444";
+const RECORDER_SERVICE_BASE: &str = "https://api.flightproxy.teams.microsoft.com/api/v2/ep/aks-prod-usea-p08-api.callrecorder.teams.cloud.microsoft:23444";
 
 /// Delay between transcription start and recording start.
 /// Teams web client waits ~11s, but we use 2s to race against solo-call teardown.
@@ -764,8 +763,8 @@ fn extract_conversation_id(url: &str) -> Option<String> {
 /// The conversation controller URL contains a base64url-encoded GUID where the bytes
 /// are in Windows/COM little-endian format (first 3 groups byte-swapped).
 fn decode_base64_uuid(b64: &str) -> Option<String> {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
     let bytes = URL_SAFE_NO_PAD.decode(b64).ok()?;
     if bytes.len() != 16 {
@@ -774,11 +773,22 @@ fn decode_base64_uuid(b64: &str) -> Option<String> {
     // UUID from little-endian bytes (Data1=LE u32, Data2=LE u16, Data3=LE u16, rest=big-endian)
     Some(format!(
         "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[3], bytes[2], bytes[1], bytes[0],
-        bytes[5], bytes[4],
-        bytes[7], bytes[6],
-        bytes[8], bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        bytes[3],
+        bytes[2],
+        bytes[1],
+        bytes[0],
+        bytes[5],
+        bytes[4],
+        bytes[7],
+        bytes[6],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
     ))
 }
 

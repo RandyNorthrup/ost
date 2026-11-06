@@ -1,11 +1,11 @@
 //! Help popup overlay: shows all keyboard shortcuts organized by category.
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
 };
 
 /// Popup dimensions.

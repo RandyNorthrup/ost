@@ -134,8 +134,8 @@ mod tests {
 
     #[test]
     fn test_tone_generator_output() {
-        let mut gen = ToneGenerator::new();
-        let frame = gen.next_frame();
+        let mut tone = ToneGenerator::new();
+        let frame = tone.next_frame();
         assert_eq!(frame.len(), 160);
         // Should have positive and negative values (sine wave)
         assert!(frame.iter().any(|&s| s > 1000));
@@ -156,12 +156,12 @@ mod tests {
     #[test]
     fn test_detect_echo_with_tone() {
         // Generate a 1kHz tone and feed it as "received" audio
-        let mut gen = ToneGenerator::new();
+        let mut tone = ToneGenerator::new();
         let mut samples = Vec::new();
         // Add some silence then the tone
         samples.extend_from_slice(&vec![0i16; 400]); // 50ms silence
         for _ in 0..25 {
-            samples.extend_from_slice(&gen.next_frame());
+            samples.extend_from_slice(&tone.next_frame());
         }
         let result = detect_echo(&samples, 1000.0, 8000.0);
         assert!(

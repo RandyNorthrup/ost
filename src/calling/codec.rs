@@ -4,10 +4,10 @@
 //! Decoder: takes H.264 NAL units, produces I420 YUV frames.
 
 use anyhow::{Context, Result};
+use openh264::OpenH264API;
 use openh264::decoder::{Decoder, DecoderConfig};
 use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate, IntraFramePeriod, Profile};
 use openh264::formats::YUVSource;
-use openh264::OpenH264API;
 
 /// Wrapper to pass raw I420 data directly to openh264 encoder.
 struct RawI420<'a> {

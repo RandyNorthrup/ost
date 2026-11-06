@@ -13,7 +13,7 @@
 //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //! ```
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Minimum RTP header size in bytes (no CSRC, no extension).
 pub const RTP_HEADER_SIZE: usize = 12;
@@ -231,11 +231,7 @@ pub fn ulaw_to_linear(sample: u8) -> i16 {
     let mag = biased - 132;
     let mag = mag.max(0);
 
-    if sign {
-        -(mag as i16)
-    } else {
-        mag as i16
-    }
+    if sign { -(mag as i16) } else { mag as i16 }
 }
 
 /// Generate a silence payload for PCMU (160 bytes of mu-law silence = 0xFF).

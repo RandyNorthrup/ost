@@ -11,11 +11,11 @@
 //! handshake, RTP/RTCP (128-191) is decrypted and played.
 
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use openssl::asn1::Asn1Time;
 use openssl::bn::{BigNum, MsbOption};
 use openssl::ec::{EcGroup, EcKey};
@@ -23,9 +23,9 @@ use openssl::hash::MessageDigest;
 use openssl::nid::Nid;
 use openssl::pkey::{PKey, Private};
 use openssl::ssl::{HandshakeError, SslContext, SslMethod, SslVerifyMode};
-use openssl::x509::{X509NameBuilder, X509};
+use openssl::x509::{X509, X509NameBuilder};
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use super::{ice, rtp, srtp};
 
@@ -1461,8 +1461,7 @@ fn split_srtp_keys(
 mod tests {
     use super::*;
 
-    const OFFER: &str =
-        "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\n\
+    const OFFER: &str = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\n\
 m=audio 59842 RTP/SAVP 105 111 0 8 126\r\nc=IN IP4 52.115.84.98\r\n\
 a=candidate:1 1 UDP 2130706431 52.115.84.98 59842 typ relay raddr 10.0.0.1 rport 5000\r\n\
 a=ice-ufrag:2wdP\r\na=ice-pwd:F8gUHddBXyfqYtixpZlIvgWH\r\n\

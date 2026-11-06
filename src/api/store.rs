@@ -35,11 +35,7 @@ fn safe_icon(url: &str) -> String {
                     || h.ends_with(".microsoft.com")
             })
     });
-    if ok {
-        url.to_string()
-    } else {
-        String::new()
-    }
+    if ok { url.to_string() } else { String::new() }
 }
 
 /// The first sentence of a (markdown) description, for a card's line.

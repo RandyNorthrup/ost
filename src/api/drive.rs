@@ -5,11 +5,11 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use super::client::TeamsClient;
-use super::files::{save_unique, seg, upload_in_session, MAX_FILE_BYTES};
+use super::files::{MAX_FILE_BYTES, save_unique, seg, upload_in_session};
 
 /// One file or folder.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

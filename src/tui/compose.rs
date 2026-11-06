@@ -1,12 +1,12 @@
 //! Compose box: text input with formatting toolbar and send button.
 
 use ratatui::{
+    Frame,
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Widget},
-    Frame,
 };
 
 /// State for the compose box.

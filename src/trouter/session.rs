@@ -1,8 +1,8 @@
 //! Trouter v4 session negotiation
 
 use anyhow::{Context, Result};
-use serde::de;
 use serde::Deserialize;
+use serde::de;
 
 fn string_or_u64<'de, D: de::Deserializer<'de>>(d: D) -> std::result::Result<u64, D::Error> {
     struct Visitor;
@@ -94,10 +94,13 @@ impl SessionResponse {
         let tc =
             r#"{"cv":"TEAMS_TROUTER_TCCV","ua":"TeamsCDL","hr":"","v":"TEAMS_CLIENTINFO_VERSION"}"#;
 
-        let mut url =
-            format!(
+        let mut url = format!(
             "{}/socket.io/1/websocket/{}?v=v4&{}&tc={}&con_num=0_1&auth=true&timeout=40&epid={}",
-            host, session_id, cp_query, e(tc), e(epid),
+            host,
+            session_id,
+            cp_query,
+            e(tc),
+            e(epid),
         );
 
         if let Some(ref ccid) = self.ccid {

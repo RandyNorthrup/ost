@@ -364,7 +364,7 @@ fn dump_frame(frame: &str) {
 
 /// Handle an incoming socket.io frame.
 async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, opts: ListenOptions) {
-    use crate::event_hub::{publish, EventKind};
+    use crate::event_hub::{EventKind, publish};
     // Stdout output belongs to the CLI only.
     macro_rules! say {
         ($($t:tt)*) => { if opts.console { println!($($t)*); } };
