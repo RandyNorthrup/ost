@@ -54,6 +54,10 @@ Microsoft branding.
   Full screen, turn incoming video off) and More (Device settings, Full
   screen). OST answers Teams' mid-call re-offers, including the move to
   a media processor that Hold and group escalation make.
+- **Watching a share**: when the other person shares a screen, window
+  or tab, it takes the stage whole (letterboxed) with "<name> is
+  presenting", their camera moves to a corner tile, and it's taken down
+  when they stop. Works in audio-only calls too, as in Teams.
 - **View more apps** lists Teams' apps for the account, in Teams'
   order: Shifts, Planner, OneNote, Help, Clipchamp, Whiteboard, Events,
   People. Planner, OneNote and People are native; Whiteboard, Clipchamp

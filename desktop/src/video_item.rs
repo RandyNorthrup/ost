@@ -1,6 +1,7 @@
 //! `VideoFrame`: a QML item that draws the newest decoded frame of a
 //! video stream ("remote" for the person you're calling), scaled to fill
-//! the item and cropped, as Teams fills its video tiles. QML calls
+//! the item and cropped, as Teams fills its video tiles (or, with `fit`,
+//! letterboxed whole, as Teams shows a shared screen). QML calls
 //! `refresh()` on a timer; it repaints only when there is a new frame.
 
 #[cxx_qt::bridge]
@@ -25,6 +26,7 @@ pub mod qobject {
         #[qproperty(bool, has_frame)]
         #[qproperty(i32, frame_width)]
         #[qproperty(i32, frame_height)]
+        #[qproperty(bool, fit)]
         type VideoFrame = super::VideoFrameRust;
     }
 
@@ -62,6 +64,8 @@ pub struct VideoFrameRust {
     has_frame: bool,
     frame_width: i32,
     frame_height: i32,
+    /// Letterbox (show it all) instead of fill-and-crop: shared screens.
+    fit: bool,
     /// The frame sequence last drawn.
     shown: u64,
 }
@@ -116,8 +120,13 @@ impl qobject::VideoFrame {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
-        // Fill and crop: scale so the frame covers the item.
-        let scale = (w / f.width as f64).max(h / f.height as f64);
+        // Fill and crop (cameras) or fit inside (shared screens).
+        let (sx, sy) = (w / f.width as f64, h / f.height as f64);
+        let scale = if self.rust().fit {
+            sx.min(sy)
+        } else {
+            sx.max(sy)
+        };
         let (dw, dh) = (f.width as f64 * scale, f.height as f64 * scale);
         let target = QRect::new(
             ((w - dw) / 2.0).round() as i32,
@@ -138,6 +147,13 @@ impl qobject::VideoFrame {
             &QRect::new(0, 0, w as i32, h as i32),
             ClipOperation::ReplaceClip,
         );
+        // Letterbox bars are near-black, as Teams' presenting stage.
+        if self.rust().fit {
+            painter.as_mut().fill_rect(
+                &cxx_qt_lib::QRectF::new(0.0, 0.0, w, h),
+                &cxx_qt_lib::QColor::from_rgb(0x1f, 0x1f, 0x1f),
+            );
+        }
         painter
             .as_mut()
             .set_render_hint(QPainterRenderHint::SmoothPixmapTransform, true);

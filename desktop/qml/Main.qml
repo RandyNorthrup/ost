@@ -661,6 +661,16 @@ Window {
         }
     }
     Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
+    // In a test call, capture the stage once someone's shared screen shows.
+    Connections {
+        target: callWindow
+        enabled: window.callTest
+        function onShareShownChanged() {
+            console.warn("CALL share shown", callWindow.shareShown)
+            if (callWindow.shareShown) shareShot.start()
+        }
+    }
+    Timer { id: shareShot; interval: 3000; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-share.png"))) }
     // --call-out: open the first chat and call it.
     Timer {
         running: window.callOut && backend.signedIn && !backend.callState

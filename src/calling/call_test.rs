@@ -385,7 +385,7 @@ pub async fn run_call_test(
     }
 
     // 8. Set up media leg
-    let mut outgoing_leg = setup_media_leg(
+    let outgoing_leg = setup_media_leg(
         LegSetup {
             local_audio_crypto_line: &offer_result.audio_crypto_line,
             local_video_crypto_line: &offer_result.video_crypto_line,
@@ -447,8 +447,16 @@ pub async fn run_call_test(
     };
     #[cfg(not(feature = "audio"))]
     let mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>> = None;
+    #[cfg(not(feature = "audio"))]
+    if !tone_mode {
+        tracing::warn!(
+            "Built without the audio feature: sending a 1kHz test tone instead of the microphone"
+        );
+    }
 
     // 9a. Initialize camera and display AFTER audio (SDL2 can interfere with audio)
+    #[cfg(feature = "video-capture")]
+    let mut outgoing_leg = outgoing_leg;
     #[cfg(feature = "video-capture")]
     {
         if use_camera {
@@ -893,13 +901,16 @@ async fn setup_media_leg(leg: LegSetup<'_>, remote_sdp: &str) -> Result<MediaLeg
 /// instead of generating a test tone — used on the incoming leg for echo verification.
 /// Returns handles and shared stat counters.
 fn spawn_media_leg(
-    mut leg: MediaLeg,
+    leg: MediaLeg,
     cname: &str,
     recorder: Option<Arc<Mutex<test_tone::AudioRecorder>>>,
     loopback: bool,
     speaker_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
     mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>>,
 ) -> MediaLegHandles {
+    // The camera and display handles move into their tasks.
+    #[cfg(feature = "video-capture")]
+    let mut leg = leg;
     let label = leg.label.clone();
     let mut handles = Vec::new();
 
@@ -1384,8 +1395,11 @@ fn spawn_media_leg(
                                     // Depacketize and optionally decode + display
                                     let marker = pkt.marker;
                                     match depacketizer.depacketize(&pkt.payload, marker) {
+                                        // Shown only with the SDL viewer.
+                                        #[cfg(not(feature = "video-capture"))]
+                                        Ok(Some(_)) => {}
+                                        #[cfg(feature = "video-capture")]
                                         Ok(Some(nal)) => {
-                                            #[cfg(feature = "video-capture")]
                                             if let (Some(dec), Some(tx)) =
                                                 (&mut decoder, &display_tx)
                                             {

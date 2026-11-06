@@ -112,6 +112,8 @@ pub struct WebRtcOffer {
     pub video: Option<OfferedVideo>,
     /// The peer's telephone-event/8000 payload type (dial-pad tones).
     pub dtmf_pt: Option<u8>,
+    /// The screen-sharing video line, if offered (even inactive).
+    pub sharing: Option<OfferedVideo>,
 }
 
 /// The payload type of `telephone-event/8000` in an audio section.
@@ -276,6 +278,9 @@ fn dtmf_payload(event: u8, end: bool, duration: u16) -> [u8; 4] {
 pub struct OfferedVideo {
     pub mid: String,
     pub payload_type: u8,
+    /// That payload type's profile-level-id (echoed in our answer, so the
+    /// formats match).
+    pub profile: String,
     pub ssrc: Option<u32>,
     /// The peer sends video (`sendrecv` or `sendonly`).
     pub sends: bool,
@@ -315,16 +320,45 @@ fn section_with_mid<'a>(sdp: &'a str, mid: &str) -> Option<&'a str> {
 }
 
 /// The main video stream of an offer: the first video m-line labelled
-/// main-video (else the first video m-line), with an H.264 format we
-/// decode. Constrained baseline (42e0..) is preferred, then baseline.
+/// main-video (else the first video m-line that isn't screen sharing),
+/// with an H.264 format we decode. Constrained baseline (42e0..) is
+/// preferred, then baseline. An inactive main video line is no video.
 fn offered_video(sdp: &str, sections: &[(String, String, String)]) -> Option<OfferedVideo> {
     let candidates: Vec<&(String, String, String)> =
         sections.iter().filter(|s| s.1 == "video").collect();
+    let labelled = |s: &&&(String, String, String), label: &str| {
+        section_with_mid(sdp, &s.0).is_some_and(|t| t.contains(&format!("a=label:{label}")))
+    };
     let main = candidates
         .iter()
-        .find(|s| section_with_mid(sdp, &s.0).is_some_and(|t| t.contains("a=label:main-video")))
-        .or(candidates.first())?;
-    let text = section_with_mid(sdp, &main.0)?;
+        .find(|s| labelled(s, "main-video"))
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|s| !labelled(s, "applicationsharing-video"))
+        })?;
+    video_line(sdp, &main.0, None).filter(|v| v.sends || v.receives)
+}
+
+/// The screen-sharing video line of an offer (labelled
+/// applicationsharing-video), kept even while inactive so a later
+/// re-offer can turn it on. Its H.264 payload type differs from the main
+/// video's where the offer allows, so the two streams can be told apart.
+fn offered_sharing(
+    sdp: &str,
+    sections: &[(String, String, String)],
+    main_pt: Option<u8>,
+) -> Option<OfferedVideo> {
+    let mid = sections.iter().filter(|s| s.1 == "video").find(|s| {
+        section_with_mid(sdp, &s.0).is_some_and(|t| t.contains("a=label:applicationsharing-video"))
+    })?;
+    video_line(sdp, &mid.0, main_pt)
+}
+
+/// One video m-line: its H.264 payload type (not `avoid` when another
+/// will do), the peer's SSRC and the direction.
+fn video_line(sdp: &str, mid: &str, avoid: Option<u8>) -> Option<OfferedVideo> {
+    let text = section_with_mid(sdp, mid)?;
     let h264: Vec<u8> = text
         .lines()
         .filter_map(|l| l.trim_end().strip_prefix("a=rtpmap:"))
@@ -350,10 +384,16 @@ fn offered_video(sdp: &str, sections: &[(String, String, String)]) -> Option<Off
         let f = fmtp(*pt);
         f.contains("packetization-mode=1") && f.contains(&format!("profile-level-id={profile}"))
     };
-    let payload_type = h264
+    let ranked: Vec<u8> = h264
         .iter()
-        .find(|pt| usable(pt, "42e0"))
-        .or_else(|| h264.iter().find(|pt| usable(pt, "4200")))
+        .filter(|pt| usable(pt, "42e0"))
+        .chain(h264.iter().filter(|pt| usable(pt, "4200")))
+        .copied()
+        .collect();
+    let payload_type = ranked
+        .iter()
+        .find(|pt| Some(**pt) != avoid)
+        .or(ranked.first())
         .copied()?;
     let ssrc = text
         .lines()
@@ -364,29 +404,41 @@ fn offered_video(sdp: &str, sections: &[(String, String, String)]) -> Option<Off
                 .find_map(|l| l.trim_end().strip_prefix("a=ssrc:"))
                 .and_then(|r| r.split_whitespace().next()?.parse().ok())
         });
-    let dir = text
-        .lines()
-        .map(str::trim_end)
-        .find(|l| {
-            matches!(
-                *l,
-                "a=sendrecv" | "a=sendonly" | "a=recvonly" | "a=inactive"
-            )
-        })
-        .unwrap_or("a=sendrecv");
-    let sends = matches!(dir, "a=sendrecv" | "a=sendonly");
-    let receives = matches!(dir, "a=sendrecv" | "a=recvonly");
-    // An inactive video line is no video.
-    if !sends && !receives {
-        return None;
-    }
+    let dir = section_direction(text);
+    let profile = fmtp(payload_type)
+        .split(';')
+        .find_map(|p| p.trim().strip_prefix("profile-level-id="))
+        .unwrap_or("42e01f")
+        .to_string();
     Some(OfferedVideo {
-        mid: main.0.clone(),
+        mid: mid.to_string(),
         payload_type,
+        profile,
         ssrc,
-        sends,
-        receives,
+        sends: matches!(dir, "sendrecv" | "sendonly"),
+        receives: matches!(dir, "sendrecv" | "recvonly"),
     })
+}
+
+/// Whether an offer's screen-sharing line is sending (someone presents).
+pub fn offer_shares(offer: &str) -> bool {
+    WebRtcOffer::parse(offer)
+        .and_then(|o| o.sharing)
+        .is_some_and(|v| v.sends)
+}
+
+/// What differs between our video m-lines.
+struct VideoLine<'a> {
+    mid: &'a str,
+    /// DTLS role: actpass in our offers, active in our answers.
+    setup: &'a str,
+    pt: u8,
+    /// H.264 profile-level-id for `pt`: the offer's in an answer.
+    profile: &'a str,
+    direction: &'a str,
+    /// main-video or applicationsharing-video.
+    label: &'a str,
+    ssrc: u32,
 }
 
 impl WebRtcOffer {
@@ -428,6 +480,10 @@ impl WebRtcOffer {
             fingerprint,
             candidates,
             video: offered_video(sdp, &sections),
+            sharing: {
+                let main_pt = offered_video(sdp, &sections).map(|v| v.payload_type);
+                offered_sharing(sdp, &sections, main_pt)
+            },
             dtmf_pt: dtmf_payload_type(&audio),
             sections,
             audio_mid,
@@ -460,6 +516,8 @@ pub struct LocalAudio {
     pub identity: DtlsIdentity,
     /// Our video SSRC (used for RTCP feedback even before we send video).
     pub video_ssrc: u32,
+    /// Our screen-sharing SSRC.
+    pub share_ssrc: u32,
     /// The answer accepted the peer's video: receive and show it.
     pub receive_video: bool,
     /// The telephone-event payload type to put in our SDP (the peer's when
@@ -497,6 +555,7 @@ impl LocalAudio {
             candidates,
             identity: DtlsIdentity::generate()?,
             video_ssrc: super::video::generate_ssrc(),
+            share_ssrc: super::video::generate_ssrc(),
             receive_video: false,
             dtmf_pt: Some(PT_DTMF_DEFAULT),
         })
@@ -531,7 +590,19 @@ impl LocalAudio {
         s.push_str("a=group:BUNDLE 0 1\r\n");
         s.push_str("a=msid-semantic: WMS ost\r\n");
         s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
-        s.push_str(&self.video_section(port, &addr, "1", "actpass", PT_H264_OFFER, "sendrecv"));
+        s.push_str(&self.video_section(
+            port,
+            &addr,
+            VideoLine {
+                mid: "1",
+                setup: "actpass",
+                pt: PT_H264_OFFER,
+                profile: "42e01f",
+                direction: "sendrecv",
+                label: "main-video",
+                ssrc: self.video_ssrc,
+            },
+        ));
         s
     }
 
@@ -544,16 +615,24 @@ impl LocalAudio {
             .unwrap_or_else(|| "0.0.0.0".into())
     }
 
-    /// Our main video m-line: receive H.264 with keyframe requests.
-    fn video_section(
-        &self,
-        port: u16,
-        addr: &str,
-        mid: &str,
-        setup: &str,
-        pt: u8,
-        direction: &str,
-    ) -> String {
+    /// One of our video m-lines (camera or screen sharing): H.264 with
+    /// keyframe requests.
+    fn video_section(&self, port: u16, addr: &str, line: VideoLine<'_>) -> String {
+        let VideoLine {
+            mid,
+            setup,
+            pt,
+            profile,
+            direction,
+            label,
+            ssrc,
+        } = line;
+        // One track id per stream (the camera, the shared screen).
+        let track = if label == "applicationsharing-video" {
+            "ost-share"
+        } else {
+            "ost-video"
+        };
         let mut s = String::new();
         s.push_str(&format!("m=video {port} RTP/SAVP {pt}\r\n"));
         s.push_str(&format!("c=IN IP4 {addr}\r\n"));
@@ -569,19 +648,16 @@ impl LocalAudio {
         s.push_str("a=rtcp-mux\r\n");
         s.push_str(&format!("a=rtpmap:{pt} H264/90000\r\n"));
         s.push_str(&format!(
-            "a=fmtp:{pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f\r\n"
+            "a=fmtp:{pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id={profile}\r\n"
         ));
         s.push_str("a=x-signaling-fb:* x-message app send:src recv:src,vc\r\n");
         s.push_str("a=rtcp-rsize\r\n");
         s.push_str(&format!("a=rtcp-fb:{pt} nack pli\r\n"));
         s.push_str(&format!("a=rtcp-fb:{pt} ccm fir\r\n"));
-        s.push_str("a=label:main-video\r\n");
-        s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", self.video_ssrc));
-        s.push_str(&format!("a=ssrc:{} cname:ost\r\n", self.video_ssrc));
-        s.push_str(&format!(
-            "a=ssrc:{} msid:ost ost-video\r\n",
-            self.video_ssrc
-        ));
+        s.push_str(&format!("a=label:{label}\r\n"));
+        s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", ssrc));
+        s.push_str(&format!("a=ssrc:{} cname:ost\r\n", ssrc));
+        s.push_str(&format!("a=ssrc:{ssrc} msid:ost {track}\r\n"));
         s
     }
 
@@ -639,14 +715,19 @@ impl LocalAudio {
         let addr = self.public_address();
         let session_id = u64::from(self.ssrc) << 16 | 1;
         let video = offer.video.as_ref().filter(|_| video);
+        // Screen sharing is accepted whenever we can decode it, in audio
+        // calls too (as Teams allows), and even while inactive so the other
+        // side can turn it on in a re-offer.
+        let sharing = offer.sharing.as_ref().filter(|_| cfg!(feature = "video"));
         let mut s = String::new();
         s.push_str("v=0\r\n");
         s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
         s.push_str("s=-\r\nt=0 0\r\n");
-        match video {
-            Some(v) => s.push_str(&format!("a=group:BUNDLE {} {}\r\n", offer.audio_mid, v.mid)),
-            None => s.push_str(&format!("a=group:BUNDLE {}\r\n", offer.audio_mid)),
-        }
+        let bundle: Vec<&str> = std::iter::once(offer.audio_mid.as_str())
+            .chain(video.map(|v| v.mid.as_str()))
+            .chain(sharing.map(|v| v.mid.as_str()))
+            .collect();
+        s.push_str(&format!("a=group:BUNDLE {}\r\n", bundle.join(" ")));
         s.push_str("a=msid-semantic: WMS ost\r\n");
         for (mid, kind, proto_fmts) in &offer.sections {
             if *mid == offer.audio_mid {
@@ -656,10 +737,29 @@ impl LocalAudio {
                 s.push_str(&self.video_section(
                     port,
                     &addr,
-                    mid,
-                    "active",
-                    v.payload_type,
-                    v.answer_direction(),
+                    VideoLine {
+                        mid,
+                        setup: "active",
+                        pt: v.payload_type,
+                        profile: &v.profile,
+                        direction: v.answer_direction(),
+                        label: "main-video",
+                        ssrc: self.video_ssrc,
+                    },
+                ));
+            } else if let Some(sh) = sharing.filter(|v| v.mid == *mid) {
+                s.push_str(&self.video_section(
+                    port,
+                    &addr,
+                    VideoLine {
+                        mid,
+                        setup: "active",
+                        pt: sh.payload_type,
+                        profile: &sh.profile,
+                        direction: sh.answer_direction(),
+                        label: "applicationsharing-video",
+                        ssrc: self.share_ssrc,
+                    },
                 ));
             } else {
                 let fmt = proto_fmts.split_whitespace().nth(1).unwrap_or("0");
@@ -698,7 +798,7 @@ pub struct WebRtcAudioSession {
     )>,
     /// The peer's video, decoded and published as the "remote" frame.
     #[cfg(feature = "video")]
-    _video_rx: Option<Arc<super::webrtc_video::VideoReceiver>>,
+    _video_rx: Vec<Arc<super::webrtc_video::VideoReceiver>>,
     muted: Arc<AtomicBool>,
     /// On hold: nothing is sent or played until it's resumed.
     held: Arc<AtomicBool>,
@@ -773,6 +873,10 @@ impl WebRtcAudioSession {
         let sdp = reanswer(&g.0, offer, g.1, self.dtls_role);
         self.held_by_peer
             .store(offer_holds(offer), Ordering::Relaxed);
+        // They stopped presenting: take their last shared frame down.
+        if !offer_shares(offer) {
+            super::frames::clear("share");
+        }
         Ok(sdp)
     }
 
@@ -905,18 +1009,28 @@ impl WebRtcAudioSession {
         let keyframe_req: Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>> = Default::default();
         // The peer's video, when the answer accepted it.
         #[cfg(feature = "video")]
-        let video_rx = offer
-            .video
-            .as_ref()
-            // Also when the peer isn't sending yet: it may turn its camera
-            // on later (a re-offer).
-            .filter(|_| local.receive_video)
-            .map(|v| {
-                (
-                    v.payload_type,
-                    Arc::new(super::webrtc_video::VideoReceiver::start("remote")),
-                )
-            });
+        // The peer's camera ("remote") and screen share ("share"): each a
+        // payload type, its decoder and the SSRC last seen carrying it.
+        // Started even while the peer isn't sending: a re-offer may turn
+        // either on later.
+        // The camera only when the answer accepted video; the share always
+        // (the answer always accepts it).
+        let video_rx: Vec<VideoStream> = [
+            (
+                offer.video.as_ref().filter(|_| local.receive_video),
+                "remote",
+            ),
+            (offer.sharing.as_ref(), "share"),
+        ]
+        .into_iter()
+        .filter_map(|(v, key)| {
+            v.map(|v| VideoStream {
+                pt: v.payload_type,
+                rx: Arc::new(super::webrtc_video::VideoReceiver::start(key)),
+                ssrc: Arc::new(std::sync::atomic::AtomicU32::new(v.ssrc.unwrap_or(0))),
+            })
+        })
+        .collect();
 
         // Receive and demultiplex.
         tasks.push(tokio::spawn(recv_loop(RecvCtx {
@@ -1006,16 +1120,18 @@ impl WebRtcAudioSession {
 
         // Ask for a keyframe (RTCP PLI) whenever the video decoder needs one.
         #[cfg(feature = "video")]
-        if let Some((_, rx)) = &video_rx {
-            let (socket, srtp, want) =
-                (socket.clone(), srtp_ctx.clone(), rx.keyframe_wanted.clone());
-            let (ours, theirs) = (
-                local.video_ssrc,
-                offer.video.as_ref().and_then(|v| v.ssrc).unwrap_or(0),
+        for stream in &video_rx {
+            let (socket, srtp, want, theirs) = (
+                socket.clone(),
+                srtp_ctx.clone(),
+                stream.rx.keyframe_wanted.clone(),
+                stream.ssrc.clone(),
             );
+            let ours = local.video_ssrc;
             tasks.push(tokio::spawn(async move {
                 loop {
-                    if want.load(Ordering::Relaxed) {
+                    let theirs = theirs.load(Ordering::Relaxed);
+                    if want.load(Ordering::Relaxed) && theirs != 0 {
                         let pli = super::webrtc_video::pli(ours, theirs);
                         let sealed = srtp
                             .lock()
@@ -1071,7 +1187,7 @@ impl WebRtcAudioSession {
             #[cfg(feature = "video")]
             camera: None,
             #[cfg(feature = "video")]
-            _video_rx: video_rx.map(|(_, rx)| rx),
+            _video_rx: video_rx.into_iter().map(|v| v.rx).collect(),
             muted,
             held,
             dtmf_tx,
@@ -1087,6 +1203,16 @@ impl WebRtcAudioSession {
     }
 }
 
+/// A video stream we receive: its payload type, decoder, and the SSRC
+/// last seen carrying it (for keyframe requests).
+#[cfg(feature = "video")]
+#[derive(Clone)]
+struct VideoStream {
+    pt: u8,
+    rx: Arc<super::webrtc_video::VideoReceiver>,
+    ssrc: Arc<std::sync::atomic::AtomicU32>,
+}
+
 struct RecvCtx {
     socket: Arc<UdpSocket>,
     local_pwd: String,
@@ -1099,7 +1225,7 @@ struct RecvCtx {
     held: Arc<AtomicBool>,
     /// The video payload type and its receiver.
     #[cfg(feature = "video")]
-    video: Option<(u8, Arc<super::webrtc_video::VideoReceiver>)>,
+    video: Vec<VideoStream>,
     /// Our video SSRC and where to flag the peer's keyframe requests.
     #[cfg(feature = "video")]
     keyframe_req: (u32, Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>),
@@ -1178,11 +1304,10 @@ async fn recv_loop(ctx: RecvCtx) {
                     s.bytes_received += len as u64;
                 }
                 #[cfg(feature = "video")]
-                if let Some((vpt, rx)) = &ctx.video
-                    && pt == *vpt
-                {
+                if let Some(stream) = ctx.video.iter().find(|v| v.pt == pt) {
                     if let Ok(pkt) = rtp::decode(&plain) {
-                        rx.push(super::webrtc_video::VideoPacket {
+                        stream.ssrc.store(pkt.ssrc, Ordering::Relaxed);
+                        stream.rx.push(super::webrtc_video::VideoPacket {
                             payload: pkt.payload.to_vec(),
                             marker: pkt.marker,
                             seq: pkt.sequence_number,
@@ -1650,7 +1775,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f\r\n\
             a=ssrc-group:FID 3236 2038\r\na=ssrc:3236 cname:x\r\na=label:main-video\r\n\
             m=video 9 RTP/SAVP 102\r\na=mid:2\r\na=sendrecv\r\na=rtpmap:102 H264/90000\r\n\
-            a=fmtp:102 packetization-mode=1;profile-level-id=42e01f\r\na=label:applicationsharing-video\r\n";
+            a=fmtp:102 packetization-mode=1;profile-level-id=42001f\r\na=label:applicationsharing-video\r\n";
         let o = WebRtcOffer::parse(offer).unwrap();
         let v = o.video.clone().unwrap();
         assert_eq!(
@@ -1658,6 +1783,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             OfferedVideo {
                 mid: "1".into(),
                 payload_type: 108,
+                profile: "42e01f".into(),
                 ssrc: Some(3236),
                 sends: true,
                 receives: true
@@ -1671,14 +1797,39 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert!(WebRtcOffer::parse(&inactive).unwrap().video.is_none());
         let rt = tokio::runtime::Runtime::new().unwrap();
         let local = rt.block_on(LocalAudio::prepare()).unwrap();
+        // The sharing line is parsed with its own payload type.
+        let sh = o.sharing.clone().unwrap();
+        assert_eq!((sh.mid.as_str(), sh.payload_type), ("2", 102));
         let a = local.answer_sdp_with(&o, true);
-        assert!(a.contains("a=group:BUNDLE 0 1\r\n"));
+        assert!(a.contains("a=group:BUNDLE 0 1 2\r\n"), "{a}");
         assert!(a.contains("m=video ") && a.contains("a=rtpmap:108 H264/90000"));
+        // Screen sharing is accepted (bundled, mirrored, labelled), so a
+        // re-offer can turn it on; an inactive offer is answered inactive.
         assert!(
-            a.contains("a=mid:2\r\na=inactive"),
-            "screen sharing stays off"
+            a.contains("a=mid:2\r\na=sendrecv") && a.contains("a=label:applicationsharing-video")
         );
-        assert!(!local.answer_sdp(&o).contains("a=rtpmap:108"));
+        assert!(a.contains("a=rtpmap:102 H264/90000"));
+        // Each line echoes the offer's profile for its payload type, and
+        // the two streams have their own track ids.
+        assert!(a.contains(
+            "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
+        ));
+        assert!(a.contains("msid:ost ost-video") && a.contains("msid:ost ost-share"));
+        let share_off = offer.replacen("a=mid:2\r\na=sendrecv", "a=mid:2\r\na=inactive", 1);
+        assert!(offer_shares(offer) && !offer_shares(&share_off));
+        let so = local.answer_sdp_with(&WebRtcOffer::parse(&share_off).unwrap(), true);
+        assert!(
+            so.contains("a=mid:2\r\na=inactive") && !so.contains("m=video 0 "),
+            "{so}"
+        );
+        // An audio-only answer still takes the screen share.
+        let audio_only = local.answer_sdp(&o);
+        assert!(!audio_only.contains("a=rtpmap:108"));
+        assert!(
+            audio_only.contains("a=group:BUNDLE 0 2\r\n")
+                && audio_only.contains("a=label:applicationsharing-video"),
+            "{audio_only}"
+        );
     }
 
     #[test]
@@ -1757,6 +1908,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
                 pwd: "p".repeat(24),
                 ssrc: 42,
                 video_ssrc: 43,
+                share_ssrc: 44,
                 receive_video: false,
                 dtmf_pt: Some(PT_DTMF_DEFAULT),
                 candidates: vec![ice::IceCandidate {

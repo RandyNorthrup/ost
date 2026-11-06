@@ -31,6 +31,7 @@ Window {
     // Teams shows Controls and Rooms to the meeting's organizer only.
     readonly property bool organizer: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase() === "organizer"
     readonly property bool remoteVideoShown: remoteVideo.visible
+    readonly property bool shareShown: shareVideo.visible
     // People pane rows: you first, then everyone else.
     /// Raise hand: yours, and everyone's in the order they raised.
     property bool handRaised: false
@@ -352,20 +353,42 @@ Window {
                 }
             }
         }
-        // Their video, filling the stage, once frames arrive.
+        // Their video, filling the stage, once frames arrive; while they
+        // share their screen it moves to a small tile (as in Teams).
         VideoFrame {
             id: remoteVideo
             source: "remote"
-            anchors.fill: parent
+            readonly property bool small: shareVideo.visible
+            anchors.fill: small ? undefined : parent
+            x: small ? parent.width - width - 12 : 0; y: small ? 12 : 0
+            width: small ? 240 : parent.width; height: small ? 135 : parent.height
+            z: small ? 3 : 0
             visible: hasFrame && !win.meeting && win.state === "connected" && !win.incomingVideoOff && !win.held && !win.heldByPeer
+        }
+        // Their shared screen takes the stage, fitted (not cropped).
+        VideoFrame {
+            id: shareVideo
+            source: "share"
+            fit: true
+            anchors.fill: parent
+            z: 1
+            visible: hasFrame && win.state === "connected" && !win.held && !win.heldByPeer
+        }
+        Rectangle {
+            visible: shareVideo.visible
+            z: 2
+            anchors { left: parent.left; top: parent.top; margins: 12 }
+            width: shareText.implicitWidth + 16; height: 28; radius: 4
+            color: "#CC000000"
+            Text { id: shareText; anchors.centerIn: parent; text: win.peer + " is presenting"; color: "white"; font.family: theme.font; font.pixelSize: theme.small }
         }
         Timer {
             interval: 33; repeat: true
             running: win.visible && win.state === "connected"
-            onTriggered: remoteVideo.refresh()
+            onTriggered: { remoteVideo.refresh(); shareVideo.refresh() }
         }
         Column {
-            visible: !win.meeting && !remoteVideo.visible
+            visible: !win.meeting && !remoteVideo.visible && !shareVideo.visible
             anchors.centerIn: parent
             spacing: 24
             Avatar { size: 144; name: win.peer; photoId: backend.callPeerId; anchors.horizontalCenter: parent.horizontalCenter }
