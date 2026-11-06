@@ -13,13 +13,17 @@ Item {
     property string appIcon
     property color appColor: theme.brand
     property url home
+    /// The app's own header (icon, name, Reload, Open in browser); off for
+    /// a channel tab, which Teams shows bare under the channel's tabs.
+    property bool showHeader: true
     readonly property alias view: web
 
     Rectangle { anchors.fill: parent; color: theme.surface }
 
     Rectangle {
         id: header
-        width: parent.width; height: 52; color: theme.surface
+        visible: root.showHeader
+        width: parent.width; height: root.showHeader ? 52 : 0; color: theme.surface
         Row {
             x: 20; anchors.verticalCenter: parent.verticalCenter; spacing: 10
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: root.appIcon || "apps"; size: 22; color: root.appColor }
@@ -41,10 +45,14 @@ Item {
         httpCacheType: WebEngineProfile.DiskHttpCache
     }
 
+    property bool ready: false
     Component.onCompleted: {
         web.profile = webProfile.instance()
         web.url = root.home
+        ready = true
     }
+    // Another page for the same view (a different channel's Page).
+    onHomeChanged: if (ready) web.url = root.home
 
     WebEngineView {
         id: web

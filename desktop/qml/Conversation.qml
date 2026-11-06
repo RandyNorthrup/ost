@@ -38,8 +38,24 @@ Rectangle {
     function openFind() { finding = true; tab = ""; findField.forceActiveFocus() }
     function jumpToNewest() { tab = ""; list.positionViewAtBeginning(); channelPosts.toEnd() }
     function toggleDetails() { participants.visible = !participants.visible }
-    readonly property var tabNames: isChannel ? ["Posts", "Shared", "Notes"]
+    // A channel's tabs, as Teams lists them: Posts, Shared (its Files
+    // tab), then the channel's own tabs in order (Page, Notes, apps).
+    readonly property var channelTabs: {
+        if (!isChannel || !backend.channelTabsJson) return []
+        const r = JSON.parse(backend.channelTabsJson)
+        if (r.channel !== chatId || !r.tabs) return []
+        // Teams pins the channel's Page right after Shared.
+        const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
+        return tabs.filter(t => t.app === "Channel Pages").concat(tabs.filter(t => t.app !== "Channel Pages"))
+    }
+    readonly property var tabNames: isChannel ? ["Posts", "Shared"].concat(channelTabs.length ? channelTabs.map(t => t.name) : ["Notes"])
         : isSelf ? ["Chat", "Shared", "Storyline"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+    // Load a channel's tabs once it's known which team it's in.
+    readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
+    onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId)
+    // The channel tab showing a web page in place (Page: the channel's
+    // Loop page), when one is selected.
+    readonly property var webTab: channelTabs.find(t => t.name === tab && t.url && t.app !== "OneNote") || null
     function openTab(i) { if (i < tabNames.length) tab = i === 0 ? "" : tabNames[i] }
     readonly property bool composeFocused: input.activeFocus
     readonly property bool detailsOpen: participants.visible
@@ -892,6 +908,15 @@ Rectangle {
                 }
             }
         }
+    }
+    // A channel tab that is a web page (Page): shown in place, signed in
+    // with OST's web profile, as Teams shows it.
+    Loader {
+        id: webTabLoader
+        active: !!root.webTab
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: WebApp { showHeader: false; appName: root.webTab ? root.webTab.name : ""; home: root.webTab ? root.webTab.url : "" }
     }
     // Tabs OST can't offer say so.
     Column {

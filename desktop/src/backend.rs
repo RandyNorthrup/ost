@@ -50,6 +50,8 @@ pub mod qobject {
         #[qproperty(bool, call_video_offered)]
         /// The Planner view last loaded: {view, plan, tasks, plans, error}.
         #[qproperty(QString, store_json)]
+        /// A channel's tabs: {channel, tabs: [{id, name, app, url}], error}.
+        #[qproperty(QString, channel_tabs_json)]
         #[qproperty(bool, store_busy)]
         #[qproperty(QString, channel_files_json)]
         #[qproperty(bool, channel_files_busy)]
@@ -303,6 +305,10 @@ pub mod qobject {
         #[qinvokable]
         fn store_load(self: Pin<&mut Backend>);
 
+        /// A channel's tabs (Page, Notes, apps) into channel_tabs_json.
+        #[qinvokable]
+        fn channel_tabs_load(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString);
+
         /// A channel's Shared tab: list folder `item_id` of `drive_id`, or,
         /// with both empty, the channel's own folder (found from the team
         /// and channel), into channel_files_json.
@@ -536,6 +542,7 @@ pub struct BackendRust {
     drive_json: QString,
     drive_busy: bool,
     store_json: QString,
+    channel_tabs_json: QString,
     store_busy: bool,
     channel_files_json: QString,
     channel_files_busy: bool,
@@ -3225,6 +3232,24 @@ impl qobject::Backend {
                     Err(e) => json!({ "error": short_error(&e) }).to_string(),
                 };
                 this.as_mut().set_store_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn channel_tabs_load(self: Pin<&mut Self>, team_id: &QString, channel_id: &QString) {
+        let (team, channel) = (team_id.to_string(), channel_id.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                api::tabs::channel_tabs(&TeamsClient::new().await?, &team, &channel).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let text = match result {
+                    Ok(tabs) => json!({ "channel": channel, "tabs": tabs }).to_string(),
+                    Err(e) => json!({ "channel": channel, "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_channel_tabs_json(QString::from(text.as_str()));
             });
         });
     }

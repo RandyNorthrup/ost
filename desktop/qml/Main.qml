@@ -489,7 +489,15 @@ Window {
             }
             // --reply-test takes over once the channel is open.
             if (Qt.application.arguments.indexOf("--reply-test") >= 0) return
-            console.warn("shot: signedIn", backend.signedIn, "chats", backend.chatsJson.length, "status", backend.statusText)
+            // --tab=<name>: open that tab of the chat or channel first, and
+            // give a web tab time to load.
+            const wantTab = (Qt.application.arguments.find(a => a.startsWith("--tab=")) || "").slice(6)
+            if (wantTab && conversation.tab !== wantTab) {
+                if (conversation.tabNames.indexOf(wantTab) < 0) { restart(); return }
+                conversation.tab = wantTab
+                interval = 12000; restart(); return
+            }
+            console.warn("shot: signedIn", backend.signedIn, "chats", backend.chatsJson.length, "status", backend.statusText, "tabs", JSON.stringify(conversation.tabNames))
             window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
         }
     }

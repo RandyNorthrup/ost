@@ -14,6 +14,7 @@ pub mod onenote;
 pub mod planner;
 pub mod presence;
 pub mod store;
+pub mod tabs;
 mod teams;
 
 use anyhow::Result;
