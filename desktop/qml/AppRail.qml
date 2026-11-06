@@ -21,7 +21,10 @@ Rectangle {
     readonly property var extraApps: [
         { key: "planner", icon: "clipboard-task-list-ltr-24", label: "Planner", keys: "" },
         { key: "people", icon: "people-20", label: "People", keys: "" },
-        { key: "onenote", icon: "notebook-20", label: "OneNote", keys: "" }
+        { key: "onenote", icon: "notebook-20", label: "OneNote", keys: "" },
+        { key: "whiteboard", icon: "board-20", label: "Whiteboard", keys: "" },
+        { key: "clipchamp", icon: "video", label: "Clipchamp", keys: "" },
+        { key: "help", icon: "question-circle-20", label: "Help", keys: "" }
     ]
     // Teams desktop's rail, with its labels and shortcuts (Copilot left out).
     readonly property var apps: [
@@ -112,9 +115,9 @@ Rectangle {
             { url: "https://teams.microsoft.com/l/app/42f6c1da-a241-483a-a3cc-4f5be9185951", label: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7" },
             { key: "planner", label: "Planner", icon: "clipboard-task-list-ltr-24-filled", color: theme.brand },
             { key: "onenote", label: "OneNote", icon: "notebook-20", color: "#7719AA" },
-            { url: "https://support.microsoft.com/teams", label: "Help", icon: "question-circle-20", color: theme.textStrong },
-            { url: "https://app.clipchamp.com/", label: "Clipchamp", icon: "video", color: "#8764B8" },
-            { url: "https://whiteboard.cloud.microsoft/", label: "Whiteboard", icon: "board-20", color: "#0F6CBD" },
+            { key: "help", label: "Help", icon: "question-circle-20", color: theme.textStrong },
+            { key: "clipchamp", label: "Clipchamp", icon: "video", color: "#8764B8" },
+            { key: "whiteboard", label: "Whiteboard", icon: "board-20", color: "#0F6CBD" },
             { url: "https://teams.cloud.microsoft/", label: "Events", icon: "ticket-diagonal-20", color: theme.textStrong },
             { key: "people", label: "People", icon: "people-20", color: theme.textStrong }
         ]

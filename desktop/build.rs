@@ -27,6 +27,7 @@ fn main() {
         "qml/OneNoteView.qml",
         "qml/ChannelFiles.qml",
         "qml/StoreView.qml",
+        "qml/WebApp.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
         "qml/ActivityView.qml",
@@ -52,11 +53,19 @@ fn main() {
     let module = QmlModule::new("com.ost.desktop")
         .qml_files(qml)
         .qml_file(QmlFile::from("qml/IconCache.qml").singleton(true));
-    CxxQtBuilder::new_qml_module(module)
+    let builder = CxxQtBuilder::new_qml_module(module)
         .file("src/backend.rs")
         .file("src/video_item.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
-        .qrc_resources(resources)
-        .build();
+        .qt_module("WebEngineQuick")
+        .qrc_resources(resources);
+    // SAFETY: only adds a source file to the C++ build.
+    let builder = unsafe {
+        builder.cc_builder(|cc| {
+            cc.file("src/webengine.cpp");
+        })
+    };
+    println!("cargo::rerun-if-changed=src/webengine.cpp");
+    builder.build();
 }

@@ -56,9 +56,10 @@ Microsoft branding.
   a media processor that Hold and group escalation make.
 - **View more apps** lists Teams' apps for the account, in Teams'
   order: Shifts, Planner, OneNote, Help, Clipchamp, Whiteboard, Events,
-  People. Planner, OneNote and People are native; Shifts (it needs a
-  scope OST's sign-in doesn't have), Clipchamp, Whiteboard, Events and
-  Help are web apps Teams embeds, so they open on the web. An app opened
+  People. Planner, OneNote and People are native; Whiteboard, Clipchamp
+  and Help are embedded, as Teams embeds them (QtWebEngine, with OST's
+  own persistent web profile: sign in once). Shifts (it needs a scope
+  OST's sign-in doesn't have) and Events open Teams on the web. An app opened
   there takes the rail's one extra slot, as in Teams.
 - **Store**: your organization's Teams app catalog, as Teams' Store
   Home shows it: the "Do more in Teams" banner with Search agents and
@@ -97,16 +98,18 @@ meetings, transfer, hold and the dial pad. Their buttons are shown disabled rath
 
 ## Build
 
-Requirements: Rust (stable), Qt 6.8 or newer (developed on 6.11) with
-Qt Quick and Qt Quick Controls, a C++ compiler and CMake (for CXX-Qt),
+Requirements: Rust (stable), Qt 6.9 or newer (developed on 6.11) with
+Qt Quick, Qt Quick Controls and Qt WebEngine (embedded apps), a C++
+compiler and CMake (for CXX-Qt),
 the ALSA development files (calls), and NASM (openh264, video).
 
 ```bash
 # Arch
-sudo pacman -S qt6-base qt6-declarative qt6-svg alsa-lib cmake nasm
+sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-webengine alsa-lib cmake nasm
 # Debian / Ubuntu
 sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-qtquick-controls \
-  qml6-module-qtquick-window libqt6svg6 libasound2-dev cmake nasm
+  qml6-module-qtquick-window libqt6svg6 qt6-webengine-dev qml6-module-qtwebengine \
+  libasound2-dev cmake nasm
 
 cargo build --release -p ost-desktop
 ```
@@ -209,6 +212,7 @@ account.
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
 | `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
+| `--webapp-test` | Open Whiteboard (`--webapp-help`: Help) from View more apps and capture it once loaded. |
 | `--store-test` | Open the Store, capture Home, search "planner", open Whiteboard's details. |
 | `--channel-files-test` | OST Test Team's General channel, Shared tab: make a folder, capture it, delete it. |
 | `--apps-test` | People: add a contact, favorite it, delete it; OneNote: open the first notebook, add a page, read it, delete it. |
