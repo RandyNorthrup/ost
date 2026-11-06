@@ -47,6 +47,8 @@ pub mod qobject {
         #[qproperty(QString, call_peer_id)]
         #[qproperty(bool, call_video_offered)]
         /// The Planner view last loaded: {view, plan, tasks, plans, error}.
+        #[qproperty(QString, channel_files_json)]
+        #[qproperty(bool, channel_files_busy)]
         #[qproperty(QString, onenote_json)]
         #[qproperty(bool, onenote_busy)]
         #[qproperty(QString, contacts_json)]
@@ -286,6 +288,31 @@ pub mod qobject {
             first_message: &QString,
         );
 
+        /// A channel's Shared tab: list folder `item_id` of `drive_id`, or,
+        /// with both empty, the channel's own folder (found from the team
+        /// and channel), into channel_files_json.
+        #[qinvokable]
+        fn channel_files_load(
+            self: Pin<&mut Backend>,
+            team_id: &QString,
+            channel_id: &QString,
+            drive_id: &QString,
+            item_id: &QString,
+        );
+
+        /// A channel's Shared tab: "upload" (paths, one per line), "folder"
+        /// (a name), "delete" (an item id) or "shortcut" (add the folder to
+        /// OneDrive, `arg` its name) in folder `item_id` of `drive_id`;
+        /// then the folder reloads.
+        #[qinvokable]
+        fn channel_files_change(
+            self: Pin<&mut Backend>,
+            op: &QString,
+            drive_id: &QString,
+            item_id: &QString,
+            arg: &QString,
+        );
+
         /// OneNote: load "notebooks", "sections" (of notebook `id`),
         /// "pages" (of section `id`) or "page" (`id`'s content) into
         /// onenote_json.
@@ -493,6 +520,8 @@ pub struct BackendRust {
     call_meeting: bool,
     drive_json: QString,
     drive_busy: bool,
+    channel_files_json: QString,
+    channel_files_busy: bool,
     onenote_json: QString,
     onenote_busy: bool,
     contacts_json: QString,
@@ -2878,6 +2907,107 @@ impl qobject::Backend {
                             &QString::from(name.as_str()),
                         );
                         this.as_mut().reload_chats();
+                    }
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
+                }
+            });
+        });
+    }
+
+    pub fn channel_files_load(
+        mut self: Pin<&mut Self>,
+        team_id: &QString,
+        channel_id: &QString,
+        drive_id: &QString,
+        item_id: &QString,
+    ) {
+        let (team, channel, drive, item) = (
+            team_id.to_string(),
+            channel_id.to_string(),
+            drive_id.to_string(),
+            item_id.to_string(),
+        );
+        self.as_mut().set_channel_files_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let c = TeamsClient::new().await?;
+                let (folder, root) = if drive.is_empty() || item.is_empty() {
+                    let f = api::drive::channel_folder(&c, &team, &channel).await?;
+                    (f.clone(), Some(f))
+                } else {
+                    (api::drive::DriveItem { drive_id: drive.clone(), id: item.clone(), ..Default::default() }, None)
+                };
+                let items = api::drive::children(&c, &folder.drive_id, &folder.id).await?;
+                let mut out = json!({ "channel": channel, "drive_id": folder.drive_id, "item_id": folder.id, "items": items });
+                if let Some(r) = root {
+                    out["root"] = json!(r);
+                }
+                anyhow::Ok(out)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_channel_files_busy(false);
+                let text = match result {
+                    Ok(v) => v.to_string(),
+                    Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_channel_files_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn channel_files_change(
+        mut self: Pin<&mut Self>,
+        op: &QString,
+        drive_id: &QString,
+        item_id: &QString,
+        arg: &QString,
+    ) {
+        let (op, drive, item, arg) = (
+            op.to_string(),
+            drive_id.to_string(),
+            item_id.to_string(),
+            arg.to_string(),
+        );
+        self.as_mut().set_channel_files_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let c = TeamsClient::new().await?;
+                match op.as_str() {
+                    "upload" => {
+                        for p in arg.lines().map(str::trim).filter(|p| !p.is_empty()) {
+                            api::drive::upload(&c, &drive, &item, std::path::Path::new(p)).await?;
+                        }
+                    }
+                    "folder" => {
+                        api::drive::new_folder(&c, &drive, &item, &arg).await?;
+                    }
+                    "delete" => api::drive::delete(&c, &drive, &arg).await?,
+                    "shortcut" => api::drive::add_shortcut(&c, &drive, &item, &arg).await?,
+                    _ => anyhow::bail!("Unknown change"),
+                }
+                let items = api::drive::children(&c, &drive, &item).await?;
+                anyhow::Ok((
+                    op,
+                    json!({ "drive_id": drive, "item_id": item, "items": items }),
+                ))
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_channel_files_busy(false);
+                match result {
+                    Ok((op, v)) => {
+                        if op == "shortcut" {
+                            this.as_mut().set_status_text(QString::from(
+                                "Added a shortcut in your OneDrive",
+                            ));
+                        }
+                        this.as_mut()
+                            .set_channel_files_json(QString::from(v.to_string().as_str()));
                     }
                     Err(e) => this
                         .as_mut()

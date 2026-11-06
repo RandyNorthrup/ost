@@ -60,6 +60,10 @@ Microsoft branding.
   scope OST's sign-in doesn't have), Clipchamp, Whiteboard, Events and
   Help are web apps Teams embeds, so they open on the web. An app opened
   there takes the rail's one extra slot, as in Teams.
+- **Channel Shared tab**: the channel's folder in the team's SharePoint
+  library, as Teams shows it: breadcrumb, Share, Copy link, Add shortcut
+  to OneDrive, Create or upload (folder, files), Name / Modified /
+  Modified By, opening folders and files, deleting.
 - **People**: your Outlook contacts as Teams' People app shows them (All
   contacts, Favorites, Categories), Add new contact, add or remove a
   favorite, send or copy an email, delete.
@@ -199,6 +203,7 @@ account.
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
 | `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
+| `--channel-files-test` | OST Test Team's General channel, Shared tab: make a folder, capture it, delete it. |
 | `--apps-test` | People: add a contact, favorite it, delete it; OneNote: open the first notebook, add a page, read it, delete it. |
 | `--planner-test` | Add and complete a private task; create a plan in OST Test Team, add a task, then delete the test plans. |
 | `--group-call-test` | Start a group call in "OST group test", capture it and People, hang up. |

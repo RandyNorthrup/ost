@@ -399,6 +399,58 @@ pub async fn purge(client: &TeamsClient, ids: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// A channel's files folder (its folder in the team's SharePoint library),
+/// as Teams' channel Shared tab shows it.
+pub async fn channel_folder(
+    client: &TeamsClient,
+    team_id: &str,
+    channel_id: &str,
+) -> Result<DriveItem> {
+    if uuid::Uuid::parse_str(team_id).is_err() {
+        bail!("Not a team");
+    }
+    let ok = channel_id.starts_with("19:")
+        && channel_id.len() < 200
+        && channel_id[3..]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.@=".contains(&b));
+    if !ok {
+        bail!("Not a channel");
+    }
+    let channel = channel_id.replace(':', "%3A").replace('@', "%40");
+    let path = format!("/teams/{team_id}/channels/{channel}/filesFolder");
+    // The first look at a channel's folder can make SharePoint create it,
+    // which may time out (504) once; it's there on the next try.
+    let resp = match client.graph_get(&path).await {
+        Ok(r) => r,
+        Err(e) if format!("{e:#}").contains("HTTP 504") => {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            client.graph_get(&path).await?
+        }
+        Err(e) => return Err(e),
+    };
+    let v: serde_json::Value = resp.json().await?;
+    parse_item(&v).context("The channel has no files folder")
+}
+
+/// Add a shortcut to a shared folder in your OneDrive (Teams' "Add
+/// shortcut to OneDrive").
+pub async fn add_shortcut(
+    client: &TeamsClient,
+    drive_id: &str,
+    item_id: &str,
+    name: &str,
+) -> Result<()> {
+    item_path(drive_id, item_id)?;
+    let body = serde_json::json!({
+        "name": name,
+        "remoteItem": { "id": item_id, "parentReference": { "driveId": drive_id } },
+        "@microsoft.graph.conflictBehavior": "rename"
+    });
+    client.graph_post("/me/drive/root/children", &body).await?;
+    Ok(())
+}
+
 /// Download a file into `dir` (a free name is chosen if it exists).
 pub async fn download(client: &TeamsClient, item: &DriveItem, dir: &Path) -> Result<PathBuf> {
     if item.is_folder {

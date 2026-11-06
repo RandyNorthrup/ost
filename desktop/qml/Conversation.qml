@@ -802,10 +802,24 @@ Rectangle {
         list.positionViewAtIndex(findHits[findIndex], ListView.Center)
     }
 
+    function channelFilesForTest() { return channelFiles }
+    // A channel's Shared tab: its folder in the team's SharePoint library.
+    ChannelFiles {
+        id: channelFiles
+        visible: root.isChannel && root.tab === "Shared"
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        teamId: root.teamId
+        channelId: root.isChannel ? root.chatId : ""
+        channelName: root.chatName
+        reply: backend.channelFilesJson ? JSON.parse(backend.channelFilesJson) : ({})
+        busy: backend.channelFilesBusy
+        onLoad: (t, c, d, i) => backend.channelFilesLoad(t, c, d, i)
+        onChange: (op, d, i, arg) => backend.channelFilesChange(op, d, i, arg)
+    }
     // Shared: the files and links in this chat.
     Item {
         id: sharedPane
-        visible: root.tab === "Shared" || root.tab === "Files"
+        visible: (root.tab === "Shared" && !root.isChannel) || root.tab === "Files"
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         readonly property var files: root.messages.reduce((a, m) => a.concat((m.files || []).map(f => Object.assign({ from: m.sender, time: m.time }, f))), []).reverse()
         readonly property var links: root.messages.reduce((a, m) => {
