@@ -536,6 +536,12 @@ Window {
         canVideo: backend.callCanVideo
         cameraOn: backend.callCameraOn
         onToggleCamera: backend.toggleCamera()
+        held: backend.callHeld
+        heldByPeer: backend.callHeldByPeer
+        onToggleHold: backend.toggleHold()
+        canDtmf: backend.callCanDtmf
+        onDtmf: key => backend.sendDtmf(key)
+        onDeviceSettings: { rail.current = "settings"; window.raise(); window.requestActivate() }
         onClosing: if (backend.callState !== "ended") backend.hangUp()
         meeting: backend.callMeeting
         roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
@@ -571,11 +577,11 @@ Window {
 
     // --call-test: capture the toast, answer, capture the call, hang up.
     readonly property bool callOut: Qt.application.arguments.indexOf("--call-out") >= 0
-    readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0 || Qt.application.arguments.indexOf("--call-panes") >= 0
+    readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0 || Qt.application.arguments.indexOf("--call-panes") >= 0
     property string favName: ""
     readonly property bool callPanes: Qt.application.arguments.indexOf("--call-panes") >= 0
     // --remote-hangup: stay in the call until the caller ends it.
-    readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0
+    readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0
     Connections {
         target: backend
         enabled: window.callTest
@@ -899,6 +905,33 @@ Window {
                 const l = (d.libraries || []).find(l => l.site === "OST Test Team"); if (l) { oneDrive.trail = []; oneDrive.openFolder(l.site + " · " + l.name, l.drive_id, "") }
             }
             else if (step === 13) { console.warn("DRIVE library", (d.items || []).map(i => i.name).join(", "), d.error || ""); cap("library") }
+            step++
+        }
+    }
+
+    // --hold-test: in a call, hold and resume, send dial-pad tones, and
+    // capture when the other side holds; stays until they hang up.
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.indexOf("--hold-test") >= 0
+        function onCallStateChanged() { if (backend.callState === "connected") holdTest.start() }
+        function onCallHeldByPeerChanged() {
+            console.warn("HOLD held by peer", backend.callHeldByPeer)
+            callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", backend.callHeldByPeer ? "-peerheld.png" : "-peerresumed.png")))
+        }
+    }
+    Timer {
+        id: holdTest
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const cap = tag => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            if (step === 1) { console.warn("HOLD can dtmf", backend.callCanDtmf); backend.toggleHold() }
+            else if (step === 2) { console.warn("HOLD held", backend.callHeld, backend.statusText); cap("held") }
+            else if (step === 7) { backend.toggleHold() }
+            else if (step === 8) { console.warn("HOLD resumed", !backend.callHeld, backend.statusText) }
+            else if (step === 9) { callWindow.dialPadForTest(); callWindow.pressForTest("123#") }
+            else if (step === 10) { cap("dialpad"); callWindow.closeDialPadForTest(); console.warn("HOLD tones sent") }
             step++
         }
     }

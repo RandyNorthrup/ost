@@ -27,6 +27,13 @@ pub struct OutgoingCall {
     end_url: Option<String>,
     call_leg: Option<String>,
     media: Option<WebRtcAudioSession>,
+    /// Our participant JSON and media-acknowledgement callback, for
+    /// answering re-offers.
+    me: (serde_json::Value, String),
+    /// Our Trouter callback base: (surl, endpoint id).
+    callbacks: (String, String),
+    hold_link: Option<String>,
+    resume_link: Option<String>,
 }
 
 impl OutgoingCall {
@@ -42,6 +49,73 @@ impl OutgoingCall {
 
     pub fn is_muted(&self) -> bool {
         self.media.as_ref().is_some_and(|m| m.is_muted())
+    }
+
+    /// Hold or resume the call with the call controller, then our media.
+    pub async fn hold(&mut self, held: bool) -> Result<()> {
+        let (surl, epid) = self.callbacks.clone();
+        let cb = |p: &str| signaling::trouter_callback(&surl, &epid, p);
+        if held {
+            let link = self
+                .hold_link
+                .clone()
+                .context("This call can't be put on hold")?;
+            let resume = super::incoming::request_hold(
+                &self.http,
+                &self.skype_token,
+                &link,
+                &cb("call/holdCompletion/"),
+            )
+            .await?;
+            self.resume_link = Some(resume);
+        } else {
+            let link = self.resume_link.take().context("The call isn't on hold")?;
+            super::incoming::request_resume(
+                &self.http,
+                &self.skype_token,
+                &link,
+                &cb("call/resumeCompletion/"),
+            )
+            .await?;
+        }
+        self.set_held(held);
+        Ok(())
+    }
+
+    /// Put the call on hold, or resume it (our media only).
+    pub fn set_held(&self, held: bool) {
+        if let Some(m) = &self.media {
+            m.set_held(held);
+        }
+    }
+
+    pub fn can_dtmf(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.can_dtmf())
+    }
+
+    /// Send a dial-pad key as a tone.
+    pub fn send_dtmf(&self, key: char) -> Result<()> {
+        self.media
+            .as_ref()
+            .context("No audio in this call")?
+            .send_dtmf(key)
+    }
+
+    /// Answer the other side's re-offer (hold, resume, camera); returns
+    /// whether it now has us on hold.
+    pub async fn answer_renegotiation(&mut self, event: &serde_json::Value) -> Result<bool> {
+        super::incoming::answer_renegotiation(
+            &self.http,
+            &self.skype_token,
+            &mut self.media,
+            Some(self.me.clone()),
+            event,
+        )
+        .await
+    }
+
+    pub fn is_held_by_peer(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.is_held_by_peer())
     }
 
     pub async fn stats(&self) -> Option<WebRtcStats> {
@@ -118,6 +192,7 @@ struct Acceptance {
     sdp: String,
     acknowledgement: Option<String>,
     call_leg: Option<String>,
+    hold: Option<String>,
     end: Option<String>,
 }
 
@@ -162,6 +237,7 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
         sdp: blob.to_string(),
         acknowledgement: link("acknowledgement"),
         call_leg: link("callLeg"),
+        hold: link("hold"),
         end: link("end"),
     }))
 }
@@ -411,7 +487,10 @@ async fn start(
 
     let media = match WebRtcOffer::parse(&acceptance.sdp) {
         Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer).await {
-            Ok(m) => Some(m),
+            Ok(m) => {
+                m.set_local_sdp(&offer);
+                Some(m)
+            }
             Err(e) => {
                 tracing::warn!("WebRTC audio failed: {:#}", e);
                 None
@@ -429,6 +508,26 @@ async fn start(
         end_url: acceptance.end,
         call_leg: acceptance.call_leg,
         media,
+        me: (
+            serde_json::json!({
+                "id": params.caller_mri,
+                "displayName": params.caller_display_name,
+                "endpointId": params.endpoint_id,
+                "participantId": params.participant_id,
+                "languageId": "en-US",
+            }),
+            signaling::trouter_callback(
+                params.trouter_surl,
+                params.endpoint_id,
+                "call/mediaAcknowledgement/",
+            ),
+        ),
+        callbacks: (
+            params.trouter_surl.to_string(),
+            params.endpoint_id.to_string(),
+        ),
+        hold_link: acceptance.hold,
+        resume_link: None,
     })
 }
 

@@ -64,6 +64,9 @@ pub mod qobject {
         /// The meeting's chat thread (for the call window's Chat pane).
         #[qproperty(QString, call_thread_id)]
         #[qproperty(bool, call_muted)]
+        #[qproperty(bool, call_held)]
+        #[qproperty(bool, call_held_by_peer)]
+        #[qproperty(bool, call_can_dtmf)]
         #[qproperty(bool, call_has_audio)]
         /// "Randy Northrup is typing" for the open chat, or "".
         #[qproperty(QString, typing_text)]
@@ -196,6 +199,14 @@ pub mod qobject {
         /// Turn the camera on or off in the current call.
         #[qinvokable]
         fn toggle_camera(self: Pin<&mut Backend>);
+
+        /// Put the call on hold, or resume it.
+        #[qinvokable]
+        fn toggle_hold(self: Pin<&mut Backend>);
+
+        /// Send a dial-pad key (0-9, *, #) as a tone in the call.
+        #[qinvokable]
+        fn send_dtmf(self: Pin<&mut Backend>, key: &QString);
     }
 
     #[auto_cxx_name]
@@ -438,6 +449,9 @@ pub struct BackendRust {
     user_mri: QString,
     roster: Vec<teams_cli::calling::roster::Participant>,
     call_muted: bool,
+    call_held: bool,
+    call_held_by_peer: bool,
+    call_can_dtmf: bool,
     call_has_audio: bool,
     typing_text: QString,
     window_active: bool,
@@ -707,6 +721,19 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         tracing::info!(changes = delta.len(), "roster update");
         let _ = qt.queue(move |mut this| {
             if !this.rust().call_meeting {
+                // A 1:1 call: the roster tells when the other person holds.
+                let me = this.rust().user_mri.to_string().to_ascii_lowercase();
+                let changed: Vec<_> = delta
+                    .iter()
+                    .filter(|p| p.id != me && p.id.starts_with("8:"))
+                    .collect();
+                if let Some(p) = changed.first() {
+                    let held = p.active && p.on_hold;
+                    if held != this.rust().call_held_by_peer {
+                        tracing::info!(held, "peer hold state");
+                        this.as_mut().set_call_held_by_peer(held);
+                    }
+                }
                 return;
             }
             let mut roster = std::mem::take(&mut this.as_mut().rust_mut().roster);
@@ -771,6 +798,41 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let _ = qt.queue(|mut this| this.as_mut().end_call_ui());
             }
         });
+        return;
+    }
+    if teams_cli::calling::incoming::is_renegotiation_event(json) {
+        // Hold, resume or a camera change from the other side: answer it,
+        // or Teams drops the call.
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(json) else {
+            return;
+        };
+        let mut guard = call_slot().lock().await;
+        let slot = &mut *guard;
+        let result = match (slot.active.as_mut(), slot.outgoing.as_mut()) {
+            (Some(call), _) => match CallAuth::load().await {
+                Ok(auth) => call.answer_renegotiation(&auth, &event).await,
+                Err(e) => Err(e),
+            },
+            (None, Some(call)) => call.answer_renegotiation(&event).await,
+            _ => return,
+        };
+        let slot = guard;
+        drop(slot);
+        match result {
+            Ok(held) => {
+                tracing::info!(held, "re-offer answered");
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_held_by_peer(held));
+            }
+            Err(e) => tracing::warn!("re-offer not answered: {}", short_error(&e)),
+        }
+        return;
+    }
+    if let Some(held) = teams_cli::calling::incoming::retarget_hold(json) {
+        tracing::info!(held, "call retargeted");
+        // Only a music bot says "held"; the roster tells when it ends.
+        if held {
+            let _ = qt.queue(move |mut this| this.as_mut().set_call_held_by_peer(true));
+        }
         return;
     }
     if teams_cli::calling::incoming::is_call_end_event(json) {
@@ -1223,6 +1285,7 @@ impl qobject::Backend {
                 Ok(mut active) => {
                     let has_audio = active.has_audio();
                     let can_video = active.can_send_video();
+                    let can_dtmf = active.can_dtmf();
                     // Accept with video: the camera starts on.
                     let camera = with_video
                         && can_video
@@ -1239,6 +1302,7 @@ impl qobject::Backend {
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_video(can_video);
+                        this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_camera_on(camera);
                         this.as_mut().set_call_muted(false);
                         this.as_mut().set_call_state(QString::from("connected"));
@@ -1306,12 +1370,14 @@ impl qobject::Backend {
             match result {
                 Ok(call) => {
                     let has_audio = call.has_audio();
-                    tracing::info!(has_audio, "outgoing call connected");
+                    let can_dtmf = call.can_dtmf();
+                    tracing::info!(has_audio, can_dtmf, "outgoing call connected");
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
+                        this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }
@@ -1350,12 +1416,14 @@ impl qobject::Backend {
             match result {
                 Ok(call) => {
                     let has_audio = call.has_audio();
-                    tracing::info!(has_audio, "group call started");
+                    let can_dtmf = call.can_dtmf();
+                    tracing::info!(has_audio, can_dtmf, "group call started");
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
+                        this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }
@@ -1410,12 +1478,14 @@ impl qobject::Backend {
             match result {
                 Ok(call) => {
                     let has_audio = call.has_audio();
-                    tracing::info!(has_audio, "meeting joined");
+                    let can_dtmf = call.can_dtmf();
+                    tracing::info!(has_audio, can_dtmf, "meeting joined");
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
+                        this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }
@@ -1461,7 +1531,7 @@ impl qobject::Backend {
         });
     }
 
-    pub fn toggle_camera(mut self: Pin<&mut Self>) {
+    pub fn toggle_camera(self: Pin<&mut Self>) {
         let on = !self.rust().call_camera_on;
         let device = camera_device();
         let qt = self.qt_thread();
@@ -1498,8 +1568,62 @@ impl qobject::Backend {
         });
     }
 
+    pub fn toggle_hold(mut self: Pin<&mut Self>) {
+        let held = !self.rust().call_held;
+        self.as_mut().set_call_held(held);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut guard = call_slot().lock().await;
+            let slot = &mut *guard;
+            let result = match (slot.active.as_mut(), slot.outgoing.as_mut()) {
+                (Some(call), _) => match CallAuth::load().await {
+                    Ok(auth) => call.hold(&auth, held).await,
+                    Err(e) => Err(e),
+                },
+                (None, Some(call)) => call.hold(held).await,
+                _ => Err(anyhow::anyhow!("No call")),
+            };
+            drop(guard);
+            if let Err(e) = result {
+                tracing::warn!("hold: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_call_held(!held);
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Hold: {}", short_error(&e)).as_str(),
+                    ));
+                });
+            }
+        });
+    }
+
+    pub fn send_dtmf(self: Pin<&mut Self>, key: &QString) {
+        let Some(k) = key.to_string().chars().next() else {
+            return;
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let result = match (slot.active.as_ref(), slot.outgoing.as_ref()) {
+                (Some(c), _) => c.send_dtmf(k),
+                (None, Some(c)) => c.send_dtmf(k),
+                _ => Err(anyhow::anyhow!("No call")),
+            };
+            drop(slot);
+            if let Err(e) = result {
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Dial pad: {}", short_error(&e)).as_str(),
+                    ));
+                });
+            }
+        });
+    }
+
     /// Show the call as over; the UI fades it out from "ended".
     fn end_call_ui(mut self: Pin<&mut Self>) {
+        self.as_mut().set_call_held(false);
+        self.as_mut().set_call_held_by_peer(false);
+        self.as_mut().set_call_can_dtmf(false);
         if !self.rust().call_state.is_empty() {
             self.as_mut().set_call_state(QString::from("ended"));
         }
@@ -2331,7 +2455,7 @@ impl qobject::Backend {
             .iter()
             .map(|(id, (text, t))| (id.clone(), text.clone(), *t))
             .collect();
-        list.sort_by(|a, b| b.2.cmp(&a.2));
+        list.sort_by_key(|a| std::cmp::Reverse(a.2));
         let chats = &self.rust().chats;
         let json: Vec<serde_json::Value> = list
             .into_iter()

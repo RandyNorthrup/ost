@@ -34,6 +34,10 @@ use super::audio;
 
 /// RTP payload type for PCMU.
 const PT_PCMU: u8 = 0;
+/// Our payload type for DTMF (RFC 4733 telephone-event/8000) when we offer.
+const PT_DTMF_DEFAULT: u8 = 101;
+/// How long one dial-pad tone lasts, in 20 ms packets (160 ms).
+const DTMF_PACKETS: u32 = 8;
 /// SRTP profile negotiated in the DTLS `use_srtp` extension.
 const SRTP_PROFILE: &str = "SRTP_AES128_CM_SHA1_80";
 /// Bytes exported for SRTP: two 16-byte keys and two 14-byte salts.
@@ -104,6 +108,129 @@ pub struct WebRtcOffer {
     /// we can decode (packetization mode 1, baseline profile) and the
     /// peer's video SSRC.
     pub video: Option<OfferedVideo>,
+    /// The peer's telephone-event/8000 payload type (dial-pad tones).
+    pub dtmf_pt: Option<u8>,
+}
+
+/// The payload type of `telephone-event/8000` in an audio section.
+fn dtmf_payload_type(audio: &str) -> Option<u8> {
+    audio.lines().find_map(|l| {
+        let rest = l.trim_end().strip_prefix("a=rtpmap:")?;
+        let (pt, codec) = rest.split_once(' ')?;
+        codec
+            .eq_ignore_ascii_case("telephone-event/8000")
+            .then(|| pt.parse().ok())
+            .flatten()
+    })
+}
+
+/// The direction attribute of one SDP section (sendrecv when absent).
+fn section_direction(section: &str) -> &'static str {
+    for l in section.lines().map(str::trim_end) {
+        match l {
+            "a=sendrecv" => return "sendrecv",
+            "a=sendonly" => return "sendonly",
+            "a=recvonly" => return "recvonly",
+            "a=inactive" => return "inactive",
+            _ => {}
+        }
+    }
+    "sendrecv"
+}
+
+/// The sections of an SDP (from each "m=" line), with their mids.
+fn sections(sdp: &str) -> Vec<(Option<String>, String)> {
+    let mut out: Vec<(Option<String>, String)> = Vec::new();
+    for l in sdp.split_inclusive('\n') {
+        if l.starts_with("m=") {
+            out.push((None, String::new()));
+        }
+        if let Some((mid, body)) = out.last_mut() {
+            if let Some(m) = l.trim_end().strip_prefix("a=mid:") {
+                *mid = Some(m.to_string());
+            }
+            body.push_str(l);
+        }
+    }
+    out
+}
+
+/// Whether a re-offer puts us on hold: its audio neither sends nor is
+/// active (`sendonly` or `inactive`, RFC 3264 8.4).
+pub fn offer_holds(offer: &str) -> bool {
+    sections(offer)
+        .iter()
+        .find(|(_, b)| b.starts_with("m=audio"))
+        .is_some_and(|(_, b)| matches!(section_direction(b), "sendonly" | "inactive"))
+}
+
+/// Answer a re-offer (hold, resume, a camera turned on) with our earlier
+/// SDP: the same transport and codecs, each accepted section's direction
+/// mirroring the new offer's, and the session version bumped (RFC 3264 8).
+pub fn reanswer(ours: &str, offer: &str, version: u64) -> String {
+    let theirs = sections(offer);
+    let mut out = String::new();
+    let head_end = ours.find("\nm=").map(|i| i + 1).unwrap_or(ours.len());
+    for l in ours[..head_end].split_inclusive('\n') {
+        match l.strip_prefix("o=") {
+            Some(o) => {
+                let mut f: Vec<&str> = o.split(' ').collect();
+                let v = version.to_string();
+                if f.len() > 2 {
+                    f[2] = &v;
+                }
+                out.push_str("o=");
+                out.push_str(&f.join(" "));
+                if !out.ends_with('\n') {
+                    out.push_str("\r\n");
+                }
+            }
+            None => out.push_str(l),
+        }
+    }
+    for (mid, body) in sections(ours) {
+        let rejected = body.split_whitespace().nth(1) == Some("0");
+        let peer = mid
+            .as_ref()
+            .and_then(|m| theirs.iter().find(|(tm, _)| tm.as_ref() == Some(m)))
+            .map(|(_, b)| section_direction(b));
+        let dir = match (rejected, peer) {
+            (true, _) => None,
+            (false, Some("sendonly")) => Some("recvonly"),
+            (false, Some("recvonly")) => Some("sendonly"),
+            (false, Some("inactive")) => Some("inactive"),
+            (false, _) => Some("sendrecv"),
+        };
+        for l in body.split_inclusive('\n') {
+            let t = l.trim_end();
+            if matches!(t, "a=sendrecv" | "a=sendonly" | "a=recvonly" | "a=inactive") {
+                if let Some(d) = dir {
+                    out.push_str(&format!("a={d}\r\n"));
+                    continue;
+                }
+            }
+            out.push_str(l);
+        }
+    }
+    out
+}
+
+/// The RFC 4733 event code of a dial-pad key.
+pub fn dtmf_event(key: char) -> Option<u8> {
+    match key {
+        '0'..='9' => Some(key as u8 - b'0'),
+        '*' => Some(10),
+        '#' => Some(11),
+        'A'..='D' => Some(12 + (key as u8 - b'A')),
+        _ => None,
+    }
+}
+
+/// A telephone-event payload (RFC 4733 2.3): event, E bit + volume, duration.
+fn dtmf_payload(event: u8, end: bool, duration: u16) -> [u8; 4] {
+    let d = duration.to_be_bytes();
+    // Volume 10 (-10 dBm0), as phones send.
+    [event, if end { 0x80 } else { 0 } | 10, d[0], d[1]]
 }
 
 /// The peer's main video stream as offered.
@@ -263,6 +390,7 @@ impl WebRtcOffer {
             fingerprint,
             candidates,
             video: offered_video(sdp, &sections),
+            dtmf_pt: dtmf_payload_type(&audio),
             sections,
             audio_mid,
             setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
@@ -296,6 +424,9 @@ pub struct LocalAudio {
     pub video_ssrc: u32,
     /// The answer accepted the peer's video: receive and show it.
     pub receive_video: bool,
+    /// The telephone-event payload type to put in our SDP (the peer's when
+    /// answering, ours when offering); None leaves DTMF out.
+    pub dtmf_pt: Option<u8>,
 }
 
 impl LocalAudio {
@@ -329,6 +460,7 @@ impl LocalAudio {
             identity: DtlsIdentity::generate()?,
             video_ssrc: super::video::generate_ssrc(),
             receive_video: false,
+            dtmf_pt: Some(PT_DTMF_DEFAULT),
         })
     }
 
@@ -343,7 +475,7 @@ impl LocalAudio {
         s.push_str("s=-\r\nt=0 0\r\n");
         s.push_str("a=group:BUNDLE 0\r\n");
         s.push_str("a=msid-semantic: WMS ost\r\n");
-        s.push_str(&self.audio_section(port, &addr, "0", "actpass"));
+        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
         s
     }
 
@@ -395,9 +527,20 @@ impl LocalAudio {
         s
     }
 
-    fn audio_section(&self, port: u16, addr: &str, mid: &str, setup: &str) -> String {
+    /// Our audio m-line; `dtmf` adds telephone-event with that payload type.
+    fn audio_section(
+        &self,
+        port: u16,
+        addr: &str,
+        mid: &str,
+        setup: &str,
+        dtmf: Option<u8>,
+    ) -> String {
         let mut s = String::new();
-        s.push_str(&format!("m=audio {port} RTP/SAVP {PT_PCMU}\r\n"));
+        match dtmf {
+            Some(d) => s.push_str(&format!("m=audio {port} RTP/SAVP {PT_PCMU} {d}\r\n")),
+            None => s.push_str(&format!("m=audio {port} RTP/SAVP {PT_PCMU}\r\n")),
+        }
         s.push_str(&format!("c=IN IP4 {addr}\r\n"));
         for c in &self.candidates {
             // to_sdp_line() omits the "a=" prefix.
@@ -413,6 +556,10 @@ impl LocalAudio {
         s.push_str("a=sendrecv\r\n");
         s.push_str("a=rtcp-mux\r\n");
         s.push_str(&format!("a=rtpmap:{PT_PCMU} PCMU/8000\r\n"));
+        if let Some(d) = dtmf {
+            s.push_str(&format!("a=rtpmap:{d} telephone-event/8000\r\n"));
+            s.push_str(&format!("a=fmtp:{d} 0-15\r\n"));
+        }
         s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", self.ssrc));
         s.push_str(&format!("a=ssrc:{} cname:ost\r\n", self.ssrc));
         s
@@ -443,7 +590,8 @@ impl LocalAudio {
         s.push_str("a=msid-semantic: WMS ost\r\n");
         for (mid, kind, proto_fmts) in &offer.sections {
             if *mid == offer.audio_mid {
-                s.push_str(&self.audio_section(port, &addr, mid, "active"));
+                // DTMF only with the payload type the peer offered.
+                s.push_str(&self.audio_section(port, &addr, mid, "active", offer.dtmf_pt));
             } else if let Some(v) = video.filter(|v| v.mid == *mid) {
                 s.push_str(&self.video_section(
                     port,
@@ -492,6 +640,14 @@ pub struct WebRtcAudioSession {
     #[cfg(feature = "video")]
     _video_rx: Option<Arc<super::webrtc_video::VideoReceiver>>,
     muted: Arc<AtomicBool>,
+    /// On hold: nothing is sent or played until it's resumed.
+    held: Arc<AtomicBool>,
+    /// Dial-pad tones to send (RFC 4733 event codes), when negotiated.
+    dtmf_tx: Option<mpsc::UnboundedSender<u8>>,
+    /// The SDP we last sent, and its session version, for re-answers.
+    local_sdp: std::sync::Mutex<(String, u64)>,
+    /// The other side put the call on hold.
+    held_by_peer: AtomicBool,
     stats: Arc<Mutex<WebRtcStats>>,
     #[cfg(feature = "audio")]
     _capture: Option<audio::AudioCapture>,
@@ -529,6 +685,54 @@ impl WebRtcAudioSession {
 
     pub fn is_muted(&self) -> bool {
         self.muted.load(Ordering::Relaxed)
+    }
+
+    /// Put the call on hold (no audio either way) or resume it.
+    pub fn set_held(&self, held: bool) {
+        self.held.store(held, Ordering::Relaxed);
+    }
+
+    pub fn is_held(&self) -> bool {
+        self.held.load(Ordering::Relaxed)
+    }
+
+    /// Remember the SDP we sent (offer or answer), to answer re-offers.
+    pub fn set_local_sdp(&self, sdp: &str) {
+        *self.local_sdp.lock().unwrap_or_else(|e| e.into_inner()) = (sdp.to_string(), 2);
+    }
+
+    /// Answer the peer's re-offer, noting whether it holds the call.
+    pub fn answer_reoffer(&self, offer: &str) -> Result<String> {
+        let mut g = self.local_sdp.lock().unwrap_or_else(|e| e.into_inner());
+        if g.0.is_empty() {
+            bail!("No earlier SDP to answer with");
+        }
+        g.1 += 1;
+        let sdp = reanswer(&g.0, offer, g.1);
+        self.held_by_peer
+            .store(offer_holds(offer), Ordering::Relaxed);
+        Ok(sdp)
+    }
+
+    /// The other side has the call on hold.
+    pub fn is_held_by_peer(&self) -> bool {
+        self.held_by_peer.load(Ordering::Relaxed)
+    }
+
+    /// Whether the call negotiated dial-pad tones (telephone-event).
+    pub fn can_dtmf(&self) -> bool {
+        self.dtmf_tx.is_some()
+    }
+
+    /// Send a dial-pad key (0-9, *, #, A-D) as an RFC 4733 tone.
+    pub fn send_dtmf(&self, key: char) -> Result<()> {
+        let event = dtmf_event(key).context("Not a dial-pad key")?;
+        self.dtmf_tx
+            .as_ref()
+            .context("This call doesn't take dial-pad tones")?
+            .send(event)
+            .ok()
+            .context("The call has ended")
     }
 
     pub async fn stats(&self) -> WebRtcStats {
@@ -633,6 +837,7 @@ impl WebRtcAudioSession {
         let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>> = None;
 
         let mut tasks = Vec::new();
+        let held = Arc::new(AtomicBool::new(false));
 
         #[cfg(feature = "video")]
         let keyframe_req: Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>> = Default::default();
@@ -641,7 +846,9 @@ impl WebRtcAudioSession {
         let video_rx = offer
             .video
             .as_ref()
-            .filter(|v| local.receive_video && v.sends)
+            // Also when the peer isn't sending yet: it may turn its camera
+            // on later (a re-offer).
+            .filter(|_| local.receive_video)
             .map(|v| {
                 (
                     v.payload_type,
@@ -658,6 +865,7 @@ impl WebRtcAudioSession {
             srtp: srtp_ctx.clone(),
             stats: stats.clone(),
             spk_tx,
+            held: held.clone(),
             #[cfg(feature = "video")]
             video: video_rx.clone(),
             #[cfg(feature = "video")]
@@ -718,17 +926,21 @@ impl WebRtcAudioSession {
         tracing::info!("DTLS-SRTP established");
 
         let muted = Arc::new(AtomicBool::new(false));
+        let (dtmf_tx, dtmf_rx) = mpsc::unbounded_channel::<u8>();
+        let dtmf_tx = offer.dtmf_pt.map(|_| dtmf_tx);
 
         // Send audio every 20 ms.
-        tasks.push(tokio::spawn(send_loop(
-            socket.clone(),
-            remote.clone(),
-            srtp_ctx.clone(),
-            local.ssrc,
-            stats.clone(),
+        tasks.push(tokio::spawn(send_loop(SendCtx {
+            socket: socket.clone(),
+            remote: remote.clone(),
+            srtp: srtp_ctx.clone(),
+            ssrc: local.ssrc,
+            stats: stats.clone(),
             mic_rx,
-            muted.clone(),
-        )));
+            muted: muted.clone(),
+            held: held.clone(),
+            dtmf: offer.dtmf_pt.map(|pt| (pt, dtmf_rx)),
+        })));
 
         // Ask for a keyframe (RTCP PLI) whenever the video decoder needs one.
         #[cfg(feature = "video")]
@@ -799,6 +1011,10 @@ impl WebRtcAudioSession {
             #[cfg(feature = "video")]
             _video_rx: video_rx.map(|(_, rx)| rx),
             muted,
+            held,
+            dtmf_tx,
+            local_sdp: std::sync::Mutex::new((String::new(), 2)),
+            held_by_peer: AtomicBool::new(false),
             stats,
             #[cfg(feature = "audio")]
             _capture: capture,
@@ -816,6 +1032,8 @@ struct RecvCtx {
     srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     stats: Arc<Mutex<WebRtcStats>>,
     spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
+    /// On hold: the peer's audio isn't played.
+    held: Arc<AtomicBool>,
     /// The video payload type and its receiver.
     #[cfg(feature = "video")]
     video: Option<(u8, Arc<super::webrtc_video::VideoReceiver>)>,
@@ -911,7 +1129,7 @@ async fn recv_loop(ctx: RecvCtx) {
                     }
                 }
                 if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain)) {
-                    if pkt.payload_type == PT_PCMU {
+                    if pkt.payload_type == PT_PCMU && !ctx.held.load(Ordering::Relaxed) {
                         let pcm: Vec<i16> = pkt
                             .payload
                             .iter()
@@ -926,38 +1144,97 @@ async fn recv_loop(ctx: RecvCtx) {
     }
 }
 
-async fn send_loop(
+struct SendCtx {
     socket: Arc<UdpSocket>,
     remote: Arc<Mutex<Option<SocketAddr>>>,
-    srtp_ctx: Arc<Mutex<Option<srtp::SrtpStreams>>>,
+    srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     ssrc: u32,
     stats: Arc<Mutex<WebRtcStats>>,
     mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>>,
     muted: Arc<AtomicBool>,
-) {
+    held: Arc<AtomicBool>,
+    /// The telephone-event payload type and the keys to send.
+    dtmf: Option<(u8, mpsc::UnboundedReceiver<u8>)>,
+}
+
+/// A dial-pad tone being sent: its event, start timestamp and packets sent.
+struct Tone {
+    event: u8,
+    start_ts: u32,
+    sent: u32,
+}
+
+/// The packets of one tone: DTMF_PACKETS growing ones, the last marked end,
+/// then the end packet twice more (RFC 4733 2.5.1.4 asks for three).
+fn tone_packet(tone: &Tone) -> Option<(bool, [u8; 4])> {
+    let end_at = DTMF_PACKETS - 1;
+    if tone.sent > end_at + 2 {
+        return None;
+    }
+    let n = tone.sent.min(end_at);
+    let duration = ((n + 1) * rtp::TIMESTAMP_INCREMENT) as u16;
+    Some((
+        tone.sent == 0,
+        dtmf_payload(tone.event, tone.sent >= end_at, duration),
+    ))
+}
+
+async fn send_loop(mut ctx: SendCtx) {
     let r = random_u64();
     let (mut seq, mut ts) = (r as u16, (r >> 16) as u32);
     let mut tick = tokio::time::interval(Duration::from_millis(rtp::PACKET_INTERVAL_MS));
+    let mut tone: Option<Tone> = None;
     loop {
         tick.tick().await;
-        let frame = mic_rx.as_ref().and_then(|rx| rx.try_recv().ok());
-        let payload = match frame {
-            Some(samples) if !muted.load(Ordering::Relaxed) => {
-                let mut enc: Vec<u8> = samples.iter().map(|&s| rtp::linear_to_ulaw(s)).collect();
-                enc.resize(rtp::SAMPLES_PER_PACKET, 0xFF);
-                enc
+        let frame = ctx.mic_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if tone.is_none() {
+            if let Some((_, rx)) = ctx.dtmf.as_mut() {
+                if let Ok(event) = rx.try_recv() {
+                    tone = Some(Tone {
+                        event,
+                        start_ts: ts,
+                        sent: 0,
+                    });
+                }
             }
-            _ => rtp::silence_payload(),
+        }
+        let packet = match (tone.as_ref().and_then(tone_packet), ctx.dtmf.as_ref()) {
+            (Some((first, payload)), Some((pt, _))) => {
+                let t = tone.as_mut().map(|t| {
+                    t.sent += 1;
+                    t.start_ts
+                });
+                let mut p = rtp::encode(*pt, seq, t.unwrap_or(ts), ctx.ssrc, &payload);
+                if first {
+                    p[1] |= 0x80;
+                }
+                p
+            }
+            _ => {
+                tone = None;
+                let payload = match frame {
+                    Some(samples)
+                        if !ctx.muted.load(Ordering::Relaxed)
+                            && !ctx.held.load(Ordering::Relaxed) =>
+                    {
+                        let mut enc: Vec<u8> =
+                            samples.iter().map(|&s| rtp::linear_to_ulaw(s)).collect();
+                        enc.resize(rtp::SAMPLES_PER_PACKET, 0xFF);
+                        enc
+                    }
+                    _ => rtp::silence_payload(),
+                };
+                rtp::encode(PT_PCMU, seq, ts, ctx.ssrc, &payload)
+            }
         };
-        let packet = rtp::encode(PT_PCMU, seq, ts, ssrc, &payload);
         let protected = {
-            let mut guard = srtp_ctx.lock().await;
+            let mut guard = ctx.srtp.lock().await;
             guard.as_mut().and_then(|c| c.protect(&packet).ok())
         };
-        let target = *remote.lock().await;
+        let target = *ctx.remote.lock().await;
         if let (Some(p), Some(to)) = (protected, target) {
-            if socket.send_to(&p, to).await.is_ok() {
-                stats.lock().await.packets_sent += 1;
+            if ctx.socket.send_to(&p, to).await.is_ok() {
+                ctx.stats.lock().await.packets_sent += 1;
             }
         }
         seq = seq.wrapping_add(1);
@@ -1343,6 +1620,53 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
     }
 
     #[test]
+    fn reoffers_are_mirrored_and_holds_seen() {
+        let ours = "v=0\r\no=- 77 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1\r\nm=audio 5000 RTP/SAVP 0\r\na=mid:0\r\na=sendrecv\r\nm=video 5000 RTP/SAVP 107\r\na=mid:1\r\na=sendonly\r\nm=video 0 RTP/SAVP 0\r\na=mid:2\r\na=inactive\r\n";
+        let hold = "v=0\r\nm=audio 1 RTP/SAVP 0\r\na=mid:0\r\na=sendonly\r\nm=video 1 RTP/SAVP 107\r\na=mid:1\r\na=inactive\r\nm=video 1 RTP/SAVP 107\r\na=mid:2\r\na=sendrecv\r\n";
+        assert!(offer_holds(hold));
+        let a = reanswer(ours, hold, 3);
+        assert!(a.contains("o=- 77 3 IN IP4"));
+        assert!(a.contains("a=mid:0\r\na=recvonly"));
+        assert!(a.contains("a=mid:1\r\na=inactive"));
+        // A section we rejected stays rejected.
+        assert!(a.contains("m=video 0 RTP/SAVP 0\r\na=mid:2\r\na=inactive"));
+        let resume = hold
+            .replace("a=sendonly", "a=sendrecv")
+            .replace("a=mid:1\r\na=inactive", "a=mid:1\r\na=sendrecv");
+        assert!(!offer_holds(&resume));
+        let b = reanswer(ours, &resume, 4);
+        assert!(b.contains("a=mid:0\r\na=sendrecv") && b.contains("a=mid:1\r\na=sendrecv"));
+    }
+
+    #[test]
+    fn dial_pad_tones_follow_rfc4733() {
+        assert_eq!(dtmf_event('5'), Some(5));
+        assert_eq!(dtmf_event('*'), Some(10));
+        assert_eq!(dtmf_event('#'), Some(11));
+        assert_eq!(dtmf_event('x'), None);
+        let mut t = Tone {
+            event: 1,
+            start_ts: 0,
+            sent: 0,
+        };
+        let mut packets = Vec::new();
+        while let Some(p) = tone_packet(&t) {
+            packets.push(p);
+            t.sent += 1;
+        }
+        // 8 growing packets, the last marked end, then 2 more end packets.
+        assert_eq!(packets.len(), 10);
+        assert!(packets[0].0 && !packets[1].0, "marker only on the first");
+        assert_eq!(packets[0].1, [1, 10, 0, 160]);
+        assert_eq!(packets[6].1[1] & 0x80, 0);
+        for p in &packets[7..] {
+            assert_eq!(p.1, [1, 0x80 | 10, 0x05, 0x00], "end, 1280 samples");
+        }
+        let sdp = "m=audio 9 UDP/TLS/RTP/SAVPF 111 0 126\r\na=rtpmap:111 opus/48000/2\r\na=rtpmap:110 telephone-event/48000\r\na=rtpmap:126 telephone-event/8000\r\n";
+        assert_eq!(dtmf_payload_type(sdp), Some(126));
+    }
+
+    #[test]
     fn offer_is_audio_only_actpass() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let local = rt.block_on(async {
@@ -1354,6 +1678,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
                 ssrc: 42,
                 video_ssrc: 43,
                 receive_video: false,
+                dtmf_pt: Some(PT_DTMF_DEFAULT),
                 candidates: vec![ice::IceCandidate {
                     foundation: "1".into(),
                     component: 1,

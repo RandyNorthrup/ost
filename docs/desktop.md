@@ -40,6 +40,12 @@ Microsoft branding.
   (Restore, Delete permanently), Browse files by People, Meetings
   (recordings) and Media (photos and videos); Create or upload works
   from every view (into My files when you're not in a folder).
+- **Call controls**: Hold and Resume through Teams' hold service (the
+  other person hears Teams' hold music; you see "On hold" when they hold
+  you), Dial pad (RFC 4733 tones), View (Gallery / Speaker in meetings,
+  Full screen, turn incoming video off) and More (Device settings, Full
+  screen). OST answers Teams' mid-call re-offers, including the move to
+  a media processor that Hold and group escalation make.
 - **Planner** (from View more apps): My tasks (private To Do tasks and
   the Planner tasks assigned to you, with All / Private tasks / Assigned
   to me), My day, My plans (your teams' plans), Grid and Board, adding
@@ -171,6 +177,7 @@ account.
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
+| `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
 | `--planner-test` | Add and complete a private task; create a plan in OST Test Team, add a task, then delete the test plans. |
 | `--group-call-test` | Start a group call in "OST group test", capture it and People, hang up. |
 | `--cancel-ring` | With `--call-out`, hang up while it rings. |

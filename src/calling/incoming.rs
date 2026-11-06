@@ -149,6 +149,7 @@ fn debug_dump(kind: &str, text: &str) {
 }
 
 /// Who we are in call signalling.
+#[derive(Clone)]
 struct LocalParticipant {
     id: String,
     display_name: String,
@@ -177,6 +178,154 @@ impl LocalParticipant {
 /// Capabilities the Teams web client advertises for an answering endpoint.
 const ENDPOINT_CAPABILITIES: u64 = 73463;
 
+/// Whether a link from a call push is one of Teams' services (our Skype
+/// token goes only there): https on teams.microsoft.com, skype.com or
+/// trouter.io.
+pub(crate) fn is_service_link(url: &str) -> bool {
+    let Ok(u) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+    u.scheme() == "https"
+        && [
+            ".teams.microsoft.com",
+            ".skype.com",
+            ".trouter.io",
+            ".teams.cloud.microsoft",
+        ]
+        .iter()
+        .any(|d| host.ends_with(d))
+}
+
+/// Answer a re-offer from the other side. A plain re-offer (the same
+/// media, directions changed) gets our earlier SDP mirrored. A new offer
+/// (`newOffer`: Teams moving the call onto a media processor, as its Hold
+/// does to play music, or escalating to a group call) gets a fresh answer,
+/// and the media moves to a new session with ICE and DTLS against it.
+/// `me`: our participant JSON and media-acknowledgement callback.
+/// Returns whether the other side has us on hold.
+pub(crate) async fn answer_renegotiation(
+    http: &reqwest::Client,
+    skype_token: &str,
+    session: &mut Option<webrtc_audio::WebRtcAudioSession>,
+    me: Option<(serde_json::Value, String)>,
+    event: &serde_json::Value,
+) -> Result<bool> {
+    let neg = event
+        .pointer("/body/mediaNegotiation")
+        .or_else(|| event.get("mediaNegotiation"))
+        .context("Not a renegotiation")?;
+    let offer = str_at(neg, "/mediaContent/blob").context("Re-offer without SDP")?;
+    let url = str_at(neg, "/links/mediaAnswer").context("Re-offer without a mediaAnswer link")?;
+    let current = session.as_ref().context("No WebRTC media to renegotiate")?;
+    debug_dump("sdp-reoffer", &offer);
+    let new_offer = neg
+        .pointer("/mediaContent/newOffer")
+        .and_then(|v| v.as_bool())
+        == Some(true);
+    let mut moved = None;
+    let sdp = if new_offer {
+        let parsed =
+            webrtc_audio::WebRtcOffer::parse(&offer).context("New offer without DTLS-SRTP")?;
+        let local = webrtc_audio::LocalAudio::prepare().await?;
+        let sdp = local.answer_sdp_with(&parsed, false);
+        moved = Some((local, parsed));
+        sdp
+    } else {
+        current.answer_reoffer(&offer)?
+    };
+    debug_dump("sdp-reanswer", &sdp);
+    let mut answer = serde_json::json!({
+        "callModalities": neg.get("callModalities").cloned().unwrap_or(serde_json::json!(["audio"])),
+        "mediaContent": { "blob": sdp, "contentType": "application/sdp" },
+    });
+    if let Some((sender, ack)) = me {
+        answer["sender"] = sender;
+        answer["links"] = serde_json::json!({ "mediaAcknowledgement": ack });
+    }
+    cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        &url,
+        &serde_json::json!({ "mediaAnswer": answer }),
+        "Re-answer",
+    )
+    .await?;
+    if let Some((local, parsed)) = moved {
+        let muted = current.is_muted();
+        let held = current.is_held();
+        let fresh = webrtc_audio::WebRtcAudioSession::start(local, parsed).await?;
+        fresh.set_local_sdp(&sdp);
+        fresh.set_muted(muted);
+        fresh.set_held(held);
+        tracing::info!("media moved to the new offer");
+        // The old session (its socket, camera and tasks) stops here.
+        *session = Some(fresh);
+    }
+    Ok(session.as_ref().is_some_and(|s| s.is_held_by_peer()))
+}
+
+/// Put the other person on hold as Teams does (its "serverHoldV2"): the
+/// call controller moves them onto music, and returns the resume link.
+pub(crate) async fn request_hold(
+    http: &reqwest::Client,
+    skype_token: &str,
+    hold_link: &str,
+    completion: &str,
+) -> Result<String> {
+    let body = serde_json::json!({
+        "hold": { "holdType": "musicOnHold", "links": { "holdCompletion": completion } }
+    });
+    let reply = cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        hold_link,
+        &body,
+        "Hold",
+    )
+    .await?;
+    let resume =
+        str_at(&reply, "/holdResponse/links/resume").context("Hold reply without a resume link")?;
+    if !is_service_link(&resume) {
+        anyhow::bail!("Hold reply's resume link isn't a Teams service");
+    }
+    Ok(resume)
+}
+
+/// Take the call off hold (the resume link from `request_hold`).
+pub(crate) async fn request_resume(
+    http: &reqwest::Client,
+    skype_token: &str,
+    resume_link: &str,
+    completion: &str,
+) -> Result<()> {
+    let body = serde_json::json!({ "resume": { "links": { "resumeCompletion": completion } } });
+    cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        resume_link,
+        &body,
+        "Resume",
+    )
+    .await?;
+    Ok(())
+}
+
+/// Teams' Hold moves the held side onto a media processor that plays
+/// music; `call/retargetCompletion` tells which bot it went to. Returns
+/// Some(on hold) for a retarget event.
+pub fn retarget_hold(json: &str) -> Option<bool> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let r = v
+        .pointer("/body/retargetCompleted")
+        .or_else(|| v.get("retargetCompleted"))?;
+    let ok = r.get("code").and_then(|c| c.as_u64()).unwrap_or(0) < 300;
+    Some(ok && r.get("audioBotType").and_then(|b| b.as_str()) == Some("audioPlayback"))
+}
+
 /// POST a JSON body to a call-controller link and return the JSON reply
 /// (or `Null` for an empty one). Errors carry only the HTTP status.
 async fn cc_request(
@@ -187,6 +336,9 @@ async fn cc_request(
     body: &serde_json::Value,
     what: &str,
 ) -> Result<serde_json::Value> {
+    if !is_service_link(url) {
+        anyhow::bail!("{what}: not a Teams service link");
+    }
     let resp = http
         .request(method, url)
         .header("X-Skypetoken", skype_token)
@@ -298,6 +450,11 @@ pub struct ActiveCall {
     webrtc: Option<webrtc_audio::WebRtcAudioSession>,
     video: Option<VideoMediaSession>,
     started: Instant,
+    /// Who we are in a forked call (sender of re-answers).
+    me: Option<LocalParticipant>,
+    /// Hold's link, and Resume's once on hold.
+    hold_link: Option<String>,
+    resume_link: Option<String>,
 }
 
 impl Drop for ActiveCall {
@@ -331,6 +488,80 @@ impl ActiveCall {
     pub fn is_muted(&self) -> bool {
         self.audio.as_ref().is_some_and(|a| a.is_muted())
             || self.webrtc.as_ref().is_some_and(|w| w.is_muted())
+    }
+
+    /// Hold or resume the call with the call controller (the other person
+    /// hears Teams' hold music), then stop or restart our own audio.
+    pub async fn hold(&mut self, auth: &CallAuth, held: bool) -> Result<()> {
+        let me = self.me.as_ref().context("Hold needs a Teams call")?;
+        if held {
+            let link = self
+                .hold_link
+                .as_deref()
+                .context("This call can't be put on hold")?;
+            let resume = request_hold(
+                &auth.http,
+                &auth.skype_token,
+                link,
+                &me.callback("call/holdCompletion/"),
+            )
+            .await?;
+            self.resume_link = Some(resume);
+        } else {
+            let link = self.resume_link.take().context("The call isn't on hold")?;
+            request_resume(
+                &auth.http,
+                &auth.skype_token,
+                &link,
+                &me.callback("call/resumeCompletion/"),
+            )
+            .await?;
+        }
+        self.set_held(held);
+        Ok(())
+    }
+
+    /// Put the call on hold, or resume it (our media only).
+    pub fn set_held(&self, held: bool) {
+        if let Some(w) = &self.webrtc {
+            w.set_held(held);
+        }
+        if let Some(a) = &self.audio {
+            a.set_muted(held || self.is_muted());
+        }
+    }
+
+    /// The other side has the call on hold.
+    pub fn is_held_by_peer(&self) -> bool {
+        self.webrtc.as_ref().is_some_and(|w| w.is_held_by_peer())
+    }
+
+    /// Answer the other side's re-offer (`call/mediaRenegotiation`: hold,
+    /// resume, a camera turned on) so the call carries on. Returns whether
+    /// it now has us on hold.
+    pub async fn answer_renegotiation(
+        &mut self,
+        auth: &CallAuth,
+        event: &serde_json::Value,
+    ) -> Result<bool> {
+        let me = self
+            .me
+            .as_ref()
+            .map(|m| (m.json(), m.callback("call/mediaAcknowledgement/")));
+        answer_renegotiation(&auth.http, &auth.skype_token, &mut self.webrtc, me, event).await
+    }
+
+    /// The call takes dial-pad tones.
+    pub fn can_dtmf(&self) -> bool {
+        self.webrtc.as_ref().is_some_and(|w| w.can_dtmf())
+    }
+
+    /// Send a dial-pad key as a tone.
+    pub fn send_dtmf(&self, key: char) -> Result<()> {
+        self.webrtc
+            .as_ref()
+            .context("This call doesn't take dial-pad tones")?
+            .send_dtmf(key)
     }
 
     /// The call negotiated video we can send (camera button usable).
@@ -619,6 +850,9 @@ pub async fn answer(
         webrtc: None,
         video,
         started: Instant::now(),
+        me,
+        hold_link: leg.hold,
+        resume_link: None,
     })
 }
 
@@ -662,6 +896,7 @@ async fn answer_webrtc(
     let webrtc = match media.await {
         Ok(Ok(session)) => {
             session.set_muted(!microphone_on);
+            session.set_local_sdp(&sdp);
             Some(session)
         }
         Ok(Err(e)) => {
@@ -682,6 +917,9 @@ async fn answer_webrtc(
         webrtc,
         video: None,
         started: Instant::now(),
+        me,
+        hold_link: leg.hold,
+        resume_link: None,
     })
 }
 
@@ -840,6 +1078,7 @@ async fn accept_v2(
     tracing::info!(?shape, "acceptance reply");
     Ok(CallLeg {
         url: str_at(ack, "/links/callLeg"),
+        hold: str_at(ack, "/links/hold"),
         keep_alive_secs: ack.get("callKeepAliveInterval").and_then(|v| v.as_u64()),
     })
 }
@@ -848,11 +1087,23 @@ async fn accept_v2(
 #[derive(Debug, Clone, Default)]
 struct CallLeg {
     url: Option<String>,
+    /// Where Hold goes (`links.hold`).
+    hold: Option<String>,
     keep_alive_secs: Option<u64>,
 }
 
 /// Keep-alive period when the service does not name one.
 const DEFAULT_KEEP_ALIVE_SECS: u64 = 45;
+
+/// Whether a call event is the other side's re-offer.
+pub fn is_renegotiation_event(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json).is_ok_and(|v| {
+        v.get("callAgentPath")
+            .and_then(|p| p.as_str())
+            .is_some_and(|p| p.starts_with("call/mediaRenegotiation"))
+            || v.pointer("/body/mediaNegotiation").is_some()
+    })
+}
 
 /// Whether a call event says the call is over (remote hang-up, cancel
 /// while ringing, or the conversation ending).
@@ -986,6 +1237,42 @@ mod tests {
             r#"{"callAgentPath":"conversation/conversationEnd/","body":null}"#
         ));
         assert!(is_call_end_event(r#"{"callEnd":{"code":487}}"#));
+        assert!(is_renegotiation_event(
+            r#"{"callAgentPath":"call/mediaRenegotiation/","body":{}}"#
+        ));
+        assert_eq!(
+            retarget_hold(
+                r#"{"body":{"retargetCompleted":{"code":0,"audioBotType":"audioPlayback"}}}"#
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            retarget_hold(
+                r#"{"body":{"retargetCompleted":{"code":410,"audioBotType":"audioPlayback"}}}"#
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            retarget_hold(r#"{"body":{"retargetCompleted":{"code":0}}}"#),
+            Some(false)
+        );
+        assert_eq!(retarget_hold(r#"{"body":{}}"#), None);
+        assert!(!is_renegotiation_event(
+            r#"{"callAgentPath":"call/end/","body":{}}"#
+        ));
+        assert!(is_service_link(
+            "https://api.flightproxy.teams.microsoft.com/api/v2/ep/x/answer"
+        ));
+        assert!(is_service_link("https://cc-uswe-01.cc.skype.com/cc/v1/x"));
+        assert!(!is_service_link(
+            "http://api.flightproxy.teams.microsoft.com/x"
+        ));
+        assert!(!is_service_link(
+            "https://teams.microsoft.com.evil.example/x"
+        ));
+        assert!(!is_service_link(
+            "https://evil.example/?h=.teams.microsoft.com"
+        ));
         assert!(!is_call_end_event(
             r#"{"callAgentPath":"call/mediaAcknowledgement/","body":{}}"#
         ));

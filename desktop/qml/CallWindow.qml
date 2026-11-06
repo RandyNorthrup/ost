@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Window
 import com.ost.desktop
 
@@ -35,6 +36,19 @@ Window {
           .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.server_muted, role: p.role })))
         : [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
+    /// Hold: you put the call on hold, or the other person did.
+    property bool held: false
+    property bool heldByPeer: false
+    signal toggleHold()
+    /// Dial pad: the call takes tones; dtmf(key) sends one.
+    property bool canDtmf: false
+    signal dtmf(string key)
+    /// View: "gallery" or "speaker"; incoming video can be turned off.
+    property string layout: "gallery"
+    property bool incomingVideoOff: false
+    signal deviceSettings()
+    readonly property bool live: state === "connected"
+    function toggleFullScreen() { visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
     /// The open side pane: "", "chat" or "people".
     property string side: ""
     signal openChat()
@@ -45,6 +59,14 @@ Window {
     title: peer + " | OST"
 
     property int seconds: 0
+    property real heldAt: 0
+    property int heldSeconds: 0
+    onHeldChanged: { heldAt = Date.now(); heldSeconds = 0 }
+    Timer {
+        interval: 1000; repeat: true
+        running: win.visible && win.held
+        onTriggered: win.heldSeconds = Math.floor((Date.now() - win.heldAt) / 1000)
+    }
     Timer {
         interval: 1000; repeat: true
         running: win.visible && win.state === "connected"
@@ -94,12 +116,12 @@ Window {
             }
             BarButton { icon: "hand-left-24"; label: "Raise"; enabled: false }
             BarButton { icon: "emoji-24"; label: "React"; enabled: false }
-            BarButton { icon: "grid"; label: "View"; enabled: false }
+            BarButton { id: viewBtnM; icon: "grid"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtnM; onClicked: { viewMenu.parent = viewBtnM; viewMenu.open() } }
             BarButton { icon: "shield-task-24"; label: "Controls"; enabled: false }
             BarButton { icon: "notepad-24"; label: "Notes"; enabled: false }
             BarButton { icon: "conference-room-24"; label: "Rooms"; enabled: false }
             BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
-            BarButton { icon: "more-24"; label: "More"; enabled: false }
+            BarButton { id: moreBtnM; icon: "more-24"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtnM; onClicked: { moreMenu.parent = moreBtnM; moreMenu.open() } }
             Divider {}
             BarButton {
                 icon: win.cameraOn ? "video" : "video-off"; label: "Camera"
@@ -128,8 +150,37 @@ Window {
             BarButton { icon: "call-transfer"; label: "Transfer"; enabled: false }
             BarButton { icon: "consult"; label: "Consult"; enabled: false }
             Divider {}
-            BarButton { icon: "dialpad"; label: "Dial pad"; enabled: false }
-            BarButton { icon: "pause"; label: "Hold"; enabled: false }
+            BarButton {
+                id: padBtn
+                icon: "dialpad"; label: "Dial pad"
+                enabled: win.live && win.canDtmf && !win.held
+                checked: dialPad.visible
+                onClicked: dialPad.visible ? dialPad.close() : dialPad.open()
+            }
+            BarButton {
+                visible: !win.held
+                icon: "pause"; label: "Hold"
+                enabled: win.live && win.hasAudio
+                onClicked: win.toggleHold()
+            }
+            // Held: Teams swaps Hold for a bordered "Resume" pill.
+            Rectangle {
+                visible: win.held
+                anchors.verticalCenter: parent.verticalCenter
+                width: resumeRow.implicitWidth + 40; height: 48; radius: theme.radius
+                color: rph.hovered ? theme.pane : theme.rowHover
+                border.color: theme.stroke
+                Row {
+                    id: resumeRow
+                    anchors.centerIn: parent; spacing: 8
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                }
+                HoverHandler { id: rph; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: win.toggleHold() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Resume"
+            }
             Divider {}
             BarButton {
                 icon: "chat-24"; label: "Chat"; checked: win.side === "chat"
@@ -139,19 +190,19 @@ Window {
                 icon: "people"; label: "People"; checked: win.side === "people"
                 onClicked: win.side = win.side === "people" ? "" : "people"
             }
-            BarButton { icon: "grid"; label: "View"; enabled: false }
+            BarButton { id: viewBtn; icon: "grid"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtn; onClicked: { viewMenu.parent = viewBtn; viewMenu.open() } }
             BarButton { icon: "apps-add"; label: "Apps"; enabled: false }
-            BarButton { icon: "more-24"; label: "More"; enabled: false }
+            BarButton { id: moreBtn; icon: "more-24"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtn; onClicked: { moreMenu.parent = moreBtn; moreMenu.open() } }
             Divider {}
             BarButton {
                 icon: win.cameraOn ? "video" : "video-off"; label: "Camera"
-                enabled: win.canVideo
+                enabled: win.canVideo && !win.held
                 checked: win.cameraOn
                 onClicked: win.toggleCamera()
             }
             BarButton {
                 icon: win.muted ? "mic-off-24" : "mic-24"; label: "Mic"
-                enabled: win.hasAudio
+                enabled: win.hasAudio && !win.held
                 checked: !win.muted
                 onClicked: win.toggleMute()
             }
@@ -197,12 +248,14 @@ Window {
         Grid {
             id: tiles
             visible: win.meeting && win.others.length > 0
-            anchors.fill: parent; anchors.margins: 8
-            columns: Math.ceil(Math.sqrt(win.others.length))
-            readonly property int rowsN: Math.ceil(win.others.length / columns)
+            anchors { fill: parent; margins: 8; bottomMargin: strip.visible ? strip.height + 16 : 8 }
+            // Speaker: one large tile (the others in a strip below).
+            readonly property var shown: win.layout === "speaker" ? win.others.slice(0, 1) : win.others
+            columns: Math.max(1, Math.ceil(Math.sqrt(shown.length)))
+            readonly property int rowsN: Math.max(1, Math.ceil(shown.length / columns))
             spacing: 8
             Repeater {
-                model: win.meeting ? win.others : []
+                model: win.meeting ? tiles.shown : []
                 Rectangle {
                     required property var modelData
                     width: (tiles.width - (tiles.columns - 1) * tiles.spacing) / tiles.columns
@@ -222,12 +275,30 @@ Window {
                 }
             }
         }
+        Row {
+            id: strip
+            visible: win.meeting && win.layout === "speaker" && win.others.length > 1
+            anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 8 }
+            height: 96; spacing: 8
+            Repeater {
+                model: strip.visible ? win.others.slice(1) : []
+                Rectangle {
+                    required property var modelData
+                    width: 160; height: 96; radius: 6
+                    color: "#FFFFFF"; border.color: theme.dividerSoft
+                    Avatar { anchors.centerIn: parent; size: 48; name: parent.modelData.name; photoId: parent.modelData.id }
+                    Text { x: 6; anchors.bottom: parent.bottom; anchors.bottomMargin: 4; width: parent.width - 12; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    Accessible.role: Accessible.Grouping
+                    Accessible.name: modelData.name
+                }
+            }
+        }
         // Their video, filling the stage, once frames arrive.
         VideoFrame {
             id: remoteVideo
             source: "remote"
             anchors.fill: parent
-            visible: hasFrame && !win.meeting && win.state === "connected"
+            visible: hasFrame && !win.meeting && win.state === "connected" && !win.incomingVideoOff && !win.held && !win.heldByPeer
         }
         Timer {
             interval: 33; repeat: true
@@ -244,10 +315,24 @@ Window {
                 text: win.state === "calling" ? "Calling…"
                     : win.state === "connecting" ? "Connecting…"
                     : win.state === "ended" ? "Call ended"
+                    : win.held || win.heldByPeer ? ""
                     : !win.hasAudio ? "Connected without audio" : ""
                 visible: text.length > 0
                 color: theme.text
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
+            }
+            // Teams: "On hold 00:14" under the avatar for the one holding,
+            // plain "On hold" for the one held.
+            Row {
+                visible: (win.held || win.heldByPeer) && win.live
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 8
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "pause"; size: 20; color: theme.text }
+                Text {
+                    text: win.held ? "On hold " + win.clock(win.heldSeconds) : "On hold"
+                    color: theme.text
+                    font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
+                }
             }
         }
         // Their name chip, bottom left
@@ -384,6 +469,97 @@ Window {
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
         Rectangle { anchors.centerIn: parent; width: 1; height: 32; color: theme.divider }
     }
+
+    // View: Teams' layout menu.
+    MenuPopup {
+        id: viewMenu
+        x: parent ? parent.width - width : 0; y: parent ? parent.height + 4 : 0
+        width: 240
+        items: (win.meeting ? [
+            { label: "Gallery", icon: "gallery-20", checked: win.layout === "gallery" },
+            { label: "Speaker", icon: "speaker-view-20", checked: win.layout === "speaker" },
+            { separator: true }] : [])
+            .concat([
+            { label: win.visibility === Window.FullScreen ? "Exit full screen" : "Full screen", icon: "full-screen-maximize-20" },
+            { label: win.incomingVideoOff ? "Turn on incoming video" : "Turn off incoming video", icon: "video-off-20" }])
+        onPicked: i => {
+            const l = items[i].label
+            if (l === "Gallery") win.layout = "gallery"
+            else if (l === "Speaker") win.layout = "speaker"
+            else if (l.indexOf("full screen") >= 0 || l === "Full screen") win.toggleFullScreen()
+            else win.incomingVideoOff = !win.incomingVideoOff
+        }
+    }
+    // More: settings and window actions.
+    MenuPopup {
+        id: moreMenu
+        x: parent ? parent.width - width : 0; y: parent ? parent.height + 4 : 0
+        width: 240
+        items: [
+            { label: "Device settings", icon: "settings-20" },
+            { label: win.visibility === Window.FullScreen ? "Exit full screen" : "Full screen", icon: "full-screen-maximize-20" }
+        ]
+        onPicked: i => i === 0 ? win.deviceSettings() : win.toggleFullScreen()
+    }
+    // Dial pad: Teams' keypad under the button; keys send tones.
+    Popup {
+        id: dialPad
+        parent: padBtn
+        x: (padBtn.width - width) / 2; y: padBtn.height + 4
+        width: 236; padding: 12
+        property string dialed: ""
+        onOpened: dialed = ""
+        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+        contentItem: Column {
+            spacing: 8
+            focus: true
+            Keys.onPressed: e => {
+                const k = e.text
+                if (k && "0123456789*#".indexOf(k) >= 0) { dialPad.press(k); e.accepted = true }
+            }
+            Rectangle {
+                width: 212; height: 36; radius: theme.radius
+                color: theme.input; border.color: theme.stroke
+                Text {
+                    x: 10; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter
+                    text: dialPad.dialed; elide: Text.ElideLeft
+                    font.family: theme.font; font.pixelSize: 18; color: theme.text
+                }
+                FluentIcon {
+                    visible: dialPad.dialed.length > 0
+                    anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                    name: "backspace-20"; size: 20; color: theme.textStrong
+                    TapHandler { onTapped: dialPad.dialed = dialPad.dialed.slice(0, -1) }
+                }
+            }
+            Grid {
+                columns: 3; spacing: 4
+                Repeater {
+                    model: [["1", ""], ["2", "ABC"], ["3", "DEF"], ["4", "GHI"], ["5", "JKL"], ["6", "MNO"],
+                            ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"], ["*", ""], ["0", "+"], ["#", ""]]
+                    Rectangle {
+                        required property var modelData
+                        width: 68; height: 48; radius: theme.radius
+                        color: kh.pressed ? theme.selected : kh2.hovered ? theme.rowHover : "transparent"
+                        Column {
+                            anchors.centerIn: parent
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[0]; font.family: theme.font; font.pixelSize: 20; color: theme.text }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[1]; font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary; visible: text.length > 0 }
+                        }
+                        HoverHandler { id: kh2; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { id: kh; onTapped: dialPad.press(modelData[0]) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Dial " + modelData[0]
+                    }
+                }
+            }
+        }
+        function press(k) { dialed += k; win.dtmf(k) }
+    }
+
+    function dialPadForTest() { dialPad.open() }
+    function closeDialPadForTest() { dialPad.close() }
+    function pressForTest(keys) { for (const k of keys) dialPad.press(k) }
 
     component BarButton: Rectangle {
         id: bb

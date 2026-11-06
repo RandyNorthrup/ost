@@ -17,6 +17,9 @@ pub struct Participant {
     pub active: bool,
     /// Muted by the meeting (server mute) on every endpoint.
     pub server_muted: bool,
+    /// Their audio is inactive: they put the call on hold (Teams' Hold
+    /// moves the held side to a music bot and makes the holder inactive).
+    pub on_hold: bool,
 }
 
 /// The participants a roster update changes, or `None` for other events.
@@ -32,6 +35,13 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
     Some(
         participants
             .iter()
+            // Service bots (28:…, such as Hold's music) aren't people.
+            .filter(|(mri, p)| {
+                !(mri.starts_with("28:")
+                    && p.pointer("/details/displayName")
+                        .and_then(|n| n.as_str())
+                        .is_none_or(str::is_empty))
+            })
             .map(|(mri, p)| {
                 let s = |ptr: &str| p.pointer(ptr).and_then(|x| x.as_str()).unwrap_or_default();
                 let streams: Vec<&serde_json::Value> = p
@@ -56,6 +66,10 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
                         && streams
                             .iter()
                             .all(|m| m.get("serverMuted").and_then(|b| b.as_bool()) == Some(true)),
+                    on_hold: !streams.is_empty()
+                        && streams.iter().all(|m| {
+                            m.get("direction").and_then(|d| d.as_str()) == Some("inactive")
+                        }),
                 }
             })
             .collect(),
@@ -114,5 +128,19 @@ mod tests {
         assert_eq!(r.len(), 1);
         assert!(roster_delta(r#"{"callAgentPath":"call/end/","body":{}}"#).is_none());
         assert!(roster_delta("not json").is_none());
+    }
+
+    #[test]
+    fn hold_shows_as_inactive_audio_and_bots_are_left_out() {
+        let json = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "28:56aa0a8f-4cd3-446b-8146-0023476a5ff2":{"state":"active","details":{"displayName":null},
+                "endpoints":{"e":{"call":{"mediaStreams":[{"type":"audio","direction":"sendrecv"}]}}}},
+            "8:orgid:aaaa":{"state":"active","details":{"displayName":"Randy"},
+                "endpoints":{"e":{"call":{"mediaStreams":[{"type":"audio","direction":"inactive"},{"type":"video","direction":"inactive"}]}}}}}}}"#;
+        let d = roster_delta(json).unwrap();
+        assert_eq!(d.len(), 1, "the music bot isn't a person");
+        assert!(d[0].on_hold);
+        let resumed = json.replacen(r#""direction":"inactive""#, r#""direction":"sendrecv""#, 1);
+        assert!(!roster_delta(&resumed).unwrap()[0].on_hold);
     }
 }
