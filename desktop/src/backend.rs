@@ -617,6 +617,26 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             this.as_mut().set_call_meeting(false);
             this.as_mut().set_call_state(QString::from("ringing"));
         });
+        // Teams web's calls only say they're video calls in the full
+        // invitation: fetch it while ringing (an Accept meanwhile waits).
+        if !video {
+            let (qt, call_id) = (qt.clone(), call_id.clone());
+            runtime().spawn(async move {
+                let Ok(auth) = CallAuth::load().await else {
+                    return;
+                };
+                let mut slot = call_slot().lock().await;
+                let Some(call) = slot.ringing.as_mut().filter(|c| c.call_id() == call_id) else {
+                    return;
+                };
+                let video = auth.probe_video(call).await;
+                drop(slot);
+                tracing::info!(video, "incoming call probed");
+                if video {
+                    let _ = qt.queue(move |mut this| this.as_mut().set_call_video_offered(true));
+                }
+            });
+        }
         // Stop ringing if nobody answers.
         let qt = qt.clone();
         runtime().spawn(async move {

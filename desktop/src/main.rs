@@ -1,6 +1,7 @@
 //! OST desktop: a native Qt 6 / QML client on the OST engine.
 
 mod backend;
+mod video_item;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use tracing_subscriber::EnvFilter;

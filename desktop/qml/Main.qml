@@ -614,6 +614,7 @@ Window {
                     quitTimer.start()
                 })
             } else if (step === "talk") {
+                console.warn("CALL video frame shown", callWindow.remoteVideoShown)
                 callWindow.contentItem.grabToImage(r => {
                     r.saveToFile(window.shotPath.replace(".png", "-call.png"))
                     if (!window.remoteHangup) {

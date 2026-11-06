@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import com.ost.desktop
 
 // A 1:1 call, laid out as the Teams call screen (light theme, measured
 // from the Teams client at 1x): a 60 px meeting bar with the timer on the
@@ -22,6 +23,7 @@ Window {
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
     readonly property var others: roster.filter(p => p.id !== selfId)
+    readonly property bool remoteVideoShown: remoteVideo.visible
     // People pane rows: you first, then everyone else.
     readonly property var people: meeting
         ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio,
@@ -206,8 +208,20 @@ Window {
                 }
             }
         }
+        // Their video, filling the stage, once frames arrive.
+        VideoFrame {
+            id: remoteVideo
+            source: "remote"
+            anchors.fill: parent
+            visible: hasFrame && !win.meeting && win.state === "connected"
+        }
+        Timer {
+            interval: 33; repeat: true
+            running: win.visible && win.state === "connected"
+            onTriggered: remoteVideo.refresh()
+        }
         Column {
-            visible: !win.meeting
+            visible: !win.meeting && !remoteVideo.visible
             anchors.centerIn: parent
             spacing: 24
             Avatar { size: 144; name: win.peer; photoId: backend.callPeerId; anchors.horizontalCenter: parent.horizontalCenter }
@@ -225,6 +239,7 @@ Window {
         // Their name chip, bottom left
         Rectangle {
             visible: !win.meeting
+            z: 2
             anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
             width: nameText.implicitWidth + 12; height: 24; radius: 4
             color: "#99000000"

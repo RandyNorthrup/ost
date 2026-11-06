@@ -100,6 +100,100 @@ pub struct WebRtcOffer {
     pub audio_mid: String,
     /// The peer's `a=setup` role: `actpass`, `active` or `passive`.
     pub setup: String,
+    /// The main video m-line, if offered: its mid, the H.264 payload type
+    /// we can decode (packetization mode 1, baseline profile) and the
+    /// peer's video SSRC.
+    pub video: Option<OfferedVideo>,
+}
+
+/// The peer's main video stream as offered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferedVideo {
+    pub mid: String,
+    pub payload_type: u8,
+    pub ssrc: Option<u32>,
+    /// The peer sends video (`sendrecv` or `sendonly`).
+    pub sends: bool,
+}
+
+/// The m-line section of `sdp` whose `a=mid` is `mid`.
+fn section_with_mid<'a>(sdp: &'a str, mid: &str) -> Option<&'a str> {
+    let mut start = None;
+    let mut found = false;
+    let mut offset = 0;
+    for line in sdp.split_inclusive('\n') {
+        if line.starts_with("m=") {
+            if found {
+                return Some(&sdp[start?..offset]);
+            }
+            start = Some(offset);
+        } else if start.is_some() && line.trim_end() == format!("a=mid:{mid}") {
+            found = true;
+        }
+        offset += line.len();
+    }
+    found.then(|| &sdp[start.unwrap_or(0)..])
+}
+
+/// The main video stream of an offer: the first video m-line labelled
+/// main-video (else the first video m-line), with an H.264 format we
+/// decode. Constrained baseline (42e0..) is preferred, then baseline.
+fn offered_video(sdp: &str, sections: &[(String, String, String)]) -> Option<OfferedVideo> {
+    let candidates: Vec<&(String, String, String)> =
+        sections.iter().filter(|s| s.1 == "video").collect();
+    let main = candidates
+        .iter()
+        .find(|s| section_with_mid(sdp, &s.0).is_some_and(|t| t.contains("a=label:main-video")))
+        .or(candidates.first())?;
+    let text = section_with_mid(sdp, &main.0)?;
+    let h264: Vec<u8> = text
+        .lines()
+        .filter_map(|l| l.trim_end().strip_prefix("a=rtpmap:"))
+        .filter_map(|r| {
+            let (pt, codec) = r.split_once(' ')?;
+            codec
+                .to_ascii_uppercase()
+                .starts_with("H264/")
+                .then(|| pt.parse().ok())?
+        })
+        .collect();
+    let fmtp = |pt: u8| {
+        text.lines()
+            .find_map(|l| {
+                l.trim_end()
+                    .strip_prefix(&format!("a=fmtp:{pt} "))
+                    .map(str::to_string)
+            })
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+    };
+    let usable = |pt: &u8, profile: &str| {
+        let f = fmtp(*pt);
+        f.contains("packetization-mode=1") && f.contains(&format!("profile-level-id={profile}"))
+    };
+    let payload_type = h264
+        .iter()
+        .find(|pt| usable(pt, "42e0"))
+        .or_else(|| h264.iter().find(|pt| usable(pt, "4200")))
+        .copied()?;
+    let ssrc = text
+        .lines()
+        .find_map(|l| l.trim_end().strip_prefix("a=ssrc-group:FID "))
+        .and_then(|g| g.split_whitespace().next()?.parse().ok())
+        .or_else(|| {
+            text.lines()
+                .find_map(|l| l.trim_end().strip_prefix("a=ssrc:"))
+                .and_then(|r| r.split_whitespace().next()?.parse().ok())
+        });
+    let sends = text
+        .lines()
+        .any(|l| matches!(l.trim_end(), "a=sendrecv" | "a=sendonly"));
+    Some(OfferedVideo {
+        mid: main.0.clone(),
+        payload_type,
+        ssrc,
+        sends,
+    })
 }
 
 impl WebRtcOffer {
@@ -140,6 +234,7 @@ impl WebRtcOffer {
             ice_pwd: in_audio("a=ice-pwd:")?,
             fingerprint,
             candidates,
+            video: offered_video(sdp, &sections),
             sections,
             audio_mid,
             setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
@@ -169,6 +264,10 @@ pub struct LocalAudio {
     pub ssrc: u32,
     pub candidates: Vec<ice::IceCandidate>,
     pub identity: DtlsIdentity,
+    /// Our video SSRC (used for RTCP feedback even before we send video).
+    pub video_ssrc: u32,
+    /// The answer accepted the peer's video: receive and show it.
+    pub receive_video: bool,
 }
 
 impl LocalAudio {
@@ -200,6 +299,8 @@ impl LocalAudio {
             ssrc: super::video::generate_ssrc(),
             candidates,
             identity: DtlsIdentity::generate()?,
+            video_ssrc: super::video::generate_ssrc(),
+            receive_video: false,
         })
     }
 
@@ -225,6 +326,28 @@ impl LocalAudio {
             .or(self.candidates.first())
             .map(|c| c.address.clone())
             .unwrap_or_else(|| "0.0.0.0".into())
+    }
+
+    /// Our main video m-line: receive H.264 with keyframe requests.
+    fn video_section(&self, port: u16, addr: &str, mid: &str, setup: &str, pt: u8) -> String {
+        let mut s = String::new();
+        s.push_str(&format!("m=video {port} RTP/SAVP {pt}\r\n"));
+        s.push_str(&format!("c=IN IP4 {addr}\r\n"));
+        s.push_str(&format!("a=ice-ufrag:{}\r\n", self.ufrag));
+        s.push_str(&format!("a=ice-pwd:{}\r\n", self.pwd));
+        s.push_str(&format!("a=fingerprint:{}\r\n", self.identity.fingerprint));
+        s.push_str(&format!("a=setup:{setup}\r\n"));
+        s.push_str(&format!("a=mid:{mid}\r\n"));
+        s.push_str("a=recvonly\r\n");
+        s.push_str("a=rtcp-mux\r\n");
+        s.push_str(&format!("a=rtpmap:{pt} H264/90000\r\n"));
+        s.push_str(&format!(
+            "a=fmtp:{pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f\r\n"
+        ));
+        s.push_str(&format!("a=rtcp-fb:{pt} nack pli\r\n"));
+        s.push_str(&format!("a=rtcp-fb:{pt} ccm fir\r\n"));
+        s.push_str("a=label:main-video\r\n");
+        s
     }
 
     fn audio_section(&self, port: u16, addr: &str, mid: &str, setup: &str) -> String {
@@ -253,18 +376,31 @@ impl LocalAudio {
     /// The SDP answer: audio (PCMU, DTLS active) bundled alone; every other
     /// offered m-line is rejected with port 0.
     pub fn answer_sdp(&self, offer: &WebRtcOffer) -> String {
+        self.answer_sdp_with(offer, false)
+    }
+
+    /// The SDP answer, also accepting the peer's main video when `video`
+    /// is set and it offered H.264 we decode (bundled with the audio, so
+    /// one socket and one DTLS handshake carry both).
+    pub fn answer_sdp_with(&self, offer: &WebRtcOffer, video: bool) -> String {
         let port = self.socket.local_addr().map(|a| a.port()).unwrap_or(9);
         let addr = self.public_address();
         let session_id = u64::from(self.ssrc) << 16 | 1;
+        let video = offer.video.as_ref().filter(|_| video);
         let mut s = String::new();
         s.push_str("v=0\r\n");
         s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
         s.push_str("s=-\r\nt=0 0\r\n");
-        s.push_str(&format!("a=group:BUNDLE {}\r\n", offer.audio_mid));
+        match video {
+            Some(v) => s.push_str(&format!("a=group:BUNDLE {} {}\r\n", offer.audio_mid, v.mid)),
+            None => s.push_str(&format!("a=group:BUNDLE {}\r\n", offer.audio_mid)),
+        }
         s.push_str("a=msid-semantic: WMS ost\r\n");
         for (mid, kind, proto_fmts) in &offer.sections {
             if *mid == offer.audio_mid {
                 s.push_str(&self.audio_section(port, &addr, mid, "active"));
+            } else if let Some(v) = video.filter(|v| v.mid == *mid) {
+                s.push_str(&self.video_section(port, &addr, mid, "active", v.payload_type));
             } else {
                 let fmt = proto_fmts.split_whitespace().nth(1).unwrap_or("0");
                 let proto = proto_fmts.split_whitespace().next().unwrap_or("RTP/SAVP");
@@ -291,6 +427,9 @@ pub struct WebRtcStats {
 /// A running WebRTC audio session; dropping it stops the media.
 pub struct WebRtcAudioSession {
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// The peer's video, decoded and published as the "remote" frame.
+    #[cfg(feature = "video")]
+    _video_rx: Option<Arc<super::webrtc_video::VideoReceiver>>,
     muted: Arc<AtomicBool>,
     stats: Arc<Mutex<WebRtcStats>>,
     #[cfg(feature = "audio")]
@@ -342,7 +481,7 @@ impl WebRtcAudioSession {
         let socket = local.socket.clone();
         let (dtls_tx, dtls_rx) = std::sync::mpsc::channel::<Vec<u8>>();
         let (peer_tx, mut peer_rx) = mpsc::channel::<SocketAddr>(8);
-        let srtp_ctx: Arc<Mutex<Option<srtp::SrtpContext>>> = Arc::new(Mutex::new(None));
+        let srtp_ctx: Arc<Mutex<Option<srtp::SrtpStreams>>> = Arc::new(Mutex::new(None));
         let stats = Arc::new(Mutex::new(WebRtcStats::default()));
         let remote: Arc<Mutex<Option<SocketAddr>>> = Arc::new(Mutex::new(None));
 
@@ -363,6 +502,19 @@ impl WebRtcAudioSession {
 
         let mut tasks = Vec::new();
 
+        // The peer's video, when the answer accepted it.
+        #[cfg(feature = "video")]
+        let video_rx = offer
+            .video
+            .as_ref()
+            .filter(|v| local.receive_video && v.sends)
+            .map(|v| {
+                (
+                    v.payload_type,
+                    Arc::new(super::webrtc_video::VideoReceiver::start("remote")),
+                )
+            });
+
         // Receive and demultiplex.
         tasks.push(tokio::spawn(recv_loop(RecvCtx {
             socket: socket.clone(),
@@ -372,6 +524,8 @@ impl WebRtcAudioSession {
             srtp: srtp_ctx.clone(),
             stats: stats.clone(),
             spk_tx,
+            #[cfg(feature = "video")]
+            video: video_rx.clone(),
         })));
 
         // ICE: check every remote candidate until one answers; the peer's
@@ -424,7 +578,7 @@ impl WebRtcAudioSession {
             .await
             .context("DTLS task failed")??
         };
-        *srtp_ctx.lock().await = Some(srtp::create_context(&keys.0, &keys.1)?);
+        *srtp_ctx.lock().await = Some(srtp::SrtpStreams::new(&keys.0, &keys.1)?);
         tracing::info!("DTLS-SRTP established");
 
         let muted = Arc::new(AtomicBool::new(false));
@@ -439,6 +593,33 @@ impl WebRtcAudioSession {
             mic_rx,
             muted.clone(),
         )));
+
+        // Ask for a keyframe (RTCP PLI) whenever the video decoder needs one.
+        #[cfg(feature = "video")]
+        if let Some((_, rx)) = &video_rx {
+            let (socket, srtp, want) =
+                (socket.clone(), srtp_ctx.clone(), rx.keyframe_wanted.clone());
+            let (ours, theirs) = (
+                local.video_ssrc,
+                offer.video.as_ref().and_then(|v| v.ssrc).unwrap_or(0),
+            );
+            tasks.push(tokio::spawn(async move {
+                loop {
+                    if want.load(Ordering::Relaxed) {
+                        let pli = super::webrtc_video::pli(ours, theirs);
+                        let sealed = srtp
+                            .lock()
+                            .await
+                            .as_mut()
+                            .and_then(|c| c.protect_rtcp(&pli).ok());
+                        if let Some(p) = sealed {
+                            let _ = socket.send_to(&p, peer).await;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            }));
+        }
 
         // Consent freshness: keep sending binding requests to the peer.
         {
@@ -462,6 +643,8 @@ impl WebRtcAudioSession {
 
         Ok(Self {
             tasks,
+            #[cfg(feature = "video")]
+            _video_rx: video_rx.map(|(_, rx)| rx),
             muted,
             stats,
             #[cfg(feature = "audio")]
@@ -477,9 +660,12 @@ struct RecvCtx {
     local_pwd: String,
     dtls_tx: std::sync::mpsc::Sender<Vec<u8>>,
     peer_tx: mpsc::Sender<SocketAddr>,
-    srtp: Arc<Mutex<Option<srtp::SrtpContext>>>,
+    srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     stats: Arc<Mutex<WebRtcStats>>,
     spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
+    /// The video payload type and its receiver.
+    #[cfg(feature = "video")]
+    video: Option<(u8, Arc<super::webrtc_video::VideoReceiver>)>,
 }
 
 async fn recv_loop(ctx: RecvCtx) {
@@ -518,7 +704,7 @@ async fn recv_loop(ctx: RecvCtx) {
                 let plain = {
                     let mut guard = ctx.srtp.lock().await;
                     match guard.as_mut() {
-                        Some(c) => srtp::unprotect(c, data).ok(),
+                        Some(c) => c.unprotect(data).ok(),
                         None => None,
                     }
                 };
@@ -530,6 +716,20 @@ async fn recv_loop(ctx: RecvCtx) {
                     let mut s = ctx.stats.lock().await;
                     s.packets_received += 1;
                     s.bytes_received += len as u64;
+                }
+                #[cfg(feature = "video")]
+                if let Some((vpt, rx)) = &ctx.video {
+                    if pt == *vpt {
+                        if let Ok(pkt) = rtp::decode(&plain) {
+                            rx.push(super::webrtc_video::VideoPacket {
+                                payload: pkt.payload.to_vec(),
+                                marker: pkt.marker,
+                                seq: pkt.sequence_number,
+                                timestamp: pkt.timestamp,
+                            });
+                        }
+                        continue;
+                    }
                 }
                 if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain)) {
                     if pkt.payload_type == PT_PCMU {
@@ -550,7 +750,7 @@ async fn recv_loop(ctx: RecvCtx) {
 async fn send_loop(
     socket: Arc<UdpSocket>,
     remote: Arc<Mutex<Option<SocketAddr>>>,
-    srtp_ctx: Arc<Mutex<Option<srtp::SrtpContext>>>,
+    srtp_ctx: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     ssrc: u32,
     stats: Arc<Mutex<WebRtcStats>>,
     mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>>,
@@ -573,7 +773,7 @@ async fn send_loop(
         let packet = rtp::encode(PT_PCMU, seq, ts, ssrc, &payload);
         let protected = {
             let mut guard = srtp_ctx.lock().await;
-            guard.as_mut().and_then(|c| srtp::protect(c, &packet).ok())
+            guard.as_mut().and_then(|c| c.protect(&packet).ok())
         };
         let target = *remote.lock().await;
         if let (Some(p), Some(to)) = (protected, target) {
@@ -919,6 +1119,44 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
     }
 
     #[test]
+    fn teams_web_video_offers_are_answered_bundled() {
+        // The shape of Teams web's video call offer (trimmed, made up keys).
+        let offer = "v=0\r\na=group:BUNDLE 0 1 2\r\n\
+            m=audio 9 RTP/SAVP 111 0\r\na=ice-ufrag:u\r\na=ice-pwd:pppppppppppppppppppppp\r\n\
+            a=fingerprint:sha-256 AA:BB\r\na=setup:actpass\r\na=mid:0\r\na=sendrecv\r\n\
+            a=rtpmap:111 opus/48000/2\r\na=rtpmap:0 PCMU/8000\r\na=label:main-audio\r\n\
+            m=video 9 RTP/SAVP 102 104 108 103\r\na=mid:1\r\na=sendrecv\r\n\
+            a=rtpmap:102 H264/90000\r\na=rtpmap:104 H264/90000\r\na=rtpmap:108 H264/90000\r\na=rtpmap:103 rtx/90000\r\n\
+            a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f\r\n\
+            a=fmtp:104 level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f\r\n\
+            a=fmtp:108 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f\r\n\
+            a=ssrc-group:FID 3236 2038\r\na=ssrc:3236 cname:x\r\na=label:main-video\r\n\
+            m=video 9 RTP/SAVP 102\r\na=mid:2\r\na=sendrecv\r\na=rtpmap:102 H264/90000\r\n\
+            a=fmtp:102 packetization-mode=1;profile-level-id=42e01f\r\na=label:applicationsharing-video\r\n";
+        let o = WebRtcOffer::parse(offer).unwrap();
+        let v = o.video.clone().unwrap();
+        assert_eq!(
+            v,
+            OfferedVideo {
+                mid: "1".into(),
+                payload_type: 108,
+                ssrc: Some(3236),
+                sends: true
+            }
+        );
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let local = rt.block_on(LocalAudio::prepare()).unwrap();
+        let a = local.answer_sdp_with(&o, true);
+        assert!(a.contains("a=group:BUNDLE 0 1\r\n"));
+        assert!(a.contains("m=video ") && a.contains("a=rtpmap:108 H264/90000"));
+        assert!(
+            a.contains("a=mid:2\r\na=inactive"),
+            "screen sharing stays off"
+        );
+        assert!(!local.answer_sdp(&o).contains("a=rtpmap:108"));
+    }
+
+    #[test]
     fn offer_is_audio_only_actpass() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let local = rt.block_on(async {
@@ -928,6 +1166,8 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
                 ufrag: "abcd".into(),
                 pwd: "p".repeat(24),
                 ssrc: 42,
+                video_ssrc: 43,
+                receive_video: false,
                 candidates: vec![ice::IceCandidate {
                     foundation: "1".into(),
                     component: 1,

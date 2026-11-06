@@ -21,6 +21,9 @@ use super::{ice, sdp, signaling, srtp, turn, webrtc_audio, CallNotification};
 pub struct IncomingCall {
     notification: Option<CallNotification>,
     forked: Option<serde_json::Value>,
+    /// A forked call's full invitation, fetched while it rings
+    /// ([`CallAuth::probe_video`]) so we know whether it's a video call.
+    attached: Option<CallNotification>,
 }
 
 impl IncomingCall {
@@ -35,6 +38,7 @@ impl IncomingCall {
             return Some(Self {
                 notification: None,
                 forked: Some(v),
+                attached: None,
             });
         }
         let notification = super::parse_call_notification(json)?;
@@ -48,6 +52,7 @@ impl IncomingCall {
         Some(Self {
             notification: Some(notification),
             forked: None,
+            attached: None,
         })
     }
 
@@ -75,11 +80,28 @@ impl IncomingCall {
     /// Whether the caller offered video (known up front only for legacy
     /// invitations; forked ones reveal it after attaching).
     pub fn has_video(&self) -> bool {
-        self.notification
+        let modalities = self
+            .notification
             .as_ref()
             .and_then(|n| n.call_invitation.as_ref())
             .and_then(|inv| inv.call_modalities.as_ref())
-            .is_some_and(|mods| mods.iter().any(|m| m.eq_ignore_ascii_case("video")))
+            .is_some_and(|mods| mods.iter().any(|m| m.eq_ignore_ascii_case("video")));
+        // Forked calls: the attached invitation's offer says.
+        let offered = self
+            .attached
+            .as_ref()
+            .and_then(|n| {
+                n.call_invitation
+                    .as_ref()?
+                    .media_content
+                    .as_ref()?
+                    .blob
+                    .clone()
+            })
+            .and_then(|b| webrtc_audio::WebRtcOffer::parse(&b))
+            .and_then(|o| o.video)
+            .is_some_and(|v| v.sends);
+        modalities || offered
     }
 
     fn caller_field(&self, field: &str) -> Option<String> {
@@ -404,9 +426,10 @@ pub async fn answer(
     } else {
         None
     };
-    let notification = match (call.notification, &call.forked, &me) {
-        (Some(n), _, _) => n,
-        (None, Some(v), Some(me)) => attach(http, skype_token, v, me).await?,
+    let notification = match (call.notification, call.attached, &call.forked, &me) {
+        (Some(n), _, _, _) => n,
+        (None, Some(n), _, _) => n,
+        (None, None, Some(v), Some(me)) => attach(http, skype_token, v, me).await?,
         _ => anyhow::bail!("Not a call invitation"),
     };
     let blob = notification
@@ -418,7 +441,16 @@ pub async fn answer(
     // WebRTC callers (Teams web) secure media with DTLS-SRTP.
     if let Some(offer) = blob.as_deref().and_then(webrtc_audio::WebRtcOffer::parse) {
         debug_dump("sdp-offer", blob.as_deref().unwrap_or_default());
-        return answer_webrtc(http, skype_token, notification, me, offer, microphone_on).await;
+        return answer_webrtc(
+            http,
+            skype_token,
+            notification,
+            me,
+            offer,
+            with_video,
+            microphone_on,
+        )
+        .await;
     }
 
     // TURN relay credentials are best-effort: without them we offer only
@@ -577,17 +609,22 @@ pub async fn answer(
     })
 }
 
-/// Answer a DTLS-SRTP (WebRTC) offer: bundled audio only, PCMU.
+/// Answer a DTLS-SRTP (WebRTC) offer: bundled audio (PCMU), plus the
+/// caller's video when `with_video`.
 async fn answer_webrtc(
     http: &reqwest::Client,
     skype_token: &str,
     notification: CallNotification,
     me: Option<LocalParticipant>,
     offer: webrtc_audio::WebRtcOffer,
+    with_video: bool,
     microphone_on: bool,
 ) -> Result<ActiveCall> {
-    let local = webrtc_audio::LocalAudio::prepare().await?;
-    let sdp = local.answer_sdp(&offer);
+    let mut local = webrtc_audio::LocalAudio::prepare().await?;
+    // Video only when asked for and the caller offered H.264 we decode.
+    let video = with_video && cfg!(feature = "video") && offer.video.is_some();
+    local.receive_video = video;
+    let sdp = local.answer_sdp_with(&offer, video);
     debug_dump("sdp-answer", &sdp);
     match &me {
         Some(me) => send_media_answer_v2(http, skype_token, &notification, me, &sdp, false).await,
@@ -602,7 +639,7 @@ async fn answer_webrtc(
         skype_token,
         &notification,
         me.as_ref(),
-        false,
+        video,
         microphone_on,
     )
     .await?;
@@ -859,6 +896,26 @@ impl CallAuth {
 
     pub async fn decline(&self, call: &IncomingCall) -> Result<()> {
         decline(&self.http, &self.skype_token, call).await
+    }
+
+    /// For a forked call (Teams web's), fetch the full invitation while it
+    /// rings, as Teams does, so the toast can tell a video call; answering
+    /// then reuses it. Returns whether the caller is sending video.
+    pub async fn probe_video(&self, call: &mut IncomingCall) -> bool {
+        if call.notification.is_none() && call.attached.is_none() {
+            if let Some(v) = call.forked.clone() {
+                let attached = async {
+                    let me = local_participant(Some(&v))?;
+                    attach(&self.http, &self.skype_token, &v, &me).await
+                }
+                .await;
+                match attached {
+                    Ok(n) => call.attached = Some(n),
+                    Err(e) => tracing::info!("Early attach failed: {:#}", e),
+                }
+            }
+        }
+        call.has_video()
     }
 
     pub async fn hang_up(&self, call: ActiveCall) -> Result<()> {

@@ -77,7 +77,14 @@ sdl2 = { version = "0.37", optional = true }
 [features]
 default = []
 audio = ["cpal"]
-video-capture = ["v4l", "openh264", "sdl2"]
+# Camera and H.264 (the desktop app); video-capture adds the SDL viewer.
+video = ["v4l", "openh264"]
+video-capture = ["video", "sdl2"]
+
+# openh264's YUV to RGB conversion runs per pixel; keep it fast in debug
+# builds too.
+[profile.dev.package.openh264]
+opt-level = 3
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -73,6 +73,91 @@ pub struct SrtpContext {
     pub remote_srtcp_index: u32,
 }
 
+/// SRTP for a bundled session (RFC 3711 keeps the rollover counter, the
+/// replay window and the SRTCP index per SSRC): one context per SSRC in
+/// each direction, all from the same keys. Audio and video share a socket
+/// and keys but must not share counters.
+pub struct SrtpStreams {
+    template: SrtpContext,
+    inbound: std::collections::HashMap<u32, SrtpContext>,
+    outbound: std::collections::HashMap<u32, SrtpContext>,
+    inbound_rtcp: std::collections::HashMap<u32, SrtpContext>,
+    outbound_rtcp: std::collections::HashMap<u32, SrtpContext>,
+}
+
+/// Most SSRCs tracked per direction (a peer can't make us grow without end).
+const MAX_STREAMS: usize = 64;
+
+impl SrtpStreams {
+    pub fn new(local: &SrtpKeyingMaterial, remote: &SrtpKeyingMaterial) -> Result<Self> {
+        Ok(Self {
+            template: create_context(local, remote)?,
+            inbound: Default::default(),
+            outbound: Default::default(),
+            inbound_rtcp: Default::default(),
+            outbound_rtcp: Default::default(),
+        })
+    }
+
+    fn stream<'a>(
+        map: &'a mut std::collections::HashMap<u32, SrtpContext>,
+        template: &SrtpContext,
+        ssrc: u32,
+    ) -> Result<&'a mut SrtpContext> {
+        if !map.contains_key(&ssrc) && map.len() >= MAX_STREAMS {
+            bail!("Too many SRTP streams");
+        }
+        Ok(map.entry(ssrc).or_insert_with(|| template.clone()))
+    }
+
+    pub fn protect(&mut self, rtp: &[u8]) -> Result<Vec<u8>> {
+        let ssrc = ssrc_at(rtp, 8)?;
+        protect(Self::stream(&mut self.outbound, &self.template, ssrc)?, rtp)
+    }
+
+    pub fn unprotect(&mut self, srtp_packet: &[u8]) -> Result<Vec<u8>> {
+        let ssrc = ssrc_at(srtp_packet, 8)?;
+        // Only keep a stream for packets that authenticate.
+        let mut ctx = self
+            .inbound
+            .get(&ssrc)
+            .cloned()
+            .unwrap_or_else(|| self.template.clone());
+        let plain = unprotect(&mut ctx, srtp_packet)?;
+        if self.inbound.contains_key(&ssrc) || self.inbound.len() < MAX_STREAMS {
+            self.inbound.insert(ssrc, ctx);
+        }
+        Ok(plain)
+    }
+
+    pub fn protect_rtcp(&mut self, rtcp: &[u8]) -> Result<Vec<u8>> {
+        let ssrc = ssrc_at(rtcp, 4)?;
+        protect_rtcp(
+            Self::stream(&mut self.outbound_rtcp, &self.template, ssrc)?,
+            rtcp,
+        )
+    }
+
+    pub fn unprotect_rtcp(&mut self, srtcp: &[u8]) -> Result<Vec<u8>> {
+        let ssrc = ssrc_at(srtcp, 4)?;
+        let mut ctx = self
+            .inbound_rtcp
+            .get(&ssrc)
+            .cloned()
+            .unwrap_or_else(|| self.template.clone());
+        let plain = unprotect_rtcp(&mut ctx, srtcp)?;
+        if self.inbound_rtcp.contains_key(&ssrc) || self.inbound_rtcp.len() < MAX_STREAMS {
+            self.inbound_rtcp.insert(ssrc, ctx);
+        }
+        Ok(plain)
+    }
+}
+
+fn ssrc_at(packet: &[u8], offset: usize) -> Result<u32> {
+    let b = packet.get(offset..offset + 4).context("Packet too short")?;
+    Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+}
+
 /// Parse an SDP crypto line to extract SRTP keying material.
 ///
 /// Formats handled:
@@ -553,6 +638,42 @@ fn compute_srtcp_auth_tag(auth_key: &[u8; 20], authenticated_portion: &[u8]) -> 
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn bundled_streams_keep_counters_per_ssrc() {
+        let km = |b: u8| SrtpKeyingMaterial {
+            master_key: [b; MASTER_KEY_LEN],
+            master_salt: [b ^ 0x5a; MASTER_SALT_LEN],
+            tag: 1,
+        };
+        let (a, b) = (km(1), km(2));
+        let mut tx = SrtpStreams::new(&a, &b).unwrap();
+        let mut rx = SrtpStreams::new(&b, &a).unwrap();
+        let pkt = |ssrc: u32, seq: u16| {
+            let mut p = vec![0x80, 0x60];
+            p.extend_from_slice(&seq.to_be_bytes());
+            p.extend_from_slice(&1234u32.to_be_bytes());
+            p.extend_from_slice(&ssrc.to_be_bytes());
+            p.extend_from_slice(b"payload");
+            p
+        };
+        // Audio near seq 100 and video near 60000, interleaved: one shared
+        // context would misjudge the rollover counter and fail to decrypt.
+        for k in 0..50u16 {
+            for (ssrc, seq) in [(11u32, 100 + k), (22, 60000 + k)] {
+                let p = pkt(ssrc, seq);
+                let sealed = tx.protect(&p).unwrap();
+                assert_eq!(rx.unprotect(&sealed).unwrap(), p);
+            }
+        }
+        // A forged packet doesn't create a stream.
+        let mut bad = tx.protect(&pkt(33, 5)).unwrap();
+        let n = bad.len();
+        bad[n - 1] ^= 1;
+        assert!(rx.unprotect(&bad).is_err());
+        assert!(!rx.inbound.contains_key(&33));
+    }
+
     use super::*;
 
     fn make_test_material() -> SrtpKeyingMaterial {

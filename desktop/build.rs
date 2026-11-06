@@ -48,6 +48,7 @@ fn main() {
         .qml_file(QmlFile::from("qml/IconCache.qml").singleton(true));
     CxxQtBuilder::new_qml_module(module)
         .file("src/backend.rs")
+        .file("src/video_item.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
         .qrc_resources(resources)

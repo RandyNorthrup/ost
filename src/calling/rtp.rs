@@ -122,7 +122,29 @@ pub fn decode(data: &[u8]) -> Result<RtpPacket> {
         );
     }
 
-    let payload = data[header_len..].to_vec();
+    // A header extension (RFC 3550 5.3.1): 16-bit profile, 16-bit length
+    // in words, then the data.
+    let mut header_len = header_len;
+    if extension {
+        let ext = data
+            .get(header_len..header_len + 4)
+            .ok_or_else(|| anyhow::anyhow!("RTP extension header truncated"))?;
+        let words = u16::from_be_bytes([ext[2], ext[3]]) as usize;
+        header_len += 4 + words * 4;
+        if data.len() < header_len {
+            bail!("RTP extension truncated");
+        }
+    }
+    // Padding: the last byte says how many bytes to drop.
+    let mut end = data.len();
+    if padding {
+        let n = *data.last().unwrap_or(&0) as usize;
+        if n == 0 || header_len + n > end {
+            bail!("Bad RTP padding");
+        }
+        end -= n;
+    }
+    let payload = data[header_len..end].to_vec();
 
     Ok(RtpPacket {
         version,
@@ -224,6 +246,18 @@ pub fn silence_payload() -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn extensions_and_padding_are_not_payload() {
+        let mut p = vec![0xb0, 102, 0, 1, 0, 0, 0, 9, 0, 0, 0, 7]; // V=2 P=1 X=1
+        p.extend_from_slice(&[0xbe, 0xde, 0, 1, 0x10, 0xaa, 0, 0]); // one-word extension
+        p.extend_from_slice(&[0x41, 0x42]); // payload
+        p.extend_from_slice(&[0, 0, 3]); // 3 bytes of padding
+        let r = decode(&p).unwrap();
+        assert_eq!(r.payload, vec![0x41, 0x42]);
+        assert!(decode(&[0x90, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0xbe, 0xde, 0, 9]).is_err());
+    }
+
     use super::*;
 
     #[test]

@@ -5,12 +5,13 @@
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod call_test;
-#[cfg(feature = "video-capture")]
+#[cfg(feature = "video")]
 pub mod camera;
-#[cfg(feature = "video-capture")]
+#[cfg(feature = "video")]
 pub mod codec;
 #[cfg(feature = "video-capture")]
 pub mod display;
+pub mod frames;
 pub mod ice;
 pub mod incoming;
 pub mod media;
@@ -29,6 +30,8 @@ pub mod test_tone;
 pub mod turn;
 pub mod video;
 pub mod webrtc_audio;
+#[cfg(feature = "video")]
+pub mod webrtc_video;
 
 use serde::Deserialize;
 
