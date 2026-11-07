@@ -2225,7 +2225,7 @@ Rectangle {
         } else if (root.plainText().trim().length > 0) {
             // Formatted text goes as Teams HTML; plain text as before.
             const html = input.getFormattedText(0, input.length)
-            if (/font-weight:\s*[6-9]00|font-style:\s*italic|text-decoration:[^;"]*(underline|line-through)|<ul|<ol|href="mention:/.test(html)) backend.sendRich(html)
+            if (/font-weight:\s*[6-9]00|font-style:\s*italic|text-decoration:[^;"]*(underline|line-through)|<ul|<ol|href="mention[-:]/.test(html)) backend.sendRich(html)
             else root.send(root.plainText())
         }
         compose.clear()
@@ -2588,8 +2588,17 @@ Rectangle {
         onSubmit: root.sendCompose()
         // Teams: not in channels; Urgent only in chats up to 20 people.
         deliveryOptions: !root.isChannel
-        mentionDirectory: !root.isGroup
+        // Teams suggests only the members in group chats and channels.
+        mentionDirectory: !root.isGroup && !root.isChannel
         everyoneId: root.isGroup ? root.chatId : ""
+        channelMention: root.isChannel ? { id: root.chatId, name: root.chatName } : null
+        // A team is mentioned by its thread id, its General channel's.
+        teamMention: {
+            if (!root.isChannel || !root.teamId) return null
+            const t = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => t.id === root.teamId)
+            const general = t ? (t.channels.find(c => c.name === "General") || t.channels[0]) : null
+            return general ? { id: general.id, name: root.teamName, groupId: root.teamId } : null
+        }
         readonly property var roster: backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
         memberCount: roster.length
         mentionables: roster.filter(m => !m.me).map(m => ({ mri: m.mri, name: m.name, mail: m.mail }))

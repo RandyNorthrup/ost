@@ -912,6 +912,31 @@ Groups are separated by dividers; empty groups are skipped.
   - the content has `<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Randy</span>&nbsp;<span … itemid="1">Northrup</span>`;
   - `properties.mentions` is a JSON string, one entry per span: `{"@type":"http://schema.skype.com/Mention","itemid":N,"mri":"8:orgid:…","mentionType":"person","displayName":"Randy"}`.
 
+### Channels (measured on winpc, 2026-11-07, OST Test Team > General)
+- **The picker in a channel.**
+  - "Suggestions" shows even with a query.
+  - "@" alone offers only "Add agent to the channel" and "Share someone's contact info".
+  - Typing matches the team ("OST Test Team", subtitle "Team") and the channel ("General", subtitle "Channel"). Both rows show the team's square picture (32, radius 4).
+  - The typed part of a name is bold (700). "@cha" matches the current channel through the word "channel".
+  - Only team members are suggested. "@Ran" found nobody, since Randy isn't in the team.
+- **Wire format** (Teams-sent "OST TEST 60"; OST-sent "OST TEST 62" and "OST TEST 63" are byte for byte the same).
+  - A channel mention is one span. Its mention has `mentionType` "channel", `mri` = the channel's thread id and `displayName` = the channel name.
+  - A team mention is one span holding the whole team name. Its mention has `mentionType` "team", `mri` = the team's thread id (the General channel's id) and `displayName` = the team name.
+  - Teams' editor holds a team as one token per word, but it sends one span.
+- **Post highlight** (763654 `L`). The first match wins:
+  - pinned: green, pin icon;
+  - mentions you: orange, mention icon. Important or Urgent replace it when the message has them;
+  - @Everyone from someone else: orange;
+  - Important: red, "!" icon;
+  - Urgent: red;
+  - a channel mention: orange, channel icon, aria "Channel message";
+  - a team mention: orange, team icon;
+  - your own post: a brand #4F52B2 bar with no badge.
+- **Highlight geometry.**
+  - The bar is a 4 × 32 rect at (4, 16) in the card, rx 2. A reply's bar is 4 × 20 beside its avatar.
+  - The badge (`channel-badge` and the like) is a 24 px circle centred on the card's right edge, 20 down, with shadow 0 0 2 / 0 2 4. It holds a white 16 px icon: Fluent's 20 px icon drawn with viewBox "2 2 16 16".
+  - Orange is #DA3B01.
+
 ## 20. Keyboard shortcuts (504800, Windows class `P`; per-flag, all live on unless noted)
 | key | command | key | command |
 |---|---|---|---|
@@ -987,5 +1012,5 @@ Menu items show the shortcut text; hover-bar buttons expose it through `aria-key
 - [ ] "+" flyout items; Attach menu; fun picker tabs.
 - [ ] Delivery options (Urgent disabled above 20 members), schedule send on right-click of Send, Enter behaviour and setting, hint text.
 - [ ] Pre-send checks, 90112-byte message limit and its error text, draft save, debounced at 400 ms.
-- [ ] @mention rules (Everyone limits, channel and team mentions, tags).
+- [ ] @mention rules: Everyone limits and tags (channel and team mentions done).
 - [ ] Message and compose keyboard shortcuts in §20.

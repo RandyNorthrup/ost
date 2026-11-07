@@ -86,6 +86,26 @@ Item {
                 Item {
                     width: parent.width
                     height: !card.post ? 44 : postEdit.active ? (postEdit.item ? postEdit.item.height : 0) + 8 : postBody.y + postBody.height + 51
+                    readonly property var mark: postEdit.active ? null : root.highlight(card.post)
+                    // Teams' indicator bar: 4 x 32 at (4, 16), rounded 2.
+                    Rectangle {
+                        visible: !!parent.mark
+                        x: 4; y: 16; width: 4; height: 32; radius: 2
+                        color: parent.mark ? parent.mark.color : "transparent"
+                    }
+                    // Its badge: a 24 px circle centred on the card's right
+                    // edge, 20 down, with a white 16 px icon (shadow 2/4).
+                    Item {
+                        id: nubbin
+                        visible: !!parent.mark && parent.mark.icon !== ""
+                        x: card.width - 12; y: 20; z: 6
+                        width: 24; height: 24
+                        FluentSurface { anchors.fill: parent; depth: 4; radius: 12; color: nubbin.parent.mark ? nubbin.parent.mark.color : "transparent" }
+                        FluentIcon { x: 4; y: 4.5; size: 16; name: nubbin.parent.mark ? nubbin.parent.mark.icon : ""; color: "white" }
+                        HoverHandler {}
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: nubbin.parent.mark ? nubbin.parent.mark.tip : ""
+                    }
                     Avatar {
                         id: av
                         visible: !!card.post && !postEdit.active
@@ -210,6 +230,13 @@ Item {
                                 height: editing ? (repEdit.item ? repEdit.item.height : 0) - 7.4 + 11.4
                                     : 20 + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 16
                                 z: repHover.hovered || repBar.hovered ? 2 : 1
+                                // A reply's indicator bar: 4 x 20 beside its avatar.
+                                Rectangle {
+                                    readonly property var mark: rep.editing ? null : root.highlight(rep.modelData)
+                                    visible: !!mark
+                                    x: 4; y: 0; width: 4; height: 20; radius: 2
+                                    color: mark ? mark.color : "transparent"
+                                }
                                 Avatar {
                                     visible: !rep.editing
                                     x: 18; y: 0; size: 20
@@ -409,6 +436,26 @@ Item {
     }
 
     // Teams' relative dates, as in chats.
+    // Teams' post indicator (763654 `L`, measured): which highlight a post
+    // or reply gets, in Teams' order: pinned, mentions you (Important or
+    // Urgent shown instead), @Everyone, Important, Urgent, a channel or
+    // team mention, then your own. {color, icon ("" for a bar only), tip}.
+    function highlight(m) {
+        if (!m || m.deleted) return null
+        const orange = theme.mentionMe, red = theme.danger
+        const important = { color: red, icon: "badge-important-16", tip: "Important" }
+        const urgent = { color: red, icon: "badge-urgent-16", tip: "Urgent" }
+        if (m.pinned) return { color: theme.pick("#237B4B", "#92C353"), icon: "badge-pin-16", tip: "Pinned" }
+        const k = m.mention_kind || ""
+        if (k === "me") return m.importance === "high" ? important : m.importance === "urgent" ? urgent : { color: orange, icon: "badge-mention-16", tip: "Mentions you" }
+        if (k === "everyone") return { color: orange, icon: "badge-everyone-16", tip: "Mentions everyone" }
+        if (m.importance === "high") return important
+        if (m.importance === "urgent") return urgent
+        if (k === "channel") return { color: orange, icon: "badge-channel-16", tip: "Channel message" }
+        if (k === "team") return { color: orange, icon: "badge-team-16", tip: "Team message" }
+        if (m.mine) return { color: theme.brand, icon: "", tip: "" }
+        return null
+    }
     function conversationStamp(t) {
         const d = new Date(t), now = new Date()
         const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)

@@ -488,6 +488,9 @@ pub struct MessageView {
     pub edit_html: String,
     #[serde(default)]
     pub edit_media: Vec<ComposeMedia>,
+    /// Teams' mention highlight: "me", "everyone", "channel", "team" or "".
+    #[serde(default)]
+    pub mention_kind: String,
     /// The text a quoted reply to this message carries, as Teams builds it.
     #[serde(default)]
     pub quote_text: String,
@@ -1254,6 +1257,11 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         cards,
         carousel,
         mentions_me: !my_mentions.is_empty() && !deleted,
+        mention_kind: if deleted {
+            String::new()
+        } else {
+            mention_kind(!my_mentions.is_empty(), &mention_types(props), mine).to_string()
+        },
         html: if deleted {
             String::new()
         } else if may_be_big && big_emoticons(&head) {
@@ -1459,6 +1467,45 @@ fn my_mention_ids(props: Option<&serde_json::Value>, me: &str) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+/// The kinds of mention in a message (`mentionType`s), each once.
+fn mention_types(props: Option<&serde_json::Value>) -> Vec<String> {
+    let Some(raw) = props.and_then(|p| p.get("mentions")) else {
+        return Vec::new();
+    };
+    let list: serde_json::Value = match raw {
+        serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+        v => v.clone(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for m in list.as_array().into_iter().flatten() {
+        if let Some(t) = m.get("mentionType").and_then(|t| t.as_str())
+            && !out.iter().any(|o| o == t)
+        {
+            out.push(t.to_string());
+        }
+    }
+    out
+}
+
+/// Which of Teams' mention highlights a message gets (Teams' post
+/// indicator, 763654 `L`, before importance and your own posts): "me"
+/// when it @mentions you, "everyone" for @Everyone from someone else,
+/// "channel" or "team" for a channel or team mention; "" otherwise.
+fn mention_kind(me_mentioned: bool, types: &[String], mine: bool) -> &'static str {
+    let has = |t: &str| types.iter().any(|x| x == t);
+    if me_mentioned {
+        "me"
+    } else if has("everyone") && !mine {
+        "everyone"
+    } else if has("channel") {
+        "channel"
+    } else if has("team") {
+        "team"
+    } else {
+        ""
+    }
 }
 
 /// As `sanitize_html`, keeping Teams' mention spans as
@@ -2762,6 +2809,13 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                 let target = href
                     .strip_prefix("mention-everyone:")
                     .map(|c| (c, "everyone"))
+                    // A channel or a team (its General channel's thread id),
+                    // as Teams' channel picker sends them.
+                    .or_else(|| {
+                        href.strip_prefix("mention-channel:")
+                            .map(|c| (c, "channel"))
+                    })
+                    .or_else(|| href.strip_prefix("mention-team:").map(|t| (t, "team")))
                     .or_else(|| href.strip_prefix("mention:").map(|m| (m, "person")));
                 if let Some((mri, mention_type)) = target {
                     let itemid = mentions.len();
@@ -3026,6 +3080,68 @@ mod quote_tests {
         );
         assert_eq!(j[0]["@type"], "http://schema.skype.com/Mention");
         assert_eq!(j[0]["mentionType"], "person");
+        // A channel and a team, as Teams sent them from OST Test Team's
+        // General channel ("OST TEST 60").
+        let team = "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2";
+        let (html, m) = teams_html_and_mentions(&format!(
+            r#"<p><a href="mention-channel:{team}">General</a>&nbsp;and <a href="mention-team:{team}">OST Test Team</a>&nbsp;OST TEST 60</p>"#
+        ));
+        assert_eq!(
+            html,
+            r#"<p><span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">General</span>&nbsp;and <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="1">OST Test Team</span>&nbsp;OST TEST 60</p>"#
+        );
+        let j = serde_json::to_value(&m).unwrap();
+        assert_eq!(
+            j,
+            serde_json::json!([
+                {"@type": "http://schema.skype.com/Mention", "itemid": 0, "mri": team, "mentionType": "channel", "displayName": "General"},
+                {"@type": "http://schema.skype.com/Mention", "itemid": 1, "mri": team, "mentionType": "team", "displayName": "OST Test Team"}
+            ])
+        );
+    }
+
+    #[test]
+    fn channel_and_team_mentions_highlight_posts() {
+        let team = "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2";
+        // As Teams posted "OST TEST 60" (a channel and a team mention).
+        let mentions = serde_json::json!([
+            {"@type": "http://schema.skype.com/Mention", "itemid": 0, "mri": team, "mentionType": "channel", "displayName": "General"},
+            {"@type": "http://schema.skype.com/Mention", "itemid": 1, "mri": team, "mentionType": "team", "displayName": "OST Test Team"}
+        ]).to_string();
+        let m = |mentions: &str, from: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": "<p>x</p>", "from": format!("https://x/contacts/{from}"), "imdisplayname": "X", "properties": {"mentions": mentions}});
+        let v = view_of(&m(&mentions, "8:orgid:me"), "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.mention_kind, "channel");
+        let only_team =
+            serde_json::json!([{"itemid": 0, "mri": team, "mentionType": "team"}]).to_string();
+        assert_eq!(
+            view_of(&m(&only_team, "8:orgid:x"), "8:orgid:me", "Me")
+                .unwrap()
+                .mention_kind,
+            "team"
+        );
+        // You, before anything else; Everyone only from someone else.
+        let me_and_channel = serde_json::json!([{"itemid": 0, "mri": team, "mentionType": "channel"}, {"itemid": 1, "mri": "8:orgid:me", "mentionType": "person"}]).to_string();
+        assert_eq!(
+            view_of(&m(&me_and_channel, "8:orgid:x"), "8:orgid:me", "Me")
+                .unwrap()
+                .mention_kind,
+            "me"
+        );
+        let everyone =
+            serde_json::json!([{"itemid": 0, "mri": "19:g@thread.v2", "mentionType": "everyone"}])
+                .to_string();
+        assert_eq!(
+            view_of(&m(&everyone, "8:orgid:x"), "8:orgid:me", "Me")
+                .unwrap()
+                .mention_kind,
+            "everyone"
+        );
+        assert_eq!(
+            view_of(&m(&everyone, "8:orgid:me"), "8:orgid:me", "Me")
+                .unwrap()
+                .mention_kind,
+            ""
+        );
     }
 
     #[test]
@@ -3459,6 +3575,7 @@ mod tests {
         assert!(html.find("giphy").unwrap() < html.find("after it").unwrap());
         // A reply quotes it as Teams does, the GIF as a camera.
         assert_eq!(v.quote_text, "Look 😮 📷 after it");
+        assert_eq!(v.mention_kind, "");
         // Someone else's message has no edit form.
         let theirs = view_of(&m(c, "8:orgid:them"), "8:orgid:me", "Me").unwrap();
         assert!(theirs.edit_html.is_empty() && theirs.edit_media.is_empty());

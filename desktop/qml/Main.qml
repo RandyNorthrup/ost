@@ -2048,10 +2048,14 @@ Window {
             const q = (Qt.application.arguments.find(a => a.startsWith("--mention-test=")) || "").slice(15)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "mention-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST mention test"); return }
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).flatMap(t => t.channels).find(c => c.id === id)
+                backend.selectChat(id, ch ? ch.name : "OST mention test"); return
+            }
             const c = conversation.composeForTest()
-            if (step === 0) { conversation.setPlain("OST test 54: mention for "); c.focusEditor(); c.mentionForTest("@" + q) }
-            else if (step === 1) shot("picker")
+            const text = (Qt.application.arguments.find(a => a.startsWith("--mention-text=")) || "--mention-text=OST test 54: mention for ").slice(15)
+            if (step === 0) { if (conversation.isChannel) conversation.posting = true; conversation.setPlain(text); c.focusEditor(); c.mentionForTest("@" + q) }
+            else if (step === 1) { shot("picker"); console.warn("MENTION-TEST targets", JSON.stringify(c.channelMention), JSON.stringify(c.teamMention), conversation.chatName, conversation.teamId) }
             else if (step === 2) c.pickMentionForTest()
             else if (step === 3) { c.insertText("check"); shot("picked"); console.warn("MENTION-TEST editor", c.formattedText().replace(/\n/g, " ").slice(-400)) }
             else if (step === 4) conversation.sendForTest()

@@ -43,6 +43,10 @@ Item {
     // Everyone (group chats): the conversation id, and how many are in it
     // (Teams: up to 250; two or fewer get plain text).
     property string everyoneId: ""
+    // In a channel: the channel and its team, mentionable as Teams' channel
+    // picker offers them ({id, name}; the team's id is its thread id).
+    property var channelMention: null
+    property var teamMention: null
     property int memberCount: 0
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
@@ -514,6 +518,15 @@ Item {
     }
     function insertMention(person) {
         if (mentionAt < 0) return
+        if (person.kind === "team" || person.kind === "channel") {
+            const at1 = mentionAt, end1 = input.cursorPosition
+            mentionAt = -1; mentionPicker.close()
+            input.remove(at1, end1)
+            input.insert(at1, '<a href="mention-' + person.kind + ':' + person.mri + '" style="color:' + theme.brandForeground1 + '; text-decoration:none">' + escapeHtml(person.name) + '</a>&nbsp;')
+            input.cursorPosition = at1 + person.name.length + 1
+            input.forceActiveFocus()
+            return
+        }
         if (person.everyone) {
             const at0 = mentionAt, end0 = input.cursorPosition
             mentionAt = -1; mentionPicker.close()
@@ -539,7 +552,7 @@ Item {
         id: mentionPicker
         parent: Overlay.overlay
         width: 300; padding: 0
-        height: Math.min(310.3, (root.mentionQuery.trim() ? 8 : 43.2) + rowsCol.height + 8)
+        height: Math.min(310.3, 43.2 + rowsCol.height + 8)
         closePolicy: Popup.CloseOnPressOutside
         focus: false
         property int current: 0
@@ -547,7 +560,16 @@ Item {
             const q = root.mentionQuery.trim().toLowerCase()
             const fromRoster = root.mentionables.filter(p => !q || (p.name || "").toLowerCase().split(/\s+/).some(w => w.startsWith(q)) || (p.name || "").toLowerCase().startsWith(q) || (p.mail || "").toLowerCase().startsWith(q))
             const found = q.length >= 2 && root.mentionDirectory ? (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).map(p => ({ mri: "8:orgid:" + p.id, name: p.name, mail: p.mail || p.email || "" })) : []
-            const out = fromRoster.slice()
+            const out = []
+            // A channel's team and the channel itself (Teams' channel
+            // picker): by a word of their name, or by "team" / "channel".
+            const words = n => (n || "").toLowerCase().split(/\s+/)
+            const t = root.teamMention, c = root.channelMention
+            if (q && t && (words(t.name).some(w => w.startsWith(q)) || t.name.toLowerCase().startsWith(q) || "team".startsWith(q)))
+                out.push({ kind: "team", mri: t.id, name: t.name, mail: "Team", photoId: t.groupId })
+            if (q && c && (words(c.name).some(w => w.startsWith(q)) || c.name.toLowerCase().startsWith(q) || "channel".startsWith(q)))
+                out.push({ kind: "channel", mri: c.id, name: c.name, mail: "Channel", photoId: t ? t.groupId : "" })
+            for (const p of fromRoster) out.push(p)
             for (const p of found) if (!out.some(o => o.mri === p.mri)) out.push(p)
             // Everyone, in group chats up to 250 people.
             if (root.everyoneId && root.memberCount <= 250 && (!q || "everyone".startsWith(q)))
@@ -561,14 +583,13 @@ Item {
         y: { const p = input.mapToItem(Overlay.overlay, 0, input.positionToRectangle(Math.max(0, root.mentionAt)).y); return Math.max(8, p.y - height - 1) }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Text {
-            visible: !root.mentionQuery.trim()
             x: 20.7; y: 10.7; height: 20; verticalAlignment: Text.AlignVCenter
             text: "Suggestions"
             font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
         }
         Column {
             id: rowsCol
-            x: 0.7; y: root.mentionQuery.trim() ? 8 : 43.2
+            x: 0.7; y: 43.2
             Repeater {
                 model: mentionPicker.people
                 Rectangle {
@@ -577,9 +598,19 @@ Item {
                     required property int index
                     width: 298.7; height: 47.3
                     color: index === mentionPicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : prowHover.hovered ? theme.menuHover : "transparent"
-                    Avatar { visible: !prow.modelData.everyone; x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri || "" }
+                    Avatar { visible: !prow.modelData.everyone && !prow.modelData.kind; x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri || "" }
+                    // A team or channel: the team's picture, a 4 px square.
+                    Avatar {
+                        visible: !!prow.modelData.kind
+                        x: 19.6; y: 7.6; size: 32; square: true
+                        readonly property string team: root.teamMention ? root.teamMention.name : ""
+                        name: team
+                        initialsText: team.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+                        photoId: prow.modelData.photoId ? "team:" + prow.modelData.photoId : ""
+                    }
                     FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.textStrong }
-                    Text { x: 59.6; y: 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    // The typed part in bold (Teams).
+                    Text { x: 59.6; y: 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.boldMatch(prow.modelData.name, root.mentionQuery.trim()); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Text { visible: !!prow.modelData.mail; x: 59.6; y: 25.6; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     HoverHandler { id: prowHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.insertMention(prow.modelData) }
@@ -589,6 +620,17 @@ Item {
                 }
             }
         }
+    }
+    // `name` with the word that starts with `q` bold for its first
+    // q.length letters.
+    function boldMatch(name, q) {
+        const n = String(name || "")
+        if (!q) return escapeHtml(n)
+        const lower = n.toLowerCase(), ql = q.toLowerCase()
+        let i = lower.startsWith(ql) ? 0 : lower.indexOf(" " + ql)
+        if (i > 0) i++
+        if (i < 0) return escapeHtml(n)
+        return escapeHtml(n.slice(0, i)) + "<b>" + escapeHtml(n.slice(i, i + q.length)) + "</b>" + escapeHtml(n.slice(i + q.length))
     }
     function mentionForTest(text) { input.insert(input.cursorPosition, text); input.cursorPosition = input.length }
     function pickMentionForTest() { mentionPicker.pick() }
