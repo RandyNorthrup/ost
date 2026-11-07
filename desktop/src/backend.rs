@@ -135,6 +135,9 @@ pub mod qobject {
         /// Teams' in-app toast: `{id, text, intent}` (intent "success" or
         /// "error"); a new id each time.
         #[qproperty(QString, toast_json)]
+        /// The open chat's newest pinned message for Teams' pinned banner:
+        /// `{id, sender, sender_mri, text, time, count}`, or "".
+        #[qproperty(QString, pinned_json)]
         /// The user's quick reactions for the hover bar (Teams' roamed
         /// defaultMessageReactions, else its default four), as a JSON array.
         #[qproperty(QString, quick_reactions_json)]
@@ -765,6 +768,7 @@ pub struct BackendRust {
     recent_reactions_json: QString,
     message_readers_json: QString,
     toast_json: QString,
+    pinned_json: QString,
     quick_reactions_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
@@ -1305,6 +1309,12 @@ fn server_timelines() -> &'static std::sync::Mutex<HashMap<String, Vec<api::mess
     MAP.get_or_init(Default::default)
 }
 
+/// The open chat's pinned banner (`pinned_json`), per chat.
+fn pinned_banner() -> &'static std::sync::Mutex<(String, serde_json::Value)> {
+    static P: OnceLock<std::sync::Mutex<(String, serde_json::Value)>> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
 /// The open chat's pinned message ids, newest first.
 fn pinned_order() -> &'static std::sync::Mutex<(String, Vec<String>)> {
     static P: OnceLock<std::sync::Mutex<(String, Vec<String>)>> = OnceLock::new();
@@ -1384,6 +1394,26 @@ async fn load_messages(
         m.saved = saved.contains(&m.id);
         m.pinned = pinned.contains(&m.id);
     }
+    // Teams' banner shows the newest pin; fetch it if it isn't loaded.
+    let banner = match pinned.first() {
+        None => serde_json::Value::Null,
+        Some(id) => {
+            let shown = timeline.iter().find(|m| &m.id == id).cloned();
+            let m = match shown {
+                Some(m) => Some(m),
+                None => api::messages::read_message(&client, &chat_id, id)
+                    .await
+                    .ok(),
+            };
+            match m {
+                Some(m) => {
+                    json!({ "id": m.id, "sender": m.sender, "sender_mri": m.sender_mri, "text": m.text, "time": m.time, "count": pinned.len() })
+                }
+                None => serde_json::Value::Null,
+            }
+        }
+    };
+    *pinned_banner().lock().unwrap() = (chat_id.clone(), banner);
     *pinned_order().lock().unwrap() = (chat_id.clone(), pinned);
     for img in timeline.iter_mut().flat_map(|m| m.images.iter_mut()) {
         match cached_image(&client, img).await {
@@ -3723,6 +3753,16 @@ impl qobject::Backend {
                 }
                 match result {
                     Ok((json, last_id, has_older)) => {
+                        let banner = {
+                            let b = pinned_banner().lock().unwrap();
+                            if b.0 == wanted && !b.1.is_null() {
+                                b.1.to_string()
+                            } else {
+                                String::new()
+                            }
+                        };
+                        this.as_mut()
+                            .set_pinned_json(QString::from(banner.as_str()));
                         this.as_mut().set_messages_has_older(has_older);
                         this.as_mut().set_messages_loading_older(false);
                         this.as_mut()

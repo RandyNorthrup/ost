@@ -480,6 +480,27 @@ pub struct TimelinePage {
     pub older: Option<String>,
 }
 
+/// One message by id (for a pinned message that isn't loaded).
+pub async fn read_message(
+    client: &TeamsClient,
+    chat_id: &str,
+    message_id: &str,
+) -> Result<MessageView> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages/{}",
+        client.chat_service_url(),
+        chat_id,
+        message_id
+    );
+    let m: serde_json::Value = client.chat_get(&url).await?.json().await?;
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    let name = client.display_name().unwrap_or_default();
+    view_of(&m, &me, &name).ok_or_else(|| anyhow::anyhow!("not a message Teams shows"))
+}
+
 /// Teams' page size for a conversation's messages (its chat service cap).
 pub const PAGE_SIZE: usize = 200;
 

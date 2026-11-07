@@ -1618,6 +1618,62 @@ Rectangle {
         root.formatting = false
         root.posting = false
     }
+    // Teams' pinned-message banner (pinned-message-banner, measured): over
+    // the top of the list, 40 tall, NeutralBackground2 with shadow 8 and a
+    // NeutralStroke3 bottom line. Pin icon (20) at 20.7, the sender (12),
+    // the preview (12 semibold) 15 after it, the date (12 semibold) at the
+    // right, then ··· (View in chat, Unpin for everyone). Clicking it goes
+    // to the message.
+    readonly property var pinnedBanner: backend.pinnedJson ? JSON.parse(backend.pinnedJson) : null
+    function pinnedStamp(iso) {
+        const d = new Date(iso), now = new Date()
+        if (d.toDateString() === now.toDateString()) return Qt.formatTime(d, "h:mm AP")
+        return d.getFullYear() === now.getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yyyy")
+    }
+    Item {
+        id: pinBanner
+        visible: !!root.pinnedBanner && list.visible
+        z: 6
+        x: 0; y: list.y; width: list.width; height: 40
+        FluentSurface { anchors.fill: parent; depth: 8; radius: 0; color: theme.quoteFill }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.quoteBorder }
+        Item {
+            x: 12; y: 4; width: parent.width - 12 - 2 - 32; height: 31.3
+            FluentIcon { x: 8.7; y: 5.7; name: "pin-20"; size: 20; color: theme.textStrong }
+            Text { id: pinWho; x: 41.7; anchors.verticalCenter: parent.verticalCenter; text: root.pinnedBanner ? root.pinnedBanner.sender : ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+            Text {
+                x: pinWho.x + pinWho.implicitWidth + 15; anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(0, pinWhen.x - x - 12); elide: Text.ElideRight
+                text: root.pinnedBanner ? root.pinnedBanner.text : ""
+                font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold; color: theme.textStrong
+            }
+            Text {
+                id: pinWhen
+                anchors.right: parent.right; anchors.rightMargin: 8.6; anchors.verticalCenter: parent.verticalCenter
+                text: root.pinnedBanner ? root.pinnedStamp(root.pinnedBanner.time) : ""
+                font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold; color: theme.textStrong
+            }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.jumpToMessage(root.pinnedBanner.id) }
+            Accessible.role: Accessible.Button
+            Accessible.name: root.pinnedBanner ? "Pinned message banner. Message from " + root.pinnedBanner.sender + " sent on " + root.pinnedStamp(root.pinnedBanner.time) + ", " + root.pinnedBanner.text : ""
+        }
+        BarButton {
+            id: pinMore
+            x: parent.width - 32 - 2; y: 4; height: 31.3
+            icon: "more-horizontal-20"; tip: "Pinned options"
+            onClicked: { pinMenu.parent = pinMore; pinMenu.x = pinMore.width - pinMenu.implicitWidth; pinMenu.y = pinMore.height; pinMenu.open() }
+        }
+        MenuPopup {
+            id: pinMenu
+            margins: 8
+            items: [{ key: "view", label: "View in chat", icon: "open-20" }, { key: "unpin", label: "Unpin for everyone", icon: "pin-off-20" }]
+            onPicked: i => {
+                if (items[i].key === "view") root.jumpToMessage(root.pinnedBanner.id)
+                else backend.setMessagePinned(root.pinnedBanner.id, false)
+            }
+        }
+    }
     // The menu for selected message text.
     MenuPopup {
         id: textMenu

@@ -1615,6 +1615,26 @@ Window {
         }
     }
 
+    // --pin-banner-test with --open-chat=<id> --shots=<dir>: capture the
+    // pinned banner, then unpin from it and capture again.
+    Timer {
+        running: Qt.application.arguments.indexOf("--pin-banner-test") >= 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        property string pinned: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST pin test"); return }
+            if (step === 0 && !backend.pinnedJson) return
+            if (step === 0) { pinned = JSON.parse(backend.pinnedJson).id; console.warn("PIN-TEST banner", backend.pinnedJson); window.contentItem.grabToImage(r => r.saveToFile(dir + "pin-banner.png")) }
+            else if (step === 1) { console.warn("PIN-TEST unpin", pinned); backend.setMessagePinned(pinned, false) }
+            else if (step === 3) { console.warn("PIN-TEST banner after", JSON.stringify(backend.pinnedJson)); window.contentItem.grabToImage(r => r.saveToFile(dir + "pin-after.png")) }
+            else if (step === 4) Qt.quit()
+            step++
+        }
+    }
+
     // --toast-test --shots=<dir>: show Teams' toast and capture it.
     Timer {
         running: Qt.application.arguments.indexOf("--toast-test") >= 0 && backend.signedIn
