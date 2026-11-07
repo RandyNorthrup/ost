@@ -1637,15 +1637,21 @@ Rectangle {
         radius: 8
         color: theme.menu
         border.color: theme.dividerSoft
+        // The chat's roster (thread members), you first; channels fall back
+        // to the people seen in the posts.
         readonly property var members: {
+            const roster = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+            if (roster.length > 0) {
+                const me = roster.filter(m => m.me).map(m => ({ name: (m.name || root.myName) + " (You)", mri: m.mri }))
+                return me.concat(roster.filter(m => !m.me).map(m => ({ name: m.name, mri: m.mri, mail: m.mail })))
+            }
             const seen = {}, out = []
             if (root.myName) { out.push({ name: root.myName + " (You)", mri: "me" }); seen.me = true }
             for (const m of root.messages) {
-                if (m.mine || !m.sender_mri || seen[m.sender_mri]) continue
+                if (m.mine || !m.sender_mri || !m.sender || seen[m.sender_mri]) continue
                 seen[m.sender_mri] = true
                 out.push({ name: m.sender, mri: m.sender_mri })
             }
-            if (!root.isChannel && root.chatPhotoId && !seen[root.chatPhotoId] && !root.isSelf) out.push({ name: root.chatName, mri: root.chatPhotoId })
             return out
         }
         Column {
