@@ -2064,6 +2064,37 @@ Window {
         }
     }
 
+    // --share-contact-test=<query> with --open-chat=<id> --shots=<dir>:
+    // "@", Share someone's contact info, pick the first match, OK, add
+    // text, capture each step, send and log the newest message.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--share-contact-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const q = (Qt.application.arguments.find(a => a.startsWith("--share-contact-test=")) || "").slice(21)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "share-" + n + ".png"))
+            if (backend.currentChatId !== id) { const c0 = chatList.chats.find(c => c.id === id); backend.selectChat(id, c0 ? c0.name : "OST share test"); return }
+            const c = conversation.composeForTest()
+            const d = c.shareContactForTest()
+            if (step === 0) { c.focusEditor(); c.mentionForTest("@") }
+            else if (step === 1) shot("picker")
+            else if (step === 2) c.pickShareForTest()
+            else if (step === 3) d.typeForTest(q)
+            else if (step === 5) shot("results")
+            else if (step === 6) d.pickFirstForTest()
+            else if (step === 7) shot("picked")
+            else if (step === 8) d.okForTest()
+            else if (step === 9) { c.insertText("OST TEST 65 shared from OST"); shot("compose"); console.warn("SHARE-TEST editor", c.formattedText().replace(/\n/g, " ").slice(-500)) }
+            else if (step === 10) conversation.sendForTest()
+            else if (step === 13) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => m.mine).pop(); console.warn("SHARE-TEST newest", JSON.stringify({ html: m.html, state: m.send_state })); shot("sent") }
+            else if (step === 14) Qt.quit()
+            step++
+        }
+    }
+
     // --rename-test=<name> with --open-chat=<id>: rename the group chat,
     // log the chat list's name for it, then quit.
     Timer {

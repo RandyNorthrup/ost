@@ -518,6 +518,14 @@ Item {
     }
     function insertMention(person) {
         if (mentionAt < 0) return
+        if (person.kind === "share") {
+            // Teams' "Share someone's contact info": the "@" and what
+            // follows it go; the dialog puts the cards in.
+            shareAt = mentionAt; shareEnd = input.cursorPosition
+            mentionAt = -1; mentionPicker.close()
+            shareContact.start()
+            return
+        }
         if (person.kind === "team" || person.kind === "channel") {
             const at1 = mentionAt, end1 = input.cursorPosition
             mentionAt = -1; mentionPicker.close()
@@ -574,7 +582,10 @@ Item {
             // Everyone, in group chats up to 250 people.
             if (root.everyoneId && root.memberCount <= 250 && (!q || "everyone".startsWith(q)))
                 out.push({ everyone: true, name: "Everyone", mail: "Notify everyone in the chat" })
-            return out.slice(0, 21)
+            const rows = out.slice(0, 20)
+            // Always last (Teams): share someone's contact card.
+            rows.push({ kind: "share", name: "Share someone\u2019s contact info", mail: "" })
+            return rows
         }
         function move(d) { if (people.length) current = (current + d + people.length) % people.length }
         function pick() { if (people.length) root.insertMention(people[Math.max(0, Math.min(current, people.length - 1))]); else close() }
@@ -596,12 +607,12 @@ Item {
                     id: prow
                     required property var modelData
                     required property int index
-                    width: 298.7; height: 47.3
+                    width: 298.7; height: modelData.kind === "share" ? 49.3 : 47.3
                     color: index === mentionPicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : prowHover.hovered ? theme.menuHover : "transparent"
                     Avatar { visible: !prow.modelData.everyone && !prow.modelData.kind; x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri || "" }
                     // A team or channel: the team's picture, a 4 px square.
                     Avatar {
-                        visible: !!prow.modelData.kind
+                        visible: prow.modelData.kind === "team" || prow.modelData.kind === "channel"
                         x: 19.6; y: 7.6; size: 32; square: true
                         readonly property string team: root.teamMention ? root.teamMention.name : ""
                         name: team
@@ -609,8 +620,10 @@ Item {
                         photoId: prow.modelData.photoId ? "team:" + prow.modelData.photoId : ""
                     }
                     FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.textStrong }
+                    // Share someone's contact info: the contact card icon (20).
+                    FluentIcon { visible: prow.modelData.kind === "share"; x: 19.6; y: 14.6; name: "contact-card-20"; size: 20; color: theme.textStrong }
                     // The typed part in bold (Teams).
-                    Text { x: 59.6; y: 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.boldMatch(prow.modelData.name, root.mentionQuery.trim()); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { x: prow.modelData.kind === "share" ? 59 : 59.6; y: prow.modelData.kind === "share" ? 14.7 : 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; textFormat: prow.modelData.kind === "share" ? Text.PlainText : Text.StyledText; text: prow.modelData.kind === "share" ? prow.modelData.name : root.boldMatch(prow.modelData.name, root.mentionQuery.trim()); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Text { visible: !!prow.modelData.mail; x: 59.6; y: 25.6; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     HoverHandler { id: prowHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.insertMention(prow.modelData) }
@@ -632,6 +645,27 @@ Item {
         if (i < 0) return escapeHtml(n)
         return escapeHtml(n.slice(0, i)) + "<b>" + escapeHtml(n.slice(i, i + q.length)) + "</b>" + escapeHtml(n.slice(i + q.length))
     }
+    // Share someone's contact info: where the "@" was, and the dialog.
+    property int shareAt: -1
+    property int shareEnd: -1
+    ShareContactDialog {
+        id: shareContact
+        onAccepted: people => {
+            const at = root.shareAt, end = root.shareEnd
+            if (at < 0) return
+            input.remove(at, Math.max(at, Math.min(end, input.length)))
+            const style = 'style="color:' + theme.brandForeground1 + '; text-decoration:none"'
+            const icon = Qt.resolvedUrl("../assets/icons/contact-card-inline-" + (theme.dark ? "dark" : "light") + ".svg")
+            const html = people.map(p => '<img src="' + icon + '" width="20" height="20"><a href="mention-contact:' + p.mri + '" ' + style + '>' + escapeHtml(p.name) + '</a>&nbsp;').join("")
+            input.insert(at, html)
+            input.cursorPosition = at + people.reduce((n, p) => n + 1 + p.name.length + 1, 0)
+            root.shareAt = -1
+            input.forceActiveFocus()
+        }
+        onClosed: input.forceActiveFocus()
+    }
+    function shareContactForTest() { return shareContact }
+    function pickShareForTest() { insertMention({ kind: "share" }) }
     function mentionForTest(text) { input.insert(input.cursorPosition, text); input.cursorPosition = input.length }
     function pickMentionForTest() { mentionPicker.pick() }
 

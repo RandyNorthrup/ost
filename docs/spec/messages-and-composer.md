@@ -912,6 +912,28 @@ Groups are separated by dividers; empty groups are skipped.
   - the content has `<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Randy</span>&nbsp;<span … itemid="1">Northrup</span>`;
   - `properties.mentions` is a JSON string, one entry per span: `{"@type":"http://schema.skype.com/Mention","itemid":N,"mri":"8:orgid:…","mentionType":"person","displayName":"Randy"}`.
 
+### Share someone's contact info (measured on winpc, 2026-11-07, "OST TEST 64")
+- **Picker row.** It is always last: the contact-card icon (20) at 20.3, text at 59.7, 49.3 tall.
+- **Dialog** (`chat-share-contact-popup`). 402 wide, radius 4, 16.7 padding.
+  - Title "Share someone's contact info in the message" (14/20).
+  - A tag picker at (16.7, 46.7): 368.7 × 33.3, #F5F5F5, radius 4, 12 in, a brand underline while focused, placeholder "Enter name". With a tag it is 38.7 tall.
+  - The hint "They won't be @mentioned or notified" at 24.7.
+  - Cancel and OK (96 × 31.3) at (177.3 / 281.3, picker bottom + 54). OK is disabled (#F0F0F0 / #BDBDBD) until someone is picked.
+- **Results.**
+  - A white list under the picker: 368.7 wide, radius 4, menu shadow.
+  - Rows are 346.7 × 50, starting 4 in, 2 apart, with the active row #F5F5F5.
+  - Each row has a 32 px avatar at (12, 9), the name 14/20 #424242 at (60, 6.5) and a second line 12/16 #616161 at 27.5, with the typed part bold.
+- **Tags.** A white pill 25.3 tall holding a 24 px avatar, the name and a 12 px dismiss. Several people can be picked.
+- **Wire format.** For each contact:
+  - `<span title="ID card" type="(idcard)" class="animated-emoticon-20-idcard" itemscope="Share_Contact_Card">`;
+  - inside it, an Emoji img with `itemid="idcard"`, Teams' fixed 64 px PNG as a `data:` src, `alt` "🪪";
+  - then `<span itemtype="http://schema.skype.com/Mention" itemscope="Share_Contact_Card" itemid="N">{name}</span>`;
+  - its mention has `mentionType` "share-contact".
+
+  It never counts as mentioning that person. OST's "OST TEST 65" matched it byte for byte.
+- **Rendering.** The contact-card-20 icon in brand #4F52B2, then the name as a mention (#4F52B2, opens the profile card).
+- **Mention colour.** Received mentions are BrandForeground1 #4F52B2 (measured), not #5B5FC7.
+
 ### Channels (measured on winpc, 2026-11-07, OST Test Team > General)
 - **The picker in a channel.**
   - "Suggestions" shows even with a query.

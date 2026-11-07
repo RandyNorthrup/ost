@@ -6,6 +6,10 @@ QtObject {
     /// Dark theme on: chosen in Settings > Appearance, or the system's.
     property bool dark: false
     function pick(light, darkValue) { return dark ? darkValue : light }
+    // Message HTML as shown: a shared contact's card icon in brand colour.
+    function messageHtml(h) {
+        return String(h || "").replace(/src="ost-contact-card"/g, 'style="vertical-align: middle" src="' + Qt.resolvedUrl("../assets/icons/contact-card-inline-" + (dark ? "dark" : "light") + ".svg") + '"')
+    }
 
     // Brand
     readonly property color brand: pick("#5B5FC7", "#7F85F5")          // BrandForeground1 / indicators

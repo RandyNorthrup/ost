@@ -1185,7 +1185,7 @@ Rectangle {
                 readonly property bool endsInText: inFlow && flow[flow.length - 1].html !== undefined
                 readonly property real picsEnd: picsTop + picsH
                 readonly property string textStyle: "<style>a { color: " + theme.brand + "; text-decoration: none; } "
-                    + ".mention { color: " + theme.brand + "; } "
+                    + ".mention { color: " + theme.brandForeground1 + "; } "
                     + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; } "
                     + "p, div, li, body { line-height: " + (bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; }</style>"
                 // Teams' lines are 20 px; big emoticons (50 px) set their own.
@@ -1281,7 +1281,7 @@ Rectangle {
                                 persistentSelection: false
                                 selectionColor: theme.selectionFill
                                 selectedTextColor: theme.text
-                                text: part.isText ? bubble.textStyle + part.modelData.flowText : ""
+                                text: part.isText ? bubble.textStyle + theme.messageHtml(part.modelData.flowText) : ""
                                 textFormat: TextEdit.RichText
                                 wrapMode: TextEdit.Wrap
                                 font.family: theme.font; font.pixelSize: theme.base
@@ -1394,7 +1394,7 @@ Rectangle {
                     // Teams' 14/20 text (a fixed 20 px line).
                     // Sanitised by the engine to a safe subset.
                     text: msg.modelData.deleted ? "This message has been deleted."
-                        : bubble.textStyle + (msg.modelData.html || msg.modelData.text)
+                        : bubble.textStyle + (msg.modelData.html ? theme.messageHtml(msg.modelData.html) : msg.modelData.text)
                     textFormat: msg.modelData.deleted ? TextEdit.PlainText : TextEdit.RichText
                     wrapMode: TextEdit.Wrap
                     font.family: theme.font; font.pixelSize: theme.base

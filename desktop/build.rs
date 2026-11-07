@@ -39,6 +39,7 @@ fn main() {
         "qml/Emoticon.qml",
         "qml/QuoteCard.qml",
         "qml/ReactionPicker.qml",
+        "qml/ShareContactDialog.qml",
         "qml/EmojiPanel.qml",
         "qml/FunPicker.qml",
         "qml/CustomEmojiAdd.qml",

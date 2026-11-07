@@ -1456,6 +1456,10 @@ fn my_mention_ids(props: Option<&serde_json::Value>, me: &str) -> Vec<String> {
         .into_iter()
         .flatten()
         .filter(|m| {
+            // Sharing your contact doesn't mention you (Teams).
+            m.get("mentionType").and_then(|t| t.as_str()) != Some("share-contact")
+        })
+        .filter(|m| {
             !me.is_empty()
                 && m.get("mri")
                     .and_then(|x| x.as_str())
@@ -1604,6 +1608,22 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
                     escape(&e.shortcut)
                 ));
                 continue;
+            }
+            // A shared contact's card icon (Teams draws its contact-card
+            // icon in brand colour, not the emoticon).
+            if attr(tag, "itemid").as_deref() == Some("idcard") {
+                let at = html.len() - rest.len() - end - 1;
+                let span = html[..at.min(html.len())]
+                    .rfind("<span")
+                    .map(|i| &html[i..at.min(html.len())])
+                    .unwrap_or("");
+                if span.contains("Share_Contact_Card") {
+                    out.push_str(&format!(
+                        "<img src=\"{CONTACT_CARD_SRC}\" width=\"20\" height=\"20\" alt=\"{}\">",
+                        escape(&attr(tag, "alt").unwrap_or_default())
+                    ));
+                    continue;
+                }
             }
             // A Teams emoticon: its Fluent picture, 20 px in the line, whose
             // src the client fills in (EMOTICON_SRC + emoticon id).
@@ -1949,6 +1969,14 @@ pub fn quote_preview(content: &str) -> String {
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+/// Where a shared contact's card icon goes in message HTML; the client
+/// draws its contact-card icon there.
+pub const CONTACT_CARD_SRC: &str = "ost-contact-card";
+
+/// Teams' picture for the ID card emoticon it sends before a shared
+/// contact (a 64 px PNG, sent inline exactly as Teams sends it).
+const SHARE_CONTACT_IDCARD_PNG: &str = include_str!("share_contact_idcard.b64");
 
 /// Where an AMS picture goes in the edit box until the client puts its
 /// cached file there.
@@ -2816,11 +2844,26 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                             .map(|c| (c, "channel"))
                     })
                     .or_else(|| href.strip_prefix("mention-team:").map(|t| (t, "team")))
+                    // A shared contact (Share someone's contact info).
+                    .or_else(|| {
+                        href.strip_prefix("mention-contact:")
+                            .map(|m| (m, "share-contact"))
+                    })
                     .or_else(|| href.strip_prefix("mention:").map(|m| (m, "person")));
                 if let Some((mri, mention_type)) = target {
                     let itemid = mentions.len();
+                    let scope = if mention_type == "share-contact" {
+                        // Teams' ID card emoticon goes first.
+                        out.push_str(&format!(
+                            "<span title=\"ID card\" type=\"(idcard)\" class=\"animated-emoticon-20-idcard\" itemscope=\"Share_Contact_Card\"><img itemscope=\"\" itemtype=\"http://schema.skype.com/Emoji\" itemid=\"idcard\" src=\"data:image/png;base64,{}\" title=\"ID card\" alt=\"\u{1FAAA}\" style=\"width:20px; height:20px\"></span>",
+                            SHARE_CONTACT_IDCARD_PNG.trim()
+                        ));
+                        "Share_Contact_Card"
+                    } else {
+                        ""
+                    };
                     out.push_str(&format!(
-                        "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"{itemid}\">"
+                        "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"{scope}\" itemid=\"{itemid}\">"
                     ));
                     mentions.push(OutMention {
                         kind: "http://schema.skype.com/Mention",
@@ -3141,6 +3184,46 @@ mod quote_tests {
                 .unwrap()
                 .mention_kind,
             ""
+        );
+    }
+
+    #[test]
+    fn shared_contacts_read_and_send_as_teams_does() {
+        let png = SHARE_CONTACT_IDCARD_PNG.trim();
+        // As Teams sent "OST TEST 64" (Share someone's contact info).
+        let wire = format!(
+            "<p><span title=\"ID card\" type=\"(idcard)\" class=\"animated-emoticon-20-idcard\" itemscope=\"Share_Contact_Card\"><img itemscope=\"\" itemtype=\"http://schema.skype.com/Emoji\" itemid=\"idcard\" src=\"data:image/png;base64,{png}\" title=\"ID card\" alt=\"\u{1FAAA}\" style=\"width:20px; height:20px\"></span><span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"Share_Contact_Card\" itemid=\"0\">Randy Northrup</span>&nbsp; OST TEST 64 shared contact</p>"
+        );
+        let randy = "8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3";
+        let mentions = serde_json::json!([{"@type": "http://schema.skype.com/Mention", "itemid": 0, "mri": randy, "mentionType": "share-contact", "displayName": "Randy Northrup"}]).to_string();
+        let m = serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": wire, "from": "https://x/contacts/8:orgid:me", "imdisplayname": "Me", "properties": {"mentions": mentions}});
+        // Read by Randy: the card icon and the name, not a mention of him.
+        let v = view_of(&m, randy, "Randy Northrup").unwrap();
+        assert!(
+            v.html.starts_with(&format!(
+                "<p><img src=\"{CONTACT_CARD_SRC}\" width=\"20\" height=\"20\""
+            )),
+            "{}",
+            v.html
+        );
+        assert!(
+            v.html
+                .contains("<span class=\"mention\">Randy Northrup</span>"),
+            "{}",
+            v.html
+        );
+        assert!(!v.mentions_me && v.mention_kind.is_empty());
+        assert!(emoticon_ids(&v.html).is_empty());
+        // Sent from the compose box: byte for byte Teams' own.
+        let (html, out) = teams_html_and_mentions(&format!(
+            "<p><a href=\"mention-contact:{randy}\">Randy Northrup</a>&nbsp; OST TEST 64 shared contact</p>"
+        ));
+        assert_eq!(html, wire);
+        assert_eq!(
+            serde_json::to_string(&out).unwrap(),
+            format!(
+                "[{{\"@type\":\"http://schema.skype.com/Mention\",\"itemid\":0,\"mri\":\"{randy}\",\"mentionType\":\"share-contact\",\"displayName\":\"Randy Northrup\"}}]"
+            )
         );
     }
 
