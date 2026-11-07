@@ -357,6 +357,11 @@ pub mod qobject {
         /// "OST Support Logs <time>" folder on the Desktop, then the Desktop opened.
         #[qinvokable]
         fn collect_support_files(self: &Backend);
+        /// The call or sharing state changed: publish presence as Teams does
+        /// (Busy/InACall in a call, DoNotDisturb/Presenting while sharing,
+        /// Available after).
+        #[qinvokable]
+        fn sync_call_presence(self: &Backend);
         /// Load the page of messages before the oldest shown.
         #[qinvokable]
         fn load_older_messages(self: Pin<&mut Backend>);
@@ -1592,6 +1597,8 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
 impl qobject::Backend {
     pub fn start(mut self: Pin<&mut Self>) {
         let _ = QT_THREAD.set(self.qt_thread());
+        // The machine's lock state feeds presence, as Teams' host does.
+        runtime().spawn(crate::lock_watch::run());
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
         self.as_mut().set_system_frame(frame);
         // Teams' default theme is "Follow operating system theme".
@@ -1655,6 +1662,15 @@ impl qobject::Backend {
     }
 
     pub fn sign_out(mut self: Pin<&mut Self>) {
+        // As Teams: remove this presence endpoint before the tokens go
+        // (the request needs them).
+        let _ = runtime().block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                teams_cli::api::presence::delete_endpoint(&reqwest::Client::new()),
+            )
+            .await
+        });
         if let Err(e) = teams_cli::auth::sign_out() {
             self.as_mut()
                 .set_status_text(QString::from(short_error(&e).as_str()));
@@ -3424,6 +3440,19 @@ impl qobject::Backend {
                 this.as_mut()
                     .set_channel_tabs_json(QString::from(text.as_str()));
             });
+        });
+    }
+
+    pub fn sync_call_presence(&self) {
+        use teams_cli::api::presence::CallState;
+        let state = match (self.call_state.to_string().as_str(), self.call_sharing) {
+            ("connected", true) => CallState::Presenting,
+            ("connected", false) => CallState::InCall,
+            _ => CallState::NotInCall,
+        };
+        runtime().spawn(async move {
+            let http = reqwest::Client::new();
+            teams_cli::api::presence::set_call_state(&http, state).await;
         });
     }
 

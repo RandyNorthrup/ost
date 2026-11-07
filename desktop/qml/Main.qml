@@ -107,6 +107,12 @@ Window {
     }
     property bool reallyQuit: Qt.application.arguments.length > 1
 
+    // Calls and sharing set presence, as Teams' calling client state does.
+    Connections {
+        target: backend
+        function onCallStateChanged() { backend.syncCallPresence() }
+        function onCallSharingChanged() { backend.syncCallPresence() }
+    }
     // Bring the main window back (tray, or a second launch of OST).
     function showRaised() {
         window.show(); window.raise(); window.requestActivate()

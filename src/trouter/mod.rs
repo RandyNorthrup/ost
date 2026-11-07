@@ -197,24 +197,31 @@ where
     if let Err(e) = crate::api::presence::publish_endpoint(&http, &epid).await {
         tracing::warn!("Presence endpoint publish failed: {:#}", e);
     }
-    // Mark the endpoint active, as Teams clients do right after the
-    // handshake; chat pushes only flow to active endpoints. (eisbaw/ost#88)
-    let activity = serde_json::json!({
-        "name": "user.activity",
-        "args": [{"state": "active", "cv": format!("{}.0.1", uuid::Uuid::new_v4().simple())}],
-    });
-    if let Err(e) = ws.send_text(&format!("5:1+::{}", activity)).await {
-        tracing::warn!("user.activity send failed: {:#}", e);
-    }
+    // Report the user's activity as Teams does (docs/spec/presence.md):
+    // `active` unless the machine is locked, sent twice on connect (the
+    // second 10 s later), then on each lock change; chat pushes only flow
+    // to active endpoints. (eisbaw/ost#88) Each report asks for an ack; none
+    // within 10 s means the connection is broken.
+    let cv_base = uuid::Uuid::new_v4().simple().to_string();
+    let mut cv_n: u32 = 0;
+    let mut msg_id: u32 = 0;
+    let mut awaiting_ack: Option<(u32, Instant)> = None;
+    let mut presence = crate::api::presence::changes();
+    let mut reported_locked = presence.borrow().locked;
+    awaiting_ack = report_activity(&mut ws, &cv_base, reported_locked, &mut msg_id, &mut cv_n)
+        .await
+        .or(awaiting_ack);
+    let mut second_report = Box::pin(time::sleep(Duration::from_secs(10)));
+    let mut second_sent = false;
+    let mut unlock_debounce: Option<std::pin::Pin<Box<time::Sleep>>> = None;
 
     // 6. Event loop: recv frames, send heartbeat, re-register before TTL,
     //    force reconnect after session max age.
     let connected_at = Instant::now();
     let mut heartbeat = time::interval(Duration::from_secs(30));
-    // The presence service drops endpoints that stop reporting within a
-    // few minutes; republish well inside that window.
-    let mut presence_tick = time::interval(Duration::from_secs(120));
-    presence_tick.tick().await; // first publish happened above
+    // Teams' presence heartbeat (reportmyactivity) is hourly.
+    let mut presence_heartbeat = time::interval(Duration::from_secs(3600));
+    presence_heartbeat.tick().await; // the first tick is immediate
     heartbeat.tick().await; // skip first immediate tick
 
     // Re-register 30s before TTL expires.
@@ -267,6 +274,12 @@ where
                                 });
                             }
                         }
+                        // socket.io ack of a user.activity report: "6:::<id>+[...]".
+                        if let Some((id, _)) = awaiting_ack
+                            && text.starts_with(&format!("6:::{id}"))
+                        {
+                            awaiting_ack = None;
+                        }
                         handle_frame(&text, &http, skype_token_str, opts).await
                     }
                     Ok(None) => {
@@ -277,13 +290,51 @@ where
                     }
                 }
             }
-            _ = presence_tick.tick() => {
-                let (h, ep) = (http.clone(), epid.clone());
+            _ = presence_heartbeat.tick() => {
+                let h = http.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = crate::api::presence::publish_endpoint(&h, &ep).await {
-                        tracing::warn!("Presence refresh failed: {:#}", e);
+                    if let Err(e) = crate::api::presence::heartbeat(&h).await {
+                        tracing::warn!("Presence heartbeat failed: {:#}", e);
                     }
                 });
+            }
+            _ = &mut second_report, if !second_sent => {
+                second_sent = true;
+                awaiting_ack = report_activity(&mut ws, &cv_base, reported_locked, &mut msg_id, &mut cv_n).await.or(awaiting_ack);
+            }
+            changed = presence.changed() => {
+                if changed.is_err() { continue; }
+                let locked = presence.borrow().locked;
+                if locked != reported_locked {
+                    if locked {
+                        // Locking is reported at once.
+                        unlock_debounce = None;
+                        reported_locked = true;
+                        awaiting_ack = report_activity(&mut ws, &cv_base, true, &mut msg_id, &mut cv_n).await.or(awaiting_ack);
+                    } else {
+                        unlock_debounce = Some(Box::pin(time::sleep(Duration::from_secs(1))));
+                    }
+                }
+            }
+            _ = async { unlock_debounce.as_mut().unwrap().await }, if unlock_debounce.is_some() => {
+                unlock_debounce = None;
+                if !presence.borrow().locked && reported_locked {
+                    reported_locked = false;
+                    awaiting_ack = report_activity(&mut ws, &cv_base, false, &mut msg_id, &mut cv_n).await.or(awaiting_ack);
+                    // Unlocked: Teams' state-change publish of the current pair.
+                    let h = http.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::api::presence::publish_state(&h).await {
+                            tracing::warn!("Presence publish failed: {:#}", e);
+                        }
+                    });
+                }
+            }
+            _ = async {
+                let (_, at) = awaiting_ack.expect("guarded");
+                time::sleep_until((at + Duration::from_secs(10)).into()).await
+            }, if awaiting_ack.is_some() => {
+                break DisconnectReason::Error(anyhow::anyhow!("user.activity not acknowledged in 10 s"));
             }
             _ = heartbeat.tick() => {
                 if let Err(e) = ws.send_text("2::").await {
@@ -660,6 +711,30 @@ async fn handle_call_event(json_str: &str, http: &reqwest::Client, skype_token: 
             });
         }
         Err(e) => tracing::warn!("Failed to answer call: {:#}", e),
+    }
+}
+
+/// Send Teams' `user.activity` report (`active` unless the machine is
+/// locked) asking for an ack; the id and send time to wait on.
+async fn report_activity(
+    ws: &mut websocket::TrouterSocket,
+    cv_base: &str,
+    locked: bool,
+    msg_id: &mut u32,
+    cv_n: &mut u32,
+) -> Option<(u32, Instant)> {
+    *msg_id += 1;
+    *cv_n += 1;
+    let activity = serde_json::json!({
+        "name": "user.activity",
+        "args": [{"state": if locked { "inactive" } else { "active" }, "cv": format!("{cv_base}.0.{cv_n}")}],
+    });
+    match ws.send_text(&format!("5:{}+::{}", msg_id, activity)).await {
+        Ok(()) => Some((*msg_id, Instant::now())),
+        Err(e) => {
+            tracing::warn!("user.activity send failed: {:#}", e);
+            None
+        }
     }
 }
 
