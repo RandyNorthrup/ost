@@ -2639,6 +2639,8 @@ Rectangle {
         mentionDirectory: !root.isGroup && !root.isChannel
         everyoneId: root.isGroup ? root.chatId : ""
         channelMention: root.isChannel ? { id: root.chatId, name: root.chatName } : null
+        canAddPeople: root.isGroup && !root.isChannel
+        onAddPeopleRequested: root.openAddPeople()
         // A team is mentioned by its thread id, its General channel's.
         teamMention: {
             if (!root.isChannel || !root.teamId) return null

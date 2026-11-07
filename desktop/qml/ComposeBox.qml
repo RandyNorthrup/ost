@@ -46,6 +46,9 @@ Item {
     // In a channel: the channel and its team, mentionable as Teams' channel
     // picker offers them ({id, name}; the team's id is its thread id).
     property var channelMention: null
+    // Group chats offer "Add someone to the chat" in the @ picker.
+    property bool canAddPeople: false
+    signal addPeopleRequested()
     property var teamMention: null
     property int memberCount: 0
     // The Enter setting: "send" (Teams' Default) or "newline".
@@ -520,6 +523,13 @@ Item {
     }
     function insertMention(person) {
         if (mentionAt < 0) return
+        if (person.kind === "add") {
+            // The "@" and what follows it go; Teams' Add dialog opens.
+            input.remove(mentionAt, Math.max(mentionAt, input.cursorPosition))
+            mentionAt = -1; mentionPicker.close()
+            root.addPeopleRequested()
+            return
+        }
         if (person.kind === "share") {
             // Teams' "Share someone's contact info": the "@" and what
             // follows it go; the dialog puts the cards in.
@@ -585,6 +595,7 @@ Item {
             if (root.everyoneId && root.memberCount <= 250 && (!q || "everyone".startsWith(q)))
                 out.push({ everyone: true, name: "Everyone", mail: "Notify everyone in the chat" })
             const rows = out.slice(0, 20)
+            if (root.canAddPeople) rows.push({ kind: "add", name: "Add someone to the chat", mail: "" })
             // Always last (Teams): share someone's contact card.
             rows.push({ kind: "share", name: "Share someone\u2019s contact info", mail: "" })
             return rows
@@ -609,7 +620,8 @@ Item {
                     id: prow
                     required property var modelData
                     required property int index
-                    width: 298.7; height: modelData.kind === "share" ? 49.3 : 47.3
+                    readonly property bool action: modelData.kind === "share" || modelData.kind === "add"
+                    width: 298.7; height: modelData.kind === "share" ? 49.3 : modelData.kind === "add" ? 48.7 : 47.3
                     color: index === mentionPicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : prowHover.hovered ? theme.menuHover : "transparent"
                     Avatar { visible: !prow.modelData.everyone && !prow.modelData.kind; x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri || "" }
                     // A team or channel: the team's picture, a 4 px square.
@@ -624,8 +636,10 @@ Item {
                     FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.textStrong }
                     // Share someone's contact info: the contact card icon (20).
                     FluentIcon { visible: prow.modelData.kind === "share"; x: 19.6; y: 14.6; name: "contact-card-20"; size: 20; color: theme.textStrong }
+                    // Add someone to the chat: person-add (20).
+                    FluentIcon { visible: prow.modelData.kind === "add"; x: 19.6; y: 14.3; name: "person-add-20"; size: 20; color: theme.textStrong }
                     // The typed part in bold (Teams).
-                    Text { x: prow.modelData.kind === "share" ? 59 : 59.6; y: prow.modelData.kind === "share" ? 14.7 : 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; textFormat: prow.modelData.kind === "share" ? Text.PlainText : Text.StyledText; text: prow.modelData.kind === "share" ? prow.modelData.name : root.boldMatch(prow.modelData.name, root.mentionQuery.trim()); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { x: prow.action ? 59 : 59.6; y: prow.action ? 14.5 : 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; textFormat: prow.action ? Text.PlainText : Text.StyledText; text: prow.action ? prow.modelData.name : root.boldMatch(prow.modelData.name, root.mentionQuery.trim()); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Text { visible: !!prow.modelData.mail; x: 59.6; y: 25.6; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     HoverHandler { id: prowHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.insertMention(prow.modelData) }
