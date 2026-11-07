@@ -48,6 +48,9 @@ pub struct Outgoing {
     /// The message this one quotes (its card is already in `content`).
     #[serde(default)]
     pub quote: Option<super::messages::Quote>,
+    /// Teams' delivery option: "" (standard), "high" or "urgent".
+    #[serde(default)]
+    pub importance: String,
 }
 
 /// offlineActionsManagerDefaultCrossSessionRetries.
@@ -304,7 +307,7 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         "version": "0",
         "amsreferences": [],
         "properties": {
-            "importance": "",
+            "importance": o.importance,
             "cards": "[]",
             "links": "[]",
             "mentions": "[]",
@@ -469,6 +472,7 @@ pub fn lie_view(o: &Outgoing) -> MessageView {
         text: super::strip_html(&rest).trim().to_string(),
         quote,
         html,
+        importance: o.importance.clone(),
         send_state: send_state.into(),
         send_note: send_note.into(),
         can_retry: o.state == SendState::Error && can_retry(o.pipeline_status.as_deref()),
@@ -864,8 +868,10 @@ mod tests {
             queued: true,
             server_id: None,
             quote: None,
+            importance: "high".into(),
         };
         let b = post_body(&o);
+        assert_eq!(b["properties"]["importance"], "high");
         assert_eq!(b["id"], "-1");
         assert_eq!(b["state"], 0);
         assert_eq!(b["contenttype"], "Text");

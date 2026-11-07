@@ -93,6 +93,7 @@ Rectangle {
     property var emojiTarget: null
     function openEmojiFor(box) { emojiTarget = box; emojiPicker.parent = box; emojiPicker.open() }
     signal openChatSettings()
+    signal scheduleMeeting()
     // Go to a message (a quote card's target), if it is loaded.
     // Card types drawn natively (Teams' supported set, so far).
     readonly property var cardKinds: ["application/vnd.microsoft.card.adaptive", "application/vnd.microsoft.card.hero", "application/vnd.microsoft.card.thumbnail"]
@@ -158,6 +159,7 @@ Rectangle {
     property string forceChannelBarId: ""
     function forceChannelBarForTest(id) { forceChannelBarId = id }
     function channelMenuForTest(m, context) { openMessageMenu(m, channelPosts, false, channelPosts.width - 300, 120, context) }
+    function composeForTest() { return compose }
     function closePickerForTest() { reactionPicker.close() }
     function closeMessageMenuForTest() { messageMenu.close() }
     function forwardDialogForTest() { return forwardDialog }
@@ -1686,6 +1688,7 @@ Rectangle {
     // Send what's in the compose box: text, files, or both.
     function sendCompose() {
         backend.setReplyQuote(root.quoting ? JSON.stringify(root.quoting) : "")
+        backend.setNextImportance(compose.importance)
         if (root.pendingFiles.length > 0) {
             backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []
@@ -1698,6 +1701,7 @@ Rectangle {
         input.clear()
         root.quoting = null
         compose.formatting = false
+        compose.importance = ""
         root.posting = false
     }
     // Teams' pinned-message banner (pinned-message-banner, measured): over
@@ -2031,6 +2035,10 @@ Rectangle {
         onSettingsRequested: root.openChatSettings()
         onTyped: root.typing()
         onSubmit: root.sendCompose()
+        // Teams: not in channels; Urgent only in chats up to 20 people.
+        deliveryOptions: !root.isChannel
+        urgentAllowed: !root.isGroup || participants.members.length <= 20
+        onScheduleMeetingRequested: root.scheduleMeeting()
         onCancelled: { root.quoting = null; root.pendingFiles = []; root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
         Connections {
             target: compose.editor

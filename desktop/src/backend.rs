@@ -211,6 +211,10 @@ pub mod qobject {
         /// `{message_id, sender_mri, sender_name, preview}`, or "" to drop it.
         #[qinvokable]
         fn set_reply_quote(self: Pin<&mut Backend>, quote_json: &QString);
+
+        /// The next message's delivery option: "", "high" or "urgent".
+        #[qinvokable]
+        fn set_next_importance(self: Pin<&mut Backend>, importance: &QString);
         /// Copy a message's link as Teams does (text: the URL; HTML: Teams'
         /// copy-link anchor). `message_json`: {id, sender, text, root_id};
         /// `place_json`: {team_id, team_name, channel_name} for a channel.
@@ -842,6 +846,7 @@ pub struct BackendRust {
     typers: Vec<Typer>,
     /// The message the next send quotes.
     reply_quote: Option<api::messages::Quote>,
+    next_importance: String,
     last_typing_sent: Option<std::time::Instant>,
     /// Chats with messages pushed since the user last opened them.
     unread: HashSet<String>,
@@ -3388,6 +3393,7 @@ impl qobject::Backend {
         }
         self.as_mut().rust_mut().typers.clear();
         self.as_mut().rust_mut().reply_quote = None;
+        self.as_mut().rust_mut().next_importance.clear();
         self.as_mut().rust_mut().typing_generation += 1;
         self.as_mut().set_typing_text(QString::default());
         self.as_mut().set_typing_avatar(QString::default());
@@ -3437,6 +3443,7 @@ impl qobject::Backend {
         }
         let chat_id = self.rust().current_chat_id.to_string();
         let quote = self.as_mut().rust_mut().reply_quote.take();
+        let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
         let content = match &quote {
             Some(q) => format!("{}{}", api::messages::quote_html(q), content),
             None => content,
@@ -3469,6 +3476,7 @@ impl qobject::Backend {
             queued: true,
             server_id: None,
             quote,
+            importance,
         };
         // Sent: the draft for this chat is done.
         self.as_mut()
@@ -3864,6 +3872,15 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+
+    pub fn set_next_importance(mut self: Pin<&mut Self>, importance: &QString) {
+        let v = importance.to_string();
+        self.as_mut().rust_mut().next_importance = if v == "high" || v == "urgent" {
+            v
+        } else {
+            String::new()
+        };
     }
 
     pub fn set_reply_quote(mut self: Pin<&mut Self>, quote_json: &QString) {

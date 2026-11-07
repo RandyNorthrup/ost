@@ -29,6 +29,12 @@ Item {
     property var quote: null
     property var files: []
     property bool formatting: false
+    // Teams' delivery option for the next message: "", "high" or "urgent";
+    // offered outside channels, Urgent only up to 20 members.
+    property string importance: ""
+    property bool deliveryOptions: true
+    property bool urgentAllowed: true
+    signal scheduleMeetingRequested()
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
     readonly property alias editor: input
@@ -38,9 +44,11 @@ Item {
     property bool grown: false
     // Editing always uses the multiline layout (Teams, measured).
     readonly property bool multiline: editing || formatting || files.length > 0 || !!quote || grown
-    readonly property real boxHeight: multiline
+    // The delivery header ("IMPORTANT!") is 26 tall above the editor.
+    readonly property real headerH: importance ? 26 : 0
+    readonly property real boxHeight: headerH + (multiline
         ? (formatting ? 43 : 0) + editorArea.height + 44.7
-        : Math.max(45.3, input.contentHeight + 18 + 7.3)
+        : Math.max(45.3, input.contentHeight + 18 + 7.3))
     signal submit()
     signal cancelled()
     signal quoteDismissed()
@@ -81,11 +89,20 @@ Item {
         border.width: 0.67
         clip: true
 
+        // The delivery option header (measured): 14/20 bold uppercase,
+        // DarkOrange foreground for Important, 16 in, 26 tall.
+        Text {
+            visible: !!root.importance
+            x: 16.7; y: 3; height: 20; verticalAlignment: Text.AlignVCenter
+            text: root.importance === "urgent" ? "URGENT!" : "IMPORTANT!"
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
+            color: root.importance === "urgent" ? theme.redForeground3 : theme.pick("#DA3B01", "#E9835E")
+        }
         // The formatting bar.
         Item {
             id: formatBar
             visible: root.formatting
-            x: 0; y: 0; width: parent.width; height: 43
+            x: 0; y: root.headerH; width: parent.width; height: 43
             Row {
                 x: 6.7; y: 9.7
                 spacing: 0
@@ -127,7 +144,7 @@ Item {
         Item {
             id: editorArea
             x: 0.67
-            y: root.formatting ? 43 : 0.67
+            y: root.headerH + (root.formatting ? 43 : 0.67)
             width: root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
             height: Math.max(root.formatting ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
             QuoteCard {
@@ -197,6 +214,7 @@ Item {
                     else if (event.key === Qt.Key_I) { root.wrapSelection("i"); event.accepted = true }
                     else if (event.key === Qt.Key_U) { root.wrapSelection("u"); event.accepted = true }
                     else if (event.key === Qt.Key_X && (event.modifiers & Qt.ShiftModifier)) { root.formatting = !root.formatting; event.accepted = true }
+                    else if (event.key === Qt.Key_I && (event.modifiers & Qt.ShiftModifier) && root.deliveryOptions) { root.importance = root.importance === "high" ? "" : "high"; event.accepted = true }
                 }
                 Keys.onReturnPressed: event => root.enterPressed(event)
                 Keys.onEnterPressed: event => root.enterPressed(event)
@@ -210,7 +228,7 @@ Item {
         Row {
             id: sideTools
             visible: !root.multiline
-            x: parent.width - width - 6.7; y: 6.7
+            x: parent.width - width - 6.7; y: root.headerH + 6.7
             Repeater { model: root.toolModel; delegate: toolDelegate }
             Item {
                 width: 8.7 - 4 + 4; height: 32
@@ -269,7 +287,8 @@ Item {
     readonly property var toolModel: [
         { id: "expand-compose", icon: "format-20", label: root.formatting ? "Hide Formatting options" : "Show Formatting options", pressed: root.formatting },
         { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers" },
-        { id: "FilePicker", icon: "attach-20", label: "Attach files (Alt+Shift+O)", hidden: root.editing }
+        { id: "FilePicker", icon: "attach-20", label: "Attach files (Alt+Shift+O)", hidden: root.editing },
+        { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps", hidden: root.editing }
     ].filter(t => !t.hidden)
     readonly property var endModel: root.editing
         ? [{ id: "discard-draft", icon: "dismiss-20", label: "Cancel" }, { id: "send", icon: "checkmark-20", label: "Done" }]
@@ -290,6 +309,7 @@ Item {
         if (id === "expand-compose") { formatting = !formatting; input.forceActiveFocus() }
         else if (id === "UnifiedFunPicker") root.emojiRequested(item)
         else if (id === "FilePicker") root.attachRequested()
+        else if (id === "message-extension-flyout-command") { plusFlyout.anchorItem = item; plusFlyout.open() }
         else if (id === "discard-draft") root.requestCancel()
         else if (id === "send") root.trySubmit()
     }
@@ -328,6 +348,111 @@ Item {
         Accessible.role: Accessible.Button
         Accessible.name: label
     }
+
+    // "+" Actions and apps (measured): 341.3 wide, a search box, then Teams'
+    // own items as 36 px rows (20 px icon 8 in, the label at 40). Installed
+    // apps' actions are not built yet.
+    Popup {
+        id: plusFlyout
+        property Item anchorItem: null
+        parent: Overlay.overlay
+        width: 341.3; padding: 0
+        height: 62.7 + itemsCol.height + 14.7
+        x: anchorItem ? Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width) : 0
+        y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - 8 : 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        onOpened: { search.text = ""; search.forceActiveFocus() }
+        readonly property var items: [
+            { key: "delivery", label: "Set delivery options", icon: "important-20", hidden: !root.deliveryOptions },
+            { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" }
+        ].filter(i => !i.hidden && i.label.toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
+        Rectangle {
+            x: 14.7; y: 17.3; width: 310; height: 30.7; radius: 4
+            color: theme.surface
+            border.color: search.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
+            Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: search.activeFocus ? 2 : 0.67; color: search.activeFocus ? theme.brand : theme.textSecondary }
+            FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
+            TextInput {
+                id: search
+                x: 34.6; width: parent.width - 46; anchors.verticalCenter: parent.verticalCenter
+                font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                Text { visible: !search.text; text: "Search for apps"; font: search.font; color: theme.textSecondary }
+                Accessible.role: Accessible.EditableText
+                Accessible.name: "Search for apps"
+            }
+        }
+        Column {
+            id: itemsCol
+            x: 14.7; y: 62.7
+            Repeater {
+                model: plusFlyout.items
+                Rectangle {
+                    required property var modelData
+                    width: 310; height: 36; radius: 4
+                    color: rowHover.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { x: 8; y: 8; name: parent.modelData.icon; size: 20; color: theme.textStrong }
+                    Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            plusFlyout.close()
+                            if (parent.modelData.key === "delivery") { deliveryPopup.anchorItem = plusFlyout.anchorItem; deliveryPopup.open() }
+                            else root.scheduleMeetingRequested()
+                        }
+                    }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: modelData.label
+                }
+            }
+        }
+    }
+    // Delivery options (measured): 317.3 x 161.3; 48 px options with a 16 px
+    // icon at (16, 18.3), the title 14/18.7 and description 12/16 at 40.7,
+    // the selected one NeutralBackground1Hover with a checkmark at 284.
+    Popup {
+        id: deliveryPopup
+        property Item anchorItem: null
+        parent: Overlay.overlay
+        width: 317.3; height: 161.3; padding: 0
+        x: anchorItem ? Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width + 50) : 0
+        y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - 8 : 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        Column {
+            x: 0.7; y: 8.7
+            Repeater {
+                model: [
+                    { key: "", title: "Standard", desc: "Message will be sent as usual", icon: "chat-20", color: "", name: "Standard Message Delivery" },
+                    { key: "high", title: "Important", desc: "Message will be marked as important", icon: "important-20", color: "#C4314B", name: "Mark message as important" },
+                    { key: "urgent", title: "Urgent", desc: root.urgentAllowed ? "Recipient notified every 2 min for 20 min" : "Unavailable in chats with more than 20 people", icon: "alert-urgent-20", color: "#C4314B", name: "Mark message as urgent and repeatedly notify recipient every 2 minutes for 20 minutes" }
+                ]
+                Rectangle {
+                    id: opt
+                    required property var modelData
+                    readonly property bool selected: root.importance === modelData.key
+                    readonly property bool enabledNow: modelData.key !== "urgent" || root.urgentAllowed
+                    width: 316; height: 48
+                    color: selected || (optHover.hovered && enabledNow) ? theme.menuHover : "transparent"
+                    FluentIcon {
+                        x: opt.modelData.key === "urgent" ? 20 : 16; y: 16; size: 16
+                        name: opt.modelData.icon
+                        color: !opt.enabledNow ? theme.disabled : opt.modelData.color || theme.text
+                    }
+                    Text { x: opt.modelData.key === "urgent" ? 44.7 : 40.7; y: 6.6; text: opt.modelData.title; font.family: theme.font; font.pixelSize: 14; color: opt.enabledNow ? theme.text : theme.disabled }
+                    Text { x: opt.modelData.key === "urgent" ? 44.7 : 40.7; y: 25.3; text: opt.modelData.desc; font.family: theme.font; font.pixelSize: 12; color: opt.enabledNow ? theme.text : theme.disabled }
+                    FluentIcon { visible: opt.selected; x: 284; y: 16; name: "checkmark-20"; size: 16; color: theme.text }
+                    HoverHandler { id: optHover; cursorShape: opt.enabledNow ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler { enabled: opt.enabledNow; onTapped: { root.importance = opt.modelData.key; deliveryPopup.close(); input.forceActiveFocus() } }
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: modelData.name
+                    Accessible.selected: selected
+                }
+            }
+        }
+    }
+    function deliveryForTest() { deliveryPopup.anchorItem = sideTools; deliveryPopup.open() }
+    function plusForTest() { plusFlyout.anchorItem = sideTools; plusFlyout.open() }
 
     // Teams' "Discard draft" (messagedraft-discard-dialog): 600 x 156,
     // radius 8; the title 20/28 semibold at 24.7, Close, the text at 62,

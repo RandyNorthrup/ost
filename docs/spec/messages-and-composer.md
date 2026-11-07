@@ -717,6 +717,17 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
     - Cancel and Discard (brand), 96 × 31.3, at y 100.
   - A Teams edit (seen live) keeps the quote's blockquote and `qtdMsgs` and sends the full property set. The service then stores `edittime` (ms) and `version` = `edittime`; `clientmessageid` and `composetime` are unchanged.
 
+### "+" and delivery options (measured, winpc)
+- "+" (`sendMessageCommands-message-extension-flyout-command`) opens a 341.3-wide surface:
+  - the search box (`extensibility-app-picker-search-input`) at (14.7, 17.3), 310 × 30.7, "Search for apps";
+  - `SECTION_firstPartyMessageExtensions`: Schedule message, Set delivery options, Schedule meeting, Record video clip. Rows are 36 tall with a 20 px icon 8 in and the label at 40, 14/20;
+  - then a separator, `SECTION_recent` (installed apps, e.g. Clipchamp, Approvals, Power BI, Praise, Updates, Viva Learning, Workflows), "Add a new app" with store suggestions (90 px rows with Add buttons), and "Get more apps".
+- Set delivery options opens a 317.3 × 161.3 listbox:
+  - `standard-delivery-option` (Chat20Regular), `important-delivery-option` (Important20Regular, #C4314B), `urgent-delivery-option` (AlertUrgent20Regular, #C4314B, 4 further in);
+  - rows are 48 tall; the title is 14/18.7 and the description 12/16, at 40.7;
+  - the selected row is #F5F5F5 with Checkmark20 at 284.
+- With Important chosen, the compose shows an "IMPORTANT!" row above the editor: 26 tall, 14/20, weight 700, uppercase, #DA3B01. The box grows to 71.3.
+
 ## 16. Formatting bar (111774, `simplified-formatting-toolbar`; shown when expanded)
 Groups are separated by dividers; empty groups are skipped.
 

@@ -1801,6 +1801,31 @@ Window {
         }
     }
 
+    // --delivery-test=<text> with --open-chat=<id> --shots=<dir>: the "+"
+    // flyout and delivery options (captured), then <text> sent Important
+    // through the compose; logs the newest message.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--delivery-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const text = (Qt.application.arguments.find(a => a.startsWith("--delivery-test=")) || "").slice(16)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "delivery-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST delivery test"); return }
+            if (step === 0) conversation.composeForTest().plusForTest()
+            else if (step === 1) shot("plus")
+            else if (step === 2) conversation.composeForTest().deliveryForTest()
+            else if (step === 3) shot("options")
+            else if (step === 4) { conversation.composeForTest().importance = "high"; conversation.setPlain(text) }
+            else if (step === 5) shot("compose")
+            else if (step === 6) conversation.sendForTest()
+            else if (step === 8) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => m.mine).pop(); console.warn("DELIVERY-TEST newest", JSON.stringify({ text: m.text, importance: m.importance, state: m.send_state })); shot("sent"); Qt.quit() }
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu
@@ -2340,6 +2365,7 @@ Window {
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onEditMessage: (id, text) => backend.editMessage(id, text)
         onOpenChatSettings: { settingsView.page = "chats"; rail.current = "settings" }
+        onScheduleMeeting: { rail.current = "calendar"; calendarView.newMeeting() }
         onDeleteMessage: id => backend.deleteMessage(id)
         onSendReply: (id, text) => backend.sendReply(id, text)
         typingText: backend.typingText
