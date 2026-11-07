@@ -35,6 +35,7 @@ fn main() {
         "qml/EmojiPicker.qml",
         "qml/PresenceBadge.qml",
         "qml/MenuPopup.qml",
+        "qml/FluentSurface.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts"] {
@@ -65,8 +66,10 @@ fn main() {
     let builder = unsafe {
         builder.cc_builder(|cc| {
             cc.file("src/webengine.cpp");
+            cc.file("src/native.cpp");
         })
     };
     println!("cargo::rerun-if-changed=src/webengine.cpp");
+    println!("cargo::rerun-if-changed=src/native.cpp");
     builder.build();
 }

@@ -84,10 +84,15 @@ Microsoft branding.
   (Table, Bulleted list, Checklist, Task list, Voting table, and more),
   which types Loop's own "/" commands. It uses OST's web profile; sign
   in there once.
-- **Channel tab menu**: the ▾ on the selected tab, as Teams': Copy link
-  to tab, Rename, Move left, Move right (only where there's room) and
-  Remove. Rename and Remove go through Graph; moves go through Teams'
-  middle tier (its pinned tabs), since Graph ignores a tab's place.
+- **Channel tabs and their menus** behave as Teams desktop's, per
+  [docs/spec/channel-tabs.md](spec/channel-tabs.md):
+  - The tabs come from Teams' middle tier (its pinned tabs), so a channel's Page shows.
+  - The selected tab shows a chevron when it has a menu, and a right-click opens a tab's menu.
+  - The items, their order and their disabled states are worked out per tab type and
+    per the user's rights, as Teams does it. Move left and Move right are disabled at the ends, not hidden.
+  - Moves use Teams' order algorithm.
+  - Rename and Remove use Teams' dialogs and save through the middle tier.
+  - Copy link to tab puts Teams' deep link on the clipboard as rich text, so it reads as the tab's name.
 - **Channel Shared tab**: the channel's folder in the team's SharePoint
   library, as Teams shows it: breadcrumb, Share, Copy link, Add shortcut
   to OneDrive, Create or upload (folder, files), Name / Modified /
@@ -191,9 +196,13 @@ for multi-step tests) and quits; the flags pick what it does first. Run
 it offscreen against a test account:
 
 ```bash
-QT_QPA_PLATFORM=offscreen QT_SCALE_FACTOR=1.5 \
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=rhi QT_SCALE_FACTOR=1.5 \
   target/debug/ost-desktop /tmp/shot.png "" "" --size=1280x680 --view=calendar
 ```
+
+`QT_QUICK_BACKEND=rhi` makes offscreen runs draw on the GPU as the app
+does. Otherwise Qt falls back to its software renderer, which draws no
+shader effects (the menus' and dialogs' Fluent shadows).
 
 The second argument, when not empty, is a message to send in the opened
 chat. Tests that talk to Teams act on the signed-in account for real

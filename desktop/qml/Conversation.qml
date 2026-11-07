@@ -47,14 +47,14 @@ Rectangle {
         // In the channel's own order (Graph's sortOrderIndex).
         return r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
     }
-    readonly property var tabNames: isChannel ? ["Posts", "Shared"].concat(channelTabs.length ? channelTabs.map(t => t.name) : ["Notes"])
+    readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map(t => t.name) : ["Posts", "Shared"])
         : isSelf ? ["Chat", "Shared", "Storyline"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
     // Load a channel's tabs once it's known which team it's in.
     readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
     onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
     // The channel tab showing a web page in place (Page: the channel's
     // Loop page), when one is selected.
-    readonly property var webTab: channelTabs.find(t => t.name === tab && t.url && t.app !== "OneNote") || null
+    readonly property var webTab: null
     function openTab(i) { if (i < tabNames.length) tab = i === 0 ? "" : tabNames[i] }
     readonly property bool composeFocused: input.activeFocus
     readonly property bool detailsOpen: participants.visible
@@ -214,10 +214,10 @@ Rectangle {
                     required property string modelData
                     required property int index
                     readonly property bool sel: root.tab === modelData || (index === 0 && root.tab === "")
-                    // A channel's own tab (Page, Notes, apps) has Teams'
-                    // ▾ menu while selected.
+                    // Teams: the selected tab shows a chevron when it has a
+                    // menu; any tab with a right-click menu opens it there.
                     readonly property var channelTab: root.channelTabs.find(t => t.name === modelData) || null
-                    readonly property bool menuable: sel && !!channelTab
+                    readonly property bool menuable: sel && !!channelTab && channelTab.menu.length > 0
                     // 6 px padding each side of the label.
                     width: tabText.implicitWidth + 12 + (menuable ? 20 : 0); height: parent.height
                     // Tabs that would run under the header actions are hidden
@@ -249,9 +249,14 @@ Rectangle {
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
-                            if (tabItem.menuable) { tabMenu.tab = tabItem.channelTab; tabMenu.parent = tabItem; tabMenu.y = tabItem.height; tabMenu.open(); return }
+                            if (tabItem.menuable) { tabMenu.show(tabItem.channelTab, tabItem.channelTab.menu, tabItem, 0, tabItem.height); return }
                             root.tab = tabItem.index === 0 ? "" : tabItem.modelData
                         }
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.RightButton
+                        enabled: !!tabItem.channelTab && tabItem.channelTab.context_menu.length > 0
+                        onTapped: (ev) => tabMenu.show(tabItem.channelTab, tabItem.channelTab.context_menu, tabItem, ev.position.x, ev.position.y)
                     }
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData
@@ -944,92 +949,200 @@ Rectangle {
         }
     }
 
-    // A channel tab's menu, as Teams': Copy link to tab, Rename, Move left,
-    // Move right, Remove (moves only where there's room).
+    // A channel tab's menu, exactly as Teams builds it (the backend gives
+    // each tab its chevron menu and right-click menu; docs/spec/channel-tabs.md).
     MenuPopup {
         id: tabMenu
         property var tab: null
-        readonly property int at: tab ? root.channelTabs.findIndex(t => t.id === tab.id) : -1
-        readonly property var actions: {
-            const a = []
-            if (tab && tab.link) a.push({ op: "link", label: "Copy link to tab", icon: "link-20" })
-            if (tab) a.push({ separator: true, op: "" }, { op: "rename", label: "Rename", icon: "edit-20" })
-            if (at > 0) a.push({ op: "left", label: "Move left", icon: "arrow-left-20" })
-            if (at >= 0 && at < root.channelTabs.length - 1) a.push({ op: "right", label: "Move right", icon: "arrow-right-20" })
-            if (tab) a.push({ separator: true, op: "" }, { op: "remove", label: "Remove", icon: "delete-20" })
-            return a
+        property var entries: []
+        readonly property var icons: ({
+            popOut: "window-new-20", expandTab: "arrow-maximize-20", reloadTab: "arrow-clockwise-20",
+            goToWebsite: "globe-20", copyLink: "link-20", renameTab: "edit-20",
+            devicePermissions: "shield-keyhole-20", aboutTab: "info-20", moveLeft: "arrow-left-20",
+            moveRight: "arrow-right-20", removeTab: "delete-20"
+        })
+        items: entries.map(e => e.key === "divider" ? { separator: true } : { label: e.label, icon: icons[e.key] || "", enabled: e.enabled })
+        function show(t, list, anchor, px, py) {
+            tab = t; entries = list
+            parent = anchor; x = px; y = py
+            open()
         }
-        items: actions
-        width: 220
-        onPicked: i => {
-            const op = actions[i].op
-            if (op === "link") { linkCopier.text = tab.link; linkCopier.selectAll(); linkCopier.copy(); backend.statusText = "Link copied" }
-            else if (op === "rename") { renameField.text = tab.name; renameDialog.tab = tab; renameDialog.open() }
-            else if (op === "remove") { removeDialog.tab = tab; removeDialog.open() }
-            else if (op) backend.channelTabChange(op, root.teamId, root.chatId, tab.id, "")
-        }
+        onPicked: i => root.tabAction(entries[i].key, tab)
     }
-    TextEdit { id: linkCopier; visible: false }
-    Popup {
-        id: renameDialog
-        property var tab: null
+    function tabAction(key, t) {
+        if (key === "copyLink") backend.copyTabLink(root.teamId, root.chatId, JSON.stringify(t))
+        else if (key === "goToWebsite") { if (t.website_url) Qt.openUrlExternally(t.website_url) }
+        else if (key === "renameTab") renameDialog.start(t)
+        else if (key === "removeTab") removeDialog.start(t)
+        else if (key === "moveLeft") backend.channelTabChange("left", root.teamId, root.chatId, t.id, "")
+        else if (key === "moveRight") backend.channelTabChange("right", root.teamId, root.chatId, t.id, "")
+        else if (key === "reloadTab") root.reloadTab(t)
+    }
+    signal reloadTab(var t)
+    // Teams' platform dialog (Fluent Dialog, as measured): 600 wide,
+    // padding 24, radius 8, shadow 64; a header row of the title, "About"
+    // and a close button; content below.
+    component TabDialog: Popup {
+        id: td
+        property string title
+        default property alias body: tdBody.data
         anchors.centerIn: Overlay.overlay
-        modal: true; padding: 24; width: 440
-        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+        modal: true; padding: 24; width: 600
+        background: FluentSurface { depth: 64; radius: 8 }
         contentItem: Column {
-            spacing: 16
-            Text { text: "Rename tab"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-            Rectangle {
-                width: parent.width; height: 32; radius: theme.radius; color: theme.input
-                border.color: renameField.activeFocus ? theme.brand : theme.stroke
-                TextInput {
-                    id: renameField
-                    x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
-                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
-                    maximumLength: 128; selectByMouse: true
-                    Keys.onReturnPressed: renameDialog.save()
-                    Accessible.name: "Tab name"
+            Item { width: 1; height: 19.4 }
+            Item {
+                width: parent.width; height: 31.3
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: td.title
+                    font.family: theme.font; font.pointSize: 12.285; font.weight: Font.DemiBold; color: theme.text // 16.38 px
                 }
-            }
-            Row {
-                anchors.right: parent.right; spacing: 8
-                DialogButton { label: "Cancel"; onClicked: renameDialog.close() }
-                DialogButton { label: "Save"; primary: true; enabled: renameField.text.trim().length > 0; onClicked: renameDialog.save() }
-            }
-        }
-        function save() {
-            if (!renameField.text.trim()) return
-            backend.channelTabChange("rename", root.teamId, root.chatId, tab.id, renameField.text.trim())
-            if (root.tab === tab.name) root.tab = renameField.text.trim()
-            close()
-        }
-        onOpened: { renameField.forceActiveFocus(); renameField.selectAll() }
-    }
-    Popup {
-        id: removeDialog
-        property var tab: null
-        anchors.centerIn: Overlay.overlay
-        modal: true; padding: 24; width: 440
-        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
-        contentItem: Column {
-            spacing: 16
-            Text { width: parent.width; wrapMode: Text.Wrap; text: "Remove " + (removeDialog.tab ? removeDialog.tab.name : "") + "?"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-            Text {
-                width: parent.width; wrapMode: Text.Wrap
-                text: "This will remove the tab for everyone in the channel."
-                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-            }
-            Row {
-                anchors.right: parent.right; spacing: 8
-                DialogButton { label: "Cancel"; onClicked: removeDialog.close() }
-                DialogButton {
-                    label: "Remove"; primary: true
-                    onClicked: {
-                        backend.channelTabChange("remove", root.teamId, root.chatId, removeDialog.tab.id, "")
-                        if (root.tab === removeDialog.tab.name) root.tab = ""
-                        removeDialog.close()
+                Row {
+                    anchors.right: parent.right
+                    Rectangle {
+                        width: 96; height: 31.3; radius: 4
+                        color: aboutHover.hovered ? theme.menuHover : "transparent"
+                        Text { anchors.centerIn: parent; text: "About"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brandLink }
+                        HoverHandler { id: aboutHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.tabAction("aboutTab", renameDialog.visible ? renameDialog.tab : removeDialog.tab) }
+                        Accessible.role: Accessible.Button; Accessible.name: "About"
+                    }
+                    Rectangle {
+                        width: 32; height: 31.3; radius: 4
+                        color: closeHover.hovered ? theme.menuHover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                        HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: td.close() }
+                        Accessible.role: Accessible.Button; Accessible.name: "Close " + td.title
                     }
                 }
+            }
+            Column { id: tdBody; width: parent.width }
+        }
+    }
+    component PrimaryButton: Rectangle {
+        id: pb
+        property string label
+        signal clicked()
+        width: 96; height: 31.3; radius: 4
+        color: !enabled ? theme.disabled : pbh.hovered ? theme.brandHover : theme.brandFill
+        Text { anchors.centerIn: parent; text: pb.label; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+        HoverHandler { id: pbh; cursorShape: pb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        TapHandler { enabled: pb.enabled; onTapped: pb.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: label
+    }
+    // Rename: "Rename {name}", "Tab name", the field with its validity icon,
+    // Teams' errors (empty, over 128, already used), Save.
+    TabDialog {
+        id: renameDialog
+        property var tab: null
+        property bool saving: false
+        property string failure: ""
+        readonly property string error: {
+            const v = renameField.text, t = v.trim()
+            if (t === "") return "Name is required"
+            if (v.length > 128) return "Tab name cannot exceed 128 characters."
+            const others = root.channelTabs.filter(x => tab && x.id !== tab.id).map(x => x.name.trim().toLowerCase())
+            if (others.indexOf(t.toLowerCase()) >= 0) return "You already have a tab with that name. Try a different one."
+            return ""
+        }
+        title: "Rename " + (tab ? tab.name : "")
+        function start(t) { tab = t; saving = false; failure = ""; renameField.text = t.name; open() }
+        function save() {
+            if (error || saving) return
+            saving = true
+            backend.channelTabChange("rename", root.teamId, root.chatId, tab.id, renameField.text.trim())
+        }
+        onOpened: { renameField.forceActiveFocus(); renameField.cursorPosition = renameField.text.length }
+        Item { width: 1; height: 20 }
+        Item {
+            width: parent.width; height: 20
+            Text { text: "Tab name"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { anchors.right: parent.right; text: renameDialog.error; font.family: theme.font; font.pixelSize: theme.base; color: theme.danger; Accessible.role: Accessible.AlertMessage }
+        }
+        Item { width: 1; height: 10 }
+        Rectangle {
+            width: parent.width; height: 32; radius: 4; color: theme.inputFilled
+            TextInput {
+                id: renameField
+                x: 12; width: parent.width - 12 - 40; anchors.verticalCenter: parent.verticalCenter
+                font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
+                selectByMouse: true
+                Keys.onReturnPressed: renameDialog.save()
+                Keys.onEnterPressed: renameDialog.save()
+                Accessible.name: "Tab name"
+            }
+            // Fluent's focus indicator: a 2 px brand line along the bottom.
+            Rectangle {
+                visible: renameField.activeFocus
+                anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1
+                color: theme.brand
+            }
+            FluentIcon {
+                anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
+                name: renameDialog.error ? "error-circle-20-filled" : "presence-available-20-regular"; size: 20
+                color: renameDialog.error ? theme.danger : theme.brandLink
+            }
+        }
+        Text {
+            width: parent.width; wrapMode: Text.Wrap
+            visible: !!renameDialog.failure
+            text: renameDialog.failure
+            font.family: theme.font; font.pixelSize: theme.base; color: theme.danger
+        }
+        Item { width: 1; height: 20 }
+        Item {
+            width: parent.width; height: 31.3
+            PrimaryButton { anchors.right: parent.right; label: "Save"; enabled: !renameDialog.error && !renameDialog.saving; onClicked: renameDialog.save() }
+        }
+    }
+    // Remove: "Want to remove this tab?" (a Page: "...this page?"), Remove
+    // (then "Removing").
+    TabDialog {
+        id: removeDialog
+        property var tab: null
+        property bool removing: false
+        property string failure: ""
+        readonly property bool page: !!tab && tab.kind === "ChannelPage"
+        title: page ? "Want to remove this page?" : "Want to remove this tab?"
+        function start(t) { tab = t; removing = false; failure = ""; open() }
+        Item { width: 1; height: 20 }
+        Text {
+            width: parent.width; wrapMode: Text.Wrap
+            text: removeDialog.page ? "The page will be removed, not deleted. You can still access it from Microsoft Loop."
+                : "The " + (removeDialog.tab ? removeDialog.tab.name : "") + " tab will be permanently removed."
+            font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+        }
+        Text {
+            width: parent.width; wrapMode: Text.Wrap
+            visible: !!removeDialog.failure
+            text: removeDialog.failure
+            font.family: theme.font; font.pixelSize: theme.base; color: theme.danger
+        }
+        Item { width: 1; height: 20 }
+        Item {
+            width: parent.width; height: 31.3
+            PrimaryButton {
+                anchors.right: parent.right
+                label: removeDialog.removing ? "Removing" : "Remove"
+                enabled: !removeDialog.removing
+                onClicked: { removeDialog.removing = true; backend.channelTabChange("remove", root.teamId, root.chatId, removeDialog.tab.id, "") }
+            }
+        }
+    }
+    // A tab change's outcome: close its dialog, or show Teams' failure text.
+    Connections {
+        target: backend
+        function onChannelTabResultChanged() {
+            const r = JSON.parse(backend.channelTabResult || "{}")
+            if (r.op === "rename" && renameDialog.tab && r.tab === renameDialog.tab.id) {
+                if (r.ok) { if (root.tab === renameDialog.tab.name) root.tab = renameField.text.trim(); renameDialog.close() }
+                else { renameDialog.saving = false; renameDialog.failure = "Unable to save " + renameDialog.tab.name + " tab configuration." }
+            } else if (r.op === "remove" && removeDialog.tab && r.tab === removeDialog.tab.id) {
+                if (r.ok) { if (root.tab === removeDialog.tab.name) root.tab = ""; removeDialog.close() }
+                else { removeDialog.removing = false; removeDialog.failure = "We couldn't remove your tab. Please try later." }
             }
         }
     }
@@ -1049,7 +1162,11 @@ Rectangle {
         Accessible.name: label
     }
     // Test hooks for the tab menu.
-    function tabMenuForTest(name) { const t = root.channelTabs.find(x => x.name === name); if (!t) return []; tabMenu.tab = t; return tabMenu.actions.filter(a => a.op).map(a => a.op) }
+    function tabMenuForTest(name) { const t = root.channelTabs.find(x => x.name === name); return t ? t.menu.map(e => e.enabled ? e.key : e.key + "(off)") : [] }
+    function tabMenuShowForTest(name) { const i = root.tabNames.indexOf(name); const t = root.channelTabs[i]; if (t) tabMenu.show(t, t.menu, tabs.children[i], 0, 56) }
+    function tabMenuCloseForTest() { tabMenu.close() }
+    function tabDialogCloseForTest() { renameDialog.close(); removeDialog.close() }
+    function tabDialogForTest(kind, name) { const t = root.channelTabs.find(x => x.name === name); if (!t) return false; if (kind === "rename") renameDialog.start(t); else removeDialog.start(t); return true }
     function tabChangeForTest(op, name, arg) { const t = root.channelTabs.find(x => x.name === name); if (t) backend.channelTabChange(op, root.teamId, root.chatId, t.id, arg || ""); return !!t }
 
     // Participants: who is in this chat.

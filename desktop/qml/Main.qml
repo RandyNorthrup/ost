@@ -748,8 +748,9 @@ Window {
     }
     function loopShot(name) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + name + ".png"))) }
     // --tab-menu-test: in the channel --open-chat names (with test tabs
-    // "OST tab A" and "OST tab B"), open A's menu, rename it, move it
-    // right, then remove both, logging the tabs after each step.
+    // "OST tab A" and "OST tab B"): log every tab's menu, capture the Notes
+    // menu and the Rename and Remove dialogs, then rename A, move it next
+    // to B, and remove both, logging the tabs after each step.
     Timer {
         running: Qt.application.arguments.indexOf("--tab-menu-test") >= 0 && backend.signedIn
         interval: 4000; repeat: true
@@ -762,16 +763,27 @@ Window {
                 if (ch) backend.selectChat(ch.id, ch.name)
                 return
             }
-            if (step === 0) { if (names.indexOf("OST tab A") < 0) return; console.warn("TABS start", names, "menu", JSON.stringify(conversation.tabMenuForTest("OST tab A"))); conversation.tab = "OST tab A" }
-            else if (step === 1) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-tab.png"))); conversation.tabChangeForTest("rename", "OST tab A", "OST tab A2") }
-            else if (step === 2) {
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + n + ".png")))
+            if (step === 0) {
+                if (names.indexOf("OST tab A") < 0) return
+                for (const t of conversation.tabNames) console.warn("TABS menu", t, JSON.stringify(conversation.tabMenuForTest(t)))
+                conversation.tab = "Notes"
+            }
+            else if (step === 1) conversation.tabMenuShowForTest("Notes")
+            else if (step === 2) shot("menu")
+            else if (step === 3) { conversation.tabMenuCloseForTest(); conversation.tabDialogForTest("rename", "OST tab A") }
+            else if (step === 4) shot("rename")
+            else if (step === 5) { conversation.tabDialogCloseForTest(); conversation.tabDialogForTest("remove", "OST tab A") }
+            else if (step === 6) shot("remove")
+            else if (step === 7) { conversation.tabDialogCloseForTest(); conversation.tabChangeForTest("rename", "OST tab A", "OST tab A2") }
+            else if (step === 8) {
                 console.warn("TABS renamed", names)
                 const n = conversation.tabNames
                 conversation.tabChangeForTest(n.indexOf("OST tab A2") < n.indexOf("OST tab B") ? "right" : "left", "OST tab A2")
             }
-            else if (step === 3) { console.warn("TABS moved", names); conversation.tabChangeForTest("remove", "OST tab A2") }
-            else if (step === 4) { console.warn("TABS removed A", names); conversation.tabChangeForTest("remove", "OST tab B") }
-            else if (step === 5) { console.warn("TABS removed B", names); Qt.quit() }
+            else if (step === 9) { console.warn("TABS moved", names); conversation.tabChangeForTest("remove", "OST tab A2") }
+            else if (step === 10) { console.warn("TABS removed A", names); conversation.tabChangeForTest("remove", "OST tab B") }
+            else if (step === 11) { console.warn("TABS removed B", names); Qt.quit() }
             step++
         }
     }

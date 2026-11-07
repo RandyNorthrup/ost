@@ -27,6 +27,12 @@ QtObject {
     readonly property color rowHover: pick("#EBEBEB", "#2E2E2E")
     readonly property color searchFill: pick("#FAFAFA", "#242424")
     readonly property color menu: pick("#FFFFFF", "#292929")           // flyouts, tooltips
+    readonly property color menuHover: pick("#F5F5F5", "#3D3D3D")      // NeutralBackground1Hover (menu items)
+    readonly property color inputFilled: pick("#F5F5F5", "#141414")    // filled-darker inputs (dialogs)
+    readonly property color brandLink: pick("#4F52B2", "#9EA2FF")      // transparent brand buttons ("About")
+    // Fluent shadows: two layers each (ambient, key), as the client's CSS.
+    readonly property color shadowAmbient: pick(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(0, 0, 0, 0.24))
+    readonly property color shadowKey: pick(Qt.rgba(0, 0, 0, 0.14), Qt.rgba(0, 0, 0, 0.28))
 
     // Lines
     readonly property color divider: pick("#E0E0E0", "#525252")        // NeutralStroke2

@@ -1,0 +1,1044 @@
+# Call and meeting window — Teams desktop behaviour (spec)
+
+Source: the Teams client itself (build 26276.513, Windows desktop). Its modules
+were read from the published client bundles; module ids are given so this can be
+re-checked against later builds.
+
+The toolbar layout and all flag values were read from the running Windows app on
+winpc, signed in as ost-test1, through the WebView2 debugger. These were
+read-only reads of the ECS `calling` settings from React context, made while no
+call was active. "(live X)" means the value seen there.
+
+Anything not confirmed in code is marked **unverified**.
+
+Main modules:
+
+| module | what |
+|---|---|
+| 414673 | unified bar (toolbar), all bar buttons, More/View/Leave menus, visibility rules |
+| 615280 | pre-join screen, call window titles, compact-view title bar |
+| 620894 | pre-join per-state presets |
+| 221949 / 320296 / 978369 | People pane / rows and menu / sort |
+| 522284, 512425 | lobby |
+| 710637 | raise-hand state |
+| 477421, 2998, 972234, 296162 | stage segments, areas, grid, gallery size |
+| 325285 | share tray |
+| 827897 | sharing control bar |
+| 459205, 657347 | compact view |
+| 691083 | call quality survey |
+| 504800 | key map |
+| 448700 (in `r_data-client-calling-*.js`), 527114 | calling GraphQL resolvers and calling-service proxy |
+
+**Where the service layer ends.** Calling mutations are *not* resolved in the
+data-layer web worker. Each client-side resolver is a thin
+`getCallingService("<name>").<name>(args)` call (module 448700) into the
+in-process calling stack, whose code is not shipped as JS. So for calling
+actions the contract a clone has to honour is the mutation name, its arguments,
+and the calling-stack method it reaches; both are listed below.
+
+## 1. Meeting/call toolbar ("unified bar", module 414673)
+
+Component tree: `UnifiedBarWrapper` (`Cq`) → `hq` (call query) → `uq` → `rq`/`oq`
+(configuration loader) → `HI` (settings provider) → `MQ` (visibility) → slot
+renderers. The bar is only mounted when the call state is Connected, Staging,
+LocalHold or RemoteHold, or (P2P only) Connecting/EarlyMedia, or InLobby when the
+lobby variant is enabled (`pq`, `hq`). In a moderated meeting's staging phase it is
+not shown.
+
+### 1.1 Where the item list comes from: server config, not code
+The items, their order, their slot and their menu nesting are **not hard-coded**.
+They come from three ECS settings in the `calling` category (live values read from
+the Windows client, saved in the research dir as presets.json / overrides.json):
+
+- `ubarLayoutPresets`: 10 presets. Each is a tree of groups → items → nested
+  groups. A preset is picked by `layoutSetup` and `filter` (`GQ`): exact match on
+  both scores 3, a filter match with no setup scores 2, a preset with neither scores 1.
+  The main bar uses filter none. Others: `meeting-room`, `presenter-toolbar`,
+  `callsmonitor`, `lightweight-callsmonitor`, `speaker-only-callsmonitor`.
+- `ubarLayoutSetup`: live value **`Inline`**. That selects preset 0 (no preset has
+  setup "Inline"). The other setup, `InlineCentered`, is the alternative
+  "centred" design (preset 1). The template names are Anchor, Inline,
+  InlineCentered and Stacked (`GI`).
+- `ubarLayoutOverrides`: 30 per-call-type entries (`configName`). Each lists the
+  `available` controls (a whitelist), plus `overrides` that move a control to
+  another slot or change its props, and `settings` (groupingStrategy,
+  layoutTemplate, suppressTooltips...). The entry is looked up by name, and
+  falls back to `default`.
+- `ubarActiveExperiments` / `ubarExperimentDefinitions` can patch the overrides.
+  Live value: none active.
+
+**Layout name** (`eq`, first match wins): presenter toolbar active →
+`presenterToolbar`/`presenterToolbarMinimized`; personal attendant test call /
+personal attendant; follow mode; broadcast (Producer → `broadcastProducer`);
+voicemail greeting or emergency → `greetingEmergency`; content-only stage →
+`contentOnly`; agent monitor/whisper; conversationType `CONSULT_AND_ADD` →
+`consultAndAdd`; VTC call; **1:1 PSTN → `oneToOnePstn`**; Skype consumer;
+**callType P2P → `oneToOneOrGroupCall`**; streaming client (town hall attendee) →
+`streamingClient`; immersive event; local Copilot session; **otherwise `default`**.
+So a Teams **group call** (callType Conference, `extendedCallType.isGroupCall`)
+uses the **`default`** layout, the same as a meeting. The difference between them
+comes only from the visibility rules (§1.4). Calls-monitor (mini window) layouts
+are chosen separately (`KQ`, §8).
+
+**Building the slots** (`xQ.createLayoutMap`): the preset tree is walked in
+order. Items not in `available` are skipped. MoreButton is always added. Nested
+items keep their nearest available ancestor as the menu parent. If no ancestor is
+available, the item is promoted to the root's slot. Every bar item also gets a
+**placeholder** in the overflow (More) menu, and the placeholders are
+*prepended* to the More menu. Every item that lives in More gets a hidden
+placeholder in the bar (used for hoisting). An override slot moves a nested item
+onto the bar as its own group, inserted before the root group (`placeBefore`).
+Defaults per item: isCritical false, overflowBehaviour `AsFirst`, template
+`default`. `isCritical` only means "mounted in the first render phase", not
+"never overflows".
+
+### 1.2 Slot arrangement (template), sizes
+`rQ`:
+- **Inline** (live): `[indicators][horizontalMiddleEnd]` | `[horizontalEnd]`.
+  The middle slot is right-justified (`justify-content:end`). A slot divider
+  (`showSlotDividers` = `enableUbarSlotGrouping`, live true) separates the main
+  group from the end group, which holds Leave.
+- InlineCentered: one group `[indicators][horizontalMiddleEnd centred][horizontalEnd]`.
+- Anchor: `[indicators][hStart][hMiddleStart centred][hMiddleEnd]` | `[hEnd]`. Stacked: `[indicators][hStart][hEnd]`.
+
+The root font size is 10px, so 1rem = 10px (read from the live client).
+- Bar button, `default` template: height 48px, min-width 48px, max-width 72px,
+  margin 6px vertical / 4px horizontal (spacingVerticalSNudge /
+  spacingHorizontalXS). Icon 25px. Label below the icon, 11px, regular weight.
+  When the control's panel is open, a status bar shows under the button: 2px
+  high, 66% wide, 5px below.
+- `truncated` template: 32px high, min-width 32px, max-width 72px, icon only (the
+  label becomes the aria label). `minimized`: 32×32px, icon 20px.
+- Labels show when `enableIconLabelsInUbar` (live true) and the layout doesn't
+  suppress them. Tooltips are suppressed on meeting-room consoles and in the
+  presenter toolbar. A tooltip with a shortcut reads `{{tooltip}} ({{keyboardShortcut}})`
+  (`calling_ubar_control_tooltip_with_shortcut`).
+- `role="toolbar"` when a slot holds more than one control, else `role="group"`.
+  The wrapper has `data-tid="ubar-toolbar-wrapper"`, `data-layout=<template>`.
+
+**Dividers between groups** (`cr`, `_$`). Each preset group becomes a run of
+items. The divider rule follows the group's `groupingStrategy`, else the
+layout's. The default is `MergeWithNext`; the `oneToOneOrGroupCall` layout uses
+`MergeWithPrevious`.
+- AlwaysKeep: a divider between every pair of non-empty groups.
+- MergeWithNext: a group with exactly one visible item merges into the next
+  group, with no divider.
+- MergeWithPrevious: a divider only before a group with more than one item.
+
+### 1.3 Order in the bar (live `Inline` preset 0)
+Left to right. Items whose visibility rule (§1.4) fails are removed.
+
+| # | group | control | label (bar) | tooltip/title | string keys |
+|---|---|---|---|---|---|
+| — | indicators | BroadcastState, E2EEncryption, Recording, VirtualEventsLive, Copilot, AiInterpretation, **CallDuration** (timer), ImmersiveEventLive, BroadcastAttendeeCount, VdiLocalStackStatus, IndicatorOverflow | — | "More status indicators" | `ubar_calling_indicator_overflow_button_tooltip` |
+| 1 | contextual | ReturnToBreakoutRoom, BreakoutRoomReturnToMain, CallTransferDuringConsult, CallTransferButtonV2, CallConsultativeTransferButtonV2, **Resume** (on hold), ScreensharingControl (Take control), Whiteboard/PPT control sections, MixedRealityToolbar, AnnotationViewer, StopSpotlight, PopoutContent, TogetherMode×3 | e.g. "Resume", "Take control", "Transfer", "Consult" | | `calling_resume_call`, `calling_screensharing_viewer_action_request_control_label`, `calling_transfer_call`, `calling_consultThenTransfer_button_label` |
+| 2 | secondary | **ChatButton** | Chat | Chat | `calling_chat_icon_label` |
+| 3 | | YammerQnaButton | Q&A | | `yammer_qna_icon_label` |
+| 4 | | **RosterButton** | People | | `calling_participants_icon_label` |
+| 5 | | **RaiseHandsButton** | Raise | "Raise your hand" / "Lower your hand" | `calling_raise_hand_icon_label` |
+| 6 | | **ReactionButton** | React | "Send a reaction" | `calling_react_menu_icon_label`, `calling_meeting_reactions` |
+| 7 | | **ViewModeButton** | View | "Change your view" | `calling_view_mode_icon_label`, `calling_change_view_mode_button_tooltip` |
+| 8 | | OrganizerControlButton | Controls | Controls | `calling_organizer_control_button_icon_label` |
+| 9 | | BroadcastQnaButton | Q&A | | `broadcast_qna_icon_label` |
+| 10 | | **MeetingDetailsButton** | Notes | "Open notes"/"Close notes" | `calling_meeting_details_icon_label` |
+| 11 | | **StartBreakoutRoomButton** | Rooms | "Create breakout rooms" | `calling_breakout_room_icon_label` |
+| 12 | | MeetingCollab / OneCopilot / BizChatCopilot | (Copilot; label not traced) | | |
+| 13 | | CallContextButton | | | |
+| 14 | | PlatformTabSection (pinned meeting apps, one button per app tab) | app name | | |
+| 15 | | **MeetingAppsAddButton** | Apps | "Find apps and more" / "Close apps" | `calling_apps_add_menu_icon_label`, `calling_ubar_meeting_apps_open_tooltip` |
+| 16 | | **MoreButton** (Docked) | More | "More actions" | `calling_more_menu_icon_label`, `calling_more_actions` |
+| 17 | primary | **VideoButton** (Docked) | Camera | Camera | `calling_camera_icon_label` |
+| 18 | | **MicrophoneButton** (Docked) | Mic | "Mute mic"/"Unmute mic" | `calling_microphone_icon_label`, `calling_ubar_mic_button_mute_tooltip` |
+| 19 | | VolumeControlButton (Docked) | | | |
+| 20 | | **ShareButton** (Docked) | Share | "Share content" / "Stop sharing" | `calling_share_icon_label`, `calling_share_button_open_sharetray_label`, `calling_share_button_stop_sharing_label` |
+| 21 | | PauseScreenShareButton (Docked, while sharing) | Pause / Resume | "Pause screen share" / "Resume screen share" | `calling_pause_screenshare`, … |
+| 22 | callControls (horizontalEnd) | MonitoredAgentStateChange, FollowChange ("Join"), StagingRoomStart/EndMeeting ("End meeting"), **CallButton** (Leave) | Leave | Leave | `call_leave`, `calling_ubar_hangup_button_tooltip`, `calling_end_call` |
+
+The `InlineCentered` preset (not live) differs:
+- Order: Mic, Camera, Share, PauseShare, Volume, then React, Raise, Chat, People,
+  Copilot, Controls, Q&A, CallContext, then the contextual group (Dial pad, Hold,
+  Upgrade, Transfer…), then More.
+- Leave is in the same centred group.
+- More becomes a grid section ("collaborationCommunication") with
+  `hoistingBehaviour`, which promotes a More item into the bar while it is
+  active, notified or clicked.
+
+### 1.4 Visibility per call type and role (`MQ.calculateVisibilityOverrides`)
+A control is shown only if it is in the layout's `available` list **and** its
+rule here is true. Rules that matter for the main bar (flags in brackets; live
+value given when known):
+
+| control | shown when |
+|---|---|
+| Chat | `showUbarChatButton` (true). Not in a 1:1 PSTN call (unless `enableSmsChatForEnterpriseVoice`), not in a voicemail-greeting call. Streaming client only with `enableStreamChatFeature`. Not in appliance mode |
+| People | `enableRosterButtonInUbar` (true), not an immersive event, not a voicemail greeting |
+| Raise | Host `isRaiseHandsEnabled` (true), not appliance mode, not an immersive event; streaming client only for a town hall with `enableRaiseHandForStreaming`. The component (`414673` ~l.21026) also renders nothing when **callType == P2P**: Raise is in the 1:1 `available` list but never shows in a 1:1 call. With `hideRaiseHandIfDisabled` (true) the button stays hidden until raising is allowed; after it has once appeared, a later revoke makes it *disabled*, not hidden. Disabled reasons: "Disabled by the organizer", "Only available when the event is live", "Disabled in Preview" |
+| React | not an immersive event (map). The component (104370) additionally needs `enableMeetingReactions`, **not P2P**, not broadcast, not an overflow streaming call, and meeting option `allowMeetingReactions` (or policy). Also absent from the 1:1 and 1:1 PSTN `available` lists. Disabled when not connected, during transfer, or when a town hall attendee is behind the live edge ("Only available when the event is live") |
+| View | `enableViewModeButton`, not the meeting-room layout dialog, not a production meeting |
+| Controls (organizer) | meetingRole == Organizer && `enableOrganizerControlButton` (true) && not a town hall. Or the security-threats variant: private/channel meeting && `enableMeetingControlsPanel` && `enableThreatDetection` |
+| Meeting options (in More › Settings) | legacy case: not a 1:1, `enableMeetingOptionsButtonInUbar` (true), private/channel meeting (or broadcast with RTMP), Organizer, **and the Controls button is not shown** |
+| Notes | `enableMeetingDetailsButtonInUbar`. Not a town hall attendee. Ad hoc meetings only when `enableMeetingNotesInMeetNowCall` and not a channel meeting. Private meeting (meetingType Recurring, MeetNow or Scheduled, with `isPrivateMeeting`) or channel meeting with `enableChannelMeetingNotes`. So **never in plain group calls or 1:1 calls** |
+| Rooms | `enableBreakoutRooms` && not a town hall; the component also requires a scheduled meeting (`isMeeting`). Organizer or breakout manager: button shown (hidden on web unless `enableBreakoutRoomsOrganizerExperienceOnWeb`, inside a breakout room unless self-select, or when the meeting capability `isBreakoutRoomsAllowed` is false). Participant: hidden. A demoted manager sees it disabled. Self-assigning participant: shown with `enableSelfSelectBreakoutRoomsCapability`. Never for a screen-share call, a private channel without support, or a cancelled meeting (module 414673 `B8`/`_8`) |
+| Apps | `enableMeetingAppAddButtonInUbar`. Not a town hall (unless `enableTownhallAppsInstallationInMeeting`). Not a 1:1 PSTN call (unless `enableAgentsInPstnCalls`) |
+| App tabs (PlatformTabSection) | `enablePlatformTabSection`. Town hall attendees need `enableTownhallAppsForAttendees`; town hall attendee endpoints that aren't attendees: no |
+| Camera | not appliance mode, not AV-over-IP blocked, not disabled in VDI, not an immersive event |
+| Mic | not AV-over-IP blocked, not disabled in VDI. Emergency call: only for the non-caller (with self capabilities). Streaming client: town hall raise-hands only. Immersive event: `enableImmersiveEventsMicButton` |
+| Share | not appliance mode; immersive event only with `enableImmersiveEventsShareButton` |
+| Pause share | `enableScreenSharePauseResume` && Share available |
+| Hold | `isOneToOneCall` (P2P) only |
+| Dial pad | always, unless `disableDtmfForNonP2pAndEmergencyCalls` (live false), in which case P2P, voicemail greeting or emergency only |
+| Transfer (V2 buttons on the bar) | `enableUbarTransferButtonOnL1` (true) → `CallTransferButtonV2`/`CallConsultativeTransferButtonV2` shown, V1 menu items hidden. Not appliance mode (Transfer V2 also allowed in survivability mode) |
+| Upgrade ("Upgrade to video call") | `enableUpgradeCall` (false) |
+| Merge calls | not appliance mode |
+| Park call | not appliance mode, not an ACS interop call |
+
+**Disabled, not hidden** (`propagateCallConfigChanges`). A visible control gets
+`forceDisabledReason`, in this order of precedence:
+- OnHold: when the call is on hold and the item lacks `isOnHold`. Enabled on
+  hold: Chat, More, Mic, Leave, Resume, Breakout…
+- Disconnected
+- InLobby: unless `isLobbyEnabled`; only Leave has it.
+- StagingRoom: in a green room, unless `isStagingRoom`.
+- GreenRoom: items with `isGreenRoomDisabled`, i.e. React and most View options.
+- ImmersiveView
+
+Items flagged `isE2EEHidden` are **removed** when end-to-end encryption is on:
+Notes, Rooms, Apps, Copilot, recording, transcript, Large gallery, Together…
+
+**1:1 Teams call (`oneToOneOrGroupCall`).** `available` = View, Controls, the
+View-menu items, indicators, screen-sharing controls, Resume, People, Chat,
+Raise, Music mode, More, Camera, Mic, Share, Leave, Settings menu, device/audio
+settings, Call health, Dial pad, Hold, Transfer, Merge, Park, SLA lock, Video
+effects, Join info, Language & speech, captions, interpretation, coach,
+recording/transcript, Other videos, Copilot, Apps, app tabs, Whiteboard,
+Streaming, RTT, CallContext, Hide controls, Insights, Annotation.
+**Missing: React, Notes, Rooms, Organizer Controls' meeting options, Report.**
+Overrides put **HoldButton, CallTransferMenuControl and DialpadButton on the
+bar** (horizontalMiddleEnd, isCritical). They form their own group
+("callingOverflow"), inserted before the Chat/People group. With
+`enableUbarTransferButtonOnL1` the Transfer menu has no visible children, so it
+is hidden; the V2 Transfer/Consult buttons show in the contextual group instead.
+Resulting 1:1 bar:
+
+`[timer…] [Transfer][Consult] [Dial pad][Hold] | [Chat][People][View][Apps][More] [Camera][Mic][Share] | [Leave]`
+(1:1 has no Raise, no React, no Notes, no Rooms.)
+
+**1:1 PSTN (`oneToOnePstn`).** No Camera, Share, View, React or video options.
+Hold, Transfer menu, Dial pad, Transfer V2, Consult V2 and Upgrade are all
+critical bar items. Grouping is AlwaysKeep.
+
+**Consult call (`consultAndAdd`).** Merge calls, Dial pad and Hold on the bar,
+plus Chat, Camera, Mic, Share, More and Leave.
+
+**Group call vs meeting.** Both use `default`. A group call loses:
+- Notes (needs a private or channel meeting)
+- Rooms (needs a scheduled meeting)
+- Report a concern (not a group call)
+- Shared content bin
+- the organizer's Meeting options (needs a private or channel meeting)
+
+Controls needs meetingRole Organizer, which group calls don't have.
+
+### 1.5 Overflow as the window narrows (no fixed breakpoints)
+The middle slot (`horizontalMiddleEnd`) uses Fluent v9 `Overflow`
+(`overflowConfiguration {type:"Dynamic", overflowParent: MoreButton}`, `c$`).
+Items that don't fit move into **More**, at the top of its menu, in bar order.
+Overflow is measured from widths; there is **no px breakpoint table**.
+Priorities (`kc`): `AsFirst` = 0, `AsLast` = 500, `Docked` = pinned (never
+overflows). Fluent hides the lowest priority first. On ties it hides the **last
+item in DOM order** first (overflowDirection "end").
+
+For the live preset, items leave the bar in this order:
+1. The secondary group's AsFirst items, right to left: Apps, app tabs, CallContext, Copilot, Rooms, Notes, broadcast Q&A, Controls, View, People, Yammer Q&A, Chat.
+2. Then the bar groups further left (in a 1:1 call: Hold, Dial pad; then the contextual group: Transfer, Consult, Resume, Take control…).
+3. Last of all **React**, then **Raise** (AsLast).
+
+More, Camera, Mic, Volume, Share, Pause share and Leave never overflow.
+
+Group dividers are overflow items with priority AsFirst, and are hidden when
+their group empties. Indicators overflow into "More status indicators" after 4
+items, but only with `enableIndicatorOverflowInUbar` (live false). Mutations of
+the toolbar re-run overflow, debounced 50ms with a max wait of 1000ms (`l$`).
+
+**Layout-shift click protection** (`WH`, `ubarLayoutShiftProtection` live
+`{enabled:true, onClickSuppressTimeMs:2000}`). While the pointer is over the bar:
+- A shift marks the bar for 2000ms. A shift is a resize, a child change, or a
+  `data-overflowing` change.
+- A click in that window is swallowed (`data-layout-shifting`), so the user
+  doesn't click a control that just moved under the cursor.
+
+### 1.6 Customization / pinning
+Customization needs `enableUbarCustomization`, which is **false live**, so
+current users can't customize. When enabled:
+- Right-clicking a control opens a context menu:
+  - "Move before {control}" / "Move after {control}"
+  - "Pin" (the item is in More) or "Unpin"
+  - divider, then "Reset meeting controls"
+  Keys: `calling_ubar_control_contextual_menu_pin_action_name`, `…unpin…`,
+  `…reset_layout_action_name`. The move items only appear when the group's
+  `layoutCustomizationBehaviour` is All or ArrangeOnly.
+- Drag and drop (dnd-kit) between the bar and More. Announcements: "Pin
+  {{controlLabel}}", "Pin {{controlLabel}} to {{slotLabel}}", "Unpin
+  {{controlLabel}}", "{{controlLabel}} pinned to {{slotLabel}}",
+  "{{controlLabel}} unpinned".
+- Docked items can't be moved.
+- The layout is saved per layout id `"<entityType>-<layoutTemplate>"` through
+  `updateUserExperiencePreferences` (`stageSettings.callingControlsPreferences.layouts[{id, controls:[{name, slot: HORIZONTAL_MIDDLE_END|OVERFLOW|…, group, priority}]}]`).
+  Session-only hoisting is saved through `setCallingControlsSessionSettings(layoutId, controls)`.
+
+### 1.7 Auto-hide ("Hide meeting controls")
+- Needs `enableHideUbar` (live false). Then More › Settings has "Hide meeting
+  controls" / "Always show meeting controls" (`calling_hide_controls_button`,
+  `calling_show_controls_button`).
+- The choice is stored in `clientPreferences(category:meeting).hideControls`
+  (`ComponentsMeetingSettingsHideControlsMutation`).
+- Hide delays: `hideUbarInitialDelay` 3000ms, `hideUbarDelay` 500ms.
+- Always hidden by default with `enableHideUbarByDefault`.
+### 1.8 More (…) menu (live `Inline` preset 0, `default` layout)
+The menu opens from MoreButton. It has label "More", tooltip "More actions" and
+is `Docked`. It is a vertical menu (`MenuControls`); groups are separated by
+dividers. Its contents, top to bottom:
+1. **Overflowed bar items**: placeholders of every bar item that doesn't fit,
+   in bar order (§1.5).
+2. The preset's groups. An item shows only if it is available for the layout
+   and visible by its rule. A submenu shows only when at least one child is
+   visible (`hierarchy.hasVisibleNodes`).
+
+Menu item text is the control's `title` when it has one (the menu renderer `VC`
+drops `buttonLabel`); otherwise its label.
+
+| group | item (control) | text (en-us) | shown when (besides layout `available`) |
+|---|---|---|---|
+| overflowTop | RestartEvent | "Restart event" | broadcast producer, `enableRestartEventForBroadcastProducers` |
+| | Streaming ▸ (StreamingMenuControl) | "Streaming" → Streams / Broadcast / Switchboard | `enableMediaStreamsPanel` / NDI visible in calling UI |
+| | Record and transcribe ▸ (RecordingMenuControl) | "Record and transcribe" → "Start recording"/"Stop recording" (RecordingButton), "Local recording" ("Record to my computer"), then "Start transcription"/"Transcript" (TranscriptButton, TranscriptPanelButton "Transcript"), "Stop Data Collection", then "Voice ID" | recording: not appliance mode, not a green room, not E2EE; local recording `enableLocalRecording` (live false); transcript panel `enableCallTranscript` (live true) |
+| | IsolateVoiceButton | "Voice isolation" | `enableIsolateVoiceButton` (live false) |
+| | MusicModeButton | "Music mode" (title "High fidelity music mode") | `enableHighFidelityAudioToggle` (true), not 1:1 PSTN, town hall only with its own flag |
+| | BroadcastYammerButton | "Yammer" | broadcast |
+| settings | MeetingInfoButton | "Info" | `enableMeetingInfoButton` = `!pn.tO()` (what that platform check means is unverified) |
+| | FacilitatorButton | "{{appName}}" ("Facilitator") | Copilot facilitator flags; private/channel meeting |
+| | MeetingFacilitatorTimerButton | "Timer" → "Ad-hoc timer" / "Agenda timer" | `enableTimerUBarButton` (true); not town hall, webinar, Attendee, or group call |
+| | MeetingInsightsButton | | `enableMeetingInsightsPanel` |
+| | WhiteboardButton | "Whiteboard" (title "Start Whiteboard") | `enableWhiteboardButtonInUbar` (live false), not town hall, not E2EE |
+| | MeetingNotesButton | "Notes" | `enableMeetingNotesLink` |
+| | MeetingContentBinButton | "Shared" (title "Open shared content") | private scheduled meeting only (not channel, ad hoc, Meet now, town hall, webinar, 1:1 or group call) and `enableMeetingContentBinControlInUbar` |
+| | CameraEffectsButton | "Video effects and settings" (other titles depending on flags: "Video effects", "Effects and avatars", "Video settings", "Video settings and avatars"; while open "Hide …") | not appliance mode, not AV-over-IP blocked, and either (not E2EE and video extensibility/avatars) or `enableAVFramework` (live true) |
+| | CustomVideoBackgroundsPanelButton | "Backgrounds" | `enableVideoBackground` && not `enableAVFramework` → **hidden live** |
+| | AudioSettingsButton | "Audio settings" ("Hide audio settings" while open) | `enableAVFramework` (live true), not broadcast producer, not town hall streaming |
+| | Language and speech ▸ | "Language and speech" → "Captions" (ClosedCaptionsButton), "Interpreter" (AI interpretation for all), "Interpretation" (live interpretation), "Speaker Coach", "RTT" | captions: not appliance mode, not E2EE unless local captions |
+| | Settings ▸ | "Settings" → group 1: "Devices" (DeviceSettingsButton, title "Device settings"), "Privacy mode", "Call health", "Meeting options", "Accessibility"; group 2: "Chat bubbles", "Notifications", "Hide meeting controls"; group 3: "Data" ("Collect my meeting data") | Devices: **hidden when `enableAVFramework`** (live true), except for a town hall Attendee; Call health `enableCallHealthForMeetings` (true); Meeting options = organizer legacy rule (§1.4); Accessibility `enableAccessibilityView` (true); Chat bubbles `enableChatBubbles` (true); Notifications `enableMuteNotifications` (true), labels "Mute notifications"/"Allow notifications"; Hide controls `enableHideUbar` (false) |
+| callingOverflow | (flat; see note) | "Call me" (PstnButton, PSTN call-me-back), "Dial pad", "Hold", "Upgrade" ("Upgrade to video call"), "Transfer" (V1), "Merge Calls", "Park Call", "Lock Call"/"Unlock Call" (SLA lock) | `CallMenuControl` ("Call ▸") is in **no** live layout's `available` list. Its children are therefore promoted into More itself, as a flat "callingOverflow" group. `CallTransferMenuControl` ("Transfer ▸": Transfer / Consult then transfer) exists only in the 1:1 and PSTN layouts, and is hidden when `enableUbarTransferButtonOnL1` is on (live) |
+| reportMeeting | ReportMeetingButton | "Report a concern" (short "Report") | `enableReportMeeting`, private/ad hoc/Meet now meeting, not town hall, webinar, 1:1 or group call |
+| help | ReportProblemButton | "Report a problem" | always available → `openFeedbackDialog` |
+| | MeetingHelpButton | "Help" | |
+
+In the 1:1 layout, Hold, Dial pad and Transfer are on the bar (§1.4). Call ▸ then
+only holds what is left (Merge, Park, Lock).
+
+### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
+- Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
+- Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.
+- Shows `--:--` before the start time is known.
+- Tooltip "Elapsed time"; aria "Elapsed time {{elapsedTime}}".
+
+## 2. Pre-join screen (module 615280; per-state presets 620894; audio enum 548277; hooks 398206)
+Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`). `enablePrejoinVisualRefresh` is off live, so this section describes the **classic** layout.
+
+### Structure (`BG`, top to bottom)
+1. Alert banners: watermark, audio-only, screen-capture protection.
+2. Account picker: `Auth.enableAccountSelectionOnPreMeetingJoin` (true), meetings only, not ad hoc. Re-auth tooltip: "To join this meeting, sign in again or select another account."
+3. **Header**:
+   - H1 = meeting title, or "Microsoft Teams meeting" when there is none. Ad hoc meetings get an editable title box.
+   - The title is replaced by "Connecting", by "Encrypting your meeting. This may take a moment" (E2EE), or by the lobby/staging text.
+   - "Choose your video and audio options for {{meetingTitle}}" is **screen-reader only**; it is never shown as visible text.
+   - Under the title, for Scheduled/Recurring/Broadcast meetings only, after `prejoinMeetingContextDetailsDelayInMs` 5000 ms:
+     - date
+     - "start – end TZ"
+     - participant summary: "Organizer joined" / "Organizer +{{participantsString}}" / "1 other joined" / "{{numberJoined}} others joined" / "over 99 others joined"
+     - The summary opens a popover: "In this meeting", "+{{lobbyCount}} waiting in lobby".
+     - Recurring meetings add an icon with "This is an occurrence of a series."
+   - Anonymous users get a name box "Type your name", max 50 characters. Errors: "Enter a name to join the meeting." / "Your name can be up to 50 characters." / "Your name can only include letters, numbers, spaces, and these symbols: - ' . _ @".
+4. **Content row**: video preview on the left, audio options on the right.
+   - If only Computer audio is possible (phone, room and none options all false), the mic toggle moves into the video toolbar and the audio column disappears. The toolbar landmark is then called "Join options" instead of "Video options".
+   - **Below 720 px width** only the selected audio option shows, with a "More audio options" chevron. It opens a popover listing every option (icon, title, short subtitle, "Suggested" badge).
+5. Action buttons **below** the row, right-aligned (centred in computer-audio-only mode).
+
+### Video preview + toolbar (`dk`, `fk`; data-tid `prejoin-v2-video-actions`)
+- Preview rendered natively. Camera-off text: "Your camera is turned off" / "No camera is connected" / "Video preview is not available" / device failure / "Your camera is being used by another application…". Notification banners over the preview disappear after 7000 ms.
+- Toolbar: [mic toggle (computer-audio-only mode)] [camera toggle] | divider | [effects button].
+- **Camera toggle**: camera icon, a chevron ("Open video options") and an on/off switch.
+  - Labels "Turn camera on" / "Turn camera off" (+ shortcut).
+  - Disabled when: admin block ("Video sharing is disabled by the administrator"), no camera, or permission denied ("Allow Teams to access your camera. Go to your privacy settings to allow it.").
+  - Flyout (686534): "Camera" list + "More video settings", which opens the `videoeffectsandsettings` pane. No backgrounds row in pre-join.
+- **Effects button**, exactly one, first match wins (`Kk`):
+  1. avatar mode → "Effects and avatars"
+  2. video extensibility → "Video effects"
+  3. `enableVideoAutoAdjust` (false) → "Video effects"
+  4. blur-capable device → **"Background filters"**, which toggles the `videobackgrounds` pane. Needs `enableVideoBackground` (true) and a filter policy other than NoFilters (live AllFilters), or org images. Disabled while video is off ("Turn on video to use background effects").
+  - Which one shows live depends on runtime contexts (unverified).
+
+### Audio options (radio group "Audio options"; order `M7`)
+
+| value | title | subtitle (wide; shown only when nothing is selected yet or on the suggested option) | narrow subtitle | content when selected |
+|---|---|---|---|---|
+| 0 | "Computer audio" | "Use your default mic and speaker." | "Use this device." | mic row, speaker row, "Test mic and speaker" |
+| 1 | "Phone audio" | "Checking for dial-in info…", then "Dial in from any phone, or we'll call you." (disabled: "You don't have access to dial-in information for this meeting") | "Dial in or receive a call on my phone." | "We'll give you a number to call after you join, or we can call you." |
+| 2 | "Room audio" | "Use the meeting room's audio system." / "We've detected a room device." | "Connect to a Teams room system." | room picker (638130): "Search for a room", "Nearby", "Other Suggestions", "Unable to find any rooms", "Requires a room with an audio system." |
+| 3 | "Don't use audio" | "We'll mute your device when you join." / "You're in a room that already has meeting audio." | "We'll mute your mic and speaker." | "Join muted to avoid causing audio disruption." |
+| 4 | "Follow Meeting" | (follow mode; flags off) | "You will join in follow mode. You won't be able to see or hear others." | |
+
+- A suggested option gets "(suggested)", or "Suggested" in the narrow layout.
+  - Room is suggested when a Bluetooth room is detected or BYOD.
+  - None is suggested when a room loudspeaker is already in the meeting.
+- Phone is hidden for broadcast roles. Room is hidden for anonymous users.
+- Dial-in availability comes from the `subscribedCallChangedEvent{isPSTNEnabled,isPSTNInitialized}` subscription.
+- **Default selection**: the cached `prejoinScreenSelectedAudio`, else ECS `defaultPreJoinAudioOption` = 0 (Computer). Room, None and Follow are never cached (`blackListPrejoinAudioOptionsCache` ["2","3","4"]). A companion device forces Computer.
+- **Computer audio content** (`HY`):
+  1. Mic row: Fluent Switch with a mic-icon label.
+     - Tooltip "Mute mic" / "Unmute mic" (+ shortcut). Unavailable: "Mic is not available".
+     - Next to it, the device name as a button (aria "Selected microphone: {{deviceName}}, open microphone options"). It opens a flyout: "Microphone" list, 17-segment level meter, "More audio settings".
+  2. Speaker row (833394): speaker on/off ("Turn speaker off/on ({{shortcut}})"), volume slider (`enablePrejoinComputerAudioVolumeSlider` true), speaker-name flyout.
+  3. "Test mic and speaker" (773962). Disabled in another call or in the lobby: "Testing isn't available while you're in another meeting." / "…waiting to join the meeting."
+  - Auto-mute notice: "There are already {{participantsCount}} people in the meeting. We have muted your mic." (threshold `preJoinAutoMuteParticipantThreshold` = 4 is likely the trigger; not traced).
+- Toggles call `setCallPrejoinState(newState, callingIntentId)` and `updatePrejoinDevicesConfiguration(callingIntentId, cameraOn, microphoneOn, speakerOn)`.
+
+### Buttons and Join (`HG`)
+- [Cancel] (secondary), **[Join now]** (primary, `prejoin-join-button`), then "Lobby chat" (lobby only, after an unread lobby message).
+- Town hall / broadcast with a role: Join now is a split button. Menu: "Join as Producer/Presenter/Organizer", "Join as Attendee", "Preview as Attendee".
+- Join now is enabled when the state allows joining, an audio option is selected (or computer-audio-only mode), you are online, and the name is valid.
+- **Join** (`vM` → `_joinCallFromPreJoinState` → `_internalJoinCall`):
+  1. Saves the audio choice.
+  2. Runs the anonymous-name, re-auth, consent/CAPTCHA and bot checks.
+  3. Builds the join options:
+     - `outgoingAudio`/`incomingAudio`: false unless Computer audio, or Room with BYOD/ad hoc space.
+     - `outgoingVideo`: off in follow mode.
+     - `isTransfer`.
+     - `meeting{isFollowMode, isPSTN, title, displayName, isByodEnabledFromPrejoin, roomParticipantToAdd, roomParticipantInMeeting, isRoomAudioSelected, byodRoomName, adhocMeetingSpace}`.
+     - consent/CAPTCHA fields, `joinEventAsAttendee`, `shouldSendHigherFrameRateVideo`.
+  4. Caches the video state, and the mic state only if you toggled it.
+  5. Sets the Connecting state.
+  6. `mutation joinCallFromIntent($callingIntentId,$joinOptions)` (+ `weatherpersonCapable`, `nativeMeetingStageEnabled`, `stageEngineEnabled`).
+- **Cancel**: `tryStopCall` if a call already exists (lobby/connecting), else `abandonCallingIntent(callingIntentId, "DismissPrejoinScreen")`. A drop survey may ask first: "We noticed you're leaving before joining the meeting. What happened?".
+- Phone audio after joining (890111): "Use phone for audio".
+  - Call-me option: "Enter your number and we'll call you." / "Enter phone number" / [Call me].
+  - Dial-in option: "Dial in with one of the following phone numbers."
+  - Status: "We are calling your phone", "Disconnect".
+
+### States (620894, chosen by `QH`)
+
+| state | preset | behaviour |
+|---|---|---|
+| PreJoin, signed in | `BA` | **Camera default off**, mic default on, cached states applied, focus on Join now (`turnOnVideoByDefaultOnPrejoinScreen` off) |
+| PreJoin, anonymous | `TE` | camera default **on**, focus on the name box |
+| Connecting | `aN` | title "Connecting" + animated dots, everything disabled, focus on Cancel |
+| Staging (moderated) | `R0` | "A moderator is required due to org policy. The meeting will start when they join." |
+| InLobby, a presenter is present | `jF` | "Hi, {{userName}}. Someone will let you in shortly." |
+| InLobby, no presenter | `MM` | "Hi, {{userName}}. Someone will let you in when the meeting starts." |
+
+- In the lobby, the audio option headers are disabled; the mic and camera toggles still work. Join is disabled and the speaker toggle is disabled.
+- Teams Free variants: "We've let the organizer know you're waiting." / "When the meeting starts, we'll let the organizer know you're waiting."
+- Overflow/streaming: "Attendee mics and cameras are turned off by default for this event." / "The meeting has reached capacity. You are joining in audio-only mode."
+
+### Device settings pane (`devicesettings`, module 912295; frame 867038 "Device settings", close "Hide settings pane")
+In-call, live, with `enableAVFramework` the Devices item is hidden from More. These settings are then reached through Mic ▾ "More audio settings" (`audiosettings`) and Camera ▾ "More video effects and settings" (`videoeffectsandsettings`).
+1. "Audio Settings":
+   - Speaker dropdown (`selectDevice(id,"Speaker")`; "None" when empty).
+   - In-call volume slider 0–100, default 50 (localStorage `speakerVolume`, `setSpeakerVolume`), mute "Speaker is on/off".
+   - Microphone dropdown + level meter.
+   - "Spatial audio".
+   - "Noise suppression" switch + "Background noise only" / "Voice isolation" (`updateNoiseSuppression(Auto|High|None|NoneWithPns)`).
+2. "Video Settings": Camera dropdown, "Mirror my video", "Adjust brightness", "Soft focus", "Advanced settings" › "Super resolution".
+3. "Extended Displays": "Shared Display Mode" (BYOD).
+- "Make a test call" (`startEchoBotCall`) lives only in the Settings app (918664).
+
+### Background effects pane (`videobackgrounds`, module 41834)
+- Tiles, in order:
+  1. "None"
+  2. "Blur" (with `enableBokehBlur`: split "Standard blur" / "Portrait blur")
+  3. (style my room)
+  4. **"Add new"**, placed right after Blur, not at the end (policy AllFilters + user upload enabled)
+  5. images: the selected/recent one first, then org images, then Microsoft's 23 CDN images, then the user's uploads
+- Grid: 3 columns (`enableThreeColumnBackgroundLayout`), cells `minmax(91px,1fr)`, rows 58 px, tiles 88×50.
+- **Pre-join: a tile click applies at once and persists.** In a call: [Preview] / "Stop preview". Preview turns your video off and shows a 640×360 self-view ("Others won't see your video while you preview."). Then [Apply] / [Apply and turn on video].
+- Apply: `applyVideoBackgroundEffects(callingIntentId, imageId, imagePath, persistEffect, isUserImage, imageSrc, imageProvider)`, after `downloadVideoBackgroundImage` for Microsoft/org images (timeout 1000 ms).
+- Upload: `.png .jpeg .jpg .bmp`, at least 360 px per side, aspect ratio ≤ 4. The tooltip's "2048 px" is not enforced on desktop. POSTed to `${deepLinkDomain}/maglev/custom-video-background/upload`. Remove is in the tile's "…" menu.
+- Policy banners: "Your org sets background to Blur unless something else is selected." / "Some settings are managed by your organization."
+## 3. Camera ▾ and Mic ▾ (module 414673; flyouts in 686534 and 269248; mic reasons in 467033)
+
+### Camera (VideoButton, `id video-button`)
+- Label "Camera" (`calling_camera_icon_label`). Tooltip "Turn camera off" / "Turn camera on"; "Turning on camera…" while it toggles.
+- Icons: `call-video`, `call-video-off`, `call-video-disabled` (attendee video restricted), `call-video-error`. An internal failure disables the button with the aria label "Disabled due to internal failure".
+- Toggle: `toggleVideoWithState(teamsCallId, videoOn, context, shouldSendHigherFrameRateVideo, toggleVideoExecutionCounter)`, then `confirmCallToggleState`.
+- **Disabled reasons**, first match wins (tooltip text):
+  1. "Your camera is being used by another application. Close the other application, then rejoin the call to share video."
+  2. "Video devices loading..."
+  3. "No available camera found"
+  4. "Video sharing is disabled by the administrator"
+  5. PSTN call-me-back AV block
+  6. "Only select participants can share video" (attendee video restricted), or "Unavailable until the meeting starts" (staging)
+  7. "You can share your video when you're done screensharing"
+  8. "Video is unavailable for audio-only participants"
+  9. "You're sharing content from your camera"
+  10. "Disabled by Coordinated Meeting"
+  11. "Video call is disabled"
+  12. minors-recording restriction
+  13. "Allow Teams to access your camera. Go to your privacy settings to allow it."
+- **▾ split** (`id video-button-configure`, aria/tooltip "Open video options"). Present when `enableAVFramework` (true). Disabled together with the main button (`enableNoCameraVideoFlyout` false).
+- **Flyout**, top to bottom:
+  - Live preview while video is off ("Your camera failed" on error).
+  - Tabs "Effects and settings" | "Avatars", only when there is more than one tab. Avatars needs avatar mode and `enableAvatarTabInFlyout` (true).
+  - Effects tab:
+    - "Camera": device list, plus any device error.
+    - Divider, then "Backgrounds": a one-row quick picker, shown if tenant backgrounds or a background policy exist.
+    - Divider, then the toggles "Adjust brightness" and "Soft focus", each only if the device supports it.
+    - Divider, then "More video effects and settings" ("More video settings" in pre-join). It opens the `videoeffectsandsettings` side pane.
+  - Avatars tab: avatar picker plus "Turn on avatars".
+  - The flyout has **no "Mirror my video" item**.
+
+### Mic (MicrophoneButton, `id microphone-button`)
+- Label "Mic". Tooltip "Mute mic" / "Unmute mic". Variants:
+  - "Mute mic (speaker is muted)"
+  - "Turn audio on", when audio is off; it opens the audio escalation dialog
+  - in a shared room: "Audio is linked with other devices in the same room as you. Mute this mic only" / "… Unmute this mic only"
+- Announcements: "Your microphone is muted" / "Your microphone is unmuted".
+- Toggle debounce: `minToggleMutePeriod` 100 ms. The icon shows a live volume meter (`enableMicVolumeIndicatorInUbarMicIcon` true).
+- Toggle: `toggleMuteWithState(teamsCallId, muteCall, context, causeId, toggleMuteExecutionCounter)`, then `confirmCallToggleState`. Push to talk: `togglePushToTalk(teamsCallId, unmuteCall)`.
+- **Disabled reasons**, first match wins:
+  1. PSTN AV blocked
+  2. Hard mute: "Only meeting organizers and presenters can unmute", or v2 "Only select participants can unmute", or "Unavailable until the meeting starts"
+  3. "Audio devices loading..."
+  4. "No audio devices available"
+  5. no device selected
+  6. "Unable to unmute yourself."
+  7. "Microphone disabled due to policy."
+  8. "Microphone disabled for coordinated meetings."
+  9. "Microphone disabled."
+  10. "Unmuting..." / "Muting..."
+  11. minors restriction
+  12. "Allow Teams to access your mic. Go to your privacy settings to allow it."
+  13. "Your microphone isn't working. Try reconnecting it or select a different device."
+- There is no "Ask to unmute" string in this build. Hard-mute hints: "Mic is disabled for all attendees.", "Raise your hand if you'd like to speak."
+- **▾ split** (`id audio-button-configure`, "Open audio options"). Flyout, in default mode:
+  - "Speaker": device list, then a volume slider.
+  - Divider, then "Microphone": device list, then a level meter.
+  - Divider, then the effects section, only if audio effects exist and it isn't an immersive event:
+    - "Spatial audio" (only applies to non-P2P calls; `setSpatialAudio`).
+    - "Noise suppression": an On/Off switch plus the radios "Background noise only" / "Voice isolation" (`updateNoiseSuppression`).
+    - "High fidelity music mode", if supported and the user turned on "Display in the microphone dropdown menu".
+  - Divider, then "More audio settings", which opens the `audiosettings` pane.
+  - Streaming attendees get a microphone-only variant.
+
+## 4. Leave / End (CallButton `ZS` → `PS`, module 414673; speedbump 588771)
+- Button `id hangup-button`, `uiStyle terminal` (red). App-wide shortcut `LeaveCall`.
+- Label "Leave" (`call_leave`) in 1:1 calls *and* meetings; there is no "Hang up" string. Other labels:
+  - "Leave room" when returning from a breakout room
+  - "End monitoring"
+  - "Unfollow" in follow mode
+- Tooltip "Leave". `enableUbarLeaveButtonSlim` (true) forces the default icon template instead of the wide textual button.
+- **▾ split** (`hangup-button-more-options`, aria "More options"). Shown when:
+  `((Organizer && !shouldHideHangupEndMeeting) || multipleEndpoints || breakoutReturn || moderator || restartAvailable)`,
+  and not follow mode, not a meeting-room console, not a call monitor, and (not a breakout room, or breakout return).
+  Items, in order:
+  1. "Leave": Organizer (not an attendee endpoint) or moderator.
+  2. "Leave on all my devices": more than one own endpoint, `enableEndCallOnUserEndpoints` (true), not streaming or immersive.
+  3. "End meeting": (Organizer && !shouldHideHangupEndMeeting) or moderator.
+  4. "Restart event": town hall/staging only.
+  - In a breakout room the menu is "Leave room" / "Leave meeting" instead.
+  - **Presenters and attendees get no End meeting.** In a 1:1 call the ▾ only appears with multiple endpoints, and then holds only "Leave on all my devices".
+  - `shouldHideHangupEndMeeting` = (staging end-curtain active, not moderated) or immersive event.
+- **End meeting** first asks "End the meeting?" / "You'll end the meeting for everyone." [Cancel] [End]. It then sends `stopCall(callId, "confirm-end-meeting", {forEveryone:true})`.
+- **Leave**: `stopCall(callId, "hangup-button_click", {forEveryone:false, forAllUserEndpoints:false})`. "Leave on all my devices" sends `forAllUserEndpoints:true`. Announcements: "Leaving..." then "You have left the call".
+- **Leave confirmation ("speedbump")**, `enableHangupSpeedbumpMode` live "Always":
+  - While you are screen sharing, a popover anchored on the button: "You're currently sharing. Are you sure you want to leave?" [Stay] [Leave].
+  - Otherwise only if the user preference `clientPreferences.meeting.enableLeaveConfirmationDialog` is on (default off). That preference is Settings › General "Ask me to confirm when I leave a meeting", shown only in mode Always. Popover text: "Are you sure you want to leave?" [Stay] [Leave].
+  - Never from the keyboard shortcut, in breakout rooms, or in call monitors.
+- Breakout return: `goToMainMeetingFromBreakoutRoom(breakoutRoomTeamsCallId)`.
+
+## 5. 1:1 call flows: hold, transfer, consult, merge, park, dial pad (414673; resolvers in 448700 / r_data-client-calling)
+
+| control | id / label | visible & enabled | action |
+|---|---|---|---|
+| Hold | `hold-button`, "Hold" | P2P only. Enabled in Connected/RemoteHold, not barge | `toggleHoldCall(teamsCallId, context:"Hold")`, announces "You've put the call on hold" |
+| Resume | `resume-button`, "Resume" | state LocalHold and not Transferring (or the overflow room is held) | `toggleHoldCall(context:"Resume")`, announces "Call resumed". Overflow room: `resumeOverflowRoom` |
+| Transfer | `transfer-button`, "Transfer" | `enableCallTransfer`. Connected/LocalHold, not transferring, not barge, `capabilities.isTransferAllowed`, not a consult call | puts the call on hold (`context:"Transfer"`), then opens the dialog |
+| Consult | `consultative-transfer-button`, "Consult" (tooltip "Consult then transfer") | `enableCallConsultTransfer`; as Transfer | hold (`context:"ConsultativeTransfer"`), then the dialog in consult mode |
+| Transfer (during a delegate consult) | `transfer-during-consult-custom`, "Transfer" | only when `consultContext.consultingWith=="boss"`; enabled if `canTransfer` | `transferCallConsultation(teamsCallId)` |
+| Merge Calls | `merge-calls`, "Merge Calls" | `enableMergeCalls`, `isMergeable`, Connected/LocalHold | dialog "Choose a call to merge" (rows "Call with"; [Merge] [Cancel]; query `mergeableCalls`), then `mergeCalls(targetCallId, callToMergeId)`. In a CONSULT_AND_ADD call: `mergeConsultCall` directly ("Merging calls...") |
+| Park Call | `park-button`, "Park Call" | `enableCallPark`, `capabilities.isCallParkAvailable` | `parkCall`, announces "Parking..." then "Call is parked". Shows "Share this code {{pickupCode}} to retrieve the call" [Copy code] (378194). Policy: timeout 300 s, codes 10–99 |
+| Dial pad | `dialpad-button`, "Dial pad" | `showDtmfKeypad`; always shown (see §1.4) | toggles `callingScreenStatus.isDtmfKeypadVisible`. Keys send `sendDtmf(teamsCallId, dtmfString)` (798196) |
+
+Held state on the stage (98585):
+- local hold: "On hold"
+- remote hold: "You've been put on hold"
+- calls list (320880): "On Hold" / "Held by {{caller}}"
+
+**Transfer dialog** (V2, because `enableTransferCopilotSummary` is on):
+- Title: "Transfer the call", or in consult mode "Consult then transfer the call".
+- People picker "Type a name or number" (PSTN numbers allowed; self hidden). Up to `suggestedTransferTargetCount` = 3 suggestions (query `callTransferSuggestions`).
+- For a Teams target, a destination dropdown: "Transfer to an audio call" / "Transfer to their work voicemail" / "Transfer to their mobile number: N" / "Transfer to their work number: N".
+- Checkbox "Ring back if there's no answer." when `isSafeTransferAllowed` && `enableSafeTransfer`.
+- Copilot toggles "Include a call topic for the recipient", "Generate call transfer context for the recipient with Copilot".
+- Footer: [Transfer] [Cancel]. Consult mode: [Start a call] (a menu: Audio call / Mobile / Work, when numbers exist) and [Open chat]. With context: "Send message and call" / "Send message and open chat".
+- Mutations:
+  - `transferCall(teamsCallId, targetUserMri, isSafeTransfer, transferToVoicemail, callContext, callTopic)`, which resolves to `callTransferService.transferCall`.
+  - `startConsultation(teamsCallId, targetUserMri, mode:"TeamsCall"|"Chat", recipientMessage, callContext)`.
+- Unverified: how an ordinary (non-delegate) consult completes the transfer.
+## 6. People pane (roster) (module 221949; rows 320296; sort 978369; lobby 522284/512425)
+
+### Header and top area
+- Title "Participants" (`participants_header`). While searching rooms it reads "Add a room". Close button: "Close participants pane". Drill-in panes show a back button, "Return to main Participants panel".
+- The search box `roster-participants-search-input` gets focus on open, unless `disableParticpantsSearchInputFocus` is set.
+  - No results: "We didn't find any matches."
+  - Error: "Search failed." [Try again]
+- Invite field (815275), placeholder "Invite someone or dial a number". Picking someone calls `addParticipant1`. Hidden in breakout rooms, for guests and in VTC calls.
+- "Share invite":
+  - Shown only in meetings, and not in broadcasts or breakout rooms, unless `disableParticipantsToShareInvite`.
+  - Disabled at E2EE capacity: "This end-to-end encrypted meeting is at capacity".
+  - In freemium meetings it becomes an icon button, "Copy join info".
+- "More actions" (…) popover (below-end). Meetings only, and only when at least one item is visible. Items in order:
+
+| # | label | shown when | action |
+|---|---|---|---|
+| 1 | Mute all | role ≠ attendee, at least 1 other person unmuted, not 1:1, not screen-share-from-chat, not a guest (`canMuteOthers` with self-capabilities) | "Mute everyone?" / "This will mute everyone in the meeting but you." [Mute], then `muteAllParticipants1(teamsCallId, scope)` |
+| 2 | Disable mic for attendees / Allow mic for attendees | there are attendees, Host `isAttendeeRestrictionsUpdatesEnabled` (true), role ≠ attendee, not broadcast, not a guest | "Disable mic for attendees?" / "Attendees won't be able to unmute themselves. The organizer and presenters can let people unmute as needed." [Disable mics] [Cancel], then `updateAttendeeRestrictions` |
+| 3 | Disable camera for attendees / Allow camera for attendees | as #2, plus `enableAttendeeVideoRestriction` (true) | "Disable camera for attendees?" [Disable cameras] / [Allow cameras] |
+| 4 | Lower all hands | at least 1 raised hand, `enableLowerAllRaisehands` (true), role ≠ attendee, not a guest | "Lower all hands?" / "You'll lower {n} raised hand(s)." [Lower all hands] [Cancel], then `lowerAllRaisedHands` |
+| 5 | Manage permissions | organizer, and `enableMeetingOptionsButtonInRoster` (false → hidden live) | opens the meeting options URL |
+| 6 | Download attendance list | organizer, `enableAttendanceReportInRoster` (true), engagement report policy Enabled, not broadcast, not P2P | v2 builds a TSV ("Full Name / User Action / Timestamp") and calls `downloadLocalReport` |
+| 7 | Stop all spotlights | multi-spotlight active, role ≠ attendee | spotlight dialog (634992) |
+| 8 | Lock the meeting / Unlock the meeting | `enableLockMeeting` (true), organizer, not in or with breakout rooms, not broadcast | "Lock the meeting?" (943063), then `updateMeetingLock`; on failure "Couldn't lock the meeting" |
+
+### Sections (320296 `Hg`), top to bottom
+Titles use the format "{{title}} ({{participantsCount}})". Empty sections are not drawn. The root view shows at most **20 rows per section** (15 for suspected threats), then "See more" (a drill-in) and "+{{n}} more".
+1. **Waiting in lobby**. Only when you are not an attendee and not anonymous. With suspected threats it splits into "Waiting" and "Suspected threats".
+2. **Presenters**. The title varies:
+   - "In this meeting" when the meeting has no attendees
+   - "Currently in this call" in a non-meeting call ("Currently in this screenshare" for screen-share-from-chat)
+   - "Event group" in a broadcast
+3. **Attendees** ("External presenters" in a broadcast). Only when there are attendees.
+4. Interpreters.
+5. Following (follow mode).
+6. **Others invited**: Exchange invitees not in the call, with the status Accepted / Declined / No response / Tentative.
+7. **People added to the chat**: thread members.
+8. **Suggestions**. Not in breakout rooms.
+9. "View Only Attendees" / "Attendees watching event".
+10. Agents: `enableAgentsAndBotsInCallingRoster` (true), at most `agentsAndBotsInCallingRosterMaxLimit` (5).
+
+Sections 6–8 are hidden when `maskIdentitiesForRole` is set.
+
+**Sort** (978369 `Eb`), in this order:
+1. sign-language signer/interpreter (sign mode only)
+2. the group Copilot bot
+3. **raised hands, by `raiseHandsOrderedRank` ascending**
+4. signers
+5. impersonation-detected users
+6. external recorder
+7. PSTN before non-PSTN
+8. display name (`localeCompare`)
+
+In the section that holds you: raised hands first, then **you**, then everyone else.
+
+A separate Raised hands pane, "Raised Hands (N)", sorts by rank. Empty state: "Raise your hand to appear here."
+
+### Row
+- Avatar, then the name. The secondary line is one of:
+  - an app name
+  - "Organizer" / "Moderator" / "Organizer, Moderator" / interpreter language
+  - a hybrid room name
+  - "Meeting guest" or "External"
+  - in the lobby: the impersonation email or "Verifying identity…"
+- State text:
+  - "Calling...", "On hold", "Leaving..."
+  - "Declined" / "No response", with [Retry]
+  - "Muting...", "Admitting...", "Denying...", "Changing role...", "Renaming..."
+  - "Action failed", which clears after 3000 ms
+- Trailing icons, in order:
+  1. video off for me
+  2. signer
+  3. "Pinned"
+  4. "Spotlighted"
+  5. PSTN
+  6. audio off
+  7. **raised hand: rank number + hand emoji in the user's skin tone** (aria "Hand raised position {{rank}}")
+  8. "Cannot share video"
+  9. mic: "Cannot unmute" / "Muted" / "Unmuted"
+- "More options" (…) appears on hover; right-click opens the same menu. Ringing participants get an inline [Cancel] instead.
+
+### Participant menu, in order (`Cg`)
+1. **Mute participant**: not 1:1. Needs the right to manage the participant (`canMuteOthers` with self-capabilities); disabled when the participant is already server-muted.
+2. Allow mic / Disable mic, Allow camera / Disable camera (per attendee).
+3. **Lower hand**: their hand is raised, it isn't you, and you are not an attendee or guest.
+4. **Pin for me** / Unpin (for yourself: "Pin for me" / "Unpin for me"). Disabled at the pin limit ("You reached the maximum number of pins"), when spotlighted ("Can't pin a participant that is spotlighted"), and in managed/presenter mode. Local only (`togglePinItem`).
+5. For yourself: Hide me / Include me in gallery / Remove me from gallery.
+6. **Spotlight for everyone** ("Add spotlight" when someone is already spotlighted) / "Stop spotlighting" (for yourself: "Exit spotlight"). Needs `enableSpotlightFeature` and you not an attendee. At most `numberOfAllowedSpotlights` = 7 ("No more people can be spotlighted").
+7. Fit to frame / Fill frame.
+8. Show video for me / Hide video for me; Make a signer; Add as my interpreter.
+9. Lower my hand: `enableStageAndRosterLowerHandsEntrypoints` (false → hidden).
+10. Make an interpreter (organizer only).
+11. Control Room System (room devices).
+12. Edit display name: yourself only, `enableRosterRenameAction` (true), and the meeting allows renaming. Calls `renameParticipant`.
+13. Join/leave meeting space.
+14. **Make a presenter** (target is an attendee) / 15. **Make an attendee** (target is a presenter). Both open "Change role?" / "A participant's role determines whether they can share content, mute others, and more." [Change] [Cancel].
+16. divider, then **Remove from meeting**. Takes effect immediately, with no confirmation.
+17. Threat items: View threat details (placed at the top, followed by a divider), Report, Report as not a concern.
+
+**Missing on purpose:** there is no Chat, View profile or "Ask to unmute" item in the in-call menu.
+
+Services:
+- `muteParticipant1` → `callMuteService.muteParticipant`
+- `muteAllParticipants1` → `muteAllInSection`
+- `removeParticipant1` → `addParticipantService.removeParticipant`
+- `promoteAttendeeToPresenter` / `demotePresenterToAttendee` → `changeParticipantRole`
+- `updateCallParticipantRestrictions` / `clearCallParticipantRestriction`
+- `updateMeetingLock` → `lockMeetingsService.setMeetingLockedFlag`
+
+### Lobby
+- Each row has icon buttons Admit ✓ / Deny ✕ (aria "Admit participant in lobby" / "Deny participant in lobby").
+- Section header:
+  - "Chat" (lobby chat): organizer only, when lobby chat is enabled.
+  - With more than 1 waiting: "Admit all" (drill-in: "Admit ({{n}})").
+  - Confirm variant: "Admit everyone in the lobby?" / "Some of the people waiting aren't shown." [Admit everyone] (XL meetings also get "See who's waiting").
+  - Suspected threats: "Deny all".
+- Toast (512425): "Waiting in the lobby", "{{name}} +{{n}}".
+  - 1 person: [Deny] [Admit] plus "More info", which opens the roster.
+  - More than 1 person, or impersonation suspected: [View Lobby].
+- Services:
+  - `admitParticipant1(teamsCallId, participantId, entryPoint, markedAsNotBot)` → `callLobbyService.admitParticipant`
+  - `admitAllParticipants1(teamsCallId, participantIds)`; the list is empty when `enableLobbyAdmitAllScopeAll` (true)
+  - `denyParticipant(teamsCallId, participantId)`; Deny all sends one per person
+- Failsafe 100 s. The XL lobby list refreshes every 5 s.
+
+## 7. Raise hand (414673, 527114, 710637, 615280)
+- Bar button `raisehands-button`, label "Raise". Standalone, because `showRaiseHandInReactionMenu` is false. Title "Raise your hand" / "Lower your hand"; shown in the active state while raised. Visibility: §1.4 (never in P2P).
+- Announcements: "Your hand is raised." / "Your hand is lowered".
+- Service:
+  - `toggleRaiseHands(callId, skinTone)` → `raiseHand` = `call.publishState({type:RaiseHands, level:User, content:{skinTone}})`, or `dismissHand` = `call.removeState({stateIds})`.
+  - Others: `lowerOtherParticipantsHand` → `dismissParticipantHand` (needs the DismissParticipantHand capability, which organizers and presenters have).
+  - All: `lowerAllRaisedHands` → `call.removeStatesForEveryone({type:RaiseHands})`.
+  - The UI updates optimistically and rolls back after 10 s without confirmation. Errors: "Couldn't raise your hand. Try again." / "Couldn't lower your hand. Try again."
+- **Queue**: the server `raiseHandRank` (publish order), ascending. `raiseHandsOrderedRank` 1…N is computed only up to 20 (`raiseHandsOrderedRankLimit`). The rank number shows next to the hand in the roster and on the tile.
+- "Someone raised a hand" popup:
+  - Shown for 10 s (`raiseHandsNotificationTimeout`).
+  - Text "{name} + # other(s)", where name is the newest raiser.
+  - Not shown while the roster is open or someone is in the lobby.
+- People button badge = lobby count + raised hands (non-attendees only). Aria "{n} people with new activity. Show participants".
+- Auto-lower:
+  - Speaking with your hand up for `lowerHandUfdDelayInMs` 3000 ms shows "We noticed you've spoken."
+  - With `enableAutoLowerHand` (true) it reads "Lowering your hand in a few seconds" [Keep it raised]. If dismissed without keeping it, the hand is lowered.
+  - Manual variant: "Lower your hand?" [Keep it raised] [Lower hand].
+  - Unraised speaking can prompt "We noticed you tried to join the conversation" / "Would you like to raise your hand?" [Yes].
+## 8. View menu, video stage and reactions
+
+### 8.1 View menu (ViewModeButton `N6`, module 414673)
+- Bar label "View", tooltip "Change your view". The icon follows the current layout.
+- Menu rows show `title`. Layout items are radio items: the selected one has `uiStatus "open"` and shows a checkmark.
+- Order comes from preset 0; rules from `calculateVisibilityOverrides` and each component.
+
+| group | item | text | shown (live) | disabled / notes |
+|---|---|---|---|---|
+| grid | GridButton | "Gallery" | only when mixed grid is off → **hidden** (`enableMixedGridView` true) | |
+| | MixedGridButton | "Gallery" | not 1:1 PSTN | checked for MixedGridView or PrioritizeVideoView. "Unavailable while managing what attendees see" in host managed mode. Selecting it restores Videos first if that is the stored preference |
+| | DynamicViewButton | "Dynamic" | hidden (`enableDynamicViewButtonInUbar` false) | |
+| | SpeakerViewButton | "Speaker" | `enableSpeakerView` (true), not 1:1 PSTN | disabled in presenter/attendee host view mode. Saves `preferredLayout:"SPEAKER_VIEW"` |
+| | AudienceButton | "Together mode" | hidden (`enableAudienceView` false). Never in 1:1/PSTN or with a watermark | enabled from 4 participants ("Share a virtual space with {{n}} or more people") |
+| | LargeGridButton | "Large gallery" | `enableLargeGalleryView` (true), not 1:1/PSTN, no watermark, not ACS. **Also only when the device can't show 49 in Gallery**: `allowLargeGalleryForSelectedDevicesOnly` (true) && min(49, maxNumberOfStreams, device gallery limit) < 49 | disabled until **9** remote participants have video. It then stays enabled. Tooltip "View more than 9 videos at once" |
+| | AccessibilityButton | "Sign language" | `enableAccessibilityView` and the user's sign-language setting | disabled in presenter host mode |
+| | ImmersiveViewModeButton | "Immersive space (3D)" | hidden | |
+| | FrontRowButton | "Front Row" | hidden | |
+| | FocusModeButton | "Focus on content" (tooltip "Enlarge shared content and hide the gallery") | `enableFocusMode` (true) | disabled unless content is being shared, in host view mode, in immersive view, or when content is popped out. Toggles `isFocusModeEnabled` |
+| screen | GalleryViewSizeButton | "Gallery size" ▸ radio: "4 people", "9 people", "16 people", "49 people" | only in MixedGridView / PrioritizeVideoView | sizes above the device limit: disabled when popped out ("Unavailable when content is popped out"), otherwise a warning "Your device might not be able to show this many videos". Saves `preferredGallerySize`; announces "Gallery size changed to {{size}} people" |
+| | PrioritizeVideoButton | switch, title "Show videos first" / "Don't show videos first" (bar "Videos first") | mixed grid, `enablePrioritizeVideoViewControlInUbar` (true), MixedGridView/PrioritizeVideoView | stores `isPrioritizeVideoLayoutPreference` |
+| | ParticipantsPopoutButton | "Pop out interpreters" | hidden | |
+| | ViewModeMoreOptionsMenuControl | "More options" ▸ | | |
+| More options | NarrowModeButton | "Show gallery at top" / "Show gallery on right" | `enableNarrowMode` && `enableModernStage` (true) | with spatial audio on: "Turn off spatial audio to select a different view" |
+| | IncomingVideoButton | "Turn off other videos" / "Turn on other videos" | `enableToggleIncomingVideo` (true); not 1:1 PSTN | `toggleIncomingVideo(callId)` |
+| | ToggleHideMyselfButton | "Hide me" / "Unhide me" | `enableHideMyselfV2`, not broadcast or host view mode | disabled when you are pinned |
+| | ToggleMyselfInGridButton | "Include me in gallery" / "Remove me from gallery" | `enableMyselfInGrid` | only in Gallery / Videos first / Speaker. Disabled while hidden or pinned. Videos first needs your camera on |
+| | FullScreenButton | "Full screen" (F11) | `enableFullScreen` (true) | announces "Fullscreen mode was set" / "…exited" |
+
+The chosen layout is saved through `updateUserExperiencePreferences{stageSettings{preferredLayout, isPrioritizeVideoLayoutPreference}}`.
+
+### 8.2 Stage layout rules (477421 segments; 2998 areas; 972234 grid; 296162 gallery size)
+- Layouts: `MixedGridView` (Gallery, **the default**), `SpeakerView`, `PrioritizeVideoView` (Videos first), `LargeGrid`, `Audience`, `Accessibility`, `FrontRow`.
+- Every layout is a Central segment plus a Bar segment:
+  - Gallery: Central = shared content (Stage) if any, else the first of HolographicStage, PinStage, MixedStage, MyselfVideo. The others go to the **right column** (side bar).
+  - Speaker: SpeakerStage (1 tile, the active speaker; 0 while there are pins or content) comes before MixedStage.
+  - Videos first: adds LeanAudioStage for audio-only people.
+  - Focus on content: Central = content; the bar keeps only pins and self.
+  - "Narrow" variants put the bar on **top**.
+- **Gallery at top automatically** (`enableDynamicNarrowMode` true): when the central segment is portrait (h > w), or when content in Central gets a bigger 16:9 area with a top bar.
+- **Gallery size**: `mixedGridSizes {defaultSize:16, sizes:[4,9,16,49]}`.
+  - `limit` = the largest size ≤ min(maxNumberOfStreams, device decode limit: gallery 49 / sidebar 9 / popout 49).
+  - `recommended` = the largest size ≤ min(limit, 16).
+  - `selected` = the stored `preferredGallerySize`, else recommended.
+  - Streams are also capped by the server's optimal video count (default 49; refresh 30 s).
+  - When the selection exceeds the limit, a toast says "You might not see everyone's video" / "The device you're using can only show a limited number of videos at this time."
+- **Grid fitting** (lean layouts, fixed 16:9 cells, `972234` class `O`):
+  - 1 item → 1×1.
+  - 2 items → 1×2 when the container aspect ≥ 1.25.
+  - Otherwise grow from 1×1: one row or one column if everything fits there; else take the single "+1 row" or "+1 column" step that fits everything; else add whichever of row/column brings `cols*16/(rows*9)` closer to the container aspect.
+  - Then drop a trailing empty row.
+  - Rows are centred, so a partial last row is centred. The whole grid is letterboxed at 16:9 in the container.
+  - **2 px inset per tile**: 4 px between tiles, 2 px at the edges (`stageLayoutContainerPixelGap` 2, 769760).
+- **Side and top bars** (108874/544727):
+  - Tile ratios 16:9 / 4:3 / 1:1 (min areas 14000 / 11500 / 10000 px²).
+  - Side bar: one column of 16:9 tiles if they all fit, else 2 columns of 4:3.
+  - Top bar: the ratio that fits the most tiles.
+  - Lean bar widths are chosen from 70/90/100/120/160/240/327 px, top-bar heights from 70/90/134/184 px, by stage-size buckets (78251).
+- **Pagination** (`enablePagination` true; 790339): a 36 px strip with "Previous page", "{{currentPage}}/{{pageCount}}", "Next page" (narrow: buttons at both ends, 68 px total). Announces "Page {{currentPage}}/{{pageCount}} selected".
+  - Overflow tile "+N" (aria "{{hiddenItemsCount}} more participants").
+  - Participants tile: total capped at "99+" ("{{totalItemsCount}} people are in the meeting").
+- **Active speaker**: in MixedStage, SpeakerStage and LeanAudioStage, a speaker who isn't visible replaces the first visible tile that isn't speaking (not hidden, not order-preserved), else the least prominent speaker. No swapping while anything is pinned or spotlighted.
+  - Screen share, self-in-grid and pins keep their places.
+  - Raised hands are promoted into view (`enableRaiseHandPromotion` true).
+- **Pins**: up to 9 (`maxPinnedItems` with `enableVideoStage`). The menu disables at `maxItemsOnStage`, which is 9 with 3×3 or else 4; which applies live is unverified ("You reached the maximum number of pins").
+- **Spotlight**: up to 7.
+- **Self view**: "Myself in grid" is on by default (`enableMyselfInGrid {isEnabled, isDefault:true}`, stored `stageSettings.isMyselfInGrid`). When off, self is a separate floating/bar tile.
+- Tiles without video show the avatar.
+
+### 8.3 Reactions (React menu `mw`, 414673; items 402023; overlay 385168/776505)
+- Shown only when `enableMeetingReactions`, **not P2P**, not broadcast or overflow streaming, and meeting option `allowMeetingReactions` (or policy). Hidden in immersive events.
+- Flyout (toolbox, closes on click), in order: **Like, Love, Applause, Laugh, Surprised** (ids like, heart, applause, laugh, surprised).
+  - Skin tone applies to like, applause, okay, wave, handshake, luck.
+  - The expanded set (Celebrate, 100, Fire, …) needs `enableExpandedMeetingReactions` (unset → off).
+  - **Raise hand is not inside the menu** (`showRaiseHandInReactionMenu` false); it is its own button.
+- Shortcuts Alt+Shift+1…5 only with `enableMeetingReactionShortcuts` (unset → off).
+- Send: `sendMeetingReaction(teamsCallId, {id:uuid, type, attributes:{skinTone}}, causeId)` (`enableMeetingReactionsThroughNGC` true). Fallback: LiveStateBroadcast `sendMeetingReactionLiveState`. Announces "{{meetingReactionType}} sent". Receive: `meetingReactionsEvent`.
+- **On the sender's tile**: only the latest reaction, centred over a dimmed tile, for 4250 ms (`meetingReactionLifetimeInMs`).
+  - Emoji size by tile height: <100 → 42 px, <150 → 56, <280 → 84, <410 → 112, <715 → 140, <875 → 168, else 224.
+  - A stack of reactions shows at most 8.
+- **Floating overlay** over the stage:
+  - Emoji 56 px (74 px when the overlay is ≥ 1228 px wide).
+  - Each rises from the bottom over 2.133 s with `cubic-bezier(0,0.83,0.19,1.09)`. Opacity reaches max at 31.2%, holds to 67.2%, then fades.
+  - Fewer than 3 concurrent: 95% travel at scale 1. More: random scale 1/0.9/0.8 with travel 95/66.5/38%.
+  - x follows a repeating 25-step offset pattern around the centre.
+  - 24 fps sprites. Capacity: primary 50, burst 100, single-emission cap 12, `maxNewReactionsCount` 5.
+  - Same-type reactions in a batch are aggregated.
+- There is **no "turn off others' reactions" user setting** in this build. Only the organizer option "Allow reactions" and policy.
+## 9. Share tray (module 325285; gate 282627; button in 414673)
+- The live tray is the **classic floating tray (325285)**. The modern tray (354183: tabs All / Screens / Interactive files / More options) is dormant: `modernShareTrayConfig.enabled` false, `enableModernShareTray` false, `isFloatingSharetray` true.
+- ShareButton ("Share") toggles `callingScreenStatus.isShareTrayVisible`. Shortcut `ToggleShareTray` (Ctrl+Shift+E).
+  - While sharing, the button reads "Stop sharing" and calls `stopSharing(callId)`. From the compact view it also shows the call window.
+  - Disabled when:
+    - the call is not Connected
+    - you are an attendee ("Only meeting organizers and presenters can share")
+    - you are server-muted or audio-only
+    - VDI+E2EE, BYOD, or an external-tenant policy ("Content sharing isn't available in meetings hosted by another org")
+    - policy blocks every sharing type
+- Tray layout, top to bottom:
+  1. Header: "Share content". On the right, the toggle "Include sound" (`share_audio`, `data-tid=system-audio-checkbox`), hidden when `systemAudioSupport=="NotSupported"`; it calls `tryToggleIncludeSystemAudio`. In a drill-down the header shows the section name and a back button ("Back to share tray main content").
+  2. **"Presenter mode"**: icon radio buttons "Content only", "Standout", "Side-by-side", "Reporter", plus "Add background".
+     - Shown if `isWeatherpersonPresenterEnabled`, more than one layout is supported, not `forceAttendeeStreaming`, and screen sharing is supported.
+     - The camera layouts are disabled when the camera is off ("Turn on your camera to select this layout") and during multi-share ("Presenter modes won't work while multiple people are sharing.").
+  3. **"Screen"** ("Screen (n)" when n>1): live thumbnails in a 2-column grid (1 column for a single screen).
+     - At most `maxDesktopPreviewsAllowedInMainView` = 4. More screens go behind a "More" drill-down.
+     - Missing preview: "Screen {{screenNumber}}".
+  4. **"Window"**: a single tile, "Opens list of {{windowsCount}} active windows", that drills down to "Choose window". Previews are loaded lazily via `callScreenPreviewsList(APP)` / `callScreenPreviewsImages`.
+  5. "Microsoft Whiteboard" / "Start Whiteboard": Member role only, `enableWhiteboardSharing && !enableWhiteboardButtonInUbar`, not a broadcast or immersive event.
+  6. "Content from camera" ("Share a document, a whiteboard, and more": Whiteboard / Document / Video). Not shown with `forceAttendeeStreaming`.
+  7. "PowerPoint Live" ("See your notes, slides, and audience while you present."), then the recent-files grid.
+     - "Excel Live" ("Share a workbook for everyone to work on together."; up to 100 people; files ≤ 2048 MB).
+     - "Browse OneDrive", "Browse my computer".
+     - In events: "Presenter mode, Whiteboard, PowerPoint Live, and Excel Live aren't available during this event."
+- Picking (Windows): there is **no OS picker**. Thumbnails come from the calling stack (`callScreenPreviewsV2`). A click calls `startSharing(callId, sourceId, sharingLayoutMode, aplDefaultBackground, sharingPreviewType)` → `{isScreenSharingOn, screenSharingBounds}`.
+  - A window whose title matches an Office file may be redirected to PowerPoint Live (`startFileSharing1`).
+  - A "replace the current sharer" or recording-interruption dialog can come first.
+  - Esc closes the tray.
+  - Sharing from a chat without a call: `fireCallingIntent` → `joinCallFromIntent(sharingSourceId)`.
+
+## 10. While presenting
+### Sharing control bar (presenter toolbar window, module 827897; layouts `presenterToolbar` / `presenterToolbarMinimized`)
+- A separate top-level window titled "Sharing control bar". It opens when `isScreenSharingOn` turns true (call-monitor service 459205) and closes when sharing stops or the call ends. Draggable (`enableDraggablePresenterToolbar` true).
+- **Expanded**, left to right:
+  1. drag handle (aria "Dragger"; arrow keys move it 20 px)
+  2. indicators: Recording, AI interpretation, duration
+  3. Camera, Mic (no ▾)
+  4. Give control, Share sound, Optimize, Layout, Annotate
+  5. Chat, People, More
+  6. Pause (only with `enableScreenSharePauseResume`; off live)
+  7. "Stop sharing"
+  8. Pin
+  - Grouping is AlwaysKeep, template Inline, no slot grouping, **no tooltips**.
+- **Minimized**: handle, badge "You're sharing your screen" / "You're sharing a window" / "You've paused sharing", then the text button "Stop sharing" (+ Pause). Hovering or clicking the badge expands it.
+- Sizes:
+  - Expanded: height 55. Width = content + 22, max 790 minus a compensation for each hidden button (video 56, mic 56, give control 70, annotate 56, share sound 70, optimize 56, layout 56, people 56, chat 56, plus 100 when the share didn't start from a chat). Never wider than 90% of the screen.
+  - Minimized: 297×35 (+143 wide when paused).
+- Position: centred on the shared screen, 8 px from its top (5 px minimized), never above the work area. Remembered per call (`setPresenterToolbarPosition`, saved after a move of more than 5 px).
+- Auto-minimizes after `draggablePresenterToolbarTimeoutInMs` 4000 ms, unless hovered, focused or pinned. Fades in after 150 ms.
+- Pin aria: "Pin toolbar" / "Unpin toolbar". Announcements: "Sharing control bar is pinned." / "…unpinned."
+- Ctrl+Shift+Space (global) expands and focuses it, announcing "Entering Sharing control bar. To bring Sharing control bar back, use Shift + Ctrl + Space".
+- Buttons:
+  - **Give control** → "Take back" while someone else has control.
+    - Opens a searchable list: "Give control of your screen to" / "Give control of your window to".
+    - Give: `screenSharingGiveControlRequest(userId)`. Take back: `screenSharingTerminateControlRequest`.
+    - Disabled in Side-by-side or Reporter ("Unavailable with this layout."), during multi-share, by policy, or when no viewer can control ("Participants are not allowed to control the shared content").
+    - With PowerPoint slide control it becomes a menu: "Of your window" / "Of your slides".
+  - **Share sound**: "Share system sound is on" / "…off".
+  - **Optimize**: "Optimize for video content is on" / "…off".
+  - **Layout**: radio menu of the 4 presenter modes → `setSharingUpdateLayout`.
+  - **Annotate**: presenter or organizer, whole-screen shares only (`sharingSourceType=="Monitor"`).
+  - Flags: `enableGiveControlInPresenterToolbar`, `enableShareSystemAudio`, `enableAplT2`, `enableHighMotionScreenSharingButtonInUbar` (all true).
+- The red border around the shared screen is not drawn by JS. It is presumably native (unverified).
+
+### Viewer side (ScreensharingControlButton `Zw`, contextual group)
+
+| state | label / behaviour |
+|---|---|
+| NotInControl | "Take control" (tooltip "Take control of the presentation"). Dialog "Request control?" / "You'll control the content the presenter is sharing." [Cancel] [Request] → `screenSharingRequestControl` |
+| RequestSent | "Waiting for approval" (disabled) |
+| InControl | "Stop control" → `screenSharingReleaseControl`, announces "Screen control has been stopped" |
+| Disabled | "Requesting control is disabled by the sharer company's administrator" |
+| NotControlCapable | hidden |
+
+- Sharer alert (523673): "Presenter mode" / "{{displayName}} is requesting control." [Give control] [Deny]. Afterwards: "{{displayName}} has control." [Take control].
+- Viewer messages: "You have been given screen control", "You didn't get control" / "Your request for control wasn't accepted.", "The person sharing took control back."
+
+## 11. Compact view ("Meeting compact view", call-monitor service 459205; views 657347)
+- Desktop modern monitor (`enableModernCallMonitor` true).
+  - When the **call window is minimized** (becomes not visible), a separate always-on-top window opens, titled **"Meeting compact view | {title}"**. It closes when the call window becomes visible again.
+  - Not shown if the user turned on "Hide Call Monitor when minimizing meeting window".
+  - After 4 minimizes, a "Don't need the floating window?" prompt offers [Hide window] (211532).
+  - When a local share stops, the call window is shown again.
+- The in-app floating monitor for navigating away inside the main window is used only on web / single-window mode (`showCallMonitorOnWeb` false). On desktop the call has its own window (unverified whether the in-app monitor ever shows on desktop).
+- Views:
+  - Default `callMonitorDefaultView` "MultiParticipant": a horizontal gallery of up to 4 tiles ("speaker only" = 1 tile).
+  - While I'm sharing: a vertical Gallery (my share preview + my video).
+  - Lightweight speaker line: "{{name}} is speaking" / "You are speaking" / "Nobody is speaking" (500 ms debounce).
+  - The preference is saved in localStorage `callMonitorPreferredView`. Gallery size goes through `updateUserExperiencePreferences`.
+- Sizes:
+
+  | mode | size |
+  |---|---|
+  | Simple | 304×247 |
+  | Lightweight | 334 wide (382 with Pop out) × 120 |
+  | Gallery | 192 wide; height = segments + 78 (default 180) |
+  | Horizontal gallery | tile height ≤ 170; window ≥ 334+12 wide |
+
+  Placed bottom-right of the work area with a 30 px margin (or on the shared screen), capped at 75% of the screen. The last position is kept.
+- Title bar: title; view switch "Show only active speaker" / "Show more people" (or a menu: Show only speaker / Hide videos / Show videos / Show more people); "Minimize"; **"Maximize meeting window"**, which shows the call window again (`navigateToMainWindow`).
+- Toolbars (no labels, no ▾):
+
+  | layout (`KQ`) | used when | controls |
+  |---|---|---|
+  | callsMonitorForParticipant | Simple, not sharing | Camera, Mic, Share, Leave |
+  | callsMonitor | Simple, sharing | Camera, Mic, People, Share (+Recording, Duration) |
+  | lightweightCallsMonitorForParticipant | Lightweight / horizontal gallery, not sharing | Camera, Mic, Share, Pop out, Raise, React, People, Leave |
+  | lightweightCallsMonitor | as above, sharing | same, without Leave |
+  | lightweightSpeakerOnlyGallery | speaker-only | Camera, Mic, Share, Pop out, More (React, Raise, People), Leave |
+  | callsMonitorGalleryForParticipant / callsMonitorGallery | vertical gallery, not sharing / sharing | Camera, Mic, Share, Leave / Camera, Mic, People, Share |
+  | callsMonitorPstn / lightweightCallsMonitorPstn | PSTN | Mic, Leave |
+
+  The window title string is `calling_call_monitor_window_title`.
+
+## 12. Call ended
+- **Call quality survey** (UI 691083, logic 527114). Live `callQualityFeedbackUxStyle` = "ThumbsCombined", so **thumbs, not stars**.
+  - "How was the call quality?" ("How was the screen share quality?" for a share started from chat), with [Had issues] (rating 1) and [Good] (rating 5).
+  - Issue categories (Audio / Video / Screenshare / Live Captions) on the same page, with [Send feedback], [Dismiss] and "Privacy statement".
+  - Rating 5 submits immediately; the thank-you shows for 3 s. Auto-dismiss after 60 s.
+  - `submitCallFeedback` / `cancelCallFeedback`.
+  - Sampling (`samplingRatesForCQF`, desktop): 1:1 0.1, group 0.1, meeting 0.1, share-from-chat 0.1, streaming 1, PSTN 0, interop 0. Needs `enableDesktopPostCallCQFForCallingAndMeetings` (true).
+- **Short call**: you hung up and the call lasted under 5000 ms (call) or 8000 ms (meeting), sampled at 1.0. Prompt: "We noticed your call was pretty short. Can you let us know why?", "Call ended: {{duration}}" / "Meeting ended: {{duration}}" (246648).
+- **Rejoin** screen (29382) only after abnormal ends: reconnect failed, removed, not admitted, breakout room closed. Buttons "Rejoin" / "Rejoin meeting" / "Call back" / "Try again" (`hideRejoinButton` false).
+  - Anonymous end screen (428492): "Did you leave by mistake?" / "Rejoin the call".
+  - "Call was answered elsewhere" (729518).
+  - Follow-up card "Pick up where you left off" / "Join again" / "Schedule meeting" (611318; conditions unverified).
+  - A normal leave closes the call window (plus the survey when sampled).
+
+## 13. Keyboard shortcuts in calls (Windows key map: class `P` in 504800; names in 790959)
+
+| keys | action | notes |
+|---|---|---|
+| Ctrl+Shift+M | Toggle mute (`ToggleMuteCurrentCall`, app-wide) | |
+| Ctrl+Space | Temporarily unmute (push to talk) | |
+| Ctrl+Shift+O | Toggle video (`ToggleVideoCurrentCall`, app-wide) | |
+| Ctrl+Shift+K | Raise or lower your hand | |
+| Ctrl+Shift+E | Toggle share content tray | |
+| Ctrl+Shift+H | Leave meeting or call (`LeaveCall`, app-wide; skips the leave confirmation) | |
+| Ctrl+Shift+Space | Go to the sharing toolbar | global (OS-wide) |
+| Ctrl+Shift+U | Toggle speaker | |
+| Ctrl+Shift+P | Toggle background blur | |
+| Ctrl+Shift+Y | Admit people from the lobby notification | |
+| Alt+Shift+C | Toggle live captions | |
+| Ctrl+Shift+L | Announce raised hands | screen reader |
+| Ctrl+Alt+Shift+S | Announce the active speaker | `enableAnnounceActiveSpeaker` true |
+| Ctrl+Shift+A / Ctrl+Shift+S / Ctrl+Shift+D | Accept video call (or screen share) / accept audio call / decline | global |
+| Ctrl+Shift+J / Ctrl+Shift+R | Join from the meeting-started toast / open meeting chat from the toast | global |
+| Alt+Shift+A / Alt+Shift+V | Start audio / video call | |
+| F11 | Full screen | |
+| Alt+Shift+ +, −, 0, arrows | Zoom in / zoom out / reset / pan shared content | |
+| Alt+Shift+1…5 | Like / Love / Applause / Laugh / Surprised | `enableMeetingReactionShortcuts` unset → off |
+| Ctrl+Shift+G | Visual Assist | `enableVisualAssist` false |
+
+- Tooltips append the shortcut: `{{tooltip}} ({{keyboardShortcut}})`.
+- Alternative profile "meetings_alt" (`enableShortcutProfiles`): Alt+A mute, Alt+V video, Alt+Y hand, Alt+Q leave, Alt+S share tray, Alt+H chat.
+
+## 14. Services touched by the call window (summary)
+
+| UI action | GraphQL operation | calling-stack method (448700/527114) |
+|---|---|---|
+| Join | `joinCallFromIntent(callingIntentId, joinOptions)` | — |
+| Cancel pre-join | `abandonCallingIntent(callingIntentId, "DismissPrejoinScreen")` | — |
+| Pre-join toggles | `setCallPrejoinState`, `updatePrejoinDevicesConfiguration` | — |
+| Mic / Camera | `toggleMuteWithState`, `toggleVideoWithState`, `confirmCallToggleState`, `togglePushToTalk` | same names |
+| Leave / End / all devices | `stopCall(callId, context, {forEveryone, forAllUserEndpoints})` | `stopCall` |
+| Hold / Resume | `toggleHoldCall(teamsCallId, context)` | `toggleHoldCall` |
+| Transfer / Consult / Merge / Park / DTMF | `transferCall`, `startConsultation`, `transferCallConsultation`, `mergeCalls`, `mergeConsultCall`, `parkCall`, `sendDtmf` | `callTransferService.transferCall`, … |
+| Raise / lower hand | `toggleRaiseHands(callId, skinTone)`, `lowerOtherParticipantsHand`, `lowerAllRaisedHands` | `publishState` / `removeState` / `removeStatesForEveryone` (RaiseHands) |
+| Reaction | `sendMeetingReaction` (fallback `sendMeetingReactionLiveState`) | calling service / LiveStateBroadcast |
+| Roster | `addParticipant1`, `muteParticipant1`, `muteAllParticipants1`, `removeParticipant1`, `promoteAttendeeToPresenter`, `demotePresenterToAttendee`, `updateAttendeeRestrictions`, `updateCallParticipantRestrictions`, `updateMeetingLock`, `renameParticipant` | `callMuteService`, `addParticipantService`, `changeParticipantRole`, `lockMeetingsService` |
+| Lobby | `admitParticipant1`, `admitAllParticipants1`, `denyParticipant` | `callLobbyService` |
+| Share | `startSharing`, `stopSharing`, `tryToggleIncludeSystemAudio`, `setSharingUpdateLayout`, `screenSharingGiveControlRequest` / `RequestControl` / `ReleaseControl` / `TerminateControlRequest` | same names |
+| Recording / transcript / captions | `startRecording`, `stopRecording`, `startTranscript`, `startRecordingAndTranscript`, `startClosedCaptions`, `stopClosedCaptions` | |
+| Other videos | `toggleIncomingVideo(callId)` | |
+| Layout prefs / toolbar customization | `updateUserExperiencePreferences{stageSettings{preferredLayout, preferredGallerySize, isMyselfInGrid, callingControlsPreferences}}`, `setCallingControlsSessionSettings` | — |
+| Backgrounds | `applyVideoBackgroundEffects`, `downloadVideoBackgroundImage`; upload POST `${deepLinkDomain}/maglev/custom-video-background/upload` | |
+| Feedback | `submitCallFeedback`, `cancelCallFeedback`, `openFeedbackDialog` | |
+
+## OST status against this spec
+- [ ] Toolbar order from the live `Inline` preset (§1.3):
+      `[timer] … Chat, People, Raise, React, View, Controls, Notes, Rooms, Apps, More | Camera, Mic, Share | Leave`,
+      with labels under 48×(48–72) px buttons and dividers per the grouping rules.
+- [ ] Layout chosen per call type (§1.1). A group call uses the meeting (`default`) layout.
+- [ ] 1:1 bar: no Raise, React, Notes or Rooms. Transfer, Consult, Dial pad and Hold on the bar.
+- [ ] 1:1 PSTN bar: no Camera, Share or View.
+- [ ] Visibility and disabled-reason rules per role and meeting type (§1.4). Notes only in private/channel meetings; Rooms only for the organizer of a scheduled meeting; Controls only for the organizer; End meeting only for the organizer or a moderator.
+- [ ] Width-driven overflow into More (§1.5): AsFirst items from the right first, then React and Raise; More, Camera, Mic, Share and Leave never overflow. Overflowed items appear at the top of More.
+- [ ] Clicks are suppressed for 2000 ms after the toolbar layout shifts under the pointer.
+- [ ] More menu groups and items exactly as §1.8. Devices is hidden in favour of "Video effects and settings" / "Audio settings" while `enableAVFramework` is on. The Call ▸ items are flat.
+- [ ] Timer format `MM:SS` / `HH:MM:SS` / `--:--`.
+- [ ] Pre-join (§2):
+  - [ ] classic layout, camera off by default (anonymous: on)
+  - [ ] audio options in order with the wide and narrow subtitles; narrow layout below 720 px
+  - [ ] cached audio choice, but Room, None and Follow are never cached
+  - [ ] "Background filters" pane; tile click applies immediately
+  - [ ] Join builds `joinOptions` as specified; Cancel abandons the intent
+  - [ ] lobby texts "Hi, {name}. Someone will let you in shortly."
+- [ ] Camera ▾ and Mic ▾ flyouts with exact sections, and the ordered disabled-reason tooltips (§3).
+- [ ] Leave (§4):
+  - [ ] split menu only for the organizer, a moderator, or multiple own endpoints
+  - [ ] "End the meeting?" confirmation; `stopCall` flags
+  - [ ] leave confirmation only while sharing, or when the user setting is on
+- [ ] Hold/Resume, Transfer dialog (V2), Consult, Merge, Park (pickup code), Dial pad (§5).
+- [ ] People pane (§6):
+  - [ ] header actions and More actions menu with its conditions
+  - [ ] section order, titles and counts; 20-row cap with "See more"
+  - [ ] sort: raised hands, then self, then name
+  - [ ] row icons
+  - [ ] participant menu order; Remove has no confirmation
+  - [ ] lobby admit/deny, Admit all, waiting toast
+- [ ] Raise hand (§7): rank queue numbers, 10 s popup, People badge count, auto-lower prompt after 3 s of speaking.
+- [ ] View menu items, labels and conditions (§8.1). Large gallery only on limited devices, enabled at 9 videos. Gallery size 4/9/16/49, default 16.
+- [ ] Stage (§8.2):
+  - [ ] default Gallery with self in grid
+  - [ ] 16:9 grid-fitting algorithm with a 2 px inset; side-bar/top-bar rules; automatic gallery-at-top
+  - [ ] pagination strip
+  - [ ] active-speaker swap rules; pins (max 9) and spotlight (max 7)
+- [ ] Reactions (§8.3):
+  - [ ] 5 reactions; not in 1:1 calls
+  - [ ] tile overlay for 4250 ms with size steps by tile height
+  - [ ] floating overlay animation (2.133 s, easing, scale/travel steps)
+- [ ] Share tray (§9): classic tray, Include sound, Presenter mode, Screen grid (max 4), Window drill-down, Whiteboard, PowerPoint/Excel Live; `startSharing` arguments.
+- [ ] Sharing control bar (§10): separate window, expanded/minimized sizes, 4 s auto-minimize, pin, Ctrl+Shift+Space; Give/Take control flows on both sides.
+- [ ] Compact view (§11): opens only when the call window is minimized; title "Meeting compact view | {title}"; sizes and position; per-mode toolbars without labels; "Maximize meeting window".
+- [ ] Call ended (§12): thumbs survey ("Had issues" / "Good") sampled at 10%; short-call prompt; Rejoin only after abnormal ends.
+- [ ] Keyboard shortcuts (§13), including the global ones and the shortcut text in tooltips.

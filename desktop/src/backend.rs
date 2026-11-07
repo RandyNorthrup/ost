@@ -15,6 +15,11 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use serde_json::json;
 use teams_cli::api::{self, client::TeamsClient};
+
+unsafe extern "C" {
+    /// Put text (and its HTML form) on the clipboard (src/native.cpp).
+    fn ost_set_clipboard(text: *const core::ffi::c_char, html: *const core::ffi::c_char);
+}
 use teams_cli::calling::incoming::{ActiveCall, CallAuth, IncomingCall};
 use teams_cli::calling::outgoing::{self, OutgoingCall};
 use teams_cli::calling::webrtc_audio::Reoffer;
@@ -52,6 +57,9 @@ pub mod qobject {
         #[qproperty(QString, store_json)]
         /// A channel's tabs: {channel, tabs: [{id, name, app, url}], error}.
         #[qproperty(QString, channel_tabs_json)]
+        /// The last tab change's outcome: {op, tab, ok} (its dialog shows
+        /// Teams' failure text, or closes).
+        #[qproperty(QString, channel_tab_result)]
         #[qproperty(bool, store_busy)]
         #[qproperty(QString, channel_files_json)]
         #[qproperty(bool, channel_files_busy)]
@@ -314,8 +322,18 @@ pub mod qobject {
             channel_name: &QString,
         );
 
+        /// Copy link to tab: Teams' deep link, as rich text with the tab's
+        /// name (`tab_json` is the tab as channelTabsJson gives it).
+        #[qinvokable]
+        fn copy_tab_link(
+            self: &Backend,
+            team_id: &QString,
+            channel_id: &QString,
+            tab_json: &QString,
+        );
         /// A channel tab's menu: "rename" (to `arg`), "left", "right" or
-        /// "remove" tab `tab_id`; then the tabs reload.
+        /// "remove" tab `tab_id`; the outcome goes to channelTabResult and
+        /// the tabs reload.
         #[qinvokable]
         fn channel_tab_change(
             self: Pin<&mut Backend>,
@@ -560,6 +578,7 @@ pub struct BackendRust {
     drive_busy: bool,
     store_json: QString,
     channel_tabs_json: QString,
+    channel_tab_result: QString,
     /// The channel name channel_tabs_load was last given (reloads reuse it).
     channel_tabs_name: String,
     store_busy: bool,
@@ -3284,6 +3303,43 @@ impl qobject::Backend {
         });
     }
 
+    pub fn copy_tab_link(&self, team_id: &QString, channel_id: &QString, tab_json: &QString) {
+        let Ok(tab) = serde_json::from_str::<serde_json::Value>(&tab_json.to_string()) else {
+            return;
+        };
+        let s = |k: &str| {
+            tab.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let t = api::tabs::Tab {
+            id: s("id"),
+            name: s("name"),
+            app_id: s("app_id"),
+            kind: api::tabs::Kind::Extension,
+            entity_id: s("entity_id"),
+            content_url: String::new(),
+            website_url: String::new(),
+            order: 0.0,
+            draggable: true,
+            menu: Vec::new(),
+            context_menu: Vec::new(),
+        };
+        let tenant = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.tenant_id())
+            .unwrap_or_default();
+        let (link, html) =
+            api::tabs::copy_link(&t, &channel_id.to_string(), &team_id.to_string(), &tenant);
+        let (Ok(link), Ok(html)) = (std::ffi::CString::new(link), std::ffi::CString::new(html))
+        else {
+            return;
+        };
+        // SAFETY: two NUL-terminated strings, copied by Qt before returning.
+        unsafe { ost_set_clipboard(link.as_ptr(), html.as_ptr()) };
+    }
+
     pub fn channel_tab_change(
         self: Pin<&mut Self>,
         op: &QString,
@@ -3304,8 +3360,8 @@ impl qobject::Backend {
             let result = async {
                 let client = TeamsClient::new().await?;
                 match op.as_str() {
-                    "rename" => api::tabs::rename(&client, &team, &channel, &tab, &arg).await,
-                    "remove" => api::tabs::remove(&client, &team, &channel, &tab).await,
+                    "rename" => api::tabs::rename(&client, &channel, &tab, &arg).await,
+                    "remove" => api::tabs::remove(&client, &channel, &tab).await,
                     "left" | "right" => {
                         api::tabs::move_tab(&client, &channel, &tab, op == "right").await
                     }
@@ -3315,10 +3371,11 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| {
                 if let Err(e) = &result {
-                    this.as_mut().set_status_text(QString::from(
-                        format!("Tab: {}", short_error(e)).as_str(),
-                    ));
+                    tracing::warn!("tab {op} failed: {e:#}");
                 }
+                let outcome = json!({ "op": op, "tab": tab, "ok": result.is_ok() }).to_string();
+                this.as_mut()
+                    .set_channel_tab_result(QString::from(outcome.as_str()));
                 let name = QString::from(this.rust().channel_tabs_name.as_str());
                 this.as_mut().channel_tabs_load(
                     &QString::from(team.as_str()),

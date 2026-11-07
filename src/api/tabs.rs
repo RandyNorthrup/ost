@@ -1,30 +1,74 @@
-//! A channel's tabs (Graph `/teams/{id}/channels/{id}/tabs`): Page (a
-//! Loop page), Notes (OneNote) and any apps added to the channel, with
-//! what each shows.
+//! A channel's tabs as Teams desktop has them (docs/spec/channel-tabs.md):
+//! the middle tier's pinned tabs (as Teams reads them, which includes the
+//! channel Page), each tab's kind, its menu (order, visibility and
+//! disabled states as Teams computes them), Teams' order algorithm for
+//! moves, and rename / remove / copy link through the same services.
+
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use super::client::TeamsClient;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct Tab {
-    pub id: String,
-    /// The tab's name ("Page", "Notes", ...).
-    pub name: String,
-    /// The app behind it ("Channel Pages", "OneNote", "Files", ...).
-    pub app: String,
-    /// What the tab shows, when it's a page on Microsoft's own hosts
-    /// (https only); empty otherwise.
-    pub url: String,
-    /// The tab's Teams link (Copy link to tab).
-    pub link: String,
-    /// Its place among the channel's tabs (Teams' sortOrderIndex).
-    pub order: i64,
+/// Files (Shared): a predefined StaticExtensionTab.
+pub const FILES_APP: &str = "3ed5b337-c2c9-4d5d-b7b4-84ff09a8fc1c";
+/// Channel Pages (Loop).
+pub const PAGES_APP: &str = "5ae80e49-7ada-461a-a6bd-c5df2e0cdb06";
+/// Website tabs.
+pub const WEB_APP: &str = "com.microsoft.teamspace.tab.web";
+
+/// The kinds of tab whose menus differ (Teams' `__typename`s).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum Kind {
+    /// Posts: no menu.
+    Posts,
+    /// Files (Shared): predefined static app tab.
+    StaticExtension,
+    /// A real channel Page.
+    ChannelPage,
+    Website,
+    /// An app tab (the current Notes app is one).
+    Extension,
+    /// A legacy OneNote tab (settings with a section URL).
+    OneNote,
 }
 
-/// What a tab's page may be told about where it is, as Teams fills its
-/// `{placeholders}` (the tab context).
+/// One entry of a tab's menu.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MenuItem {
+    /// Teams' key: popOut, expandTab, reloadTab, goToWebsite, copyLink,
+    /// renameTab, updateTab, devicePermissions, aboutTab, moveLeft,
+    /// moveRight, removeTab, or divider.
+    pub key: &'static str,
+    pub label: &'static str,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Tab {
+    /// The pinned tab id (`tab::<guid>`), or the app id for Files.
+    pub id: String,
+    pub name: String,
+    pub app_id: String,
+    pub kind: Kind,
+    pub entity_id: String,
+    /// Where the tab's content lives, placeholders filled (for native
+    /// views to identify it; never loaded as a page).
+    pub content_url: String,
+    /// What Open in browser opens (https only; empty when none).
+    pub website_url: String,
+    pub order: f64,
+    pub draggable: bool,
+    /// The chevron menu of the selected tab.
+    pub menu: Vec<MenuItem>,
+    /// The right-click menu.
+    pub context_menu: Vec<MenuItem>,
+}
+
+/// What a tab's URLs may be told about where they are, as Teams fills
+/// their `{placeholders}`.
 #[derive(Debug, Clone, Default)]
 pub struct TabContext {
     pub tenant: String,
@@ -34,179 +78,258 @@ pub struct TabContext {
     pub channel_name: String,
 }
 
-/// Fill a tab's content URL as Teams does: each `{name}` it knows becomes
-/// its (URL-encoded) value; unknown ones become empty.
+/// Fill a URL's `{name}` placeholders as Teams does (URL-encoded); unknown
+/// ones become empty.
 fn fill(url: &str, ctx: &TabContext, entity_id: &str) -> String {
     let enc = |v: &str| url::form_urlencoded::byte_serialize(v.as_bytes()).collect::<String>();
-    let session = uuid::Uuid::new_v4().to_string();
     let mut out = String::new();
     let mut rest = url;
     while let Some(i) = rest.find('{') {
         let Some(j) = rest[i..].find('}') else { break };
         out.push_str(&rest[..i]);
         let value = match &rest[i + 1..i + j] {
-            "locale" => "en-us".to_string(),
-            "tid" | "tenantId" => ctx.tenant.clone(),
-            "upn" | "userPrincipalName" | "loginHint" => ctx.upn.clone(),
-            "groupId" | "teamId" => ctx.team.clone(),
-            "channelId" => ctx.channel.clone(),
-            "channelName" => ctx.channel_name.clone(),
-            "entityId" => entity_id.to_string(),
-            "theme" => "default".to_string(),
-            "hostClientType" => "web".to_string(),
-            "channelType" | "teamType" => "Standard".to_string(),
-            "ringId" => "general".to_string(),
-            "sessionId" | "appSessionId" => session.clone(),
-            _ => String::new(),
+            "locale" => "en-us",
+            "tid" | "tenantId" => &ctx.tenant,
+            "upn" | "userPrincipalName" | "loginHint" => &ctx.upn,
+            "groupId" | "teamId" => &ctx.team,
+            "channelId" => &ctx.channel,
+            "channelName" => &ctx.channel_name,
+            "entityId" => entity_id,
+            "theme" => "default",
+            _ => "",
         };
-        out.push_str(&enc(&value));
+        out.push_str(&enc(value));
         rest = &rest[i + j + 1..];
     }
     out.push_str(rest);
     out
 }
 
-/// Only Microsoft 365 pages over https are shown in a tab, once filled in.
-fn safe_url(url: &str) -> String {
-    let ok = !url.contains('{')
-        && reqwest::Url::parse(url).is_ok_and(|u| {
-            u.scheme() == "https"
-                && u.host_str().is_some_and(|h| {
-                    h.ends_with(".sharepoint.com")
-                        || h.ends_with(".cloud.microsoft")
-                        || h == "www.onenote.com"
-                        || h.ends_with(".office.com")
-                })
-        });
-    if ok { url.to_string() } else { String::new() }
-}
-
-fn tabs_from(v: &serde_json::Value, ctx: &TabContext) -> Vec<Tab> {
-    let s = |t: &serde_json::Value, p: &str| {
-        t.pointer(p)
-            .and_then(|x| x.as_str())
-            .unwrap_or_default()
-            .to_string()
-    };
-    let mut tabs: Vec<Tab> = v
-        .get("value")
-        .and_then(|x| x.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|t| {
-            let name = s(t, "/displayName");
-            (!name.is_empty()).then(|| Tab {
-                id: s(t, "/id"),
-                url: safe_url(&fill(
-                    &s(t, "/configuration/contentUrl"),
-                    ctx,
-                    &s(t, "/configuration/entityId"),
-                )),
-                app: s(t, "/teamsApp/displayName"),
-                link: teams_link(&s(t, "/webUrl")),
-                order: s(t, "/sortOrderIndex").parse().unwrap_or(i64::MAX),
-                name,
-            })
-        })
-        .collect();
-    tabs.sort_by_key(|t| t.order);
-    tabs
-}
-
-/// A tab's link, when it's a Teams link (https, teams.microsoft.com).
-fn teams_link(url: &str) -> String {
-    let ok = reqwest::Url::parse(url)
-        .is_ok_and(|u| u.scheme() == "https" && u.host_str() == Some("teams.microsoft.com"));
-    if ok { url.to_string() } else { String::new() }
-}
-
-/// The Graph path of a channel (checked ids), for its tabs.
-fn channel_path(team_id: &str, channel_id: &str) -> Result<String> {
-    if uuid::Uuid::parse_str(team_id).is_err() {
-        bail!("Not a team");
+fn https_only(url: &str) -> String {
+    if !url.contains('{') && reqwest::Url::parse(url).is_ok_and(|u| u.scheme() == "https") {
+        url.to_string()
+    } else {
+        String::new()
     }
+}
+
+/// A tab's kind, from its app (Teams' app id → tab kind table).
+fn kind_of(app_id: &str, id: &str) -> Kind {
+    match app_id {
+        FILES_APP if id == FILES_APP => Kind::StaticExtension,
+        PAGES_APP => Kind::ChannelPage,
+        WEB_APP => Kind::Website,
+        "com.microsoft.teamspace.tab.notes" => Kind::OneNote,
+        _ => Kind::Extension,
+    }
+}
+
+/// A tab's menus, as Teams builds them (`We` plus its `c` / `m` filters,
+/// channel entry point, desktop host). `can_update` is the channel's
+/// isAllowedToUpdateTabs; `device_permissions` whether the tab's app
+/// declares any; `can_left` / `can_right` whether it can move.
+pub fn menus(
+    kind: Kind,
+    can_update: bool,
+    device_permissions: bool,
+    can_left: bool,
+    can_right: bool,
+) -> (Vec<MenuItem>, Vec<MenuItem>) {
+    use Kind::*;
+    if kind == Posts {
+        return (Vec::new(), Vec::new());
+    }
+    let item = |key, label| MenuItem {
+        key,
+        label,
+        enabled: true,
+    };
+    let divider = || MenuItem {
+        key: "divider",
+        label: "",
+        enabled: true,
+    };
+    // Per item: the tab kinds that keep it (module 542104).
+    let reload_expand = matches!(kind, StaticExtension | Extension | Website | OneNote);
+    let popout = matches!(kind, Extension | ChannelPage);
+    let copy_link = matches!(kind, Extension | Website | OneNote | ChannelPage);
+    let rename = can_update && matches!(kind, Website | Extension | ChannelPage);
+    let remove = can_update && matches!(kind, Website | Extension | OneNote | ChannelPage);
+    let about = matches!(kind, Extension | Website | OneNote);
+    let website = matches!(kind, Extension | Website | OneNote);
+    let perms = device_permissions && matches!(kind, Extension | StaticExtension);
+    let mut all: Vec<(MenuItem, bool)> = Vec::new();
+    let mut push = |m: MenuItem, submenu_only: bool, keep: bool| {
+        if keep {
+            all.push((m, submenu_only));
+        }
+    };
+    push(item("popOut", "Open tab in new window"), false, popout);
+    push(item("expandTab", "Expand tab"), true, reload_expand);
+    push(item("reloadTab", "Reload tab"), true, reload_expand);
+    push(item("goToWebsite", "Open in browser"), false, website);
+    push(item("copyLink", "Copy link to tab"), false, copy_link);
+    // The divider before Rename shows with Rename (ConfigDivider).
+    push(divider(), false, rename);
+    push(item("renameTab", "Rename"), false, rename);
+    push(item("devicePermissions", "App permissions"), false, perms);
+    push(item("aboutTab", "About this tab"), false, about);
+    push(
+        MenuItem {
+            key: "moveLeft",
+            label: "Move left",
+            enabled: can_left,
+        },
+        false,
+        true,
+    );
+    push(
+        MenuItem {
+            key: "moveRight",
+            label: "Move right",
+            enabled: can_right,
+        },
+        false,
+        true,
+    );
+    push(divider(), false, remove);
+    push(item("removeTab", "Remove"), false, remove);
+    let menu = all.iter().map(|(m, _)| m.clone()).collect();
+    let context = all
+        .iter()
+        .filter(|(_, s)| !s)
+        .map(|(m, _)| m.clone())
+        .collect();
+    (menu, context)
+}
+
+/// Teams' tab order constants (worker module 61009).
+const WALL: f64 = 100_000.0;
+const GAP: f64 = 10_000.0;
+const MIN_GAP: f64 = 50.0;
+
+fn mid(mut a: f64, b: f64) -> f64 {
+    if a < WALL && b > WALL {
+        a = WALL;
+    }
+    let c = (a + b) / 2.0;
+    let f = c.floor();
+    if f > a { f } else { c }
+}
+
+/// The order Teams gives tab `i` of `orders` (the list after the move,
+/// the moved tab at `i`; worker module 80574).
+pub fn new_order(i: usize, orders: &[f64]) -> f64 {
+    let n = orders.len();
+    if i == 0 && n == 1 {
+        WALL + GAP
+    } else if i == 0 {
+        let r = orders[1];
+        if r > WALL {
+            mid(WALL, r)
+        } else {
+            mid(0.0, r).max(r - MIN_GAP)
+        }
+    } else if i == n - 1 {
+        orders[i - 1].max(WALL) + GAP
+    } else {
+        mid(orders[i - 1], orders[i + 1])
+    }
+}
+
+/// djb2 as Teams computes it (module 428148: JS int32 shifts, uint32 result).
+fn djb2(s: &str) -> u32 {
+    let mut u: f64 = 5381.0;
+    for c in s.encode_utf16() {
+        let shifted = ((u as i64 as i32) << 5) as f64;
+        u = shifted + u + c as f64;
+    }
+    (u as i64) as u32
+}
+
+/// Copy link to tab, as Teams builds it (module 137308): the link, and the
+/// HTML that carries the tab's name.
+pub fn copy_link(tab: &Tab, channel_id: &str, group_id: &str, tenant_id: &str) -> (String, String) {
+    let enc = encode_uri_component;
+    let path = if tab.entity_id.is_empty() {
+        format!("channel/{}/{}", enc(channel_id), enc(&tab.id))
+    } else {
+        let key = format!("{}:{}", tab.app_id, tab.entity_id.replace('+', " "));
+        format!("entity/{}/_djb2_msteams_prefix_{}", tab.app_id, djb2(&key))
+    };
+    // JSON.stringify({subEntityId: undefined, channelId}) drops the
+    // undefined key.
+    let context = format!("{{\"channelId\":{}}}", serde_json::Value::from(channel_id));
+    let mut query = vec![format!("context={}", enc(&context))];
+    if !group_id.is_empty() {
+        query.push(format!("groupId={group_id}"));
+    }
+    if !tenant_id.is_empty() {
+        query.push(format!("tenantId={tenant_id}"));
+    }
+    let link = format!("https://teams.microsoft.com/l/{path}?{}", query.join("&"));
+    let esc = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;")
+    };
+    let html = format!(
+        "<div><a href=\"{}\" title=\"{}\" data-origin-known=\"true\">{}</a></div>",
+        esc(&link),
+        esc(&link),
+        esc(&tab.name)
+    );
+    (link, html)
+}
+
+/// JavaScript's encodeURIComponent (leaves `A-Z a-z 0-9 - _ . ! ~ * ' ( )`).
+fn encode_uri_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// A channel thread id, checked before it reaches a URL path.
+fn check_channel(channel_id: &str) -> Result<()> {
     let ok = channel_id.starts_with("19:")
         && channel_id.len() < 200
         && channel_id[3..]
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-_.@=".contains(&b));
-    if !ok {
-        bail!("Not a channel");
-    }
-    let channel = channel_id.replace(':', "%3A").replace('@', "%40");
-    Ok(format!("/teams/{team_id}/channels/{channel}/tabs"))
+    if ok { Ok(()) } else { bail!("Not a channel") }
 }
 
-/// A tab id as Graph gives it (a GUID, or Teams' own ids for built-in tabs).
-fn tab_id(id: &str) -> Result<&str> {
-    let ok = !id.is_empty()
-        && id.len() < 100
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b));
-    if ok { Ok(id) } else { bail!("Not a tab") }
+/// A pinned tab id (`tab::<guid>`), checked.
+fn check_tab(id: &str) -> Result<()> {
+    let guid = id.strip_prefix("tab::").unwrap_or("");
+    if uuid::Uuid::parse_str(guid).is_ok() {
+        Ok(())
+    } else {
+        bail!("Not a tab")
+    }
 }
 
-/// Rename a tab (Rename).
-pub async fn rename(
-    client: &TeamsClient,
-    team_id: &str,
-    channel_id: &str,
-    tab: &str,
-    name: &str,
-) -> Result<()> {
-    let name = name.trim();
-    if name.is_empty() || name.chars().count() > 128 {
-        bail!("A tab needs a name of up to 128 characters");
-    }
-    let path = format!("{}/{}", channel_path(team_id, channel_id)?, tab_id(tab)?);
-    client
-        .graph_beta_patch(&path, &serde_json::json!({ "displayName": name }))
-        .await?;
-    Ok(())
-}
-
-/// The places to give tabs so that tab `from` moves to index `to` of
-/// `tabs` (in their current order): just the two changed values when
-/// they differ, else the whole list renumbered (tabs added together can
-/// share one place, and then swapping changes nothing).
-pub fn reorder(tabs: &[(String, i64)], from: usize, to: usize) -> Vec<(String, i64)> {
-    let mut moved: Vec<(String, i64)> = tabs.to_vec();
-    if from >= moved.len() || to >= moved.len() || from == to {
-        return Vec::new();
-    }
-    let distinct = moved[from].1 != moved[to].1 && (from as i64 - to as i64).abs() == 1;
-    if distinct {
-        let (a, b) = (moved[from].clone(), moved[to].clone());
-        return vec![(a.0, b.1), (b.0, a.1)];
-    }
-    let t = moved.remove(from);
-    moved.insert(to, t);
-    moved
-        .into_iter()
-        .enumerate()
-        .map(|(k, (id, _))| (id, (k as i64 + 1) * 100))
-        .collect()
-}
-
-/// Move a channel's tab one place left or right among its own tabs (not
-/// Files, which is Shared), as Teams does: through Teams' middle tier
-/// (its pinned tabs, PATCHed with the tabs whose places change); Graph
-/// takes a tab's place but ignores it.
-pub async fn move_tab(
-    client: &TeamsClient,
-    channel_id: &str,
-    tab: &str,
-    right: bool,
-) -> Result<()> {
-    // Checked as a channel id (the team id is not needed here).
-    channel_path("00000000-0000-0000-0000-000000000000", channel_id)?;
-    let tab = tab_id(tab)?;
+async fn middle_tier(client: &TeamsClient) -> Result<(String, String)> {
     let base = client
         .middle_tier_url()
         .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
-    let list: serde_json::Value = client
+    Ok((base, token))
+}
+
+/// The middle tier's pinned tabs of a channel (Teams' GetPinnedTabs).
+async fn pinned(client: &TeamsClient, channel_id: &str) -> Result<Vec<serde_json::Value>> {
+    check_channel(channel_id)?;
+    let (base, token) = middle_tier(client).await?;
+    let v: serde_json::Value = client
         .http()
         .get(format!("{base}/v1.0/channels/{channel_id}/tabs"))
         .bearer_auth(&token)
@@ -215,84 +338,132 @@ pub async fn move_tab(
         .error_for_status()?
         .json()
         .await?;
-    let mut tabs: Vec<serde_json::Value> = list
+    let mut tabs = v
         .get("value")
         .and_then(|v| v.as_array())
         .cloned()
+        .unwrap_or_default();
+    tabs.sort_by(|a, b| order_of(a).total_cmp(&order_of(b)));
+    Ok(tabs)
+}
+
+fn order_of(t: &serde_json::Value) -> f64 {
+    t.get("order").and_then(|o| o.as_f64()).unwrap_or(f64::MAX)
+}
+
+fn str_at(t: &serde_json::Value, p: &str) -> String {
+    t.pointer(p)
+        .and_then(|x| x.as_str())
         .unwrap_or_default()
-        .into_iter()
-        // Files (Shared) is fixed; its id is its app's.
-        .filter(|t| t.get("id") != t.get("appId"))
-        .collect();
-    let order =
-        |t: &serde_json::Value| t.get("order").and_then(|o| o.as_f64()).unwrap_or(f64::MAX) as i64;
-    tabs.sort_by_key(order);
-    let id_of = |t: &serde_json::Value| {
-        t.get("id")
-            .and_then(|i| i.as_str())
-            .map(|i| i.trim_start_matches("tab::").to_string())
-            .unwrap_or_default()
+        .to_string()
+}
+
+/// Whether an app declares device permissions (middle tier app
+/// definitions, cached for the session).
+async fn declares_device_permissions(client: &TeamsClient, app_id: &str) -> bool {
+    static CACHE: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+    if let Some(v) = CACHE
+        .lock()
+        .ok()
+        .and_then(|c| c.as_ref()?.get(app_id).copied())
+    {
+        return v;
+    }
+    let Ok((base, token)) = middle_tier(client).await else {
+        return false;
     };
-    let i = tabs
-        .iter()
-        .position(|t| id_of(t) == tab)
-        .context("No such tab")?;
-    let j = if right { Some(i + 1) } else { i.checked_sub(1) }
-        .filter(|j| *j < tabs.len())
-        .context("The tab is already at that end")?;
-    let places = reorder(
-        &tabs
-            .iter()
-            .map(|t| (id_of(t), order(t)))
-            .collect::<Vec<_>>(),
-        i,
-        j,
-    );
-    let changed: Vec<serde_json::Value> = places
-        .iter()
-        .filter_map(|(id, place)| {
-            let mut t = tabs.iter().find(|t| id_of(t) == *id)?.clone();
-            t["order"] = serde_json::json!(*place as f64);
-            Some(t)
-        })
-        .collect();
-    client
-        .http()
-        .patch(format!("{base}/beta/channels/{channel_id}/tabs"))
-        .bearer_auth(&token)
-        .json(&changed)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(())
+    let enc: String = url::form_urlencoded::byte_serialize(app_id.as_bytes()).collect();
+    let v = async {
+        let d: serde_json::Value = client
+            .http()
+            .get(format!("{base}/beta/users/apps/definitions/{enc}"))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        Some(
+            d.get("devicePermissions")
+                .and_then(|p| p.as_array())
+                .is_some_and(|p| !p.is_empty()),
+        )
+    }
+    .await
+    .unwrap_or(false);
+    if let Ok(mut c) = CACHE.lock() {
+        c.get_or_insert_with(HashMap::new)
+            .insert(app_id.to_string(), v);
+    }
+    v
 }
 
-/// Remove a tab from the channel (Remove).
-pub async fn remove(
-    client: &TeamsClient,
-    team_id: &str,
-    channel_id: &str,
-    tab: &str,
-) -> Result<()> {
-    let path = format!("{}/{}", channel_path(team_id, channel_id)?, tab_id(tab)?);
-    client.graph_delete(&path).await?;
-    Ok(())
+/// Whether the signed-in user may change the channel's tabs (Teams'
+/// isAllowedToUpdateTabs for a standard channel: owners yes, guests no,
+/// members per the team's "create, update and remove tabs" setting; never
+/// in an archived team).
+async fn can_update_tabs(client: &TeamsClient, team_id: &str) -> bool {
+    let team: Option<serde_json::Value> = async {
+        client
+            .graph_get(&format!(
+                "/teams/{team_id}?$select=isArchived,memberSettings"
+            ))
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()
+    }
+    .await;
+    let Some(team) = team else { return false };
+    if team
+        .get("isArchived")
+        .and_then(|a| a.as_bool())
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let me = client.object_id().unwrap_or_default();
+    let owner = async {
+        let v: serde_json::Value = client
+            .graph_get(&format!("/groups/{team_id}/owners?$select=id&$top=999"))
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        Some(
+            v.get("value")?
+                .as_array()?
+                .iter()
+                .any(|o| o.get("id").and_then(|i| i.as_str()) == Some(me.as_str())),
+        )
+    }
+    .await
+    .unwrap_or(false);
+    owner
+        || team
+            .pointer("/memberSettings/allowCreateUpdateRemoveTabs")
+            .and_then(|a| a.as_bool())
+            .unwrap_or(false)
 }
 
-/// The tabs of a channel, in the channel's order (Graph beta, which has
-/// each tab's place).
+/// The tabs of a channel in Teams' order: Posts, then the pinned tabs
+/// (Files as Shared first), with their menus.
 pub async fn channel_tabs(
     client: &TeamsClient,
     team_id: &str,
     channel_id: &str,
     channel_name: &str,
 ) -> Result<Vec<Tab>> {
-    let path = channel_path(team_id, channel_id)?;
-    let v: serde_json::Value = client
-        .graph_beta(&format!("{path}?$expand=teamsApp"), None)
-        .await?
-        .json()
-        .await?;
+    if uuid::Uuid::parse_str(team_id).is_err() {
+        bail!("Not a team");
+    }
+    let pinned = pinned(client, channel_id).await?;
+    let can_update = can_update_tabs(client, team_id).await;
     let ctx = TabContext {
         tenant: client.tenant_id().unwrap_or_default(),
         upn: client.user_principal_name().unwrap_or_default(),
@@ -300,101 +471,350 @@ pub async fn channel_tabs(
         channel: channel_id.to_string(),
         channel_name: channel_name.to_string(),
     };
-    Ok(tabs_from(&v, &ctx))
+    let mut perms = HashMap::new();
+    for t in &pinned {
+        let app = str_at(t, "/appId");
+        if let std::collections::hash_map::Entry::Vacant(e) = perms.entry(app) {
+            let p = declares_device_permissions(client, e.key()).await;
+            e.insert(p);
+        }
+    }
+    Ok(tabs_from(&pinned, &ctx, can_update, &perms))
+}
+
+fn tabs_from(
+    pinned: &[serde_json::Value],
+    ctx: &TabContext,
+    can_update: bool,
+    perms: &HashMap<String, bool>,
+) -> Vec<Tab> {
+    let mut tabs = vec![Tab {
+        id: "com.microsoft.channeltabs.posts".into(),
+        name: "Posts".into(),
+        app_id: "com.microsoft.channeltabs.posts".into(),
+        kind: Kind::Posts,
+        entity_id: String::new(),
+        content_url: String::new(),
+        website_url: String::new(),
+        order: 1.0,
+        draggable: false,
+        menu: Vec::new(),
+        context_menu: Vec::new(),
+    }];
+    for t in pinned {
+        let id = str_at(t, "/id");
+        let app_id = str_at(t, "/appId");
+        let kind = kind_of(&app_id, &id);
+        let entity_id = str_at(t, "/configuration/entityId");
+        let files = kind == Kind::StaticExtension;
+        tabs.push(Tab {
+            name: if files {
+                "Shared".into()
+            } else {
+                str_at(t, "/name")
+            },
+            content_url: fill(&str_at(t, "/configuration/contentUrl"), ctx, &entity_id),
+            website_url: https_only(&fill(
+                &str_at(t, "/configuration/websiteUrl"),
+                ctx,
+                &entity_id,
+            )),
+            order: if files { 2.0 } else { order_of(t) },
+            draggable: !files,
+            menu: Vec::new(),
+            context_menu: Vec::new(),
+            id,
+            app_id,
+            kind,
+            entity_id: if files { String::new() } else { entity_id },
+        });
+    }
+    tabs.sort_by(|a, b| a.order.total_cmp(&b.order));
+    // Moves: not for fixed tabs; the first movable tab can't go left, the
+    // last can't go right.
+    let movable: Vec<usize> = (0..tabs.len()).filter(|&i| tabs[i].draggable).collect();
+    for (i, tab) in tabs.iter_mut().enumerate() {
+        let pos = movable.iter().position(|&m| m == i);
+        let can_left = pos.is_some_and(|p| p > 0);
+        let can_right = pos.is_some_and(|p| p + 1 < movable.len());
+        let device = perms.get(&tab.app_id).copied().unwrap_or(false);
+        let (menu, context) = menus(tab.kind, can_update, device, can_left, can_right);
+        tab.menu = menu;
+        tab.context_menu = context;
+    }
+    tabs
+}
+
+/// Move a tab one place left or right among the movable tabs, as Teams
+/// does: only the moved tab gets a new order (Teams' algorithm), saved
+/// with one UpdatePinnedTabs PATCH.
+pub async fn move_tab(
+    client: &TeamsClient,
+    channel_id: &str,
+    tab: &str,
+    right: bool,
+) -> Result<()> {
+    check_tab(tab)?;
+    let mut tabs: Vec<serde_json::Value> = pinned(client, channel_id)
+        .await?
+        .into_iter()
+        .filter(|t| str_at(t, "/appId") != FILES_APP)
+        .collect();
+    let i = tabs
+        .iter()
+        .position(|t| str_at(t, "/id") == tab)
+        .context("No such tab")?;
+    let j = if right { Some(i + 1) } else { i.checked_sub(1) }
+        .filter(|j| *j < tabs.len())
+        .context("The tab is already at that end")?;
+    let moved = tabs.remove(i);
+    tabs.insert(j, moved);
+    let orders: Vec<f64> = tabs.iter().map(order_of).collect();
+    let mut changed = tabs[j].clone();
+    changed["order"] = serde_json::json!(new_order(j, &orders));
+    patch_pinned(client, channel_id, &[changed]).await
+}
+
+async fn patch_pinned(
+    client: &TeamsClient,
+    channel_id: &str,
+    tabs: &[serde_json::Value],
+) -> Result<()> {
+    check_channel(channel_id)?;
+    let (base, token) = middle_tier(client).await?;
+    client
+        .http()
+        .patch(format!("{base}/beta/channels/{channel_id}/tabs"))
+        .bearer_auth(&token)
+        .json(&tabs)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+/// Why a new tab name can't be used, as Teams' Rename dialog says it
+/// (none when it can).
+pub fn rename_error(name: &str, others: &[String]) -> Option<&'static str> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        Some("Name is required")
+    } else if name.chars().count() > 128 {
+        Some("Tab name cannot exceed 128 characters.")
+    } else if others
+        .iter()
+        .any(|o| o.trim().to_lowercase() == trimmed.to_lowercase())
+    {
+        Some("You already have a tab with that name. Try a different one.")
+    } else {
+        None
+    }
+}
+
+/// Rename a tab, as Teams saves it (UpdatePinnedTabs with the new name).
+pub async fn rename(client: &TeamsClient, channel_id: &str, tab: &str, name: &str) -> Result<()> {
+    check_tab(tab)?;
+    let tabs = pinned(client, channel_id).await?;
+    let others: Vec<String> = tabs
+        .iter()
+        .filter(|t| str_at(t, "/id") != tab)
+        .map(|t| str_at(t, "/name"))
+        .collect();
+    if let Some(e) = rename_error(name, &others) {
+        bail!(e);
+    }
+    let mut t = tabs
+        .into_iter()
+        .find(|t| str_at(t, "/id") == tab)
+        .context("No such tab")?;
+    t["name"] = serde_json::json!(name.trim());
+    patch_pinned(client, channel_id, &[t]).await
+}
+
+/// Remove a tab, as Teams does (DeletePinnedTab).
+pub async fn remove(client: &TeamsClient, channel_id: &str, tab: &str) -> Result<()> {
+    check_channel(channel_id)?;
+    check_tab(tab)?;
+    let (base, token) = middle_tier(client).await?;
+    let id: String = url::form_urlencoded::byte_serialize(tab.as_bytes()).collect();
+    client
+        .http()
+        .delete(format!("{base}/beta/channels/{channel_id}/tabs/{id}"))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn tabs_keep_microsoft_pages_only() {
-        let v = serde_json::json!({"value": [
-            {"id": "5", "displayName": "Notes", "sortOrderIndex": "10000", "teamsApp": {"displayName": "OneNote"},
-             "webUrl": "https://teams.microsoft.com/l/entity/x", "configuration": {}},
-            {"id": "1", "displayName": "Page", "sortOrderIndex": "10", "teamsApp": {"displayName": "Channel Pages"},
-             "webUrl": "https://evil.example/l/channel",
-             "configuration": {"contentUrl": "https://contoso.sharepoint.com/:fl:/r/sites/x/General/Page.loop?web=1"}},
-            {"id": "2", "displayName": "Odd", "teamsApp": {"displayName": "Website"},
-             "configuration": {"contentUrl": "https://evil.example/sharepoint.com"}},
-            {"id": "3", "displayName": "Plain", "teamsApp": {"displayName": "X"},
-             "configuration": {"contentUrl": "http://contoso.sharepoint.com/x"}},
-            {"id": "4", "displayName": ""}
-        ]});
-        let t = tabs_from(&v, &TabContext::default());
-        assert_eq!(t.len(), 4);
-        // In the channel's order; tabs without a place go last.
-        assert_eq!(t[0].name, "Page");
-        assert_eq!(
-            (t[1].name.as_str(), t[1].link.as_str()),
-            ("Notes", "https://teams.microsoft.com/l/entity/x")
-        );
-        assert!(t[0].link.is_empty(), "links only to Teams");
-        let t: Vec<Tab> = t.into_iter().filter(|x| x.name != "Notes").collect();
-        assert_eq!(
-            (t[0].name.as_str(), t[0].app.as_str()),
-            ("Page", "Channel Pages")
-        );
-        assert!(t[0].url.starts_with("https://contoso.sharepoint.com/"));
-        assert!(t[1].url.is_empty() && t[2].url.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod id_tests {
-    use super::*;
-
-    #[test]
-    fn content_urls_are_filled_as_teams_does() {
-        let ctx = TabContext {
-            tenant: "t-1".into(),
-            upn: "a b@x.com".into(),
-            team: "g-1".into(),
-            channel: "19:c@thread.tacv2".into(),
-            channel_name: "General".into(),
-        };
-        let u = fill(
-            "https://www.onenote.com/teams/ChannelNotes?ui={locale}&tenantId={tid}&upn={upn}&groupId={groupId}&entityId={entityId}&x={unknown}",
-            &ctx,
-            "NOTES",
-        );
-        assert_eq!(
-            u,
-            "https://www.onenote.com/teams/ChannelNotes?ui=en-us&tenantId=t-1&upn=a+b%40x.com&groupId=g-1&entityId=NOTES&x="
-        );
-        assert_eq!(safe_url(&u), u);
-        assert!(safe_url("https://x/{left}").is_empty() && safe_url("http://x/").is_empty());
+    fn keys(m: &[MenuItem]) -> Vec<String> {
+        m.iter()
+            .map(|i| {
+                if i.enabled {
+                    i.key.to_string()
+                } else {
+                    format!("{}(off)", i.key)
+                }
+            })
+            .collect()
     }
 
+    /// The menus Windows Teams showed for OST Test Team › General
+    /// (read from the live client, 2026-11-06).
     #[test]
-    fn moves_swap_places_or_renumber() {
-        let t = |v: &[(&str, i64)]| {
-            v.iter()
-                .map(|(a, b)| (a.to_string(), *b))
-                .collect::<Vec<_>>()
+    fn menus_match_the_live_client() {
+        let pinned = vec![
+            serde_json::json!({"id": FILES_APP, "appId": FILES_APP, "name": "Files", "order": 2.0,
+                "configuration": {"entityId": "FileBrowserTabApp"}}),
+            serde_json::json!({"id": "tab::d7c1b5c5-6d6a-4f5e-8a3e-1f2b3c4d5e6f", "appId": "0d820ecd-def2-4297-adad-78056cde7c78",
+                "name": "Notes", "order": 10000.0, "configuration": {"entityId": "NOTES",
+                "contentUrl": "https://www.onenote.com/teams/ChannelNotes?groupId={groupId}"}}),
+            serde_json::json!({"id": "tab::a62a7cb0-4528-4db8-958e-c6a5ce6b364e", "appId": PAGES_APP,
+                "name": "Page", "order": 10.0, "configuration": {}}),
+        ];
+        let perms = HashMap::from([("0d820ecd-def2-4297-adad-78056cde7c78".to_string(), true)]);
+        let t = tabs_from(&pinned, &TabContext::default(), true, &perms);
+        let names: Vec<_> = t.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["Posts", "Shared", "Page", "Notes"]);
+        assert!(t[0].menu.is_empty() && t[0].context_menu.is_empty());
+        assert_eq!(
+            keys(&t[1].menu),
+            ["expandTab", "reloadTab", "moveLeft(off)", "moveRight(off)"]
+        );
+        assert_eq!(
+            keys(&t[1].context_menu),
+            ["moveLeft(off)", "moveRight(off)"]
+        );
+        assert_eq!(
+            keys(&t[2].menu),
+            [
+                "popOut",
+                "copyLink",
+                "divider",
+                "renameTab",
+                "moveLeft(off)",
+                "moveRight",
+                "divider",
+                "removeTab"
+            ]
+        );
+        assert_eq!(t[2].menu, t[2].context_menu);
+        assert_eq!(
+            keys(&t[3].menu),
+            [
+                "popOut",
+                "expandTab",
+                "reloadTab",
+                "goToWebsite",
+                "copyLink",
+                "divider",
+                "renameTab",
+                "devicePermissions",
+                "aboutTab",
+                "moveLeft",
+                "moveRight(off)",
+                "divider",
+                "removeTab"
+            ]
+        );
+        assert_eq!(
+            keys(&t[3].context_menu),
+            [
+                "popOut",
+                "goToWebsite",
+                "copyLink",
+                "divider",
+                "renameTab",
+                "devicePermissions",
+                "aboutTab",
+                "moveLeft",
+                "moveRight(off)",
+                "divider",
+                "removeTab"
+            ]
+        );
+        // Without update rights: no Rename / Remove (nor their dividers).
+        let t = tabs_from(&pinned, &TabContext::default(), false, &perms);
+        assert_eq!(
+            keys(&t[2].menu),
+            ["popOut", "copyLink", "moveLeft(off)", "moveRight"]
+        );
+    }
+
+    #[test]
+    fn moves_use_teams_order_algorithm() {
+        // Between neighbours: the floored midpoint.
+        assert_eq!(new_order(1, &[10.0, 0.0, 10000.0]), 5005.0);
+        // Crossing the wall: the left side counts as the wall.
+        assert_eq!(new_order(1, &[10.0, 0.0, 120000.0]), 110000.0);
+        // To the end: past the wall by a gap.
+        assert_eq!(new_order(1, &[10000.0, 0.0]), 110000.0);
+        assert_eq!(new_order(1, &[130000.0, 0.0]), 140000.0);
+        // To the front: half the right neighbour, at most a minimum gap below it.
+        assert_eq!(new_order(0, &[0.0, 10.0]), 5.0);
+        assert_eq!(new_order(0, &[0.0, 10000.0]), 9950.0);
+        assert_eq!(new_order(0, &[0.0, 120000.0]), 110000.0);
+        assert_eq!(new_order(0, &[0.0]), 110000.0);
+    }
+
+    #[test]
+    fn rename_errors_are_teams_own() {
+        let others = vec!["Notes".to_string(), "Page".to_string()];
+        assert_eq!(rename_error("  ", &others), Some("Name is required"));
+        assert_eq!(
+            rename_error(&"x".repeat(129), &others),
+            Some("Tab name cannot exceed 128 characters.")
+        );
+        assert_eq!(
+            rename_error(" notes ", &others),
+            Some("You already have a tab with that name. Try a different one.")
+        );
+        assert_eq!(rename_error("Plans", &others), None);
+    }
+
+    #[test]
+    fn copy_link_is_teams_deep_link() {
+        // djb2 as JS computes it (int32 shift, uint32 result).
+        assert_eq!(djb2(""), 5381);
+        assert_eq!(djb2("a"), 177670);
+        let mut tab = Tab {
+            id: "tab::a62a7cb0-4528-4db8-958e-c6a5ce6b364e".into(),
+            name: "Page <1>".into(),
+            app_id: PAGES_APP.into(),
+            kind: Kind::ChannelPage,
+            entity_id: String::new(),
+            content_url: String::new(),
+            website_url: String::new(),
+            order: 10.0,
+            draggable: true,
+            menu: Vec::new(),
+            context_menu: Vec::new(),
         };
-        // Distinct neighbours: just the two swap.
+        let (link, html) = copy_link(&tab, "19:ab@thread.tacv2", "g-1", "t-1");
         assert_eq!(
-            reorder(&t(&[("p", 10), ("n", 50), ("a", 90)]), 0, 1),
-            t(&[("p", 50), ("n", 10)])
+            link,
+            "https://teams.microsoft.com/l/channel/19%3Aab%40thread.tacv2/tab%3A%3Aa62a7cb0-4528-4db8-958e-c6a5ce6b364e?context=%7B%22channelId%22%3A%2219%3Aab%40thread.tacv2%22%7D&groupId=g-1&tenantId=t-1"
         );
-        // Shared places: the list is renumbered in the new order.
-        assert_eq!(
-            reorder(&t(&[("p", 10), ("a", 90), ("b", 90)]), 1, 2),
-            t(&[("p", 100), ("b", 200), ("a", 300)])
-        );
-        assert!(reorder(&t(&[("p", 10)]), 0, 1).is_empty());
+        assert!(html.ends_with(">Page &lt;1&gt;</a></div>"));
+        tab.entity_id = "NOTES".into();
+        tab.app_id = "0d820ecd-def2-4297-adad-78056cde7c78".into();
+        let (link, _) = copy_link(&tab, "19:ab@thread.tacv2", "", "");
+        assert!(link.starts_with(&format!(
+            "https://teams.microsoft.com/l/entity/0d820ecd-def2-4297-adad-78056cde7c78/_djb2_msteams_prefix_{}?",
+            djb2("0d820ecd-def2-4297-adad-78056cde7c78:NOTES")
+        )));
     }
 
     #[test]
     fn ids_are_checked_before_they_reach_a_path() {
-        assert!(tab_id("7d08c880-6b49-43d4-b45c-e38c27b69726").is_ok());
-        assert!(tab_id("tab::x").is_err() && tab_id("../x").is_err() && tab_id("").is_err());
-        assert!(channel_path("not-a-team", "19:x@thread.tacv2").is_err());
-        assert!(channel_path("1fac3ae3-c9c0-4ddb-90bb-58f52209c181", "19:a/b@thread").is_err());
-        assert_eq!(
-            channel_path("1fac3ae3-c9c0-4ddb-90bb-58f52209c181", "19:ab@thread.tacv2").unwrap(),
-            "/teams/1fac3ae3-c9c0-4ddb-90bb-58f52209c181/channels/19%3Aab%40thread.tacv2/tabs"
-        );
+        assert!(check_tab("tab::a62a7cb0-4528-4db8-958e-c6a5ce6b364e").is_ok());
+        assert!(check_tab("a62a7cb0-4528-4db8-958e-c6a5ce6b364e").is_err());
+        assert!(check_tab("tab::../x").is_err());
+        assert!(check_channel("19:ab@thread.tacv2").is_ok());
+        assert!(check_channel("19:a/b@thread").is_err());
     }
 }

@@ -2237,6 +2237,15 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         let sh = o.sharing.clone().unwrap();
         assert_eq!((sh.mid.as_str(), sh.payload_type), ("2", 102));
         let a = local.answer_sdp_with(&o, true);
+        // Without the video feature there's no H.264, so the sharing line is
+        // turned down; the rest of this test is about taking it.
+        if !cfg!(feature = "video") {
+            assert!(
+                a.contains("a=group:BUNDLE 0 1\r\n") && a.contains("m=video 0 RTP/SAVP 102"),
+                "{a}"
+            );
+            return;
+        }
         assert!(a.contains("a=group:BUNDLE 0 1 2\r\n"), "{a}");
         assert!(a.contains("m=video ") && a.contains("a=rtpmap:108 H264/90000"));
         // Screen sharing is accepted (bundled, mirrored, labelled), so a
