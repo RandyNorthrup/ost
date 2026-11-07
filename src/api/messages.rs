@@ -1192,6 +1192,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     // Which mention ids (`itemid`) are you, from properties.mentions.
     let my_mentions = my_mention_ids(props, me);
     let cards = if deleted { Vec::new() } else { cards };
+    // Files, cards, pictures, GIFs and stickers keep emoticons small (as in
+    // Teams, where any other image counts).
+    let may_be_big = files.is_empty() && cards.is_empty() && images.is_empty() && media.is_empty();
     Some(MessageView {
         quote,
         forward,
@@ -1204,7 +1207,12 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         html: if deleted {
             String::new()
         } else {
-            without_empty_paragraphs(&sanitize_html_marking(&content, &my_mentions))
+            let html = without_empty_paragraphs(&sanitize_html_marking(&content, &my_mentions));
+            if may_be_big && big_emoticons(&html) {
+                html.replace("width=\"20\" height=\"20\"", "width=\"50\" height=\"50\"")
+            } else {
+                html
+            }
         },
         text: if deleted { String::new() } else { text },
         edited,
@@ -1476,6 +1484,23 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
                 ));
                 continue;
             }
+            // A Teams emoticon: its Fluent picture, 20 px in the line, whose
+            // src the client fills in (EMOTICON_SRC + emoticon id).
+            if attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/Emoji"))
+                && let Some(id) = attr(tag, "itemid").filter(|id| {
+                    !id.is_empty()
+                        && id.len() <= 80
+                        && id
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                })
+            {
+                out.push_str(&format!(
+                    "<img src=\"{EMOTICON_SRC}{id}\" width=\"20\" height=\"20\" alt=\"{}\">",
+                    escape(&attr(tag, "alt").unwrap_or_default())
+                ));
+                continue;
+            }
             if let Some(alt) = attr(tag, "alt") {
                 out.push_str(&escape(&alt));
             }
@@ -1553,22 +1578,66 @@ pub fn custom_emoji_docs(html: &str) -> Vec<String> {
 }
 
 /// Sanitised HTML with each custom emoji as `:name:` (Teams' plain-text
-/// form, as in previews and notifications).
+/// form, as in previews and notifications) and each emoticon as its
+/// character.
 fn custom_emoji_as_text(html: &str) -> String {
     let mut out = String::new();
     let mut rest = html;
-    let marker = format!("<img src=\"{CUSTOM_EMOJI_SRC}");
-    while let Some(i) = rest.find(&marker) {
+    while let Some(i) = rest.find("<img src=\"ost-") {
         out.push_str(&rest[..i]);
         let end = rest[i..].find('>').map(|e| i + e + 1).unwrap_or(rest.len());
         let tag = &rest[i..end];
-        if let Some(name) = attr(tag, "alt") {
-            out.push_str(&format!(":{name}:"));
+        let alt = attr(tag, "alt").unwrap_or_default();
+        if tag.contains(CUSTOM_EMOJI_SRC) {
+            out.push_str(&format!(":{alt}:"));
+        } else {
+            out.push_str(&alt);
         }
         rest = &rest[end..];
     }
     out.push_str(rest);
     out
+}
+
+/// Where a Teams emoticon's picture goes in message HTML until the client
+/// puts its cached file there.
+pub const EMOTICON_SRC: &str = "ost-emoticon:";
+
+/// The emoticon ids a message's HTML shows.
+pub fn emoticon_ids(html: &str) -> Vec<String> {
+    html.split(EMOTICON_SRC)
+        .skip(1)
+        .filter_map(|r| r.split('"').next())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Teams' big emoticons (async-entry BigEmoticonPreprocessor): a message of
+/// only one to three emoticons or custom emoji, without other text,
+/// pictures or line breaks, shows them at 50 px instead of 20.
+pub fn big_emoticons(html: &str) -> bool {
+    let markers = html.matches("<img src=\"ost-").count();
+    if markers == 0 || markers > 3 || html.contains("<br") {
+        return false;
+    }
+    let mut rest = html;
+    let mut others = String::new();
+    while let Some(i) = rest.find("<img") {
+        others.push_str(&rest[..i]);
+        let end = rest[i..].find('>').map(|e| i + e + 1).unwrap_or(rest.len());
+        if !rest[i..end].starts_with("<img src=\"ost-") {
+            return false;
+        }
+        rest = &rest[end..];
+    }
+    others.push_str(rest);
+    super::strip_html(&others)
+        .replace(
+            ['\u{a0}', '\u{200b}', '\u{200c}', '\u{200d}', '\u{feff}'],
+            "",
+        )
+        .trim()
+        .is_empty()
 }
 
 /// The message HTML without the empty paragraphs Teams puts around GIFs,
@@ -3033,6 +3102,32 @@ mod tests {
                 .text,
             "😮"
         );
+        // Emoticons keep their place as pictures; one to three on their own
+        // are big (50 px), as in Teams.
+        let one = view_of(&m(emoji), "8:orgid:me", "Me").unwrap();
+        assert_eq!(emoticon_ids(&one.html), ["surprised"]);
+        assert!(
+            one.html
+                .contains(r#"<img src="ost-emoticon:surprised" width="50" height="50" alt="😮">"#),
+            "{}",
+            one.html
+        );
+        let with_text = view_of(
+            &m(&emoji.replace("<p><span", "<p>wow <span")),
+            "8:orgid:me",
+            "Me",
+        )
+        .unwrap();
+        assert!(
+            with_text.html.contains(r#"width="20" height="20""#) && with_text.text == "wow 😮",
+            "{} / {}",
+            with_text.html,
+            with_text.text
+        );
+        let four = emoji.replace("</span></p>", "</span>").repeat(4) + "</p>";
+        assert!(!big_emoticons(
+            &view_of(&m(&four), "8:orgid:me", "Me").unwrap().html
+        ));
         // A custom emoji keeps its place, its picture filled in later.
         let ce = r#"<p>hi <span contenteditable="false"><img alt="ost-test" itemid="ost-test;0-wus-d1-ab" itemtype="http://schema.skype.com/CustomEmoji" src="https://gw/v1/objects/0-wus-d1-ab/views/imgt2_anim" style="width:20px;height:20px;"></span></p>"#;
         let v = view_of(&m(ce), "8:orgid:me", "Me").unwrap();

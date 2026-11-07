@@ -208,6 +208,12 @@ Sent from Teams web into "OST group test" and read back raw. Both are plain `Ric
   - both were still (GIPHY's `giphy_s.gif`) under a play button: a 48 px circle `rgba(0,0,0,.8)` with a white play icon.
 - **Autoplay** (262200): `shouldAutoPlayGifs` = the message is newer than the chat's consumption horizon when it was opened. Otherwise it shows still with the play button, and clicking plays it.
 
+## 5c. Emoticons in the body and big emoticons
+- **Wire format**: an emoticon is `<span class="animated-emoticon-20-{id}"><img itemscope itemtype="http://schema.skype.com/Emoji" itemid="{id}" src="https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/{id}/default/20_f.png" title="{name}" alt="{char}" width="20" height="20" …></span>`. Teams draws its own Fluent picture for `{id}`, not the platform's emoji font.
+- **Big emoticons** (BigEmoticonPreprocessor, async entry): a message whose body is only 1–3 emoticons or custom emoji shows them at 50 px instead of 20. Any other text, a `<br>`, another image, files or cards keeps them at 20.
+- **Rendering**: a big-emoticon message has no bubble, like an image-only message; each line is 50 px tall.
+- **OST**: the sanitizer turns each Teams Emoji img into an `ost-emoticon:{id}` placeholder. The desktop app fetches the emoticon picture from the catalogue (50 px, or 100 px for big), caches it and swaps in the file. A text-only view falls back to the alt character.
+
 ## 6. RichText/UriObject — images, stickers, GIFs
 ### 6a. `Picture.1`, `Sticker.1` (289206 `SkypeImageDeserializer`)
 - **Wire**: `<URIObject type="Picture.1" uri="https://…/v1/objects/{id}" doc_id="{id}" width="…" height="…" alt="…"><OriginalName v="photo.jpg"/></URIObject>`.

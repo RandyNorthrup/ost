@@ -1613,6 +1613,7 @@ async fn load_messages(
     }
     for m in timeline.iter_mut() {
         localize_custom_emoji(&client, m).await;
+        localize_emoticons(m).await;
     }
     let last_id = timeline
         .iter()
@@ -1879,6 +1880,54 @@ async fn custom_emoji_file(
     }
     std::fs::write(&path, bytes)?;
     Ok(path)
+}
+
+/// Teams' emoticon catalogue, loading it if needed.
+async fn catalog_loaded() -> Option<std::sync::Arc<api::emoticons::Catalog>> {
+    if let Some(c) = emoticon_catalog().read().unwrap().clone() {
+        return Some(c);
+    }
+    match api::emoticons::load_catalog(&cache_base(), "en-us").await {
+        Ok(c) => {
+            let c = std::sync::Arc::new(c);
+            *emoticon_catalog().write().unwrap() = Some(c.clone());
+            Some(c)
+        }
+        Err(e) => {
+            tracing::warn!("emoticons unavailable: {}", short_error(&e));
+            None
+        }
+    }
+}
+
+/// Fill in the Teams emoticon pictures a message's HTML shows: Teams'
+/// Fluent pictures (the 100 px asset for big ones, 50 px in the line).
+async fn localize_emoticons(m: &mut api::messages::MessageView) {
+    let ids = api::messages::emoticon_ids(&m.html);
+    if ids.is_empty() {
+        return;
+    }
+    let Some(catalog) = catalog_loaded().await else {
+        return;
+    };
+    for id in ids {
+        let marker = format!("{}{id}\"", api::messages::EMOTICON_SRC);
+        if !m.html.contains(&marker) {
+            continue;
+        }
+        let big = m.html.contains(&format!("{marker} width=\"50\""));
+        let Some(url) = catalog.image_url(&id, if big { 100 } else { 50 }, false) else {
+            continue;
+        };
+        match api::emoticons::image_file(&url, &cache_base()).await {
+            Ok(path) => {
+                m.html = m
+                    .html
+                    .replace(&marker, &format!("file://{}\"", path.display()))
+            }
+            Err(e) => tracing::warn!("emoticon picture failed: {}", short_error(&e)),
+        }
+    }
 }
 
 /// Fill in the custom emoji pictures a message's HTML shows.

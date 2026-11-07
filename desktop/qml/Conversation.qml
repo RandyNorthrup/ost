@@ -1167,8 +1167,9 @@ Rectangle {
                 // Inline pictures, then GIFs and stickers.
                 readonly property var imgs: (msg.modelData.images || []).concat(msg.modelData.media || [])
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
-                // A picture on its own is shown bare, without the bubble.
-                readonly property bool bare: imageOnly && !root.isChannel
+                // A picture on its own, or big emoticons, show bare, without
+                // the bubble (as in Teams).
+                readonly property bool bare: (imageOnly || bigEmoticons) && !root.isChannel
                 readonly property real pad: bare ? 0 : 15.7
                 readonly property var files: msg.modelData.files || []
                 // Cards (Adaptive Cards rendered natively; Teams' frame).
@@ -1177,8 +1178,9 @@ Rectangle {
                 // Text shows unless the message is only a picture, only files
                 // or only cards.
                 readonly property bool showBody: !imageOnly && (msg.modelData.deleted || ((msg.modelData.text || "").length > 0 && !(cards.length > 0 && !(msg.modelData.html || "").length)))
-                // Teams' lines are 20 px each.
-                readonly property real bodyH: showBody ? Math.max(1, body.lineCount) * 20 : 0
+                // Teams' lines are 20 px; big emoticons (50 px) set their own.
+                readonly property bool bigEmoticons: (msg.modelData.html || "").indexOf("width=\"50\" height=\"50\"") >= 0
+                readonly property real bodyH: !showBody ? 0 : bigEmoticons ? Math.max(1, body.lineCount) * 50 : Math.max(1, body.lineCount) * 20
                 // A quoted reply's card sits at the top (Teams: 10.7 down, the
                 // text 4 under it).
                 readonly property real quoteShift: msg.modelData.quote ? 60.3
@@ -1196,7 +1198,7 @@ Rectangle {
                     : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
-                    : bare && files.length === 0 ? picsH
+                    : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : imgs.length > 0 ? picsTop + picsH + (showBody ? 8.6 : 8)
                     : bodyH + 15.3 + quoteShift
@@ -1339,7 +1341,7 @@ Rectangle {
                 TextEdit {
                     id: body
                     visible: bubble.showBody
-                    x: bubble.pad; y: 6.7 + bubble.quoteShift
+                    x: bubble.pad; y: bubble.bare ? 0 : 6.7 + bubble.quoteShift
                     width: Math.min(msg.maxBubble - 2 * bubble.pad, implicitWidth)
                     readOnly: true
                     selectByMouse: true
@@ -1352,7 +1354,7 @@ Rectangle {
                         : "<style>a { color: " + theme.brand + "; text-decoration: none; } "
                           + ".mention { color: " + theme.brand + "; } "
                           + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; } "
-                          + "p, div, li, body { line-height: 20px; -qt-line-height-type: fixed; }</style>"
+                          + "p, div, li, body { line-height: " + (bubble.bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; }</style>"
                           + (msg.modelData.html || msg.modelData.text)
                     textFormat: msg.modelData.deleted ? TextEdit.PlainText : TextEdit.RichText
                     wrapMode: TextEdit.Wrap

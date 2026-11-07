@@ -257,44 +257,6 @@ pub fn message_html(ams_v2: &str, e: &CustomEmoji) -> String {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ids_names_and_lists() {
-        let e = CustomEmoji::from_id("ost-test;0-wus-d1-abc").unwrap();
-        assert_eq!(
-            (e.shortcut.as_str(), e.document_id.as_str()),
-            ("ost-test", "0-wus-d1-abc")
-        );
-        assert!(CustomEmoji::from_id("laugh").is_none());
-        assert!(CustomEmoji::from_id("a;b;c").is_none());
-        assert!(
-            valid_name("ost-test") && !valid_name("OST") && !valid_name("a b") && !valid_name("")
-        );
-        assert_eq!(default_name("OST_Test logo.PNG"), "ost-test-logo");
-        assert_eq!(default_name("!!!.png"), "");
-        // As the live list read with nothing in it, and with two.
-        let empty = serde_json::json!({"categories": [{"id": "customEmoji", "emoticons": []}], "continuationToken": "1794076212"});
-        assert!(parse_list(&empty).is_empty());
-        let two = serde_json::json!({"categories": [{"emoticons": [
-            {"id": "old;0-a", "documentId": "0-a", "shortcuts": ["old"], "createdOn": 1, "creator": "x"},
-            {"id": "new;0-b", "documentId": "0-b", "shortcuts": ["new"], "createdOn": 2},
-            {"id": "gone;0-c", "isDeleted": true}
-        ]}]});
-        let got = parse_list(&two);
-        assert_eq!(
-            got.iter().map(|e| e.shortcut.as_str()).collect::<Vec<_>>(),
-            ["new", "old"]
-        );
-        assert_eq!(
-            message_html("https://gw", &got[0]),
-            r#"<span contenteditable="false"><img alt="new" itemid="new;0-b" itemtype="http://schema.skype.com/CustomEmoji" src="https://gw/v1/objects/0-b/views/imgt2_anim" style="width:20px;height:20px;"></span>"#
-        );
-    }
-}
-
 /// Your Teams messaging policy, from the middle tier's effective policies
 /// (`POST beta/users/effectivePolicies` with the namespaces wanted,
 /// services-policies 929782).
@@ -335,5 +297,43 @@ pub fn find_bool(v: &serde_json::Value, key: &str) -> Option<bool> {
             .or_else(|| m.values().find_map(|c| find_bool(c, key))),
         serde_json::Value::Array(a) => a.iter().find_map(|c| find_bool(c, key)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ids_names_and_lists() {
+        let e = CustomEmoji::from_id("ost-test;0-wus-d1-abc").unwrap();
+        assert_eq!(
+            (e.shortcut.as_str(), e.document_id.as_str()),
+            ("ost-test", "0-wus-d1-abc")
+        );
+        assert!(CustomEmoji::from_id("laugh").is_none());
+        assert!(CustomEmoji::from_id("a;b;c").is_none());
+        assert!(
+            valid_name("ost-test") && !valid_name("OST") && !valid_name("a b") && !valid_name("")
+        );
+        assert_eq!(default_name("OST_Test logo.PNG"), "ost-test-logo");
+        assert_eq!(default_name("!!!.png"), "");
+        // As the live list read with nothing in it, and with two.
+        let empty = serde_json::json!({"categories": [{"id": "customEmoji", "emoticons": []}], "continuationToken": "1794076212"});
+        assert!(parse_list(&empty).is_empty());
+        let two = serde_json::json!({"categories": [{"emoticons": [
+            {"id": "old;0-a", "documentId": "0-a", "shortcuts": ["old"], "createdOn": 1, "creator": "x"},
+            {"id": "new;0-b", "documentId": "0-b", "shortcuts": ["new"], "createdOn": 2},
+            {"id": "gone;0-c", "isDeleted": true}
+        ]}]});
+        let got = parse_list(&two);
+        assert_eq!(
+            got.iter().map(|e| e.shortcut.as_str()).collect::<Vec<_>>(),
+            ["new", "old"]
+        );
+        assert_eq!(
+            message_html("https://gw", &got[0]),
+            r#"<span contenteditable="false"><img alt="new" itemid="new;0-b" itemtype="http://schema.skype.com/CustomEmoji" src="https://gw/v1/objects/0-b/views/imgt2_anim" style="width:20px;height:20px;"></span>"#
+        );
     }
 }
