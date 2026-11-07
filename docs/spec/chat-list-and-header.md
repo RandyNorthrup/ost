@@ -920,3 +920,11 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
   - Three radios (12 px, 20 apart): "Don't include chat history" (default), "Include history from the past number of days:" with a days box (1 to 999, default 1), and "Include all chat history". The chosen label is #242424, the others #616161.
   - Cancel and Add (96 × 31.3) at (185.3 / 289.3, 160). Add is disabled until someone is picked.
 - **Request** (r_data-resolvers-chat `addMembersToConversation` → services-chat `ln` → 534565 `ke`). `PUT {chatsvc}/v1/threads/{id}/members` with `{"members":[{"id":mri,"role":"Admin","shareHistoryTime":t}]}`, where t is −1 for no history, 0 for all of it, or now − days × 86 400 000. Remove is `DELETE /v1/threads/{id}/members/{mri}`.
+- **Remove.**
+  - Hovering another member's row shows an X (`chat-header-remove-user-button`, 32 px, transparent, tooltip "Remove") about 30 in from the flyout's right edge.
+  - The X opens `remove-user-dialog`: 600 × 144.7, radius 8; title "Remove {name} from the conversation?" (20/28 semibold at 24.7), "They'll still have access to the chat history." at 59.3, and Cancel and Remove (96 × 31.3) at 88.7.
+  - With more than two people, the flyout also offers Leave.
+  - Every member shows presence, including Offline.
+- **Verified live (2026-11-07).**
+  - OST added randy@techit.pw to OST group test and then removed it. Teams web showed "OST Test 1 added Randy Northrup to the chat and shared chat history from the past 2 days." and "OST Test 1 removed Randy Northrup from the chat."
+  - The server moved the shared-history time to the chat's oldest message (about 2.2 days back, though 3 days were asked for). Teams rounds that to days.

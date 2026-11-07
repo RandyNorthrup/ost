@@ -2214,7 +2214,23 @@ Rectangle {
                         font.family: theme.font; font.pixelSize: 12; color: theme.text
                     }
                     HoverHandler { id: prowHover }
-                    ToolTip.visible: prowHover.hovered && !prow.modelData.me
+                    // Remove (chat-header-remove-user-button): an X on hover,
+                    // for others in a group chat.
+                    Rectangle {
+                        id: removeBtn
+                        visible: participants.canAdd && !prow.modelData.me && (prowHover.hovered || removeHover.hovered)
+                        x: 198.2; anchors.verticalCenter: parent.verticalCenter
+                        width: 32; height: 32; radius: 4
+                        color: "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: removeHover.hovered ? "dismiss-20-filled" : "dismiss-20"; size: 20; color: removeHover.hovered ? theme.brand : theme.textStrong }
+                        HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { participants.visible = false; memberRemoveDialog.start(prow.modelData) } }
+                        ToolTip.visible: removeHover.hovered
+                        ToolTip.text: "Remove"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Remove " + prow.modelData.name
+                    }
+                    ToolTip.visible: prowHover.hovered && !removeHover.hovered && !prow.modelData.me
                     ToolTip.text: prow.modelData.name
                     ToolTip.delay: 600
                     Accessible.role: Accessible.MenuItem
@@ -2251,6 +2267,57 @@ Rectangle {
         onAccepted: (people, days) => backend.addChatMembers(JSON.stringify(people.map(p => p.mri)), days)
     }
     function addPeopleForTest() { return addPeople }
+    // Teams' remove-user-dialog: 600 wide, radius 8; the title 20/28
+    // semibold at 24.7, the note at 59.3, Cancel and Remove at 88.7.
+    Popup {
+        id: memberRemoveDialog
+        parent: Overlay.overlay
+        modal: true; focus: true
+        width: 600; height: 144.7; padding: 0
+        anchors.centerIn: Overlay.overlay
+        closePolicy: Popup.CloseOnEscape
+        property var member: null
+        function start(m) { member = m; open() }
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: "#66000000" }
+        Text {
+            x: 24.7; y: 24.7; width: 550; height: 28; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+            text: "Remove " + (memberRemoveDialog.member ? memberRemoveDialog.member.name : "") + " from the conversation?"
+            font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
+        }
+        Text {
+            x: 24.7; y: 59.3; height: 20; verticalAlignment: Text.AlignVCenter
+            text: "They'll still have access to the chat history."
+            font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+        }
+        Row {
+            x: 375.3; y: 88.7; spacing: 8
+            Rectangle {
+                width: 96; height: 31.3; radius: 4
+                color: rCancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                HoverHandler { id: rCancelHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: memberRemoveDialog.close() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Cancel"
+            }
+            Rectangle {
+                width: 96; height: 31.3; radius: 4
+                color: rOkHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: "Remove"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
+                HoverHandler { id: rOkHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: memberRemoveDialog.confirm() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Remove"
+            }
+        }
+        function confirm() {
+            const m = member
+            close()
+            if (m) backend.removeChatMember(m.mri)
+        }
+    }
+    function memberRemoveDialogForTest() { return memberRemoveDialog }
 
     function wrapSelection(tag) { compose.wrapSelection(tag) }
     // Files picked to send with the next message (local paths).

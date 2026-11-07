@@ -290,6 +290,9 @@ pub mod qobject {
         /// the past `days` days. The roster reloads after.
         #[qinvokable]
         fn add_chat_members(self: Pin<&mut Backend>, mris_json: &QString, days: i32);
+        /// Remove someone from the open group chat; the roster reloads after.
+        #[qinvokable]
+        fn remove_chat_member(self: Pin<&mut Backend>, mri: &QString);
         /// Save or unsave a message (Teams' Save this message).
         #[qinvokable]
         fn set_message_saved(self: Pin<&mut Backend>, message_id: &QString, save: bool);
@@ -4320,6 +4323,28 @@ impl qobject::Backend {
                 }
                 Err(e) => this.as_mut().set_status_text(QString::from(
                     format!("Couldn't add people: {}", short_error(&e)).as_str(),
+                )),
+            });
+        });
+    }
+
+    pub fn remove_chat_member(self: Pin<&mut Self>, mri: &QString) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let mri = mri.to_string();
+        if chat_id.is_empty() || mri.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::remove_chat_member(&client, &chat_id, &mri).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().load_chat_members(),
+                Err(e) => this.as_mut().set_status_text(QString::from(
+                    format!("Couldn't remove them: {}", short_error(&e)).as_str(),
                 )),
             });
         });

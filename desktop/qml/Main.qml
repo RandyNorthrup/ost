@@ -2123,6 +2123,33 @@ Window {
         }
     }
 
+    // --remove-member-test=<mail> with --open-chat=<id> --shots=<dir>: open
+    // the roster, capture it with that member's remove button shown, open
+    // Teams' remove dialog, capture, Remove, log the roster after.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--remove-member-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const mail = (Qt.application.arguments.find(a => a.startsWith("--remove-member-test=")) || "").slice(21).toLowerCase()
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "remove-" + n + ".png"))
+            if (backend.currentChatId !== id) { const c0 = chatList.chats.find(c => c.id === id); backend.selectChat(id, c0 ? c0.name : "OST remove test"); return }
+            const roster = JSON.parse(backend.chatMembersJson || "[]")
+            const m = roster.find(x => (x.mail || "").toLowerCase() === mail)
+            const d = conversation.memberRemoveDialogForTest()
+            if (step === 1) conversation.openParticipantsForTest()
+            else if (step === 2) shot("roster")
+            else if (step === 3) { if (!m) { console.warn("REMOVE-TEST not in the chat"); Qt.quit() } else d.start({ mri: m.mri, name: m.name }) }
+            else if (step === 4) shot("dialog")
+            else if (step === 5) d.confirm()
+            else if (step === 8) { console.warn("REMOVE-TEST members", backend.chatMembersJson); shot("after") }
+            else if (step === 9) Qt.quit()
+            step++
+        }
+    }
+
     // --rename-test=<name> with --open-chat=<id>: rename the group chat,
     // log the chat list's name for it, then quit.
     Timer {

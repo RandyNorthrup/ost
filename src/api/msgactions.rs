@@ -795,6 +795,21 @@ pub async fn add_chat_members(
     Ok(())
 }
 
+/// Remove someone from a group chat as Teams does:
+/// `DELETE /v1/threads/{id}/members/{mri}`.
+pub async fn remove_chat_member(client: &TeamsClient, chat_id: &str, mri: &str) -> Result<()> {
+    let url = format!(
+        "{}/v1/threads/{}/members/{}",
+        client.chat_service_url(),
+        chat_id,
+        mri
+    );
+    client
+        .chat_request(reqwest::Method::DELETE, &url, &serde_json::json!({}))
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod add_members_tests {
     use super::*;
