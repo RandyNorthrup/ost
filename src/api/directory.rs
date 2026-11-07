@@ -89,7 +89,7 @@ pub enum PhotoOwner {
 
 /// A middle-tier token (audience api.spaces.skype.com), reused until close
 /// to expiry so pictures don't each mint one.
-async fn middle_tier_token() -> Result<String> {
+pub(crate) async fn middle_tier_token() -> Result<String> {
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
     static CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);

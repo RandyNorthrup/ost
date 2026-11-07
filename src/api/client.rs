@@ -23,6 +23,16 @@ impl TeamsClient {
         self.config.display_name()
     }
 
+    /// The signed-in tenant.
+    pub fn tenant_id(&self) -> Option<String> {
+        self.config.tenant_id()
+    }
+
+    /// The signed-in user's sign-in name (user@domain).
+    pub fn user_principal_name(&self) -> Option<String> {
+        self.config.user_principal_name()
+    }
+
     /// The signed-in user's object id, to recognise their own messages.
     pub fn object_id(&self) -> Option<String> {
         self.config.object_id()

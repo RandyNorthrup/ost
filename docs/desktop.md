@@ -84,6 +84,10 @@ Microsoft branding.
   (Table, Bulleted list, Checklist, Task list, Voting table, and more),
   which types Loop's own "/" commands. It uses OST's web profile; sign
   in there once.
+- **Channel tab menu**: the ▾ on the selected tab, as Teams': Copy link
+  to tab, Rename, Move left, Move right (only where there's room) and
+  Remove. Rename and Remove go through Graph; moves go through Teams'
+  middle tier (its pinned tabs), since Graph ignores a tab's place.
 - **Channel Shared tab**: the channel's folder in the team's SharePoint
   library, as Teams shows it: breadcrumb, Share, Copy link, Add shortcut
   to OneDrive, Create or upload (folder, files), Name / Modified /

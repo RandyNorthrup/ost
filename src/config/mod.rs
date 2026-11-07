@@ -72,6 +72,14 @@ impl Config {
         jwt_claim(&token.token, "name").filter(|n| !n.trim().is_empty())
     }
 
+    /// The signed-in user's sign-in name (`upn`, else `unique_name`).
+    pub fn user_principal_name(&self) -> Option<String> {
+        let token = self.access_token.as_ref()?;
+        jwt_claim(&token.token, "upn")
+            .or_else(|| jwt_claim(&token.token, "unique_name"))
+            .filter(|n| n.contains('@'))
+    }
+
     /// The signed-in user's Entra object id (`oid` claim), validated as a GUID.
     pub fn object_id(&self) -> Option<String> {
         let token = self.access_token.as_ref()?;

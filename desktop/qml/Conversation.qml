@@ -44,15 +44,14 @@ Rectangle {
         if (!isChannel || !backend.channelTabsJson) return []
         const r = JSON.parse(backend.channelTabsJson)
         if (r.channel !== chatId || !r.tabs) return []
-        // Teams pins the channel's Page right after Shared.
-        const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
-        return tabs.filter(t => t.app === "Channel Pages").concat(tabs.filter(t => t.app !== "Channel Pages"))
+        // In the channel's own order (Graph's sortOrderIndex).
+        return r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
     }
     readonly property var tabNames: isChannel ? ["Posts", "Shared"].concat(channelTabs.length ? channelTabs.map(t => t.name) : ["Notes"])
         : isSelf ? ["Chat", "Shared", "Storyline"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
     // Load a channel's tabs once it's known which team it's in.
     readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
-    onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId)
+    onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
     // The channel tab showing a web page in place (Page: the channel's
     // Loop page), when one is selected.
     readonly property var webTab: channelTabs.find(t => t.name === tab && t.url && t.app !== "OneNote") || null
@@ -215,8 +214,12 @@ Rectangle {
                     required property string modelData
                     required property int index
                     readonly property bool sel: root.tab === modelData || (index === 0 && root.tab === "")
+                    // A channel's own tab (Page, Notes, apps) has Teams'
+                    // ▾ menu while selected.
+                    readonly property var channelTab: root.channelTabs.find(t => t.name === modelData) || null
+                    readonly property bool menuable: sel && !!channelTab
                     // 6 px padding each side of the label.
-                    width: tabText.implicitWidth + 12; height: parent.height
+                    width: tabText.implicitWidth + 12 + (menuable ? 20 : 0); height: parent.height
                     // Tabs that would run under the header actions are hidden
                     // (opacity, so the row's layout doesn't depend on it).
                     readonly property bool fits: tabs.x + x + width <= header.width
@@ -231,15 +234,25 @@ Rectangle {
                         font.weight: tabItem.sel ? Font.DemiBold : Font.Normal
                         color: tabItem.sel ? theme.text : theme.textStrong
                     }
+                    FluentIcon {
+                        visible: tabItem.menuable
+                        x: tabText.x + tabText.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter
+                        name: "chevron-down-12"; size: 12; color: theme.text
+                    }
                     // Selected: a 3 px brand pill, inset 8 px, at the bottom.
                     Rectangle {
                         visible: tabItem.sel
-                        x: 8; width: tabText.implicitWidth - 4; height: 3; radius: 1.5
+                        x: 8; width: tabText.implicitWidth - 4 + (tabItem.menuable ? 20 : 0); height: 3; radius: 1.5
                         anchors.bottom: parent.bottom
                         color: theme.brand
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.tab = tabItem.index === 0 ? "" : tabItem.modelData }
+                    TapHandler {
+                        onTapped: {
+                            if (tabItem.menuable) { tabMenu.tab = tabItem.channelTab; tabMenu.parent = tabItem; tabMenu.y = tabItem.height; tabMenu.open(); return }
+                            root.tab = tabItem.index === 0 ? "" : tabItem.modelData
+                        }
+                    }
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData
                     Accessible.selected: sel
@@ -920,7 +933,7 @@ Rectangle {
     }
     // Tabs OST can't offer say so.
     Column {
-        visible: ["Notes", "Recap", "Storyline"].indexOf(root.tab) >= 0
+        visible: !root.webTab && ["Notes", "Recap", "Storyline"].indexOf(root.tab) >= 0
         anchors.centerIn: parent
         spacing: 8
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "info-16"; size: 32; color: theme.textSecondary }
@@ -930,6 +943,114 @@ Rectangle {
             font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
         }
     }
+
+    // A channel tab's menu, as Teams': Copy link to tab, Rename, Move left,
+    // Move right, Remove (moves only where there's room).
+    MenuPopup {
+        id: tabMenu
+        property var tab: null
+        readonly property int at: tab ? root.channelTabs.findIndex(t => t.id === tab.id) : -1
+        readonly property var actions: {
+            const a = []
+            if (tab && tab.link) a.push({ op: "link", label: "Copy link to tab", icon: "link-20" })
+            if (tab) a.push({ separator: true, op: "" }, { op: "rename", label: "Rename", icon: "edit-20" })
+            if (at > 0) a.push({ op: "left", label: "Move left", icon: "arrow-left-20" })
+            if (at >= 0 && at < root.channelTabs.length - 1) a.push({ op: "right", label: "Move right", icon: "arrow-right-20" })
+            if (tab) a.push({ separator: true, op: "" }, { op: "remove", label: "Remove", icon: "delete-20" })
+            return a
+        }
+        items: actions
+        width: 220
+        onPicked: i => {
+            const op = actions[i].op
+            if (op === "link") { linkCopier.text = tab.link; linkCopier.selectAll(); linkCopier.copy(); backend.statusText = "Link copied" }
+            else if (op === "rename") { renameField.text = tab.name; renameDialog.tab = tab; renameDialog.open() }
+            else if (op === "remove") { removeDialog.tab = tab; removeDialog.open() }
+            else if (op) backend.channelTabChange(op, root.teamId, root.chatId, tab.id, "")
+        }
+    }
+    TextEdit { id: linkCopier; visible: false }
+    Popup {
+        id: renameDialog
+        property var tab: null
+        anchors.centerIn: Overlay.overlay
+        modal: true; padding: 24; width: 440
+        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+        contentItem: Column {
+            spacing: 16
+            Text { text: "Rename tab"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Rectangle {
+                width: parent.width; height: 32; radius: theme.radius; color: theme.input
+                border.color: renameField.activeFocus ? theme.brand : theme.stroke
+                TextInput {
+                    id: renameField
+                    x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
+                    maximumLength: 128; selectByMouse: true
+                    Keys.onReturnPressed: renameDialog.save()
+                    Accessible.name: "Tab name"
+                }
+            }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                DialogButton { label: "Cancel"; onClicked: renameDialog.close() }
+                DialogButton { label: "Save"; primary: true; enabled: renameField.text.trim().length > 0; onClicked: renameDialog.save() }
+            }
+        }
+        function save() {
+            if (!renameField.text.trim()) return
+            backend.channelTabChange("rename", root.teamId, root.chatId, tab.id, renameField.text.trim())
+            if (root.tab === tab.name) root.tab = renameField.text.trim()
+            close()
+        }
+        onOpened: { renameField.forceActiveFocus(); renameField.selectAll() }
+    }
+    Popup {
+        id: removeDialog
+        property var tab: null
+        anchors.centerIn: Overlay.overlay
+        modal: true; padding: 24; width: 440
+        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
+        contentItem: Column {
+            spacing: 16
+            Text { width: parent.width; wrapMode: Text.Wrap; text: "Remove " + (removeDialog.tab ? removeDialog.tab.name : "") + "?"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text {
+                width: parent.width; wrapMode: Text.Wrap
+                text: "This will remove the tab for everyone in the channel."
+                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+            }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                DialogButton { label: "Cancel"; onClicked: removeDialog.close() }
+                DialogButton {
+                    label: "Remove"; primary: true
+                    onClicked: {
+                        backend.channelTabChange("remove", root.teamId, root.chatId, removeDialog.tab.id, "")
+                        if (root.tab === removeDialog.tab.name) root.tab = ""
+                        removeDialog.close()
+                    }
+                }
+            }
+        }
+    }
+    component DialogButton: Rectangle {
+        id: db
+        property string label
+        property bool primary: false
+        signal clicked()
+        width: dbText.implicitWidth + 32; height: 32; radius: theme.radius
+        opacity: enabled ? 1 : 0.5
+        color: primary ? (dbh.hovered ? theme.brandHover : theme.brandFill) : (dbh.hovered ? theme.rowHover : theme.input)
+        border.color: primary ? "transparent" : theme.stroke
+        Text { id: dbText; anchors.centerIn: parent; text: db.label; color: db.primary ? "white" : theme.text; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+        HoverHandler { id: dbh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: if (db.enabled) db.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: label
+    }
+    // Test hooks for the tab menu.
+    function tabMenuForTest(name) { const t = root.channelTabs.find(x => x.name === name); if (!t) return []; tabMenu.tab = t; return tabMenu.actions.filter(a => a.op).map(a => a.op) }
+    function tabChangeForTest(op, name, arg) { const t = root.channelTabs.find(x => x.name === name); if (t) backend.channelTabChange(op, root.teamId, root.chatId, t.id, arg || ""); return !!t }
 
     // Participants: who is in this chat.
     Rectangle {

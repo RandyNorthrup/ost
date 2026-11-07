@@ -307,7 +307,24 @@ pub mod qobject {
 
         /// A channel's tabs (Page, Notes, apps) into channel_tabs_json.
         #[qinvokable]
-        fn channel_tabs_load(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString);
+        fn channel_tabs_load(
+            self: Pin<&mut Backend>,
+            team_id: &QString,
+            channel_id: &QString,
+            channel_name: &QString,
+        );
+
+        /// A channel tab's menu: "rename" (to `arg`), "left", "right" or
+        /// "remove" tab `tab_id`; then the tabs reload.
+        #[qinvokable]
+        fn channel_tab_change(
+            self: Pin<&mut Backend>,
+            op: &QString,
+            team_id: &QString,
+            channel_id: &QString,
+            tab_id: &QString,
+            arg: &QString,
+        );
 
         /// A channel's Shared tab: list folder `item_id` of `drive_id`, or,
         /// with both empty, the channel's own folder (found from the team
@@ -543,6 +560,8 @@ pub struct BackendRust {
     drive_busy: bool,
     store_json: QString,
     channel_tabs_json: QString,
+    /// The channel name channel_tabs_load was last given (reloads reuse it).
+    channel_tabs_name: String,
     store_busy: bool,
     channel_files_json: QString,
     channel_files_busy: bool,
@@ -3236,12 +3255,22 @@ impl qobject::Backend {
         });
     }
 
-    pub fn channel_tabs_load(self: Pin<&mut Self>, team_id: &QString, channel_id: &QString) {
-        let (team, channel) = (team_id.to_string(), channel_id.to_string());
+    pub fn channel_tabs_load(
+        mut self: Pin<&mut Self>,
+        team_id: &QString,
+        channel_id: &QString,
+        channel_name: &QString,
+    ) {
+        let (team, channel, name) = (
+            team_id.to_string(),
+            channel_id.to_string(),
+            channel_name.to_string(),
+        );
+        self.as_mut().rust_mut().channel_tabs_name = name.clone();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
-                api::tabs::channel_tabs(&TeamsClient::new().await?, &team, &channel).await
+                api::tabs::channel_tabs(&TeamsClient::new().await?, &team, &channel, &name).await
             }
             .await;
             let _ = qt.queue(move |mut this| {
@@ -3251,6 +3280,51 @@ impl qobject::Backend {
                 };
                 this.as_mut()
                     .set_channel_tabs_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn channel_tab_change(
+        self: Pin<&mut Self>,
+        op: &QString,
+        team_id: &QString,
+        channel_id: &QString,
+        tab_id: &QString,
+        arg: &QString,
+    ) {
+        let (op, team, channel, tab, arg) = (
+            op.to_string(),
+            team_id.to_string(),
+            channel_id.to_string(),
+            tab_id.to_string(),
+            arg.to_string(),
+        );
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                match op.as_str() {
+                    "rename" => api::tabs::rename(&client, &team, &channel, &tab, &arg).await,
+                    "remove" => api::tabs::remove(&client, &team, &channel, &tab).await,
+                    "left" | "right" => {
+                        api::tabs::move_tab(&client, &channel, &tab, op == "right").await
+                    }
+                    _ => Err(anyhow::anyhow!("Unknown tab change")),
+                }
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if let Err(e) = &result {
+                    this.as_mut().set_status_text(QString::from(
+                        format!("Tab: {}", short_error(e)).as_str(),
+                    ));
+                }
+                let name = QString::from(this.rust().channel_tabs_name.as_str());
+                this.as_mut().channel_tabs_load(
+                    &QString::from(team.as_str()),
+                    &QString::from(channel.as_str()),
+                    &name,
+                );
             });
         });
     }
