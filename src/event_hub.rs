@@ -108,6 +108,9 @@ pub struct PushedMessage {
     pub text: String,
     /// Who the message @mentions (MRIs, lowercase).
     pub mentions: Vec<String>,
+    /// Sent as Urgent (`properties.importance`): Teams lets it through Do
+    /// not disturb.
+    pub urgent: bool,
 }
 
 /// The MRIs a message mentions, from `properties.mentions` (a JSON array,
@@ -180,12 +183,17 @@ pub fn message_events(json: &str) -> Vec<PushedMessage> {
                 .unwrap_or_default()
                 .to_string();
             let mentions = mentions_of(r.get("properties"));
+            let urgent = r
+                .pointer("/properties/importance")
+                .and_then(|i| i.as_str())
+                .is_some_and(|i| i.eq_ignore_ascii_case("urgent"));
             Some(PushedMessage {
                 conversation_id,
                 sender_name,
                 sender_mri,
                 text,
                 mentions,
+                urgent,
             })
         })
         .collect()

@@ -1021,6 +1021,32 @@ fn should_notify(
     mentioned || !(channel || mentions_only)
 }
 
+/// What Teams does with a toast (async-apps-notifications 876340 `jt`).
+#[derive(Debug, PartialEq, Eq)]
+enum Toast {
+    Show,
+    /// Presenting: shown, but as "You have a new notification".
+    Redacted,
+    Drop,
+}
+
+/// Teams' toast rule by your own presence: urgent (or from a priority
+/// contact) always shows, redacted while presenting; otherwise Presenting
+/// and Do not disturb drop it. Busy doesn't.
+fn toast_decision(availability: &str, presenting: bool, urgent: bool) -> Toast {
+    if urgent {
+        return if presenting {
+            Toast::Redacted
+        } else {
+            Toast::Show
+        };
+    }
+    if presenting || availability.eq_ignore_ascii_case("DoNotDisturb") {
+        return Toast::Drop;
+    }
+    Toast::Show
+}
+
 /// Longest message text shown in a notification.
 const NOTIFICATION_BODY_CHARS: usize = 200;
 
@@ -2380,6 +2406,19 @@ impl qobject::Backend {
         ) {
             return;
         }
+        // Your presence decides, as in Teams.
+        let availability = self
+            .rust()
+            .my_mri
+            .as_deref()
+            .and_then(|me| self.rust().presence.get(me).cloned())
+            .unwrap_or_default();
+        let presenting = teams_cli::api::presence::changes().borrow().call
+            == teams_cli::api::presence::CallState::Presenting;
+        let decision = toast_decision(&availability, presenting, m.urgent);
+        if decision == Toast::Drop {
+            return;
+        }
         let chat_name = if channel {
             self.channel_label(&m.conversation_id)
         } else {
@@ -2402,6 +2441,11 @@ impl qobject::Backend {
             format!("{chat_name}\n{text}")
         } else {
             text
+        };
+        let (title, body) = if decision == Toast::Redacted {
+            ("You have a new notification".to_string(), String::new())
+        } else {
+            (title, body)
         };
         let chat_id = m.conversation_id.clone();
         std::thread::spawn(move || {
@@ -4629,6 +4673,21 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod toast_tests {
+    use super::*;
+
+    #[test]
+    fn toasts_follow_teams_presence_rule() {
+        assert_eq!(toast_decision("Available", false, false), Toast::Show);
+        assert_eq!(toast_decision("Busy", false, false), Toast::Show);
+        assert_eq!(toast_decision("DoNotDisturb", false, false), Toast::Drop);
+        assert_eq!(toast_decision("DoNotDisturb", false, true), Toast::Show);
+        assert_eq!(toast_decision("DoNotDisturb", true, false), Toast::Drop);
+        assert_eq!(toast_decision("Available", true, true), Toast::Redacted);
     }
 }
 
