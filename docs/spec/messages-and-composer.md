@@ -275,6 +275,37 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 - Recording rows read "{{message}} at {{time}}".
 - An Event/Call row counts as ended when the content has `<ended/>` or `partlist type="ended"` (197100).
 
+### Verified on the live client (winpc, OST group test, 2026-11-06)
+- **Rows**: a control row is 28 px tall and a call row 36 px. Both are flush with the rows around them (no top padding).
+- **Icon**: 20×20 at row x 6, y 8, in NeutralForeground3 (#616161).
+- **Text**: 12/20 #616161 at x 40, y 10.
+- **Names**: regular weight (clickable personas), *not* bold. The spec above says "bold persona"; the live client shows weight 400.
+- **Call row**: the time, then an EM space (12 px), "Call ended", a no-break space, and the duration at weight **700**.
+- **Icons**, from table `ir` in module 349533, resolved to Fluent names:
+
+  | type | icon | type | icon | type | icon |
+  |---|---|---|---|---|---|
+  | AddMember | PersonAdd | DeleteMember | PersonArrowLeft | TopicUpdate | Edit |
+  | ModalityUpdate | Edit | PictureUpdate | PersonCircle | ThreadShared | PersonAdd |
+  | Call | Call | CallMissed | CallMissed | Meeting | Video |
+  | ScreenShare | ShareScreenStart | MemberJoined | CalendarAdd | MemberLeft | PersonArrowLeft |
+  | MemberRenamed | PersonEdit | RetentionDeleted | Chat | EscalationUpdate | AlertUrgent |
+  | MeetingPolicyUpdated | ErrorCircle | ShowHiddenChatHistory | Eye | Recording | Record |
+  | StopRecording | RecordStop | TrashCan | Delete | PinMessage | Pin |
+  | UnpinMessage | PinOff | ConsentInvites | PersonAdd | ReplyChainCreated | ChatMultiple |
+  | UploadedRecording | CloudArrowUp | Transcript | SlideTextEdit | MeetingScheduled | Calendar |
+  | MessageMoveCompleted | ChatCursor | CreateThread | Channel | AddCustomApp, DeleteCustomApp | Apps |
+  | GroupCopilot | Sparkle | | | | |
+
+  Each icon is a CompoundIcon: regular normally, filled on hover. Its appearance is the default, brand or red class.
+- **AddMember parsing** (75579 `ma`):
+  - The targets are the `<target>`s minus the initiator; bot ids are skipped.
+  - If no target is left, it is a self-join ("joined the conversation").
+  - Each `<detailedtargetinfo>` gives `<id>` and an optional `<friendlyName>`.
+  - `<sharehistorytime>` gives days = round((eventtime − sharehistorytime) / 86400000).
+- **Missed call** (75579 `rs`): ended, not a meeting, fewer than 2 participants, and not the third flag.
+- **"Call started" events produce no row.**
+
 ## 10. Channel posts and replies
 - **Subject**: `h2 data-tid="subject-line"`, 18px semibold, max-width 1028px,
   padding-bottom 16px (8px in the threaded view). The subject field in compose

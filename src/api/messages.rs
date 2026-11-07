@@ -70,6 +70,176 @@ pub struct MessageView {
     /// post, the post's id for a reply. Empty in chats.
     #[serde(default)]
     pub root_id: String,
+    /// For system events (kind "event"): what happened, as Teams' control
+    /// message renderer reads it; `text` then holds Teams' sentence.
+    #[serde(default)]
+    pub event: Option<ChatEvent>,
+}
+
+/// A chat's system event (ThreadActivity/*), as Teams parses it (module
+/// 75579): who did it, to whom, and the value (a new name).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ChatEvent {
+    /// Teams' control type: AddMember, DeleteMember, TopicUpdate,
+    /// PictureUpdate, MemberJoined, MemberLeft, MemberRenamed. Its icon is
+    /// Teams' (module 349533 `ir`).
+    pub kind: String,
+    pub actor: String,
+    pub targets: Vec<String>,
+    pub value: String,
+    /// Shared history, in days (Teams' shareHistoryDaysCount); none when
+    /// no history was shared.
+    pub history_days: Option<i64>,
+    /// Names given in the event itself (`friendlyName`), by MRI.
+    #[serde(skip)]
+    pub names: std::collections::HashMap<String, String>,
+}
+
+/// Every `<tag>…</tag>` value of `tag` in a control message, in order.
+fn tag_values(xml: &str, tag: &str) -> Vec<String> {
+    let (open, close) = (format!("<{tag}>"), format!("</{tag}>"));
+    let mut out = Vec::new();
+    let mut rest = xml;
+    while let Some(i) = rest.find(&open) {
+        let after = &rest[i + open.len()..];
+        let Some(j) = after.find(&close) else { break };
+        out.push(super::strip_html(&after[..j]).trim().to_string());
+        rest = &after[j + close.len()..];
+    }
+    out
+}
+
+/// A ThreadActivity message as Teams reads it: the parts its sentence
+/// needs, or none for types Teams doesn't show.
+pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
+    let kind = message_type.strip_prefix("ThreadActivity/")?;
+    let first = |t: &str| {
+        tag_values(content, t)
+            .into_iter()
+            .next()
+            .unwrap_or_default()
+    };
+    let actor = first("initiator");
+    let mut names = std::collections::HashMap::new();
+    // Each <detailedtargetinfo>: <id>, then an optional <friendlyName>.
+    for block in content.split("<detailedtargetinfo>").skip(1) {
+        let b = block
+            .split("</detailedtargetinfo>")
+            .next()
+            .unwrap_or_default();
+        if let (Some(id), Some(name)) = (
+            tag_values(b, "id").pop(),
+            tag_values(b, "friendlyName").pop(),
+        ) && !name.is_empty()
+        {
+            names.insert(id, name);
+        }
+    }
+    let mut targets: Vec<String> = tag_values(content, "target");
+    let ev = |kind: &str, targets: Vec<String>, value: String, history_days| ChatEvent {
+        kind: kind.into(),
+        actor: actor.clone(),
+        targets,
+        value,
+        history_days,
+        names: names.clone(),
+    };
+    match kind {
+        "AddMember" => {
+            if actor.is_empty() {
+                return None;
+            }
+            let joined = targets.iter().all(|t| *t == actor);
+            targets.retain(|t| *t != actor);
+            if joined {
+                return Some(ev("MemberJoined", vec![actor.clone()], String::new(), None));
+            }
+            let event_time: i64 = first("eventtime").parse().unwrap_or(-1);
+            let share: i64 = first("sharehistorytime").parse().unwrap_or(-1);
+            let days = (share >= 0 && event_time >= 0)
+                .then(|| ((event_time - share) as f64 / 86_400_000.0).round() as i64);
+            Some(ev("AddMember", targets, String::new(), days))
+        }
+        "DeleteMember" => {
+            (!targets.is_empty()).then(|| ev("DeleteMember", targets, String::new(), None))
+        }
+        "TopicUpdate" => Some(ev("TopicUpdate", Vec::new(), first("value"), None)),
+        "PictureUpdate" => Some(ev("PictureUpdate", Vec::new(), String::new(), None)),
+        "MemberJoined" | "MemberLeft" => {
+            if targets.is_empty() && !actor.is_empty() {
+                targets.push(actor.clone());
+            }
+            (!targets.is_empty()).then(|| ev(kind, targets, String::new(), None))
+        }
+        "MemberRenamed" => Some(ev("MemberRenamed", Vec::new(), first("value"), None)),
+        _ => None,
+    }
+}
+
+/// Teams' sentence for an event (module 75579's strings), with names.
+pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -> String {
+    let others = |n: usize| {
+        if n == 1 {
+            "1 other".to_string()
+        } else {
+            format!("{n} others")
+        }
+    };
+    // <1>, <1> and <2>, or <1> and N others.
+    let list = |ts: &[String]| -> String {
+        match ts.len() {
+            0 => String::new(),
+            1 => name(&ts[0]),
+            2 => format!("{} and {}", name(&ts[0]), name(&ts[1])),
+            n => format!("{} and {}", name(&ts[0]), others(n - 1)),
+        }
+    };
+    let actor = name(&e.actor);
+    match e.kind.as_str() {
+        "AddMember" => {
+            let base = format!("{actor} added {} to the chat", list(&e.targets));
+            match e.history_days {
+                None => format!("{base}."),
+                Some(0) => format!("{base} and shared all chat history."),
+                Some(1) => format!("{base} and shared chat history from the past day."),
+                Some(d) => format!("{base} and shared chat history from the past {d} days."),
+            }
+        }
+        "DeleteMember" => {
+            if e.targets.len() == 1 && e.targets[0] == e.actor {
+                format!("{actor} left the chat.")
+            } else if !e.actor.starts_with("8:") {
+                let verb = if e.targets.len() == 1 { "was" } else { "were" };
+                format!("{} {verb} removed from the chat.", list(&e.targets))
+            } else {
+                format!("{actor} removed {} from the chat.", list(&e.targets))
+            }
+        }
+        "TopicUpdate" if e.value.is_empty() => {
+            format!("{actor} removed the group name for this conversation.")
+        }
+        "TopicUpdate" if meeting => format!("{actor} named the meeting {}.", e.value),
+        "TopicUpdate" => format!("{actor} changed the group name to {}.", e.value),
+        "PictureUpdate" => format!("{actor} changed the group profile picture."),
+        "MemberJoined" => {
+            let verb = match (e.targets.len(), meeting) {
+                (1, true) => "was invited to the meeting",
+                (_, true) => "were invited to the meeting",
+                _ => "joined the conversation",
+            };
+            format!("{} {verb}.", list(&e.targets))
+        }
+        "MemberLeft" => {
+            let verb = match (e.targets.len(), meeting) {
+                (_, true) => "left the chat",
+                (1, false) => "no longer has access to the chat",
+                _ => "no longer have access to the chat",
+            };
+            format!("{} {verb}.", list(&e.targets))
+        }
+        "MemberRenamed" => format!("{actor} changed their display name to {}.", e.value),
+        _ => String::new(),
+    }
 }
 
 /// Teams' reaction keys and their emoji.
@@ -181,11 +351,65 @@ pub async fn read_timeline_page(
         .filter_map(|m| view_of(m, &me, &own_name))
         .collect();
     sort_by_arrival(&mut out);
+    name_events(client, chat_id, &mut out).await;
     let older = v.get("_metadata").and_then(backward_token);
     Ok(TimelinePage {
         messages: out,
         older,
     })
+}
+
+/// Fill in system events' sentences, resolving people's names (from the
+/// event, else Graph; remembered for the session).
+async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView]) {
+    use std::sync::{Mutex, OnceLock};
+    static NAMES: OnceLock<Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
+    let cache = NAMES.get_or_init(Default::default);
+    let mut wanted: Vec<String> = Vec::new();
+    for e in out.iter().filter_map(|m| m.event.as_ref()) {
+        let mut c = cache.lock().unwrap();
+        for (id, n) in &e.names {
+            c.entry(id.clone()).or_insert_with(|| n.clone());
+        }
+        for id in std::iter::once(&e.actor).chain(e.targets.iter()) {
+            if id.starts_with("8:orgid:") && !c.contains_key(id) && !wanted.contains(id) {
+                wanted.push(id.clone());
+            }
+        }
+    }
+    for id in wanted {
+        let oid = id.trim_start_matches("8:orgid:");
+        if uuid::Uuid::parse_str(oid).is_err() {
+            continue;
+        }
+        let name = async {
+            let v: serde_json::Value = client
+                .graph_get(&format!("/users/{oid}?$select=displayName"))
+                .await
+                .ok()?
+                .json()
+                .await
+                .ok()?;
+            v.get("displayName")?.as_str().map(str::to_string)
+        }
+        .await;
+        if let Some(n) = name {
+            cache.lock().unwrap().insert(id, n);
+        }
+    }
+    let meeting = chat_id.starts_with("19:meeting_");
+    let names = cache.lock().unwrap().clone();
+    let name = |id: &str| {
+        names
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| "Unknown user".into())
+    };
+    for m in out.iter_mut() {
+        if let Some(e) = &m.event {
+            m.text = event_text(e, &name, meeting);
+        }
+    }
 }
 
 /// The service lists by last change (a reaction or edit moves a message
@@ -255,7 +479,16 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         files: Vec::new(),
         root_id: s("/rootMessageId"),
         mentions_me: false,
+        event: None,
     };
+    if kind.starts_with("ThreadActivity/") {
+        let event = chat_event(&kind, &s("/content"))?;
+        return Some(MessageView {
+            kind: "event".into(),
+            event: Some(event),
+            ..base
+        });
+    }
     if kind == "Event/Call" {
         let content = s("/content");
         // Only the end of a call goes in the timeline, as in Teams.
@@ -1153,6 +1386,7 @@ mod tests {
             files: vec![],
             root_id: String::new(),
             mentions_me: false,
+            event: None,
         };
         let mut t = vec![
             mk("100", false),
@@ -1350,5 +1584,80 @@ mod tests {
         );
         let started = serde_json::json!({"messagetype": "Event/Call", "content": "<partlist/>"});
         assert!(view_of(&started, "x", "y").is_none());
+    }
+}
+
+#[cfg(test)]
+mod paging_and_event_tests {
+    use super::*;
+
+    #[test]
+    fn system_events_read_as_teams_says_them() {
+        let add = "<addmember><eventtime>1793904854879</eventtime><initiator>8:orgid:a</initiator><target>8:orgid:a</target><detailedtargetinfo><id>8:orgid:a</id></detailedtargetinfo><target>8:orgid:b</target><detailedtargetinfo><id>8:orgid:b</id><friendlyName>Bo</friendlyName></detailedtargetinfo></addmember>";
+        let e = chat_event("ThreadActivity/AddMember", add).unwrap();
+        assert_eq!(
+            (e.kind.as_str(), e.targets.clone()),
+            ("AddMember", vec!["8:orgid:b".to_string()])
+        );
+        assert_eq!(e.names.get("8:orgid:b").map(String::as_str), Some("Bo"));
+        let names = |id: &str| match id {
+            "8:orgid:a" => "Ann".to_string(),
+            "8:orgid:b" => "Bo".to_string(),
+            "8:orgid:c" => "Cy".to_string(),
+            _ => "Di".to_string(),
+        };
+        assert_eq!(event_text(&e, &names, false), "Ann added Bo to the chat.");
+        let many = ChatEvent {
+            kind: "AddMember".into(),
+            actor: "8:orgid:a".into(),
+            targets: vec!["8:orgid:b".into(), "8:orgid:c".into(), "8:orgid:d".into()],
+            history_days: Some(3),
+            ..Default::default()
+        };
+        assert_eq!(
+            event_text(&many, &names, false),
+            "Ann added Bo and 2 others to the chat and shared chat history from the past 3 days."
+        );
+        let topic = chat_event(
+            "ThreadActivity/TopicUpdate",
+            "<topicupdate><eventtime>1</eventtime><initiator>8:orgid:a</initiator><value>OST group test</value></topicupdate>",
+        )
+        .unwrap();
+        assert_eq!(
+            event_text(&topic, &names, false),
+            "Ann changed the group name to OST group test."
+        );
+        let left = ChatEvent {
+            kind: "DeleteMember".into(),
+            actor: "8:orgid:a".into(),
+            targets: vec!["8:orgid:a".into()],
+            ..Default::default()
+        };
+        assert_eq!(event_text(&left, &names, false), "Ann left the chat.");
+        let joined = chat_event(
+            "ThreadActivity/AddMember",
+            "<addmember><initiator>8:orgid:a</initiator><target>8:orgid:a</target></addmember>",
+        )
+        .unwrap();
+        assert_eq!(
+            event_text(&joined, &names, false),
+            "Ann joined the conversation."
+        );
+        assert!(chat_event("ThreadActivity/PinnedItemsUpdate", "<x/>").is_none());
+    }
+
+    #[test]
+    fn pages_back_as_teams_does() {
+        let meta = serde_json::json!({"backwardLink": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations/19%3Ax%40thread.v2/messages?startTime=1&syncState=abc%2B%3D&pageSize=200&view=msnp24Equivalent"});
+        assert_eq!(backward_token(&meta).as_deref(), Some("abc+="));
+        assert_eq!(backward_token(&serde_json::json!({})), None);
+        assert_eq!(
+            messages_url("https://cs", "19:x@thread.v2", 200, Some("abc+=")),
+            "https://cs/v1/users/ME/conversations/19%3Ax%40thread.v2/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=200&syncState=abc%2B%3D&startTime=1"
+        );
+        assert!(
+            !messages_url("https://cs", "19:c@thread.tacv2", 200, None)
+                .contains("supportsMessageProperties")
+        );
     }
 }

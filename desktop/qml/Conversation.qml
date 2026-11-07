@@ -138,7 +138,8 @@ Rectangle {
             const gap = new Date(cur.time) - new Date(prev.time)
             // Channel posts each get their own card and header; a divider
             // also starts a new group.
-            cur.grouped = !root.isChannel && cur.kind !== "call" && prev.kind !== "call"
+            const row = k => k === "call" || k === "event"
+            cur.grouped = !root.isChannel && !row(cur.kind) && !row(prev.kind)
                 && !cur.dayDivider && !cur.lastRead
                 && cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
         }
@@ -148,10 +149,10 @@ Rectangle {
         // Teams' receipts: your newest message carries the sent tick until
         // it is read; the newest one the other person has read gets the eye.
         for (let i = out.length - 1; i >= 0; i--) {
-            if (out[i].mine && out[i].kind !== "call") { out[i].latestMine = true; break }
+            if (out[i].mine && out[i].kind === "message") { out[i].latestMine = true; break }
         }
         for (let i = out.length - 1; i >= 0; i--) {
-            if (out[i].mine && out[i].kind !== "call" && out[i].seen) { out[i].latestSeen = true; break }
+            if (out[i].mine && out[i].kind === "message" && out[i].seen) { out[i].latestSeen = true; break }
         }
         return out.reverse()
     }
@@ -399,6 +400,9 @@ Rectangle {
             // In channels every post is a left-aligned card, yours included.
             readonly property bool mine: modelData.mine && !root.isChannel
             readonly property bool isCall: modelData.kind === "call"
+            // Teams' control messages (someone added, renamed, left…).
+            readonly property bool isEvent: modelData.kind === "event"
+            readonly property bool isRow: isCall || isEvent
             readonly property var reactions: modelData.reactions || []
             width: list.width
             // Grouped messages (same sender, within minutes) drop the
@@ -406,9 +410,10 @@ Rectangle {
             readonly property bool grouped: modelData.grouped === true
             // Day divider and "Last read" line sit above the message.
             readonly property int dividerH: (modelData.dayDivider ? 30 : 0) + (modelData.lastRead ? 36 : 0)
-            readonly property int topPad: dividerH + (grouped ? 2 : 12)
+            // Control and call rows sit flush, as in Teams (28 / 36 px rows).
+            readonly property int topPad: dividerH + (isRow ? 0 : grouped ? 2 : 12)
             readonly property int bubbleY: topPad + (grouped || isCall ? 0 : meta.height + 2)
-            height: isCall ? topPad + callRow.height
+            height: isRow ? topPad + (isCall ? 36 : 28)
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height + 4 : 0)
             readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : Math.min(640, list.width * 0.7)
 
@@ -448,37 +453,50 @@ Rectangle {
             }
 
             // Call events: an icon, the time and "Call ended 3m 9s" / "Call missed".
+            // Teams' control and call rows (measured): a 20 px icon at x 38 and
+            // y 8 in NeutralForeground3, the 12 px text from x 72, y 10. A
+            // call row reads time, then "Call ended" and the bold duration
+            // ({h}h {m}m {s}s, zero parts left out); a missed call has none.
+            FluentIcon {
+                visible: msg.isRow
+                x: 38; y: msg.topPad + 8
+                size: 20
+                name: msg.isCall ? (msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
+                    : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20",
+                         PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
+                         MemberRenamed: "person-edit-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
+                color: theme.textSecondary
+            }
             Row {
                 id: callRow
-                visible: msg.isCall
-                x: 72; y: msg.topPad
-                height: 24; spacing: 12
-                FluentIcon {
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: msg.modelData.call_state === "missed" ? "call-missed-16" : "call-20"
-                    size: 16
-                    color: msg.modelData.call_state === "missed" ? theme.danger : theme.icon
-                }
+                visible: msg.isRow
+                x: 72; y: msg.topPad + 10
+                spacing: 12
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter
+                    visible: msg.isCall
                     text: root.stamp(msg.modelData.time)
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                 }
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, msg.width - 72 - 32)
+                    wrapMode: Text.Wrap
+                    textFormat: msg.isCall ? Text.StyledText : Text.PlainText
                     text: {
+                        if (msg.isEvent) return msg.modelData.text
                         if (msg.modelData.call_state === "missed") return "Call missed"
-                        const s = msg.modelData.call_seconds, m = Math.floor(s / 60)
-                        return "Call ended  " + (m > 0 ? m + "m " : "") + (s % 60) + "s"
+                        const s = msg.modelData.call_seconds
+                        const parts = [[Math.floor(s / 3600), "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
+                            .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
+                        return "Call ended&nbsp;<b>" + parts + "</b>"
                     }
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: theme.text
+                    color: theme.textSecondary
                 }
             }
 
             Avatar {
-                visible: !msg.mine && !msg.grouped && !msg.isCall
+                visible: !msg.mine && !msg.grouped && !msg.isRow
                 x: 32; y: msg.bubbleY
                 size: 32; name: msg.modelData.sender
                 photoId: msg.modelData.sender_mri || ""
@@ -487,7 +505,7 @@ Rectangle {
             }
             Text {
                 id: meta
-                visible: !msg.grouped && !msg.isCall
+                visible: !msg.grouped && !msg.isRow
                 y: msg.topPad
                 text: (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
                     + (msg.modelData.edited ? "   Edited" : "")
@@ -497,7 +515,7 @@ Rectangle {
             }
             Rectangle {
                 id: bubble
-                visible: !msg.isCall
+                visible: !msg.isRow
                 y: msg.bubbleY
                 readonly property var imgs: msg.modelData.images || []
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
@@ -693,7 +711,7 @@ Rectangle {
             // Hover bar: quick reactions and More, at the bubble's top edge.
             Rectangle {
                 id: actions
-                readonly property bool can: !msg.isCall && !msg.modelData.deleted
+                readonly property bool can: !msg.isRow && !msg.modelData.deleted
                 visible: can && (msgHover.hovered || barHover.hovered || menu.visible)
                 z: 5
                 height: 32; width: actionRow.implicitWidth + 8; radius: theme.radius
@@ -748,7 +766,7 @@ Rectangle {
             // the other person has read.
             FluentIcon {
                 readonly property bool seen: msg.modelData.latestSeen === true
-                visible: msg.mine && !msg.isCall && (seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
+                visible: msg.mine && !msg.isRow && (seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
                 name: seen ? "seen-12" : "sent-12"; size: 12; color: theme.brand
                 x: bubble.x + bubble.width + 8
                 y: bubble.y + bubble.height - 14
