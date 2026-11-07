@@ -208,6 +208,10 @@ Sent from Teams web into "OST group test" and read back raw. Both are plain `Ric
   - both were still (GIPHY's `giphy_s.gif`) under a play button: a 48 px circle `rgba(0,0,0,.8)` with a white play icon.
 - **Autoplay** (262200): `shouldAutoPlayGifs` = the message is newer than the chat's consumption horizon when it was opened. Otherwise it shows still with the play button, and clicking plays it.
 
+- **Order** (measured on Teams web, 2026-11-07, message "OST TEST 58 before the GIF"): the body is one HTML flow, so text, GIFs, stickers and pictures show in the order they were written. Teams draws each `<p>&nbsp;</p>` as an empty 20 px line, and a GIF has a 4 px top margin. Text, blank line, GIF, blank line, text measured 20 + 20 + 4 + 250 + 20 + 20. (On winpc, one message whose emoticon was a real Emoji span showed no blank lines; a plain one did. The cause is not known.)
+- **OST**: `view_of` marks each picture in the sanitised HTML. `html` holds the text before the first picture; `flow` holds the pictures and the text between them in order. It is empty when the pictures only follow the text.
+- **Editing** keeps every emoticon, custom emoji, GIF, sticker and picture, as Teams' edit box does. OST gives your own messages an `edit_html` and `edit_media`, which the edit box loads. They go back out in Teams' own form. This was verified live: two edits of the message above kept the GIF and its layout byte for byte.
+
 ## 5c. Emoticons in the body and big emoticons
 - **Wire format**: an emoticon is `<span class="animated-emoticon-20-{id}"><img itemscope itemtype="http://schema.skype.com/Emoji" itemid="{id}" src="https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/{id}/default/20_f.png" title="{name}" alt="{char}" width="20" height="20" …></span>`. Teams draws its own Fluent picture for `{id}`, not the platform's emoji font.
 - **Big emoticons** (BigEmoticonPreprocessor, async entry): a message whose body is only 1–3 emoticons or custom emoji shows them at 50 px instead of 20. Any other text, a `<br>`, another image, files or cards keeps them at 20.

@@ -405,6 +405,7 @@ pub mod qobject {
             message_id: &QString,
             editor_html: &QString,
             quote_json: &QString,
+            media_json: &QString,
         );
 
         /// Delete one of our messages in the open chat.
@@ -1614,6 +1615,7 @@ async fn load_messages(
     for m in timeline.iter_mut() {
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
+        localize_edit_images(m);
     }
     let last_id = timeline
         .iter()
@@ -1903,7 +1905,13 @@ async fn catalog_loaded() -> Option<std::sync::Arc<api::emoticons::Catalog>> {
 /// Fill in the Teams emoticon pictures a message's HTML shows: Teams'
 /// Fluent pictures (the 100 px asset for big ones, 50 px in the line).
 async fn localize_emoticons(m: &mut api::messages::MessageView) {
-    let ids = api::messages::emoticon_ids(&m.html);
+    let mut ids = api::messages::emoticon_ids(&m.html);
+    for p in &m.flow {
+        ids.extend(api::messages::emoticon_ids(&p.html));
+    }
+    ids.extend(api::messages::emoticon_ids(&m.edit_html));
+    ids.sort();
+    ids.dedup();
     if ids.is_empty() {
         return;
     }
@@ -1911,35 +1919,71 @@ async fn localize_emoticons(m: &mut api::messages::MessageView) {
         return;
     };
     for id in ids {
-        let marker = format!("{}{id}\"", api::messages::EMOTICON_SRC);
-        if !m.html.contains(&marker) {
-            continue;
-        }
-        let big = m.html.contains(&format!("{marker} width=\"50\""));
+        let marker = format!("{}{id}", api::messages::EMOTICON_SRC);
+        // Big ones (alone in a message) get the sharper picture.
+        let big = m.html.contains(&format!("{marker}\" width=\"50\""));
         let Some(url) = catalog.image_url(&id, if big { 100 } else { 50 }, false) else {
             continue;
         };
         match api::emoticons::image_file(&url, &cache_base()).await {
-            Ok(path) => {
-                m.html = m
-                    .html
-                    .replace(&marker, &format!("file://{}\"", path.display()))
-            }
+            Ok(path) => swap_src(m, &marker, &format!("file://{}", path.display())),
             Err(e) => tracing::warn!("emoticon picture failed: {}", short_error(&e)),
         }
     }
 }
 
+/// Put a cached file where a message's HTML (and its edit form) has a
+/// placeholder src (`from`, a whole src value).
+fn swap_src(m: &mut api::messages::MessageView, from: &str, to: &str) {
+    let (a, b) = (format!("src=\"{from}\""), format!("src=\"{to}\""));
+    let flow = m.flow.iter_mut().map(|p| &mut p.html);
+    for html in [&mut m.html, &mut m.edit_html].into_iter().chain(flow) {
+        if html.contains(&a) {
+            *html = html.replace(&a, &b);
+        }
+    }
+    for e in m.edit_media.iter_mut().filter(|e| e.src == from) {
+        e.src = to.to_string();
+    }
+}
+
+/// The edit form's AMS pictures: their cached files (from `images`).
+fn localize_edit_images(m: &mut api::messages::MessageView) {
+    let cached: Vec<(String, String)> = m
+        .images
+        .iter()
+        .filter(|i| !i.local_path.is_empty())
+        .map(|i| (i.id.clone(), i.local_path.clone()))
+        .collect();
+    for (id, path) in cached {
+        swap_src(m, &format!("{}{id}", api::messages::IMAGE_SRC), &path);
+    }
+}
+
 /// Fill in the custom emoji pictures a message's HTML shows.
 async fn localize_custom_emoji(client: &TeamsClient, m: &mut api::messages::MessageView) {
-    for doc in api::messages::custom_emoji_docs(&m.html) {
-        match custom_emoji_file(client, &doc).await {
-            Ok(path) => {
-                m.html = m.html.replace(
-                    &format!("{}{doc}", api::messages::CUSTOM_EMOJI_SRC),
-                    &format!("file://{}", path.display()),
-                )
+    let mut docs = api::messages::custom_emoji_docs(&m.html);
+    for p in &m.flow {
+        docs.extend(api::messages::custom_emoji_docs(&p.html));
+    }
+    docs.extend(api::messages::custom_emoji_docs(&m.edit_html));
+    docs.sort();
+    docs.dedup();
+    // An edit sends custom emoji again with their picture's address.
+    if let Some(base) = client.ams_v2_url() {
+        for e in m.edit_media.iter_mut().filter(|e| e.kind == "custom") {
+            if let Some(doc) = e.src.strip_prefix(api::messages::CUSTOM_EMOJI_SRC) {
+                e.url = api::custom_emoji::picture_url(&base, doc, true);
             }
+        }
+    }
+    for doc in docs {
+        match custom_emoji_file(client, &doc).await {
+            Ok(path) => swap_src(
+                m,
+                &format!("{}{doc}", api::messages::CUSTOM_EMOJI_SRC),
+                &format!("file://{}", path.display()),
+            ),
             Err(e) => tracing::warn!("custom emoji picture failed: {}", short_error(&e)),
         }
     }
@@ -3514,9 +3558,14 @@ impl qobject::Backend {
         message_id: &QString,
         editor_html: &QString,
         quote_json: &QString,
+        media_json: &QString,
     ) {
         let id = message_id.to_string();
-        let html = api::messages::teams_html_from_editor(&editor_html.to_string());
+        // The emoticons, custom emoji and pictures in the box go out in
+        // Teams' own form (the edit form gave them back; the picker adds).
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let html = api::messages::teams_html_with_media(&editor_html.to_string(), &media).0;
         if html.trim().is_empty() {
             return;
         }

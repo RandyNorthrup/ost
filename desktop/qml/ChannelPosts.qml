@@ -381,11 +381,11 @@ Item {
             id: box
             property var message: null
             editing: true
-            onMessageChanged: if (message) { quote = message.quote || null; setHtml(message.html || escapeHtml(message.text || "")); focusEditor() }
+            onMessageChanged: if (message) { quote = message.quote || null; setMessage(message); focusEditor() }
             onQuoteDismissed: quote = null
             onEmojiRequested: a => root.host.openEmojiFor(box)
             onSettingsRequested: root.host.openChatSettings()
-            onSubmit: { backend.editMessageRich(message.id, formattedText(), quote ? JSON.stringify(quote) : ""); root.host.editingId = "" }
+            onSubmit: { backend.editMessageRich(message.id, formattedText(), quote ? JSON.stringify(quote) : "", JSON.stringify(mediaInUse())); root.host.editingId = "" }
             onCancelled: root.host.editingId = ""
         }
     }

@@ -438,6 +438,16 @@ pub struct MessageMedia {
     pub alt: String,
 }
 
+/// One part of a message's flow: a picture (`pic`, its index in `images`
+/// followed by `media`) or text (`html`).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FlowPart {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pic: Option<usize>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub html: String,
+}
+
 /// A timeline item.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MessageView {
@@ -466,6 +476,18 @@ pub struct MessageView {
     /// GIFs and stickers, shown animated.
     #[serde(default)]
     pub media: Vec<MessageMedia>,
+    /// What follows the message's first picture, in order: pictures and
+    /// the text between them (Teams keeps each picture where it was
+    /// written); `html` then holds the text before it. Empty when the
+    /// pictures simply follow the text.
+    #[serde(default)]
+    pub flow: Vec<FlowPart>,
+    /// Your own message as the edit box takes it: its HTML with each
+    /// emoticon, custom emoji and picture as an `<img>`, and what each is.
+    #[serde(default)]
+    pub edit_html: String,
+    #[serde(default)]
+    pub edit_media: Vec<ComposeMedia>,
     /// For call events: "ended" (with duration), "missed" or "started".
     pub call_state: String,
     pub call_seconds: u64,
@@ -1195,6 +1217,31 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     // Files, cards, pictures, GIFs and stickers keep emoticons small (as in
     // Teams, where any other image counts).
     let may_be_big = files.is_empty() && cards.is_empty() && images.is_empty() && media.is_empty();
+    let (marked, pic_tags) = if deleted {
+        (String::new(), Vec::new())
+    } else {
+        sanitize_core(&content, &my_mentions, true)
+    };
+    // Pictures stay where they were written (Teams keeps the order).
+    let (head, flow) = split_flow(&marked, &pic_tags, |tag| {
+        let src = attr(tag, "src")?;
+        images.iter().position(|i| i.url == src).or_else(|| {
+            media
+                .iter()
+                .position(|m| m.url == src)
+                .map(|k| images.len() + k)
+        })
+    });
+    let head = if flow.is_empty() {
+        without_empty_paragraphs(&head)
+    } else {
+        flow_text(&head)
+    };
+    let (edit_html, edit_media) = if mine && !deleted {
+        edit_form(&marked, &pic_tags)
+    } else {
+        (String::new(), Vec::new())
+    };
     Some(MessageView {
         quote,
         forward,
@@ -1206,14 +1253,14 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         mentions_me: !my_mentions.is_empty() && !deleted,
         html: if deleted {
             String::new()
+        } else if may_be_big && big_emoticons(&head) {
+            head.replace("width=\"20\" height=\"20\"", "width=\"50\" height=\"50\"")
         } else {
-            let html = without_empty_paragraphs(&sanitize_html_marking(&content, &my_mentions));
-            if may_be_big && big_emoticons(&html) {
-                html.replace("width=\"20\" height=\"20\"", "width=\"50\" height=\"50\"")
-            } else {
-                html
-            }
+            head
         },
+        flow,
+        edit_html,
+        edit_media,
         text: if deleted { String::new() } else { text },
         edited,
         deleted,
@@ -1410,6 +1457,21 @@ fn my_mention_ids(props: Option<&serde_json::Value>, me: &str) -> Vec<String> {
 /// `<span class="mention">`, or `class="mention-me"` for the `itemid`s in
 /// `mine`, so the client can colour them as Teams does.
 pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
+    sanitize_core(html, mine, false).0
+}
+
+/// Where the sanitised HTML had a picture (an AMS image, GIF or sticker):
+/// `<img src="ost-pic:N">`, N counting from 0 in document order.
+const PIC_SRC: &str = "ost-pic:";
+
+fn pic_marker(n: usize) -> String {
+    format!("<img src=\"{PIC_SRC}{n}\">")
+}
+
+/// The sanitiser; with `mark_pics`, pictures leave a marker (`PIC_SRC`)
+/// and their tags are returned in order.
+fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<String>) {
+    let mut pics: Vec<String> = Vec::new();
     const KEEP: [&str; 15] = [
         "p",
         "br",
@@ -1436,7 +1498,7 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
         out.push_str(&linkify(&rest[..start], in_link > 0));
         let Some(end) = rest[start..].find('>') else {
             out.push_str(&escape(&rest[start..]));
-            return out;
+            return (out, pics);
         };
         let tag = &rest[start + 1..start + end];
         rest = &rest[start + end + 1..];
@@ -1465,6 +1527,10 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
             // Inline pictures, GIFs and stickers are shown by the client
             // from `images` and `media`.
             if tag.contains("AMSImage") || media_kind(tag).is_some() {
+                if mark_pics {
+                    out.push_str(&pic_marker(pics.len()));
+                    pics.push(tag.to_string());
+                }
                 continue;
             }
             // A custom emoji, rebuilt from its itemid alone (as Teams does):
@@ -1496,8 +1562,9 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
                 })
             {
                 out.push_str(&format!(
-                    "<img src=\"{EMOTICON_SRC}{id}\" width=\"20\" height=\"20\" alt=\"{}\">",
-                    escape(&attr(tag, "alt").unwrap_or_default())
+                    "<img src=\"{EMOTICON_SRC}{id}\" width=\"20\" height=\"20\" alt=\"{}\" title=\"{}\">",
+                    escape(&attr(tag, "alt").unwrap_or_default()),
+                    escape(&attr(tag, "title").unwrap_or_default())
                 ));
                 continue;
             }
@@ -1561,8 +1628,193 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
         out.push_str("</a>");
         in_link -= 1;
     }
+    (out, pics)
+}
+
+/// Whether sanitised HTML has text to show (emoticons count).
+fn has_visible_text(html: &str) -> bool {
+    !super::strip_html(&custom_emoji_as_text(html))
+        .trim()
+        .is_empty()
+}
+
+/// Text between pictures as Teams shows it: blank paragraphs stay (Teams
+/// draws `<p>&nbsp;</p>` as an empty line), but text that is only blank
+/// is dropped.
+fn flow_text(html: &str) -> String {
+    let t = html.trim();
+    if has_visible_text(t) {
+        t.to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// Marked HTML (`sanitize_core` with `mark_pics`) as the text before the
+/// first picture and the flow after it. `index` maps a picture's tag to
+/// its place in `images` + `media`. When nothing but blank text follows
+/// the first picture (pictures after the text, the usual case), the flow
+/// is empty and the text is returned as before.
+fn split_flow(
+    marked: &str,
+    pics: &[String],
+    index: impl Fn(&str) -> Option<usize>,
+) -> (String, Vec<FlowPart>) {
+    let lead = format!("<img src=\"{PIC_SRC}");
+    let Some(first) = marked.find(&lead) else {
+        return (marked.to_string(), Vec::new());
+    };
+    let mut flow = Vec::new();
+    let mut rest = &marked[first..];
+    while let Some(j) = rest.find(&lead) {
+        let text = flow_text(&rest[..j]);
+        if !text.is_empty() {
+            flow.push(FlowPart {
+                pic: None,
+                html: text,
+            });
+        }
+        let end = rest[j..].find('>').map(|e| j + e + 1).unwrap_or(rest.len());
+        let n = rest[j + lead.len()..end]
+            .split('"')
+            .next()
+            .and_then(|n| n.parse::<usize>().ok());
+        if let Some(k) = n.and_then(|n| pics.get(n)).and_then(|t| index(t)) {
+            flow.push(FlowPart {
+                pic: Some(k),
+                html: String::new(),
+            });
+        }
+        rest = &rest[end..];
+    }
+    let text = flow_text(rest);
+    if !text.is_empty() {
+        flow.push(FlowPart {
+            pic: None,
+            html: text,
+        });
+    }
+    if flow.iter().all(|p| p.pic.is_some()) {
+        flow.clear();
+    }
+    (marked[..first].to_string(), flow)
+}
+
+/// A received message as the edit box takes it (Teams keeps every
+/// emoticon, custom emoji, GIF, sticker and picture when you edit): the
+/// marked HTML with each one as an `<img>` the box shows, and what each is,
+/// keyed by that `src`. Emoticons, custom emoji and AMS pictures keep
+/// placeholder srcs (`ost-emoticon:`, `ost-custom-emoji:`, `ost-image:`)
+/// that the client swaps for its cached files.
+pub fn edit_form(marked: &str, pics: &[String]) -> (String, Vec<ComposeMedia>) {
+    let mut media: Vec<ComposeMedia> = Vec::new();
+    let mut add = |m: ComposeMedia| {
+        if !media.iter().any(|x| x.src == m.src) {
+            media.push(m);
+        }
+    };
+    let mut out = String::new();
+    let mut rest = marked;
+    while let Some(i) = rest.find("<img src=\"ost-") {
+        out.push_str(&rest[..i]);
+        let end = rest[i..].find('>').map(|e| i + e + 1).unwrap_or(rest.len());
+        let tag = &rest[i..end];
+        rest = &rest[end..];
+        let src = attr(tag, "src").unwrap_or_default();
+        let alt = attr(tag, "alt").unwrap_or_default();
+        if let Some(n) = src
+            .strip_prefix(PIC_SRC)
+            .and_then(|n| n.parse::<usize>().ok())
+        {
+            let Some(pic) = pics.get(n) else { continue };
+            let num = |k: &str| attr(pic, k).and_then(|v| v.parse().ok()).unwrap_or(0u32);
+            let url = attr(pic, "src").unwrap_or_default();
+            let title = attr(pic, "alt").unwrap_or_default();
+            let (kind, (w, h)) = match media_kind(pic) {
+                Some("gif") => ("gif", fit(num("width"), num("height"), 444, 250)),
+                Some(_) => ("sticker", (180, 180)),
+                None => ("image", fit(num("width"), num("height"), 240, 180)),
+            };
+            let id = if kind == "image" {
+                attr(pic, "itemid").unwrap_or_default()
+            } else {
+                String::new()
+            };
+            // AMS objects need our token: the client shows its cached copy.
+            let shown = if kind == "image" {
+                if id.is_empty()
+                    || !id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                {
+                    continue;
+                }
+                format!("{IMAGE_SRC}{id}")
+            } else {
+                url.clone()
+            };
+            out.push_str(&format!(
+                "<img src=\"{}\" width=\"{w}\" height=\"{h}\">",
+                escape(&shown)
+            ));
+            add(ComposeMedia {
+                src: shown,
+                kind: kind.to_string(),
+                id,
+                title: match kind {
+                    "gif" => title.trim_end_matches(" (GIF Image)").to_string(),
+                    _ => title,
+                },
+                url,
+                width: num("width"),
+                height: num("height"),
+                ..Default::default()
+            });
+        } else if let Some(doc) = src.strip_prefix(CUSTOM_EMOJI_SRC) {
+            out.push_str(tag);
+            add(ComposeMedia {
+                src: src.clone(),
+                kind: "custom".into(),
+                id: format!("{alt};{doc}"),
+                title: alt,
+                ..Default::default()
+            });
+        } else if let Some(id) = src.strip_prefix(EMOTICON_SRC) {
+            out.push_str(tag);
+            add(ComposeMedia {
+                src: src.clone(),
+                kind: "emoji".into(),
+                id: id.to_string(),
+                title: attr(tag, "title").unwrap_or_default(),
+                unicode: alt,
+                ..Default::default()
+            });
+        }
+    }
+    out.push_str(rest);
+    (between_tags_trimmed(&without_empty_paragraphs(&out)), media)
+}
+
+/// HTML without the line breaks and spaces between its tags (Qt's editor
+/// would keep them as a space, sent back as `<p> </p>`).
+fn between_tags_trimmed(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find('>') {
+        out.push_str(&rest[..=i]);
+        rest = &rest[i + 1..];
+        let ws = rest.len() - rest.trim_start().len();
+        if rest[ws..].starts_with('<') {
+            rest = &rest[ws..];
+        }
+    }
+    out.push_str(rest);
     out
 }
+
+/// Where an AMS picture goes in the edit box until the client puts its
+/// cached file there.
+pub const IMAGE_SRC: &str = "ost-image:";
 
 /// Where a custom emoji's picture goes in message HTML until the client
 /// puts its cached file there.
@@ -2229,7 +2481,7 @@ pub struct OutMention {
 /// and listed for `properties.mentions`.
 /// Something the fun picker put in the compose box as an `<img>` (keyed by
 /// that image's `src`), sent as Teams sends it.
-#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ComposeMedia {
     /// The `src` the compose box shows it with.
     pub src: String,
@@ -3070,6 +3322,89 @@ mod tests {
     }
 
     #[test]
+    fn text_after_a_picture_stays_after_it_and_edits_keep_pictures() {
+        // As OST's compose sends text, an emoticon, a GIF and more text.
+        let c = r#"<p>Look <span title="Surprised" type="(surprised)" class="animated-emoticon-20-surprised" itemscope=""><img itemscope="" itemtype="http://schema.skype.com/Emoji" itemid="surprised" src="https://statics.teams.cdn.office.net/x/20_f.png" title="Surprised" alt="😮" style="width:20px; height:20px"></span></p><p>&nbsp;</p>
+<img src="https://media1.giphy.com/media/abc/giphy.gif" width="444" height="250" alt="Cat Dance (GIF Image)" style="height:auto; margin-top:4px; max-width:100%">
+<p>&nbsp;</p><p>after it</p>"#;
+        let m = |c: &str, from: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": c, "from": format!("https://x/contacts/{from}"), "imdisplayname": "X"});
+        let v = view_of(&m(c, "8:orgid:me"), "8:orgid:me", "Me").expect("shows");
+        // Teams draws the blank paragraphs around the GIF as empty lines.
+        assert!(
+            v.html.contains("Look") && v.html.ends_with("<p>&nbsp;</p>"),
+            "{}",
+            v.html
+        );
+        assert_eq!(
+            v.flow,
+            [
+                FlowPart {
+                    pic: Some(0),
+                    html: String::new()
+                },
+                FlowPart {
+                    pic: None,
+                    html: "<p>&nbsp;</p><p>after it</p>".into()
+                }
+            ]
+        );
+        assert_eq!(v.media.len(), 1);
+        // Your own message: the edit box gets everything back, in place.
+        assert_eq!(
+            v.edit_html,
+            "<p>Look <img src=\"ost-emoticon:surprised\" width=\"20\" height=\"20\" alt=\"😮\" title=\"Surprised\"></p><img src=\"https://media1.giphy.com/media/abc/giphy.gif\" width=\"444\" height=\"250\"><p>after it</p>"
+        );
+        let kinds: Vec<_> = v
+            .edit_media
+            .iter()
+            .map(|m| (m.kind.as_str(), m.title.as_str()))
+            .collect();
+        assert_eq!(kinds, [("emoji", "Surprised"), ("gif", "Cat Dance")]);
+        // Sent again, the GIF goes out as Teams' own (444 x 250, its title).
+        let (html, _) = teams_html_with_media(&v.edit_html, &v.edit_media);
+        assert!(html.contains("alt=\"Cat Dance (GIF Image)\""), "{html}");
+        assert!(html.contains("itemid=\"surprised\""), "{html}");
+        assert!(html.find("Look").unwrap() < html.find("giphy").unwrap());
+        assert!(html.find("giphy").unwrap() < html.find("after it").unwrap());
+        // Someone else's message has no edit form.
+        let theirs = view_of(&m(c, "8:orgid:them"), "8:orgid:me", "Me").unwrap();
+        assert!(theirs.edit_html.is_empty() && theirs.edit_media.is_empty());
+        // A picture first and text after: nothing above it.
+        let pic_first = r#"<p>&nbsp;</p><img src="https://media1.giphy.com/media/abc/giphy.gif" width="480" height="270" alt="Cat (GIF Image)"><p>&nbsp;</p><p>caption</p>"#;
+        let v = view_of(&m(pic_first, "8:orgid:me"), "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.html, "");
+        assert_eq!(v.flow[1].html, "<p>&nbsp;</p><p>caption</p>");
+        // Text, then only a picture: nothing after.
+        let text_first = r#"<p>hi</p><p>&nbsp;</p><img src="https://media1.giphy.com/media/abc/giphy.gif" width="480" height="270" alt="Cat (GIF Image)"><p>&nbsp;</p>"#;
+        let v = view_of(&m(text_first, "8:orgid:me"), "8:orgid:me", "Me").unwrap();
+        assert_eq!((v.html.as_str(), v.flow.len()), ("<p>hi</p>", 0));
+        // A sticker, an emoticon line, then a GIF (as OST's fun picker test
+        // sent them): each in its place.
+        let mixed = r#"<p>&nbsp;</p><img src="https://us-api.asm.skype.com/v1/objects/0-wus-d1-abc/views/imgo" width="240" height="180" itemtype="http://schema.skype.com/AMSImage" alt="Sticker image, hi" itemid="0-wus-d1-abc"><p>&nbsp;</p><p>wow</p><p>&nbsp;</p><img src="https://media1.giphy.com/media/abc/giphy.gif" width="444" height="250" alt="Cat (GIF Image)"><p>&nbsp;</p>"#;
+        let v = view_of(&m(mixed, "8:orgid:them"), "8:orgid:me", "Me").unwrap();
+        let parts: Vec<_> = v.flow.iter().map(|p| (p.pic, p.html.as_str())).collect();
+        assert_eq!(
+            parts,
+            [
+                (Some(0), ""),
+                (None, "<p>&nbsp;</p><p>wow</p><p>&nbsp;</p>"),
+                (Some(1), "")
+            ]
+        );
+        // An AMS picture keeps its object id for the edit box.
+        let ams = r#"<p>&nbsp;</p><img src="https://us-api.asm.skype.com/v1/objects/0-wus-d1-abc/views/imgo" width="240" height="180" itemscope="image/png" itemtype="http://schema.skype.com/AMSImage" alt="Sticker image, hi" id="x_0-wus-d1-abc" itemid="0-wus-d1-abc"><p>&nbsp;</p>"#;
+        let v = view_of(&m(ams, "8:orgid:me"), "8:orgid:me", "Me").unwrap();
+        assert_eq!(
+            v.edit_html,
+            "<img src=\"ost-image:0-wus-d1-abc\" width=\"240\" height=\"180\">"
+        );
+        assert_eq!(
+            (v.edit_media[0].kind.as_str(), v.edit_media[0].id.as_str()),
+            ("image", "0-wus-d1-abc")
+        );
+    }
+
+    #[test]
     fn gifs_and_stickers_are_media() {
         // As Teams sent them from its fun picker.
         let gif = r#"<p>&nbsp;</p>
@@ -3108,7 +3443,7 @@ mod tests {
         assert_eq!(emoticon_ids(&one.html), ["surprised"]);
         assert!(
             one.html
-                .contains(r#"<img src="ost-emoticon:surprised" width="50" height="50" alt="😮">"#),
+                .contains(r#"<img src="ost-emoticon:surprised" width="50" height="50" alt="😮" title="Surprised">"#),
             "{}",
             one.html
         );

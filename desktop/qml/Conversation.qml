@@ -1153,11 +1153,11 @@ Rectangle {
                     onEmojiRequested: a => root.openEmojiFor(editBox)
                     onSettingsRequested: root.openChatSettings()
                     onSubmit: {
-                        backend.editMessageRich(msg.modelData.id, editBox.formattedText(), editBox.quote ? JSON.stringify(editBox.quote) : "")
+                        backend.editMessageRich(msg.modelData.id, editBox.formattedText(), editBox.quote ? JSON.stringify(editBox.quote) : "", JSON.stringify(editBox.mediaInUse()))
                         root.editingId = ""
                     }
                     onCancelled: root.editingId = ""
-                    Component.onCompleted: { setHtml(msg.modelData.html || root.escapeHtml(msg.modelData.text || "")); focusEditor() }
+                    Component.onCompleted: { setMessage(msg.modelData); focusEditor() }
                 }
             }
             Rectangle {
@@ -1177,7 +1177,17 @@ Rectangle {
                 readonly property real cardW: list.width >= 720 ? (cards.some(c => c.content_type !== "application/vnd.microsoft.card.adaptive") ? 452 : 448) : 360
                 // Text shows unless the message is only a picture, only files
                 // or only cards.
-                readonly property bool showBody: !imageOnly && (msg.modelData.deleted || ((msg.modelData.text || "").length > 0 && !(cards.length > 0 && !(msg.modelData.html || "").length)))
+                readonly property bool showBody: !imageOnly && !(inFlow && !(msg.modelData.html || "").length) && (msg.modelData.deleted || ((msg.modelData.text || "").length > 0 && !(cards.length > 0 && !(msg.modelData.html || "").length)))
+                // Pictures where they were written, with the text between
+                // them (Teams keeps the order): [{pic} | {html}].
+                readonly property var flow: msg.modelData.flow || []
+                readonly property bool inFlow: flow.length > 0 && imgs.length > 0
+                readonly property bool endsInText: inFlow && flow[flow.length - 1].html !== undefined
+                readonly property real picsEnd: picsTop + picsH
+                readonly property string textStyle: "<style>a { color: " + theme.brand + "; text-decoration: none; } "
+                    + ".mention { color: " + theme.brand + "; } "
+                    + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; } "
+                    + "p, div, li, body { line-height: " + (bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; }</style>"
                 // Teams' lines are 20 px; big emoticons (50 px) set their own.
                 readonly property bool bigEmoticons: (msg.modelData.html || "").indexOf("width=\"50\" height=\"50\"") >= 0
                 readonly property real bodyH: !showBody ? 0 : bigEmoticons ? Math.max(1, body.lineCount) * 50 : Math.max(1, body.lineCount) * 20
@@ -1187,9 +1197,10 @@ Rectangle {
                     // A forward card sits 14.7 down; a note 4 under it, else
                     // the bubble ends 9 under it (Teams).
                     : msg.modelData.forward ? fwdCard.height + (showBody ? 12 : 8.4) : 0
-                readonly property real picsTop: showBody ? body.y + bodyH + 8 : (bare ? 0 : 8)
+                // In a flow the text's own blank line sets the gap (Teams).
+                readonly property real picsTop: showBody ? body.y + bodyH + (inFlow ? 0 : 8) : (bare ? 0 : 8)
                 readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
-                readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + bodyH + 8 : 8)
+                readonly property real filesTop: imgs.length > 0 ? picsEnd + 8 : (showBody ? body.y + bodyH + 8 : 8)
                 // Measured: a card sits 8 under the bubble's top (or the text),
                 // 17.3 in, and the bubble ends 10.7 under it.
                 readonly property real cardsTop: showBody ? body.y + bodyH + 8 : 8
@@ -1200,7 +1211,7 @@ Rectangle {
                 height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
-                    : imgs.length > 0 ? picsTop + picsH + (showBody ? 8.6 : 8)
+                    : imgs.length > 0 ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
                     : bodyH + 15.3 + quoteShift
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
@@ -1243,16 +1254,47 @@ Rectangle {
                     }
                 }
                 // Inline pictures, scaled to fit the bubble (as in Teams).
+                // In a flow, the text between them too.
                 Column {
                     id: pics
                     x: bubble.pad; y: bubble.picsTop
-                    spacing: 4
+                    spacing: bubble.inFlow ? 0 : 4
                     Repeater {
-                        model: bubble.imgs
+                        model: bubble.inFlow ? bubble.flow.map(p => p.pic !== undefined ? bubble.imgs[p.pic] : { flowText: p.html }) : bubble.imgs
+                        Item {
+                            id: part
+                            required property var modelData
+                            required property int index
+                            readonly property bool isText: modelData.flowText !== undefined
+                            // Teams: a picture after text or another picture
+                            // sits 4 below it (the GIF's margin); text follows
+                            // a picture directly.
+                            readonly property real gap: bubble.inFlow && !isText && (index > 0 || bubble.showBody) ? 4 : 0
+                            width: isText ? flowText.width : pic.width
+                            height: gap + (isText ? Math.max(1, flowText.lineCount) * 20 : pic.height)
+                            TextEdit {
+                                id: flowText
+                                visible: part.isText
+                                width: Math.min(msg.maxBubble - 2 * bubble.pad, implicitWidth)
+                                readOnly: true
+                                selectByMouse: true
+                                persistentSelection: false
+                                selectionColor: theme.selectionFill
+                                selectedTextColor: theme.text
+                                text: part.isText ? bubble.textStyle + part.modelData.flowText : ""
+                                textFormat: TextEdit.RichText
+                                wrapMode: TextEdit.Wrap
+                                font.family: theme.font; font.pixelSize: theme.base
+                                color: theme.text
+                                onLinkActivated: link => Qt.openUrlExternally(link)
+                                HoverHandler { cursorShape: flowText.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
+                            }
                         // Rounded 4 px with a hairline border, as Teams draws them.
                         Item {
                             id: pic
-                            required property var modelData
+                            visible: !part.isText
+                            y: part.gap
+                            readonly property var modelData: part.isText ? ({}) : part.modelData
                             // A GIF or sticker (fun picker) rather than an AMS picture.
                             readonly property bool fun: !!modelData.kind
                             // Teams' image component scales anything wider
@@ -1267,7 +1309,7 @@ Rectangle {
                             Image {
                                 visible: !pic.fun
                                 anchors.fill: parent
-                                source: pic.fun ? "" : (parent.modelData.local_path || "")
+                                source: pic.fun ? "" : (pic.modelData.local_path || "")
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true
                             }
@@ -1301,6 +1343,7 @@ Rectangle {
                             HoverHandler { enabled: pic.fun; cursorShape: Qt.PointingHandCursor }
                             Accessible.role: pic.fun ? Accessible.Button : Accessible.Graphic
                             Accessible.name: pic.fun ? (pic.modelData.alt || "") : "Image"
+                        }
                         }
                     }
                 }
@@ -1351,11 +1394,7 @@ Rectangle {
                     // Teams' 14/20 text (a fixed 20 px line).
                     // Sanitised by the engine to a safe subset.
                     text: msg.modelData.deleted ? "This message has been deleted."
-                        : "<style>a { color: " + theme.brand + "; text-decoration: none; } "
-                          + ".mention { color: " + theme.brand + "; } "
-                          + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; } "
-                          + "p, div, li, body { line-height: " + (bubble.bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; }</style>"
-                          + (msg.modelData.html || msg.modelData.text)
+                        : bubble.textStyle + (msg.modelData.html || msg.modelData.text)
                     textFormat: msg.modelData.deleted ? TextEdit.PlainText : TextEdit.RichText
                     wrapMode: TextEdit.Wrap
                     font.family: theme.font; font.pixelSize: theme.base

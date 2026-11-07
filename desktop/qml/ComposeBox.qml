@@ -75,6 +75,12 @@ Item {
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
     function clear() { input.clear(); media = [] }
+    // One of your messages to edit: its edit form keeps the emoticons,
+    // custom emoji and pictures (as Teams' edit does); else its text.
+    function setMessage(m) {
+        media = m.edit_media || []
+        setHtml(m.edit_html || m.html || escapeHtml(m.text || ""))
+    }
     function insertText(t) { input.insert(input.cursorPosition, t); input.forceActiveFocus() }
     // What the fun picker put in: [{src, kind, id, title, unicode, url, width,
     // height}], each shown as an <img> with that src and sent in Teams' form.
