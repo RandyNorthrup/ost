@@ -108,7 +108,7 @@ pub fn parse_list(v: &serde_json::Value) -> Vec<CustomEmoji> {
         .filter(|e| e.get("isDeleted").and_then(|d| d.as_bool()) != Some(true))
         .filter_map(parse)
         .collect();
-    out.sort_by(|a, b| b.created_on.cmp(&a.created_on));
+    out.sort_by_key(|e| std::cmp::Reverse(e.created_on));
     out
 }
 
