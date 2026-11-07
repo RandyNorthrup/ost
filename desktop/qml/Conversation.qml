@@ -530,7 +530,8 @@ Rectangle {
                 readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
                 readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + body.implicitHeight + 8 : 8)
                 width: root.isChannel ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0) + 2 * pad)
+                TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: bare && files.length === 0 ? picsH
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : imgs.length > 0 ? picsTop + picsH + (showBody ? 8.6 : 8)
@@ -595,12 +596,26 @@ Rectangle {
                     textFormat: msg.modelData.deleted ? Text.PlainText : Text.RichText
                     wrapMode: Text.Wrap
                     font.family: theme.font; font.pixelSize: theme.base
+                    // Teams' tombstone: italic, in the normal text colour.
                     font.italic: msg.modelData.deleted === true
-                    color: msg.modelData.deleted ? theme.textSecondary : theme.text
+                    color: theme.text
                     linkColor: theme.brand
                     onLinkActivated: link => Qt.openUrlExternally(link)
                     HoverHandler { cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
                     Accessible.name: msg.modelData.text
+                }
+                // Undo, 12 px after the tombstone text (14 px semibold brand), for
+                // your own message deleted in this session.
+                Text {
+                    visible: msg.modelData.deleted === true && msg.mine
+                    x: body.x + body.contentWidth + 12; y: body.y
+                    text: "Undo"
+                    font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                    color: theme.brandLink
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: backend.undoDeleteMessage(msg.modelData.id) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Undo"
                 }
                 // File cards, as Teams draws them: type icon, name, and
                 // share/download actions in a 48 px header.

@@ -924,8 +924,24 @@ pub async fn edit_message(
 
 /// Delete one of our messages.
 pub async fn delete_message(client: &TeamsClient, chat_id: &str, message_id: &str) -> Result<()> {
+    // Teams' deleteMessage: a soft delete, so it can be undone.
     let url = format!(
-        "{}/v1/users/ME/conversations/{}/messages/{}",
+        "{}/v1/users/ME/conversations/{}/messages/{}?behavior=softDelete",
+        client.chat_service_url(),
+        chat_id,
+        message_id
+    );
+    client
+        .chat_request(reqwest::Method::DELETE, &url, &serde_json::json!({}))
+        .await?;
+    Ok(())
+}
+
+/// Undo a delete, as Teams' undeleteMessage does: remove the message's
+/// `deletetime` property.
+pub async fn undelete_message(client: &TeamsClient, chat_id: &str, message_id: &str) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages/{}/properties?name=deletetime",
         client.chat_service_url(),
         chat_id,
         message_id

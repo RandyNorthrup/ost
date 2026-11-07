@@ -236,6 +236,9 @@ pub mod qobject {
         /// Delete one of our messages in the open chat.
         #[qinvokable]
         fn delete_message(self: Pin<&mut Backend>, message_id: &QString);
+        /// Undo a delete made in this session.
+        #[qinvokable]
+        fn undo_delete_message(self: Pin<&mut Backend>, message_id: &QString);
 
         /// Ring (or stop ringing) for an incoming call.
         #[qinvokable]
@@ -2589,6 +2592,15 @@ impl qobject::Backend {
         deleted_here().lock().unwrap().insert(id.clone());
         self.message_action(move |client, chat| {
             Box::pin(async move { api::messages::delete_message(&client, &chat, &id).await })
+        });
+    }
+
+    /// Undo a delete made in this session (Teams' Undo on the tombstone).
+    pub fn undo_delete_message(self: Pin<&mut Self>, message_id: &QString) {
+        let id = message_id.to_string();
+        deleted_here().lock().unwrap().remove(&id);
+        self.message_action(move |client, chat| {
+            Box::pin(async move { api::messages::undelete_message(&client, &chat, &id).await })
         });
     }
 

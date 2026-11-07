@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T04:50:00Z'
+updated_date: '2026-11-07T05:00:00Z'
 labels:
   - desktop
   - messages
@@ -27,7 +27,7 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 - [x] #1 Older messages load on scroll-up (Teams' paging)
 - [ ] #2 Every message type Teams shows per chat kind renders (system/control events incl. member added and rename, call rows with bold duration, cards, files, media)
 - [ ] #3 Optimistic send with Sending/Retrying/failed states and Retry/Edit/Delete
-- [ ] #4 Delete is Teams' soft delete with the tombstone and Undo
+- [x] #4 Delete is Teams' soft delete with the tombstone and Undo
 - [ ] #5 Read receipts: Teams' Seen rule (at most two icons, 2-20 members); typing indicator with Teams' timeouts and multiple typers
 <!-- AC:END -->
 
@@ -40,4 +40,6 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 
 - System/control messages: researched module 75579 (strings, AddMember parsing, missed-call rule) and 349533 (type→icon table); live rows measured on winpc (28/36 px rows, icon x6 y8, text 12px x40 y10, names regular, call duration bold).
 - Built: chat_event/event_text (AddMember incl. history and self-join, DeleteMember self/by/system, TopicUpdate incl. removed/meeting, PictureUpdate, MemberJoined, MemberLeft, MemberRenamed) with names from the event or Graph (cached); rows drawn as Teams with its icons; call rows with Teams' {h}h {m}m {s}s bold duration. Remaining types for AC2: cards, contacts, media, polls, recordings/transcripts.
+
+- Soft delete: Teams' deleteMessage = DELETE …/messages/{id}?behavior=softDelete; undo = DELETE …/messages/{id}/properties?name=deletetime; canBeUndeleted is client-side (deleted this session). Tombstone measured on winpc (own bubble, italic #242424 14px, "Undo" 14px semibold #4F52B2 12px after). Built and verified with --delete-undo-test on ost-test1's notes chat (delete → tombstone → Undo → restored).
 <!-- SECTION:NOTES:END -->
