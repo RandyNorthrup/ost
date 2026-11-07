@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T05:24:00Z'
+updated_date: '2026-11-07T05:41:00Z'
 labels:
   - desktop
   - shell
@@ -26,7 +26,7 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 - [x] #2 Relaunching OST brings the running instance forward
 - [ ] #3 Presence goes Away when idle/locked/minimised and shows In a call / In a meeting / Presenting automatically, as Teams computes it
 - [ ] #4 Do not disturb suppresses banners as Teams does (priority access aside)
-- [ ] #5 Set status message dialog as Teams (expiry, show when people message me)
+- [x] #5 Set status message dialog as Teams (expiry, show when people message me)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -39,4 +39,8 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 - Presence researched in Teams' worker (docs/spec/presence.md, by agent from modules 93846/67431/64130): three published pairs only; Away is the service's; on desktop "inactive" = machine locked; user.activity over Trouter (twice on connect, on change, ack in 10 s); hourly heartbeat; Teams-V2-Desktop headers; endpoint create only for a new epid or 240 s after the last success.
 - Built: engine presence state machine (endpoint_pair, set_call_state, publish_endpoint with the 240 s rule, publish_state, heartbeat, delete_endpoint) with Teams' bodies/key order/headers; Offline sends activity OffWork; Trouter: user.activity twice on connect, lock immediately / unlock debounced 1 s, ack timeout → reconnect, hourly heartbeat, no 120 s re-PUT; desktop: logind lock watcher (session via auto Id → GetSession; suspend = locked), call/sharing state → Busy/InACall or DoNotDisturb/Presenting; endpoint deleted on sign-out.
 - Verified live: Trouter acks (6:::n+[]), second report at 10 s, lock hint → inactive at once, unlock → active after 1 s (SetLockedHint, no real lock). Call-state publish to be verified in the next live call test. Left for AC3-5: status duration UI + dedupe, Set status message dialog, DND toast filter.
+
+- Status duration and status message: researched (spec §Forced status, Expiry, Profile menu); live profile menu read on winpc (statuses, Duration ›, Reset status; icons resolved: Clock, ArrowReset, Status, Open, PersonAdd…); Duration page measured (320 wide, padding 16, dropdowns 30, Done 96×31.3). Captured Teams' real publishnote request: {"expiry":"9999-12-31T08:00:00.000Z","message":"<p>…</p><pinnednote></pinnednote>"}.
+- Built: expiry_for (Teams' table), force_availability_until (desiredExpirationTime), publish_note/note_body (verified byte-for-byte against the capture), backend setMyStatusUntil with Teams' drop rules and setStatusNote; profile flyout 320 wide with View account, Set status message ›, Fluent status menu (Duration ›, Reset status), Duration page and Set status message page.
+- Verified: --status-test (Busy for 1 hour, Reset → service Available; note set pinned, then cleared). Left: DND toast filter (AC4); Pause notifications ›, Set work location ›, Add another account, Schedule out of office (link hidden until the OOF dialog exists); Teams' filled dropdown style on these pages.
 <!-- SECTION:NOTES:END -->

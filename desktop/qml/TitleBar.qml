@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls.Basic
 
 // Top bar, laid out as Teams desktop's (measured from its DOM at 1x):
 // sidebar toggle, back/forward, search, settings-and-more, profile, and the
@@ -31,7 +32,9 @@ Rectangle {
     property bool pinned: false
     signal togglePin()
     function focusSearch() { field.forceActiveFocus() }
-    function openProfileForTest() { menu.visible = true; statusMenu.visible = true }
+    function openProfileForTest() { menu.visible = true; statusMenu.open() }
+    function profilePageForTest(page) { statusMenu.close(); if (page === "duration") durationPage.start(); if (page === "note") notePage.start(); menu.visible = true; menu.page = page }
+    function closeProfileForTest() { menu.visible = false }
     // Test hook: type into search and keep the suggestions open offscreen,
     // where the window never has focus.
     property bool keepSuggestionsOpen: false
@@ -321,19 +324,31 @@ Rectangle {
         const s = statuses.find(s => s.key.toLowerCase() === k)
         return s ? s.label : (k === "inacall" || k === "inameeting" || k === "busyidle" ? "Busy" : k === "availableidle" ? "Available" : p)
     }
+    readonly property var presenceInk: ({ available: "#13A10E", away: "#EAA300", busy: "#D13438", dnd: "#D13438", offline: "#616161" })
+    function presenceKind(key) {
+        const k = key.toLowerCase()
+        return k === "available" ? "available" : (k === "away" || k === "berightback") ? "away"
+            : k === "busy" ? "busy" : k === "donotdisturb" ? "dnd" : "offline"
+    }
+    // Your status message (Set status message), as last saved here.
+    property string statusNote: ""
+    property bool statusNotePinned: false
     Rectangle {
         id: menu
         visible: false
         z: 100
-        width: 360; height: menuCol.implicitHeight + 8
+        // Teams' profile flyout: 320 wide; its pages replace one another.
+        property string page: "main"
+        width: 320; height: (page === "main" ? menuCol.implicitHeight : page === "duration" ? durationPage.implicitHeight : notePage.implicitHeight) + 8
         anchors.right: parent.right; anchors.rightMargin: 8
         y: parent.height + 4
         radius: 8
         color: theme.menu
         border.color: theme.dividerSoft
-        onVisibleChanged: if (!visible) statusMenu.visible = false
+        onVisibleChanged: if (!visible) { statusMenu.close(); page = "main" }
         Column {
             id: menuCol
+            visible: menu.page === "main"
             width: parent.width
             Item {
                 width: parent.width; height: 48
@@ -356,72 +371,262 @@ Rectangle {
                 }
             }
             Item {
-                width: parent.width; height: 72
+                width: parent.width; height: 80
                 Avatar { x: 18; anchors.verticalCenter: parent.verticalCenter; name: root.userName || "?"; size: 56; photoId: "me" }
                 Column {
                     x: 88; anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 100
                     Text { width: parent.width; elide: Text.ElideRight; text: root.userName; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                     Text { visible: root.userMail.length > 0; width: parent.width; elide: Text.ElideRight; text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+                    // View account ↗ (opens the Microsoft account page in the browser, as Teams does).
+                    Row {
+                        spacing: 4
+                        Text { text: "View account"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 12; color: theme.textStrong }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { menu.visible = false; Qt.openUrlExternally("https://myaccount.microsoft.com/") } }
+                        Accessible.role: Accessible.Link
+                        Accessible.name: "View account"
+                    }
                 }
             }
-            // Your status: opens the choices.
-            Rectangle {
-                id: statusRow
-                width: parent.width - 8; x: 4; height: 36; radius: theme.radius
-                color: srh.hovered || statusMenu.visible ? theme.rowHover : "transparent"
-                PresenceBadge { x: 86; anchors.verticalCenter: parent.verticalCenter; total: 16; presence: root.presence || "Available" }
-                Text {
-                    x: 112; anchors.verticalCenter: parent.verticalCenter
-                    text: root.statusLabel(root.presence)
-                    font.family: theme.font; font.pixelSize: theme.base
-                    color: theme.text
-                }
-                FluentIcon { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.textStrong }
-                HoverHandler { id: srh; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: statusMenu.visible = !statusMenu.visible }
+            component FlyoutRow: Rectangle {
+                id: fr
+                property string icon
+                property string label
+                property bool chevron: true
+                property bool active: false
+                default property alias lead: frLead.data
+                signal clicked()
+                width: menuCol.width - 8; x: 4; height: 36; radius: theme.radius
+                color: frh.hovered || active ? theme.rowHover : "transparent"
+                Item { id: frLead; x: 78; width: 20; height: 20; anchors.verticalCenter: parent.verticalCenter }
+                FluentIcon { visible: !!fr.icon; x: 78; anchors.verticalCenter: parent.verticalCenter; name: fr.icon; size: 20; color: theme.textStrong }
+                Text { x: 108; anchors.verticalCenter: parent.verticalCenter; text: fr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                FluentIcon { visible: fr.chevron; anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.textStrong }
+                HoverHandler { id: frh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: fr.clicked() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Status: " + root.statusLabel(root.presence)
+                Accessible.name: fr.label
+            }
+            // Your status: the Fluent status menu beside it.
+            FlyoutRow {
+                id: statusRow
+                label: root.statusLabel(root.presence)
+                active: statusMenu.opened
+                PresenceBadge { anchors.centerIn: parent; total: 16; presence: root.presence || "Available" }
+                onClicked: statusMenu.opened ? statusMenu.close() : statusMenu.open()
+            }
+            FlyoutRow {
+                icon: "status-20"; label: "Set status message"
+                onClicked: { notePage.start(); menu.page = "note" }
             }
             Item { width: 1; height: 8 }
         }
-        // The status choices, beside the menu as in Teams.
-        Rectangle {
+        // The status choices, as Teams' menu: the statuses, Duration, Reset status.
+        MenuPopup {
             id: statusMenu
-            visible: false
-            x: 80; y: statusRow.y + statusRow.height + 2
-            width: 220; height: statusCol.implicitHeight + 8
-            radius: 8
-            color: theme.menu
-            border.color: theme.dividerSoft
-            Column {
-                id: statusCol
-                x: 4; y: 4; width: parent.width - 8
-                Repeater {
-                    model: root.statuses
-                    Rectangle {
-                        required property var modelData
-                        width: statusCol.width; height: 36; radius: theme.radius
-                        color: sth.hovered ? theme.rowHover : "transparent"
-                        PresenceBadge { x: 12; anchors.verticalCenter: parent.verticalCenter; total: 16; presence: parent.modelData.key }
-                        Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                        HoverHandler { id: sth; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { menu.visible = false; root.setStatus(parent.modelData.key) } }
-                        Accessible.role: Accessible.MenuItem
-                        Accessible.name: modelData.label
-                    }
-                }
-                Rectangle { width: statusCol.width; height: 1; color: theme.dividerSoft }
-                Rectangle {
-                    width: statusCol.width; height: 36; radius: theme.radius
-                    color: rsh.hovered ? theme.rowHover : "transparent"
-                    Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: "Reset status"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                    HoverHandler { id: rsh; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { menu.visible = false; root.setStatus("Reset") } }
-                    Accessible.role: Accessible.MenuItem
-                    Accessible.name: "Reset status"
-                }
+            x: 72; y: statusRow.y + statusRow.height + 2
+            items: root.statuses.map(s => ({ label: s.label, icon: "presence-" + root.presenceKind(s.key) + "-16",
+                                               iconColor: root.presenceInk[root.presenceKind(s.key)] }))
+                .concat([{ separator: true }, { label: "Duration", icon: "clock-20", chevron: true },
+                         { separator: true }, { label: "Reset status", icon: "arrow-reset-20" }])
+            onPicked: i => {
+                const n = root.statuses.length
+                if (i < n) { menu.visible = false; root.setStatus(root.statuses[i].key) }
+                else if (i === n + 1) { durationPage.start(); menu.page = "duration" }
+                else if (i === n + 3) { menu.visible = false; root.setStatus("Reset") }
             }
         }
+        // A Fluent dropdown of the flyout's pages (30 tall, as measured).
+        component Dropdown: Rectangle {
+            id: dd
+            property var options: []
+            property int current: 0
+            property var leadColor
+            property string leadIcon
+            width: parent ? parent.width : 288; height: 30; radius: 4
+            color: theme.input
+            border.color: ddMenu.opened ? theme.brand : theme.stroke
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.textSecondary; visible: !ddMenu.opened }
+            FluentIcon { visible: !!dd.leadIcon; x: 12; anchors.verticalCenter: parent.verticalCenter; name: dd.leadIcon; size: 16; color: dd.leadColor || theme.text }
+            Text {
+                x: dd.leadIcon ? 36 : 12; anchors.verticalCenter: parent.verticalCenter
+                text: dd.options.length ? dd.options[dd.current].label : ""
+                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+            }
+            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.textStrong }
+            TapHandler { onTapped: ddMenu.open() }
+            MenuPopup {
+                id: ddMenu
+                y: dd.height + 2; width: dd.width
+                items: dd.options.map((o, k) => ({ label: o.label, icon: o.icon, iconColor: o.color, checked: k === dd.current }))
+                onPicked: k => dd.current = k
+            }
+            Accessible.role: Accessible.ComboBox
+        }
+        component BackHeader: Item {
+            signal back()
+            width: parent ? parent.width : 288; height: 40
+            Row {
+                y: 10; spacing: 6
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-16"; size: 16; color: theme.textStrong }
+                Text { text: "Back"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: parent.parent.back() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Back"
+            }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
+        }
+        component PrimaryButton: Rectangle {
+            id: pb
+            property string label
+            signal clicked()
+            width: 96; height: 31.3; radius: 4
+            color: !enabled ? theme.disabled : pbh.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: pb.label; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+            HoverHandler { id: pbh; cursorShape: pb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: pb.enabled; onTapped: pb.clicked() }
+            Accessible.role: Accessible.Button
+            Accessible.name: label
+        }
+        // Duration: Status and "Reset status after" (default Today), then Done.
+        Column {
+            id: durationPage
+            visible: menu.page === "duration"
+            x: 16; y: 4; width: parent.width - 32
+            spacing: 0
+            readonly property var durations: [
+                { key: "HalfHour", label: "30 minutes" }, { key: "OneHour", label: "1 hour" },
+                { key: "TwoHours", label: "2 hours" }, { key: "Today", label: "Today" }, { key: "ThisWeek", label: "This week" }
+            ]
+            function start() {
+                const i = root.statuses.findIndex(s => s.key.toLowerCase() === (root.presence || "Available").toLowerCase())
+                statusPick.current = Math.max(0, i)
+                durationPick.current = 3
+            }
+            BackHeader { onBack: menu.page = "main" }
+            Item { width: 1; height: 21 }
+            Text { text: "Status"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Item { width: 1; height: 5 }
+            Dropdown {
+                id: statusPick
+                options: root.statuses.map(s => ({ label: s.label, icon: "presence-" + root.presenceKind(s.key) + "-16", color: root.presenceInk[root.presenceKind(s.key)] }))
+                leadIcon: options.length ? options[current].icon : ""
+                leadColor: options.length ? options[current].color : theme.text
+            }
+            Item { width: 1; height: 26 }
+            Text { text: "Reset status after"; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
+            Item { width: 1; height: 5 }
+            Dropdown { id: durationPick; options: durationPage.durations }
+            Item { width: 1; height: 29 }
+            Item {
+                width: parent.width; height: 31.3
+                PrimaryButton {
+                    anchors.right: parent.right; label: "Done"
+                    onClicked: { menu.visible = false; root.setStatusUntil(root.statuses[statusPick.current].key, durationPage.durations[durationPick.current].key) }
+                }
+            }
+            Item { width: 1; height: 12 }
+        }
+        // Set status message: 280 characters, "Show when people message me",
+        // "Clear status message after" (default Never), Done / Saving...
+        Column {
+            id: notePage
+            visible: menu.page === "note"
+            x: 16; y: 4; width: parent.width - 32
+            property bool saving: false
+            readonly property var clearAfter: [
+                { key: "Never", label: "Never" }, { key: "Today", label: "Today" }, { key: "OneHour", label: "1 hour" },
+                { key: "FourHours", label: "4 hours" }, { key: "ThisWeek", label: "This week" }
+            ]
+            function start() { saving = false; noteText.text = root.statusNote; pinBox.checked = root.statusNotePinned; clearPick.current = 0 }
+            BackHeader { onBack: menu.page = "main" }
+            Item { width: 1; height: 12 }
+            Text { text: "Set status message"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+            Item { width: 1; height: 10 }
+            Rectangle {
+                width: parent.width; height: 96; radius: 4
+                color: theme.input; border.color: noteText.activeFocus ? theme.brand : theme.stroke
+                TextEdit {
+                    id: noteText
+                    x: 10; y: 8; width: parent.width - 20; height: parent.height - 30
+                    wrapMode: TextEdit.Wrap
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                    onTextChanged: if (text.length > 280) { const p = cursorPosition; text = text.slice(0, 280); cursorPosition = Math.min(p, 280) }
+                    Text { visible: !parent.text; text: "Type your status message here"; font: parent.font; color: theme.textSecondary }
+                    Accessible.name: "Status message"
+                }
+                Text {
+                    anchors.right: parent.right; anchors.rightMargin: 10; anchors.bottom: parent.bottom; anchors.bottomMargin: 6
+                    text: noteText.text.length + " / 280"
+                    font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
+                }
+            }
+            Item { width: 1; height: 10 }
+            Row {
+                spacing: 8
+                Rectangle {
+                    id: pinBox
+                    property bool checked: false
+                    width: 16; height: 16; radius: 2
+                    color: checked ? theme.brandFill : "transparent"; border.color: checked ? theme.brandFill : theme.textStrong
+                    FluentIcon { anchors.centerIn: parent; visible: pinBox.checked; name: "checkmark-12"; size: 12; color: "white" }
+                    TapHandler { onTapped: pinBox.checked = !pinBox.checked }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.checked: checked
+                    Accessible.name: "Show when people message me"
+                }
+                Text {
+                    text: "Show when people message me"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                    TapHandler { onTapped: pinBox.checked = !pinBox.checked }
+                }
+                FluentIcon {
+                    anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 16; color: theme.textStrong
+                    HoverHandler { id: infoHover }
+                    ToolTip {
+                        visible: infoHover.hovered; width: 240
+                        background: FluentSurface { depth: 16; radius: 4 }
+                        contentItem: Text { text: "Your status message will show above the compose message box when someone sends you a message or @mentions you."; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    }
+                }
+            }
+            Item { width: 1; height: 14 }
+            Text { text: "Clear status message after"; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
+            Item { width: 1; height: 5 }
+            Dropdown { id: clearPick; options: notePage.clearAfter }
+            Item { width: 1; height: 18 }
+            Item {
+                width: parent.width; height: 31.3
+                // Teams' "Schedule out of office" opens its out-of-office dialog;
+                // shown once OST has that dialog (TASK-0041).
+                Text {
+                    visible: false
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Schedule out of office"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brandLink
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { menu.visible = false; root.openOutOfOffice() } }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: "Schedule out of office"
+                }
+                PrimaryButton {
+                    anchors.right: parent.right
+                    label: notePage.saving ? "Saving..." : "Done"
+                    enabled: !notePage.saving && (noteText.text.trim().length > 0 || root.statusNote.length > 0)
+                    onClicked: { notePage.saving = true; root.setStatusNote(noteText.text.trim(), pinBox.checked, notePage.clearAfter[clearPick.current].key) }
+                }
+            }
+            Item { width: 1; height: 12 }
+        }
+    }
+    signal setStatusUntil(string status, string duration)
+    signal setStatusNote(string message, bool pinned, string clearAfter)
+    signal openOutOfOffice()
+    // A status message save finished: close on success, as Teams does.
+    function statusNoteSaved(ok, message, pinned) {
+        notePage.saving = false
+        if (ok) { root.statusNote = message; root.statusNotePinned = pinned; menu.visible = false }
     }
 }

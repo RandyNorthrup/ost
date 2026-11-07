@@ -415,8 +415,12 @@ For a forced status, Never (the 9999 date) means **no**
 - **Pinned** ("Show when people message me") is stored in the message
   itself: the text followed by `<pinnednote></pinnednote>`. Readers test
   `message.indexOf("<pinnednote></pinnednote>") > 0` (compose module 382442
-  `It`; 304255 `oy` keeps the element after the text). → TODO: capture one
-  real publishnote body to confirm where the element sits.
+  `It`; 304255 `oy` keeps the element after the text). **Confirmed** from a
+  real request on winpc (2026-11-06): `PUT https://teams.microsoft.com/ups/noam/v1/me/publishnote`
+  `{"expiry":"9999-12-31T08:00:00.000Z","message":"<p>OST test 41 status message</p><pinnednote></pinnednote>"}`
+  (Never = 9999-12-31 00:00 local, sent as UTC). Headers: x-ms-client-user-agent Teams-V2-Desktop,
+  x-ms-client-type cdlworker, x-ms-session-id, x-ms-endpoint-id, x-ms-client-version,
+  x-ms-client-caller `set-status-note-worker-resolver:DataViewSchemaCdlSetStatusNoteMutation`, x-ms-correlation-id.
 - **Clearing a status message**: an empty message gives `{"message": ""}`
   (no expiry).
 - **Mentions in a status message**: for each mentioned person with an

@@ -86,6 +86,44 @@ const PRESENCE_URL: &str = "https://presence.teams.microsoft.com";
 /// "DoNotDisturb", "BeRightBack", "Away", "Offline"), or `None` to reset it
 /// to what your activity says (PUT …/v1/me/forceavailability/).
 pub async fn force_availability(http: &reqwest::Client, availability: Option<&str>) -> Result<()> {
+    force_availability_until(http, availability, None).await
+}
+
+/// Teams' expiry choices (worker module 49107 `Rn`), from local time `now`:
+/// HalfHour, OneHour, TwoHours, FourHours, Today (23:59:59.999), ThisWeek
+/// (the Saturday of this week, 00:00), or Never (none).
+pub fn expiry_for(
+    choice: &str,
+    now: chrono::DateTime<chrono::Local>,
+) -> Option<chrono::DateTime<chrono::Local>> {
+    use chrono::{Datelike, Duration, TimeZone};
+    let at = |d: chrono::NaiveDate, h, m, s, ms| {
+        chrono::Local
+            .from_local_datetime(&d.and_hms_milli_opt(h, m, s, ms)?)
+            .earliest()
+    };
+    match choice {
+        "HalfHour" => Some(now + Duration::minutes(30)),
+        "OneHour" => Some(now + Duration::hours(1)),
+        "TwoHours" => Some(now + Duration::hours(2)),
+        "FourHours" => Some(now + Duration::hours(4)),
+        "Today" => at(now.date_naive(), 23, 59, 59, 999),
+        "ThisWeek" => {
+            // Weeks start on Sunday; endOfWeek is Saturday, then its start of day.
+            let days_to_sat = 6 - now.weekday().num_days_from_sunday() as i64;
+            at(now.date_naive() + Duration::days(days_to_sat), 0, 0, 0, 0)
+        }
+        _ => None,
+    }
+}
+
+/// Set your status until `until` (Teams' desiredExpirationTime), or
+/// reset it with `None`.
+pub async fn force_availability_until(
+    http: &reqwest::Client,
+    availability: Option<&str>,
+    until: Option<chrono::DateTime<chrono::Local>>,
+) -> Result<()> {
     if let Some(a) = availability
         && ![
             "Available",
@@ -105,11 +143,21 @@ pub async fn force_availability(http: &reqwest::Client, availability: Option<&st
         .bearer_auth(token);
     // Teams sends "activity":"OffWork" with Offline (its check rejects
     // Offline without it).
+    let expiry = until.map(|t| {
+        t.with_timezone(&chrono::Utc)
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    });
     req = match availability {
-        Some("Offline") => {
-            req.json(&serde_json::json!({ "availability": "Offline", "activity": "OffWork" }))
+        Some(a) => {
+            let mut body = serde_json::json!({ "availability": a });
+            if a == "Offline" {
+                body["activity"] = "OffWork".into();
+            }
+            if let Some(e) = &expiry {
+                body["desiredExpirationTime"] = e.clone().into();
+            }
+            req.json(&body)
         }
-        Some(a) => req.json(&serde_json::json!({ "availability": a })),
         None => req.header("Content-Length", "0"),
     };
     let resp = req.send().await.context("Status request failed")?;
@@ -369,6 +417,116 @@ mod endpoint_tests {
             endpoint_pair(&s(CallState::Presenting, false)),
             Some(("DoNotDisturb", "Presenting"))
         );
+    }
+}
+
+/// Set your status message (Teams' setStatusNote: PUT v1/me/publishnote
+/// {expiry, message}). `pinned` is "Show when people message me", kept in
+/// the message as a trailing `<pinnednote></pinnednote>`; an empty message
+/// clears it.
+pub async fn publish_note(
+    http: &reqwest::Client,
+    message: &str,
+    pinned: bool,
+    until: Option<chrono::DateTime<chrono::Local>>,
+) -> Result<()> {
+    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
+    let body = note_body(message, pinned, until);
+    let resp = headers(
+        http.put(format!("{PRESENCE_URL}/v1/me/publishnote")),
+        None,
+        "set-status-note",
+    )
+    .bearer_auth(&token)
+    .body(body.to_string())
+    .send()
+    .await
+    .context("Status note request failed")?;
+    if !resp.status().is_success() {
+        bail!(
+            "Setting the status message failed: HTTP {}",
+            resp.status().as_u16()
+        );
+    }
+    Ok(())
+}
+
+/// The publishnote body: `{"message": ""}` to clear; else the text in a
+/// paragraph (escaped), the pinned marker, and the expiry (Never is
+/// 9999-12-31 local, which Teams sends for notes).
+pub fn note_body(
+    message: &str,
+    pinned: bool,
+    until: Option<chrono::DateTime<chrono::Local>>,
+) -> serde_json::Value {
+    use chrono::TimeZone;
+    if message.trim().is_empty() {
+        return serde_json::json!({ "message": "" });
+    }
+    let esc = message
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let html = format!(
+        "<p>{esc}</p>{}",
+        if pinned {
+            "<pinnednote></pinnednote>"
+        } else {
+            ""
+        }
+    );
+    let never = chrono::Local
+        .with_ymd_and_hms(9999, 12, 31, 0, 0, 0)
+        .earliest();
+    let expiry = until.or(never).map(|t| {
+        t.with_timezone(&chrono::Utc)
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    });
+    serde_json::json!({ "expiry": expiry, "message": html })
+}
+
+#[cfg(test)]
+mod expiry_tests {
+    use super::*;
+    use chrono::{Datelike, TimeZone, Timelike};
+
+    #[test]
+    fn expiries_are_teams_choices() {
+        // A Wednesday afternoon.
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 4, 15, 20, 0)
+            .unwrap();
+        let today = expiry_for("Today", now).unwrap();
+        assert_eq!(
+            (today.day(), today.hour(), today.minute(), today.second()),
+            (4, 23, 59, 59)
+        );
+        let week = expiry_for("ThisWeek", now).unwrap();
+        assert_eq!(
+            (week.weekday(), week.day(), week.hour()),
+            (chrono::Weekday::Sat, 7, 0)
+        );
+        assert_eq!(expiry_for("HalfHour", now).unwrap().minute(), 50);
+        assert!(expiry_for("Never", now).is_none());
+        // Saturday's "This week" is that same day, 00:00.
+        let sat = chrono::Local
+            .with_ymd_and_hms(2026, 11, 7, 10, 0, 0)
+            .unwrap();
+        assert_eq!(expiry_for("ThisWeek", sat).unwrap().day(), 7);
+    }
+
+    #[test]
+    fn notes_are_teams_bodies() {
+        assert_eq!(
+            note_body("  ", true, None),
+            serde_json::json!({ "message": "" })
+        );
+        let b = note_body("Out <today>", true, None);
+        assert_eq!(
+            b["message"],
+            "<p>Out &lt;today&gt;</p><pinnednote></pinnednote>"
+        );
+        assert!(b["expiry"].as_str().unwrap().starts_with("9999-12-3"));
     }
 }
 

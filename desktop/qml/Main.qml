@@ -107,6 +107,13 @@ Window {
     }
     property bool reallyQuit: Qt.application.arguments.length > 1
 
+    Connections {
+        target: backend
+        function onStatusNoteResultChanged() {
+            const r = JSON.parse(backend.statusNoteResult || "{}")
+            titleBar.statusNoteSaved(!!r.ok, r.message || "", !!r.pinned)
+        }
+    }
     // Calls and sharing set presence, as Teams' calling client state does.
     Connections {
         target: backend
@@ -307,15 +314,22 @@ Window {
     // then reset (capturing the menu).
     Timer {
         running: Qt.application.arguments.indexOf("--status-test") >= 0 && backend.signedIn && backend.userMail.length > 0
-        interval: 1500
+        interval: 3000
         property int step: 0
         repeat: true
         onTriggered: {
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + n + ".png")))
             if (step === 0) titleBar.openProfileForTest()
-            else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-profile.png")))
-            else if (step === 2) { backend.setMyStatus("Busy") }
-            else if (step === 4) { console.warn("STATUS after busy", titleBar.presence); backend.setMyStatus("Reset") }
-            else if (step === 6) { console.warn("STATUS reset"); Qt.quit() }
+            else if (step === 1) shot("profile")
+            else if (step === 2) titleBar.profilePageForTest("duration")
+            else if (step === 3) shot("duration")
+            else if (step === 4) titleBar.profilePageForTest("note")
+            else if (step === 5) shot("note")
+            else if (step === 6) { titleBar.closeProfileForTest(); backend.setMyStatusUntil("Busy", "OneHour", "") }
+            else if (step === 8) { console.warn("STATUS after busy", titleBar.presence); backend.setMyStatus("Reset") }
+            else if (step === 10) { console.warn("STATUS reset", titleBar.presence); backend.setStatusNote("OST test 42 status note", true, "OneHour", "") }
+            else if (step === 12) { console.warn("STATUS note", backend.statusNoteResult); backend.setStatusNote("", false, "Never", "") }
+            else if (step === 14) { console.warn("STATUS note cleared", backend.statusNoteResult); Qt.quit() }
             step++
         }
     }
@@ -1466,6 +1480,8 @@ Window {
         userMail: backend.userMail
         orgName: backend.orgName
         onSetStatus: st => backend.setMyStatus(st)
+        onSetStatusUntil: (st, dur) => backend.setMyStatusUntil(st, dur, "")
+        onSetStatusNote: (msg, pinned, clearAfter) => backend.setStatusNote(msg, pinned, clearAfter, "")
         pinned: window.pinned
         onTogglePin: window.pinned = !window.pinned
         windowButtons: !backend.systemFrame

@@ -84,6 +84,8 @@ pub mod qobject {
         #[qproperty(QString, channel_tab_result)]
         /// About this tab: {app, about} once loaded.
         #[qproperty(QString, app_about_json)]
+        /// The last status message save: {ok, message, pinned} or {ok, error}.
+        #[qproperty(QString, status_note_result)]
         /// The open chat has older messages to load (scroll up).
         #[qproperty(bool, messages_has_older)]
         /// Older messages are being fetched.
@@ -570,6 +572,23 @@ pub mod qobject {
         /// "BeRightBack", "Away", "Offline"), or "Reset".
         #[qinvokable]
         fn set_my_status(self: Pin<&mut Backend>, status: &QString);
+        /// Set your status until a Duration choice (Teams' Duration page).
+        #[qinvokable]
+        fn set_my_status_until(
+            self: Pin<&mut Backend>,
+            status: &QString,
+            duration: &QString,
+            custom: &QString,
+        );
+        /// Set or clear your status message (Teams' Set status message).
+        #[qinvokable]
+        fn set_status_note(
+            self: Pin<&mut Backend>,
+            message: &QString,
+            pinned: bool,
+            clear_after: &QString,
+            custom: &QString,
+        );
 
         /// Microphones and speakers: {"inputs": [...], "outputs": [...]}.
         #[qinvokable]
@@ -626,6 +645,7 @@ pub struct BackendRust {
     channel_tabs_json: QString,
     channel_tab_result: QString,
     app_about_json: QString,
+    status_note_result: QString,
     messages_has_older: bool,
     messages_loading_older: bool,
     /// The channel name channel_tabs_load was last given (reloads reuse it).
@@ -4312,21 +4332,108 @@ impl qobject::Backend {
         });
     }
 
-    pub fn set_my_status(mut self: Pin<&mut Self>, status: &QString) {
+    pub fn set_my_status(self: Pin<&mut Self>, status: &QString) {
+        // Teams' default duration is Today (Reset has none).
+        self.set_my_status_until(status, &QString::from("Today"), &QString::default());
+    }
+
+    /// Set your status as Teams does (forceavailability with
+    /// desiredExpirationTime from the Duration choice; Custom takes an ISO
+    /// local time), dropping repeats as Teams' manager does.
+    pub fn set_my_status_until(
+        mut self: Pin<&mut Self>,
+        status: &QString,
+        duration: &QString,
+        custom: &QString,
+    ) {
+        use std::sync::Mutex;
+        // (availability, duration) of the last request, when it was sent, and
+        // whether it is still pending.
+        static LAST: Mutex<Option<(String, String, std::time::Instant, bool)>> = Mutex::new(None);
         let status = status.to_string();
+        let duration = duration.to_string();
+        let custom = custom.to_string();
+        {
+            let last = LAST.lock().unwrap();
+            if let Some((a, d, at, pending)) = last.as_ref() {
+                let same = *a == status && *d == duration;
+                // Identical while in flight, any request within 10 s of a
+                // pending one, or equal to the current one within 300 s.
+                if (*pending && (same || at.elapsed().as_secs() < 10))
+                    || (same && at.elapsed().as_secs() < 300)
+                {
+                    return;
+                }
+            }
+        }
+        *LAST.lock().unwrap() = Some((
+            status.clone(),
+            duration.clone(),
+            std::time::Instant::now(),
+            true,
+        ));
         let forced = (status != "Reset").then(|| status.clone());
-        // Show it at once; the presence service confirms on the next poll.
         if let (Some(f), Some(me)) = (forced.clone(), self.rust().my_mri.clone()) {
             self.as_mut().rust_mut().presence.insert(me, f);
             self.as_mut().publish_chats();
         }
+        let until = if duration == "Custom" {
+            chrono::DateTime::parse_from_rfc3339(&custom)
+                .ok()
+                .map(|t| t.with_timezone(&chrono::Local))
+        } else {
+            teams_cli::api::presence::expiry_for(&duration, chrono::Local::now())
+        };
+        let until = forced.as_ref().and(until);
         runtime().spawn(async move {
             let http = reqwest::Client::new();
             if let Err(e) =
-                teams_cli::api::presence::force_availability(&http, forced.as_deref()).await
+                teams_cli::api::presence::force_availability_until(&http, forced.as_deref(), until)
+                    .await
             {
                 tracing::warn!("set status failed: {}", short_error(&e));
             }
+            if let Some(l) = LAST.lock().unwrap().as_mut() {
+                l.3 = false;
+            }
+        });
+    }
+
+    /// Set your status message (Teams' publishnote): `message`, shown when
+    /// people message you if `pinned`, cleared after `clear_after` (Never,
+    /// Today, OneHour, FourHours, ThisWeek, or Custom with `custom`).
+    pub fn set_status_note(
+        self: Pin<&mut Self>,
+        message: &QString,
+        pinned: bool,
+        clear_after: &QString,
+        custom: &QString,
+    ) {
+        let (message, choice, custom) = (
+            message.to_string(),
+            clear_after.to_string(),
+            custom.to_string(),
+        );
+        let until = if choice == "Custom" {
+            chrono::DateTime::parse_from_rfc3339(&custom)
+                .ok()
+                .map(|t| t.with_timezone(&chrono::Local))
+        } else {
+            teams_cli::api::presence::expiry_for(&choice, chrono::Local::now())
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let http = reqwest::Client::new();
+            let result =
+                teams_cli::api::presence::publish_note(&http, &message, pinned, until).await;
+            let _ = qt.queue(move |mut this| {
+                let text = match &result {
+                    Ok(()) => json!({ "ok": true, "message": message, "pinned": pinned }),
+                    Err(e) => json!({ "ok": false, "error": short_error(e) }),
+                };
+                this.as_mut()
+                    .set_status_note_result(QString::from(text.to_string().as_str()));
+            });
         });
     }
 

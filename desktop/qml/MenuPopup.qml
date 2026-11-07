@@ -7,7 +7,7 @@ import QtQuick.Controls.Basic
 //   then a 4 px gap, then the label (14/20, NeutralForeground2);
 //   hover NeutralBackground1Hover; disabled items #BDBDBD and inert;
 // - dividers: 1 px, 4 above and below.
-// items: [{ label, icon?, keys?, checked?, separator?, enabled? }]; picking
+// items: [{ label, icon?, iconColor?, chevron?, keys?, checked?, separator?, enabled? }]; picking
 // an enabled row emits picked(index) and closes.
 Popup {
     id: root
@@ -60,7 +60,7 @@ Popup {
                         visible: !!row.modelData.icon
                         x: 6; anchors.verticalCenter: parent.verticalCenter; size: 20
                         name: row.modelData.icon || ""
-                        color: row.modelData.checked ? theme.brand : row.ink
+                        color: row.modelData.iconColor ? row.modelData.iconColor : row.modelData.checked ? theme.brand : row.ink
                     }
                     FluentIcon {
                         visible: !row.modelData.icon && row.modelData.checked === true
@@ -73,6 +73,11 @@ Popup {
                         text: row.modelData.label || ""
                         font.family: theme.font; font.pixelSize: theme.base
                         color: row.ink
+                    }
+                    FluentIcon {
+                        visible: !!row.modelData.chevron
+                        anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                        name: "chevron-right-12"; size: 12; color: row.ink
                     }
                     Text {
                         anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter
