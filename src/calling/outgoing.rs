@@ -534,13 +534,16 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
 /// Call a Teams user. Resolves once the callee answers and audio is set
 /// up, or fails if they decline, do not answer, or the call fails.
 /// Sending on (or dropping) `cancel` while the callee is still ringing
-/// withdraws the call, so their ringing stops.
+/// withdraws the call, so their ringing stops. A video call offers our
+/// camera from the start (its line is sendrecv), as Teams' Video call does;
+/// the camera then starts with `set_camera` once answered.
 pub async fn place_call(
     thread_id: &str,
     callee_mri: &str,
+    video: bool,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start(thread_id, Target::Person(callee_mri), cancel).await
+    start(thread_id, Target::Person(callee_mri, video), cancel).await
 }
 
 /// A Teams meeting, from its join link
@@ -662,8 +665,8 @@ pub fn is_group_chat(thread_id: &str) -> bool {
 }
 
 enum Target<'a> {
-    /// A 1:1 call to this MRI.
-    Person(&'a str),
+    /// A 1:1 call to this MRI; a video call when true.
+    Person(&'a str, bool),
     /// A group chat's call: Meet now, Audio call or Join.
     Group(signaling::GroupCallKind),
     /// The meeting with this message id on the thread.
@@ -704,8 +707,9 @@ async fn start(
     // 1:1 calls offer video too (Teams' calls do); meetings and group
     // calls stay audio-only, since a media processor sends video only to
     // those who subscribe to it.
-    let offer = if matches!(target, Target::Person(_)) && cfg!(feature = "video") {
+    let offer = if let (Target::Person(_, video), true) = (&target, cfg!(feature = "video")) {
         local.receive_video = true;
+        local.camera_on = *video;
         local.offer_sdp_with_video()
     } else {
         local.offer_sdp()
@@ -754,7 +758,7 @@ async fn start(
         Vec::new()
     };
     let (created, _joined) = match target {
-        Target::Person(callee) => {
+        Target::Person(callee, _) => {
             signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
                 .await?
         }

@@ -133,6 +133,9 @@ pub mod qobject {
         /// The preferred skin tone (Teams' preferredSkinToneIndex): 0 for
         /// none, 1 light to 5 dark.
         #[qproperty(i32, skin_tone)]
+        /// The 1:1 header's call button is Video call (the last call placed
+        /// from it was one; Teams' mruChatHeaderCallOption).
+        #[qproperty(bool, header_call_video)]
         /// Customize reactions: "saving", "ok", "error" or empty.
         #[qproperty(QString, reaction_prefs_result)]
         /// `{message_id, total, readers: [{mri, name}]}` for Read by N of M.
@@ -294,6 +297,11 @@ pub mod qobject {
         /// Call the other person in the open 1:1 chat.
         #[qinvokable]
         fn start_call(self: Pin<&mut Backend>);
+
+        /// Video call the other person in the open 1:1 chat: the call starts
+        /// with the camera on.
+        #[qinvokable]
+        fn start_video_call(self: Pin<&mut Backend>);
 
         /// Group chats: Teams' Meet now (a huddle; members are nudged).
         #[qinvokable]
@@ -849,6 +857,7 @@ pub struct BackendRust {
     emoticons_version: i32,
     recent_reactions_json: QString,
     skin_tone: i32,
+    header_call_video: bool,
     reaction_prefs_result: QString,
     message_readers_json: QString,
     toast_json: QString,
@@ -2289,7 +2298,38 @@ impl qobject::Backend {
         });
     }
 
-    pub fn start_call(mut self: Pin<&mut Self>) {
+    pub fn start_call(self: Pin<&mut Self>) {
+        self.start_call_with(false);
+    }
+
+    pub fn start_video_call(self: Pin<&mut Self>) {
+        self.start_call_with(true);
+    }
+
+    /// Remember the 1:1 header's call choice when it changes, as Teams does
+    /// (944031: only with a new choice).
+    fn remember_header_call(mut self: Pin<&mut Self>, video: bool) {
+        if self.rust().header_call_video == video {
+            return;
+        }
+        self.as_mut().set_header_call_video(video);
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::preferences::update_personal_settings(
+                    &client,
+                    &api::preferences::header_call_patch(video),
+                )
+                .await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("call choice not saved: {}", short_error(&e));
+            }
+        });
+    }
+
+    fn start_call_with(mut self: Pin<&mut Self>, video: bool) {
         if !self.rust().call_state.is_empty() {
             return;
         }
@@ -2314,6 +2354,7 @@ impl qobject::Backend {
                 .set_status_text(QString::from("Calls are available in 1:1 chats"));
             return;
         };
+        self.as_mut().remember_header_call(video);
         self.as_mut().set_call_peer(peer);
         self.as_mut()
             .set_call_peer_id(QString::from(callee.as_str()));
@@ -2325,20 +2366,31 @@ impl qobject::Backend {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
         runtime().spawn(async move {
-            let result = outgoing::place_call(&chat_id, &callee, cancel_rx).await;
+            let result = outgoing::place_call(&chat_id, &callee, video, cancel_rx).await;
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
             match result {
-                Ok(call) => {
+                Ok(mut call) => {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
                     let can_video = call.can_send_video();
                     let can_share = call.can_share();
+                    // A video call starts with the camera on.
+                    let camera = video
+                        && can_video
+                        && match call.set_camera(true, camera_device()) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                tracing::info!("camera: {}", short_error(&e));
+                                false
+                            }
+                        };
                     tracing::info!(
                         has_audio,
                         can_dtmf,
                         can_video,
                         can_share,
+                        camera,
                         "outgoing call connected"
                     );
                     slot.outgoing = Some(call);
@@ -2349,6 +2401,7 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
                         this.as_mut().set_call_can_share(can_share);
+                        this.as_mut().set_call_camera_on(camera);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }
@@ -4623,6 +4676,12 @@ impl qobject::Backend {
                     .set_quick_reactions_json(QString::from(quick.as_str()));
                 this.as_mut().set_skin_tone(prefs.tone as i32);
             });
+            if let Ok(c) = TeamsClient::new().await
+                && let Ok(settings) = api::preferences::personal_settings(&c).await
+            {
+                let video = api::preferences::header_call_is_video(&settings);
+                let _ = qt.queue(move |mut this| this.as_mut().set_header_call_video(video));
+            }
         });
     }
 

@@ -10,6 +10,7 @@ Rectangle {
     property bool busy
     signal send(string text)
     signal call()
+    signal videoCall()
     property string chatPresence: ""
     property string typingText: ""
     /// The typer whose avatar the typing indicator shows.
@@ -489,24 +490,30 @@ Rectangle {
             TapHandler { onTapped: ha.clicked() }
             FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: theme.textStrong }
         }
+        // 1:1: Teams' sticky call button (default-chat-call-audio-button /
+        // -video-button, 24 x 31.3): the last choice placed from here, audio
+        // by default; its chevron (24 x 31.3, "More call options") has Video
+        // call and Audio call with their shortcuts, in a 171.8-wide menu
+        // ending 4.6 left of the chevron's right edge.
         HeaderAction {
+            id: callPrimary
             visible: !root.isSelf && !root.isChannel && !root.isGroup
-            x: parent.width - 199; width: 24
-            icon: "call-20"
-            onClicked: root.call()
-            Accessible.name: "Audio call"
+            x: parent.width - 199; width: 24; height: 31.3
+            icon: backend.headerCallVideo ? "video-20" : "call-20"
+            onClicked: backend.headerCallVideo ? root.videoCall() : root.call()
+            Accessible.name: backend.headerCallVideo ? "Video call" : "Audio call"
         }
         HeaderAction {
-            visible: !root.isSelf && !root.isChannel && !root.isGroup
-            x: parent.width - 175; width: 24
+            visible: callPrimary.visible
+            x: parent.width - 175; width: 24; height: 31.3
             icon: "chevron-down-16"; iconSize: 16
             Accessible.name: "More call options"
             onClicked: callMenu.open()
             MenuPopup {
                 id: callMenu
-                x: -200; y: parent.height + 4
-                items: [{ label: "Audio call", icon: "call-20" }]
-                onPicked: root.call()
+                x: parent.width - 4.6 - width; y: parent.height + 4.9
+                items: [{ label: "Video call", icon: "video-20", keys: "Alt+Shift+V" }, { label: "Audio call", icon: "call-20", keys: "Alt+Shift+A" }]
+                onPicked: i => i === 0 ? root.videoCall() : root.call()
             }
         }
         HeaderAction {

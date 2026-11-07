@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T17:36:00Z'
+updated_date: '2026-11-07T17:49:00Z'
 labels:
   - desktop
   - header
@@ -47,4 +47,8 @@ Header gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/chat-list
 
 - Mute / Unmute (alerts property, measured on winpc), in the header ··· and in the new chat-list row menu. The row menu has right-click and the hover ···, with Mark as read/unread, Mute/Unmute and Copy link.
 - Muted rows look as in Teams. Muted chats count toward no badge and notify only for @mentions, and the Meet now toast skips them. Verified with --mute-test: server state round-trips, then unmuted.
+
+- 1:1 sticky call button as Teams: Video call / Audio call (chevron menu with shortcuts, Alt+Shift+V added). The last choice roams via userPersonalSettings.chatSettings.mruChatHeaderCallOption; winpc's Teams picked up OST's value.
+- A Video call offers the camera from the start. Verified live: Randy's web got OST's video on answering. ost-test1's choice was restored to Audio call afterwards (examples/header_call_choice.rs).
+- Left for AC1: the meeting chat header (Join, Meeting details).
 <!-- SECTION:NOTES:END -->

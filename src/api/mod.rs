@@ -15,6 +15,7 @@ pub mod msgactions;
 pub mod onenote;
 pub mod outbox;
 pub mod planner;
+pub mod preferences;
 pub mod presence;
 pub mod store;
 pub mod tabs;

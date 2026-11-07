@@ -672,6 +672,14 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
   - Hidden when: the user is blocked, a member is TFL off-network or
     an unverified SMS user, a bot chat without calling, a write-locked
     thread, or the only member is me. Click → `fireCallingIntent`.
+- **Measured live** (winpc, 1280 wide, 2026-11-07):
+  - the primary button (24 × 31.3, padding 5) sits at W−199 and the chevron (24 × 31.3, padding 7, 16 px icon) at W−175; the roster button follows at W−151;
+  - the chevron's menu is 171.8 wide, 4.9 below the button, ending 4.6 left of the chevron's right edge;
+  - its items: **Video call** `Alt+Shift+V` (`chat-call-video-button`) and **Audio call** `Alt+Shift+A` (`chat-call-audio-button`).
+- **The remembered choice** lives in the user property `userPersonalSettings` (a JSON string), written by `PUT /v1/users/ME/properties?name=userPersonalSettings` with `{"userPersonalSettings": "<json>"}`:
+  - Teams' value is `{"chatSettings":{"mruChatHeaderCallOption":"VIDEO_CALL"}}`, merged with the other settings, and written only when the choice changes (944031);
+  - written from OST, winpc's Teams showed **Video call** after switching chats.
+- **A Video call** offers the camera line `sendrecv` from the start, and the callee gets video as soon as they answer. With `recvonly` plus a later camera start, Teams shows only the avatar.
 - Roster: icon button `chat-add-members` (PeopleAdd), tooltip **"Start
   a group chat"** (opens add-people, no count).
 - Context area (only while the **Chat** tab is selected): **Copilot**
