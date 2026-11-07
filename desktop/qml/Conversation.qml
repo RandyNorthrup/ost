@@ -73,6 +73,8 @@ Rectangle {
     readonly property var quickReactions: backend.quickReactionsJson ? JSON.parse(backend.quickReactionsJson) : ["like", "heart", "laugh", "surprised"]
     // Test hook: show the hover bar on this message (--actions-test).
     property string forceBarId: ""
+    // Test hook: opens the who-reacted list of this message's first pill.
+    property string forceWhoId: ""
     // The message being quoted in the compose box (Reply with quote).
     property var quoting: null
     function replyWithQuote(m) {
@@ -834,23 +836,40 @@ Rectangle {
                     Rectangle {
                         id: pillBox
                         required property var modelData
-                        width: 7 + 20 + (modelData.count > 1 ? 4 + countText.implicitWidth : 0) + 7
+                        required property int index
+                        readonly property bool forcedWho: root.forceWhoId === msg.modelData.id && index === 0
+                        onForcedWhoChanged: if (forcedWho) root.openWhoReacted(pillBox, msg.modelData.id, modelData, false)
+                        readonly property var variants: modelData.variants && modelData.variants.length ? modelData.variants : [modelData.key]
+                        width: 7 + variants.length * 20 + (modelData.count > 1 ? 4 + countText.implicitWidth : 0) + 7
                         height: 26; radius: 13
                         color: theme.surface
                         border.color: modelData.mine ? theme.brand : theme.divider
                         border.width: modelData.mine ? 1.5 : 1
-                        Emoticon { x: 7; y: 3; key: pillBox.modelData.key; named: "small"; size: 20 }
+                        Row {
+                            x: 7; y: 3
+                            Repeater {
+                                model: pillBox.variants
+                                Emoticon { required property string modelData; key: modelData; named: "small"; size: 20 }
+                            }
+                        }
                         Text {
                             id: countText
                             visible: pillBox.modelData.count > 1
-                            x: 7 + 20 + 4; anchors.verticalCenter: parent.verticalCenter
+                            x: 7 + pillBox.variants.length * 20 + 4; anchors.verticalCenter: parent.verticalCenter
                             text: pillBox.modelData.count
                             font.family: theme.font; font.pixelSize: theme.small
                             font.weight: pillBox.modelData.mine ? Font.DemiBold : Font.Normal
                             color: theme.text
                         }
-                        HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.react(msg.modelData.id, pillBox.modelData.key, !pillBox.modelData.mine) }
+                        HoverHandler {
+                            id: pillHover
+                            cursorShape: Qt.PointingHandCursor
+                            onHoveredChanged: hovered ? root.hoverWhoReacted(pillBox, msg.modelData.id, pillBox.modelData) : root.leaveWhoReacted()
+                        }
+                        // Click toggles: removes our exact reaction, else adds
+                        // it (Teams).
+                        TapHandler { onTapped: root.react(msg.modelData.id, pillBox.modelData.mine ? pillBox.modelData.my_key : pillBox.modelData.key, !pillBox.modelData.mine) }
+                        TapHandler { acceptedButtons: Qt.RightButton; onTapped: root.openWhoReacted(pillBox, msg.modelData.id, pillBox.modelData, true) }
                         Accessible.role: Accessible.Button
                         Accessible.checked: modelData.mine
                         Accessible.name: modelData.count + " " + backend.emoticonName(modelData.key) + " reaction" + (modelData.count === 1 ? "." : "s.")
@@ -899,7 +918,7 @@ Rectangle {
                         Item {
                             id: quickBtn
                             required property string modelData
-                            readonly property bool mineAlready: msg.reactions.some(r => r.key === modelData && r.mine)
+                            readonly property var mineAlready: msg.reactions.find(r => r.key === modelData && r.mine)
                             width: 32; height: 31
                             Emoticon {
                                 anchors.centerIn: parent
@@ -908,7 +927,7 @@ Rectangle {
                                 Behavior on scale { NumberAnimation { duration: 100 } }
                             }
                             HoverHandler { id: quickHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.react(msg.modelData.id, quickBtn.modelData, !quickBtn.mineAlready) }
+                            TapHandler { onTapped: root.react(msg.modelData.id, quickBtn.mineAlready ? quickBtn.mineAlready.my_key : quickBtn.modelData, !quickBtn.mineAlready) }
                             ToolTip {
                                 visible: quickHover.hovered; delay: 500
                                 y: -height - 4; padding: 8
@@ -917,7 +936,7 @@ Rectangle {
                             }
                             Accessible.role: Accessible.Button
                             Accessible.name: backend.emoticonName(modelData)
-                            Accessible.checked: mineAlready
+                            Accessible.checked: !!mineAlready
                         }
                     }
                     BarButton { icon: "emoji-add-20"; tip: "More reactions"; onClicked: root.openReactionPicker(msg.modelData.id, actions) }
@@ -1852,8 +1871,8 @@ Rectangle {
                     TapHandler {
                         onTapped: {
                             const m = messageMenu.message
-                            const mine = (m.reactions || []).some(r => r.key === stripBtn.modelData && r.mine)
-                            messageMenu.close(); root.react(m.id, stripBtn.modelData, !mine)
+                            const mine = (m.reactions || []).find(r => r.key === stripBtn.modelData && r.mine)
+                            messageMenu.close(); root.react(m.id, mine ? mine.my_key : stripBtn.modelData, !mine)
                         }
                     }
                     Accessible.role: Accessible.Button
@@ -1867,6 +1886,45 @@ Rectangle {
     // add-reaction button.
     // Above its anchor, start-aligned, kept inside the window (Teams: the
     // picker opened from the hover bar sits over the bar, 8 before it).
+    // Who reacted: hovering a pill opens it after 300 ms (below, 4 off,
+    // centred); leaving the pill and the list closes it.
+    WhoReacted {
+        id: whoReacted
+        onRemoveMine: (id, key) => root.react(id, key, false)
+        onHoveredChanged: if (!hovered && !focus) whoCloseTimer.restart()
+    }
+    property var whoPending: null
+    Timer {
+        id: whoOpenTimer
+        interval: 300
+        onTriggered: if (root.whoPending) root.openWhoReacted(root.whoPending.pill, root.whoPending.id, root.whoPending.reaction, false)
+    }
+    Timer {
+        id: whoCloseTimer
+        interval: 200
+        onTriggered: if (whoReacted.opened && !whoReacted.hovered && !whoReacted.focus) whoReacted.close()
+    }
+    function hoverWhoReacted(pill, id, reaction) {
+        whoCloseTimer.stop()
+        whoPending = { pill: pill, id: id, reaction: reaction }
+        whoOpenTimer.restart()
+    }
+    function leaveWhoReacted() {
+        whoOpenTimer.stop()
+        whoPending = null
+        if (whoReacted.opened && !whoReacted.focus) whoCloseTimer.restart()
+    }
+    function openWhoReacted(pill, id, reaction, withFocus) {
+        whoOpenTimer.stop()
+        whoReacted.close()
+        whoReacted.parent = pill
+        whoReacted.messageId = id
+        whoReacted.reaction = reaction
+        whoReacted.focus = withFocus
+        whoReacted.x = (pill.width - whoReacted.width) / 2
+        whoReacted.y = pill.height + 4.3
+        whoReacted.open()
+    }
     ReactionPicker {
         id: reactionPicker
         x: -8

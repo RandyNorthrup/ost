@@ -576,6 +576,17 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 - Your pill has a brand border; others have NeutralStroke2.
 - The add-reaction button (34 × 26) has a 1 px NeutralStroke2 border and EmojiAdd16 at (9, 5).
 
+**Who reacted** (`diverse-reaction-user-list-popover`, hovering a Fire pill reacted by one person)
+- A Fluent MenuPopover centred under the pill, its top 4.3 below the pill's bottom.
+  - 198 wide for a short name; min-width 138, and rows have max-width 290.
+  - White, radius 4, shadow8, padding 4 / 0 / 8; 85.3 tall for one row.
+- Header: the reaction's name ("Fire"), 12 px weight 300, NeutralForeground3, padding 8 / 16 (32 tall, at y 4.7).
+- The list (`diverse-reaction-user-list`, role menu): at y 36.7, padding 4, min-height 32, max-height 236, scrolling; items 2 apart.
+- A row (`diverse-reaction-user-list-item`, aria "Chat with {name}"):
+  - 32 tall, radius 4, padding 6 / 6 / 6 / 12;
+  - the 20 px round avatar at (12, 6);
+  - the name at 38 (a 2 px padded span), 14 px, weight 400, NeutralForeground2, clipped.
+
 **Reaction picker** (`reaction-picker-root`, 317 × 372)
 - Search: 242 × 32 at (16, 16), NeutralBackground3, radius 4. The placeholder is "Find something fun"; the aria label is "Search for emoji, GIFs or stickers".
 - Customize default reactions: 32 × 32 at (270, 16).

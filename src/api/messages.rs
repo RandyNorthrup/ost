@@ -5,16 +5,47 @@ use anyhow::{Context, Result};
 
 use super::client::TeamsClient;
 
-/// One reaction on a message.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One reaction pill on a message: the reactions sharing an emoji whatever
+/// their skin tone (Teams' `diverseEmotions` item).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Reaction {
-    /// Teams' key, e.g. `like`, `heart`.
+    /// Teams' common key, e.g. `like`, `heart` (`-tone{n}` dropped).
     pub key: String,
     /// The emoji to show.
     pub emoji: String,
     pub count: usize,
     /// Whether we reacted with this one.
     pub mine: bool,
+    /// The exact keys used, at most three, ours first (a pill shows each).
+    pub variants: Vec<String>,
+    /// The exact key we reacted with, if any (removing deletes that one).
+    pub my_key: String,
+    /// Who reacted, newest first.
+    pub users: Vec<Reactor>,
+}
+
+/// Someone who reacted with an emoji.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Reactor {
+    pub mri: String,
+    /// Their display name, once known.
+    pub name: String,
+    /// The exact key, with its skin tone.
+    pub key: String,
+    /// When, in epoch milliseconds.
+    pub time: i64,
+    /// Whether this is us.
+    pub me: bool,
+}
+
+/// Teams' common key of an emoticon key: the key without `-tone{n}`.
+pub fn common_key(key: &str) -> &str {
+    match key.rfind("-tone") {
+        Some(i) if key[i + 5..].chars().all(|c| c.is_ascii_digit()) && key.len() > i + 5 => {
+            &key[..i]
+        }
+        _ => key,
+    }
 }
 
 /// A quoted message at the top of a reply (Teams' Reply with quote): the
@@ -672,8 +703,25 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
             wanted.push(f.sender_mri.clone());
         }
     }
+    // And who reacted (Teams' who-reacted list names them).
+    for u in out
+        .iter()
+        .flat_map(|m| m.reactions.iter())
+        .flat_map(|r| r.users.iter())
+    {
+        if !wanted.contains(&u.mri) && cached_name(&u.mri).is_none() {
+            wanted.push(u.mri.clone());
+        }
+    }
     for id in wanted {
         person_name(client, &id).await;
+    }
+    for u in out
+        .iter_mut()
+        .flat_map(|m| m.reactions.iter_mut())
+        .flat_map(|r| r.users.iter_mut())
+    {
+        u.name = cached_name(&u.mri).unwrap_or_else(|| "Unknown user".into());
     }
     for f in out.iter_mut().filter_map(|m| m.forward.as_mut()) {
         if f.sender_name.is_empty() {
@@ -872,30 +920,71 @@ fn reactions_of(e: &serde_json::Value, me: &str) -> Vec<Reaction> {
         }
         other => other,
     };
-    list.as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|r| {
-            let key = r.get("key")?.as_str()?.to_string();
-            let users = r
-                .get("users")
-                .and_then(|u| u.as_array())
-                .cloned()
-                .unwrap_or_default();
-            if users.is_empty() {
-                return None;
-            }
-            let mine = users
-                .iter()
-                .any(|u| u.get("mri").and_then(|m| m.as_str()) == Some(me));
-            Some(Reaction {
-                emoji: reaction_emoji(&key).to_string(),
-                key,
-                count: users.len(),
-                mine,
+    let mut pills: Vec<Reaction> = Vec::new();
+    for r in list.as_array().into_iter().flatten() {
+        let Some(key) = r.get("key").and_then(|k| k.as_str()) else {
+            continue;
+        };
+        let users: Vec<Reactor> = r
+            .get("users")
+            .and_then(|u| u.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|u| {
+                Some(Reactor {
+                    mri: u.get("mri")?.as_str()?.to_string(),
+                    me: u.get("mri")?.as_str()? == me,
+                    name: String::new(),
+                    key: key.to_string(),
+                    time: u
+                        .get("time")
+                        .and_then(|t| t.as_i64().or_else(|| t.as_str()?.parse().ok()))
+                        .unwrap_or_default(),
+                })
             })
-        })
-        .collect()
+            .collect();
+        if users.is_empty() {
+            continue;
+        }
+        let common = common_key(key);
+        let i = match pills.iter().position(|p| p.key == common) {
+            Some(i) => i,
+            None => {
+                pills.push(Reaction {
+                    key: common.to_string(),
+                    emoji: reaction_emoji(common).to_string(),
+                    ..Default::default()
+                });
+                pills.len() - 1
+            }
+        };
+        let pill = &mut pills[i];
+        if users.iter().any(|u| u.me) {
+            pill.mine = true;
+            pill.my_key = key.to_string();
+        }
+        pill.users.extend(users);
+    }
+    for p in &mut pills {
+        p.count = p.users.len();
+        p.users.sort_by_key(|u| std::cmp::Reverse(u.time));
+        // Ours first, then by use.
+        let mut keys: Vec<(String, usize)> = Vec::new();
+        for u in &p.users {
+            match keys.iter_mut().find(|(k, _)| *k == u.key) {
+                Some(k) => k.1 += 1,
+                None => keys.push((u.key.clone(), 1)),
+            }
+        }
+        keys.sort_by_key(|(k, n)| (*k != p.my_key, std::cmp::Reverse(*n)));
+        p.variants = keys.into_iter().take(3).map(|(k, _)| k).collect();
+    }
+    // Teams' order: pills with our reaction first, by count; then the rest
+    // as listed.
+    let (mut mine, rest): (Vec<_>, Vec<_>) = pills.into_iter().partition(|p| p.mine);
+    mine.sort_by_key(|p| std::cmp::Reverse(p.count));
+    mine.extend(rest);
+    mine
 }
 
 /// Reduce Teams message HTML to the subset Qt's rich text renders safely:
@@ -1707,6 +1796,28 @@ mod quote_tests {
     use super::*;
 
     #[test]
+    fn reactions_group_skin_tones_and_order() {
+        let e = serde_json::json!([
+            {"key": "heart", "users": [{"mri": "a", "time": 1}]},
+            {"key": "like-tone2", "users": [{"mri": "me", "time": 5}]},
+            {"key": "like", "users": [{"mri": "b", "time": 9}, {"mri": "c", "time": 3}]},
+            {"key": "fire", "users": []}
+        ]);
+        let r = reactions_of(&e, "me");
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].key, "like");
+        assert!(r[0].mine);
+        assert_eq!(r[0].my_key, "like-tone2");
+        assert_eq!(r[0].count, 3);
+        assert_eq!(r[0].variants, vec!["like-tone2", "like"]);
+        let order: Vec<_> = r[0].users.iter().map(|u| u.mri.as_str()).collect();
+        assert_eq!(order, vec!["b", "me", "c"]);
+        assert_eq!(r[1].key, "heart");
+        assert_eq!(common_key("like-tone5"), "like");
+        assert_eq!(common_key("handsinair-tone"), "handsinair-tone");
+    }
+
+    #[test]
     fn quotes_round_trip_as_teams_writes_them() {
         let wire = "<blockquote itemscope itemtype=\"http://schema.skype.com/Reply\" itemid=\"1794032815852\"><strong itemprop=\"mri\" itemid=\"8:orgid:5050\">Randy Northrup</strong><span itemprop=\"time\" itemid=\"1794032815852\"></span><p itemprop=\"preview\">OST test 43: typing clears on send</p></blockquote>\n<p>OST test 47: quoted reply</p>";
         let (q, rest) = split_quote(wire);
@@ -1996,7 +2107,22 @@ mod tests {
                 key: "like".into(),
                 emoji: "👍".into(),
                 count: 2,
-                mine: true
+                mine: true,
+                variants: vec!["like".into()],
+                my_key: "like".into(),
+                users: vec![
+                    Reactor {
+                        mri: "8:orgid:them".into(),
+                        key: "like".into(),
+                        ..Default::default()
+                    },
+                    Reactor {
+                        mri: "8:orgid:me".into(),
+                        key: "like".into(),
+                        me: true,
+                        ..Default::default()
+                    },
+                ],
             }]
         );
 

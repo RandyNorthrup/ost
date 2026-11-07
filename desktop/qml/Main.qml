@@ -1557,6 +1557,26 @@ Window {
         }
     }
 
+    // --who-reacted-test with --open-chat=<id> --shots=<dir>: the newest
+    // reacted message's who-reacted list, captured as who-reacted.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--who-reacted-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST who reacted test"); return }
+            const m = JSON.parse(backend.messagesJson || "[]").filter(m => (m.reactions || []).length > 0).pop()
+            if (!m) return
+            if (step === 0) { console.warn("WHO-TEST", m.id, JSON.stringify(m.reactions)); conversation.jumpToMessage(m.id) }
+            else if (step === 1) conversation.forceWhoId = m.id
+            else if (step === 2) window.contentItem.grabToImage(r => r.saveToFile(dir + "who-reacted.png"))
+            else if (step === 3) Qt.quit()
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu

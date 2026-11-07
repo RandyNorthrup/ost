@@ -42,6 +42,7 @@ fn main() {
         "qml/ForwardCard.qml",
         "qml/ForwardDialog.qml",
         "qml/ReportDialog.qml",
+        "qml/WhoReacted.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts", "assets/tray"] {
