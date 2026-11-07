@@ -218,6 +218,25 @@ Sent from Teams web into "OST group test" and read back raw. Both are plain `Ric
 - **Rendering**: a big-emoticon message has no bubble, like an image-only message; each line is 50 px tall.
 - **OST**: the sanitizer turns each Teams Emoji img into an `ost-emoticon:{id}` placeholder. The desktop app fetches the emoticon picture from the catalogue (50 px, or 100 px for big), caches it and swaps in the file. A text-only view falls back to the alt character.
 
+## 5d. Formatting in received messages (measured on winpc, 2026-11-07, "OST TEST 66" and "68")
+- **Wire format** (Teams sent; classes and CSS variables are stripped):
+  - highlight is `<span style="background-color:#FDD472">`;
+  - font colour is `color:#B6424C`;
+  - Large is `font-size:x-large` (Small `small`, Medium removes the size);
+  - Quote is `<blockquote><p>…</p></blockquote>`;
+  - a code block is `<p itemtype="http://schema.skype.com/CodeBlockEditor" id="x_codeBlockEditor-{uuid}">&nbsp;</p>` then `<pre class="language-{id}" itemid="codeBlockEditor-{uuid}"><code>…</code></pre>`.
+- **Rendering.**
+  - x-large is 24/34.3 (lines are 1.4286 × the size).
+  - Quote box: white, 0.67 #D1D1D1 border, radius 4, padding 7/15, margin 7/0, fit to its text. The bar is 2.67 wide at (3, 3), its height the box − 6, radius 1.5, #D1D1D1.
+  - The empty CodeBlockEditor paragraph isn't drawn.
+- **Code card** (`code-block-editor-deserialized-*`):
+  - it fills the message width;
+  - a 32 px header: white, radius 8 8 0 0, holding the code icon at 10.7, the language name 12/16 #616161 at 36.7 (Teams' names: Plain Text, JavaScript, C#…), and Copy (24 × 23.3, copy-20) 6 from the end;
+  - then the `pre`: white, 0.67 #D1D1D1, radius 0 0 8 8, padding 8/12, Cascadia Mono 14/24, line numbers in a 42 px gutter;
+  - it sits 6 under the text before it.
+- **OST.** Styled spans keep `background-color`, `color` and `font-size` (keywords become px as a browser draws them). Quotes and code blocks become flow parts (`quote`, `code`), drawn natively. Cascadia Mono ships with OST.
+- **Not done yet.** Syntax colours by language (Teams runs CodeMirror's modes), and headings, rules and tables measured on the receiving side.
+
 ## 6. RichText/UriObject — images, stickers, GIFs
 ### 6a. `Picture.1`, `Sticker.1` (289206 `SkypeImageDeserializer`)
 - **Wire**: `<URIObject type="Picture.1" uri="https://…/v1/objects/{id}" doc_id="{id}" width="…" height="…" alt="…"><OriginalName v="photo.jpg"/></URIObject>`.

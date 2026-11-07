@@ -446,6 +446,83 @@ pub struct FlowPart {
     pub pic: Option<usize>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub html: String,
+    /// A quote (`<blockquote>`): its HTML, drawn in Teams' quote box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
+    /// A code block (`<pre class="language-…">`): its text, drawn as
+    /// Teams' code card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<CodeBlock>,
+}
+
+/// A code block in a message.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CodeBlock {
+    /// The language id (`plaintext`, `javascript`, …).
+    pub lang: String,
+    /// Its name as Teams shows it ("Plain Text", "JavaScript", …).
+    #[serde(default)]
+    pub name: String,
+    pub text: String,
+}
+
+/// Teams' code block languages: (`language-` id, the name shown), as its
+/// code block editor lists them (125961).
+pub const CODE_LANGUAGES: [(&str, &str); 44] = [
+    ("plaintext", "Plain Text"),
+    ("bash", "Bash"),
+    ("c", "C"),
+    ("cpp", "C++"),
+    ("csharp", "C#"),
+    ("css", "CSS"),
+    ("dart", "Dart"),
+    ("dockerfile", "DockerFile"),
+    ("dos", "DOS"),
+    ("go", "Go"),
+    ("graphql", "GraphQL"),
+    ("html", "HTML"),
+    ("http", "HTTP"),
+    ("java", "Java"),
+    ("javascript", "JavaScript"),
+    ("json", "JSON"),
+    ("jsp", "JSP"),
+    ("jsx", "JSX"),
+    ("kotlin", "Kotlin"),
+    ("kql", "KQL"),
+    ("latex", "LaTeX"),
+    ("lisp", "Lisp"),
+    ("markdown", "Markdown"),
+    ("objectivec", "Objective-C"),
+    ("octave", "Octave"),
+    ("perl", "Perl"),
+    ("php", "PHP"),
+    ("powershell", "PowerShell"),
+    ("python", "Python"),
+    ("r", "R"),
+    ("ruby", "Ruby"),
+    ("rust", "Rust"),
+    ("scala", "Scala"),
+    ("scss", "SCSS"),
+    ("shell", "Shell"),
+    ("sql", "SQL"),
+    ("swift", "Swift"),
+    ("typescript", "TypeScript"),
+    ("vbnet", "VB.NET"),
+    ("vbscript", "VBScript"),
+    ("verilog", "Verilog"),
+    ("vhdl", "VHDL"),
+    ("xml", "XML"),
+    ("yaml", "YAML"),
+];
+
+/// The name Teams shows for a code block's language ("Plain Text" when
+/// unknown).
+pub fn code_language_name(lang: &str) -> &'static str {
+    CODE_LANGUAGES
+        .iter()
+        .find(|(id, _)| id.eq_ignore_ascii_case(lang))
+        .map(|(_, n)| *n)
+        .unwrap_or("Plain Text")
 }
 
 /// A timeline item.
@@ -1226,7 +1303,8 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let (marked, pic_tags) = if deleted {
         (String::new(), Vec::new())
     } else {
-        sanitize_core(&content, &my_mentions, true)
+        let (m, p) = sanitize_core(&content, &my_mentions, true);
+        (sized_lines(&m), p)
     };
     // Pictures stay where they were written (Teams keeps the order).
     let (head, flow) = split_flow(&marked, &pic_tags, |tag| {
@@ -1531,7 +1609,16 @@ fn pic_marker(n: usize) -> String {
 /// and their tags are returned in order.
 fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<String>) {
     let mut pics: Vec<String> = Vec::new();
-    const KEEP: [&str; 15] = [
+    const KEEP: [&str; 24] = [
+        "h1",
+        "h2",
+        "h3",
+        "hr",
+        "table",
+        "tbody",
+        "tr",
+        "td",
+        "th",
         "p",
         "br",
         "b",
@@ -1663,8 +1750,42 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
                     } else {
                         "<span class=\"mention\">"
                     });
+                    spans.push(true);
+                } else if let Some(style) = attr(tag, "style").and_then(|s| text_style(&s)) {
+                    // Teams' highlight, font colour and size.
+                    out.push_str(&format!("<span style=\"{style}\">"));
+                    spans.push(true);
+                } else {
+                    spans.push(false);
                 }
-                spans.push(mention);
+            }
+            continue;
+        }
+        // Teams' code block editor leaves an empty paragraph before the
+        // block; Teams doesn't show it.
+        if name == "p"
+            && !closing
+            && attr(tag, "itemtype")
+                .is_some_and(|t| t.ends_with("schema.skype.com/CodeBlockEditor"))
+        {
+            match rest.find("</p>") {
+                Some(e) => rest = &rest[e + 4..],
+                None => rest = "",
+            }
+            continue;
+        }
+        // A code block keeps its language.
+        if name == "pre" && !closing {
+            match attr(tag, "class")
+                .and_then(|c| c.strip_prefix("language-").map(str::to_string))
+                .filter(|l| {
+                    !l.is_empty()
+                        && l.len() <= 40
+                        && l.chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '+' || c == '#')
+                }) {
+                Some(lang) => out.push_str(&format!("<pre class=\"language-{lang}\">")),
+                None => out.push_str("<pre>"),
             }
             continue;
         }
@@ -1706,6 +1827,81 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
     (out, pics)
 }
 
+/// The part of a span's style Teams' formatting bar sets, made safe:
+/// `background-color` and `color` (hex or rgb), and `font-size` (Teams'
+/// sizes are CSS keywords; they become pixels as a browser draws them).
+/// None when nothing is left.
+fn text_style(style: &str) -> Option<String> {
+    let color_ok = |v: &str| {
+        (v.starts_with('#')
+            && (4..=9).contains(&v.len())
+            && v[1..].chars().all(|c| c.is_ascii_hexdigit()))
+            || (v.starts_with("rgb(")
+                && v.ends_with(')')
+                && v[4..v.len() - 1]
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == ',' || c == ' '))
+    };
+    let mut out: Vec<String> = Vec::new();
+    for decl in style.split(';') {
+        let Some((k, v)) = decl.split_once(':') else {
+            continue;
+        };
+        let (k, v) = (k.trim().to_ascii_lowercase(), v.trim().to_ascii_lowercase());
+        match k.as_str() {
+            "background-color" | "color" if color_ok(&v) => out.push(format!("{k}:{v}")),
+            "font-size" => {
+                let px = match v.as_str() {
+                    "xx-small" => Some(9),
+                    "x-small" => Some(10),
+                    "small" => Some(13),
+                    "medium" => Some(16),
+                    "large" => Some(18),
+                    "x-large" => Some(24),
+                    "xx-large" => Some(32),
+                    _ => v
+                        .strip_suffix("px")
+                        .and_then(|n| n.trim().parse::<f32>().ok())
+                        .map(|n| n.clamp(8.0, 48.0).round() as i32),
+                };
+                if let Some(px) = px {
+                    out.push(format!("font-size:{px}px"));
+                }
+            }
+            _ => {}
+        }
+    }
+    (!out.is_empty()).then(|| out.join("; "))
+}
+
+/// Paragraphs holding Teams' bigger text get their taller line (Teams'
+/// lines are 1.4286 × the size: 20 for 14, 34.3 for 24).
+fn sized_lines(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find("<p>") {
+        out.push_str(&rest[..i]);
+        let body = &rest[i + 3..];
+        let end = body.find("</p>").unwrap_or(body.len());
+        let biggest = body[..end]
+            .split("font-size:")
+            .skip(1)
+            .filter_map(|s| s.split("px").next()?.trim().parse::<f32>().ok())
+            .fold(0.0f32, f32::max);
+        if biggest > 14.0 {
+            out.push_str(&format!(
+                "<p style=\"line-height:{}px\">",
+                (biggest * 20.0 / 14.0).round()
+            ));
+        } else {
+            out.push_str("<p>");
+        }
+        rest = body;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Whether sanitised HTML has text to show (emoticons count).
 fn has_visible_text(html: &str) -> bool {
     !super::strip_html(&custom_emoji_as_text(html))
@@ -1717,7 +1913,9 @@ fn has_visible_text(html: &str) -> bool {
 /// draws `<p>&nbsp;</p>` as an empty line), but text that is only blank
 /// is dropped.
 fn flow_text(html: &str) -> String {
-    let t = html.trim();
+    // A paragraph with nothing in it has no height in Teams.
+    let t = html.replace("<p></p>", "");
+    let t = t.trim();
     if has_visible_text(t) {
         t.to_string()
     } else {
@@ -1736,43 +1934,121 @@ fn split_flow(
     index: impl Fn(&str) -> Option<usize>,
 ) -> (String, Vec<FlowPart>) {
     let lead = format!("<img src=\"{PIC_SRC}");
-    let Some(first) = marked.find(&lead) else {
+    // The next picture marker, quote or code block.
+    let next = |s: &str| -> Option<usize> {
+        [s.find(&lead), s.find("<blockquote>"), s.find("<pre")]
+            .into_iter()
+            .flatten()
+            .min()
+    };
+    let Some(first) = next(marked) else {
         return (marked.to_string(), Vec::new());
+    };
+    let text_part = |html: String| FlowPart {
+        html,
+        ..Default::default()
     };
     let mut flow = Vec::new();
     let mut rest = &marked[first..];
-    while let Some(j) = rest.find(&lead) {
+    while let Some(j) = next(rest) {
         let text = flow_text(&rest[..j]);
         if !text.is_empty() {
-            flow.push(FlowPart {
-                pic: None,
-                html: text,
-            });
+            flow.push(text_part(text));
         }
-        let end = rest[j..].find('>').map(|e| j + e + 1).unwrap_or(rest.len());
-        let n = rest[j + lead.len()..end]
-            .split('"')
-            .next()
-            .and_then(|n| n.parse::<usize>().ok());
-        if let Some(k) = n.and_then(|n| pics.get(n)).and_then(|t| index(t)) {
+        let at = &rest[j..];
+        if at.starts_with("<blockquote>") {
+            let end = block_end(at, "blockquote");
+            let inner = &at["<blockquote>".len()
+                ..end
+                    .saturating_sub("</blockquote>".len())
+                    .max("<blockquote>".len())];
+            let inner = without_pic_markers(inner);
             flow.push(FlowPart {
-                pic: Some(k),
-                html: String::new(),
+                quote: Some(without_empty_paragraphs(&inner)),
+                ..Default::default()
             });
+            rest = &at[end..];
+        } else if at.starts_with("<pre") {
+            let open_end = at.find('>').map(|e| e + 1).unwrap_or(at.len());
+            let lang = attr(&at[..open_end], "class")
+                .and_then(|c| c.strip_prefix("language-").map(str::to_string))
+                .unwrap_or_default();
+            let close = at.find("</pre>").unwrap_or(at.len());
+            let text = super::strip_html(
+                &at[open_end..close]
+                    .replace("<br />", "\n")
+                    .replace("<br>", "\n"),
+            );
+            flow.push(FlowPart {
+                code: Some(CodeBlock {
+                    name: code_language_name(&lang).to_string(),
+                    lang,
+                    text: text.trim_end_matches('\n').to_string(),
+                }),
+                ..Default::default()
+            });
+            rest = &at[(close + "</pre>".len()).min(at.len())..];
+        } else {
+            let end = at.find('>').map(|e| e + 1).unwrap_or(at.len());
+            let n = at[lead.len()..end]
+                .split('"')
+                .next()
+                .and_then(|n| n.parse::<usize>().ok());
+            if let Some(k) = n.and_then(|n| pics.get(n)).and_then(|t| index(t)) {
+                flow.push(FlowPart {
+                    pic: Some(k),
+                    ..Default::default()
+                });
+            }
+            rest = &at[end..];
         }
-        rest = &rest[end..];
     }
     let text = flow_text(rest);
     if !text.is_empty() {
-        flow.push(FlowPart {
-            pic: None,
-            html: text,
-        });
+        flow.push(text_part(text));
     }
     if flow.iter().all(|p| p.pic.is_some()) {
         flow.clear();
     }
     (marked[..first].to_string(), flow)
+}
+
+/// Where an element opened at the start of `html` ends (after its closing
+/// tag), counting nested ones.
+fn block_end(html: &str, name: &str) -> usize {
+    let (open, close) = (format!("<{name}"), format!("</{name}>"));
+    let mut depth = 0usize;
+    let mut i = 0usize;
+    while i < html.len() {
+        let rest = &html[i..];
+        if rest.starts_with(&close) {
+            depth = depth.saturating_sub(1);
+            i += close.len();
+            if depth == 0 {
+                return i;
+            }
+        } else if rest.starts_with(&open) {
+            depth += 1;
+            i += open.len();
+        } else {
+            i += rest.chars().next().map(char::len_utf8).unwrap_or(1);
+        }
+    }
+    html.len()
+}
+
+/// HTML without picture markers (pictures inside a quote aren't shown).
+fn without_pic_markers(html: &str) -> String {
+    let lead = format!("<img src=\"{PIC_SRC}");
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(i) = rest.find(&lead) {
+        out.push_str(&rest[..i]);
+        let end = rest[i..].find('>').map(|e| i + e + 1).unwrap_or(rest.len());
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// A received message as the edit box takes it (Teams keeps every
@@ -3314,6 +3590,44 @@ mod quote_tests {
     }
 
     #[test]
+    fn teams_formatting_reads_as_teams_shows_it() {
+        let m = |c: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": c, "from": "https://x/contacts/8:orgid:them", "imdisplayname": "Them"});
+        // As Teams sent "OST TEST 66": a quote, highlight, colour, size.
+        let fmt = "<blockquote>\r\n<p><span style=\"background-color:#FDD472\">OST TEST 66 highlighted</span></p>\r\n</blockquote>\r\n<p><span style=\"background-color:#FDD472; color:#B6424C\">red text</span></p>\r\n<p><span style=\"background-color:inherit; color:inherit; font-size:x-large\">large text</span></p>\r\n<p>&nbsp;</p>";
+        let v = view_of(&m(fmt), "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.html, "");
+        assert_eq!(
+            v.flow[0].quote.as_deref(),
+            Some("<p><span style=\"background-color:#fdd472\">OST TEST 66 highlighted</span></p>")
+        );
+        assert_eq!(
+            v.flow[1].html,
+            "<p><span style=\"background-color:#fdd472; color:#b6424c\">red text</span></p>\r\n<p style=\"line-height:34px\"><span style=\"font-size:24px\">large text</span></p>\r\n<p>&nbsp;</p>"
+        );
+        // As Teams sent "OST TEST 68": text, then a code block.
+        let code = "<p>OST TEST 68 code block:</p>\r\n<p></p>\r\n<p itemtype=\"http://schema.skype.com/CodeBlockEditor\" id=\"x_codeBlockEditor-1b8c\">\r\n&nbsp;</p>\r\n<pre class=\"language-plaintext\" itemid=\"codeBlockEditor-1b8c\"><code>let x = 1;\nlet y = x &lt; 2;</code></pre>";
+        let v = view_of(&m(code), "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.html, "<p>OST TEST 68 code block:</p>");
+        assert_eq!(
+            v.flow,
+            [FlowPart {
+                code: Some(CodeBlock {
+                    lang: "plaintext".into(),
+                    name: "Plain Text".into(),
+                    text: "let x = 1;\nlet y = x < 2;".into()
+                }),
+                ..Default::default()
+            }]
+        );
+        // Unsafe styles go.
+        assert_eq!(
+            text_style("color:red; background-color:url(x); font-size:x-large"),
+            Some("font-size:24px".into())
+        );
+        assert_eq!(text_style("background-color:inherit; color:inherit"), None);
+    }
+
+    #[test]
     fn card_messages_parse_as_teams_reads_them() {
         use base64::Engine;
         let swift = serde_json::json!({"type": "message/card", "attachments": [
@@ -3716,11 +4030,11 @@ mod tests {
             [
                 FlowPart {
                     pic: Some(0),
-                    html: String::new()
+                    ..Default::default()
                 },
                 FlowPart {
-                    pic: None,
-                    html: "<p>&nbsp;</p><p>after it</p>".into()
+                    html: "<p>&nbsp;</p><p>after it</p>".into(),
+                    ..Default::default()
                 }
             ]
         );

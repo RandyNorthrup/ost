@@ -498,6 +498,7 @@ Window {
     FontLoader { source: "../assets/fonts/selawksb.ttf" }
     FontLoader { source: "../assets/fonts/selawkb.ttf" }
     FontLoader { source: "../assets/fonts/selawksl.ttf" }
+    FontLoader { source: "../assets/fonts/CascadiaMono-Regular.ttf" }
 
     Backend {
         id: backend

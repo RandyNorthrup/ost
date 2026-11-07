@@ -290,6 +290,9 @@ pub mod qobject {
         /// the past `days` days. The roster reloads after.
         #[qinvokable]
         fn add_chat_members(self: Pin<&mut Backend>, mris_json: &QString, days: i32);
+        /// Put text on the clipboard (a code block's Copy) and say so.
+        #[qinvokable]
+        fn copy_text(self: Pin<&mut Backend>, text: &QString);
         /// Remove someone from the open group chat; the roster reloads after.
         #[qinvokable]
         fn remove_chat_member(self: Pin<&mut Backend>, mri: &QString);
@@ -4343,6 +4346,15 @@ impl qobject::Backend {
                 )),
             });
         });
+    }
+
+    pub fn copy_text(mut self: Pin<&mut Self>, text: &QString) {
+        if let Ok(t) = std::ffi::CString::new(text.to_string()) {
+            // SAFETY: a NUL-terminated string (and an empty one), copied by
+            // Qt before returning.
+            unsafe { ost_set_clipboard(t.as_ptr(), c"".as_ptr()) };
+            self.as_mut().toast("Copied to clipboard", "success");
+        }
     }
 
     pub fn remove_chat_member(self: Pin<&mut Self>, mri: &QString) {

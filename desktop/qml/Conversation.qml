@@ -1183,7 +1183,7 @@ Rectangle {
                 // Pictures where they were written, with the text between
                 // them (Teams keeps the order): [{pic} | {html}].
                 readonly property var flow: msg.modelData.flow || []
-                readonly property bool inFlow: flow.length > 0 && imgs.length > 0
+                readonly property bool inFlow: flow.length > 0
                 readonly property bool endsInText: inFlow && flow[flow.length - 1].html !== undefined
                 readonly property real picsEnd: picsTop + picsH
                 readonly property string textStyle: "<style>a { color: " + theme.brand + "; text-decoration: none; } "
@@ -1192,7 +1192,9 @@ Rectangle {
                     + "p, div, li, body { line-height: " + (bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; }</style>"
                 // Teams' lines are 20 px; big emoticons (50 px) set their own.
                 readonly property bool bigEmoticons: (msg.modelData.html || "").indexOf("width=\"50\" height=\"50\"") >= 0
-                readonly property real bodyH: !showBody ? 0 : bigEmoticons ? Math.max(1, body.lineCount) * 50 : Math.max(1, body.lineCount) * 20
+                // Bigger text, headings, rules and tables set their own heights.
+                readonly property bool richBody: /line-height:|<h[123]>|<hr|<table/.test(msg.modelData.html || "")
+                readonly property real bodyH: !showBody ? 0 : bigEmoticons ? Math.max(1, body.lineCount) * 50 : richBody ? body.contentHeight : Math.max(1, body.lineCount) * 20
                 // A quoted reply's card sits at the top (Teams: 10.7 down, the
                 // text 4 under it).
                 readonly property real quoteShift: msg.modelData.quote ? 60.3
@@ -1201,19 +1203,23 @@ Rectangle {
                     : msg.modelData.forward ? fwdCard.height + (showBody ? 12 : 8.4) : 0
                 // In a flow the text's own blank line sets the gap (Teams).
                 readonly property real picsTop: showBody ? body.y + bodyH + (inFlow ? 0 : 8) : (bare ? 0 : 8)
-                readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
-                readonly property real filesTop: imgs.length > 0 ? picsEnd + 8 : (showBody ? body.y + bodyH + 8 : 8)
+                readonly property bool hasPics: imgs.length > 0 || inFlow
+                // A code card spans the bubble (Teams).
+                readonly property bool hasCode: flow.some(p => !!p.code)
+                readonly property real picsH: hasPics ? pics.implicitHeight : 0
+                readonly property real filesTop: hasPics ? picsEnd + 8 : (showBody ? body.y + bodyH + 8 : 8)
                 // Measured: a card sits 8 under the bubble's top (or the text),
                 // 17.3 in, and the bubble ends 10.7 under it.
                 readonly property real cardsTop: showBody ? body.y + bodyH + 8 : 8
                 width: root.isChannel ? msg.maxBubble
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
+                    : hasCode ? msg.maxBubble
                     : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
-                    : imgs.length > 0 ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
+                    : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
                     : bodyH + 15.3 + quoteShift
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
@@ -1262,18 +1268,117 @@ Rectangle {
                     x: bubble.pad; y: bubble.picsTop
                     spacing: bubble.inFlow ? 0 : 4
                     Repeater {
-                        model: bubble.inFlow ? bubble.flow.map(p => p.pic !== undefined ? bubble.imgs[p.pic] : { flowText: p.html }) : bubble.imgs
+                        model: bubble.inFlow ? bubble.flow.map(p => p.pic !== undefined ? bubble.imgs[p.pic] : p.quote !== undefined ? { flowQuote: p.quote } : p.code ? { flowCode: p.code } : { flowText: p.html }) : bubble.imgs
                         Item {
                             id: part
                             required property var modelData
                             required property int index
                             readonly property bool isText: modelData.flowText !== undefined
+                            readonly property bool isQuote: modelData.flowQuote !== undefined
+                            readonly property bool isCode: modelData.flowCode !== undefined
+                            readonly property bool isPic: !isText && !isQuote && !isCode
+                            readonly property bool richText: isText && /line-height:|<h[123]>|<hr|<table/.test(modelData.flowText)
                             // Teams: a picture after text or another picture
                             // sits 4 below it (the GIF's margin); text follows
-                            // a picture directly.
-                            readonly property real gap: bubble.inFlow && !isText && (index > 0 || bubble.showBody) ? 4 : 0
-                            width: isText ? flowText.width : pic.width
-                            height: gap + (isText ? Math.max(1, flowText.lineCount) * 20 : pic.height)
+                            // a picture directly; a code card 6 under text.
+                            readonly property real gap: !bubble.inFlow ? 0 : isPic && (index > 0 || bubble.showBody) ? 4 : isCode && (index > 0 || bubble.showBody) ? 6 : 0
+                            width: isText ? flowText.width : isQuote ? quoteBox.width : isCode ? codeCard.width : pic.width
+                            height: gap + (isText ? (richText ? flowText.contentHeight : Math.max(1, flowText.lineCount) * 20)
+                                : isQuote ? 7 + quoteBox.height + 7 : isCode ? codeCard.height : pic.height)
+                            // Teams' quote: white, a #D1D1D1 hairline, rounded
+                            // 4, 7/15 in, a 2.67 bar 3 in; 7 above and below.
+                            Rectangle {
+                                id: quoteBox
+                                visible: part.isQuote
+                                y: 7
+                                width: part.isQuote ? Math.min(msg.maxBubble - 2 * bubble.pad, quoteText.implicitWidth + 30 + 1.3) : 0
+                                height: part.isQuote ? quoteText.contentHeight + 14 + 1.3 : 0
+                                radius: 4
+                                color: theme.surface
+                                border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+                                Rectangle { x: 3; y: 3; width: 2.67; height: parent.height - 6; radius: 1.5; color: theme.pick("#D1D1D1", "#666666") }
+                                TextEdit {
+                                    id: quoteText
+                                    x: 15.7; y: 7.7
+                                    width: Math.min(msg.maxBubble - 2 * bubble.pad - 31.3, implicitWidth)
+                                    readOnly: true; selectByMouse: true
+                                    selectionColor: theme.selectionFill; selectedTextColor: theme.text
+                                    text: part.isQuote ? bubble.textStyle + theme.messageHtml(part.modelData.flowQuote) : ""
+                                    textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap
+                                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                                    onLinkActivated: link => Qt.openUrlExternally(link)
+                                }
+                            }
+                            // Teams' code block (code-block-editor-deserialized):
+                            // a 32 px header (code icon, the language 12/16
+                            // #616161, Copy), then the code in Cascadia Mono
+                            // 14/24 with line numbers, 8/12 in; rounded 8.
+                            Item {
+                                id: codeCard
+                                visible: part.isCode
+                                y: part.gap
+                                readonly property var code: part.isCode ? part.modelData.flowCode : ({})
+                                readonly property var lines: part.isCode ? String(code.text || "").split("\n") : []
+                                width: part.isCode ? msg.maxBubble - 2 * bubble.pad : 0
+                                height: part.isCode ? 32 - 0.8 + codeBody.height : 0
+                                Rectangle {
+                                    width: parent.width; height: 40
+                                    radius: 8
+                                    color: theme.surface
+                                    border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+                                    FluentIcon { x: 10.7; y: 6; name: "code-block-20"; size: 20; color: theme.textSecondary }
+                                    Text {
+                                        x: 36.7; y: 8.7; height: 16; verticalAlignment: Text.AlignVCenter
+                                        text: codeCard.code.name || "Plain Text"
+                                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                                    }
+                                    Rectangle {
+                                        x: parent.width - 6.2 - 24; y: 5.5; width: 24; height: 23.3; radius: 4
+                                        color: copyHover.hovered ? theme.menuHover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: "copy-20"; size: 20; color: theme.textStrong }
+                                        HoverHandler { id: copyHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: backend.copyText(codeCard.code.text || "") }
+                                        ToolTip.visible: copyHover.hovered
+                                        ToolTip.text: "Copy"
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Copy code"
+                                    }
+                                }
+                                Rectangle {
+                                    id: codeBody
+                                    y: 32 - 0.8
+                                    width: parent.width
+                                    height: 8 + 4 + codeCard.lines.length * 24 + 4 + 8 + 1.3
+                                    radius: 8
+                                    color: theme.surface
+                                    border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+                                    // Square top corners where it meets the header.
+                                    Rectangle { x: 0.67; y: 0.67; width: parent.width - 1.3; height: 8; color: theme.surface }
+                                    Column {
+                                        x: 12; y: 12
+                                        Repeater {
+                                            model: codeCard.lines
+                                            Item {
+                                                required property var modelData
+                                                required property int index
+                                                width: codeBody.width - 24; height: 24
+                                                Text {
+                                                    width: 30; height: 24; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter
+                                                    text: index + 1
+                                                    font.family: theme.mono; font.pixelSize: 14; color: theme.pick("#8A8886", "#ADADAD")
+                                                }
+                                                Text {
+                                                    x: 42.7; width: parent.width - 42.7; height: 24; verticalAlignment: Text.AlignVCenter
+                                                    text: parent.modelData
+                                                    textFormat: Text.PlainText
+                                                    elide: Text.ElideRight
+                                                    font.family: theme.mono; font.pixelSize: 14; color: theme.text
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             TextEdit {
                                 id: flowText
                                 visible: part.isText
@@ -1294,9 +1399,9 @@ Rectangle {
                         // Rounded 4 px with a hairline border, as Teams draws them.
                         Item {
                             id: pic
-                            visible: !part.isText
+                            visible: part.isPic
                             y: part.gap
-                            readonly property var modelData: part.isText ? ({}) : part.modelData
+                            readonly property var modelData: part.isPic ? part.modelData : ({})
                             // A GIF or sticker (fun picker) rather than an AMS picture.
                             readonly property bool fun: !!modelData.kind
                             // Teams' image component scales anything wider

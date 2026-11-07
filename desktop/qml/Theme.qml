@@ -95,6 +95,8 @@ QtObject {
     readonly property color leaveHover: "#B12C44"
 
     readonly property string font: "Selawik"
+    // Teams' code font (code blocks, inline code).
+    readonly property string mono: "Cascadia Mono"
     readonly property int base: 14
     readonly property int small: 12
     readonly property int caption: 10
