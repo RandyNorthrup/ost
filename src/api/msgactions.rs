@@ -1,0 +1,388 @@
+//! What Teams' message ··· menu does (docs/spec/message-actions.md): copy
+//! link, save, pin, mark as unread and read receipts.
+
+use super::client::TeamsClient;
+use anyhow::{Context, Result};
+use std::collections::HashSet;
+
+/// Teams' deep-link base for a native client (`deepLinkDomains[0]`).
+pub const LINK_BASE: &str = "https://teams.microsoft.com";
+
+/// JavaScript's encodeURIComponent.
+fn enc(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// A chat message's link (495364 `v`).
+pub fn chat_message_link(
+    conv: &str,
+    message_id: &str,
+    parent: Option<&str>,
+    my_oid: &str,
+) -> String {
+    let ctx = if conv == "48:notes" {
+        format!("{{\"contextType\":\"chat\",\"oid\":\"{my_oid}\"}}")
+    } else {
+        "{\"contextType\":\"chat\"}".to_string()
+    };
+    match parent {
+        Some(p) => format!(
+            "{LINK_BASE}/l/message/{conv}/{message_id}?parentMessageId={p}&context={}",
+            enc(&ctx)
+        ),
+        None => format!(
+            "{LINK_BASE}/l/message/{conv}/{message_id}?context={}",
+            enc(&ctx)
+        ),
+    }
+}
+
+/// A channel post's or reply's link (81601 `zn`).
+#[allow(clippy::too_many_arguments)]
+pub fn channel_message_link(
+    channel: &str,
+    message_id: &str,
+    parent: &str,
+    tenant: &str,
+    group_id: &str,
+    team_name: &str,
+    channel_name: &str,
+    created_ms: i64,
+    private_or_shared: bool,
+    shared: bool,
+) -> String {
+    let mut s = format!(
+        "{LINK_BASE}/l/message/{channel}/{message_id}?tenantId={tenant}&groupId={group_id}&parentMessageId={parent}&teamName={}&channelName={}&createdTime={created_ms}",
+        enc(team_name),
+        enc(channel_name)
+    );
+    if private_or_shared {
+        s.push_str("&ngc=true");
+    }
+    if shared {
+        s.push_str("&allowXTenantAccess=true");
+    }
+    s
+}
+
+/// lodash `truncate(text, {length})`: at most `length` characters, ending
+/// in "..." when cut.
+pub fn truncate(text: &str, length: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= length {
+        return text.to_string();
+    }
+    let keep = length.saturating_sub(3);
+    format!("{}...", chars[..keep].iter().collect::<String>())
+}
+
+/// The copied link's text: "{name}: {message}" cut to 85 characters (a
+/// channel adds " | {channel}").
+pub fn copy_link_text(display_name: &str, message: &str, channel_name: Option<&str>) -> String {
+    let collapsed = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = truncate(&format!("{display_name}: {collapsed}"), 85);
+    match channel_name {
+        Some(c) if !c.is_empty() => format!("{text} | {c}"),
+        _ => text,
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// The HTML Teams puts on the clipboard with the link (223398); `title` only
+/// for channel links.
+pub fn copy_link_html(url: &str, text: &str, with_title: bool) -> String {
+    let u = html_escape(url);
+    let title = if with_title {
+        format!(" title=\"{u}\"")
+    } else {
+        String::new()
+    };
+    format!(
+        "<div itemprop=\"teams-copy-link\"><a href=\"{u}\"{title}>{}</a></div>",
+        html_escape(text)
+    )
+}
+
+/// Save or unsave a message (`PUT …/rcmetadata/{rcId||msgId}` with `{s, mid}`).
+pub async fn set_saved(
+    client: &TeamsClient,
+    conv: &str,
+    reply_chain: &str,
+    message_id: &str,
+    save: bool,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/rcmetadata/{}",
+        client.chat_service_url(),
+        conv,
+        if reply_chain.is_empty() {
+            message_id
+        } else {
+            reply_chain
+        }
+    );
+    let mid: i64 = message_id.parse().context("message id")?;
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "s": if save { 1 } else { 0 }, "mid": mid }),
+        )
+        .await?;
+    Ok(())
+}
+
+/// The ids of a conversation's saved messages (roots with `s == 1`, plus
+/// saved replies `sl2`). No metadata yet (404) means none.
+pub async fn saved_ids(client: &TeamsClient, conv: &str) -> Result<HashSet<String>> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/rcmetadata?startTime=0&pageSize=200",
+        client.chat_service_url(),
+        conv
+    );
+    let resp = match client.chat_get(&url).await {
+        Ok(r) => r,
+        Err(e) if e.to_string().contains("HTTP 404") => return Ok(HashSet::new()),
+        Err(e) => return Err(e),
+    };
+    let v: serde_json::Value = resp.json().await?;
+    Ok(saved_from(&v))
+}
+
+pub fn saved_from(v: &serde_json::Value) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for item in v
+        .get("rcMetadataList")
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let root = item
+            .get("rootMessageId")
+            .map(|r| r.to_string().trim_matches('"').to_string())
+            .unwrap_or_default();
+        let md = item.get("rcMetadata");
+        if md.and_then(|m| m.get("s")).and_then(|s| s.as_i64()) == Some(1) {
+            out.insert(root);
+        }
+        for id in md
+            .and_then(|m| m.get("sl2"))
+            .and_then(|l| l.as_array())
+            .into_iter()
+            .flatten()
+        {
+            out.insert(id.to_string().trim_matches('"').to_string());
+        }
+    }
+    out
+}
+
+/// Mark a message unread (L1): Teams writes the consumption-horizon
+/// bookmark `"{arrival−1};{now};{clientMessageId}"`, not the horizon.
+pub async fn mark_unread(
+    client: &TeamsClient,
+    conv: &str,
+    arrival_ms: i64,
+    client_message_id: &str,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/properties?name=consumptionHorizonBookmark",
+        client.chat_service_url(),
+        conv
+    );
+    let cmid = match client_message_id.split_once('_') {
+        Some((_, after)) => after,
+        None if client_message_id.is_empty() => "0",
+        None => client_message_id,
+    };
+    let value = format!(
+        "{};{};{}",
+        arrival_ms - 1,
+        chrono::Utc::now().timestamp_millis(),
+        cmid
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "consumptionHorizonBookmark": value }),
+        )
+        .await?;
+    Ok(())
+}
+
+/// A thread's pinned messages, newest first (`threadProperties.pinnedItems`,
+/// a JSON string of `{itemId, itemType}`).
+pub async fn pinned_ids(client: &TeamsClient, conv: &str) -> Result<Vec<String>> {
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        conv
+    );
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await?;
+    Ok(pinned_from(&v))
+}
+
+pub fn pinned_from(thread: &serde_json::Value) -> Vec<String> {
+    thread
+        .pointer("/properties/pinnedItems")
+        .and_then(|p| p.as_str())
+        .and_then(|s| serde_json::from_str::<Vec<serde_json::Value>>(s).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|i| {
+            i.get("itemId")
+                .map(|v| v.to_string().trim_matches('"').to_string())
+        })
+        .collect()
+}
+
+/// Teams' limit on pinned messages (`maxNumberOfMultiplePinnedMessages`).
+pub const MAX_PINNED: usize = 10;
+
+/// Pin (newest first) or unpin a message; returns the new list.
+pub async fn set_pinned(
+    client: &TeamsClient,
+    conv: &str,
+    message_id: &str,
+    pin: bool,
+) -> Result<Vec<String>> {
+    let mut ids = pinned_ids(client, conv).await?;
+    ids.retain(|i| i != message_id);
+    if pin {
+        ids.insert(0, message_id.to_string());
+    }
+    let items: Vec<serde_json::Value> = ids
+        .iter()
+        .map(|i| serde_json::json!({ "itemId": i, "itemType": "Message" }))
+        .collect();
+    let url = format!(
+        "{}/v1/threads/{}/properties?name=pinnedItems",
+        client.chat_service_url(),
+        conv
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "pinnedItems": serde_json::to_string(&items)? }),
+        )
+        .await?;
+    Ok(ids)
+}
+
+/// Who has read a message (298781 `F`): members other than me whose horizon
+/// has passed it and who could see it. Returns (readers' MRIs, total).
+pub async fn readers(
+    client: &TeamsClient,
+    conv: &str,
+    arrival_ms: u64,
+) -> Result<(Vec<String>, usize)> {
+    let url = format!(
+        "{}/v1/threads/{}/consumptionhorizons",
+        client.chat_service_url(),
+        conv
+    );
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await?;
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    Ok(readers_from(&v, &me, arrival_ms))
+}
+
+pub fn readers_from(v: &serde_json::Value, me: &str, arrival_ms: u64) -> (Vec<String>, usize) {
+    let all: Vec<&serde_json::Value> = v
+        .get("consumptionhorizons")
+        .and_then(|h| h.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|h| {
+            h.get("id")
+                .and_then(|i| i.as_str())
+                .is_some_and(|i| !i.eq_ignore_ascii_case(me))
+        })
+        .collect();
+    let num = |x: Option<&serde_json::Value>| -> u64 {
+        x.and_then(|t| {
+            t.as_u64()
+                .or_else(|| t.as_str().and_then(|s| s.split(';').next()?.parse().ok()))
+        })
+        .unwrap_or(0)
+    };
+    let readers = all
+        .iter()
+        .filter(|h| {
+            let read_to = num(h.get("consumptionhorizon"));
+            let visible = num(h.get("messageVisibilityTime"));
+            arrival_ms <= read_to && arrival_ms >= visible
+        })
+        .filter_map(|h| h.get("id").and_then(|i| i.as_str()).map(str::to_string))
+        .collect();
+    (readers, all.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn links_are_teams() {
+        assert_eq!(
+            chat_message_link("19:a@thread.v2", "1794", None, "x"),
+            "https://teams.microsoft.com/l/message/19:a@thread.v2/1794?context=%7B%22contextType%22%3A%22chat%22%7D"
+        );
+        assert!(chat_message_link("48:notes", "1", None, "me").contains("%22oid%22%3A%22me%22"));
+        let c = channel_message_link(
+            "19:c@thread.tacv2",
+            "5",
+            "5",
+            "t",
+            "g",
+            "Team A",
+            "General",
+            7,
+            false,
+            false,
+        );
+        assert_eq!(
+            c,
+            "https://teams.microsoft.com/l/message/19:c@thread.tacv2/5?tenantId=t&groupId=g&parentMessageId=5&teamName=Team%20A&channelName=General&createdTime=7"
+        );
+        assert_eq!(truncate("abcdef", 5), "ab...");
+        assert_eq!(copy_link_text("Ann", "hi   there", None), "Ann: hi there");
+        assert_eq!(
+            copy_link_html("https://x/?a=1&b=2", "Ann: <hi>", false),
+            "<div itemprop=\"teams-copy-link\"><a href=\"https://x/?a=1&amp;b=2\">Ann: &lt;hi&gt;</a></div>"
+        );
+    }
+
+    #[test]
+    fn saved_pinned_and_readers_parse() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"rcMetadataList":[{"rootMessageId":1794039440533,"rcMetadata":{"s":1,"sl2":[]}},{"rootMessageId":5,"rcMetadata":{"s":0,"sl2":[6]}}]}"#).unwrap();
+        let s = saved_from(&v);
+        assert!(s.contains("1794039440533") && s.contains("6") && !s.contains("5"));
+        let t: serde_json::Value = serde_json::from_str(r#"{"properties":{"pinnedItems":"[{\"itemId\":\"9\",\"itemType\":\"Message\"},{\"itemId\":\"3\",\"itemType\":\"Message\"}]"}}"#).unwrap();
+        assert_eq!(pinned_from(&t), vec!["9", "3"]);
+        let h: serde_json::Value = serde_json::from_str(r#"{"consumptionhorizons":[{"id":"8:orgid:me","consumptionhorizon":"100;1;x"},{"id":"8:orgid:a","consumptionhorizon":"100;1;x","messageVisibilityTime":0},{"id":"8:orgid:b","consumptionhorizon":"50;1;x"}]}"#).unwrap();
+        assert_eq!(
+            readers_from(&h, "8:orgid:me", 80),
+            (vec!["8:orgid:a".to_string()], 2)
+        );
+    }
+}

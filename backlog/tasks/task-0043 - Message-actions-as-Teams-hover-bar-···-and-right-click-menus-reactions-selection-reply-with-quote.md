@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T08:28:00Z'
+updated_date: '2026-11-07T09:22:00Z'
 labels:
   - desktop
   - messages
@@ -26,7 +26,7 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 - [x] #1 Hover bar with the user's quick reactions (4 by default), More reactions picker, contextual action and ··· on every message, as the spec
 - [ ] #2 ··· menu items, order and MRU top-level rule exactly as Teams; right-click opens it at the pointer with the reaction strip
 - [ ] #3 Every reaction key renders as its emoji; any emoji can be a reaction; who reacted
-- [ ] #4 Message text can be selected and copied
+- [x] #4 Message text can be selected and copied
 - [ ] #5 Reply with quote, Edit rules as Teams (no edit of Urgent; formatting kept)
 - [ ] #6 Channel posts and replies get the same hover bar and menu
 <!-- AC:END -->
@@ -39,4 +39,7 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 - Teams' reaction picker: search, Recent (roamed recentReactions, written back as Teams does), categories and tab icons.
 - Reply with quote: Teams' wire format, byte for byte (verified by reading back a Teams-sent and an OST-sent quote); the quote card in bubbles and in compose, measured; Teams web renders OST's quotes.
 - Still to do: the ··· menu items, right-click with the reaction strip, who reacted, skin tones, Customize default reactions, Your org's emoji, text selection, in-place edit, and channel parity.
+
+- AC4: message text is selectable (a read-only TextEdit, kept to Teams' 20 px lines; the bubble now matches Teams' 35.3 px one-line height). Right-click with a selection gives Copy and Select all.
+- AC2 (in progress): the ··· and right-click menus are built to the live measurements: the reaction strip on right-click, Teams' order, icons and shortcut letters, and More actions disabled while it is empty. Working now: Reply with quote, Edit, Copy link (Teams' link and clipboard HTML), Save and Unsave (rcmetadata), Delete, Pin and Unpin (thread pinnedItems), Read by N of M (horizons, with a submenu that opens a 1:1), and Mark as unread (Teams' bookmark; the chat list honours it). Each was verified live against the service. Still to do: Forward, Share to Outlook, Translation, Report, Immersive Reader, and the pinned banner.
 <!-- SECTION:NOTES:END -->

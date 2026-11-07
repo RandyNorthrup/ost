@@ -1548,7 +1548,40 @@ Window {
             else if (step === 6) shot("picker")
             else if (step === 7) { conversation.closePickerForTest(); conversation.replyWithQuote(theirs) }
             else if (step === 8) shot("quote")
-            else if (step === 9) Qt.quit()
+            else if (step === 9) { conversation.quoting = null; conversation.openMessageMenu(mine, conversation, false, 0, 200) }
+            else if (step === 10) shot("menu-mine")
+            else if (step === 11) conversation.openMessageMenu(mine, conversation, true, 600, 300)
+            else if (step === 12) shot("menu-rightclick")
+            else if (step === 13) Qt.quit()
+            step++
+        }
+    }
+
+    // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
+    // chat, save the newest message from someone else, unsave saved ones,
+    // pin then unpin it, load your newest message's readers, open the menu
+    // (captured), and mark the first one unread; each step logged.
+    Timer {
+        running: Qt.application.arguments.indexOf("--menu-actions-test") >= 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST menu test"); return }
+            const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.deleted)
+            const theirs = msgs.filter(m => !m.mine).pop(), mine = msgs.filter(m => m.mine).pop()
+            if (step === 0) { console.warn("MENU-TEST save", theirs.id); backend.setMessageSaved(theirs.id, true) }
+            else if (step === 1) { const sv = msgs.filter(m => m.saved && m.id !== theirs.id); console.warn("MENU-TEST unsave", sv.map(m => m.id)); sv.forEach(m => backend.setMessageSaved(m.id, false)) }
+            else if (step === 2) { console.warn("MENU-TEST pin", theirs.id); backend.setMessagePinned(theirs.id, true) }
+            else if (step === 4) { console.warn("MENU-TEST pinned now", msgs.filter(m => m.pinned).map(m => m.id)); backend.setMessagePinned(theirs.id, false) }
+            else if (step === 6) { console.warn("MENU-TEST pinned after unpin", msgs.filter(m => m.pinned).map(m => m.id)); backend.loadMessageReaders(mine.id) }
+            else if (step === 7) { console.warn("MENU-TEST readers", backend.messageReadersJson); conversation.openMessageMenu(mine, conversation, false, 0, 150) }
+            else if (step === 8) window.contentItem.grabToImage(r => r.saveToFile(dir + "menu-full-mine.png"))
+            else if (step === 9) { conversation.closeMessageMenuForTest(); conversation.openMessageMenu(theirs, conversation, true, 500, 150) }
+            else if (step === 10) window.contentItem.grabToImage(r => r.saveToFile(dir + "menu-full-theirs.png"))
+            else if (step === 11) { conversation.closeMessageMenuForTest(); console.warn("MENU-TEST unread", theirs.id); backend.markMessageUnread(theirs.id, theirs.client_message_id || "") }
+            else if (step === 13) { console.warn("MENU-TEST saved now", msgs.filter(m => m.saved).map(m => m.id)); Qt.quit() }
             step++
         }
     }

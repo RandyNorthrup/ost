@@ -130,6 +130,8 @@ pub mod qobject {
         /// The user's Recent emoticons (Teams' roamed recentReactions, else
         /// its defaults), as a JSON array of ids.
         #[qproperty(QString, recent_reactions_json)]
+        /// `{message_id, total, readers: [{mri, name}]}` for Read by N of M.
+        #[qproperty(QString, message_readers_json)]
         /// The user's quick reactions for the hover bar (Teams' roamed
         /// defaultMessageReactions, else its default four), as a JSON array.
         #[qproperty(QString, quick_reactions_json)]
@@ -196,6 +198,27 @@ pub mod qobject {
         /// `{message_id, sender_mri, sender_name, preview}`, or "" to drop it.
         #[qinvokable]
         fn set_reply_quote(self: Pin<&mut Backend>, quote_json: &QString);
+        /// Copy a message's link as Teams does (text: the URL; HTML: Teams'
+        /// copy-link anchor). `message_json`: {id, sender, text, root_id};
+        /// `place_json`: {team_id, team_name, channel_name} for a channel.
+        #[qinvokable]
+        fn copy_message_link(self: &Backend, message_json: &QString, place_json: &QString);
+        /// Save or unsave a message (Teams' Save this message).
+        #[qinvokable]
+        fn set_message_saved(self: Pin<&mut Backend>, message_id: &QString, save: bool);
+        /// Mark a message unread (Teams' bookmark behind the horizon).
+        #[qinvokable]
+        fn mark_message_unread(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            client_message_id: &QString,
+        );
+        /// Pin or unpin a message for everyone.
+        #[qinvokable]
+        fn set_message_pinned(self: Pin<&mut Backend>, message_id: &QString, pin: bool);
+        /// Load who has read one of your messages into messageReadersJson.
+        #[qinvokable]
+        fn load_message_readers(self: Pin<&mut Backend>, message_id: &QString);
         /// Retry a failed message, by its clientmessageid.
         #[qinvokable]
         fn retry_failed_message(self: Pin<&mut Backend>, client_message_id: &QString);
@@ -727,6 +750,7 @@ pub struct BackendRust {
     typing_text: QString,
     emoticons_version: i32,
     recent_reactions_json: QString,
+    message_readers_json: QString,
     quick_reactions_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
@@ -1267,6 +1291,12 @@ fn server_timelines() -> &'static std::sync::Mutex<HashMap<String, Vec<api::mess
     MAP.get_or_init(Default::default)
 }
 
+/// The open chat's pinned message ids, newest first.
+fn pinned_order() -> &'static std::sync::Mutex<(String, Vec<String>)> {
+    static P: OnceLock<std::sync::Mutex<(String, Vec<String>)>> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
 /// A chat's timeline with its messages being sent placed in it; those the
 /// service already has leave the outbox.
 fn with_lies(
@@ -1324,10 +1354,23 @@ async fn load_messages(
         let here = deleted_here().lock().unwrap();
         timeline.retain(|m| !m.deleted || here.contains(&m.id));
     }
-    match api::messages::peer_read_horizon(&client, &chat_id).await {
+    // Read horizons, saved messages and pins, as Teams loads them.
+    let (horizon, saved, pinned) = tokio::join!(
+        api::messages::peer_read_horizon(&client, &chat_id),
+        api::msgactions::saved_ids(&client, &chat_id),
+        api::msgactions::pinned_ids(&client, &chat_id),
+    );
+    match horizon {
         Ok(h) => api::messages::apply_seen(&mut timeline, h),
         Err(e) => tracing::debug!("read horizons unavailable: {}", short_error(&e)),
     }
+    let saved = saved.unwrap_or_default();
+    let pinned = pinned.unwrap_or_default();
+    for m in timeline.iter_mut() {
+        m.saved = saved.contains(&m.id);
+        m.pinned = pinned.contains(&m.id);
+    }
+    *pinned_order().lock().unwrap() = (chat_id.clone(), pinned);
     for img in timeline.iter_mut().flat_map(|m| m.images.iter_mut()) {
         match cached_image(&client, img).await {
             Ok(path) => img.local_path = format!("file://{}", path.display()),
@@ -3247,6 +3290,218 @@ impl qobject::Backend {
             .set_draft(&QString::from(chat_id.as_str()), &QString::default());
         let _rt = runtime().enter();
         outbox().submit(o);
+    }
+
+    pub fn copy_message_link(&self, message_json: &QString, place_json: &QString) {
+        let m: serde_json::Value =
+            serde_json::from_str(&message_json.to_string()).unwrap_or_default();
+        let place: serde_json::Value =
+            serde_json::from_str(&place_json.to_string()).unwrap_or_default();
+        let field = |v: &serde_json::Value, k: &str| {
+            QString::from(v.get(k).and_then(|x| x.as_str()).unwrap_or_default())
+        };
+        let (message_id, sender, text, root_id) = (
+            field(&m, "id"),
+            field(&m, "sender"),
+            field(&m, "text"),
+            field(&m, "root_id"),
+        );
+        let (team_id, team_name, channel_name) = (
+            field(&place, "team_id"),
+            field(&place, "team_name"),
+            field(&place, "channel_name"),
+        );
+        let conv = self.current_chat_id.to_string();
+        let id = message_id.to_string();
+        let channel = conv.ends_with("@thread.tacv2");
+        let (url, label) = if channel {
+            let tenant = teams_cli::config::Config::load()
+                .ok()
+                .and_then(|c| c.tenant_id())
+                .unwrap_or_default();
+            let root = root_id.to_string();
+            let parent = if root.is_empty() { id.clone() } else { root };
+            let created: i64 = id.parse().unwrap_or(0);
+            (
+                api::msgactions::channel_message_link(
+                    &conv,
+                    &id,
+                    &parent,
+                    &tenant,
+                    &team_id.to_string(),
+                    &team_name.to_string(),
+                    &channel_name.to_string(),
+                    created,
+                    false,
+                    false,
+                ),
+                api::msgactions::copy_link_text(
+                    &sender.to_string(),
+                    &text.to_string(),
+                    Some(&channel_name.to_string()),
+                ),
+            )
+        } else {
+            let oid = self
+                .my_mri
+                .as_deref()
+                .and_then(|m| m.strip_prefix("8:orgid:"))
+                .unwrap_or_default()
+                .to_string();
+            (
+                api::msgactions::chat_message_link(&conv, &id, None, &oid),
+                api::msgactions::copy_link_text(&sender.to_string(), &text.to_string(), None),
+            )
+        };
+        let html = api::msgactions::copy_link_html(&url, &label, channel);
+        let (Ok(url), Ok(html)) = (std::ffi::CString::new(url), std::ffi::CString::new(html))
+        else {
+            return;
+        };
+        // SAFETY: two NUL-terminated strings, copied by Qt before returning.
+        unsafe { ost_set_clipboard(url.as_ptr(), html.as_ptr()) };
+    }
+
+    /// Change a flag on a message in the open chat's last timeline, then
+    /// redraw.
+    fn update_shown(
+        mut self: Pin<&mut Self>,
+        message_id: &str,
+        f: impl Fn(&mut api::messages::MessageView),
+    ) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        if let Some(t) = server_timelines().lock().unwrap().get_mut(&chat_id) {
+            for m in t.iter_mut().filter(|m| m.id == message_id) {
+                f(m);
+            }
+        }
+        self.as_mut().refresh_lies();
+    }
+
+    pub fn set_message_saved(mut self: Pin<&mut Self>, message_id: &QString, save: bool) {
+        let (chat_id, id) = (
+            self.rust().current_chat_id.to_string(),
+            message_id.to_string(),
+        );
+        // Teams flips the label at once and puts it back if the save fails.
+        self.as_mut().update_shown(&id, |m| m.saved = save);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_saved(&client, &chat_id, "", &id, save).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("save failed: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().update_shown(&id, |m| m.saved = !save);
+                    let msg = if save {
+                        "Your item couldn't be saved"
+                    } else {
+                        "Your item couldn't be unsaved"
+                    };
+                    this.as_mut().set_status_text(QString::from(msg));
+                });
+            }
+        });
+    }
+
+    pub fn mark_message_unread(
+        mut self: Pin<&mut Self>,
+        message_id: &QString,
+        client_message_id: &QString,
+    ) {
+        let (chat_id, id, cmid) = (
+            self.rust().current_chat_id.to_string(),
+            message_id.to_string(),
+            client_message_id.to_string(),
+        );
+        let Ok(arrival) = id.parse::<i64>() else {
+            return;
+        };
+        // The chat shows as unread in the list (Teams' bookmark).
+        if self.as_mut().rust_mut().unread.insert(chat_id.clone()) {
+            self.as_mut().publish_chats();
+        }
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::mark_unread(&client, &chat_id, arrival, &cmid).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("mark as unread failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn set_message_pinned(mut self: Pin<&mut Self>, message_id: &QString, pin: bool) {
+        let (chat_id, id) = (
+            self.rust().current_chat_id.to_string(),
+            message_id.to_string(),
+        );
+        self.as_mut().update_shown(&id, |m| m.pinned = pin);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_pinned(&client, &chat_id, &id, pin).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(order) => {
+                    *pinned_order().lock().unwrap() = (chat_id, order);
+                    this.as_mut().reload_messages();
+                }
+                Err(e) => {
+                    tracing::warn!("pin failed: {}", short_error(&e));
+                    this.as_mut().update_shown(&id, |m| m.pinned = !pin);
+                    let msg = if pin {
+                        "Couldn't pin message"
+                    } else {
+                        "Couldn't unpin message"
+                    };
+                    this.as_mut().set_status_text(QString::from(msg));
+                }
+            });
+        });
+    }
+
+    pub fn load_message_readers(self: Pin<&mut Self>, message_id: &QString) {
+        let (chat_id, id) = (
+            self.rust().current_chat_id.to_string(),
+            message_id.to_string(),
+        );
+        let Ok(arrival) = id.parse::<u64>() else {
+            return;
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let (mris, total) = api::msgactions::readers(&client, &chat_id, arrival).await?;
+                let mut readers = Vec::new();
+                for mri in mris {
+                    let name = api::messages::person_name(&client, &mri)
+                        .await
+                        .unwrap_or_else(|| "Unknown user".into());
+                    readers.push(json!({ "mri": mri, "name": name }));
+                }
+                anyhow::Ok(json!({ "message_id": id, "total": total, "readers": readers }))
+            }
+            .await;
+            match result {
+                Ok(v) => {
+                    let text = v.to_string();
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_message_readers_json(QString::from(text.as_str()))
+                    });
+                }
+                Err(e) => tracing::warn!("read receipts unavailable: {}", short_error(&e)),
+            }
+        });
     }
 
     pub fn set_reply_quote(mut self: Pin<&mut Self>, quote_json: &QString) {

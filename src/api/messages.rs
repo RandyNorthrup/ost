@@ -191,6 +191,12 @@ pub struct MessageView {
     /// The message it quotes (Reply with quote).
     #[serde(default)]
     pub quote: Option<Quote>,
+    /// Saved by you (Teams' Save this message).
+    #[serde(default)]
+    pub saved: bool,
+    /// Pinned for everyone in the chat.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module
@@ -1530,13 +1536,22 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
         .and_then(|i| i.as_str())
         .and_then(|i| i.parse().ok())
         .unwrap_or(0);
-    let horizon: u64 = conv
-        .pointer("/properties/consumptionhorizon")
-        .and_then(|h| h.as_str())
-        .and_then(|h| h.split(';').next())
-        .and_then(|h| h.parse().ok())
-        .unwrap_or(0);
-    last_id > horizon
+    let field = |name: &str, i: usize| -> u64 {
+        conv.pointer(&format!("/properties/{name}"))
+            .and_then(|h| h.as_str())
+            .and_then(|h| h.split(';').nth(i))
+            .and_then(|h| h.parse().ok())
+            .unwrap_or(0)
+    };
+    let horizon = field("consumptionhorizon", 0);
+    // Mark as unread writes a bookmark behind the horizon
+    // ("{arrival-1};{when};{clientmessageid}"); it holds until the chat is
+    // read again (a later horizon).
+    let bookmark = field("consumptionHorizonBookmark", 0);
+    let marked_unread = bookmark > 0
+        && bookmark < last_id
+        && field("consumptionHorizonBookmark", 1) > field("consumptionhorizon", 1);
+    last_id > horizon || marked_unread
 }
 
 #[cfg(test)]

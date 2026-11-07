@@ -86,6 +86,7 @@ Rectangle {
         if (i >= 0) list.positionViewAtIndex(i, ListView.Center)
     }
     function closePickerForTest() { reactionPicker.close() }
+    function closeMessageMenuForTest() { messageMenu.close() }
     function openReactionPicker(messageId, anchor) { reactionPicker.messageId = messageId; reactionPicker.parent = anchor; reactionPicker.open() }
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function plainText() { return input.getText(0, input.length) }
@@ -567,13 +568,14 @@ Rectangle {
                 readonly property var files: msg.modelData.files || []
                 // Text shows unless the message is only a picture or only files.
                 readonly property bool showBody: !imageOnly && (msg.modelData.deleted || (msg.modelData.text || "").length > 0)
-                readonly property real bodyH: showBody ? body.implicitHeight : 0
+                // Teams' lines are 20 px each.
+                readonly property real bodyH: showBody ? Math.max(1, body.lineCount) * 20 : 0
                 // A quoted reply's card sits at the top (Teams: 10.7 down, the
                 // text 4 under it).
                 readonly property real quoteShift: msg.modelData.quote ? 60.3 : 0
-                readonly property real picsTop: showBody ? body.y + body.implicitHeight + 8 : (bare ? 0 : 8)
+                readonly property real picsTop: showBody ? body.y + bodyH + 8 : (bare ? 0 : 8)
                 readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
-                readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + body.implicitHeight + 8 : 8)
+                readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + bodyH + 8 : 8)
                 width: root.isChannel ? msg.maxBubble
                     : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
@@ -625,6 +627,18 @@ Rectangle {
                         }
                     }
                 }
+                // Right-click: the same menu at the pointer, with the reaction
+                // strip on top (Teams' right-click menu).
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    enabled: actions.can
+                    onTapped: ev => {
+                        // With text selected, the text's own menu (as Teams
+                        // falls back to the native one).
+                        if (body.selectedText.length > 0) { textMenu.target = body; textMenu.popup(bubble, ev.position.x, ev.position.y); return }
+                        root.openMessageMenu(msg.modelData, bubble, true, ev.position.x, ev.position.y)
+                    }
+                }
                 QuoteCard {
                     id: quoteCard
                     visible: !!msg.modelData.quote
@@ -633,26 +647,32 @@ Rectangle {
                     maxWidth: msg.maxBubble - 2 * bubble.pad
                     onActivated: root.jumpToMessage(msg.modelData.quote.message_id)
                 }
-                Text {
+                // Selectable, as in Teams (a message's text can be selected and
+                // copied); read-only.
+                TextEdit {
                     id: body
                     visible: bubble.showBody
                     x: bubble.pad; y: 6.7 + bubble.quoteShift
                     width: Math.min(msg.maxBubble - 2 * bubble.pad, implicitWidth)
-                    // Teams' 14/20 text.
-                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    readOnly: true
+                    selectByMouse: true
+                    persistentSelection: false
+                    selectionColor: theme.selectionFill
+                    selectedTextColor: theme.text
+                    // Teams' 14/20 text (a fixed 20 px line).
                     // Sanitised by the engine to a safe subset.
                     text: msg.modelData.deleted ? "This message has been deleted."
                         : "<style>a { color: " + theme.brand + "; text-decoration: none; } "
                           + ".mention { color: " + theme.brand + "; } "
-                          + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; }</style>"
+                          + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; } "
+                          + "p, div, li, body { line-height: 20px; -qt-line-height-type: fixed; }</style>"
                           + (msg.modelData.html || msg.modelData.text)
-                    textFormat: msg.modelData.deleted ? Text.PlainText : Text.RichText
-                    wrapMode: Text.Wrap
+                    textFormat: msg.modelData.deleted ? TextEdit.PlainText : TextEdit.RichText
+                    wrapMode: TextEdit.Wrap
                     font.family: theme.font; font.pixelSize: theme.base
                     // Teams' tombstone: italic, in the normal text colour.
                     font.italic: msg.modelData.deleted === true
                     color: theme.text
-                    linkColor: theme.brand
                     onLinkActivated: link => Qt.openUrlExternally(link)
                     HoverHandler { cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
                     Accessible.name: msg.modelData.text
@@ -807,7 +827,7 @@ Rectangle {
                 readonly property var acts: msg.mine
                     ? [{ key: "edit", icon: "edit-20", tip: "Edit", name: "Edit" }]
                     : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote", name: "Reply with quote" }]
-                visible: can && (msgHover.hovered || barHover.hovered || menu.visible || root.forceBarId === msg.modelData.id)
+                visible: can && (msgHover.hovered || barHover.hovered || (messageMenu.opened && !messageMenu.rightClick && messageMenu.message && messageMenu.message.id === msg.modelData.id) || root.forceBarId === msg.modelData.id)
                 z: 5
                 height: 32
                 width: 7 + (quick.length + 1) * 32 + 8 + acts.length * 32 + 32 + 6
@@ -858,19 +878,7 @@ Rectangle {
                             onClicked: modelData.key === "edit" ? root.startEdit(msg.modelData) : root.replyWithQuote(msg.modelData)
                         }
                     }
-                    BarButton { icon: "more-horizontal-20"; tip: "More options"; height: 32; onClicked: menu.open() }
-                }
-                Menu {
-                    id: menu
-                    y: actions.height
-                    MenuItem {
-                        text: "Edit"
-                        onTriggered: root.startEdit(msg.modelData)
-                    }
-                    MenuItem {
-                        text: "Delete"
-                        onTriggered: root.deleteMessage(msg.modelData.id)
-                    }
+                    BarButton { id: moreButton; icon: "more-horizontal-20"; tip: "More options"; height: 32; onClicked: root.openMessageMenu(msg.modelData, moreButton, false, 0, moreButton.height) }
                 }
             }
             // Sent tick on your newest message, "Seen" eye on the newest one
@@ -1593,6 +1601,127 @@ Rectangle {
         root.quoting = null
         root.formatting = false
         root.posting = false
+    }
+    // The menu for selected message text.
+    MenuPopup {
+        id: textMenu
+        property var target: null
+        function popup(anchor, px, py) { parent = anchor; x = px; y = py; open() }
+        margins: 8
+        items: [{ key: "copy", label: "Copy", keys: "Ctrl+C" }, { key: "all", label: "Select all", keys: "Ctrl+A" }]
+        onPicked: i => { if (!target) return; if (items[i].key === "copy") target.copy(); else target.selectAll() }
+    }
+    // The message ··· menu (Teams' registry order; the hover bar's own
+    // actions are left out when it opens from there, kept on right-click).
+    function messageMenuItems(m, rightClick) {
+        const own = m.mine === true
+        const out = []
+        // Core items, in Teams' registry order.
+        if (rightClick || own) out.push({ key: "reply", label: "Reply with quote", icon: "quote-reply-20", keys: "Q" })
+        if (rightClick && own) out.push({ key: "edit", label: "Edit", icon: "edit-20", keys: "E" })
+        out.push({ key: "copy-link", label: "Copy link", icon: "link-20" })
+        out.push(m.saved
+            ? { key: "unsave", label: "Unsave this message", icon: "bookmark-20-filled", keys: "S" }
+            : { key: "save", label: "Save this message", icon: "bookmark-20", keys: "S" })
+        if (own) out.push({ key: "delete", label: "Delete", icon: "delete-menu-20", keys: "Del" })
+        out.push(m.pinned
+            ? { key: "unpin", label: "Unpin for everyone", icon: "pin-off-20", keys: "P" }
+            : { key: "pin", label: "Pin for everyone", icon: "pin-20", keys: "P" })
+        // Read by N of M: your messages in group chats, once the readers
+        // are known; disabled when nobody has read it.
+        const r = root.readersFor(m.id)
+        if (own && root.isGroup && r) out.push(r.total === 0
+            ? { key: "read", label: "No receipt info available", icon: "read-receipt-20", enabled: false }
+            : { key: "read", label: "Read by " + r.readers.length + " of " + r.total, icon: "read-receipt-20", chevron: r.readers.length > 0, enabled: r.readers.length > 0 })
+        // Secondary items.
+        out.push({ separator: true })
+        out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
+        // More actions: the rest of the secondary items and apps' actions;
+        // disabled while that list is empty.
+        out.push({ separator: true })
+        out.push({ key: "more", label: "More actions", chevron: true, enabled: false })
+        return out
+    }
+    function readersFor(id) {
+        const r = backend.messageReadersJson ? JSON.parse(backend.messageReadersJson) : null
+        return r && r.message_id === id ? r : null
+    }
+    function openMessageMenu(m, anchor, rightClick, px, py) {
+        if (m.mine && root.isGroup) backend.loadMessageReaders(m.id)
+        messageMenu.message = m
+        messageMenu.rightClick = rightClick
+        messageMenu.items = messageMenuItems(m, rightClick)
+        messageMenu.parent = anchor
+        messageMenu.x = rightClick ? px : anchor.width - messageMenu.implicitWidth
+        messageMenu.y = py
+        messageMenu.open()
+    }
+    MenuPopup {
+        id: messageMenu
+        property var message: null
+        property bool rightClick: false
+        labelInset: 32; separatorHeight: 8.6
+        chevronSize: 20; chevronMargin: 5.6; keysMargin: 8
+        margins: 8
+        header: rightClick ? reactionStrip : null
+        // The readers' list arrives after the menu opens.
+        Connections {
+            target: backend
+            function onMessageReadersJsonChanged() {
+                if (messageMenu.opened && messageMenu.message) messageMenu.items = root.messageMenuItems(messageMenu.message, messageMenu.rightClick)
+            }
+        }
+        onPicked: i => {
+            const it = items[i], m = message
+            if (it.key === "reply") root.replyWithQuote(m)
+            else if (it.key === "edit") root.startEdit(m)
+            else if (it.key === "delete") root.deleteMessage(m.id)
+            else if (it.key === "copy-link") backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.root_id || "" }), JSON.stringify({ team_id: root.teamId, team_name: root.teamName, channel_name: root.isChannel ? root.chatName : "" }))
+            else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
+            else if (it.key === "pin" || it.key === "unpin") backend.setMessagePinned(m.id, it.key === "pin")
+            else if (it.key === "unread") backend.markMessageUnread(m.id, m.client_message_id || "")
+            else if (it.key === "read") { readersMenu.items = root.readersFor(m.id).readers.map(x => ({ key: x.mri, label: x.name })); readersMenu.parent = messageMenu.parent; readersMenu.x = messageMenu.x + messageMenu.width; readersMenu.y = messageMenu.y; readersMenu.open() }
+        }
+    }
+    // Read by N of M's readers: one row per reader; a click opens a 1:1
+    // chat with them.
+    MenuPopup {
+        id: readersMenu
+        margins: 8
+        onPicked: i => backend.openChatWith(items[i].key.replace(/^8:orgid:/, ""), items[i].label)
+    }
+    // The right-click menu's reaction strip: the quick reactions and More
+    // reactions, 31.3 tall.
+    Component {
+        id: reactionStrip
+        Row {
+            height: 31.3
+            x: 2
+            Repeater {
+                model: root.quickReactions
+                Item {
+                    id: stripBtn
+                    required property string modelData
+                    width: 32; height: 31
+                    Emoticon {
+                        anchors.centerIn: parent; key: stripBtn.modelData; named: "medium"; size: 20
+                        scale: stripHover.hovered ? 1.2 : 1
+                        Behavior on scale { NumberAnimation { duration: 100 } }
+                    }
+                    HoverHandler { id: stripHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            const m = messageMenu.message
+                            const mine = (m.reactions || []).some(r => r.key === stripBtn.modelData && r.mine)
+                            messageMenu.close(); root.react(m.id, stripBtn.modelData, !mine)
+                        }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: backend.emoticonName(modelData)
+                }
+            }
+            BarButton { icon: "emoji-add-20"; tip: "More reactions"; onClicked: { const m = messageMenu.message; const a = messageMenu.parent; messageMenu.close(); root.openReactionPicker(m.id, a) } }
+        }
     }
     // Teams' reaction picker, opened from the hover bar or a message's
     // add-reaction button.

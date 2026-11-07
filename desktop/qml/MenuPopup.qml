@@ -14,7 +14,18 @@ Popup {
     property var items: []
     signal picked(int index)
     readonly property bool hasIcons: items.some(i => !!i.icon || i.checked !== undefined)
-    readonly property real labelX: hasIcons ? 30 : 6
+    // Per-menu metrics (defaults: Teams' tab and status menus). The message
+    // menu uses label 32, dividers 8.6, a 20 px chevron 5.6 from the right
+    // and shortcut letters 8 from the right.
+    property real labelInset: -1
+    property real separatorHeight: 5
+    property int chevronSize: 12
+    property real chevronMargin: 8
+    property real keysMargin: 6
+    // An optional strip above the items (the right-click reactions), with a
+    // divider under it.
+    property Component header: null
+    readonly property real labelX: labelInset >= 0 ? labelInset : hasIcons ? 30 : 6
     padding: 4
     implicitWidth: Math.min(290, Math.max(widest.value, 0)) + 8
     /// The pointer is over the menu (for menus that open on hover).
@@ -28,6 +39,7 @@ Popup {
                 if (i.separator) continue
                 let row = root.labelX + metrics.advanceWidth(i.label || "") + 6
                 if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
+                if (i.chevron) row += root.chevronSize + root.chevronMargin
                 w = Math.max(w, row)
             }
             return Math.ceil(w)
@@ -37,6 +49,17 @@ Popup {
     FontMetrics { id: keyMetrics; font.family: theme.font; font.pixelSize: theme.small }
     contentItem: Column {
         spacing: 2
+        Loader {
+            active: !!root.header
+            visible: active
+            width: root.width - 8
+            sourceComponent: root.header
+        }
+        Item {
+            visible: !!root.header
+            width: root.width - 8; height: root.separatorHeight
+            Rectangle { anchors.verticalCenter: parent.verticalCenter; x: -4; width: root.width; height: 1; color: theme.divider }
+        }
         Repeater {
             model: root.items
             Item {
@@ -48,7 +71,7 @@ Popup {
                 width: root.width - 8
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
-                height: modelData.separator ? 5 : 32
+                height: modelData.separator ? root.separatorHeight : 32
                 Rectangle {
                     visible: !!row.modelData.separator
                     anchors.verticalCenter: parent.verticalCenter
@@ -78,11 +101,11 @@ Popup {
                     }
                     FluentIcon {
                         visible: !!row.modelData.chevron
-                        anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                        name: "chevron-right-12"; size: 12; color: row.ink
+                        anchors.right: parent.right; anchors.rightMargin: root.chevronMargin; anchors.verticalCenter: parent.verticalCenter
+                        name: "chevron-right-" + root.chevronSize; size: root.chevronSize; color: row.ink
                     }
                     Text {
-                        anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right; anchors.rightMargin: root.keysMargin; anchors.verticalCenter: parent.verticalCenter
                         text: row.modelData.keys || ""
                         font.family: theme.font; font.pixelSize: theme.small
                         color: row.on ? theme.textSecondary : theme.disabled
