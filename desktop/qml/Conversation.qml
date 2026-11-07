@@ -556,6 +556,20 @@ Rectangle {
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                 }
+                // Saved by you: Teams' magenta bookmark at the line's end.
+                FluentIcon {
+                    visible: msg.modelData.saved === true
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "bookmark-16-filled"; size: 16; color: theme.savedFg
+                    HoverHandler { id: savedHover }
+                    ToolTip {
+                        visible: savedHover.hovered; delay: 500
+                        y: -height - 4; padding: 8
+                        background: FluentSurface { depth: 16; radius: 4 }
+                        contentItem: Text { text: "Saved by you. Others won't see that it was saved."; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    }
+                    Accessible.name: "Saved by you. Others won't see that it was saved."
+                }
             }
             Rectangle {
                 id: bubble
