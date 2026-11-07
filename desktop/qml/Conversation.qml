@@ -2159,7 +2159,9 @@ Rectangle {
         z: 50
         anchors { top: header.bottom; right: parent.right; topMargin: 4; rightMargin: 16 }
         width: 251.3
-        height: Math.min(root.height - header.height - 16, (canAdd ? addRow.y + addRow.height : rows.y + rows.height) + 16.7)
+        height: Math.min(root.height - header.height - 16, (canLeave ? leaveRow.y + leaveRow.height : canAdd ? addRow.y + addRow.height : rows.y + rows.height) + 16.7)
+        // Leave shows once there are more than two people (Teams).
+        readonly property bool canLeave: canAdd && members.length > 2
         // Teams offers Add people in group chats.
         readonly property bool canAdd: root.isGroup && !root.isChannel
         FluentSurface { anchors.fill: parent; depth: 16; radius: 4; color: theme.surface }
@@ -2169,7 +2171,7 @@ Rectangle {
             const roster = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
             if (roster.length > 0) {
                 const me = roster.filter(m => m.me).map(m => ({ name: m.name || root.myName, mri: m.mri, me: true }))
-                return me.concat(roster.filter(m => !m.me).map(m => ({ name: m.name, mri: m.mri, mail: m.mail })))
+                return me.concat(roster.filter(m => !m.me).map(m => ({ name: m.name, mri: m.mri, mail: m.mail, presence: m.presence || "" })))
             }
             const seen = {}, out = []
             if (root.myName) { out.push({ name: root.myName, mri: "me", me: true }); seen.me = true }
@@ -2199,7 +2201,7 @@ Rectangle {
                         x: 12; y: 7; size: 32
                         name: prow.modelData.name
                         photoId: prow.modelData.mri
-                        presence: prow.modelData.me ? root.myPresence : prow.modelData.mri === root.chatPhotoId ? root.chatPresence : ""
+                        presence: prow.modelData.me ? root.myPresence : prow.modelData.presence || (prow.modelData.mri === root.chatPhotoId ? root.chatPresence : "")
                     }
                     Text {
                         x: 54; y: prow.modelData.me ? 5 : 13; height: 20; verticalAlignment: Text.AlignVCenter
@@ -2250,13 +2252,28 @@ Rectangle {
             x: 2.7; y: rows.y + rows.height + 12.6
             width: 246; height: 31.3; radius: 4
             color: addHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
-            FluentIcon { x: 21.6; anchors.verticalCenter: parent.verticalCenter; name: "person-add-20"; size: 20; color: theme.textStrong }
+            FluentIcon { x: 21.6; anchors.verticalCenter: parent.verticalCenter; name: "people-add-20"; size: 20; color: theme.textStrong }
             Text { x: 57.6; anchors.verticalCenter: parent.verticalCenter; text: "Add people"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
             HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { participants.visible = false; root.openAddPeople() } }
             Accessible.role: Accessible.Button
             Accessible.name: "Add people"
         }
+    }
+    // Leave (leave-chat-btn): person-arrow-left at 24.3, 32 tall.
+    Rectangle {
+        id: leaveRow
+        parent: participants
+        visible: participants.canLeave
+        x: 2.7; y: addRow.y + addRow.height
+        width: 246; height: 32; radius: 4
+        color: leaveHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+        FluentIcon { x: 21.6; anchors.verticalCenter: parent.verticalCenter; name: "person-arrow-left-20"; size: 20; color: theme.textStrong }
+        Text { x: 57.6; anchors.verticalCenter: parent.verticalCenter; text: "Leave"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        HoverHandler { id: leaveHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: { participants.visible = false; memberRemoveDialog.startLeave(participants.members.find(m => m.me)) } }
+        Accessible.role: Accessible.Button
+        Accessible.name: "Leave"
     }
     function openAddPeople() {
         addPeople.members = participants.members.map(m => m.mri)
@@ -2277,17 +2294,20 @@ Rectangle {
         anchors.centerIn: Overlay.overlay
         closePolicy: Popup.CloseOnEscape
         property var member: null
-        function start(m) { member = m; open() }
+        // Leaving (yourself): Teams' "Leave the conversation?".
+        property bool leaving: false
+        function start(m) { member = m; leaving = false; open() }
+        function startLeave(m) { member = m; leaving = true; open() }
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         Overlay.modal: Rectangle { color: "#66000000" }
         Text {
             x: 24.7; y: 24.7; width: 550; height: 28; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
-            text: "Remove " + (memberRemoveDialog.member ? memberRemoveDialog.member.name : "") + " from the conversation?"
+            text: memberRemoveDialog.leaving ? "Leave the conversation?" : "Remove " + (memberRemoveDialog.member ? memberRemoveDialog.member.name : "") + " from the conversation?"
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
         }
         Text {
             x: 24.7; y: 59.3; height: 20; verticalAlignment: Text.AlignVCenter
-            text: "They'll still have access to the chat history."
+            text: memberRemoveDialog.leaving ? "You'll still have access to the chat history." : "They'll still have access to the chat history."
             font.family: theme.font; font.pixelSize: theme.base; color: theme.text
         }
         Row {
@@ -2304,11 +2324,11 @@ Rectangle {
             Rectangle {
                 width: 96; height: 31.3; radius: 4
                 color: rOkHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Remove"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
+                Text { anchors.centerIn: parent; text: memberRemoveDialog.leaving ? "Leave" : "Remove"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
                 HoverHandler { id: rOkHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: memberRemoveDialog.confirm() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Remove"
+                Accessible.name: memberRemoveDialog.leaving ? "Leave" : "Remove"
             }
         }
         function confirm() {

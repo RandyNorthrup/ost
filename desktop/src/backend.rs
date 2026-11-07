@@ -3912,7 +3912,14 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::chat_members(&client, &chat_id).await
+                let members = api::chat_members(&client, &chat_id).await?;
+                // Everyone's presence, as Teams' people flyout shows it.
+                let mris: Vec<String> = members.iter().map(|m| m.mri.clone()).collect();
+                let presence =
+                    teams_cli::api::presence::get_presences(&reqwest::Client::new(), &mris)
+                        .await
+                        .unwrap_or_default();
+                anyhow::Ok((members, presence))
             }
             .await;
             let _ = qt.queue(move |mut this| {
@@ -3920,8 +3927,18 @@ impl qobject::Backend {
                     return;
                 }
                 match result {
-                    Ok(members) => {
-                        let text = serde_json::to_string(&members).unwrap_or_else(|_| "[]".into());
+                    Ok((members, presence)) => {
+                        let list: Vec<serde_json::Value> = members
+                            .iter()
+                            .map(|m| {
+                                let mut v = json!(m);
+                                if let Some(p) = presence.iter().find(|p| p.mri == m.mri) {
+                                    v["presence"] = json!(p.availability);
+                                }
+                                v
+                            })
+                            .collect();
+                        let text = serde_json::to_string(&list).unwrap_or_else(|_| "[]".into());
                         this.as_mut()
                             .set_chat_members_json(QString::from(text.as_str()));
                     }
