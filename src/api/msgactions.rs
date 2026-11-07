@@ -739,6 +739,85 @@ pub async fn set_chat_muted(client: &TeamsClient, chat_id: &str, muted: bool) ->
     Ok(())
 }
 
+/// How much of the chat's history people added to it see (Teams' Add
+/// dialog): none, the past `n` days, or all of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SharedHistory {
+    None,
+    Days(u32),
+    All,
+}
+
+impl SharedHistory {
+    /// Teams' `shareHistoryTime`: -1 for none, 0 for all, else the time
+    /// (ms) from which history is shared.
+    pub fn share_history_time(self, now_ms: i64) -> i64 {
+        match self {
+            Self::None => -1,
+            Self::All => 0,
+            Self::Days(d) => now_ms - i64::from(d) * 86_400_000,
+        }
+    }
+}
+
+/// The body Teams sends to add people to a chat.
+pub fn add_members_body(mris: &[String], history: SharedHistory, now_ms: i64) -> serde_json::Value {
+    let t = history.share_history_time(now_ms);
+    serde_json::json!({
+        "members": mris.iter().map(|m| serde_json::json!({"id": m, "role": "Admin", "shareHistoryTime": t})).collect::<Vec<_>>()
+    })
+}
+
+/// Add people to a group chat as Teams does: `PUT /v1/threads/{id}/members`
+/// with `{"members": [{id, role: "Admin", shareHistoryTime}]}`.
+pub async fn add_chat_members(
+    client: &TeamsClient,
+    chat_id: &str,
+    mris: &[String],
+    history: SharedHistory,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/threads/{}/members",
+        client.chat_service_url(),
+        chat_id
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default();
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &add_members_body(mris, history, now),
+        )
+        .await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod add_members_tests {
+    use super::*;
+
+    #[test]
+    fn history_choices_are_teams_share_history_times() {
+        let m = vec!["8:orgid:a".to_string()];
+        let now = 1_794_000_000_000;
+        assert_eq!(
+            add_members_body(&m, SharedHistory::None, now),
+            serde_json::json!({"members": [{"id": "8:orgid:a", "role": "Admin", "shareHistoryTime": -1}]})
+        );
+        assert_eq!(
+            add_members_body(&m, SharedHistory::All, now)["members"][0]["shareHistoryTime"],
+            0
+        );
+        assert_eq!(
+            add_members_body(&m, SharedHistory::Days(3), now)["members"][0]["shareHistoryTime"],
+            now - 3 * 86_400_000
+        );
+    }
+}
+
 #[cfg(test)]
 mod chat_link_tests {
     #[test]

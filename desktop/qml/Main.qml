@@ -2095,6 +2095,34 @@ Window {
         }
     }
 
+    // --add-people-test=<query> with --open-chat=<id> --shots=<dir>: open
+    // the roster flyout, capture it, open Add, type the query, capture the
+    // matches, pick the first, choose 3 days, capture, then Cancel (nobody
+    // is added unless --add-people-confirm is given).
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--add-people-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const q = (Qt.application.arguments.find(a => a.startsWith("--add-people-test=")) || "").slice(18)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "add-" + n + ".png"))
+            if (backend.currentChatId !== id) { const c0 = chatList.chats.find(c => c.id === id); backend.selectChat(id, c0 ? c0.name : "OST add test"); return }
+            const d = conversation.addPeopleForTest()
+            if (step === 1) conversation.openParticipantsForTest()
+            else if (step === 2) shot("roster")
+            else if (step === 3) conversation.openAddPeople()
+            else if (step === 4) d.typeForTest(q)
+            else if (step === 6) shot("matches")
+            else if (step === 7) { d.pickFirstForTest(); d.history = 1; d.days = 3 }
+            else if (step === 8) shot("picked")
+            else if (step === 9) { if (Qt.application.arguments.indexOf("--add-people-confirm") >= 0) d.finish(); else d.close() }
+            else if (step === 12) { console.warn("ADD-TEST members", backend.chatMembersJson); Qt.quit() }
+            step++
+        }
+    }
+
     // --rename-test=<name> with --open-chat=<id>: rename the group chat,
     // log the chat list's name for it, then quit.
     Timer {
@@ -2639,6 +2667,7 @@ Window {
             const c = chatList.chats.find(c => c.id === backend.currentChatId)
             return c && c.peerMri ? c.peerMri : ""
         }
+        myPresence: window.myPresence
         chatPresence: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId)
             return c && c.presence ? c.presence : ""

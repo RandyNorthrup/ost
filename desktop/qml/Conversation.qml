@@ -12,6 +12,8 @@ Rectangle {
     signal call()
     signal videoCall()
     property string chatPresence: ""
+    /// Your own presence (the roster shows it on your row).
+    property string myPresence: ""
     property string typingText: ""
     /// The typer whose avatar the typing indicator shows.
     property string typingAvatar: ""
@@ -2148,26 +2150,29 @@ Rectangle {
     function tabDialogForTest(kind, name) { const t = root.channelTabs.find(x => x.name === name); if (!t) return false; if (kind === "rename") renameDialog.start(t); else removeDialog.start(t); return true }
     function tabChangeForTest(op, name, arg) { const t = root.channelTabs.find(x => x.name === name); if (t) backend.channelTabChange(op, root.teamId, root.chatId, t.id, arg || ""); return !!t }
 
-    // Participants: who is in this chat.
-    Rectangle {
+    // Participants (Teams' roster flyout, measured on winpc): "People (n)",
+    // you first with "You" under your name, each 48 tall with a 32 px
+    // picture and presence; then a divider and Add people.
+    Item {
         id: participants
         visible: false
         z: 50
         anchors { top: header.bottom; right: parent.right; topMargin: 4; rightMargin: 16 }
-        width: 300; height: Math.min(400, partCol.implicitHeight + 24)
-        radius: 8
-        color: theme.menu
-        border.color: theme.dividerSoft
+        width: 251.3
+        height: Math.min(root.height - header.height - 16, (canAdd ? addRow.y + addRow.height : rows.y + rows.height) + 16.7)
+        // Teams offers Add people in group chats.
+        readonly property bool canAdd: root.isGroup && !root.isChannel
+        FluentSurface { anchors.fill: parent; depth: 16; radius: 4; color: theme.surface }
         // The chat's roster (thread members), you first; channels fall back
         // to the people seen in the posts.
         readonly property var members: {
             const roster = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
             if (roster.length > 0) {
-                const me = roster.filter(m => m.me).map(m => ({ name: (m.name || root.myName) + " (You)", mri: m.mri }))
+                const me = roster.filter(m => m.me).map(m => ({ name: m.name || root.myName, mri: m.mri, me: true }))
                 return me.concat(roster.filter(m => !m.me).map(m => ({ name: m.name, mri: m.mri, mail: m.mail })))
             }
             const seen = {}, out = []
-            if (root.myName) { out.push({ name: root.myName + " (You)", mri: "me" }); seen.me = true }
+            if (root.myName) { out.push({ name: root.myName, mri: "me", me: true }); seen.me = true }
             for (const m of root.messages) {
                 if (m.mine || !m.sender_mri || !m.sender || seen[m.sender_mri]) continue
                 seen[m.sender_mri] = true
@@ -2175,35 +2180,77 @@ Rectangle {
             }
             return out
         }
+        Text {
+            x: 15.7; y: 17.7; height: 16; verticalAlignment: Text.AlignVCenter
+            text: root.isChannel ? "People in this channel" : "People (" + participants.members.length + ")"
+            font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary
+        }
         Column {
-            id: partCol
-            x: 12; y: 12; width: parent.width - 24
-            spacing: 4
-            Text {
-                text: root.isChannel ? "People in this channel" : "People (" + participants.members.length + ")"
-                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
-            }
+            id: rows
+            x: 6.7; y: 37.7
             Repeater {
                 model: participants.members
-                Item {
+                Rectangle {
+                    id: prow
                     required property var modelData
-                    width: partCol.width; height: 40
+                    width: 242; height: 48; radius: 4
+                    color: prowHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
                     Avatar {
-                        x: 0; anchors.verticalCenter: parent.verticalCenter; size: 32
-                        name: parent.modelData.name.replace(/ \(You\)$/, "")
-                        photoId: parent.modelData.mri
-                        presence: parent.modelData.mri === root.chatPhotoId ? root.chatPresence : ""
+                        x: 12; y: 7; size: 32
+                        name: prow.modelData.name
+                        photoId: prow.modelData.mri
+                        presence: prow.modelData.me ? root.myPresence : prow.modelData.mri === root.chatPhotoId ? root.chatPresence : ""
                     }
                     Text {
-                        x: 44; anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - 44; elide: Text.ElideRight
-                        text: parent.modelData.name
-                        font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                        x: 54; y: prow.modelData.me ? 5 : 13; height: 20; verticalAlignment: Text.AlignVCenter
+                        width: 176; elide: Text.ElideRight
+                        text: prow.modelData.name
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text
                     }
+                    Text {
+                        visible: !!prow.modelData.me
+                        x: 54; y: 25; height: 16; verticalAlignment: Text.AlignVCenter
+                        text: "You"
+                        font.family: theme.font; font.pixelSize: 12; color: theme.text
+                    }
+                    HoverHandler { id: prowHover }
+                    ToolTip.visible: prowHover.hovered && !prow.modelData.me
+                    ToolTip.text: prow.modelData.name
+                    ToolTip.delay: 600
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: prow.modelData.name + (prow.modelData.me ? ", You" : "")
                 }
             }
         }
+        Rectangle {
+            visible: participants.canAdd
+            x: 16.7; y: rows.y + rows.height + 7; width: 218; height: 0.67
+            color: theme.pick("#E0E0E0", "#3D3D3D")
+        }
+        // Add people (chat-add-members): person-add at 24.3, the label at 60.3.
+        Rectangle {
+            id: addRow
+            visible: participants.canAdd
+            x: 2.7; y: rows.y + rows.height + 12.6
+            width: 246; height: 31.3; radius: 4
+            color: addHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+            FluentIcon { x: 21.6; anchors.verticalCenter: parent.verticalCenter; name: "person-add-20"; size: 20; color: theme.textStrong }
+            Text { x: 57.6; anchors.verticalCenter: parent.verticalCenter; text: "Add people"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { participants.visible = false; root.openAddPeople() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Add people"
+        }
     }
+    function openAddPeople() {
+        addPeople.members = participants.members.map(m => m.mri)
+        addPeople.start()
+    }
+    AddPeopleDialog {
+        id: addPeople
+        onAccepted: (people, days) => backend.addChatMembers(JSON.stringify(people.map(p => p.mri)), days)
+    }
+    function addPeopleForTest() { return addPeople }
 
     function wrapSelection(tag) { compose.wrapSelection(tag) }
     // Files picked to send with the next message (local paths).

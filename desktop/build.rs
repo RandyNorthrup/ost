@@ -40,6 +40,8 @@ fn main() {
         "qml/QuoteCard.qml",
         "qml/ReactionPicker.qml",
         "qml/ShareContactDialog.qml",
+        "qml/PeopleTagPicker.qml",
+        "qml/AddPeopleDialog.qml",
         "qml/EmojiPanel.qml",
         "qml/FunPicker.qml",
         "qml/CustomEmojiAdd.qml",

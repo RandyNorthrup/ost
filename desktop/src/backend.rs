@@ -285,6 +285,11 @@ pub mod qobject {
         /// Mute or unmute a chat (Teams' Mute / Unmute).
         #[qinvokable]
         fn set_chat_muted(self: Pin<&mut Backend>, chat_id: &QString, muted: bool);
+        /// Add people (`mris_json`, a JSON array of MRIs) to the open group
+        /// chat with Teams' history choice: `days` < 0 none, 0 all, else
+        /// the past `days` days. The roster reloads after.
+        #[qinvokable]
+        fn add_chat_members(self: Pin<&mut Backend>, mris_json: &QString, days: i32);
         /// Save or unsave a message (Teams' Save this message).
         #[qinvokable]
         fn set_message_saved(self: Pin<&mut Backend>, message_id: &QString, save: bool);
@@ -4285,6 +4290,38 @@ impl qobject::Backend {
             if let Err(e) = result {
                 tracing::warn!("mark read/unread failed: {}", short_error(&e));
             }
+        });
+    }
+
+    pub fn add_chat_members(mut self: Pin<&mut Self>, mris_json: &QString, days: i32) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let mris: Vec<String> = serde_json::from_str(&mris_json.to_string()).unwrap_or_default();
+        if chat_id.is_empty() || mris.is_empty() {
+            return;
+        }
+        let history = match days {
+            d if d < 0 => api::msgactions::SharedHistory::None,
+            0 => api::msgactions::SharedHistory::All,
+            d => api::msgactions::SharedHistory::Days(d as u32),
+        };
+        self.as_mut()
+            .set_status_text(QString::from("Adding people…"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::add_chat_members(&client, &chat_id, &mris, history).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().set_status_text(QString::from(""));
+                    this.as_mut().load_chat_members();
+                }
+                Err(e) => this.as_mut().set_status_text(QString::from(
+                    format!("Couldn't add people: {}", short_error(&e)).as_str(),
+                )),
+            });
         });
     }
 

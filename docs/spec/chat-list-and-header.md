@@ -907,3 +907,16 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
 - [ ] Rename pencil only for group chats (member, not policy-disabled); popover with 250-char and ':' rules; PUT thread property `topic`.
 - [ ] Channel: Meet now split button (Meet now / Schedule a meeting) with its disabled reasons; Find / Channel details only on Posts; Show/Hide tab conversation on Extension/Website tabs.
 - [ ] Chat and channel header ··· menus per §7.4–7.7.
+
+## People flyout and Add people (measured on winpc, 2026-11-07, OST group test)
+- **Flyout.** 251.3 wide, white, radius 4.
+  - Header: "People (n)" 12/16 semibold #616161 at (15.7, 17.7).
+  - Member rows: 242 × 48 from (6.7, 37.7), hover #F5F5F5, a tooltip with the name. Each has a 32 px avatar with presence at 12 in, and the name 14/20 at 54 in: 5 down with "You" (12/16) at 25 for you, 13 down otherwise.
+  - Then a #E0E0E0 divider (16.7, 218 wide) and Add people (`chat-add-members`, 246 × 31.3; person-add-20 at 24.3, label at 60.3).
+  - Then Add agents (`add-copilots-btn`), which OST doesn't have yet. The flyout ends 16.7 below the last row.
+- **Add dialog** (`chat-add-participant-popup`). 402 wide, 16.7 padding.
+  - "Add" (14/20 #424242).
+  - The people picker at 43.3, placeholder "Enter a name, email, or tag" (the same TagPicker as Share contact).
+  - Three radios (12 px, 20 apart): "Don't include chat history" (default), "Include history from the past number of days:" with a days box (1 to 999, default 1), and "Include all chat history". The chosen label is #242424, the others #616161.
+  - Cancel and Add (96 × 31.3) at (185.3 / 289.3, 160). Add is disabled until someone is picked.
+- **Request** (r_data-resolvers-chat `addMembersToConversation` → services-chat `ln` → 534565 `ke`). `PUT {chatsvc}/v1/threads/{id}/members` with `{"members":[{"id":mri,"role":"Admin","shareHistoryTime":t}]}`, where t is −1 for no history, 0 for all of it, or now − days × 86 400 000. Remove is `DELETE /v1/threads/{id}/members/{mri}`.
