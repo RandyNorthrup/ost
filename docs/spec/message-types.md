@@ -406,6 +406,15 @@ Anything not confirmed from code is marked **(unconfirmed)**.
 - ShowCard:
   - opening it turns its button brand-filled with white text (aria-expanded);
   - the card opens 16 under the actions, edge to edge, #F5F5F5 with padding 16.
+- Inputs (Fluent v9 in the card host, measured from a second card):
+  - A label is 14/20 #242424, with the input 4 under it.
+  - Input.Text is 32 tall (multiline 90, padding 6 12). It has a 0.67 px #D1D1D1 border, a #616161 bottom, radius 4, and text 12 in.
+  - Input.ChoiceSet compact is a Fluent Combobox (placeholder, ChevronDown 20, 10 from the end). Expanded options are Radio rows: 32 tall, 8 apart, a 16 px indicator 8 in, and the label at 36 in #616161.
+  - Input.Toggle is a Checkbox row of the same shape.
+  - Input.Date is a DatePicker field, "Select a date..." with a calendar button.
+- Table: a 0.67 px #E0E0E0 frame and lines between rows (no vertical lines). Cells are padded 8, at least 36 tall; the header row is 600. A 1:2 split gave 138.2 / 276.4.
+- ImageSet: small images are 36, 10 apart. RichTextBlock bold is 600; highlight is #FFEDD6.
+- A hero card sent this way did not show in the desktop client, so hero/thumbnail rendering is still unmeasured.
 - Teams web showed such cards as a loading skeleton, then hid them; the desktop client rendered a card with display elements only. Inputs could not be compared live.
 
 ## 10. Cards inside `RichText/Html` messages (`properties.cards`)

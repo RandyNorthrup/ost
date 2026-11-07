@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T07:33:00Z'
+updated_date: '2026-11-07T13:57:00Z'
 labels:
   - desktop
   - messages
@@ -51,4 +51,6 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 - Send pipeline from docs/spec/send-pipeline.md (researched from the client code): src/api/outbox.rs implements the lie (clientmessageid, arrival max(now, last+1)), Teams' POST body, transport retries (5 attempts, 1/2/4/8 s, Retry-After, 401 once, 502/503 3x), error classification and sendPipelineStatus texts, and the per-conversation offline queue persisted to $XDG_STATE_HOME/ost/outbox.json (replay at startup, on Trouter connect and every 10 min; 10 cross-session retries; 48 h expiry; dedupe before replay).
 - Live tests: (1) a real send showed Sending at +57 ms and Delivered at +580 ms, and the lie was replaced by the server copy. (2) A send to a missing conversation gave a 404, Teams' "Message didn't send..." text, a red bubble, a red warning icon, and Retry and Delete; Delete removed it locally. (3) With the chat service cut by a local proxy, the transport tried for 15 s, then the message went to Retrying with the connection tooltip and was persisted. After a restart the replay delivered it, and Randy's web shows it once.
 - Still to do: the "Report a problem" link that Teams adds to the 404 text.
+
+- AC2 (cards): card messages parse (Media_Card SWIFT b64 / JSON fallback, properties.cards) and Adaptive Cards render natively with Teams' host config and frame (measured against the desktop client). Left: hero / thumbnail / list / O365 connector cards, Action.Submit / Execute bot invokes and the result footer, carousels, AMS-authenticated images.
 <!-- SECTION:NOTES:END -->

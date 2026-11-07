@@ -325,7 +325,7 @@ Item {
             property var e: ({})
             property string parentStyle
             width: parent ? parent.width : 0
-            spacing: 8
+            spacing: 10
             Repeater {
                 model: e.images || []
                 Image {
@@ -485,39 +485,52 @@ Item {
             actions: e.actions || []
         }
     }
+    // Tables (measured): a 0.67 px NeutralStroke2 frame, rows split by the
+    // same line, cells padded 8; the header row bold.
     Component {
         id: table
-        Column {
+        Rectangle {
             id: tbl
             property var e: ({})
             property string parentStyle
             readonly property var cols: e.columns || []
+            readonly property bool grid: e.showGridLines !== false
+            readonly property real inner: width - 1.33
             readonly property real total: cols.reduce((n, c) => n + (c.width && /px$/.test(String(c.width)) ? 0 : (parseFloat(c.width) || 1)), 0)
             readonly property real fixedPx: cols.reduce((n, c) => n + (c.width && /px$/.test(String(c.width)) ? parseFloat(c.width) : 0), 0)
-            function colW(i) { const c = cols[i] || {}; if (c.width && /px$/.test(String(c.width))) return parseFloat(c.width); return (width - fixedPx) * (parseFloat(c.width) || 1) / Math.max(total, 1) }
-            readonly property bool grid: e.showGridLines !== false
+            function colW(i) { const c = cols[i] || {}; if (c.width && /px$/.test(String(c.width))) return parseFloat(c.width); return (inner - fixedPx) * (parseFloat(c.width) || 1) / Math.max(total, 1) }
             width: parent ? parent.width : 0
-            Repeater {
-                model: tbl.e.rows || []
-                Row {
-                    id: trow
-                    required property var modelData
-                    required property int index
-                    readonly property bool header: tbl.e.firstRowAsHeader !== false && index === 0
-                    Repeater {
-                        model: trow.modelData.cells || []
-                        Rectangle {
-                            required property var modelData
-                            required property int index
-                            width: tbl.colW(index); height: Math.max(cellItems.height + 16, 36)
-                            color: "transparent"
-                            border.color: tbl.grid ? theme.stroke : "transparent"
-                            border.width: tbl.grid ? 0.67 : 0
-                            ElementList {
-                                id: cellItems
-                                x: 8; y: 8; width: parent.width - 16
-                                items: (parent.modelData.items || []).map(i => trow.header && card.lc(i.type, "") === "textblock" && !i.weight ? Object.assign({}, i, { weight: "Bolder" }) : i)
-                                parentStyle: tbl.parentStyle
+            height: rowsCol.height + 1.33
+            color: "transparent"
+            border.color: grid ? theme.divider : "transparent"; border.width: 0.67
+            Column {
+                id: rowsCol
+                x: 0.67; y: 0.67
+                Repeater {
+                    model: tbl.e.rows || []
+                    Item {
+                        id: trow
+                        required property var modelData
+                        required property int index
+                        readonly property bool header: tbl.e.firstRowAsHeader !== false && index === 0
+                        width: tbl.inner; height: cellsRow.height + (index > 0 && tbl.grid ? 0.67 : 0)
+                        Rectangle { visible: trow.index > 0 && tbl.grid; width: parent.width; height: 0.67; color: theme.divider }
+                        Row {
+                            id: cellsRow
+                            y: trow.index > 0 && tbl.grid ? 0.67 : 0
+                            Repeater {
+                                model: trow.modelData.cells || []
+                                Item {
+                                    required property var modelData
+                                    required property int index
+                                    width: tbl.colW(index); height: Math.max(cellItems.height + 16, 36)
+                                    ElementList {
+                                        id: cellItems
+                                        x: 8; y: 8; width: parent.width - 16
+                                        items: (parent.modelData.items || []).map(i => trow.header && card.lc(i.type, "") === "textblock" && !i.weight ? Object.assign({}, i, { weight: "Bolder" }) : i)
+                                        parentStyle: tbl.parentStyle
+                                    }
+                                }
                             }
                         }
                     }
@@ -525,51 +538,68 @@ Item {
             }
         }
     }
+    // Fluent inputs as Teams' card host draws them (measured): the label
+    // 14/20 then 4; 32 tall (90 multiline), a 0.67 px NeutralStroke1 border
+    // with a NeutralStrokeAccessible bottom, radius 4, text 12 in.
     Component {
         id: textInput
         Column {
             id: ti
             property var e: ({})
             property string parentStyle
+            readonly property string kind: card.lc(e.type, "")
             width: parent ? parent.width : 0
             spacing: 4
-            Text { visible: !!ti.e.label; text: (ti.e.label || "") + (ti.e.isRequired ? " *" : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { visible: !!ti.e.label; text: (ti.e.label || "") + (ti.e.isRequired ? " *" : ""); lineHeight: 20; lineHeightMode: Text.FixedHeight; font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Rectangle {
-                width: ti.width; height: ti.e.isMultiline ? 64 : 32; radius: 4
+                width: ti.width; height: ti.e.isMultiline ? 90 : 32; radius: 4
                 color: theme.surface
                 border.color: field.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
-                Rectangle { visible: field.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand }
+                Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: field.activeFocus ? 2 : 0.67; color: field.activeFocus ? theme.brand : theme.textSecondary }
                 TextEdit {
                     id: field
-                    x: 10; y: ti.e.isMultiline ? 6 : (parent.height - contentHeight) / 2; width: parent.width - 20
-                    height: ti.e.isMultiline ? parent.height - 12 : contentHeight
+                    x: 12; y: ti.e.isMultiline ? 6.7 : (parent.height - contentHeight) / 2
+                    width: parent.width - 24 - (ti.kind === "input.date" || ti.kind === "input.time" ? 28 : 0)
+                    height: ti.e.isMultiline ? parent.height - 14 : contentHeight
                     wrapMode: ti.e.isMultiline ? TextEdit.Wrap : TextEdit.NoWrap
                     clip: true
                     text: ti.e.value !== undefined ? String(ti.e.value) : ""
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                     onTextChanged: card.setValue(ti.e.id, text)
-                    Text { visible: !field.text; text: ti.e.placeholder || ""; font: field.font; color: theme.textSecondary }
+                    Text {
+                        visible: !field.text
+                        text: ti.e.placeholder || (ti.kind === "input.date" ? "Select a date..." : ti.kind === "input.time" ? "Select a time..." : "")
+                        font: field.font; color: theme.textSecondary
+                    }
                     Accessible.role: Accessible.EditableText
                     Accessible.name: ti.e.label || ti.e.placeholder || ""
+                }
+                FluentIcon {
+                    visible: ti.kind === "input.date" || ti.kind === "input.time"
+                    anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
+                    name: ti.kind === "input.date" ? "calendar-ltr-20" : "clock-20"; size: 20; color: theme.textStrong
                 }
             }
         }
     }
+    // Fluent checkbox / radio rows: 32 tall, the 16 px indicator 8 in, the
+    // label at 36 in NeutralForeground3 (measured).
     Component {
         id: toggleInput
-        Row {
+        Item {
             id: tg
             property var e: ({})
             property string parentStyle
             property bool on: e.value !== undefined ? String(e.value) === String(e.valueOn === undefined ? "true" : e.valueOn) : false
-            spacing: 8
+            width: parent ? parent.width : 0
+            height: 32
             Rectangle {
-                width: 16; height: 16; radius: 2; y: 2
+                x: 8; y: 8; width: 16; height: 16; radius: 2
                 color: tg.on ? theme.brand : theme.surface
-                border.color: tg.on ? theme.brand : theme.textStrong; border.width: 1
+                border.color: tg.on ? theme.brand : theme.textSecondary; border.width: 0.67
                 FluentIcon { visible: tg.on; anchors.centerIn: parent; name: "checkmark-12-filled"; size: 12; color: "white" }
             }
-            Text { text: tg.e.title || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text; wrapMode: Text.Wrap }
+            Text { x: 36; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 44; text: tg.e.title || ""; font.family: theme.font; font.pixelSize: 14; color: tg.on ? theme.text : theme.textSecondary; wrapMode: Text.Wrap }
             TapHandler { onTapped: { tg.on = !tg.on; card.setValue(tg.e.id, tg.on ? (tg.e.valueOn === undefined ? "true" : tg.e.valueOn) : (tg.e.valueOff === undefined ? "false" : tg.e.valueOff)) } }
             Accessible.role: Accessible.CheckBox
             Accessible.checked: on
@@ -594,13 +624,14 @@ Item {
                 width: ch.width; height: 32; radius: 4
                 color: theme.surface
                 border.color: theme.stroke; border.width: 0.67
+                Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 0.67; color: theme.textSecondary }
                 readonly property var current: (ch.e.choices || []).find(c => String(c.value) === ch.picked[0])
                 Text {
-                    x: 10; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 40; elide: Text.ElideRight
+                    x: 12; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 44; elide: Text.ElideRight
                     text: drop.current ? drop.current.title : (ch.e.placeholder || "")
                     font.family: theme.font; font.pixelSize: 14; color: drop.current ? theme.text : theme.textSecondary
                 }
-                FluentIcon { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textStrong }
+                FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textStrong }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { choiceMenu.width = drop.width; choiceMenu.open() } }
                 MenuPopup {
@@ -612,30 +643,37 @@ Item {
                 Accessible.role: Accessible.ComboBox
                 Accessible.name: ch.e.label || ch.e.placeholder || ""
             }
-            Repeater {
-                model: ch.compact ? [] : (ch.e.choices || [])
-                Row {
-                    required property var modelData
-                    readonly property bool on: ch.picked.indexOf(String(modelData.value)) >= 0
-                    spacing: 8
-                    Rectangle {
-                        width: 16; height: 16; y: 2
-                        radius: ch.e.isMultiSelect ? 2 : 8
-                        color: parent.on && ch.e.isMultiSelect ? theme.brand : theme.surface
-                        border.color: parent.on ? theme.brand : theme.textStrong; border.width: 1
-                        Rectangle { visible: parent.parent.on && !ch.e.isMultiSelect; anchors.centerIn: parent; width: 8; height: 8; radius: 4; color: theme.brand }
-                        FluentIcon { visible: parent.parent.on && !!ch.e.isMultiSelect; anchors.centerIn: parent; name: "checkmark-12-filled"; size: 12; color: "white" }
-                    }
-                    Text { text: modelData.title || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    TapHandler {
-                        onTapped: {
-                            const v = String(parent.modelData.value)
-                            let p = ch.picked.slice()
-                            if (ch.e.isMultiSelect) p = p.indexOf(v) >= 0 ? p.filter(x => x !== v) : p.concat([v])
-                            else p = [v]
-                            ch.picked = p
-                            card.setValue(ch.e.id, p.join(","))
+            Column {
+                spacing: 8
+                Repeater {
+                    model: ch.compact ? [] : (ch.e.choices || [])
+                    Item {
+                        id: opt
+                        required property var modelData
+                        readonly property bool on: ch.picked.indexOf(String(modelData.value)) >= 0
+                        width: ch.width; height: 32
+                        Rectangle {
+                            x: 8; y: 8; width: 16; height: 16
+                            radius: ch.e.isMultiSelect ? 2 : 8
+                            color: opt.on && ch.e.isMultiSelect ? theme.brand : theme.surface
+                            border.color: opt.on ? theme.brand : theme.textSecondary; border.width: 0.67
+                            Rectangle { visible: opt.on && !ch.e.isMultiSelect; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
+                            FluentIcon { visible: opt.on && !!ch.e.isMultiSelect; anchors.centerIn: parent; name: "checkmark-12-filled"; size: 12; color: "white" }
                         }
+                        Text { x: 36; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.title || ""; font.family: theme.font; font.pixelSize: 14; color: opt.on ? theme.text : theme.textSecondary }
+                        TapHandler {
+                            onTapped: {
+                                const v = String(opt.modelData.value)
+                                let p = ch.picked.slice()
+                                if (ch.e.isMultiSelect) p = p.indexOf(v) >= 0 ? p.filter(x => x !== v) : p.concat([v])
+                                else p = [v]
+                                ch.picked = p
+                                card.setValue(ch.e.id, p.join(","))
+                            }
+                        }
+                        Accessible.role: ch.e.isMultiSelect ? Accessible.CheckBox : Accessible.RadioButton
+                        Accessible.checked: on
+                        Accessible.name: modelData.title || ""
                     }
                 }
             }

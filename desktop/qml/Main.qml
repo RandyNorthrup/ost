@@ -510,6 +510,7 @@ Window {
     // OST_SCREENSHOT=<file.png>: render, optionally open a chat, save, quit.
     // Used for pixel comparison against the reference client.
     property bool sentTest: false
+    property bool jumped: false
     property bool signInShot: false
     // Positional arguments (never flags): <shot.png> [send text] [awaited text].
     readonly property var positional: Qt.application.arguments.slice(1).filter(a => !a.startsWith("--"))
@@ -584,6 +585,13 @@ Window {
                 if (conversation.tabNames.indexOf(wantTab) < 0) { restart(); return }
                 conversation.tab = wantTab
                 interval = 12000; restart(); return
+            }
+            // --jump=<text>: bring the newest message containing <text> into
+            // view first.
+            const jump = (Qt.application.arguments.find(a => a.startsWith("--jump=")) || "").slice(7)
+            if (jump && !window.jumped) {
+                const m = (backend.messagesJson ? JSON.parse(backend.messagesJson) : []).filter(m => JSON.stringify(m).indexOf(jump) >= 0).pop()
+                if (m) { window.jumped = true; conversation.jumpToMessage(m.id); restart(); return }
             }
             console.warn("shot: signedIn", backend.signedIn, "chats", backend.chatsJson.length, "status", backend.statusText, "tabs", JSON.stringify(conversation.tabNames))
             window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
