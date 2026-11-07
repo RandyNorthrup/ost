@@ -125,6 +125,14 @@ pub mod qobject {
         #[qproperty(QString, call_chat_url)]
         #[qproperty(bool, call_has_audio)]
         /// "Randy Northrup is typing" for the open chat, or "".
+        /// Bumped when emoticon images or the catalogue arrive.
+        #[qproperty(i32, emoticons_version)]
+        /// The user's Recent emoticons (Teams' roamed recentReactions, else
+        /// its defaults), as a JSON array of ids.
+        #[qproperty(QString, recent_reactions_json)]
+        /// The user's quick reactions for the hover bar (Teams' roamed
+        /// defaultMessageReactions, else its default four), as a JSON array.
+        #[qproperty(QString, quick_reactions_json)]
         #[qproperty(QString, typing_text)]
         /// The typer whose avatar the typing indicator shows (the latest).
         #[qproperty(QString, typing_avatar)]
@@ -184,6 +192,10 @@ pub mod qobject {
         /// Send a message to the open chat, then reload it.
         #[qinvokable]
         fn send_message(self: Pin<&mut Backend>, text: &QString);
+        /// Quote a message in the next send (Teams' Reply with quote):
+        /// `{message_id, sender_mri, sender_name, preview}`, or "" to drop it.
+        #[qinvokable]
+        fn set_reply_quote(self: Pin<&mut Backend>, quote_json: &QString);
         /// Retry a failed message, by its clientmessageid.
         #[qinvokable]
         fn retry_failed_message(self: Pin<&mut Backend>, client_message_id: &QString);
@@ -309,6 +321,29 @@ pub mod qobject {
         /// a download when needed and signals photo_ready when it lands.
         #[qinvokable]
         fn photo_for(self: Pin<&mut Backend>, id: &QString, name: &QString) -> QString;
+
+        /// Teams' image for an emoticon or reaction key (`like`,
+        /// `heart-tone2`, `1f603_…`) at one of Teams' asset sizes: a file URL,
+        /// or "" until it has downloaded (emoticonsVersion then changes).
+        #[qinvokable]
+        fn emoticon_url(self: Pin<&mut Backend>, key: &QString, size: i32) -> QString;
+        /// A picker category's icon (Teams' 20 x 40 single-colour sprite):
+        /// a file URL, or "" until it has downloaded.
+        #[qinvokable]
+        fn emoticon_category_icon(self: Pin<&mut Backend>, category_id: &QString) -> QString;
+        /// Teams' emoticon catalogue for the picker, as JSON
+        /// `[{title, emoticons: [{id, description, diverse}]}]`; "" until
+        /// loaded (emoticonsVersion then changes).
+        #[qinvokable]
+        fn emoticon_catalog_json(self: Pin<&mut Backend>) -> QString;
+        /// A reaction's name as Teams shows it ("Like", or the emoticon's
+        /// description).
+        #[qinvokable]
+        fn emoticon_name(self: &Backend, key: &QString) -> QString;
+        /// Teams' asset size for a named emoticon size ("medium", "small"…)
+        /// on this screen.
+        #[qinvokable]
+        fn emoticon_size(self: &Backend, named: &QString, hidpi: bool) -> i32;
 
         /// Keep (or, when empty, drop) the unsent text for a chat.
         #[qinvokable]
@@ -690,6 +725,9 @@ pub struct BackendRust {
     call_chat_url: QString,
     call_has_audio: bool,
     typing_text: QString,
+    emoticons_version: i32,
+    recent_reactions_json: QString,
+    quick_reactions_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
     window_active: bool,
@@ -710,6 +748,8 @@ pub struct BackendRust {
     /// whom, and until when (Teams keeps a typer 22 s after their last
     /// typing event).
     typers: Vec<Typer>,
+    /// The message the next send quotes.
+    reply_quote: Option<api::messages::Quote>,
     last_typing_sent: Option<std::time::Instant>,
     /// Chats with messages pushed since the user last opened them.
     unread: HashSet<String>,
@@ -1178,6 +1218,28 @@ fn deleted_here() -> &'static std::sync::Mutex<std::collections::HashSet<String>
 fn read_at_open() -> &'static std::sync::Mutex<HashMap<String, Option<u64>>> {
     static MAP: OnceLock<std::sync::Mutex<HashMap<String, Option<u64>>>> = OnceLock::new();
     MAP.get_or_init(Default::default)
+}
+
+fn cache_base() -> std::path::PathBuf {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ost")
+}
+
+/// Teams' emoticon catalogue, once loaded.
+fn emoticon_catalog() -> &'static std::sync::RwLock<Option<std::sync::Arc<api::emoticons::Catalog>>>
+{
+    static C: OnceLock<std::sync::RwLock<Option<std::sync::Arc<api::emoticons::Catalog>>>> =
+        OnceLock::new();
+    C.get_or_init(Default::default)
+}
+
+/// Emoticon image URL → local file URL ("" while downloading or failed).
+fn emoticon_files() -> &'static std::sync::Mutex<HashMap<String, String>> {
+    static M: OnceLock<std::sync::Mutex<HashMap<String, String>>> = OnceLock::new();
+    M.get_or_init(Default::default)
 }
 
 /// Messages being sent (Teams' send pipeline and offline queue), kept in
@@ -1840,12 +1902,13 @@ impl qobject::Backend {
 
     /// Connect to Trouter once per process and react to pushed chat events:
     /// reload the open chat, mark others unread, and refresh the list order.
-    fn start_push(self: Pin<&mut Self>) {
+    fn start_push(mut self: Pin<&mut Self>) {
         static STARTED: AtomicBool = AtomicBool::new(false);
         if STARTED.swap(true, Ordering::SeqCst) {
             return;
         }
         let mut events = teams_cli::event_hub::subscribe();
+        self.as_mut().load_recent_reactions();
         // The outbox: redraw the open chat whenever a send changes state, and
         // replay queued sends at startup and every 10 minutes (Teams'
         // OfflineActionsSyncStrategy); Trouter connects replay too (below).
@@ -2925,11 +2988,31 @@ impl qobject::Backend {
         if chat_id.is_empty() || message_id.is_empty() {
             return;
         }
-        let qt = self.qt_thread();
+        // Adding one moves it to the front of Recent, which roams (Teams'
+        // addEmojisInRecent).
+        let recent = on.then(|| {
+            let now: Vec<String> =
+                serde_json::from_str(&self.rust().recent_reactions_json.to_string())
+                    .unwrap_or_default();
+            api::emoticons::note_recent(&now, &key)
+        });
+        let mut this = self;
+        if let Some(r) = &recent {
+            let text = serde_json::to_string(r).unwrap_or_default();
+            this.as_mut()
+                .set_recent_reactions_json(QString::from(text.as_str()));
+        }
+        let qt = this.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::messages::set_reaction(&client, &chat_id, &message_id, &key, on).await
+                api::messages::set_reaction(&client, &chat_id, &message_id, &key, on).await?;
+                if let Some(r) = recent
+                    && let Err(e) = api::emoticons::set_recent_reactions(&client, &r).await
+                {
+                    tracing::warn!("recent reactions not saved: {}", short_error(&e));
+                }
+                anyhow::Ok(())
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
@@ -3076,6 +3159,7 @@ impl qobject::Backend {
             self.as_mut().publish_chats();
         }
         self.as_mut().rust_mut().typers.clear();
+        self.as_mut().rust_mut().reply_quote = None;
         self.as_mut().rust_mut().typing_generation += 1;
         self.as_mut().set_typing_text(QString::default());
         self.as_mut().set_typing_avatar(QString::default());
@@ -3124,6 +3208,11 @@ impl qobject::Backend {
             return;
         }
         let chat_id = self.rust().current_chat_id.to_string();
+        let quote = self.as_mut().rust_mut().reply_quote.take();
+        let content = match &quote {
+            Some(q) => format!("{}{}", api::messages::quote_html(q), content),
+            None => content,
+        };
         let now = chrono::Utc::now().timestamp_millis();
         // The newest message in the chat, sent or still being sent.
         let last_server = server_timelines()
@@ -3151,12 +3240,17 @@ impl qobject::Backend {
             failures: 0,
             queued: true,
             server_id: None,
+            quote,
         };
         // Sent: the draft for this chat is done.
         self.as_mut()
             .set_draft(&QString::from(chat_id.as_str()), &QString::default());
         let _rt = runtime().enter();
         outbox().submit(o);
+    }
+
+    pub fn set_reply_quote(mut self: Pin<&mut Self>, quote_json: &QString) {
+        self.as_mut().rust_mut().reply_quote = serde_json::from_str(&quote_json.to_string()).ok();
     }
 
     /// Redraw the open chat's messages being sent over its last timeline.
@@ -3357,6 +3451,172 @@ impl qobject::Backend {
                 Err(e) => tracing::warn!("mark read failed: {}", short_error(&e)),
             }
         });
+    }
+
+    pub fn emoticon_url(self: Pin<&mut Self>, key: &QString, size: i32) -> QString {
+        let catalog = emoticon_catalog().read().unwrap().clone();
+        let qt = self.qt_thread();
+        let Some(catalog) = catalog else {
+            static LOADING: AtomicBool = AtomicBool::new(false);
+            if !LOADING.swap(true, Ordering::SeqCst) {
+                runtime().spawn(async move {
+                    match api::emoticons::load_catalog(&cache_base(), "en-us").await {
+                        Ok(c) => {
+                            *emoticon_catalog().write().unwrap() = Some(std::sync::Arc::new(c));
+                            let _ = qt.queue(|mut this| {
+                                let v = this.rust().emoticons_version + 1;
+                                this.as_mut().set_emoticons_version(v);
+                            });
+                        }
+                        Err(e) => {
+                            tracing::warn!("emoticons unavailable: {}", short_error(&e));
+                            LOADING.store(false, Ordering::SeqCst);
+                        }
+                    }
+                });
+            }
+            return QString::default();
+        };
+        let Some(url) = catalog.image_url(&key.to_string(), size.max(16) as u32, false) else {
+            return QString::default();
+        };
+        if let Some(f) = emoticon_files().lock().unwrap().get(&url) {
+            return QString::from(f.as_str());
+        }
+        emoticon_files()
+            .lock()
+            .unwrap()
+            .insert(url.clone(), String::new());
+        runtime().spawn(async move {
+            match api::emoticons::image_file(&url, &cache_base()).await {
+                Ok(path) => {
+                    emoticon_files()
+                        .lock()
+                        .unwrap()
+                        .insert(url, format!("file://{}", path.display()));
+                    let _ = qt.queue(|mut this| {
+                        let v = this.rust().emoticons_version + 1;
+                        this.as_mut().set_emoticons_version(v);
+                    });
+                }
+                Err(e) => tracing::warn!("emoticon image failed: {}", short_error(&e)),
+            }
+        });
+        QString::default()
+    }
+
+    pub fn emoticon_category_icon(self: Pin<&mut Self>, category_id: &QString) -> QString {
+        let id: String = category_id
+            .to_string()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        if id.is_empty() {
+            return QString::default();
+        }
+        let url = format!(
+            "{}/evergreen-assets/personal-expressions/v2/assets/categories/{id}/thumbnail.svg",
+            api::emoticons::STATICS
+        );
+        if let Some(f) = emoticon_files().lock().unwrap().get(&url) {
+            return QString::from(f.as_str());
+        }
+        emoticon_files()
+            .lock()
+            .unwrap()
+            .insert(url.clone(), String::new());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let file = cache_base()
+                .join("emoticons")
+                .join(format!("category-{id}.svg"));
+            let result = async {
+                if !file.exists() {
+                    let bytes = reqwest::get(&url)
+                        .await?
+                        .error_for_status()?
+                        .bytes()
+                        .await?;
+                    std::fs::create_dir_all(file.parent().unwrap())?;
+                    std::fs::write(&file, &bytes)?;
+                }
+                anyhow::Ok(())
+            }
+            .await;
+            match result {
+                Ok(()) => {
+                    emoticon_files()
+                        .lock()
+                        .unwrap()
+                        .insert(url, format!("file://{}", file.display()));
+                    let _ = qt.queue(|mut this| {
+                        let v = this.rust().emoticons_version + 1;
+                        this.as_mut().set_emoticons_version(v);
+                    });
+                }
+                Err(e) => tracing::warn!("emoticon category icon failed: {}", short_error(&e)),
+            }
+        });
+        QString::default()
+    }
+
+    pub fn emoticon_catalog_json(self: Pin<&mut Self>) -> QString {
+        let Some(c) = emoticon_catalog().read().unwrap().clone() else {
+            // Starts the download; emoticonsVersion changes when it lands.
+            let _ = self.emoticon_url(&QString::from("like"), 20);
+            return QString::default();
+        };
+        let list: Vec<_> = c
+            .categories
+            .iter()
+            .map(|cat| {
+                json!({
+                    "id": cat.id,
+                    "title": cat.title,
+                    "emoticons": cat.emoticons.iter().map(|e| json!({"id": e.id, "description": e.description, "diverse": e.diverse, "keywords": e.keywords, "shortcuts": e.shortcuts})).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        QString::from(serde_json::to_string(&list).unwrap_or_default().as_str())
+    }
+
+    /// Load the Recent emoticons (roamed, else Teams' defaults).
+    fn load_recent_reactions(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let owned = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            let (recent, quick) = match TeamsClient::new().await {
+                Ok(c) => (
+                    api::emoticons::recent_reactions(&c).await,
+                    api::emoticons::quick_reactions(&c).await,
+                ),
+                Err(_) => (
+                    owned(&api::emoticons::DEFAULT_RECENT_REACTIONS),
+                    owned(&api::emoticons::DEFAULT_QUICK_REACTIONS),
+                ),
+            };
+            let recent = serde_json::to_string(&recent).unwrap_or_default();
+            let quick = serde_json::to_string(&quick).unwrap_or_default();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_recent_reactions_json(QString::from(recent.as_str()));
+                this.as_mut()
+                    .set_quick_reactions_json(QString::from(quick.as_str()));
+            });
+        });
+    }
+
+    pub fn emoticon_name(&self, key: &QString) -> QString {
+        let key = key.to_string();
+        let name = match emoticon_catalog().read().unwrap().as_ref() {
+            Some(c) => c.reaction_name(&key),
+            None => api::emoticons::parse_key(&key).0,
+        };
+        QString::from(name.as_str())
+    }
+
+    pub fn emoticon_size(&self, named: &QString, hidpi: bool) -> i32 {
+        api::emoticons::asset_size(&named.to_string(), hidpi) as i32
     }
 
     pub fn photo_for(mut self: Pin<&mut Self>, id: &QString, name: &QString) -> QString {

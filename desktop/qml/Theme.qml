@@ -30,6 +30,9 @@ QtObject {
     readonly property color menuHover: pick("#F5F5F5", "#3D3D3D")      // NeutralBackground1Hover (menu items)
     readonly property color inputFilled: pick("#F5F5F5", "#141414")    // filled-darker inputs (dialogs)
     readonly property color pressed: pick("#E0E0E0", "#1F1F1F")        // NeutralBackground1Pressed
+    readonly property color quoteFill: pick("#FAFAFA", "#1F1F1F")      // NeutralBackground2 (quote cards)
+    readonly property color quoteBorder: pick("#F0F0F0", "#3D3D3D")    // NeutralStroke3
+    readonly property color quoteBar: pick("#C7C7C7", "#757575")       // NeutralStroke1Hover
     readonly property color brandLink: pick("#4F52B2", "#9EA2FF")      // transparent brand buttons ("About")
     // Fluent shadows: two layers each (ambient, key), as the client's CSS.
     readonly property color shadowAmbient: pick(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(0, 0, 0, 0.24))

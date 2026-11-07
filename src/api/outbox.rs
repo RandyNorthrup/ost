@@ -45,6 +45,9 @@ pub struct Outgoing {
     /// In the offline queue. A manual Retry is sent outside it.
     pub queued: bool,
     pub server_id: Option<String>,
+    /// The message this one quotes (its card is already in `content`).
+    #[serde(default)]
+    pub quote: Option<super::messages::Quote>,
 }
 
 /// offlineActionsManagerDefaultCrossSessionRetries.
@@ -282,7 +285,7 @@ fn encode_uri_component(s: &str) -> String {
 
 /// The POST body: the whole lie, as Teams sends it (§7).
 pub fn post_body(o: &Outgoing) -> serde_json::Value {
-    serde_json::json!({
+    let mut body = serde_json::json!({
         "id": "-1",
         "type": "Message",
         "conversationid": o.conversation_id,
@@ -307,10 +310,15 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
             "mentions": "[]",
             "onbehalfof": null,
             "files": "[]",
-            "qtdMsgs": "[]",
             "formatVariant": "TEAMS",
         },
-    })
+    });
+    // qtdMsgs goes only with a quote (Teams adds it when quotedMessages is
+    // not empty).
+    if let Some(q) = &o.quote {
+        body["properties"]["qtdMsgs"] = super::messages::quoted_messages_property(q).into();
+    }
+    body
 }
 
 /// One run of the POST, with the transport's retries.
@@ -433,7 +441,8 @@ fn has_url(html: &str) -> bool {
 
 /// The lie as a timeline item.
 pub fn lie_view(o: &Outgoing) -> MessageView {
-    let html = super::messages::sanitize_html(&o.content);
+    let (quote, rest) = super::messages::split_quote(&o.content);
+    let html = super::messages::sanitize_html(&rest);
     let (send_state, send_note) = match o.state {
         SendState::Sending | SendState::Retrying => (
             if o.state == SendState::Sending {
@@ -457,7 +466,8 @@ pub fn lie_view(o: &Outgoing) -> MessageView {
         sender_mri: o.sender_mri.clone(),
         time: iso(o.arrival_ms),
         mine: true,
-        text: super::strip_html(&o.content).trim().to_string(),
+        text: super::strip_html(&rest).trim().to_string(),
+        quote,
         html,
         send_state: send_state.into(),
         send_note: send_note.into(),
@@ -853,6 +863,7 @@ mod tests {
             failures: 0,
             queued: true,
             server_id: None,
+            quote: None,
         };
         let b = post_body(&o);
         assert_eq!(b["id"], "-1");
@@ -861,6 +872,7 @@ mod tests {
         assert_eq!(b["conversationLink"], "blah/19:a_b@unq.gbl.spaces");
         assert_eq!(b["originalarrivaltime"], "2026-01-01T00:00:00.000Z");
         assert_eq!(b["properties"]["formatVariant"], "TEAMS");
+        assert!(b["properties"].get("qtdMsgs").is_none());
         assert_eq!(
             encode_uri_component("19:a@thread.v2;messageid=1"),
             "19%3Aa%40thread.v2%3Bmessageid%3D1"

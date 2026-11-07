@@ -17,6 +17,110 @@ pub struct Reaction {
     pub mine: bool,
 }
 
+/// A quoted message at the top of a reply (Teams' Reply with quote): the
+/// `<blockquote itemtype="http://schema.skype.com/Reply">` card.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Quote {
+    /// The quoted message's id (also its arrival time in ms).
+    pub message_id: String,
+    pub sender_mri: String,
+    pub sender_name: String,
+    /// Plain text of the quoted message.
+    pub preview: String,
+}
+
+/// Split a Teams quote card off the start of a message's HTML.
+pub fn split_quote(content: &str) -> (Option<Quote>, String) {
+    let Some(start) = content.find("<blockquote") else {
+        return (None, content.to_string());
+    };
+    let Some(open_end) = content[start..].find('>').map(|i| start + i + 1) else {
+        return (None, content.to_string());
+    };
+    let open = &content[start..open_end];
+    if !open.contains("schema.skype.com/Reply") {
+        return (None, content.to_string());
+    }
+    let Some(close) = content[open_end..]
+        .find("</blockquote>")
+        .map(|i| open_end + i)
+    else {
+        return (None, content.to_string());
+    };
+    let inner = &content[open_end..close];
+    let message_id = attr(open, "itemid").unwrap_or_default();
+    let (sender_mri, sender_name) = match inner.find("<strong") {
+        Some(i) => {
+            let tag_end = inner[i..]
+                .find('>')
+                .map(|j| i + j + 1)
+                .unwrap_or(inner.len());
+            let name_end = inner[tag_end..]
+                .find("</strong>")
+                .map(|j| tag_end + j)
+                .unwrap_or(tag_end);
+            (
+                attr(&inner[i..tag_end], "itemid").unwrap_or_default(),
+                super::strip_html(&inner[tag_end..name_end])
+                    .trim()
+                    .to_string(),
+            )
+        }
+        None => (String::new(), String::new()),
+    };
+    let preview = match inner.find("itemprop=\"preview\"") {
+        Some(i) => {
+            let body = inner[i..]
+                .find('>')
+                .map(|j| i + j + 1)
+                .unwrap_or(inner.len());
+            let end = inner[body..]
+                .find("</p>")
+                .map(|j| body + j)
+                .unwrap_or(inner.len());
+            super::strip_html(&inner[body..end]).trim().to_string()
+        }
+        None => String::new(),
+    };
+    let rest = format!(
+        "{}{}",
+        &content[..start],
+        content[close + "</blockquote>".len()..].trim_start_matches('\n')
+    );
+    (
+        Some(Quote {
+            message_id,
+            sender_mri,
+            sender_name,
+            preview,
+        }),
+        rest,
+    )
+}
+
+/// Teams' quote card HTML for a reply, as the client sends it: the reply's
+/// paragraphs follow directly (the service puts a newline between them).
+pub fn quote_html(q: &Quote) -> String {
+    format!(
+        "<blockquote itemscope itemtype=\"http://schema.skype.com/Reply\" itemid=\"{id}\"><strong itemprop=\"mri\" itemid=\"{mri}\">{name}</strong><span itemprop=\"time\" itemid=\"{id}\"></span><p itemprop=\"preview\">{preview}</p></blockquote>",
+        id = escape(&q.message_id.replace('&', "&amp;")),
+        mri = escape(&q.sender_mri.replace('&', "&amp;")),
+        name = escape(&q.sender_name.replace('&', "&amp;")),
+        preview = escape(&q.preview.replace('&', "&amp;"))
+    )
+}
+
+/// Teams' `properties.qtdMsgs` for a reply: the quoted references as a
+/// JSON string.
+pub fn quoted_messages_property(q: &Quote) -> String {
+    let time: serde_json::Value = q
+        .message_id
+        .parse::<i64>()
+        .map(serde_json::Value::from)
+        .unwrap_or(serde_json::Value::Null);
+    serde_json::json!([{ "messageId": q.message_id, "sender": q.sender_mri, "time": time, "replyChainId": null }]).to_string()
+}
+
 /// An inline image in a message.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InlineImage {
@@ -84,6 +188,9 @@ pub struct MessageView {
     /// A failed message offers Retry.
     #[serde(default)]
     pub can_retry: bool,
+    /// The message it quotes (Reply with quote).
+    #[serde(default)]
+    pub quote: Option<Quote>,
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module
@@ -550,7 +657,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let edited = props
         .and_then(|p| p.get("edittime"))
         .is_some_and(|e| !e.is_null() && e != "");
-    let content = s("/content");
+    let (quote, content) = split_quote(&s("/content"));
     let reactions = props
         .and_then(|p| p.get("emotions"))
         .map(|e| reactions_of(e, me))
@@ -584,6 +691,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     // Which mention ids (`itemid`) are you, from properties.mentions.
     let my_mentions = my_mention_ids(props, me);
     Some(MessageView {
+        quote,
         images,
         files,
         mentions_me: !my_mentions.is_empty() && !deleted,
@@ -1429,6 +1537,28 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
         .and_then(|h| h.parse().ok())
         .unwrap_or(0);
     last_id > horizon
+}
+
+#[cfg(test)]
+mod quote_tests {
+    use super::*;
+
+    #[test]
+    fn quotes_round_trip_as_teams_writes_them() {
+        let wire = "<blockquote itemscope itemtype=\"http://schema.skype.com/Reply\" itemid=\"1794032815852\"><strong itemprop=\"mri\" itemid=\"8:orgid:5050\">Randy Northrup</strong><span itemprop=\"time\" itemid=\"1794032815852\"></span><p itemprop=\"preview\">OST test 43: typing clears on send</p></blockquote>\n<p>OST test 47: quoted reply</p>";
+        let (q, rest) = split_quote(wire);
+        let q = q.unwrap();
+        assert_eq!(q.message_id, "1794032815852");
+        assert_eq!(q.sender_mri, "8:orgid:5050");
+        assert_eq!(q.sender_name, "Randy Northrup");
+        assert_eq!(q.preview, "OST test 43: typing clears on send");
+        assert_eq!(rest, "<p>OST test 47: quoted reply</p>");
+        // The client sends no newline after the card; the service adds one.
+        assert_eq!(format!("{}\n{}", quote_html(&q), rest), wire);
+        let qtd: serde_json::Value = serde_json::from_str(&quoted_messages_property(&q)).unwrap();
+        assert_eq!(qtd[0]["time"], 1794032815852i64);
+        assert_eq!(split_quote("<p>hi</p>").0, None);
+    }
 }
 
 #[cfg(test)]

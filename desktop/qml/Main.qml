@@ -1483,6 +1483,11 @@ Window {
             if (sent || Date.now() - openedAt < delay) return
             sent = true
             console.warn("SEND-TEST sending", new Date().toISOString())
+            // --quote-newest: quote the newest message from someone else.
+            if (Qt.application.arguments.indexOf("--quote-newest") >= 0) {
+                const q = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.mine && !m.deleted).pop()
+                if (q) backend.setReplyQuote(JSON.stringify({ message_id: q.id, sender_mri: q.sender_mri, sender_name: q.sender, preview: q.text }))
+            }
             backend.sendMessage(window.sendTestText)
             sendTestQuit.start()
         }
@@ -1518,6 +1523,33 @@ Window {
         onTriggered: {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             window.contentItem.grabToImage(r => r.saveToFile(dir + "send-failed-settled.png"))
+        }
+    }
+
+    // --actions-test with --open-chat=<id> --shots=<dir>: the hover bar on
+    // the newest message from someone else and on your newest, the reaction
+    // picker, and a compose quote; captured as actions-<step>.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--actions-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "actions-" + n + ".png"))
+            const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.deleted)
+            const theirs = msgs.filter(m => !m.mine).pop(), mine = msgs.filter(m => m.mine).pop()
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST actions test"); return }
+            if (step === 0 && theirs) conversation.forceBarId = theirs.id
+            else if (step === 1) shot("bar-theirs")
+            else if (step === 2 && mine) conversation.forceBarId = mine.id
+            else if (step === 3) shot("bar-mine")
+            else if (step === 4) { conversation.forceBarId = ""; conversation.openReactionPicker(theirs.id, conversation) }
+            else if (step === 6) shot("picker")
+            else if (step === 7) { conversation.closePickerForTest(); conversation.replyWithQuote(theirs) }
+            else if (step === 8) shot("quote")
+            else if (step === 9) Qt.quit()
+            step++
         }
     }
 

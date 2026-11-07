@@ -549,6 +549,58 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 
 ---
 
+### Measured in the client (winpc, 2026-11-07; CSS px with the DPR 1.5 factored out)
+**Hover bar** (`message-actions-container`)
+- 245 × 32 for 4 reactions plus one action; white, radius 4, Fluent shadow16 (a drop-shadow on the PopoverSurface).
+- It sits **end-aligned on the bubble's top edge**: its right edge is the bubble's right edge, and its bottom is the bubble's top.
+- Contents, left to right:
+  - 7 px in, the reactions: 32 × 31 buttons, each with a 20 px emoticon at (6, 6). On hover the emoticon scales to 1.2 (24 px) and the button gets no background.
+  - More reactions (EmojiAdd20).
+  - A vertical Fluent Divider: 8 wide, padding 0 4, with a 1 px NeutralStroke2 line 21 px tall at y 5.
+  - The action (Edit20 on yours, the quote glyph on others').
+  - More (MoreHorizontal20, 32 × 32).
+  - 6 px of padding at the end.
+- Icons are Fluent transparent buttons: #424242 at rest; on hover the filled glyph in brand.
+
+**Emoticons** are Teams' images, not system emoji:
+- Image: `{statics}/evergreen-assets/personal-expressions/v2/assets/emoticons/{id}/default/{size}[_anim]_f[_s{tone+1}].png?v={etag}`.
+- Metadata: `/evergreen-assets/personal-expressions/v1/metadata/{emoticonAssetVersion}/{locale}.json`, live version `ec4576179210cde40ce5494513213583`. It holds the categories, with `id`, `description`, `shortcuts`, `unicode`, `etag`, `diverse` and `keywords` for each emoticon.
+- Sizes (401251 `b`): extra-small 16/20, small 20/50, medium 30/60, medium-large 40/100, large 50/100 and extra-large 100, normal/hi-DPI.
+- The hover bar's reactions are medium and the reaction pills are small.
+- The server key `like` is drawn with the `yes` asset.
+
+**Reaction summary**
+- Pills are 34 × 26 and fully round, 2 px apart.
+- The row overlaps the bubble's bottom edge by 4 px. It sits 15.7 in from the bubble's start on others' messages, and at the bubble's **end** on your own.
+- A pill holds a 20 px emoticon at (7, 3); its count shows only when it is over 1.
+- Your pill has a brand border; others have NeutralStroke2.
+- The add-reaction button (34 × 26) has a 1 px NeutralStroke2 border and EmojiAdd16 at (9, 5).
+
+**Reaction picker** (`reaction-picker-root`, 317 × 372)
+- Search: 242 × 32 at (16, 16), NeutralBackground3, radius 4. The placeholder is "Find something fun"; the aria label is "Search for emoji, GIFs or stickers".
+- Customize default reactions: 32 × 32 at (270, 16).
+- One scrolling list runs from 56 to 320:
+  - A heading (14/20, weight 500) 10 px down for the first section and 2 px for the rest.
+  - The grid 22 px under the heading: 290 wide, with 15 px top and 20 px bottom padding, of 46 × 46 buttons, six a row. Each holds a 30 px emoticon at (8, 8).
+  - Emoticons with skin tones carry a 5 × 5 #B9B9B9 dot at (40.3, 0.6).
+- A divider at y 320, then the tabs: 27.3 × 43.3 each, from x 8.7.
+  - The selected tab is #EBEBEB.
+  - Each tab icon is the top half of `/evergreen-assets/personal-expressions/v2/assets/categories/{categoryId}/thumbnail.svg` (a 20 × 40 single-colour sprite) at (3.6, 11.7): brand when selected, NeutralForeground3 otherwise.
+- **Recent** is the user property `recentReactions`: a JSON string of ids, newest first, capped at 36. Reacting moves the id to the front, and Teams writes the property back.
+- Without that property, Recent is `recentReactions.defaultReactions` (live: surprised, cry, angry, hearteyes, cool, handsinair, fistbump, fire, … rock).
+- **Quick reactions** are the user property `defaultMessageReactions`; without it, like, heart, laugh and surprised.
+
+**Quoted reply** (verified by sending one from Teams and reading it back)
+- Wire format: `<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="{id}"><strong itemprop="mri" itemid="{mri}">{name}</strong><span itemprop="time" itemid="{id}"></span><p itemprop="preview">{text}</p></blockquote>` followed by the reply's `<p>`.
+- The service puts one `\n` between the card and the reply. `properties.qtdMsgs` is the JSON-stringified references and is sent only when quoting; the service adds `validationResult`.
+- Card, both in a bubble and in the compose box:
+  - NeutralBackground2, a 1 px NeutralStroke3 border, radius 4, shadow2;
+  - a 2 px #C7C7C7 bar 4 in;
+  - from 18 in, the name and `M/D/YYYY h:mm A` in 12 px NeutralForeground3, 8 apart, then the text in 14/20;
+  - 8 px at the end.
+- In a bubble the card is at (15.7, 10.7), 52 tall, and the reply text sits 4 below it. Clicking it goes to the quoted message.
+- In the compose box the card is 56 tall, at (12, 14) of the editor. The header row is 20 tall and ends with a 20 px "Remove Reference" button.
+
 ## 15. Compose box (266342 simplified compose; 899468 classic)
 - `enableSimplifiedCompose` (live **true**) → the **simplified** compose (`rr`) is used.
 - **Single-line state**: the editor sits in a row with a **side toolbar** on its right (`sendMessageCommands-*`).

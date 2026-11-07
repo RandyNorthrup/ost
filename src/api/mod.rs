@@ -7,6 +7,7 @@ pub mod client;
 pub mod contacts;
 pub mod directory;
 pub mod drive;
+pub mod emoticons;
 pub mod files;
 mod me;
 pub mod messages;

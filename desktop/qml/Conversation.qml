@@ -68,6 +68,25 @@ Rectangle {
     function composeText() { return root.plainText() }
     // The compose box is rich text (Teams formats as you type); these read
     // and write it as plain text.
+    // Teams' quick reactions: the user's defaultMessageReactions, else the
+    // live default (547607).
+    readonly property var quickReactions: backend.quickReactionsJson ? JSON.parse(backend.quickReactionsJson) : ["like", "heart", "laugh", "surprised"]
+    // Test hook: show the hover bar on this message (--actions-test).
+    property string forceBarId: ""
+    // The message being quoted in the compose box (Reply with quote).
+    property var quoting: null
+    function replyWithQuote(m) {
+        quoting = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.text || "" }
+        input.forceActiveFocus()
+    }
+    function startEdit(m) { root.editingId = m.id; root.setPlain(m.text); input.forceActiveFocus() }
+    // Go to a message (a quote card's target), if it is loaded.
+    function jumpToMessage(id) {
+        const i = (list.model || []).findIndex(m => m.id === id)
+        if (i >= 0) list.positionViewAtIndex(i, ListView.Center)
+    }
+    function closePickerForTest() { reactionPicker.close() }
+    function openReactionPicker(messageId, anchor) { reactionPicker.messageId = messageId; reactionPicker.parent = anchor; reactionPicker.open() }
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function plainText() { return input.getText(0, input.length) }
     function setPlain(t) { input.clear(); if (t) input.insert(0, root.escapeHtml(t)) }
@@ -424,7 +443,7 @@ Rectangle {
             readonly property int topPad: dividerH + (isRow ? 0 : grouped ? 2 : 12)
             readonly property int bubbleY: topPad + (!showMeta || isCall ? 0 : meta.height + 2)
             height: isRow ? topPad + (isCall ? 36 : 28)
-                : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height + 4 : 0)
+                : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height - 4.3 + 4 : 0)
             readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : Math.min(640, list.width * 0.7)
 
             // Measured from Teams: the label's centre 22 px below the
@@ -549,16 +568,19 @@ Rectangle {
                 // Text shows unless the message is only a picture or only files.
                 readonly property bool showBody: !imageOnly && (msg.modelData.deleted || (msg.modelData.text || "").length > 0)
                 readonly property real bodyH: showBody ? body.implicitHeight : 0
+                // A quoted reply's card sits at the top (Teams: 10.7 down, the
+                // text 4 under it).
+                readonly property real quoteShift: msg.modelData.quote ? 60.3 : 0
                 readonly property real picsTop: showBody ? body.y + body.implicitHeight + 8 : (bare ? 0 : 8)
                 readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
                 readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + body.implicitHeight + 8 : 8)
                 width: root.isChannel ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: bare && files.length === 0 ? picsH
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : imgs.length > 0 ? picsTop + picsH + (showBody ? 8.6 : 8)
-                    : bodyH + 15.3
+                    : bodyH + 15.3 + quoteShift
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
                 readonly property real r: root.isChannel ? theme.radius : 6
@@ -603,10 +625,18 @@ Rectangle {
                         }
                     }
                 }
+                QuoteCard {
+                    id: quoteCard
+                    visible: !!msg.modelData.quote
+                    x: bubble.pad; y: 10.7
+                    quote: msg.modelData.quote || null
+                    maxWidth: msg.maxBubble - 2 * bubble.pad
+                    onActivated: root.jumpToMessage(msg.modelData.quote.message_id)
+                }
                 Text {
                     id: body
                     visible: bubble.showBody
-                    x: bubble.pad; y: 6.7
+                    x: bubble.pad; y: 6.7 + bubble.quoteShift
                     width: Math.min(msg.maxBubble - 2 * bubble.pad, implicitWidth)
                     // Teams' 14/20 text.
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -711,88 +741,131 @@ Rectangle {
                 color: theme.mentionMe
                 Accessible.name: "Mentions you"
             }
-            // Reaction pills under the bubble, as in Teams; yours has a brand
-            // outline. Clicking one toggles your reaction.
+            // Teams' reaction summary (measured): pills 26 tall and 2 apart,
+            // overlapping the bubble's bottom edge by 4, 15.7 in from its
+            // start. A pill holds up to three emoticons (20 px "small") and
+            // the count when over one; yours has a brand border. Then the
+            // add-reaction button (More reactions).
             Row {
                 id: reactionRow
                 visible: msg.reactions.length > 0
-                y: bubble.y + bubble.height + 4
-                x: msg.mine ? parent.width - 72 - width : 72 + 8
-                spacing: 4
+                y: bubble.y + bubble.height - 4.3
+                // Your messages' reactions sit at the bubble's end (Teams).
+                x: msg.mine ? bubble.x + bubble.width - 15.7 - width : bubble.x + 15.7
+                spacing: 2
+                z: 4
                 Repeater {
                     model: msg.reactions
                     Rectangle {
+                        id: pillBox
                         required property var modelData
-                        width: pill.implicitWidth + 16; height: 24; radius: 12
-                        color: modelData.mine ? theme.brandTint : theme.surface
-                        border.color: modelData.mine ? theme.brand : theme.stroke
-                        Row {
-                            id: pill
-                            anchors.centerIn: parent; spacing: 4
-                            Text { text: parent.parent.modelData.emoji; font.pixelSize: 14 }
-                            Text {
-                                visible: parent.parent.modelData.count > 1
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: parent.parent.modelData.count
-                                font.family: theme.font; font.pixelSize: theme.small
-                                color: theme.text
-                            }
+                        width: 7 + 20 + (modelData.count > 1 ? 4 + countText.implicitWidth : 0) + 7
+                        height: 26; radius: 13
+                        color: theme.surface
+                        border.color: modelData.mine ? theme.brand : theme.divider
+                        border.width: modelData.mine ? 1.5 : 1
+                        Emoticon { x: 7; y: 3; key: pillBox.modelData.key; named: "small"; size: 20 }
+                        Text {
+                            id: countText
+                            visible: pillBox.modelData.count > 1
+                            x: 7 + 20 + 4; anchors.verticalCenter: parent.verticalCenter
+                            text: pillBox.modelData.count
+                            font.family: theme.font; font.pixelSize: theme.small
+                            font.weight: pillBox.modelData.mine ? Font.DemiBold : Font.Normal
+                            color: theme.text
                         }
-                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.react(msg.modelData.id, modelData.key, !modelData.mine) }
+                        HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.react(msg.modelData.id, pillBox.modelData.key, !pillBox.modelData.mine) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: modelData.count + " " + modelData.key + " reaction" + (modelData.mine ? ", including yours" : "")
+                        Accessible.checked: modelData.mine
+                        Accessible.name: modelData.count + " " + backend.emoticonName(modelData.key) + " reaction" + (modelData.count === 1 ? "." : "s.")
                     }
+                }
+                Rectangle {
+                    width: 34; height: 26; radius: 13
+                    color: theme.surface
+                    border.color: theme.divider
+                    FluentIcon { x: 9; y: 5; size: 16; name: addHover.hovered ? "emoji-add-16-filled" : "emoji-add-16"; color: addHover.hovered ? theme.brand : theme.textStrong }
+                    HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.openReactionPicker(msg.modelData.id, parent) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "More reactions"
                 }
             }
             HoverHandler { id: msgHover }
-            // Hover bar: quick reactions and More, at the bubble's top edge.
-            Rectangle {
+            // Teams' hover bar (message-actions-container, measured in the
+            // client): a 32 px popover end-aligned on the bubble's top edge,
+            // white with Fluent's shadow16. Inside: 7 px in, the quick
+            // reactions (32 x 31 buttons, the emoticon 20 px at 6, growing to
+            // 1.2x on hover), More reactions, a divider (8 px, its 1 px line
+            // 21 px tall), the contextual action (Edit on yours, Reply with
+            // quote on others'), More options; 6 px after.
+            Item {
                 id: actions
-                readonly property bool can: !msg.isRow && !msg.modelData.deleted
-                visible: can && (msgHover.hovered || barHover.hovered || menu.visible)
+                readonly property bool can: !msg.isRow && !msg.modelData.deleted && !msg.sendPending && !msg.sendFailed
+                readonly property var quick: root.quickReactions
+                readonly property var acts: msg.mine
+                    ? [{ key: "edit", icon: "edit-20", tip: "Edit", name: "Edit" }]
+                    : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote", name: "Reply with quote" }]
+                visible: can && (msgHover.hovered || barHover.hovered || menu.visible || root.forceBarId === msg.modelData.id)
                 z: 5
-                height: 32; width: actionRow.implicitWidth + 8; radius: theme.radius
-                color: theme.surface
-                border.color: theme.dividerSoft
-                y: bubble.y - 22
-                x: msg.mine ? bubble.x : Math.max(72, bubble.x + bubble.width - width)
+                height: 32
+                width: 7 + (quick.length + 1) * 32 + 8 + acts.length * 32 + 32 + 6
+                y: bubble.y - height
+                x: bubble.x + bubble.width - width
+                FluentSurface { anchors.fill: parent; depth: 16; radius: 4 }
                 HoverHandler { id: barHover }
+                Accessible.role: Accessible.ToolBar
+                Accessible.name: "Reactions and message actions"
                 Row {
-                    id: actionRow
-                    x: 4; anchors.verticalCenter: parent.verticalCenter
+                    x: 7
                     Repeater {
-                        model: [["like", "👍"], ["heart", "❤️"], ["laugh", "😆"], ["surprised", "😮"], ["sad", "😢"]]
-                        Rectangle {
-                            required property var modelData
-                            readonly property bool mineAlready: msg.reactions.some(r => r.key === modelData[0] && r.mine)
-                            width: 30; height: 28; radius: theme.radius
-                            color: emojiHover.hovered ? theme.pane : "transparent"
-                            Text { anchors.centerIn: parent; text: parent.modelData[1]; font.pixelSize: 16 }
-                            HoverHandler { id: emojiHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.react(msg.modelData.id, parent.modelData[0], !parent.mineAlready) }
+                        model: actions.quick
+                        Item {
+                            id: quickBtn
+                            required property string modelData
+                            readonly property bool mineAlready: msg.reactions.some(r => r.key === modelData && r.mine)
+                            width: 32; height: 31
+                            Emoticon {
+                                anchors.centerIn: parent
+                                key: quickBtn.modelData; named: "medium"; size: 20
+                                scale: quickHover.hovered ? 1.2 : 1
+                                Behavior on scale { NumberAnimation { duration: 100 } }
+                            }
+                            HoverHandler { id: quickHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.react(msg.modelData.id, quickBtn.modelData, !quickBtn.mineAlready) }
+                            ToolTip {
+                                visible: quickHover.hovered; delay: 500
+                                y: -height - 4; padding: 8
+                                background: FluentSurface { depth: 16; radius: 4 }
+                                contentItem: Text { text: backend.emoticonName(quickBtn.modelData); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                            }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "React with " + modelData[0]
+                            Accessible.name: backend.emoticonName(modelData)
+                            Accessible.checked: mineAlready
                         }
                     }
-                    Rectangle { width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
-                    Rectangle {
-                        visible: msg.mine
-                        width: 30; height: 28; radius: theme.radius
-                        color: moreHover.hovered ? theme.pane : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "more-20"; size: 16 }
-                        HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: menu.open() }
-                        Accessible.role: Accessible.Button
-                        Accessible.name: "More options"
+                    BarButton { icon: "emoji-add-20"; tip: "More reactions"; onClicked: root.openReactionPicker(msg.modelData.id, actions) }
+                    Item {
+                        width: 8; height: 32
+                        Rectangle { x: 4; y: 5; width: 1; height: 21; color: theme.divider }
                     }
+                    Repeater {
+                        model: actions.acts
+                        BarButton {
+                            required property var modelData
+                            icon: modelData.icon; tip: modelData.tip
+                            onClicked: modelData.key === "edit" ? root.startEdit(msg.modelData) : root.replyWithQuote(msg.modelData)
+                        }
+                    }
+                    BarButton { icon: "more-horizontal-20"; tip: "More options"; height: 32; onClicked: menu.open() }
                 }
                 Menu {
                     id: menu
                     y: actions.height
                     MenuItem {
                         text: "Edit"
-                        onTriggered: { root.editingId = msg.modelData.id; root.setPlain(msg.modelData.text); input.forceActiveFocus() }
+                        onTriggered: root.startEdit(msg.modelData)
                     }
                     MenuItem {
                         text: "Delete"
@@ -1506,6 +1579,7 @@ Rectangle {
     }
     // Send what's in the compose box: text, files, or both.
     function sendCompose() {
+        backend.setReplyQuote(root.quoting ? JSON.stringify(root.quoting) : "")
         if (root.pendingFiles.length > 0) {
             backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []
@@ -1516,8 +1590,40 @@ Rectangle {
             else root.send(root.plainText())
         }
         input.clear()
+        root.quoting = null
         root.formatting = false
         root.posting = false
+    }
+    // Teams' reaction picker, opened from the hover bar or a message's
+    // add-reaction button.
+    // Above its anchor, start-aligned, kept inside the window (Teams: the
+    // picker opened from the hover bar sits over the bar, 8 before it).
+    ReactionPicker {
+        id: reactionPicker
+        x: -8
+        y: -height - 4
+        margins: 8
+        onPicked: key => root.react(messageId, key, true)
+    }
+    // A hover-bar action: Fluent's transparent button, 32 wide; #424242 at
+    // rest, brand with the filled glyph on hover.
+    component BarButton: Item {
+        id: bb
+        property string icon
+        property string tip
+        signal clicked()
+        width: 32; height: 31
+        FluentIcon { x: 6; y: 6; size: 20; name: bbHover.hovered ? bb.icon + "-filled" : bb.icon; color: bbHover.hovered ? theme.brand : theme.textStrong }
+        HoverHandler { id: bbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: bb.clicked() }
+        ToolTip {
+            visible: bbHover.hovered; delay: 500
+            y: -height - 4; padding: 8
+            background: FluentSurface { depth: 16; radius: 4 }
+            contentItem: Text { text: bb.tip; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+        }
+        Accessible.role: Accessible.Button
+        Accessible.name: tip
     }
     EmojiPicker {
         id: emojiPicker
@@ -1539,7 +1645,17 @@ Rectangle {
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: root.pane ? 12 : 72; anchors.rightMargin: root.pane ? 12 : 72; anchors.bottomMargin: root.pane ? 12 : 24
         height: Math.max(44, input.contentHeight + 24) + (root.pendingFiles.length > 0 ? pendingRow.height + 8 : 0)
-            + (root.formatting ? 40 : 0)
+            + (root.formatting ? 40 : 0) + (root.quoting ? 56 + 14 : 0)
+        // The message being quoted (Teams: a card 12 in and 14 down in the
+        // editor, with Remove Reference).
+        QuoteCard {
+            visible: !!root.quoting
+            x: 12; y: (root.formatting ? 40 : 0) + 14
+            quote: root.quoting
+            dismissable: true
+            maxWidth: compose.width - 24
+            onDismissed: { root.quoting = null; input.forceActiveFocus() }
+        }
         // The format bar: bold, italic, underline, strikethrough, lists.
         Row {
             visible: root.formatting
@@ -1570,7 +1686,7 @@ Rectangle {
         Flow {
             id: pendingRow
             visible: root.pendingFiles.length > 0
-            x: 12; y: root.formatting ? 44 : 8; width: parent.width - 24
+            x: 12; y: (root.formatting ? 44 : 8) + (root.quoting ? 56 + 14 : 0); width: parent.width - 24
             spacing: 8
             Repeater {
                 model: root.pendingFiles
