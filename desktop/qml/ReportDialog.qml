@@ -44,7 +44,7 @@ Popup {
         x: 25; y: 68
         showTime: false
         maxWidth: 551
-        quote: root.message ? { message_id: root.message.id, sender_mri: root.message.sender_mri, sender_name: root.message.sender, preview: root.message.text } : null
+        quote: root.message ? { message_id: root.message.id, sender_mri: root.message.sender_mri, sender_name: root.message.sender, preview: root.message.quote_text || root.message.text } : null
     }
     Rectangle {
         x: 25; y: 139; width: 551; height: 52; radius: 4

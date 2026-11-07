@@ -488,6 +488,9 @@ pub struct MessageView {
     pub edit_html: String,
     #[serde(default)]
     pub edit_media: Vec<ComposeMedia>,
+    /// The text a quoted reply to this message carries, as Teams builds it.
+    #[serde(default)]
+    pub quote_text: String,
     /// For call events: "ended" (with duration), "missed" or "started".
     pub call_state: String,
     pub call_seconds: u64,
@@ -1261,6 +1264,11 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         flow,
         edit_html,
         edit_media,
+        quote_text: if deleted {
+            String::new()
+        } else {
+            quote_preview(&content)
+        },
         text: if deleted { String::new() } else { text },
         edited,
         deleted,
@@ -1810,6 +1818,89 @@ fn between_tags_trimmed(html: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// What a quoted reply to a message shows of it, as Teams' quoted-reply
+/// preview (QuotedReplyContent) builds it: the text, with emoticons as
+/// their character, custom emoji as `:name:`, any picture (GIF, sticker,
+/// AMS image) as " 📷 ", an AMS video as " 🎥 " and list items numbered or
+/// bulleted; whitespace collapsed. Teams stops taking parts once it has
+/// more than 200 characters.
+pub fn quote_preview(content: &str) -> String {
+    const ENOUGH: usize = 200;
+    let mut out = String::new();
+    let mut rest = content;
+    // Open lists: Some(count) for <ol>, None for <ul>.
+    let mut lists: Vec<Option<usize>> = Vec::new();
+    let mut skip_until: Option<String> = None;
+    let push = |out: &mut String, piece: &str| {
+        if out.chars().count() <= ENOUGH {
+            out.push_str(piece);
+        }
+    };
+    while let Some(lt) = rest.find('<') {
+        if skip_until.is_none() {
+            push(&mut out, &super::strip_html(&rest[..lt]));
+        }
+        let Some(gt) = rest[lt..].find('>') else {
+            break;
+        };
+        let tag = &rest[lt + 1..lt + gt];
+        rest = &rest[lt + gt + 1..];
+        let closing = tag.starts_with('/');
+        let name: String = tag
+            .trim_start_matches('/')
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        if let Some(until) = &skip_until {
+            if closing && &name == until {
+                skip_until = None;
+            }
+            continue;
+        }
+        let itemtype = attr(tag, "itemtype").unwrap_or_default();
+        if !closing && (itemtype.ends_with("schema.skype.com/AMSVideo") || name == "video") {
+            push(&mut out, " \u{1F3A5} ");
+            if !tag.ends_with('/') {
+                skip_until = Some(name);
+            }
+            continue;
+        }
+        match (name.as_str(), closing) {
+            ("img", _) => {
+                let alt = attr(tag, "alt").unwrap_or_default();
+                if itemtype.ends_with("schema.skype.com/Emoji") {
+                    push(&mut out, &alt);
+                } else if itemtype.ends_with("schema.skype.com/CustomEmoji") {
+                    push(&mut out, &format!(":{alt}:"));
+                } else {
+                    push(&mut out, " \u{1F4F7} ");
+                }
+            }
+            ("ol", false) => lists.push(Some(0)),
+            ("ul", false) => lists.push(None),
+            ("ol" | "ul", true) => {
+                lists.pop();
+            }
+            ("li", false) => match lists.last_mut() {
+                Some(Some(n)) => {
+                    *n += 1;
+                    let n = *n;
+                    push(&mut out, &format!(" {n}. "));
+                }
+                Some(None) => push(&mut out, " \u{2022} "),
+                None => {}
+            },
+            ("p" | "div" | "br" | "li", _) => push(&mut out, " "),
+            _ => {}
+        }
+    }
+    if skip_until.is_none() {
+        push(&mut out, &super::strip_html(rest));
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Where an AMS picture goes in the edit box until the client puts its
@@ -3366,6 +3457,8 @@ mod tests {
         assert!(html.contains("itemid=\"surprised\""), "{html}");
         assert!(html.find("Look").unwrap() < html.find("giphy").unwrap());
         assert!(html.find("giphy").unwrap() < html.find("after it").unwrap());
+        // A reply quotes it as Teams does, the GIF as a camera.
+        assert_eq!(v.quote_text, "Look 😮 📷 after it");
         // Someone else's message has no edit form.
         let theirs = view_of(&m(c, "8:orgid:them"), "8:orgid:me", "Me").unwrap();
         assert!(theirs.edit_html.is_empty() && theirs.edit_media.is_empty());

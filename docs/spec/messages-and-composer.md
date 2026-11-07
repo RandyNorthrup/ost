@@ -660,6 +660,14 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 - Save writes `defaultMessageReactions`: a JSON string of service keys (live: `["yes-tone2","heart","laugh","surprised"]`; `yes` saves as `like`). It also writes `preferredSkinToneIndex` when the tone changed.
 
 **Quoted reply** (verified by sending one from Teams and reading it back)
+- **Preview text** (443282 `QuotedReplyContent`, constants 572771). The preview walks the quoted message's nodes:
+  - text as it is;
+  - an Emoji img as its `alt`, and a CustomEmoji as `:alt:`;
+  - any other `img` or AMSImage (GIF, sticker, picture) as " 📷 ";
+  - an AMSVideo as " 🎥 ";
+  - `li` as "n." in an `ol` or "•" in a `ul`.
+
+  Teams stops taking nodes once the text is longer than 200 characters. Verified on Teams web: quoting "OST TEST 58 before the GIF" + GIF + "and after it…" gave "OST TEST 58 before the GIF 📷 and after it …". OST sent a reply quoting a sticker with preview `📷`, and Teams web rendered it.
 - Wire format: `<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="{id}"><strong itemprop="mri" itemid="{mri}">{name}</strong><span itemprop="time" itemid="{id}"></span><p itemprop="preview">{text}</p></blockquote>` followed by the reply's `<p>`.
 - The service puts one `\n` between the card and the reply. `properties.qtdMsgs` is the JSON-stringified references and is sent only when quoting; the service adds `validationResult`.
 - Card, both in a bubble and in the compose box:

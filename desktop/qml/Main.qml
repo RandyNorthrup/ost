@@ -1704,7 +1704,7 @@ Window {
             // --quote-newest: quote the newest message from someone else.
             if (Qt.application.arguments.indexOf("--quote-newest") >= 0) {
                 const q = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.mine && !m.deleted).pop()
-                if (q) backend.setReplyQuote(JSON.stringify({ message_id: q.id, sender_mri: q.sender_mri, sender_name: q.sender, preview: q.text }))
+                if (q) backend.setReplyQuote(JSON.stringify({ message_id: q.id, sender_mri: q.sender_mri, sender_name: q.sender, preview: q.quote_text || q.text }))
             }
             backend.sendMessage(window.sendTestText)
             sendTestQuit.start()

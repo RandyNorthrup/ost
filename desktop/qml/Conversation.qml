@@ -111,7 +111,7 @@ Rectangle {
     // The message being quoted in the compose box (Reply with quote).
     property var quoting: null
     function replyWithQuote(m) {
-        quoting = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.text || "" }
+        quoting = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.quote_text || m.text || "" }
         input.forceActiveFocus()
     }
     // Teams edits in place; Urgent messages can't be edited.
