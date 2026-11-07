@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T21:52:00Z'
+updated_date: '2026-11-07T21:59:00Z'
 labels:
   - desktop
   - messages
@@ -53,4 +53,6 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - Pictures keep their place: text, GIFs, stickers and pictures show in the order written, with Teams' blank lines (measured on Teams web).
 - Edits keep emoticons, custom emoji, GIFs, stickers and pictures (edit_html/edit_media), verified live with two edits (4950794).
 - Left: GIFs/stickers in quoted replies (quote preview).
+
+- Quoted replies: preview text as Teams' QuotedReplyContent (📷 for pictures, 🎥 video, emoticon chars, :custom:, list numbering); verified live, Teams web rendered OST's reply.
 <!-- SECTION:NOTES:END -->
