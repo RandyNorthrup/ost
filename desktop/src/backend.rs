@@ -310,6 +310,10 @@ pub mod qobject {
         #[qinvokable]
         fn edit_message(self: Pin<&mut Backend>, message_id: &QString, text: &QString);
 
+        /// Follow or unfollow a channel thread (Teams' Follow thread).
+        #[qinvokable]
+        fn set_thread_following(self: Pin<&mut Backend>, root_id: &QString, follow: bool);
+
         /// Edit one of our messages in place, as Teams does: the editor's
         /// rich text (formatting kept) and the quote it keeps (JSON, or
         /// empty for none).
@@ -1446,17 +1450,18 @@ async fn load_messages(
         timeline.retain(|m| !m.deleted || here.contains(&m.id));
     }
     // Read horizons, saved messages and pins, as Teams loads them.
-    let (horizon, saved, pinned) = tokio::join!(
+    let (horizon, rc, pinned) = tokio::join!(
         api::messages::peer_read_horizon(&client, &chat_id),
-        api::msgactions::saved_ids(&client, &chat_id),
+        api::msgactions::rc_metadata(&client, &chat_id),
         api::msgactions::pinned_ids(&client, &chat_id),
     );
+    let (saved, follow) = rc.unwrap_or_default();
     match horizon {
         Ok(h) => api::messages::apply_seen(&mut timeline, h),
         Err(e) => tracing::debug!("read horizons unavailable: {}", short_error(&e)),
     }
-    let saved = saved.unwrap_or_default();
     let pinned = pinned.unwrap_or_default();
+    api::messages::apply_following(&mut timeline, &follow);
     for m in timeline.iter_mut() {
         m.saved = saved.contains(&m.id);
         m.pinned = pinned.contains(&m.id);
@@ -3086,6 +3091,15 @@ impl qobject::Backend {
         }
         self.message_action(move |client, chat| {
             Box::pin(async move { api::messages::edit_message(&client, &chat, &id, &text).await })
+        });
+    }
+
+    pub fn set_thread_following(self: Pin<&mut Self>, root_id: &QString, follow: bool) {
+        let id = root_id.to_string();
+        self.message_action(move |client, chat| {
+            Box::pin(
+                async move { api::msgactions::set_following(&client, &chat, &id, follow).await },
+            )
         });
     }
 

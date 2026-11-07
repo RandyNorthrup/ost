@@ -150,6 +150,36 @@ pub async fn set_saved(
 /// The ids of a conversation's saved messages (roots with `s == 1`, plus
 /// saved replies `sl2`). No metadata yet (404) means none.
 pub async fn saved_ids(client: &TeamsClient, conv: &str) -> Result<HashSet<String>> {
+    Ok(rc_metadata(client, conv).await?.0)
+}
+
+/// The follow state of each thread with rcmetadata (`f`: 1 follows, 3
+/// unfollowed), by root message id.
+pub fn follow_from(v: &serde_json::Value) -> std::collections::HashMap<String, i64> {
+    let mut out = std::collections::HashMap::new();
+    for item in v
+        .get("rcMetadataList")
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let root = item
+            .get("rootMessageId")
+            .map(|r| r.to_string().trim_matches('"').to_string())
+            .unwrap_or_default();
+        if let Some(f) = item.pointer("/rcMetadata/f").and_then(|f| f.as_i64()) {
+            out.insert(root, f);
+        }
+    }
+    out
+}
+
+/// A conversation's saved messages and thread follow states, from one
+/// rcmetadata read.
+pub async fn rc_metadata(
+    client: &TeamsClient,
+    conv: &str,
+) -> Result<(HashSet<String>, std::collections::HashMap<String, i64>)> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}/rcmetadata?startTime=0&pageSize=200",
         client.chat_service_url(),
@@ -157,11 +187,41 @@ pub async fn saved_ids(client: &TeamsClient, conv: &str) -> Result<HashSet<Strin
     );
     let resp = match client.chat_get(&url).await {
         Ok(r) => r,
-        Err(e) if e.to_string().contains("HTTP 404") => return Ok(HashSet::new()),
+        Err(e) if e.to_string().contains("HTTP 404") => return Ok(Default::default()),
         Err(e) => return Err(e),
     };
     let v: serde_json::Value = resp.json().await?;
-    Ok(saved_from(&v))
+    Ok((saved_from(&v), follow_from(&v)))
+}
+
+/// Follow or unfollow a channel thread, as Teams does: the thread's
+/// rcmetadata `f` (1 / 3) and the post's `follow` emotion (1 / 0).
+pub async fn set_following(
+    client: &TeamsClient,
+    conv: &str,
+    root_id: &str,
+    follow: bool,
+) -> Result<()> {
+    let base = format!(
+        "{}/v1/users/ME/conversations/{}",
+        client.chat_service_url(),
+        conv
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &format!("{base}/rcmetadata/{root_id}"),
+            &serde_json::json!({ "f": if follow { 1 } else { 3 } }),
+        )
+        .await?;
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &format!("{base}/messages/{root_id}/properties?name=emotions"),
+            &serde_json::json!({ "emotions": { "key": "follow", "value": if follow { 1 } else { 0 } } }),
+        )
+        .await?;
+    Ok(())
 }
 
 pub fn saved_from(v: &serde_json::Value) -> HashSet<String> {

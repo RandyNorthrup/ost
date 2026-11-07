@@ -611,6 +611,12 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
   - On a post it sits inside the card, 10 from the end and 11 down.
   - On a reply it sits at the card's end, its bottom 3.7 above the reply.
 - ··· on a post: Forward, Follow thread / Unfollow thread ("New" badge), Copy link, Save this message, Delete, Pin for everyone, Open conversation in new window | Mark as unread, Share to Outlook, Translate | More actions. 260 wide.
+- **Follow thread** (seen on the wire while toggling it in Teams):
+  - `PUT {chatsvc}/v1/users/{me}/conversations/{conv}/rcmetadata/{root}` with `{"f":1}` to follow, `{"f":3}` to unfollow;
+  - then `PUT …/messages/{root}/properties?name=emotions` with `{"emotions":{"key":"follow","value":1|0}}`.
+  - The menu shows "Unfollow thread" (ChatMultipleMinus20) when following and "Follow thread" (ChatMultiple20) otherwise.
+  - A post you wrote shows "Unfollow thread" with neither record (auto-follow of authored threads).
+- Emotion keys `acks`, `follow` and `star` are not reactions; the summary skips them (719107 `OS`).
 - ··· on a reply: Forward, Copy link, Save this message, Delete | Share to Outlook, Translate, Immersive Reader | More actions. Content-sized (166.6).
 - Edit in place uses the multiline compose (always, even for one plain line). It spans the card in the item's place, from the line above it; the hint sits under it, then 11.4 to the next reply.
 

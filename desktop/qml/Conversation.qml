@@ -1718,13 +1718,15 @@ Rectangle {
             ? { key: "original", label: m.translated_from ? "See original message (" + m.translated_from + ")" : "See original message", icon: "translate-20" }
             : { key: "translate", label: "Translate", icon: "translate-20" }
         // Channel posts and replies (measured in a classic channel; Edit and
-        // Reply with quote are on the hover bar). Share to Outlook, Follow
-        // thread, Open conversation in new window and Immersive Reader are
-        // not built yet.
+        // Reply with quote are on the hover bar). Share to Outlook, Open
+        // conversation in new window and Immersive Reader are not built yet.
         if (context === "post" || context === "reply") {
             if (rightClick && own) out.push({ key: "edit", label: "Edit", icon: "edit-20", keys: "E" })
             if (rightClick && !own) out.push({ key: "reply", label: "Reply with quote", icon: "quote-reply-20", keys: "Q" })
             out.push({ key: "forward", label: "Forward", icon: "share-forward-20", keys: "F" })
+            if (context === "post") out.push(m.following
+                ? { key: "unfollow", label: "Unfollow thread", icon: "chat-multiple-minus-20" }
+                : { key: "follow", label: "Follow thread", icon: "chat-multiple-20" })
             out.push({ key: "copy-link", label: "Copy link", icon: "link-20" })
             out.push(save)
             if (own) out.push({ key: "delete", label: "Delete", icon: "delete-menu-20", keys: "Del" })
@@ -1814,6 +1816,7 @@ Rectangle {
             else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
             else if (it.key === "pin" || it.key === "unpin") backend.setMessagePinned(m.id, it.key === "pin")
             else if (it.key === "unread") backend.markMessageUnread(m.id, m.client_message_id || "")
+            else if (it.key === "follow" || it.key === "unfollow") backend.setThreadFollowing(m.id, it.key === "follow")
             else if (it.key === "translate" || it.key === "original") backend.translateMessage(m.id, it.key === "translate")
             else if (it.key === "translation") {
                 translationMenu.message = m

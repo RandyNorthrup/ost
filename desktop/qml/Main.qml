@@ -1773,6 +1773,26 @@ Window {
         }
     }
 
+    // --follow-test with --open-chat=<channel id>: unfollow the newest post
+    // with replies, log its state, follow it again and log it.
+    Timer {
+        running: Qt.application.arguments.indexOf("--follow-test") >= 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        property string target: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            if (backend.currentChatId !== id) { backend.selectChat(id, "General"); return }
+            const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message")
+            if (!target) { const p = msgs.filter(m => (!m.root_id || m.root_id === m.id) && msgs.some(r => r.root_id === m.id && r.id !== m.id)).pop(); if (!p) return; target = p.id }
+            const post = msgs.find(m => m.id === target)
+            if (step === 0) { console.warn("FOLLOW-TEST before", post.following); backend.setThreadFollowing(target, false) }
+            else if (step === 2) { console.warn("FOLLOW-TEST after unfollow", post.following); backend.setThreadFollowing(target, true) }
+            else if (step === 4) { console.warn("FOLLOW-TEST after follow", post.following); Qt.quit() }
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu

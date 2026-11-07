@@ -345,6 +345,12 @@ pub struct MessageView {
     /// Pinned for everyone in the chat.
     #[serde(default)]
     pub pinned: bool,
+    /// A channel post we follow (Teams' Follow thread).
+    #[serde(default)]
+    pub following: bool,
+    /// Our explicit follow choice from the post's emotions, if any.
+    #[serde(default)]
+    pub follow_explicit: Option<bool>,
     /// The message it forwards (Teams' forward card).
     #[serde(default)]
     pub forward: Option<Forwarded>,
@@ -883,6 +889,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         .and_then(|p| p.get("emotions"))
         .map(|e| reactions_of(e, me))
         .unwrap_or_default();
+    let follow_explicit = props
+        .and_then(|p| p.get("emotions"))
+        .and_then(|e| follow_of(e, me));
     let text = super::strip_html(&content).trim().to_string();
     // Teams shows "This message has been deleted" to its sender only (and
     // only right after deleting; the app decides that); for everyone else
@@ -934,8 +943,71 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         edited,
         deleted,
         reactions,
+        follow_explicit,
         ..base
     })
+}
+
+/// Teams' follow state of each channel post: an explicit choice wins (the
+/// thread's rcmetadata `f`: 1 follows, 3 unfollowed; else the post's
+/// `follow` emotion); otherwise posts we wrote or replied to are followed
+/// (autoFollowAuthoredThreads / autoFollowParticipatedThreads).
+pub fn apply_following(
+    timeline: &mut [MessageView],
+    rc_follow: &std::collections::HashMap<String, i64>,
+) {
+    let mut participated: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for m in timeline.iter() {
+        if m.mine && !m.root_id.is_empty() {
+            participated.insert(m.root_id.clone());
+        }
+    }
+    for m in timeline.iter_mut() {
+        let is_post = m.root_id.is_empty() || m.root_id == m.id;
+        if !is_post {
+            continue;
+        }
+        m.following = match rc_follow.get(&m.id) {
+            Some(1) => true,
+            Some(3) => false,
+            _ => m
+                .follow_explicit
+                .unwrap_or(m.mine || participated.contains(&m.id)),
+        };
+    }
+}
+
+/// Emotion keys that are not reactions: acknowledgements, a thread's follow
+/// state and the service's star (Teams' `OS` set).
+const HIDDEN_EMOTIONS: [&str; 3] = ["acks", "follow", "star"];
+
+/// Our explicit follow state of a channel thread from its emotions: the
+/// `follow` key's value for us ("1" follows, "0" unfollowed).
+fn follow_of(e: &serde_json::Value, me: &str) -> Option<bool> {
+    let parsed;
+    let list = match e {
+        serde_json::Value::String(s) => {
+            parsed = serde_json::from_str::<serde_json::Value>(s).unwrap_or_default();
+            &parsed
+        }
+        other => other,
+    };
+    let entry = list
+        .as_array()?
+        .iter()
+        .find(|r| r.get("key").and_then(|k| k.as_str()) == Some("follow"))?;
+    let user = entry
+        .get("users")?
+        .as_array()?
+        .iter()
+        .find(|u| u.get("mri").and_then(|m| m.as_str()) == Some(me))?;
+    let v = user.get("value")?;
+    Some(
+        v.as_str()
+            .map(|s| s == "1")
+            .or_else(|| v.as_i64().map(|n| n == 1))
+            .unwrap_or(false),
+    )
 }
 
 fn reactions_of(e: &serde_json::Value, me: &str) -> Vec<Reaction> {
@@ -953,6 +1025,10 @@ fn reactions_of(e: &serde_json::Value, me: &str) -> Vec<Reaction> {
         let Some(raw) = r.get("key").and_then(|k| k.as_str()) else {
             continue;
         };
+        // Not reactions: Teams keeps these in emotions too (719107).
+        if HIDDEN_EMOTIONS.contains(&raw) {
+            continue;
+        }
         // Teams works in client ids (its summary maps the service's keys).
         let key = super::emoticons::client_key(raw);
         let users: Vec<Reactor> = r
@@ -1904,6 +1980,41 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 #[cfg(test)]
 mod quote_tests {
     use super::*;
+
+    #[test]
+    fn follow_state_as_teams_derives_it() {
+        let post = |id: &str, mine: bool, explicit: Option<bool>| MessageView {
+            id: id.into(),
+            root_id: id.into(),
+            mine,
+            follow_explicit: explicit,
+            ..Default::default()
+        };
+        let mut t = vec![
+            post("1", true, None),
+            post("2", false, None),
+            post("3", false, Some(true)),
+            post("4", true, Some(false)),
+            post("5", false, None),
+            MessageView {
+                id: "6".into(),
+                root_id: "5".into(),
+                mine: true,
+                ..Default::default()
+            },
+        ];
+        let mut rc = std::collections::HashMap::new();
+        rc.insert("2".to_string(), 1);
+        rc.insert("1".to_string(), 3);
+        apply_following(&mut t, &rc);
+        let f: Vec<bool> = t.iter().take(5).map(|m| m.following).collect();
+        assert_eq!(f, vec![false, true, true, false, true]);
+        let e = serde_json::json!([{"key": "follow", "users": [{"mri": "me", "value": "1"}]}, {"key": "like", "users": [{"mri": "a"}]}]);
+        assert_eq!(follow_of(&e, "me"), Some(true));
+        let r = reactions_of(&e, "me");
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].key, "yes");
+    }
 
     #[test]
     fn edit_body_keeps_teams_properties() {
