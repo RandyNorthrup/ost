@@ -2753,6 +2753,7 @@ name = "ost-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",

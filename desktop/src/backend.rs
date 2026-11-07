@@ -16,6 +16,28 @@ use cxx_qt_lib::QString;
 use serde_json::json;
 use teams_cli::api::{self, client::TeamsClient};
 
+/// A folder from the user's XDG user dirs (`xdg-user-dir DESKTOP`).
+fn xdg_user_dir(name: &str) -> Option<std::path::PathBuf> {
+    let out = std::process::Command::new("xdg-user-dir")
+        .arg(name)
+        .output()
+        .ok()?;
+    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!p.is_empty()).then(|| std::path::PathBuf::from(p))
+}
+
+/// The Backend's Qt thread, so a second launch of OST (seen on another
+/// thread) can ask this window to show itself.
+static QT_THREAD: std::sync::OnceLock<cxx_qt::CxxQtThread<qobject::Backend>> =
+    std::sync::OnceLock::new();
+
+/// Another launch of OST asked for this window (main.rs).
+pub fn request_activate() {
+    if let Some(qt) = QT_THREAD.get() {
+        let _ = qt.queue(|this| this.activate_requested());
+    }
+}
+
 unsafe extern "C" {
     /// Put text (and its HTML form) on the clipboard (src/native.cpp).
     fn ost_set_clipboard(text: *const core::ffi::c_char, html: *const core::ffi::c_char);
@@ -324,6 +346,10 @@ pub mod qobject {
             channel_name: &QString,
         );
 
+        /// Help › Collect Support Files, as Teams: OST's log in an
+        /// "OST Support Logs <time>" folder on the Desktop, then the Desktop opened.
+        #[qinvokable]
+        fn collect_support_files(self: &Backend);
         /// About this tab: load the app's About (Teams' app definition).
         #[qinvokable]
         fn app_about_load(self: Pin<&mut Backend>, app_id: &QString);
@@ -1531,6 +1557,7 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
 
 impl qobject::Backend {
     pub fn start(mut self: Pin<&mut Self>) {
+        let _ = QT_THREAD.set(self.qt_thread());
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
         self.as_mut().set_system_frame(frame);
         // Teams' default theme is "Follow operating system theme".
@@ -3307,6 +3334,32 @@ impl qobject::Backend {
                     .set_channel_tabs_json(QString::from(text.as_str()));
             });
         });
+    }
+
+    pub fn collect_support_files(&self) {
+        // As Teams' tray does: a "<app> Support Logs YYYY MM DD HH MM SS"
+        // folder on the Desktop (local time), then the Desktop opened.
+        let result = (|| -> anyhow::Result<std::path::PathBuf> {
+            let home = std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default();
+            let desktop = xdg_user_dir("DESKTOP").unwrap_or_else(|| home.join("Desktop"));
+            let stamp = chrono::Local::now().format("%Y %m %d %H %M %S");
+            let dir = desktop.join(format!("OST Support Logs {stamp}"));
+            std::fs::create_dir_all(&dir)?;
+            std::fs::copy(crate::log_path(), dir.join("ost-desktop.log"))?;
+            std::fs::write(
+                dir.join("version.txt"),
+                format!("OST desktop {}\n", env!("CARGO_PKG_VERSION")),
+            )?;
+            Ok(desktop)
+        })();
+        match result {
+            Ok(desktop) => {
+                let _ = std::process::Command::new("xdg-open").arg(desktop).spawn();
+            }
+            Err(e) => tracing::warn!("collect support files failed: {e:#}"),
+        }
     }
 
     pub fn app_about_load(self: Pin<&mut Self>, app_id: &QString) {

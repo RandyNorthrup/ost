@@ -38,12 +38,12 @@ fn main() {
         "qml/FluentSurface.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
-    for dir in ["assets/icons", "assets/fonts"] {
+    for dir in ["assets/icons", "assets/fonts", "assets/tray"] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();
             if matches!(
                 path.extension().and_then(|e| e.to_str()),
-                Some("svg" | "ttf")
+                Some("svg" | "ttf" | "png")
             ) {
                 resources.push(path.to_string_lossy().into_owned());
             }

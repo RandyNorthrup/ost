@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtWebEngine
 import com.ost.desktop
+import Qt.labs.platform as Platform
 
 Window {
     id: window
@@ -105,6 +106,59 @@ Window {
         if (backend.setting("keepRunning") !== "false" && !window.reallyQuit) { close.accepted = false; window.hide() }
     }
     property bool reallyQuit: Qt.application.arguments.length > 1
+
+    // Bring the main window back (tray, or a second launch of OST).
+    function showRaised() {
+        window.show(); window.raise(); window.requestActivate()
+    }
+    // The tray, as Teams' (docs/spec/tray-and-lifecycle.md): the logo with
+    // the presence badge; the account row, the status submenu (with Reset
+    // Status), Help › Collect Support Files, and Quit, the only real quit.
+    readonly property string myPresence: titleBar.presence
+    readonly property string trayKind: {
+        const p = myPresence.toLowerCase()
+        return (p === "available" || p === "availableidle") ? "available"
+            : (p === "away" || p === "berightback") ? "away"
+            : (p === "busy" || p === "busyidle" || p === "inacall" || p === "inameeting" || p === "inaconferencecall") ? "busy"
+            : (p === "donotdisturb" || p === "presenting" || p === "focusing" || p === "urgentinterruptionsonly") ? "dnd"
+            : p === "outofoffice" ? "oof" : p === "offline" ? "offline" : "unknown"
+    }
+    function trayStatusLabel(p) {
+        const s = titleBar.statuses.find(x => x.key.toLowerCase() === (p || "").toLowerCase())
+        return s ? (s.key === "Away" ? "Away" : s.key === "Offline" ? "Offline" : s.label) : (p || "Available")
+    }
+    Platform.SystemTrayIcon {
+        id: tray
+        visible: backend.signedIn && Qt.application.arguments.length <= 1
+        icon.source: "../assets/tray/ost-" + window.trayKind + ".png"
+        tooltip: "OST"
+        onActivated: reason => { if (reason === Platform.SystemTrayIcon.Trigger) window.showRaised() }
+        menu: Platform.Menu {
+            Platform.MenuItem {
+                text: backend.userName + (backend.orgName ? " | " + backend.orgName : "")
+                icon.source: "../assets/tray/ost-" + window.trayKind + ".png"
+                onTriggered: window.showRaised()
+            }
+            Platform.Menu {
+                title: window.trayStatusLabel(window.myPresence)
+                icon.source: "../assets/tray/presence-" + window.trayKind + "-16.svg"
+                Platform.MenuItem { text: "Available"; icon.source: "../assets/tray/presence-available-16.svg"; onTriggered: backend.setMyStatus("Available") }
+                Platform.MenuItem { text: "Busy"; icon.source: "../assets/tray/presence-busy-16.svg"; onTriggered: backend.setMyStatus("Busy") }
+                Platform.MenuItem { text: "Do not disturb"; icon.source: "../assets/tray/presence-dnd-16.svg"; onTriggered: backend.setMyStatus("DoNotDisturb") }
+                Platform.MenuItem { text: "Be right back"; icon.source: "../assets/tray/presence-away-16.svg"; onTriggered: backend.setMyStatus("BeRightBack") }
+                Platform.MenuItem { text: "Appear away"; icon.source: "../assets/tray/presence-away-16.svg"; onTriggered: backend.setMyStatus("Away") }
+                Platform.MenuItem { text: "Appear offline"; icon.source: "../assets/tray/presence-offline-16.svg"; onTriggered: backend.setMyStatus("Offline") }
+                Platform.MenuSeparator {}
+                Platform.MenuItem { text: "Reset Status"; icon.source: "../assets/tray/reset-16.svg"; onTriggered: backend.setMyStatus("Reset") }
+            }
+            Platform.MenuSeparator {}
+            Platform.Menu {
+                title: "Help"
+                Platform.MenuItem { text: "Collect Support Files"; onTriggered: backend.collectSupportFiles() }
+            }
+            Platform.MenuItem { text: "Quit OST"; onTriggered: { window.reallyQuit = true; Qt.quit() } }
+        }
+    }
 
     // Back/forward through the apps and chats you visited, as Teams does.
     property var navStack: []
