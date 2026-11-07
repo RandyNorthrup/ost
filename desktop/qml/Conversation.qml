@@ -70,7 +70,9 @@ Rectangle {
     // and write it as plain text.
     // Teams' quick reactions: the user's defaultMessageReactions, else the
     // live default (547607).
-    readonly property var quickReactions: backend.quickReactionsJson ? JSON.parse(backend.quickReactionsJson) : ["like", "heart", "laugh", "surprised"]
+    // With a skin tone set, Like shows in it (547607 `x`).
+    readonly property var quickReactions: (backend.quickReactionsJson ? JSON.parse(backend.quickReactionsJson) : ["yes", "heart", "laugh", "surprised"])
+        .map(k => root.commonKey(k) === "yes" && backend.skinTone > 0 ? "yes-tone" + backend.skinTone : k)
     // Test hook: show the hover bar on this message (--actions-test).
     property string forceBarId: ""
     // Test hook: opens the who-reacted list of this message's first pill.
@@ -83,15 +85,26 @@ Rectangle {
     }
     function startEdit(m) { root.editingId = m.id; root.setPlain(m.text); input.forceActiveFocus() }
     // Go to a message (a quote card's target), if it is loaded.
+    // Teams' common key: the id without its skin tone.
+    function commonKey(id) { const m = /^(.{1,40})-tone\d$/.exec(id); return m ? m[1] : id }
     function jumpToMessage(id) {
         const i = (list.model || []).findIndex(m => m.id === id)
         if (i >= 0) list.positionViewAtIndex(i, ListView.Center)
     }
+    function tonesForTest(id) { reactionPicker.tonesForTest(id) }
+    function customizeForTest() { customizeReactions.open() }
+    function customizeSlotForTest(i) { customizeReactions.pickForTest(i) }
+    function customizeToneForTest(t) { customizeReactions.setTone(t) }
+    function closeCustomizeForTest() { customizeReactions.close() }
     function closePickerForTest() { reactionPicker.close() }
     function closeMessageMenuForTest() { messageMenu.close() }
     function forwardDialogForTest() { return forwardDialog }
     function reportDialogForTest() { return reportDialog }
-    function openReactionPicker(messageId, anchor) { reactionPicker.messageId = messageId; reactionPicker.parent = anchor; reactionPicker.open() }
+    function openReactionPicker(messageId, anchor) {
+        const m = (list.model || []).find(x => x.id === messageId)
+        reactionPicker.mine = m ? (m.reactions || []).filter(r => r.mine) : []
+        reactionPicker.messageId = messageId; reactionPicker.parent = anchor; reactionPicker.open()
+    }
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function plainText() { return input.getText(0, input.length) }
     function setPlain(t) { input.clear(); if (t) input.insert(0, root.escapeHtml(t)) }
@@ -868,7 +881,7 @@ Rectangle {
                         }
                         // Click toggles: removes our exact reaction, else adds
                         // it (Teams).
-                        TapHandler { onTapped: root.react(msg.modelData.id, pillBox.modelData.mine ? pillBox.modelData.my_key : pillBox.modelData.key, !pillBox.modelData.mine) }
+                        TapHandler { onTapped: root.react(msg.modelData.id, pillBox.modelData.mine ? pillBox.modelData.my_key : backend.emoticonToned(pillBox.modelData.key), !pillBox.modelData.mine) }
                         TapHandler { acceptedButtons: Qt.RightButton; onTapped: root.openWhoReacted(pillBox, msg.modelData.id, pillBox.modelData, true) }
                         Accessible.role: Accessible.Button
                         Accessible.checked: modelData.mine
@@ -918,7 +931,7 @@ Rectangle {
                         Item {
                             id: quickBtn
                             required property string modelData
-                            readonly property var mineAlready: msg.reactions.find(r => r.key === modelData && r.mine)
+                            readonly property var mineAlready: msg.reactions.find(r => r.key === root.commonKey(modelData) && r.mine)
                             width: 32; height: 31
                             Emoticon {
                                 anchors.centerIn: parent
@@ -1871,7 +1884,7 @@ Rectangle {
                     TapHandler {
                         onTapped: {
                             const m = messageMenu.message
-                            const mine = (m.reactions || []).find(r => r.key === stripBtn.modelData && r.mine)
+                            const mine = (m.reactions || []).find(r => r.key === root.commonKey(stripBtn.modelData) && r.mine)
                             messageMenu.close(); root.react(m.id, mine ? mine.my_key : stripBtn.modelData, !mine)
                         }
                     }
@@ -1930,7 +1943,11 @@ Rectangle {
         x: -8
         y: -height - 4
         margins: 8
-        onPicked: key => root.react(messageId, key, true)
+        onPicked: (key, on) => root.react(messageId, key, on)
+        onCustomize: customizeReactions.open()
+    }
+    CustomizeReactions {
+        id: customizeReactions
     }
     // A hover-bar action: Fluent's transparent button, 32 wide; #424242 at
     // rest, brand with the filled glyph on hover.

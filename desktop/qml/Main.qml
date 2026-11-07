@@ -1577,6 +1577,88 @@ Window {
         }
     }
 
+    // --tones-test with --open-chat=<id> --shots=<dir>: the reaction picker
+    // on the newest reacted message with no skin tone and with tone 3 (local
+    // only, nothing is saved), the hover bar in tone 3, and the six tones of
+    // Hands celebrating; captured as tones-<step>.png. Nothing is sent.
+    Timer {
+        running: Qt.application.arguments.indexOf("--tones-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "tones-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST tones test"); return }
+            const m = JSON.parse(backend.messagesJson || "[]").filter(m => (m.reactions || []).length > 0).pop()
+            if (!m) return
+            if (step === 0) { conversation.jumpToMessage(m.id); conversation.openReactionPicker(m.id, conversation) }
+            else if (step === 2) shot("picker-none")
+            else if (step === 3) { console.warn("TONES-TEST quick before", backend.quickReactionsJson); backend.skinTone = 3 }
+            else if (step === 4) shot("picker-tone3")
+            else if (step === 5) conversation.tonesForTest("handsinair")
+            else if (step === 6) shot("chooser")
+            else if (step === 7) { conversation.closePickerForTest(); conversation.forceBarId = m.id; console.warn("TONES-TEST toned yes", backend.emoticonToned("yes"), backend.emoticonToned("fire")) }
+            else if (step === 8) shot("bar")
+            else if (step === 9) Qt.quit()
+            step++
+        }
+    }
+
+    // --customize-test with --open-chat=<id> --shots=<dir>: the Customize
+    // reactions dialog, its slot picker and tone 3 (not saved), captured as
+    // customize-<step>.png. With --customize-save=<tone> it then saves the
+    // four defaults in that tone and logs the result.
+    Timer {
+        running: Qt.application.arguments.indexOf("--customize-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const save = (Qt.application.arguments.find(a => a.startsWith("--customize-save=")) || "").slice(17)
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "customize-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST customize test"); return }
+            if (step === 0) conversation.customizeForTest()
+            else if (step === 1) shot("dialog")
+            else if (step === 2) conversation.customizeSlotForTest(0)
+            else if (step === 3) shot("slot-picker")
+            else if (step === 4) { conversation.closePickerForTest(); conversation.customizeToneForTest(3) }
+            else if (step === 5) shot("tone3")
+            else if (step === 6) {
+                if (!save) { conversation.closeCustomizeForTest(); Qt.quit(); return }
+                conversation.customizeToneForTest(Number(save))
+                backend.saveReactionPrefs(JSON.stringify(["yes", "heart", "laugh", "surprised"].map(k => backend.emoticonInTone(k, Number(save)))), Number(save))
+            }
+            else if (step === 8) { console.warn("CUSTOMIZE-TEST", backend.reactionPrefsResult, backend.quickReactionsJson, backend.skinTone); Qt.quit() }
+            step++
+        }
+    }
+
+    // --react-test=<client id> with --open-chat=<id> --shots=<dir>: add that
+    // reaction to the newest reacted message, capture react-on.png and log
+    // the pills, then remove it again and log them.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--react-test=")) && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        property string target: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const key = (Qt.application.arguments.find(a => a.startsWith("--react-test=")) || "").slice(13)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST react test"); return }
+            const msgs = JSON.parse(backend.messagesJson || "[]")
+            if (!target) { const m = msgs.filter(m => (m.reactions || []).length > 0).pop(); if (!m) return; target = m.id; conversation.jumpToMessage(m.id) }
+            const m = msgs.find(m => m.id === target)
+            if (step === 0) { console.warn("REACT-TEST add", key); backend.toggleReaction(target, key, true) }
+            else if (step === 2) { console.warn("REACT-TEST after add", JSON.stringify(m.reactions.map(r => [r.key, r.my_key, r.variants, r.count]))); window.contentItem.grabToImage(r => r.saveToFile(dir + "react-on.png")) }
+            else if (step === 3) { const r = m.reactions.find(r => r.mine && r.my_key === key); console.warn("REACT-TEST remove", r ? r.my_key : "none"); if (r) backend.toggleReaction(target, r.my_key, false) }
+            else if (step === 5) { console.warn("REACT-TEST after remove", JSON.stringify(m.reactions.map(r => [r.key, r.my_key, r.count]))); Qt.quit() }
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu

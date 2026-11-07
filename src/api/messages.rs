@@ -502,7 +502,8 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
 /// Teams' reaction keys and their emoji.
 pub fn reaction_emoji(key: &str) -> &'static str {
     match key {
-        "like" => "👍",
+        // The service's like is the client's yes.
+        "like" | "yes" => "👍",
         "heart" => "❤️",
         "laugh" => "😆",
         "surprised" => "😮",
@@ -922,9 +923,11 @@ fn reactions_of(e: &serde_json::Value, me: &str) -> Vec<Reaction> {
     };
     let mut pills: Vec<Reaction> = Vec::new();
     for r in list.as_array().into_iter().flatten() {
-        let Some(key) = r.get("key").and_then(|k| k.as_str()) else {
+        let Some(raw) = r.get("key").and_then(|k| k.as_str()) else {
             continue;
         };
+        // Teams works in client ids (its summary maps the service's keys).
+        let key = super::emoticons::client_key(raw);
         let users: Vec<Reactor> = r
             .get("users")
             .and_then(|u| u.as_array())
@@ -1799,17 +1802,18 @@ mod quote_tests {
     fn reactions_group_skin_tones_and_order() {
         let e = serde_json::json!([
             {"key": "heart", "users": [{"mri": "a", "time": 1}]},
-            {"key": "like-tone2", "users": [{"mri": "me", "time": 5}]},
+            {"key": "yes-tone2", "users": [{"mri": "me", "time": 5}]},
             {"key": "like", "users": [{"mri": "b", "time": 9}, {"mri": "c", "time": 3}]},
             {"key": "fire", "users": []}
         ]);
         let r = reactions_of(&e, "me");
         assert_eq!(r.len(), 2);
-        assert_eq!(r[0].key, "like");
+        assert_eq!(r[0].key, "yes");
+        assert_eq!(r[0].emoji, "👍");
         assert!(r[0].mine);
-        assert_eq!(r[0].my_key, "like-tone2");
+        assert_eq!(r[0].my_key, "yes-tone2");
         assert_eq!(r[0].count, 3);
-        assert_eq!(r[0].variants, vec!["like-tone2", "like"]);
+        assert_eq!(r[0].variants, vec!["yes-tone2", "yes"]);
         let order: Vec<_> = r[0].users.iter().map(|u| u.mri.as_str()).collect();
         assert_eq!(order, vec!["b", "me", "c"]);
         assert_eq!(r[1].key, "heart");
@@ -2104,21 +2108,21 @@ mod tests {
         assert_eq!(
             v.reactions,
             vec![Reaction {
-                key: "like".into(),
+                key: "yes".into(),
                 emoji: "👍".into(),
                 count: 2,
                 mine: true,
-                variants: vec!["like".into()],
-                my_key: "like".into(),
+                variants: vec!["yes".into()],
+                my_key: "yes".into(),
                 users: vec![
                     Reactor {
                         mri: "8:orgid:them".into(),
-                        key: "like".into(),
+                        key: "yes".into(),
                         ..Default::default()
                     },
                     Reactor {
                         mri: "8:orgid:me".into(),
-                        key: "like".into(),
+                        key: "yes".into(),
                         me: true,
                         ..Default::default()
                     },

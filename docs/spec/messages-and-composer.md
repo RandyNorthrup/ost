@@ -601,6 +601,33 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 - Without that property, Recent is `recentReactions.defaultReactions` (live: surprised, cry, angry, hearteyes, cool, handsinair, fistbump, fire, … rock).
 - **Quick reactions** are the user property `defaultMessageReactions`; without it, like, heart, laugh and surprised.
 
+**Reaction keys** (77708, verified live)
+- Teams works in emoticon (client) ids and maps three to the service's keys: client `yes` is the service's `like`; client `like` is `likeWithFaceMSER`; client `star` is `starMSER`. Every other id is the same on both sides.
+- The summary groups by common key: the client id without a final `-tone{digit}` (at most 40 characters before it).
+- A toned reaction is sent as `{id}-tone{n}`; a toned thumbs-up from Teams is `yes-tone2` on the wire (seen live).
+
+**Skin tone** (user property `preferredSkinToneIndex`, a string "0"–"5": none, light, medium light, medium, medium dark, dark)
+- With a tone set, emoticons with tones show in it in the picker, and the hover bar's Like becomes `yes-tone{n}`.
+- Clicking a pill we have not reacted with adds the emoticon in our tone. Picking another tone of an emoticon we reacted with replaces our old one.
+- Picker cells of reactions we gave read "Undo {name}". Toned cells read "{name} with {tone} skin tone", e.g. "Hands celebrating with no skin tone".
+- Right-clicking a cell with tones opens the six tones: a 309.3 × 79.3 surface, padding 16, radius 4, 7.6 right of the cell and 65.4 above its top. It holds 46 px cells (`emoticon-button-{id}-tone{n}`).
+- Saving a tone in OST was picked up live by the desktop client: its hover-bar Like became `yes/default/60_f_s3.png`.
+
+**Customize default reactions** (`customize-reactions-trigger`, EmojiEdit20 at (269.7, 15.7) of the picker)
+- `customize-reactions-dialog`: 600 × 392.7, radius 4. The title is "Customize your reactions & appearance in Teams" (20/28 semibold, at 24.7, 24.7). Under it, "Click on a reaction below, then choose an emoji to replace it with." (14/20, at y 61.3).
+- Five slots (`customize-reaction-picker-entrypoint`), 46 × 46 with 15 px gaps, centred at y 116.7.
+  - Each slot has a 1 px NeutralStroke1 border and radius 4, with the 30 px emoticon at 8. While its picker is open the slot is NeutralBackground1Hover with border #C7C7C7.
+  - An empty slot is "Choose an emoji" with Add24.
+  - Clicking a slot opens the reaction picker centred under it. That picker has no customize button, and its search is 256.7 wide.
+  - Backspace or Delete removes a slot (the hint "Use backspace or delete to remove reaction" is read out).
+- Below the slots, "Choose a skin tone. After selection, reactions and emoji will appear with this skin tone." (470 wide, at y 198.7). Under it, `skin-tone-radio-group` at y 258.7:
+  - six 42 × 50 radios, 15 apart and centred, each a 30 px circle at 6;
+  - the circles are radial gradients from 26.4 % to 100 %, centre (8.86, 22.5), radius 23.19: #FCD53F→#FFB02E, #F4BFAA→#B77C6C, #E8B192→#A0685B, #B28876→#794E54, #875D59→#4E2C32, #26131B→#503B3B;
+  - the selected radio has a 30 × 4 brand bar with radius 2 at y 40.
+  - Choosing a tone re-tones the slots that have tones.
+- Cancel and Save are 96 × 31.3 at (375.3, 336.7) and (479.3, 336.7). Save is disabled (#F0F0F0 with #BDBDBD text) until something changes.
+- Save writes `defaultMessageReactions`: a JSON string of service keys (live: `["yes-tone2","heart","laugh","surprised"]`; `yes` saves as `like`). It also writes `preferredSkinToneIndex` when the tone changed.
+
 **Quoted reply** (verified by sending one from Teams and reading it back)
 - Wire format: `<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="{id}"><strong itemprop="mri" itemid="{mri}">{name}</strong><span itemprop="time" itemid="{id}"></span><p itemprop="preview">{text}</p></blockquote>` followed by the reply's `<p>`.
 - The service puts one `\n` between the card and the reply. `properties.qtdMsgs` is the JSON-stringified references and is sent only when quoting; the service adds `validationResult`.

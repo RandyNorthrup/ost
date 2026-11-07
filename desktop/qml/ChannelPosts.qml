@@ -144,7 +144,7 @@ Item {
                                     }
                                 }
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: root.react(card.post.id, modelData.key, !modelData.mine) }
+                                TapHandler { onTapped: root.react(card.post.id, modelData.mine ? modelData.my_key : modelData.key, !modelData.mine) }
                                 Accessible.role: Accessible.Button
                                 Accessible.name: modelData.count + " " + modelData.key + " reaction" + (modelData.mine ? ", including yours" : "")
                             }
@@ -165,7 +165,7 @@ Item {
                                 background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
                                 contentItem: Row {
                                     Repeater {
-                                        model: [["like", "👍"], ["heart", "❤️"], ["laugh", "😆"], ["surprised", "😮"], ["sad", "😢"], ["angry", "😡"]]
+                                        model: [["yes", "👍"], ["heart", "❤️"], ["laugh", "😆"], ["surprised", "😮"], ["sad", "😢"], ["angry", "😡"]]
                                         Rectangle {
                                             required property var modelData
                                             width: 32; height: 32; radius: theme.radius
@@ -174,8 +174,8 @@ Item {
                                             HoverHandler { id: qh; cursorShape: Qt.PointingHandCursor }
                                             TapHandler {
                                                 onTapped: {
-                                                    const mine = (card.post.reactions || []).some(r => r.key === parent.modelData[0] && r.mine)
-                                                    root.react(card.post.id, parent.modelData[0], !mine)
+                                                    const mine = (card.post.reactions || []).find(r => r.key === parent.modelData[0] && r.mine)
+                                                    root.react(card.post.id, mine ? mine.my_key : parent.modelData[0], !mine)
                                                     reactMenu.close()
                                                 }
                                             }

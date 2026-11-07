@@ -130,6 +130,11 @@ pub mod qobject {
         /// The user's Recent emoticons (Teams' roamed recentReactions, else
         /// its defaults), as a JSON array of ids.
         #[qproperty(QString, recent_reactions_json)]
+        /// The preferred skin tone (Teams' preferredSkinToneIndex): 0 for
+        /// none, 1 light to 5 dark.
+        #[qproperty(i32, skin_tone)]
+        /// Customize reactions: "saving", "ok", "error" or empty.
+        #[qproperty(QString, reaction_prefs_result)]
         /// `{message_id, total, readers: [{mri, name}]}` for Read by N of M.
         #[qproperty(QString, message_readers_json)]
         /// Teams' in-app toast: `{id, text, intent}` (intent "success" or
@@ -388,6 +393,19 @@ pub mod qobject {
         /// description).
         #[qinvokable]
         fn emoticon_name(self: &Backend, key: &QString) -> QString;
+
+        /// An emoticon id in the preferred skin tone when it has tones
+        /// (`{id}-tone{n}`), else the id.
+        #[qinvokable]
+        fn emoticon_toned(self: &Backend, key: &QString) -> QString;
+
+        /// An emoticon id in a given skin tone when it has tones.
+        #[qinvokable]
+        fn emoticon_in_tone(self: &Backend, key: &QString, tone: i32) -> QString;
+
+        /// Save the quick reactions (client ids, JSON) and the skin tone.
+        #[qinvokable]
+        fn save_reaction_prefs(self: Pin<&mut Backend>, slots_json: &QString, tone: i32);
         /// Teams' asset size for a named emoticon size ("medium", "small"…)
         /// on this screen.
         #[qinvokable]
@@ -775,6 +793,8 @@ pub struct BackendRust {
     typing_text: QString,
     emoticons_version: i32,
     recent_reactions_json: QString,
+    skin_tone: i32,
+    reaction_prefs_result: QString,
     message_readers_json: QString,
     toast_json: QString,
     pinned_json: QString,
@@ -3111,6 +3131,28 @@ impl qobject::Backend {
         if chat_id.is_empty() || message_id.is_empty() {
             return;
         }
+        // Adding another skin tone of an emoticon we reacted with replaces
+        // that one (Teams: one tone per emoticon).
+        let replaces: Option<String> = on
+            .then(|| {
+                let shown: serde_json::Value =
+                    serde_json::from_str(&self.rust().messages_json.to_string()).ok()?;
+                let common = api::messages::common_key(&key);
+                let m = shown
+                    .as_array()?
+                    .iter()
+                    .find(|m| m["id"].as_str() == Some(message_id.as_str()))?;
+                m["reactions"]
+                    .as_array()?
+                    .iter()
+                    .find(|r| {
+                        r["mine"].as_bool() == Some(true)
+                            && r["key"].as_str() == Some(common)
+                            && r["my_key"].as_str() != Some(key.as_str())
+                    })
+                    .and_then(|r| r["my_key"].as_str().map(str::to_string))
+            })
+            .flatten();
         // Adding one moves it to the front of Recent, which roams (Teams'
         // addEmojisInRecent).
         let recent = on.then(|| {
@@ -3129,7 +3171,14 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::messages::set_reaction(&client, &chat_id, &message_id, &key, on).await?;
+                if let Some(old) = &replaces {
+                    let wire = api::emoticons::server_key(old);
+                    api::messages::set_reaction(&client, &chat_id, &message_id, wire, false)
+                        .await?;
+                }
+                // The service keys a few emoticons differently (Teams' 77708).
+                let wire = api::emoticons::server_key(&key);
+                api::messages::set_reaction(&client, &chat_id, &message_id, wire, on).await?;
                 if let Some(r) = recent
                     && let Err(e) = api::emoticons::set_recent_reactions(&client, &r).await
                 {
@@ -4085,7 +4134,7 @@ impl qobject::Backend {
     pub fn emoticon_catalog_json(self: Pin<&mut Self>) -> QString {
         let Some(c) = emoticon_catalog().read().unwrap().clone() else {
             // Starts the download; emoticonsVersion changes when it lands.
-            let _ = self.emoticon_url(&QString::from("like"), 20);
+            let _ = self.emoticon_url(&QString::from("yes"), 20);
             return QString::default();
         };
         let list: Vec<_> = c
@@ -4106,26 +4155,73 @@ impl qobject::Backend {
     fn load_recent_reactions(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let owned = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-            let (recent, quick) = match TeamsClient::new().await {
-                Ok(c) => (
-                    api::emoticons::recent_reactions(&c).await,
-                    api::emoticons::quick_reactions(&c).await,
-                ),
-                Err(_) => (
-                    owned(&api::emoticons::DEFAULT_RECENT_REACTIONS),
-                    owned(&api::emoticons::DEFAULT_QUICK_REACTIONS),
-                ),
+            let prefs = match TeamsClient::new().await {
+                Ok(c) => api::emoticons::reaction_prefs(&c).await,
+                Err(_) => api::emoticons::ReactionPrefs::from_properties(&serde_json::Value::Null),
             };
-            let recent = serde_json::to_string(&recent).unwrap_or_default();
-            let quick = serde_json::to_string(&quick).unwrap_or_default();
+            let recent = serde_json::to_string(&prefs.recent).unwrap_or_default();
+            let quick = serde_json::to_string(&prefs.quick).unwrap_or_default();
             let _ = qt.queue(move |mut this| {
                 this.as_mut()
                     .set_recent_reactions_json(QString::from(recent.as_str()));
                 this.as_mut()
                     .set_quick_reactions_json(QString::from(quick.as_str()));
+                this.as_mut().set_skin_tone(prefs.tone as i32);
             });
         });
+    }
+
+    pub fn emoticon_in_tone(&self, key: &QString, tone: i32) -> QString {
+        let out = api::emoticons::with_tone(
+            emoticon_catalog().read().unwrap().as_deref(),
+            &key.to_string(),
+            tone.clamp(0, 5) as u8,
+        );
+        QString::from(out.as_str())
+    }
+
+    pub fn save_reaction_prefs(mut self: Pin<&mut Self>, slots_json: &QString, tone: i32) {
+        let slots: Vec<String> = serde_json::from_str(&slots_json.to_string()).unwrap_or_default();
+        let tone = tone.clamp(0, 5) as u8;
+        let tone_changed = tone as i32 != self.rust().skin_tone;
+        self.as_mut()
+            .set_reaction_prefs_result(QString::from("saving"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::emoticons::set_default_reactions(&client, &slots).await?;
+                if tone_changed {
+                    api::emoticons::set_skin_tone(&client, tone).await?;
+                }
+                anyhow::Ok(())
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    let quick = serde_json::to_string(&slots).unwrap_or_default();
+                    this.as_mut()
+                        .set_quick_reactions_json(QString::from(quick.as_str()));
+                    this.as_mut().set_skin_tone(tone as i32);
+                    this.as_mut().set_reaction_prefs_result(QString::from("ok"));
+                }
+                Err(e) => {
+                    tracing::warn!("reaction preferences not saved: {}", short_error(&e));
+                    this.as_mut()
+                        .set_reaction_prefs_result(QString::from("error"));
+                }
+            });
+        });
+    }
+
+    pub fn emoticon_toned(&self, key: &QString) -> QString {
+        let tone = self.rust().skin_tone.clamp(0, 5) as u8;
+        let out = api::emoticons::with_tone(
+            emoticon_catalog().read().unwrap().as_deref(),
+            &key.to_string(),
+            tone,
+        );
+        QString::from(out.as_str())
     }
 
     pub fn emoticon_name(&self, key: &QString) -> QString {
