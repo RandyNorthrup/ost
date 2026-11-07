@@ -74,8 +74,32 @@ Item {
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
-    function clear() { input.clear() }
+    function clear() { input.clear(); media = [] }
     function insertText(t) { input.insert(input.cursorPosition, t); input.forceActiveFocus() }
+    // What the fun picker put in: [{src, kind, id, title, unicode, url, width,
+    // height}], each shown as an <img> with that src and sent in Teams' form.
+    property var media: []
+    function insertMedia(m) {
+        media = media.concat([m])
+        // As the compose box shows them: emoticons in the line (20), GIFs
+        // fitted to 444 x 250 (as sent), stickers at 180.
+        let w = 20, h = 20
+        if (m.kind === "gif") {
+            const s = Math.min(1, 444 / Math.max(1, m.width), 250 / Math.max(1, m.height))
+            w = Math.floor(m.width * s); h = Math.round(m.height * s)
+        } else if (m.kind === "sticker") { w = 180; h = 180 }
+        else if (m.kind === "image") {
+            const s = Math.min(1, 240 / Math.max(1, m.width), 180 / Math.max(1, m.height))
+            w = Math.floor(m.width * s); h = Math.round(m.height * s)
+        }
+        input.insert(input.cursorPosition, "<img src=\"" + m.src + "\" width=\"" + w + "\" height=\"" + h + "\">")
+        input.forceActiveFocus()
+    }
+    // The picked items still in the text.
+    function mediaInUse() {
+        const html = input.getFormattedText(0, input.length)
+        return media.filter(m => html.indexOf(m.src) >= 0)
+    }
     function focusEditor() { input.forceActiveFocus() }
     function wrapSelection(tag) {
         const a = input.selectionStart, b = input.selectionEnd

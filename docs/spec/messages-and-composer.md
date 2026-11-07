@@ -782,6 +782,47 @@ Groups are separated by dividers; empty groups are skipped.
   - Tabs All | Emoji | GIFs | Stickers, each only when its policy allows.
   - Search "Find something fun", label "GIFs powered by GIPHY".
   - GIF categories: Trending, Reactions, Greetings, Perfect, Welcome, Congratulations, Thank you, Excited.
+- **Fun picker, measured live** (winpc, `unified-picker-content`, 2026-11-07):
+  - **Frame**: 316 × 485, background #FAFAFA.
+    - Tabs at y 2, 50 tall: All (x 19.1, 40.7 wide), Emoji (78, 59.3), GIFs (155.5, 50.9), Stickers (224.6, 72.4). Labels are 14 px at +10; the open one is 600 #242424, the rest 400 #424242.
+    - A white body from y 53 (radius 6 6 0 0).
+  - **Search**: 286 × 32 at (15, 68), #F5F5F5, radius 4. With a back button (32, at 15) it shrinks to 242 at x 59.
+  - **All**:
+    - headings "Emoji", "GIFs" and "Stickers" (14/500) at y 122.7 / 217.3 / 352.3, each with "See all ›" (`titlerow-end-button`, 83.2 × 31.3 at x 224.8, which opens that tab);
+    - six recent emoticons (46 px cells from x 15, y 150.3);
+    - three trending GIFs (89.3 × 86.3 at x 17.5 / 113.3 / 209.2, y 245; image 88 × 85, radius 6);
+    - four recent stickers (69 px tiles, 3 apart, at y 380).
+  - **Footer** (All and GIFs): at y 449, 36 tall. "GIFs powered by GIPHY" (12 px) at x 111.5, "View Terms" (12 px brand) at 241.4.
+    - View Terms opens a popover: "When you search for images, your search terms are sent to GIPHY. To learn more, see GIPHY's Privacy Policy and Terms of Service."
+    - Its links go to support.giphy.com/hc/{locale}/articles/360032872931-GIPHY-Privacy-Policy and …/360020027752-GIPHY-User-Terms-of-Service.
+  - **Emoji**: the reaction picker's panel, 432.3 tall from y 52.7, with Customize; the org's "Custom" section is last (see `custom-emoji.md`).
+  - **GIFs**:
+    - categories: 139.5 × 76 tiles at x 15 / 160.5, 81 apart from y 115. The picture is `…/evergreen-assets/funstuff/giphy/assets/categories_bg/{name}.gif` under `rgba(0,0,0,.3)`, with the name 14/600 white at (15.7, 28).
+    - results: two 140-wide columns (x 15 and 161, 6 apart), each item 140 × (140·h/w), radius 6; the title shows as a tooltip.
+  - **Stickers**:
+    - Recent: eight 69 px tiles, 4 a row, 3 apart, #F5F5F5, radius 6, the picture 59.7 inset 4.7. Editable stickers get an 18 px #575757 badge with a 12 px pencil at +43.6.
+    - "Sticker Packs" with See all: 138 × 46 tiles (#F5F5F5, radius 6), the name 14/600 at +10 and a 26 px icon at +102.
+    - Default recents: Clippy_HelloThere, OfficeDrama_HighFive, WordArt_Awesome, Octocorn_Coffee, Teamsquatch_Yes, grumpycat, Bee_Angry, Devs_Works_On_My_Machine.
+  - **Caption editor** (editable stickers, inline in Stickers):
+    - the captioned template centred at y 130, 195.3 wide;
+    - a "Caption" box (286 × 94.7, #F5F5F5) at y 288, pre-filled with the default caption;
+    - Cancel and **Done** (138 × 31.3) at y 395.3.
+- **Where the content comes from**:
+  - **GIFs**: `POST {middleTier}/beta/commands/com.microsoft.teamspace.inputextension.giphy/execute?version=1.0` with `[{name:"query"},{name:"rating"},{name:"limit","27"},{name:"lang"}]` (services-giphy 757304).
+    - An empty query is trending.
+    - The result is `[{result:[{composeValue, fieldValues:[title, image, previewImage, previewImageFW, width, height, …]}]}]`.
+    - Rating by the tenant's `giphyRatingType`: Strict → y, Moderate → g, NoRestriction → pg-13.
+  - **Stickers**: Teams' own catalogue (components-compose-extensions; names in `funstuff` strings), 41 packs and 674 stickers, the EDU packs only for Teacher/Student licences.
+    - Pictures come from `teams.public.onecdn.static.microsoft/evergreen-assets`:
+      - previews `funstuff/stickers/{locale}/assets/{pack}/Preview/{file}?v=5` (memes: `funstuff/meme/assets/Preview/…`);
+      - sent files `stickerassets/{pack}-250x250[/en-us]/{file}?v=5` (memes `-500x500`).
+- **What's sent** (each captured from Teams' own messages):
+  - **Emoticon**: `<span title="Surprised" type="(surprised)" class="animated-emoticon-20-surprised" itemscope=""><img itemscope="" itemtype="http://schema.skype.com/Emoji" itemid="surprised" src="https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/surprised/default/20_f.png" title="Surprised" alt="😮" style="width:20px; height:20px"></span>`.
+  - **GIF**: `<p>&nbsp;</p>` + `<img src="{giphy.gif}" width height alt="{title} (GIF Image)" style="height:auto; margin-top:4px; max-width:100%">` + `<p>&nbsp;</p>`. The size fits 444 × 250 (480 × 270 went as 444 × 250).
+  - **Sticker**: the same frame, with `<img src="{stickerassets URL}" height="180" alt="{name}" width="180" itemtype="http://schema.skype.com/Sticker">`.
+  - **Captioned sticker**: drawn by the client, uploaded to AMS, and sent as `<img src="{ams}/v1/objects/{id}/views/imgo" width="240" height="180" itemscope="image/png" itemtype="http://schema.skype.com/AMSImage" alt="Sticker image, {caption}" id="{id}" itemid="{id}">`.
+    - The service prefixes the element id with `x_`.
+    - The AMS calls need a User-Agent with `Teams/{version}/{platform}` (Teams desktop sends …/49), or they fail with 400 "platform id could not be created".
 
 ## 18. Delivery options, schedule send, Enter, limits
 - **Delivery options** (648927, 871091):

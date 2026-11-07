@@ -1137,7 +1137,10 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let follow_explicit = props
         .and_then(|p| p.get("emotions"))
         .and_then(|e| follow_of(e, me));
-    let text = super::strip_html(&content).trim().to_string();
+    // From the sanitised HTML, so Teams emoticons count as their character.
+    let text = super::strip_html(&sanitize_html(&content))
+        .trim()
+        .to_string();
     // Teams shows "This message has been deleted" to its sender only (and
     // only right after deleting; the app decides that); for everyone else
     // the message just disappears.
@@ -1200,7 +1203,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         html: if deleted {
             String::new()
         } else {
-            sanitize_html_marking(&content, &my_mentions)
+            without_empty_paragraphs(&sanitize_html_marking(&content, &my_mentions))
         },
         text: if deleted { String::new() } else { text },
         edited,
@@ -1516,6 +1519,16 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
         in_link -= 1;
     }
     out
+}
+
+/// The message HTML without the empty paragraphs Teams puts around GIFs,
+/// stickers and pictures (`<p>&nbsp;</p>`), which show as nothing there.
+fn without_empty_paragraphs(html: &str) -> String {
+    let mut out = html.to_string();
+    for empty in ["<p>&nbsp;</p>", "<p>\u{a0}</p>", "<p> </p>", "<p></p>"] {
+        out = out.replace(empty, "");
+    }
+    out.trim().to_string()
 }
 
 /// Whether an `<img>` tag is a GIF or sticker from the fun picker, and which.
@@ -2095,7 +2108,95 @@ pub struct OutMention {
 /// `mention:{mri}`) turned into Teams' mention spans
 /// (`<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="N">`)
 /// and listed for `properties.mentions`.
+/// Something the fun picker put in the compose box as an `<img>` (keyed by
+/// that image's `src`), sent as Teams sends it.
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+pub struct ComposeMedia {
+    /// The `src` the compose box shows it with.
+    pub src: String,
+    /// "emoji", "gif" or "sticker".
+    pub kind: String,
+    /// Emoji: the emoticon id; its description and unicode character.
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub unicode: String,
+    /// GIF or sticker: what's sent, and its size.
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    /// "image": the local PNG to upload first.
+    #[serde(default)]
+    pub path: String,
+}
+
+/// Teams' HTML for a picked emoticon, GIF or sticker (captured from Teams'
+/// own messages). Emoticons sit in the line; GIFs and stickers get their own
+/// block between empty paragraphs.
+pub fn compose_media_html(m: &ComposeMedia) -> String {
+    match m.kind.as_str() {
+        "emoji" => format!(
+            "<span title=\"{t}\" type=\"({id})\" class=\"animated-emoticon-20-{id}\" itemscope=\"\"><img itemscope=\"\" itemtype=\"http://schema.skype.com/Emoji\" itemid=\"{id}\" src=\"https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/{id}/default/20_f.png\" title=\"{t}\" alt=\"{u}\" style=\"width:20px; height:20px\"></span>",
+            t = escape(&m.title),
+            id = escape(&m.id),
+            u = escape(&m.unicode),
+        ),
+        "gif" => {
+            // Teams fits a GIF into 444 x 250 (480 x 270 went out as 444 x 250).
+            let (w, h) = fit(m.width, m.height, 444, 250);
+            format!(
+                "</p><p>&nbsp;</p>\n<img src=\"{}\" width=\"{w}\" height=\"{h}\" alt=\"{} (GIF Image)\" style=\"height:auto; margin-top:4px; max-width:100%\">\n<p>&nbsp;</p><p>",
+                escape(&m.url),
+                escape(&m.title)
+            )
+        }
+        // A picture uploaded to AMS (a captioned sticker): `url` is the
+        // object's imgo view and `id` its object id, as Teams sends it (the
+        // service prefixes the element id with "x_" itself).
+        "image" => {
+            let (w, h) = fit(m.width, m.height, 240, 180);
+            format!(
+                "</p><p>&nbsp;</p>\n<img src=\"{u}\" width=\"{w}\" height=\"{h}\" itemscope=\"image/png\" itemtype=\"http://schema.skype.com/AMSImage\" alt=\"{t}\" id=\"{id}\" itemid=\"{id}\">\n<p>&nbsp;</p><p>",
+                u = escape(&m.url),
+                t = escape(&m.title),
+                id = escape(&m.id),
+            )
+        }
+        "sticker" => format!(
+            "</p><p>&nbsp;</p>\n<img src=\"{}\" height=\"180\" alt=\"{}\" width=\"180\" itemtype=\"http://schema.skype.com/Sticker\">\n<p>&nbsp;</p><p>",
+            escape(&m.url),
+            escape(&m.title)
+        ),
+        _ => String::new(),
+    }
+}
+
+/// `w` x `h` scaled down to fit `max_w` x `max_h`, rounded.
+fn fit(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
+    if w == 0 || h == 0 {
+        return (max_w.min(w.max(1)), max_h.min(h.max(1)));
+    }
+    let scale = (max_w as f64 / w as f64)
+        .min(max_h as f64 / h as f64)
+        .min(1.0);
+    (
+        (w as f64 * scale).floor() as u32,
+        (h as f64 * scale).round() as u32,
+    )
+}
+
 pub fn teams_html_and_mentions(qt: &str) -> (String, Vec<OutMention>) {
+    teams_html_with_media(qt, &[])
+}
+
+/// The compose box's HTML as Teams HTML, with mentions, and the picker's
+/// emoticons, GIFs and stickers in Teams' own form.
+pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<OutMention>) {
     let mut mentions: Vec<OutMention> = Vec::new();
     // For each open <a>: whether it is a mention (closed as </span>).
     let mut anchors: Vec<bool> = Vec::new();
@@ -2217,6 +2318,13 @@ pub fn teams_html_and_mentions(qt: &str) -> (String, Vec<OutMention>) {
                     anchors.push(false);
                 }
             }
+            ("img", false) => {
+                if let Some(src) = editor_attr(tag, "src")
+                    && let Some(m) = media.iter().find(|m| m.src == src)
+                {
+                    out.push_str(&compose_media_html(m));
+                }
+            }
             ("a", true) => {
                 if anchors.pop().unwrap_or(false) {
                     let name = super::strip_html(&mention_text.take().unwrap_or_default())
@@ -2242,6 +2350,60 @@ pub fn teams_html_and_mentions(qt: &str) -> (String, Vec<OutMention>) {
         .trim()
         .to_string();
     (html, mentions)
+}
+
+#[cfg(test)]
+mod compose_media_tests {
+    use super::*;
+
+    #[test]
+    fn picked_items_are_sent_as_teams_sends_them() {
+        let emoji = ComposeMedia {
+            src: "file:///c/surprised.png".into(),
+            kind: "emoji".into(),
+            id: "surprised".into(),
+            title: "Surprised".into(),
+            unicode: "😮".into(),
+            ..Default::default()
+        };
+        let gif = ComposeMedia {
+            src: "https://media3.giphy.com/x/200w.gif".into(),
+            kind: "gif".into(),
+            url: "https://media3.giphy.com/x/giphy.gif".into(),
+            title: "Pedro Pascal Laughing GIF by Crafture".into(),
+            width: 480,
+            height: 270,
+            ..Default::default()
+        };
+        let editor = r#"<html><body><p>hi <img src="file:///c/surprised.png" width="20" height="20" /><img src="https://media3.giphy.com/x/200w.gif" width="200" height="113" /></p></body></html>"#;
+        let (html, _) = teams_html_with_media(editor, &[emoji, gif]);
+        // As Teams' own surprised emoticon and GIF messages read.
+        assert!(html.starts_with(r#"<p>hi <span title="Surprised" type="(surprised)" class="animated-emoticon-20-surprised" itemscope=""><img itemscope="" itemtype="http://schema.skype.com/Emoji" itemid="surprised" src="https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/surprised/default/20_f.png" title="Surprised" alt="😮" style="width:20px; height:20px"></span></p>"#), "{html}");
+        assert!(html.contains(r#"<p>&nbsp;</p>
+<img src="https://media3.giphy.com/x/giphy.gif" width="444" height="250" alt="Pedro Pascal Laughing GIF by Crafture (GIF Image)" style="height:auto; margin-top:4px; max-width:100%">
+<p>&nbsp;</p>"#), "{html}");
+        // A captioned sticker, once uploaded, reads as Teams' own did.
+        let img = ComposeMedia {
+            src: "file:///t/s.png".into(),
+            kind: "image".into(),
+            id: "0-wus-d8-6d53".into(),
+            url: "https://us-api.asm.skype.com/v1/objects/0-wus-d8-6d53/views/imgo".into(),
+            title: "Sticker image, OST TEST 56".into(),
+            width: 320,
+            height: 240,
+            ..Default::default()
+        };
+        let (h2, _) = teams_html_with_media(r#"<p><img src="file:///t/s.png" /></p>"#, &[img]);
+        assert_eq!(
+            h2,
+            "<p>&nbsp;</p>\n<img src=\"https://us-api.asm.skype.com/v1/objects/0-wus-d8-6d53/views/imgo\" width=\"240\" height=\"180\" itemscope=\"image/png\" itemtype=\"http://schema.skype.com/AMSImage\" alt=\"Sticker image, OST TEST 56\" id=\"0-wus-d8-6d53\" itemid=\"0-wus-d8-6d53\">\n<p>&nbsp;</p>"
+        );
+        // Images the picker didn't put there are left out, as before.
+        assert_eq!(
+            teams_html_and_mentions(r#"<p>a<img src="x.png" /></p>"#).0,
+            "<p>a</p>"
+        );
+    }
 }
 
 /// An attribute's value from a tag's text (`name="value"`).
@@ -2805,6 +2967,20 @@ mod tests {
                 .is_empty()
         );
         assert!(message_media(r#"<img src="https://evil.example/giphy.gif">"#).is_empty());
+        // An emoticon on its own is a message (its character).
+        let emoji = r#"<p><span title="Surprised" type="(surprised)" class="animated-emoticon-20-surprised" itemscope=""><img itemscope="" itemtype="http://schema.skype.com/Emoji" itemid="surprised" src="https://statics.teams.cdn.office.net/x/20_f.png" title="Surprised" alt="😮" style="width:20px; height:20px"></span></p>"#;
+        assert_eq!(
+            view_of(&m(emoji), "8:orgid:me", "Me")
+                .expect("an emoticon shows")
+                .text,
+            "😮"
+        );
+        // The empty paragraphs around a GIF show as nothing.
+        assert!(
+            !g.html.contains("<p>") || !g.html.contains("&nbsp;"),
+            "{}",
+            g.html
+        );
     }
 
     #[test]

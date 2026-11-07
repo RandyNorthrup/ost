@@ -39,6 +39,8 @@ fn main() {
         "qml/Emoticon.qml",
         "qml/QuoteCard.qml",
         "qml/ReactionPicker.qml",
+        "qml/EmojiPanel.qml",
+        "qml/FunPicker.qml",
         "qml/ForwardCard.qml",
         "qml/ForwardDialog.qml",
         "qml/ReportDialog.qml",
@@ -54,12 +56,17 @@ fn main() {
         "qml/LimitTip.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
-    for dir in ["assets/icons", "assets/fonts", "assets/tray"] {
+    for dir in [
+        "assets/icons",
+        "assets/fonts",
+        "assets/tray",
+        "assets/funstuff",
+    ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();
             if matches!(
                 path.extension().and_then(|e| e.to_str()),
-                Some("svg" | "ttf" | "png")
+                Some("svg" | "ttf" | "png" | "json")
             ) {
                 resources.push(path.to_string_lossy().into_owned());
             }

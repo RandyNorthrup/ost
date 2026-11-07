@@ -184,6 +184,9 @@ pub mod qobject {
         /// The open meeting chat's meeting: {subject, join_url, ical_uid,
         /// cancelled, start, end, organizer_id}, or "" for other chats.
         #[qproperty(QString, chat_meeting_json)]
+        /// The fun picker's GIF results: {query, items: [{url, preview,
+        /// width, height, title}], error}.
+        #[qproperty(QString, fun_results_json)]
         /// Joined teams and their channels, as JSON.
         #[qproperty(QString, teams_json)]
         type Backend = super::BackendRust;
@@ -245,6 +248,11 @@ pub mod qobject {
         /// Copy a chat's link (Teams' Copy link), from its menu in the list.
         #[qinvokable]
         fn copy_link_of_chat(self: Pin<&mut Backend>, chat_id: &QString, chat_name: &QString);
+
+        /// Search GIFs for the fun picker; an empty query is GIPHY's
+        /// trending list. The result lands in funResultsJson.
+        #[qinvokable]
+        fn search_gifs(self: Pin<&mut Backend>, query: &QString);
 
         /// Mute or unmute a chat (Teams' Mute / Unmute).
         #[qinvokable]
@@ -441,6 +449,10 @@ pub mod qobject {
         /// or "" until it has downloaded (emoticonsVersion then changes).
         #[qinvokable]
         fn emoticon_url(self: Pin<&mut Backend>, key: &QString, size: i32) -> QString;
+
+        /// An emoticon's unicode character (its alt text when sent), or "".
+        #[qinvokable]
+        fn emoticon_unicode(self: &Backend, key: &QString) -> QString;
 
         /// A card image as a local file URL once downloaded (empty until
         /// then; emoticonsVersion changes when it lands).
@@ -791,6 +803,12 @@ pub mod qobject {
         /// Send a formatted message (the compose editor's rich text).
         #[qinvokable]
         fn send_rich(self: Pin<&mut Backend>, editor_html: &QString);
+
+        /// As send_rich, with the fun picker's emoticons, GIFs and stickers
+        /// in the compose box (`media_json`: [{src, kind, id, title,
+        /// unicode, url, width, height}]) sent in Teams' form.
+        #[qinvokable]
+        fn send_rich_media(self: Pin<&mut Backend>, editor_html: &QString, media_json: &QString);
     }
 
     impl cxx_qt::Threading for Backend {}
@@ -881,6 +899,7 @@ pub struct BackendRust {
     people_json: QString,
     chat_members_json: QString,
     chat_meeting_json: QString,
+    fun_results_json: QString,
     teams_json: QString,
     people_query_generation: u64,
     /// Bumped on every typing change so a stale clear timer does nothing.
@@ -3902,6 +3921,39 @@ impl qobject::Backend {
         }
     }
 
+    pub fn search_gifs(self: Pin<&mut Self>, query: &QString) {
+        static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        let query = query.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                // Teams' default GIPHY rating ("Moderate" → g), in the UI's language.
+                api::funstuff::search_raw(
+                    &client,
+                    api::funstuff::FunKind::Gifs,
+                    &query,
+                    "g",
+                    "en-us",
+                )
+                .await
+            }
+            .await;
+            let json = match result {
+                Ok(v) => json!({ "query": query, "items": api::funstuff::items(&v) }),
+                Err(e) => json!({ "query": query, "items": [], "error": short_error(&e) }),
+            };
+            let _ = qt.queue(move |mut this| {
+                // Only the newest search counts (typing fires several).
+                if GENERATION.load(Ordering::SeqCst) == generation {
+                    this.as_mut()
+                        .set_fun_results_json(QString::from(json.to_string().as_str()));
+                }
+            });
+        });
+    }
+
     pub fn set_chat_unread(mut self: Pin<&mut Self>, chat_id: &QString, unread: bool) {
         let chat_id = chat_id.to_string();
         if chat_id.is_empty() {
@@ -4532,6 +4584,15 @@ impl qobject::Backend {
                 Err(e) => tracing::warn!("mark read failed: {}", short_error(&e)),
             }
         });
+    }
+
+    pub fn emoticon_unicode(&self, key: &QString) -> QString {
+        emoticon_catalog()
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|c| QString::from(c.unicode(&key.to_string()).as_str()))
+            .unwrap_or_default()
     }
 
     pub fn emoticon_url(self: Pin<&mut Self>, key: &QString, size: i32) -> QString {
@@ -6253,7 +6314,46 @@ impl qobject::Backend {
     }
 
     pub fn send_rich(self: Pin<&mut Self>, editor_html: &QString) {
-        let (html, mentions) = api::messages::teams_html_and_mentions(&editor_html.to_string());
+        self.send_rich_media(editor_html, &QString::default());
+    }
+
+    pub fn send_rich_media(self: Pin<&mut Self>, editor_html: &QString, media_json: &QString) {
+        let mut media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        // Captioned stickers are pictures we drew: upload them to AMS first.
+        if media.iter().any(|m| m.kind == "image" && m.id.is_empty()) {
+            let chat_id = self.rust().current_chat_id.to_string();
+            let editor_html = editor_html.to_string();
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                let result = async {
+                    let client = TeamsClient::new().await?;
+                    let base = client.ams_url().context("No media store address")?;
+                    for m in media.iter_mut().filter(|m| m.kind == "image" && m.id.is_empty()) {
+                        let path = m.path.trim_start_matches("file://").to_string();
+                        let bytes = std::fs::read(&path).context("Reading the sticker picture")?;
+                        let id = client.ams_upload_image(&chat_id, bytes, "sticker.png").await?;
+                        m.url = format!("{base}/v1/objects/{id}/views/imgo");
+                        m.id = id;
+                        let _ = std::fs::remove_file(&path);
+                    }
+                    anyhow::Ok(media)
+                }
+                .await;
+                let _ = qt.queue(move |mut this| match result {
+                    Ok(media) => {
+                        let json = serde_json::to_string(&media.iter().map(|m| json!({"src": m.src, "kind": m.kind, "id": m.id, "title": m.title, "unicode": m.unicode, "url": m.url, "width": m.width, "height": m.height})).collect::<Vec<_>>()).unwrap_or_default();
+                        this.as_mut().send_rich_media(&QString::from(editor_html.as_str()), &QString::from(json.as_str()));
+                    }
+                    Err(e) => this.as_mut().set_status_text(QString::from(
+                        format!("Couldn't send the sticker: {}", short_error(&e)).as_str(),
+                    )),
+                });
+            });
+            return;
+        }
+        let (html, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
         let chat_id = self.rust().current_chat_id.to_string();
         if chat_id.is_empty() || html.trim().is_empty() {
             return;

@@ -369,6 +369,16 @@ impl TeamsClient {
             .map(|u| u.trim_end_matches('/').to_string())
     }
 
+    /// Teams' media store (AMS) base URL from region_gtms ("ams").
+    pub fn ams_url(&self) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get("ams")?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
     /// The shared HTTP client.
     pub fn http(&self) -> &reqwest::Client {
         &self.http
@@ -500,6 +510,63 @@ impl TeamsClient {
             .context("Media GET failed")?;
         let resp = check_response(resp, url).await?;
         Ok(resp.bytes().await.context("Media body")?.to_vec())
+    }
+
+    /// Upload a picture to AMS for the members of `conv`, as Teams does for
+    /// inline pictures: `POST {ams}/v1/objects/` with type `pish/image` and
+    /// read permission for the conversation, then `PUT …/content/imgpsh`
+    /// with the bytes. Returns the object id.
+    pub async fn ams_upload_image(
+        &self,
+        conv: &str,
+        bytes: Vec<u8>,
+        filename: &str,
+    ) -> Result<String> {
+        let token = self.skype_token()?;
+        let base = self
+            .ams_url()
+            .context("No media store address for this account")?;
+        let auth = format!("skype_token {}", token);
+        // AMS reads the caller's platform from the User-Agent's
+        // `Teams/{version}/{platform}` part (Teams desktop sends …/49) and
+        // refuses a request without it; OST is platform 1415 elsewhere.
+        const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Teams/26276.513.5241.9675/1415";
+        let created = self
+            .http
+            .post(format!("{base}/v1/objects/"))
+            .header("Authorization", &auth)
+            .header(reqwest::header::USER_AGENT, UA)
+            .json(&serde_json::json!({
+                "type": "pish/image",
+                "permissions": { conv: ["read"] },
+                "filename": filename,
+            }))
+            .send()
+            .await
+            .context("Media create failed")?;
+        let created = check_response(created, &base).await?;
+        let v: serde_json::Value = created.json().await.context("Media create reply")?;
+        let id = v
+            .get("id")
+            .and_then(|i| i.as_str())
+            .context("No media object id")?
+            .to_string();
+        anyhow::ensure!(
+            id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "Unexpected media object id"
+        );
+        let put = self
+            .http
+            .put(format!("{base}/v1/objects/{id}/content/imgpsh"))
+            .header("Authorization", &auth)
+            .header(reqwest::header::USER_AGENT, UA)
+            .header("Content-Type", "application/octet-stream")
+            .body(bytes)
+            .send()
+            .await
+            .context("Media upload failed")?;
+        check_response(put, &base).await?;
+        Ok(id)
     }
 
     /// Any method with `Authentication: skypetoken=...` (native chat API).

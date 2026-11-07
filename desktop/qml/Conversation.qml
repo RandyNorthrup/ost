@@ -67,6 +67,8 @@ Rectangle {
     // into ··· as "In this chat" (measured at 604: only Find stays inline);
     // below 480 Find goes too. Live roster avatars show from 834.
     function openChatMenuForTest() { chatMenu.open() }
+    function funPickerForTest() { return emojiPicker }
+    function composeMediaForTest() { return compose.mediaInUse() }
     function closeChatMenuForTest() { chatMenu.close() }
     function toggleFind() { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
     readonly property bool headerNarrow: width < 640
@@ -116,6 +118,14 @@ Rectangle {
     // The emoji picker inserts into whichever compose asked for it.
     property var emojiTarget: null
     function openEmojiFor(box) { emojiTarget = box; emojiPicker.parent = box; emojiPicker.open() }
+    // The fun picker's picks go into the box it was opened from: GIFs and
+    // stickers as pictures, emoticons as Teams' inline emoticons (as text
+    // where the box sends plain text).
+    function insertPicked(m) {
+        const box = root.emojiTarget || compose
+        if (box === compose) box.insertMedia(m)
+        else if (m.kind === "emoji") box.insertText(m.unicode)
+    }
     signal openChatSettings()
     signal scheduleMeeting()
     // Go to a message (a quote card's target), if it is loaded.
@@ -2166,13 +2176,16 @@ Rectangle {
         if (root.pendingFiles.length > 0) {
             backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []
+        } else if (compose.mediaInUse().length > 0) {
+            // Picked emoticons, GIFs and stickers go in Teams' own form.
+            backend.sendRichMedia(input.getFormattedText(0, input.length), JSON.stringify(compose.mediaInUse()))
         } else if (root.plainText().trim().length > 0) {
             // Formatted text goes as Teams HTML; plain text as before.
             const html = input.getFormattedText(0, input.length)
             if (/font-weight:\s*[6-9]00|font-style:\s*italic|text-decoration:[^;"]*(underline|line-through)|<ul|<ol|href="mention:/.test(html)) backend.sendRich(html)
             else root.send(root.plainText())
         }
-        input.clear()
+        compose.clear()
         root.quoting = null
         compose.formatting = false
         compose.importance = ""
@@ -2479,11 +2492,18 @@ Rectangle {
     CustomizeReactions {
         id: customizeReactions
     }
-    EmojiPicker {
+    FunPicker {
         id: emojiPicker
         parent: compose
         x: parent ? parent.width - width : 0; y: -height - 8
-        onPicked: e => { (root.emojiTarget || compose).insertText(e); close() }
+        // Emoticons show in the compose box as Teams' own 20 px picture.
+        onPickedEmoji: id => root.insertPicked({
+            src: "https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/" + id + "/default/20_f.png",
+            kind: "emoji", id: id, title: backend.emoticonName(id), unicode: backend.emoticonUnicode(id) })
+        onPickedGif: g => root.insertPicked({ src: g.preview, kind: "gif", url: g.url, width: g.width, height: g.height, title: g.title })
+        onPickedSticker: st => root.insertPicked({ src: st.preview, kind: "sticker", url: st.url, title: st.title })
+        onPickedCaptioned: m => root.insertPicked(m)
+        onCustomize: customizeReactions.open()
     }
     FileDialog {
         id: filePicker
