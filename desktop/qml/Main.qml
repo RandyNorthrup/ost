@@ -1671,6 +1671,56 @@ Window {
         }
     }
 
+    // --edit-test=<suffix> with --open-chat=<id> --shots=<dir>: edit your
+    // newest message in place: capture edit-open.png, append the suffix in
+    // bold, capture edit-typed.png, press Done and log the message after.
+    // With --edit-cancel it cancels instead (Discard draft) and captures it.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--edit-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property string target: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const suffix = (Qt.application.arguments.find(a => a.startsWith("--edit-test=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const cancel = Qt.application.arguments.indexOf("--edit-cancel") >= 0
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "edit-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST edit test"); return }
+            const msgs = JSON.parse(backend.messagesJson || "[]")
+            if (!target) { const m = msgs.filter(m => m.mine && m.kind === "message" && !m.deleted).pop(); if (!m) return; target = m.id; conversation.jumpToMessage(m.id); conversation.startEdit(m); return }
+            const box = conversation.editBoxForTest()
+            if (step === 0) shot("open")
+            else if (step === 1 && box) { const e = box.editor; e.cursorPosition = e.length; e.insert(e.length, "<b>" + suffix + "</b>") }
+            else if (step === 2) shot("typed")
+            else if (step === 3 && box) { if (cancel) box.discardForTest(); else box.submit() }
+            else if (step === 4) shot(cancel ? "discard" : "done")
+            else if (step === 5 && cancel && box) box.confirmDiscardForTest()
+            else if (step === 7) { const m = msgs.find(m => m.id === target); console.warn("EDIT-TEST after", JSON.stringify({ text: m.text, html: m.html, edited: m.edited, quote: !!m.quote })); shot("after"); Qt.quit() }
+            step++
+        }
+    }
+
+    // --compose-send-test=<text> with --open-chat=<id> --shots=<dir>: type
+    // <text> into the compose, bold its first word, capture compose-typed.png
+    // (with the hint) and send it through the compose; log the newest message.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--compose-send-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const text = (Qt.application.arguments.find(a => a.startsWith("--compose-send-test=")) || "").slice(20)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST compose test"); return }
+            if (step === 0) { conversation.setPlain(text); conversation.formatForTest(0, text.indexOf(" "), "b"); conversation.focusCompose() }
+            else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(dir + "compose-typed.png"))
+            else if (step === 2) conversation.sendForTest()
+            else if (step === 4) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => m.mine).pop(); console.warn("COMPOSE-TEST newest", JSON.stringify({ html: m.html, state: m.send_state })); Qt.quit() }
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu
@@ -2127,6 +2177,7 @@ Window {
         onTriggered: backend.refreshReceipts()
     }
     SettingsView {
+        id: settingsView
         visible: rail.current === "settings"
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
     }
@@ -2208,6 +2259,7 @@ Window {
         onTyping: backend.userTyping()
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onEditMessage: (id, text) => backend.editMessage(id, text)
+        onOpenChatSettings: { settingsView.page = "chats"; rail.current = "settings" }
         onDeleteMessage: id => backend.deleteMessage(id)
         onSendReply: (id, text) => backend.sendReply(id, text)
         typingText: backend.typingText

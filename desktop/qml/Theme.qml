@@ -67,6 +67,7 @@ QtObject {
     readonly property color redForeground1: pick("#BC2F32", "#E37D80")  // colorPaletteRedForeground1 (failed sends)
     readonly property color redForeground3: pick("#D13438", "#E37D80")  // colorPaletteRedForeground3 (required marks)
     readonly property color brandForeground2: pick("#444791", "#9299F7")  // colorBrandForeground2 (forward card's time link)
+    readonly property color brandForeground1: pick("#4F52B2", "#7F85F5")  // colorBrandForeground1 (links, e.g. the compose hint)
     readonly property color successFg: pick("#0E700E", "#54B054")       // colorStatusSuccessForeground1 (toast)
     readonly property color savedFg: pick("#C239B3", "#D24ED0")         // colorPaletteBerryForeground1 (saved bookmark)
     readonly property color inputFilledDark: pick("#F0F0F0", "#141414") // the forward dialog's picker

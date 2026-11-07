@@ -295,6 +295,10 @@ pub struct MessageView {
     /// Plain text (search, notifications, accessibility).
     pub text: String,
     pub edited: bool,
+    /// Teams' delivery option: "" (standard), "high" (Important) or
+    /// "urgent".
+    #[serde(default)]
+    pub importance: String,
     pub deleted: bool,
     pub reactions: Vec<Reaction>,
     /// Inline images (Teams' AMS objects), in order.
@@ -813,6 +817,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         if t.is_empty() { s("/composetime") } else { t }
     };
     let base = MessageView {
+        importance: s("/properties/importance"),
         id: s("/id"),
         client_message_id: s("/clientmessageid"),
         kind: "message".into(),
@@ -1310,7 +1315,81 @@ pub async fn set_reaction(
     Ok(())
 }
 
-/// Replace the text of one of our messages.
+/// The body of Teams' edit (`PUT …/messages/{id}`), built from the
+/// original as Teams does: the new content, the original's client message
+/// id and properties (importance, files, cards, links, mentions), the
+/// quote's `qtdMsgs` when the quote stays, and `edittime`.
+pub fn edit_body(
+    original: &serde_json::Value,
+    content: &str,
+    quote: Option<&Quote>,
+    edit_ms: i64,
+) -> serde_json::Value {
+    let props = original.get("properties").cloned().unwrap_or_default();
+    let keep = |k: &str, default: &str| -> serde_json::Value {
+        match props.get(k) {
+            Some(serde_json::Value::String(s)) => s.clone().into(),
+            Some(v) if !v.is_null() => v.to_string().into(),
+            _ => default.into(),
+        }
+    };
+    let content = match quote {
+        Some(q) => format!("{}{}", quote_html(q), content),
+        None => content.to_string(),
+    };
+    let mut body = serde_json::json!({
+        "id": original.get("id").cloned().unwrap_or_default(),
+        "type": "Message",
+        "conversationid": original.get("conversationid").cloned().unwrap_or_default(),
+        "content": content,
+        "messagetype": "RichText/Html",
+        "contenttype": "Text",
+        "imdisplayname": original.get("imdisplayname").cloned().unwrap_or_default(),
+        "clientmessageid": original.get("clientmessageid").cloned().unwrap_or_default(),
+        "properties": {
+            "importance": keep("importance", ""),
+            "cards": keep("cards", "[]"),
+            "links": keep("links", "[]"),
+            "mentions": keep("mentions", "[]"),
+            "files": keep("files", "[]"),
+            "formatVariant": "TEAMS",
+            "edittime": edit_ms,
+        },
+    });
+    if let Some(q) = quote {
+        body["properties"]["qtdMsgs"] = quoted_messages_property(q).into();
+    }
+    body
+}
+
+/// Edit one of our messages as Teams does: `content` is Teams HTML (the
+/// editor's, formatting kept) and `quote` the quote it keeps, if any.
+pub async fn edit_message_html(
+    client: &TeamsClient,
+    chat_id: &str,
+    message_id: &str,
+    content: &str,
+    quote: Option<&Quote>,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages/{}",
+        client.chat_service_url(),
+        chat_id,
+        message_id
+    );
+    let original: serde_json::Value = client.chat_get(&url).await?.json().await?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default();
+    let body = edit_body(&original, content, quote, now);
+    client
+        .chat_request(reqwest::Method::PUT, &url, &body)
+        .await?;
+    Ok(())
+}
+
+/// Edit one of our messages to plain text, keeping its quote.
 pub async fn edit_message(
     client: &TeamsClient,
     chat_id: &str,
@@ -1323,11 +1402,14 @@ pub async fn edit_message(
         chat_id,
         message_id
     );
-    let body = serde_json::json!({
-        "content": format!("<p>{}</p>", html_escape(text)),
-        "messagetype": "RichText/Html",
-        "contenttype": "text",
-    });
+    let original: serde_json::Value = client.chat_get(&url).await?.json().await?;
+    let (quote, _) = split_quote(original["content"].as_str().unwrap_or_default());
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default();
+    let content = format!("<p>{}</p>", html_escape(text));
+    let body = edit_body(&original, &content, quote.as_ref(), now);
     client
         .chat_request(reqwest::Method::PUT, &url, &body)
         .await?;
@@ -1822,6 +1904,48 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 #[cfg(test)]
 mod quote_tests {
     use super::*;
+
+    #[test]
+    fn edit_body_keeps_teams_properties() {
+        let original = serde_json::json!({
+            "id": "1794037612096", "conversationid": "19:x@thread.v2", "imdisplayname": "OST Test 1",
+            "clientmessageid": "757156935902784764",
+            "content": "<p>old</p>",
+            "properties": {"importance": "high", "files": "[]", "mentions": "[]", "cards": "[]", "links": "[]",
+                           "qtdMsgs": [{"messageId": 1}], "edittime": 1}
+        });
+        let q = Quote {
+            message_id: "1794032815852".into(),
+            sender_mri: "8:orgid:r".into(),
+            sender_name: "R".into(),
+            preview: "hi".into(),
+        };
+        let b = edit_body(&original, "<p>new <b>bold</b></p>", Some(&q), 42);
+        assert_eq!(b["clientmessageid"], "757156935902784764");
+        assert_eq!(b["properties"]["importance"], "high");
+        assert_eq!(b["properties"]["edittime"], 42);
+        assert!(
+            b["content"]
+                .as_str()
+                .unwrap()
+                .starts_with("<blockquote itemscope")
+        );
+        assert!(
+            b["content"]
+                .as_str()
+                .unwrap()
+                .ends_with("<p>new <b>bold</b></p>")
+        );
+        assert!(
+            b["properties"]["qtdMsgs"]
+                .as_str()
+                .unwrap()
+                .contains("1794032815852")
+        );
+        let b = edit_body(&original, "<p>new</p>", None, 42);
+        assert!(b["properties"].get("qtdMsgs").is_none());
+        assert_eq!(b["content"], "<p>new</p>");
+    }
 
     #[test]
     fn reactions_group_skin_tones_and_order() {

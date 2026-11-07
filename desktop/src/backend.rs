@@ -310,6 +310,17 @@ pub mod qobject {
         #[qinvokable]
         fn edit_message(self: Pin<&mut Backend>, message_id: &QString, text: &QString);
 
+        /// Edit one of our messages in place, as Teams does: the editor's
+        /// rich text (formatting kept) and the quote it keeps (JSON, or
+        /// empty for none).
+        #[qinvokable]
+        fn edit_message_rich(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            editor_html: &QString,
+            quote_json: &QString,
+        );
+
         /// Delete one of our messages in the open chat.
         #[qinvokable]
         fn delete_message(self: Pin<&mut Backend>, message_id: &QString);
@@ -3075,6 +3086,26 @@ impl qobject::Backend {
         }
         self.message_action(move |client, chat| {
             Box::pin(async move { api::messages::edit_message(&client, &chat, &id, &text).await })
+        });
+    }
+
+    pub fn edit_message_rich(
+        self: Pin<&mut Self>,
+        message_id: &QString,
+        editor_html: &QString,
+        quote_json: &QString,
+    ) {
+        let id = message_id.to_string();
+        let html = api::messages::teams_html_from_editor(&editor_html.to_string());
+        if html.trim().is_empty() {
+            return;
+        }
+        let quote: Option<api::messages::Quote> =
+            serde_json::from_str(&quote_json.to_string()).ok();
+        self.message_action(move |client, chat| {
+            Box::pin(async move {
+                api::messages::edit_message_html(&client, &chat, &id, &html, quote.as_ref()).await
+            })
         });
     }
 

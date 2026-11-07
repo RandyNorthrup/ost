@@ -37,6 +37,8 @@ Rectangle {
     signal sendReply(string rootId, string text)
     property bool posting: false
     // Keyboard shortcuts (Ctrl+R, Ctrl+F, Ctrl+J, Alt+P, Alt+1-9, Alt+Shift+O).
+    // The chat's compose editor.
+    readonly property Item input: compose.editor
     function focusCompose() { if (compose.visible) input.forceActiveFocus() }
     function openFind() { finding = true; tab = ""; findField.forceActiveFocus() }
     function jumpToNewest() { tab = ""; list.positionViewAtBeginning(); channelPosts.toEnd() }
@@ -85,7 +87,12 @@ Rectangle {
         quoting = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.text || "" }
         input.forceActiveFocus()
     }
-    function startEdit(m) { root.editingId = m.id; root.setPlain(m.text); input.forceActiveFocus() }
+    // Teams edits in place; Urgent messages can't be edited.
+    function startEdit(m) { if (m.importance !== "urgent") root.editingId = m.id }
+    // The emoji picker inserts into whichever compose asked for it.
+    property var emojiTarget: null
+    function openEmojiFor(box) { emojiTarget = box; emojiPicker.parent = box; emojiPicker.open() }
+    signal openChatSettings()
     // Go to a message (a quote card's target), if it is loaded.
     // Teams' per-user reaction limit (217146, enableMultipleReactionsPerUser).
     readonly property int reactionLimit: 20
@@ -136,6 +143,14 @@ Rectangle {
     function customizeSlotForTest(i) { customizeReactions.pickForTest(i) }
     function customizeToneForTest(t) { customizeReactions.setTone(t) }
     function closeCustomizeForTest() { customizeReactions.close() }
+    // Test hook: the in-place editor, while one is open.
+    function editBoxForTest() {
+        for (let i = 0; i < list.count; i++) {
+            const d = list.itemAtIndex(i)
+            if (d && d.editingThis) return d.editBoxForTest()
+        }
+        return null
+    }
     function closePickerForTest() { reactionPicker.close() }
     function closeMessageMenuForTest() { messageMenu.close() }
     function forwardDialogForTest() { return forwardDialog }
@@ -156,7 +171,7 @@ Rectangle {
     function sendForTest() { root.sendCompose() }
     onChatIdChanged: {
         tab = ""; finding = false; findField.text = ""; participants.visible = false; posting = false
-        if (draftChat && !editingId) backend.setDraft(draftChat, root.plainText())
+        if (draftChat) backend.setDraft(draftChat, root.plainText())
         editingId = ""
         root.setPlain(chatId ? backend.draftFor(chatId) : "")
         draftChat = chatId
@@ -165,7 +180,7 @@ Rectangle {
     Timer {
         id: draftSave
         interval: 1000
-        onTriggered: if (root.draftChat && !root.editingId) backend.setDraft(root.draftChat, root.plainText())
+        onTriggered: if (root.draftChat) backend.setDraft(root.draftChat, root.plainText())
     }
     /// Your own notes chat: Teams drops the call and people buttons and
     /// shows only the Chat, Shared and Storyline tabs.
@@ -484,6 +499,9 @@ Rectangle {
             readonly property bool isEvent: modelData.kind === "event"
             readonly property bool isRow: isCall || isEvent
             readonly property var reactions: modelData.reactions || []
+            // Being edited in place (Teams: the compose replaces the bubble,
+            // 172 in from the list's start and 72 from its end).
+            readonly property bool editingThis: root.editingId.length > 0 && root.editingId === modelData.id
             width: list.width
             // Grouped messages (same sender, within minutes) drop the
             // name/time line and avatar, and sit 2 px under the previous.
@@ -501,6 +519,7 @@ Rectangle {
             readonly property int topPad: dividerH + (isRow ? 0 : grouped ? 2 : 12)
             readonly property int bubbleY: topPad + (!showMeta || isCall ? 0 : meta.height + 2)
             height: isRow ? topPad + (isCall ? 36 : 28)
+                : editingThis ? topPad + (editLoader.item ? editLoader.item.height : 0)
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height - 4.3 + 4 : 0)
             readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : Math.min(640, list.width * 0.7)
 
@@ -594,7 +613,7 @@ Rectangle {
             // message's text replaces the details (Teams' statusMessage).
             Row {
                 id: meta
-                visible: msg.showMeta
+                visible: msg.showMeta && !msg.editingThis
                 y: msg.topPad
                 spacing: 8
                 x: msg.mine ? msg.width - 72 - width : 72
@@ -651,9 +670,31 @@ Rectangle {
                     Accessible.name: "Saved by you. Others won't see that it was saved."
                 }
             }
+            function editBoxForTest() { return editLoader.item }
+            Loader {
+                id: editLoader
+                active: msg.editingThis
+                x: 172; y: msg.topPad
+                width: msg.width - 72 - 172
+                sourceComponent: ComposeBox {
+                    id: editBox
+                    width: editLoader.width
+                    editing: true
+                    quote: msg.modelData.quote || null
+                    onQuoteDismissed: quote = null
+                    onEmojiRequested: a => root.openEmojiFor(editBox)
+                    onSettingsRequested: root.openChatSettings()
+                    onSubmit: {
+                        backend.editMessageRich(msg.modelData.id, editBox.formattedText(), editBox.quote ? JSON.stringify(editBox.quote) : "")
+                        root.editingId = ""
+                    }
+                    onCancelled: root.editingId = ""
+                    Component.onCompleted: { setHtml(msg.modelData.html || root.escapeHtml(msg.modelData.text || "")); focusEditor() }
+                }
+            }
             Rectangle {
                 id: bubble
-                visible: !msg.isRow
+                visible: !msg.isRow && !msg.editingThis
                 y: msg.bubbleY
                 readonly property var imgs: msg.modelData.images || []
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
@@ -878,7 +919,7 @@ Rectangle {
             // add-reaction button (More reactions).
             Row {
                 id: reactionRow
-                visible: msg.reactions.length > 0
+                visible: msg.reactions.length > 0 && !msg.editingThis
                 y: bubble.y + bubble.height - 4.3
                 // Your messages' reactions sit at the bubble's end (Teams).
                 x: msg.mine ? bubble.x + bubble.width - 15.7 - width : bubble.x + 15.7
@@ -975,7 +1016,7 @@ Rectangle {
             // quote on others'), More options; 6 px after.
             Item {
                 id: actions
-                readonly property bool can: !msg.isRow && !msg.modelData.deleted && !msg.sendPending && !msg.sendFailed
+                readonly property bool can: !msg.isRow && !msg.modelData.deleted && !msg.sendPending && !msg.sendFailed && !msg.editingThis
                 readonly property var quick: root.quickReactions
                 readonly property var acts: msg.mine
                     ? [{ key: "edit", icon: "edit-20", tip: "Edit", name: "Edit" }]
@@ -1162,20 +1203,6 @@ Rectangle {
                     }
                 }
             }
-        }
-    }
-
-    // "Editing" strip above the compose box while editing a message.
-    Rectangle {
-        visible: root.editingId.length > 0
-        anchors { left: compose.left; right: compose.right; bottom: compose.top; bottomMargin: 2 }
-        height: 28; radius: theme.radius
-        color: theme.brandTint
-        Text {
-            x: 12; anchors.verticalCenter: parent.verticalCenter
-            text: "Editing message — Enter to save, Esc to cancel"
-            font.family: theme.font; font.pixelSize: theme.small
-            color: theme.text
         }
     }
 
@@ -1732,18 +1759,7 @@ Rectangle {
         }
     }
 
-    // Format (Teams' format bar): wrap the selection in a style or a list.
-    property bool formatting: false
-    function wrapSelection(tag) {
-        const a = input.selectionStart, b = input.selectionEnd
-        if (a === b) return
-        const sel = root.escapeHtml(input.getText(a, b))
-        input.remove(a, b)
-        const html = tag === "ul" || tag === "ol" ? "<" + tag + "><li>" + sel.replace(/<br>/g, "</li><li>") + "</li></" + tag + ">"
-            : "<" + tag + ">" + sel + "</" + tag + ">"
-        input.insert(a, html)
-        input.forceActiveFocus()
-    }
+    function wrapSelection(tag) { compose.wrapSelection(tag) }
     // Files picked to send with the next message (local paths).
     property var pendingFiles: []
     function addFiles(urls) {
@@ -1764,7 +1780,7 @@ Rectangle {
         }
         input.clear()
         root.quoting = null
-        root.formatting = false
+        compose.formatting = false
         root.posting = false
     }
     // Teams' pinned-message banner (pinned-message-banner, measured): over
@@ -2073,8 +2089,8 @@ Rectangle {
     EmojiPicker {
         id: emojiPicker
         parent: compose
-        x: compose.width - width; y: -height - 8
-        onPicked: e => { input.insert(input.cursorPosition, e); close(); input.forceActiveFocus() }
+        x: parent ? parent.width - width : 0; y: -height - 8
+        onPicked: e => { (root.emojiTarget || compose).insertText(e); close() }
     }
     FileDialog {
         id: filePicker
@@ -2083,178 +2099,27 @@ Rectangle {
         onAccepted: root.addFiles(selectedFiles)
     }
 
-    // Compose box
-    Rectangle {
+    // The chat's compose (Teams' simplified compose; ComposeBox). It sits
+    // 72 in on each side, 6 above the bottom, its hint row included.
+    ComposeBox {
         id: compose
         visible: root.chatName.length > 0 && (!root.isChannel || root.posting)
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        anchors.leftMargin: root.pane ? 12 : 72; anchors.rightMargin: root.pane ? 12 : 72; anchors.bottomMargin: root.pane ? 12 : 24
-        height: Math.max(44, input.contentHeight + 24) + (root.pendingFiles.length > 0 ? pendingRow.height + 8 : 0)
-            + (root.formatting ? 40 : 0) + (root.quoting ? 56 + 14 : 0)
-        // The message being quoted (Teams: a card 12 in and 14 down in the
-        // editor, with Remove Reference).
-        QuoteCard {
-            visible: !!root.quoting
-            x: 12; y: (root.formatting ? 40 : 0) + 14
-            quote: root.quoting
-            dismissable: true
-            maxWidth: compose.width - 24
-            onDismissed: { root.quoting = null; input.forceActiveFocus() }
-        }
-        // The format bar: bold, italic, underline, strikethrough, lists.
-        Row {
-            visible: root.formatting
-            x: 8; y: 4
-            spacing: 2
-            Repeater {
-                model: [
-                    { icon: "text-bold-20", tag: "b", label: "Bold (Ctrl+B)" },
-                    { icon: "text-italic-20", tag: "i", label: "Italic (Ctrl+I)" },
-                    { icon: "text-underline-20", tag: "u", label: "Underline (Ctrl+U)" },
-                    { icon: "text-strike-20", tag: "s", label: "Strikethrough" },
-                    { icon: "text-bullets-20", tag: "ul", label: "Bulleted list" },
-                    { icon: "text-numbers-20", tag: "ol", label: "Numbered list" },
-                ]
-                Rectangle {
-                    required property var modelData
-                    width: 32; height: 32; radius: theme.radius
-                    color: fbh.hovered ? theme.rowHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.textStrong }
-                    HoverHandler { id: fbh; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.wrapSelection(parent.modelData.tag) }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: modelData.label
-                }
-            }
-        }
-        // Files waiting to be sent, as removable chips above the text.
-        Flow {
-            id: pendingRow
-            visible: root.pendingFiles.length > 0
-            x: 12; y: (root.formatting ? 44 : 8) + (root.quoting ? 56 + 14 : 0); width: parent.width - 24
-            spacing: 8
-            Repeater {
-                model: root.pendingFiles
-                Rectangle {
-                    required property string modelData
-                    height: 40; width: Math.min(300, nameText.implicitWidth + 80)
-                    radius: 8
-                    color: theme.searchFill
-                    border.color: theme.divider
-                    FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "file-32"; size: 24; color: theme.textSecondary }
-                    Text {
-                        id: nameText
-                        x: 40; anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - 76
-                        text: parent.modelData.split("/").pop()
-                        elide: Text.ElideMiddle
-                        font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
-                        color: theme.text
-                    }
-                    Rectangle {
-                        anchors.right: parent.right; anchors.rightMargin: 6
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 24; height: 24; radius: theme.radius
-                        color: rmh.hovered ? theme.rowHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.textStrong }
-                        HoverHandler { id: rmh; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.pendingFiles = root.pendingFiles.filter(p => p !== parent.parent.modelData) }
-                        Accessible.role: Accessible.Button
-                        Accessible.name: "Remove " + parent.modelData.split("/").pop()
-                    }
-                }
-            }
-        }
-        radius: theme.radius
-        color: theme.input
-        border.color: input.activeFocus ? theme.brand : theme.divider
-        TextArea {
-            id: input
-            anchors { left: parent.left; right: tools.left; bottom: parent.bottom; bottomMargin: (44 - 32) / 2 }
-            anchors.leftMargin: 4
-            placeholderText: root.isChannel ? "Start a post" : "Type a message"
-            placeholderTextColor: theme.textSecondary
-            font.family: theme.font; font.pixelSize: theme.base
-            color: theme.text
-            wrapMode: TextArea.Wrap
-            background: null
-            textFormat: TextEdit.RichText
-            Keys.onPressed: event => {
-                if (!(event.modifiers & Qt.ControlModifier)) return
-                if (event.key === Qt.Key_B) { root.wrapSelection("b"); event.accepted = true }
-                else if (event.key === Qt.Key_I) { root.wrapSelection("i"); event.accepted = true }
-                else if (event.key === Qt.Key_U) { root.wrapSelection("u"); event.accepted = true }
-                else if (event.key === Qt.Key_X && (event.modifiers & Qt.AltModifier)) { root.wrapSelection("s"); event.accepted = true }
-            }
-            onActiveFocusChanged: if (activeFocus) enterKey = backend.setting("enterKey") || "send"
-            onTextChanged: {
-                if (length > 0) root.typing()
-                draftSave.restart()
-            }
-            // Settings > Chats and channels: Enter sends (Shift+Enter breaks the
-            // line), or Enter breaks the line and Ctrl+Enter sends.
-            property string enterKey: backend.setting("enterKey") || "send"
-            Keys.onReturnPressed: event => {
-                const sendKey = enterKey === "newline" ? (event.modifiers & Qt.ControlModifier) : !(event.modifiers & Qt.ShiftModifier)
-                if (!sendKey) { event.accepted = false; return }
-                if (root.editingId) { root.editMessage(root.editingId, root.plainText()); root.editingId = ""; input.clear() }
-                else root.sendCompose()
-            }
-            Keys.onEscapePressed: {
-                if (root.editingId) { root.editingId = ""; input.clear() }
-                else if (root.posting) root.posting = false
-            }
-        }
-        Row {
-            id: tools
-            anchors.right: parent.right; anchors.rightMargin: 12
-            anchors.bottom: parent.bottom; anchors.bottomMargin: 12
-            spacing: 12
-            FluentIcon {
-                name: "format-20"
-                color: root.formatting ? theme.brand : theme.icon
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.formatting = !root.formatting }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Format"
-            }
-            FluentIcon {
-                id: emojiButton
-                name: "emoji-20"
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: emojiPicker.open() }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Emoji"
-            }
-            FluentIcon {
-                name: "attach-20"
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: filePicker.open() }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Attach files"
-            }
-            FluentIcon {
-                name: "add-20"
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: actionsMenu.open() }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Actions and apps"
-                MenuPopup {
-                    id: actionsMenu
-                    x: -width + 20; y: -height - 12
-                    items: [{ label: "Upload from this device", icon: "attach-20" }, { label: "Emoji", icon: "emoji-20" }]
-                    onPicked: i => i === 0 ? filePicker.open() : emojiPicker.open()
-                }
-            }
-            Rectangle { width: 1; height: 20; color: theme.divider }
-            FluentIcon {
-                readonly property bool ready: input.length > 0 || root.pendingFiles.length > 0
-                name: ready ? "send-20-filled" : "send-20"
-                color: ready ? theme.brand : theme.icon
-                TapHandler { onTapped: root.sendCompose() }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Send"
-            }
+        anchors.leftMargin: root.pane ? 12 : 72; anchors.rightMargin: root.pane ? 12 : 72; anchors.bottomMargin: 6
+        placeholder: root.isChannel ? "Start a post" : "Type a message"
+        quote: root.quoting
+        files: root.pendingFiles
+        onQuoteDismissed: root.quoting = null
+        onFileRemoved: path => root.pendingFiles = root.pendingFiles.filter(p => p !== path)
+        onEmojiRequested: a => root.openEmojiFor(compose)
+        onAttachRequested: filePicker.open()
+        onSettingsRequested: root.openChatSettings()
+        onTyped: root.typing()
+        onSubmit: root.sendCompose()
+        onCancelled: { root.quoting = null; root.pendingFiles = []; root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
+        Connections {
+            target: compose.editor
+            function onTextChanged() { draftSave.restart() }
         }
     }
 }

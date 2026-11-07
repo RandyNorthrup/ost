@@ -676,6 +676,28 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
   - Then the video clip camera.
   - End group: [Cancel edit], Send.
 
+### Measured (winpc, 2026-11-07)
+- **Chat compose, single-line**:
+  - The box is 748 × 45.3 at 72 in on each side, white, with a 0.67 px #E0E0E0 border and radius 6. The footer keeps 2 + 16 px for the hint and 6 more under it.
+  - The editor's padding is 10 16 8 12 (14/20, min-height 38). The placeholder is #616161.
+  - The side toolbar has 32 px buttons, 6.7 down: Format, Emoji/GIFs/Stickers, Attach, Loop, Actions and apps. Then the send group (40.7 wide): a 24 px divider 4 in, then Send 8.7 in, ending 6.7 from the box's end.
+  - Focused, a 2 px brand line runs along the bottom.
+- **Formatting bar open**:
+  - The box grows to 193.3: the bar is 43, the editor at least 104, then the 44.7 bottom toolbar.
+  - Bar buttons start at (6.7, 9.7), in groups 8.6 apart with a divider. Buttons that don't fit go to "More options" (···). Discard (Delete20) sits at the end, 6.7 in.
+- **In-place edit** (Edit on your message):
+  - The compose replaces the bubble, its name line and its reactions. It is 172 in from the list's start and 72 from its end (648 wide in an 892 pane), 12 below the item's top.
+  - Top part: border on all sides but the bottom, radius 6 6 0 0. The editor holds the quote card (with Remove Reference) at (13.3, 14.7), then the text.
+  - Bottom toolbar (`simplified-compose-bottom-toolbar`, 44.7 tall, 0.67 px #E0E0E0 bottom border, radius 0 0 4 4):
+    - buttons 6 down: Format, Emoji, Attach, Actions and apps;
+    - then the send group: the divider at 4, Cancel (`newMessageCommands-discard-draft`, Dismiss20) at 8.7, Done (`newMessageCommands-send`, Checkmark20) at 40.7, ending 6.7 in.
+  - Under it, right-aligned 17 in (12/16): the link "Shift+Enter" (BrandForeground1 #4F52B2, aria "Select Shift+Enter to open settings"), 4 px, then "starts a new line." (#242424).
+  - **Escape does nothing while editing.** **Cancel always asks** with `messagedraft-discard-dialog`:
+    - 600 × 156, radius 8; the title "Discard draft" (20/28 semibold) at 24.7 and Close;
+    - "You can discard your draft or cancel to keep editing" at (22.7, 62);
+    - Cancel and Discard (brand), 96 × 31.3, at y 100.
+  - A Teams edit (seen live) keeps the quote's blockquote and `qtdMsgs` and sends the full property set. The service then stores `edittime` (ms) and `version` = `edittime`; `clientmessageid` and `composetime` are unchanged.
+
 ## 16. Formatting bar (111774, `simplified-formatting-toolbar`; shown when expanded)
 Groups are separated by dividers; empty groups are skipped.
 
