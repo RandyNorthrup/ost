@@ -83,7 +83,9 @@ Item {
     // custom emoji and pictures (as Teams' edit does); else its text.
     function setMessage(m) {
         media = m.edit_media || []
-        setHtml(m.edit_html || m.html || escapeHtml(m.text || ""))
+        // Mention tokens in Teams' colour; a shared contact's icon.
+        const tokens = String(m.edit_html || "").replace(/<a href="(mention[^"]*)">/g, '<a href="$1" style="color:' + theme.brandForeground1 + '; text-decoration:none">')
+        setHtml(m.edit_html ? theme.messageHtml(tokens) : (m.html || escapeHtml(m.text || "")))
     }
     function insertText(t) { input.insert(input.cursorPosition, t); input.forceActiveFocus() }
     // What the fun picker put in: [{src, kind, id, title, unicode, url, width,

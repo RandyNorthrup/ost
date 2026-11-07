@@ -3565,7 +3565,8 @@ impl qobject::Backend {
         // Teams' own form (the edit form gave them back; the picker adds).
         let media: Vec<api::messages::ComposeMedia> =
             serde_json::from_str(&media_json.to_string()).unwrap_or_default();
-        let html = api::messages::teams_html_with_media(&editor_html.to_string(), &media).0;
+        let (html, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
         if html.trim().is_empty() {
             return;
         }
@@ -3573,7 +3574,15 @@ impl qobject::Backend {
             serde_json::from_str(&quote_json.to_string()).ok();
         self.message_action(move |client, chat| {
             Box::pin(async move {
-                api::messages::edit_message_html(&client, &chat, &id, &html, quote.as_ref()).await
+                api::messages::edit_message_html(
+                    &client,
+                    &chat,
+                    &id,
+                    &html,
+                    quote.as_ref(),
+                    Some(&mentions),
+                )
+                .await
             })
         });
     }

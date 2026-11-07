@@ -1244,7 +1244,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         flow_text(&head)
     };
     let (edit_html, edit_media) = if mine && !deleted {
-        edit_form(&marked, &pic_tags)
+        edit_form(&marked, &pic_tags, &mention_list(props))
     } else {
         (String::new(), Vec::new())
     };
@@ -1781,7 +1781,13 @@ fn split_flow(
 /// keyed by that `src`. Emoticons, custom emoji and AMS pictures keep
 /// placeholder srcs (`ost-emoticon:`, `ost-custom-emoji:`, `ost-image:`)
 /// that the client swaps for its cached files.
-pub fn edit_form(marked: &str, pics: &[String]) -> (String, Vec<ComposeMedia>) {
+pub fn edit_form(
+    marked: &str,
+    pics: &[String],
+    mentions: &[(String, String)],
+) -> (String, Vec<ComposeMedia>) {
+    let tokens = mentions_as_tokens(marked, mentions);
+    let marked = tokens.as_str();
     let mut media: Vec<ComposeMedia> = Vec::new();
     let mut add = |m: ComposeMedia| {
         if !media.iter().any(|x| x.src == m.src) {
@@ -1854,6 +1860,10 @@ pub fn edit_form(marked: &str, pics: &[String]) -> (String, Vec<ComposeMedia>) {
                 title: alt,
                 ..Default::default()
             });
+        } else if src == CONTACT_CARD_SRC {
+            // A shared contact's icon: shown in the box; the contact's
+            // token sends the card again.
+            out.push_str(tag);
         } else if let Some(id) = src.strip_prefix(EMOTICON_SRC) {
             out.push_str(tag);
             add(ComposeMedia {
@@ -1868,6 +1878,75 @@ pub fn edit_form(marked: &str, pics: &[String]) -> (String, Vec<ComposeMedia>) {
     }
     out.push_str(rest);
     (between_tags_trimmed(&without_empty_paragraphs(&out)), media)
+}
+
+/// The message's mentions in order (`itemid`), as (mri, mentionType).
+fn mention_list(props: Option<&serde_json::Value>) -> Vec<(String, String)> {
+    let Some(raw) = props.and_then(|p| p.get("mentions")) else {
+        return Vec::new();
+    };
+    let list: serde_json::Value = match raw {
+        serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+        v => v.clone(),
+    };
+    let mut out: Vec<(i64, String, String)> = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            let id = match m.get("itemid")? {
+                serde_json::Value::Number(n) => n.as_i64()?,
+                serde_json::Value::String(s) => s.parse().ok()?,
+                _ => return None,
+            };
+            Some((
+                id,
+                m.get("mri")?.as_str()?.to_string(),
+                m.get("mentionType")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("person")
+                    .to_string(),
+            ))
+        })
+        .collect();
+    out.sort_by_key(|m| m.0);
+    out.into_iter().map(|(_, mri, t)| (mri, t)).collect()
+}
+
+/// Sanitised HTML with each mention span (in order, matching `mentions`)
+/// as the edit box's mention token: a link to `mention:{mri}` (or
+/// `mention-everyone:`, `-channel:`, `-team:`, `-contact:`), so an edit
+/// sends them again.
+fn mentions_as_tokens(html: &str, mentions: &[(String, String)]) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    let mut k = 0;
+    while let Some(i) = rest.find("<span class=\"mention") {
+        out.push_str(&rest[..i]);
+        let open_end = rest[i..].find('>').map(|e| i + e + 1).unwrap_or(rest.len());
+        let close = rest[open_end..]
+            .find("</span>")
+            .map(|e| open_end + e)
+            .unwrap_or(rest.len());
+        let text = &rest[open_end..close];
+        match mentions.get(k) {
+            Some((mri, kind)) => {
+                let scheme = match kind.as_str() {
+                    "everyone" => "mention-everyone",
+                    "channel" => "mention-channel",
+                    "team" => "mention-team",
+                    "share-contact" => "mention-contact",
+                    _ => "mention",
+                };
+                out.push_str(&format!("<a href=\"{scheme}:{}\">{text}</a>", escape(mri)));
+            }
+            None => out.push_str(text),
+        }
+        k += 1;
+        rest = &rest[(close + "</span>".len()).min(rest.len())..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// HTML without the line breaks and spaces between its tags (Qt's editor
@@ -2303,6 +2382,7 @@ pub async fn edit_message_html(
     message_id: &str,
     content: &str,
     quote: Option<&Quote>,
+    mentions: Option<&[OutMention]>,
 ) -> Result<()> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}/messages/{}",
@@ -2315,7 +2395,13 @@ pub async fn edit_message_html(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default();
-    let body = edit_body(&original, content, quote, now);
+    let mut body = edit_body(&original, content, quote, now);
+    // The edited text's own mentions (an edit can add or remove them).
+    if let Some(m) = mentions {
+        body["properties"]["mentions"] = serde_json::to_string(m)
+            .unwrap_or_else(|_| "[]".into())
+            .into();
+    }
     client
         .chat_request(reqwest::Method::PUT, &url, &body)
         .await?;
@@ -3659,6 +3745,41 @@ mod tests {
         // A reply quotes it as Teams does, the GIF as a camera.
         assert_eq!(v.quote_text, "Look 😮 📷 after it");
         assert_eq!(v.mention_kind, "");
+        // Mentions come back as the edit box's tokens, sent again as
+        // Teams' mentions.
+        let with_mention = r#"<p>Hi <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Randy</span>&nbsp;<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="1">Northrup</span>&nbsp;and <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="2">General</span></p>"#;
+        let mentions = serde_json::json!([
+            {"@type": "http://schema.skype.com/Mention", "itemid": 0, "mri": "8:orgid:r", "mentionType": "person", "displayName": "Randy"},
+            {"@type": "http://schema.skype.com/Mention", "itemid": 1, "mri": "8:orgid:r", "mentionType": "person", "displayName": "Northrup"},
+            {"@type": "http://schema.skype.com/Mention", "itemid": 2, "mri": "19:c@thread.tacv2", "mentionType": "channel", "displayName": "General"}
+        ]).to_string();
+        let mm = serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": with_mention, "from": "https://x/contacts/8:orgid:me", "imdisplayname": "Me", "properties": {"mentions": mentions}});
+        let v2 = view_of(&mm, "8:orgid:me", "Me").unwrap();
+        assert_eq!(
+            v2.edit_html,
+            r#"<p>Hi <a href="mention:8:orgid:r">Randy</a>&nbsp;<a href="mention:8:orgid:r">Northrup</a>&nbsp;and <a href="mention-channel:19:c@thread.tacv2">General</a></p>"#
+        );
+        let (again, out) = teams_html_and_mentions(&v2.edit_html);
+        assert_eq!(again, with_mention);
+        let got: Vec<_> = out
+            .iter()
+            .map(|m| {
+                (
+                    m.itemid,
+                    m.mri.as_str(),
+                    m.mention_type,
+                    m.display_name.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (0, "8:orgid:r", "person", "Randy"),
+                (1, "8:orgid:r", "person", "Northrup"),
+                (2, "19:c@thread.tacv2", "channel", "General")
+            ]
+        );
         // Someone else's message has no edit form.
         let theirs = view_of(&m(c, "8:orgid:them"), "8:orgid:me", "Me").unwrap();
         assert!(theirs.edit_html.is_empty() && theirs.edit_media.is_empty());
