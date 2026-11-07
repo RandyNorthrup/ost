@@ -708,8 +708,12 @@ Rectangle {
                 readonly property bool bare: imageOnly && !root.isChannel
                 readonly property real pad: bare ? 0 : 15.7
                 readonly property var files: msg.modelData.files || []
-                // Text shows unless the message is only a picture or only files.
-                readonly property bool showBody: !imageOnly && (msg.modelData.deleted || (msg.modelData.text || "").length > 0)
+                // Cards (Adaptive Cards rendered natively; Teams' frame).
+                readonly property var cards: (msg.modelData.cards || []).filter(c => c.content_type === "application/vnd.microsoft.card.adaptive")
+                readonly property real cardW: list.width >= 720 ? 448 : 360
+                // Text shows unless the message is only a picture, only files
+                // or only cards.
+                readonly property bool showBody: !imageOnly && (msg.modelData.deleted || ((msg.modelData.text || "").length > 0 && !(cards.length > 0 && !(msg.modelData.html || "").length)))
                 // Teams' lines are 20 px each.
                 readonly property real bodyH: showBody ? Math.max(1, body.lineCount) * 20 : 0
                 // A quoted reply's card sits at the top (Teams: 10.7 down, the
@@ -721,10 +725,15 @@ Rectangle {
                 readonly property real picsTop: showBody ? body.y + bodyH + 8 : (bare ? 0 : 8)
                 readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
                 readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + bodyH + 8 : 8)
+                // Measured: a card sits 8 under the bubble's top (or the text),
+                // 17.3 in, and the bubble ends 10.7 under it.
+                readonly property real cardsTop: showBody ? body.y + bodyH + 8 : 8
                 width: root.isChannel ? msg.maxBubble
+                    : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
                     : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
-                height: bare && files.length === 0 ? picsH
+                height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
+                    : bare && files.length === 0 ? picsH
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : imgs.length > 0 ? picsTop + picsH + (showBody ? 8.6 : 8)
                     : bodyH + 15.3 + quoteShift
@@ -741,6 +750,21 @@ Rectangle {
                 color: bare ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
                 border.color: msg.sendFailed ? theme.redBorder1 : root.isChannel ? theme.dividerSoft : "transparent"
                 x: msg.mine ? parent.width - 72 - width : 72
+                Column {
+                    id: cardCol
+                    visible: bubble.cards.length > 0
+                    x: 17.3; y: bubble.cardsTop
+                    width: bubble.cardW
+                    spacing: 12
+                    Repeater {
+                        model: bubble.cards
+                        AdaptiveCard {
+                            required property var modelData
+                            content: modelData.content
+                            cardWidth: bubble.cardW
+                        }
+                    }
+                }
                 // Inline pictures, scaled to fit the bubble (as in Teams).
                 Column {
                     id: pics

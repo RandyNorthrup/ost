@@ -70,6 +70,152 @@ pub fn common_key(key: &str) -> &str {
     }
 }
 
+/// One card in a message: its content type (Teams' supported set, e.g.
+/// `application/vnd.microsoft.card.adaptive`) and its JSON content.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Card {
+    pub content_type: String,
+    pub content: serde_json::Value,
+    #[serde(default)]
+    pub app_id: String,
+}
+
+/// The SWIFT payload of a `RichText/Media_Card` message: `<Swift b64="…"/>`
+/// (base64 UTF-8 JSON), else the first text child of `<URIObject>` when it
+/// is JSON (Teams 49385). Element and attribute names match case-
+/// insensitively.
+pub fn swift_payload(content: &str) -> Option<serde_json::Value> {
+    use base64::Engine;
+    let lower = content.to_ascii_lowercase();
+    if let Some(i) = lower.find("<swift") {
+        let tag_end = lower[i..].find('>').map(|e| i + e)?;
+        let tag = &content[i..tag_end];
+        let tag_lower = &lower[i..tag_end];
+        if let Some(a) = tag_lower.find("b64=") {
+            let rest = &tag[a + 4..];
+            let quote = rest.chars().next()?;
+            if quote == '"' || quote == '\'' {
+                let value = &rest[1..];
+                let end = value.find(quote)?;
+                let b64: String = value[..end]
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect();
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(b64.as_bytes())
+                    .or_else(|_| {
+                        base64::engine::general_purpose::STANDARD_NO_PAD
+                            .decode(b64.trim_end_matches('=').as_bytes())
+                    })
+                    .ok()?;
+                return serde_json::from_slice(&bytes).ok();
+            }
+        }
+    }
+    // The fallback: <URIObject …>{json}</URIObject> (escaped or URI-encoded).
+    let start = lower.find("<uriobject")?;
+    let open_end = lower[start..].find('>').map(|e| start + e + 1)?;
+    let close = lower[open_end..]
+        .find('<')
+        .map(|e| open_end + e)
+        .unwrap_or(content.len());
+    let text = super::strip_html(content[open_end..close].trim());
+    if text.trim_start().starts_with('{') {
+        return serde_json::from_str(&text).ok();
+    }
+    let decoded = percent_decode(&text);
+    decoded
+        .trim_start()
+        .starts_with('{')
+        .then(|| serde_json::from_str(&decoded).ok())
+        .flatten()
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The cards of a SWIFT payload, its text, and whether it is a carousel.
+pub fn swift_cards(swift: &serde_json::Value) -> (Vec<Card>, String, bool) {
+    let cards = swift
+        .get("attachments")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|a| {
+            let content_type = a.get("contentType")?.as_str()?.to_string();
+            let content = match a.get("content")? {
+                serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+                v => v.clone(),
+            };
+            Some(Card {
+                content_type,
+                content,
+                app_id: a
+                    .get("appId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+        })
+        .collect();
+    let text = swift
+        .get("text")
+        .and_then(|t| t.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let carousel = swift.get("type").and_then(|t| t.as_str()) == Some("message/card.carousel");
+    (cards, text, carousel)
+}
+
+/// Cards inside a `RichText/Html` message (`properties.cards`, a JSON string
+/// of `[{cardClientId, contentType, content, appId?}]`).
+pub fn property_cards(props: Option<&serde_json::Value>) -> Vec<Card> {
+    let Some(raw) = props.and_then(|p| p.get("cards")) else {
+        return Vec::new();
+    };
+    let parsed;
+    let list = match raw {
+        serde_json::Value::String(s) => {
+            parsed = serde_json::from_str::<serde_json::Value>(s).unwrap_or_default();
+            &parsed
+        }
+        other => other,
+    };
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            Some(Card {
+                content_type: c.get("contentType")?.as_str()?.to_string(),
+                content: match c.get("content")? {
+                    serde_json::Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+                    v => v.clone(),
+                },
+                app_id: c
+                    .get("appId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            })
+        })
+        .collect()
+}
+
 /// A quoted message at the top of a reply (Teams' Reply with quote): the
 /// `<blockquote itemtype="http://schema.skype.com/Reply">` card.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -315,6 +461,12 @@ pub struct MessageView {
     /// Attached files (Teams' file cards).
     #[serde(default)]
     pub files: Vec<super::files::FileAttachment>,
+    /// Cards (bot, connector, workflow and message-extension cards).
+    #[serde(default)]
+    pub cards: Vec<Card>,
+    /// Several cards shown as Teams' carousel (`message/card.carousel`).
+    #[serde(default)]
+    pub carousel: bool,
     /// Whether the message @mentions you (Teams marks it with an "@").
     #[serde(default)]
     pub mentions_me: bool,
@@ -883,7 +1035,19 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let edited = props
         .and_then(|p| p.get("edittime"))
         .is_some_and(|e| !e.is_null() && e != "");
-    let (quote, content) = split_quote(&s("/content"));
+    // Card messages: the SWIFT payload's cards, with its text as the body.
+    let (cards, carousel, content) = if kind == "RichText/Media_Card" {
+        match swift_payload(&s("/content")) {
+            Some(swift) => {
+                let (cards, text, carousel) = swift_cards(&swift);
+                (cards, carousel, text)
+            }
+            None => (Vec::new(), false, s("/content")),
+        }
+    } else {
+        (property_cards(props), false, s("/content"))
+    };
+    let (quote, content) = split_quote(&content);
     let (forward, content) = split_forward(&content, m.get("properties"));
     let reactions = props
         .and_then(|p| p.get("emotions"))
@@ -917,22 +1081,33 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
             ..base
         });
     }
-    if (deleted && !mine) || (!deleted && text.is_empty() && images.is_empty() && files.is_empty())
+    if (deleted && !mine)
+        || (!deleted
+            && text.is_empty()
+            && images.is_empty()
+            && files.is_empty()
+            && cards.is_empty())
     {
         return None;
     }
     let text = if text.is_empty() && !images.is_empty() {
         "Image".to_string()
+    } else if text.is_empty() && !cards.is_empty() {
+        // Teams' preview of a message that is only cards.
+        "Sent a card".to_string()
     } else {
         text
     };
     // Which mention ids (`itemid`) are you, from properties.mentions.
     let my_mentions = my_mention_ids(props, me);
+    let cards = if deleted { Vec::new() } else { cards };
     Some(MessageView {
         quote,
         forward,
         images,
         files,
+        cards,
+        carousel,
         mentions_me: !my_mentions.is_empty() && !deleted,
         html: if deleted {
             String::new()
@@ -1980,6 +2155,40 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 #[cfg(test)]
 mod quote_tests {
     use super::*;
+
+    #[test]
+    fn card_messages_parse_as_teams_reads_them() {
+        use base64::Engine;
+        let swift = serde_json::json!({"type": "message/card", "attachments": [
+            {"contentType": "application/vnd.microsoft.card.adaptive", "content": {"type": "AdaptiveCard", "version": "1.5", "body": [{"type": "TextBlock", "text": "Hi"}]}}
+        ]});
+        let b64 = base64::engine::general_purpose::STANDARD.encode(swift.to_string());
+        let m = serde_json::json!({
+            "id": "1", "messagetype": "RichText/Media_Card", "from": "https://x/contacts/28:bot",
+            "content": format!("<URIObject type=\"SWIFT.1\"><Swift b64=\"{b64}\"/></URIObject>"),
+        });
+        let v = view_of(&m, "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.cards.len(), 1);
+        assert_eq!(v.cards[0].content["body"][0]["text"], "Hi");
+        assert_eq!(v.text, "Sent a card");
+        let fallback = format!(
+            "<URIObject type=\"SWIFT.1\">{}</URIObject>",
+            escape(&swift.to_string())
+        );
+        assert!(swift_payload(&fallback).is_some());
+        let enc = format!(
+            "<uriobject type=\"SWIFT.1\">{}</uriobject>",
+            swift
+                .to_string()
+                .replace('{', "%7B")
+                .replace('}', "%7D")
+                .replace('"', "%22")
+        );
+        assert!(swift_payload(&enc).is_some());
+        let props = serde_json::json!({"cards": "[{\"cardClientId\":\"c1\",\"contentType\":\"application/vnd.microsoft.card.hero\",\"content\":{\"title\":\"T\"}}]"});
+        let c = property_cards(Some(&props));
+        assert_eq!(c[0].content["title"], "T");
+    }
 
     #[test]
     fn follow_state_as_teams_derives_it() {

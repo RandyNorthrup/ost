@@ -392,6 +392,22 @@ Anything not confirmed from code is marked **(unconfirmed)**.
 - Chat-list preview of a `Media_Card` with `imDisplayName`: "{{title}} message" (`bot_message_title_preview_suffix`); otherwise the text with the cards.unsupported tail removed. A message with cards and no text: "Sent a card".
 - Screen-reader prefix "This is a card message." (`botcards_aria_label_message_header`).
 
+### Measured (winpc, 2026-11-07; a card posted as a message-extension card in a group chat)
+- Users can't send `RichText/Media_Card` (HTTP 400, "Client not allowed to send RichText/Media_Card message"). They can send `RichText/Html` with `properties.cards` (§10), which the desktop client renders with the same frame.
+- Frame: 448 wide in an 892 px pane, NeutralCardBackground #FAFAFA, radius 6, shadow2. Content is 16 in at the sides and bottom and 26 from the top. Inside your own bubble the card is 17.3 in and 8 down, and the bubble ends 10.7 under it.
+- Element spacing is a 12 px `ac-horizontal-separator`; `spacing: None` gives 0. A separator line sits 6 down in its 12 (0.67 px).
+- Text:
+  - Large Bolder is 18/24, weight 600, #242424. Default is 14/20. Small is 12/16. Subtle is #616161.
+  - Accent text and links are #4F52B2 (BrandForeground1); markdown bold is 700.
+- ColumnSet: an auto column holds its content (a small image is 36), then a 12 px gap.
+- FactSet: titles 600, 16 to the values, rows 26 apart (20 + 6).
+- An emphasis container is #F5F5F5 with padding 16.
+- Actions: buttons 31.3 tall, padding 5 12, a 0.67 px #D1D1D1 border, radius 4, white, 14/20 semibold, 8 apart, 12 under the body.
+- ShowCard:
+  - opening it turns its button brand-filled with white text (aria-expanded);
+  - the card opens 16 under the actions, edge to edge, #F5F5F5 with padding 16.
+- Teams web showed such cards as a loading skeleton, then hid them; the desktop client rendered a card with display elements only. Inputs could not be compared live.
+
 ## 10. Cards inside `RichText/Html` messages (`properties.cards`)
 - Used by message extensions, app link unfurls, bots that send HTML, SSO cards, code snippets, voice messages.
 - `content` holds a placeholder per card:

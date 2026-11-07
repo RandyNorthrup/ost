@@ -45,6 +45,7 @@ fn main() {
         "qml/WhoReacted.qml",
         "qml/CustomizeReactions.qml",
         "qml/ComposeBox.qml",
+        "qml/AdaptiveCard.qml",
         "qml/HoverBar.qml",
         "qml/ReactionSummary.qml",
         "qml/BarButton.qml",

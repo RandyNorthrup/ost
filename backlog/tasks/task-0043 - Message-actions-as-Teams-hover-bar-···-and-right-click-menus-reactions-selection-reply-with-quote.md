@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T12:48:00Z'
+updated_date: '2026-11-07T13:28:00Z'
 labels:
   - desktop
   - messages
@@ -54,4 +54,6 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 
 - AC3: who reacted (hover/right-click list, measured), skin tones (preferredSkinToneIndex, six-tone chooser, toned quick Like), Customize default reactions (dialog, saves both properties; verified Teams desktop applies them live), Teams' client/service key mapping, overflow "+N" with its list and remove buttons, pressed underlines, the 20-reaction limit, serialised reaction writes. Left: Your org's emoji (custom emoji; research in progress) and the 413/400 HeaderInfoBanner.
 - AC5: edit in place with the rebuilt compose (Teams' simplified compose, measured), Cancel/Done, Discard draft dialog, Escape inert, Urgent not editable, formatting and quote kept; the edit body matches a Teams edit read back from the service.
+
+- AC6: channel posts and replies use the shared hover bar (measured positions), reaction summary, ··· and right-click menus (ChannelPost / ChannelReply sets as measured), in-place edit spanning the card, and Follow / Unfollow thread (Teams' rcmetadata f plus follow emotion, verified on the wire). Left: Open conversation in new window (Teams pops the thread into a 588 x 493 child window with the channel header, the post and a Reply in thread compose; needs a second conversation view with its own thread data), Share to Outlook and Immersive Reader.
 <!-- SECTION:NOTES:END -->
