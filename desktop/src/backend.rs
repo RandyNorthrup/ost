@@ -3169,6 +3169,10 @@ impl qobject::Backend {
         }
         let qt = this.qt_thread();
         runtime().spawn(async move {
+            // One reaction write at a time: the service rejects concurrent
+            // changes to a message's emotions.
+            static WRITES: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+            let _turn = WRITES.get_or_init(Default::default).lock().await;
             let result = async {
                 let client = TeamsClient::new().await?;
                 if let Some(old) = &replaces {
@@ -3189,9 +3193,11 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => this.as_mut().reload_messages(),
-                Err(e) => this
-                    .as_mut()
-                    .set_status_text(QString::from(short_error(&e).as_str())),
+                Err(e) => {
+                    tracing::warn!("reaction not changed: {}", short_error(&e));
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()));
+                }
             });
         });
     }

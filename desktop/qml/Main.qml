@@ -1635,26 +1635,38 @@ Window {
         }
     }
 
-    // --react-test=<client id> with --open-chat=<id> --shots=<dir>: add that
-    // reaction to the newest reacted message, capture react-on.png and log
-    // the pills, then remove it again and log them.
+    // --react-test=<client id>[,<id>...] with --open-chat=<id> --shots=<dir>:
+    // add those reactions to the newest reacted message, capture
+    // react-on.png (and the overflow list when there is one) and log the
+    // pills, then remove them again and log them.
     Timer {
         running: Qt.application.arguments.some(a => a.startsWith("--react-test=")) && backend.signedIn
         interval: 4000; repeat: true
         property int step: 0
         property string target: ""
+        property bool hold: false
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
-            const key = (Qt.application.arguments.find(a => a.startsWith("--react-test=")) || "").slice(13)
+            const keys = (Qt.application.arguments.find(a => a.startsWith("--react-test=")) || "").slice(13).split(",")
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             if (backend.currentChatId !== id) { backend.selectChat(id, "OST react test"); return }
             const msgs = JSON.parse(backend.messagesJson || "[]")
             if (!target) { const m = msgs.filter(m => (m.reactions || []).length > 0).pop(); if (!m) return; target = m.id; conversation.jumpToMessage(m.id) }
             const m = msgs.find(m => m.id === target)
-            if (step === 0) { console.warn("REACT-TEST add", key); backend.toggleReaction(target, key, true) }
-            else if (step === 2) { console.warn("REACT-TEST after add", JSON.stringify(m.reactions.map(r => [r.key, r.my_key, r.variants, r.count]))); window.contentItem.grabToImage(r => r.saveToFile(dir + "react-on.png")) }
-            else if (step === 3) { const r = m.reactions.find(r => r.mine && r.my_key === key); console.warn("REACT-TEST remove", r ? r.my_key : "none"); if (r) backend.toggleReaction(target, r.my_key, false) }
-            else if (step === 5) { console.warn("REACT-TEST after remove", JSON.stringify(m.reactions.map(r => [r.key, r.my_key, r.count]))); Qt.quit() }
+            // Keys starting with "-" are only removed (cleanup).
+            if (keys[0].startsWith("-")) {
+                if (step === 0) { console.warn("REACT-TEST remove only", keys); keys.forEach(k => backend.toggleReaction(target, k.slice(1), false)) }
+                else if (step === 4) { console.warn("REACT-TEST after remove", JSON.stringify(m.reactions.map(r => [r.key, r.my_key, r.count]))); Qt.quit() }
+                step++
+                return
+            }
+            if (step === 0) { console.warn("REACT-TEST add", keys); keys.forEach(k => backend.toggleReaction(target, k, true)) }
+            else if (step === 2) { conversation.jumpToMessage(target); console.warn("REACT-TEST after add", JSON.stringify(m.reactions.map(r => [r.key, r.my_key, r.variants, r.count]))); window.contentItem.grabToImage(r => r.saveToFile(dir + "react-on.png")) }
+            else if (step === 3) conversation.forceWhoOverflowId = target
+            else if (step === 4) window.contentItem.grabToImage(r => r.saveToFile(dir + "react-overflow.png"))
+            else if (step === 5 && Qt.application.arguments.indexOf("--react-hold") >= 0 && !hold) { hold = true; console.warn("REACT-TEST holding 90 s"); interval = 90000; return }
+            else if (step === 5) { interval = 4000; conversation.forceWhoOverflowId = ""; const mine = m.reactions.filter(r => r.mine && keys.indexOf(r.my_key) >= 0); console.warn("REACT-TEST remove", mine.map(r => r.my_key)); mine.forEach(r => backend.toggleReaction(target, r.my_key, false)) }
+            else if (step === 7) { console.warn("REACT-TEST after remove", JSON.stringify(m.reactions.map(r => [r.key, r.my_key, r.count]))); Qt.quit() }
             step++
         }
     }

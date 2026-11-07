@@ -77,6 +77,8 @@ Rectangle {
     property string forceBarId: ""
     // Test hook: opens the who-reacted list of this message's first pill.
     property string forceWhoId: ""
+    // Test hook: opens the overflow list ("+N") of this message.
+    property string forceWhoOverflowId: ""
     // The message being quoted in the compose box (Reply with quote).
     property var quoting: null
     function replyWithQuote(m) {
@@ -85,6 +87,44 @@ Rectangle {
     }
     function startEdit(m) { root.editingId = m.id; root.setPlain(m.text); input.forceActiveFocus() }
     // Go to a message (a quote card's target), if it is loaded.
+    // Teams' per-user reaction limit (217146, enableMultipleReactionsPerUser).
+    readonly property int reactionLimit: 20
+    readonly property string limitText: "You\u2019ve reached the " + reactionLimit + "-reaction limit. Remove one to add another."
+    // Teams' reaction overflow (`Ze`): five pills' worth of room (36 each)
+    // when the window is at least 480 wide, else three, one fewer under 360
+    // when there are more; pills estimated as Teams does (`xe`).
+    function pillEstimate(r) {
+        if (r.count === 1) return 34
+        let digits = String(r.count).length * 8
+        if (r.mine) digits *= 1.0676
+        return (r.kinds || 1) * 20 + 4 + digits + 14
+    }
+    function splitReactions(list) {
+        const w = root.Window.window ? root.Window.window.width : root.width
+        let slots = w >= 480 ? 5 : 3
+        if (w < 360 && list.length > slots) slots -= 1
+        if (slots <= 0) return { main: [], overflow: list }
+        let room = slots * 36, n = 0
+        for (const r of list) {
+            const e = pillEstimate(r)
+            room -= e
+            if (room >= 0) n++
+            else if (list.length - n === 1 && e + room <= ("+1").length * 8 + 14) n++
+            else break
+        }
+        return { main: list.slice(0, n), overflow: list.slice(n) }
+    }
+    // A pill's name, with its skin tones when it has them (Teams' `Fe`).
+    readonly property var toneWords: ["", "light", "medium light", "medium", "medium dark", "dark"]
+    function pillLabel(r) {
+        const name = backend.emoticonName(r.key)
+        const n = r.count, s = n === 1 ? "" : "s"
+        const tones = (r.variants || [r.key]).map(k => { const m = /-tone(\d)$/.exec(k); return m ? Number(m[1]) : 0 })
+        if (tones.length === 1 && tones[0] === 0) return n + " " + name + " reaction" + s + "."
+        if (tones.length === 1) return n + " " + name + " reaction" + s + " with " + toneWords[tones[0]] + " skin tone."
+        const words = tones.map(t => t === 0 ? "no" : toneWords[t])
+        return n + " " + name + " reaction" + s + " with " + words.slice(0, -1).join(", ") + " and " + words[words.length - 1] + " skin tones."
+    }
     // Teams' common key: the id without its skin tone.
     function commonKey(id) { const m = /^(.{1,40})-tone\d$/.exec(id); return m ? m[1] : id }
     function jumpToMessage(id) {
@@ -844,8 +884,10 @@ Rectangle {
                 x: msg.mine ? bubble.x + bubble.width - 15.7 - width : bubble.x + 15.7
                 spacing: 2
                 z: 4
+                readonly property var split: root.splitReactions(msg.reactions)
+                readonly property bool atLimit: msg.reactions.filter(r => r.mine).length >= root.reactionLimit
                 Repeater {
-                    model: msg.reactions
+                    model: reactionRow.split.main
                     Rectangle {
                         id: pillBox
                         required property var modelData
@@ -857,7 +899,7 @@ Rectangle {
                         height: 26; radius: 13
                         color: theme.surface
                         border.color: modelData.mine ? theme.brand : theme.divider
-                        border.width: modelData.mine ? 1.5 : 1
+                        border.width: modelData.mine ? 1.33 : 1
                         Row {
                             x: 7; y: 3
                             Repeater {
@@ -880,13 +922,37 @@ Rectangle {
                             onHoveredChanged: hovered ? root.hoverWhoReacted(pillBox, msg.modelData.id, pillBox.modelData) : root.leaveWhoReacted()
                         }
                         // Click toggles: removes our exact reaction, else adds
-                        // it (Teams).
-                        TapHandler { onTapped: root.react(msg.modelData.id, pillBox.modelData.mine ? pillBox.modelData.my_key : backend.emoticonToned(pillBox.modelData.key), !pillBox.modelData.mine) }
+                        // it in our skin tone (Teams); refused at the limit.
+                        readonly property bool refused: reactionRow.atLimit && !modelData.mine
+                        TapHandler { onTapped: if (!pillBox.refused) root.react(msg.modelData.id, pillBox.modelData.mine ? pillBox.modelData.my_key : backend.emoticonToned(pillBox.modelData.key), !pillBox.modelData.mine) }
+                        LimitTip { visible: pillBox.refused && pillHover.hovered }
                         TapHandler { acceptedButtons: Qt.RightButton; onTapped: root.openWhoReacted(pillBox, msg.modelData.id, pillBox.modelData, true) }
                         Accessible.role: Accessible.Button
                         Accessible.checked: modelData.mine
-                        Accessible.name: modelData.count + " " + backend.emoticonName(modelData.key) + " reaction" + (modelData.count === 1 ? "." : "s.")
+                        Accessible.name: root.pillLabel(modelData)
                     }
+                }
+                // Hidden pills: "+N", N the people behind them; hovering lists
+                // them with their emoji ("More reactions").
+                Rectangle {
+                    id: overflowBtn
+                    visible: reactionRow.split.overflow.length > 0
+                    readonly property bool forcedWho: visible && root.forceWhoOverflowId === msg.modelData.id
+                    onForcedWhoChanged: if (forcedWho) root.openWhoReacted(overflowBtn, msg.modelData.id, null, false, reactionRow.split.overflow)
+                    readonly property int people: reactionRow.split.overflow.reduce((n, r) => n + r.count, 0)
+                    // Measured: padding 0 6, at least 26 wide.
+                    width: Math.max(26, overflowText.implicitWidth + 12); height: 26; radius: 13
+                    color: theme.surface
+                    border.color: theme.divider
+                    Text { id: overflowText; anchors.centerIn: parent; text: "+" + overflowBtn.people; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    HoverHandler {
+                        id: overflowHover
+                        cursorShape: Qt.PointingHandCursor
+                        onHoveredChanged: hovered ? root.hoverWhoReacted(overflowBtn, msg.modelData.id, null, reactionRow.split.overflow) : root.leaveWhoReacted()
+                    }
+                    TapHandler { onTapped: root.openWhoReacted(overflowBtn, msg.modelData.id, null, true, reactionRow.split.overflow) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: people === 1 ? "1 overflow reaction." : people + " overflow reactions."
                 }
                 Rectangle {
                     width: 34; height: 26; radius: 13
@@ -931,7 +997,9 @@ Rectangle {
                         Item {
                             id: quickBtn
                             required property string modelData
-                            readonly property var mineAlready: msg.reactions.find(r => r.key === root.commonKey(modelData) && r.mine)
+                            // Pressed when we reacted with exactly this id
+                            // (Teams: aria-pressed, a 14 x 2 underline).
+                            readonly property var mineAlready: msg.reactions.find(r => r.mine && r.my_key === modelData)
                             width: 32; height: 31
                             Emoticon {
                                 anchors.centerIn: parent
@@ -939,20 +1007,30 @@ Rectangle {
                                 scale: quickHover.hovered ? 1.2 : 1
                                 Behavior on scale { NumberAnimation { duration: 100 } }
                             }
+                            PressedLine { visible: !!quickBtn.mineAlready }
                             HoverHandler { id: quickHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.react(msg.modelData.id, quickBtn.mineAlready ? quickBtn.mineAlready.my_key : quickBtn.modelData, !quickBtn.mineAlready) }
+                            // At the limit only removing is allowed, and the
+                            // tooltip says why (Teams 348213).
+                            readonly property bool refused: !mineAlready && msg.reactions.filter(r => r.mine).length >= root.reactionLimit
+                            TapHandler { onTapped: if (!quickBtn.refused) root.react(msg.modelData.id, quickBtn.mineAlready ? quickBtn.mineAlready.my_key : quickBtn.modelData, !quickBtn.mineAlready) }
                             ToolTip {
                                 visible: quickHover.hovered; delay: 500
                                 y: -height - 4; padding: 8
                                 background: FluentSurface { depth: 16; radius: 4 }
-                                contentItem: Text { text: backend.emoticonName(quickBtn.modelData); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                                contentItem: Text { text: quickBtn.refused ? root.limitText : backend.emoticonName(quickBtn.modelData); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                             }
                             Accessible.role: Accessible.Button
                             Accessible.name: backend.emoticonName(modelData)
                             Accessible.checked: !!mineAlready
                         }
                     }
-                    BarButton { icon: "emoji-add-20"; tip: "More reactions"; onClicked: root.openReactionPicker(msg.modelData.id, actions) }
+                    BarButton {
+                        icon: "emoji-add-20"; tip: "More reactions"
+                        // Pressed when we reacted with something not offered
+                        // above.
+                        pressed: msg.reactions.some(r => r.mine && root.quickReactions.indexOf(r.my_key) < 0)
+                        onClicked: root.openReactionPicker(msg.modelData.id, actions)
+                    }
                     Item {
                         width: 8; height: 32
                         Rectangle { x: 4; y: 5; width: 1; height: 21; color: theme.divider }
@@ -1880,12 +1958,16 @@ Rectangle {
                         scale: stripHover.hovered ? 1.2 : 1
                         Behavior on scale { NumberAnimation { duration: 100 } }
                     }
+                    readonly property bool pressedNow: messageMenu.message ? (messageMenu.message.reactions || []).some(r => r.mine && r.my_key === stripBtn.modelData) : false
+                    PressedLine { visible: stripBtn.pressedNow }
                     HoverHandler { id: stripHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
                             const m = messageMenu.message
-                            const mine = (m.reactions || []).find(r => r.key === root.commonKey(stripBtn.modelData) && r.mine)
-                            messageMenu.close(); root.react(m.id, mine ? mine.my_key : stripBtn.modelData, !mine)
+                            const mine = (m.reactions || []).filter(r => r.mine).length
+                            const on = !stripBtn.pressedNow
+                            if (on && mine >= root.reactionLimit) return
+                            messageMenu.close(); root.react(m.id, stripBtn.modelData, on)
                         }
                     }
                     Accessible.role: Accessible.Button
@@ -1910,16 +1992,16 @@ Rectangle {
     Timer {
         id: whoOpenTimer
         interval: 300
-        onTriggered: if (root.whoPending) root.openWhoReacted(root.whoPending.pill, root.whoPending.id, root.whoPending.reaction, false)
+        onTriggered: if (root.whoPending) root.openWhoReacted(root.whoPending.pill, root.whoPending.id, root.whoPending.reaction, false, root.whoPending.overflow)
     }
     Timer {
         id: whoCloseTimer
         interval: 200
         onTriggered: if (whoReacted.opened && !whoReacted.hovered && !whoReacted.focus) whoReacted.close()
     }
-    function hoverWhoReacted(pill, id, reaction) {
+    function hoverWhoReacted(pill, id, reaction, overflow) {
         whoCloseTimer.stop()
-        whoPending = { pill: pill, id: id, reaction: reaction }
+        whoPending = { pill: pill, id: id, reaction: reaction, overflow: overflow || [] }
         whoOpenTimer.restart()
     }
     function leaveWhoReacted() {
@@ -1927,12 +2009,16 @@ Rectangle {
         whoPending = null
         if (whoReacted.opened && !whoReacted.focus) whoCloseTimer.restart()
     }
-    function openWhoReacted(pill, id, reaction, withFocus) {
+    function openWhoReacted(pill, id, reaction, withFocus, overflow) {
         whoOpenTimer.stop()
         whoReacted.close()
         whoReacted.parent = pill
         whoReacted.messageId = id
         whoReacted.reaction = reaction
+        // The overflow list: everyone behind "+N", pill by pill.
+        const users = []
+        if (!reaction) for (const r of Array.from(overflow || [])) for (const u of Array.from(r.users)) users.push(u)
+        whoReacted.overflowUsers = users
         whoReacted.focus = withFocus
         whoReacted.x = (pill.width - whoReacted.width) / 2
         whoReacted.y = pill.height + 4.3
@@ -1943,11 +2029,24 @@ Rectangle {
         x: -8
         y: -height - 4
         margins: 8
-        onPicked: (key, on) => root.react(messageId, key, on)
+        onPicked: (key, on) => { if (!on || mine.length < root.reactionLimit || mine.some(r => r.key === root.commonKey(key))) root.react(messageId, key, on) }
         onCustomize: customizeReactions.open()
     }
     CustomizeReactions {
         id: customizeReactions
+    }
+    // A pressed reaction button's underline (measured: 14 x 2, centred, 27
+    // down, BrandForeground2).
+    component PressedLine: Rectangle {
+        x: 9; y: 27; width: 14; height: 2; radius: 1
+        color: theme.brandForeground2
+    }
+    // Teams' reaction-limit-tooltip.
+    component LimitTip: ToolTip {
+        delay: 500
+        y: -height - 4; padding: 8
+        background: FluentSurface { depth: 16; radius: 4 }
+        contentItem: Text { text: root.limitText; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
     }
     // A hover-bar action: Fluent's transparent button, 32 wide; #424242 at
     // rest, brand with the filled glyph on hover.
@@ -1955,9 +2054,11 @@ Rectangle {
         id: bb
         property string icon
         property string tip
+        property bool pressed: false
         signal clicked()
         width: 32; height: 31
         FluentIcon { x: 6; y: 6; size: 20; name: bbHover.hovered ? bb.icon + "-filled" : bb.icon; color: bbHover.hovered ? theme.brand : theme.textStrong }
+        PressedLine { visible: bb.pressed }
         HoverHandler { id: bbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: bb.clicked() }
         ToolTip {

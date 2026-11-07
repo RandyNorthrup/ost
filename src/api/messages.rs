@@ -16,8 +16,10 @@ pub struct Reaction {
     pub count: usize,
     /// Whether we reacted with this one.
     pub mine: bool,
-    /// The exact keys used, at most three, ours first (a pill shows each).
+    /// The exact keys the pill shows, at most three (Teams' `Ne`).
     pub variants: Vec<String>,
+    /// How many exact keys there are (for Teams' width estimate).
+    pub kinds: usize,
     /// The exact key we reacted with, if any (removing deletes that one).
     pub my_key: String,
     /// Who reacted, newest first.
@@ -38,12 +40,32 @@ pub struct Reactor {
     pub me: bool,
 }
 
-/// Teams' common key of an emoticon key: the key without `-tone{n}`.
+/// The variants a pill shows (Teams' `Ne`): the first three in arrival
+/// order; when there are more and ours has a skin tone, the first one
+/// without a tone gives way.
+fn shown_variants(all: &[String], mine: &str) -> Vec<String> {
+    let toned = |k: &str| common_key(k) != k;
+    let mut out = all.to_vec();
+    if all.len() > 3
+        && !mine.is_empty()
+        && toned(mine)
+        && let Some(i) = all.iter().position(|k| !toned(k))
+        && i < 3
+    {
+        out.remove(i);
+    }
+    out.truncate(3);
+    out
+}
+
+/// Teams' common key of an emoticon id: without a final `-tone{digit}`,
+/// with 1 to 40 characters before it (`/^(.{1,40})-tone\d$/`).
 pub fn common_key(key: &str) -> &str {
-    match key.rfind("-tone") {
-        Some(i) if key[i + 5..].chars().all(|c| c.is_ascii_digit()) && key.len() > i + 5 => {
-            &key[..i]
-        }
+    match key
+        .strip_suffix(|c: char| c.is_ascii_digit())
+        .and_then(|k| k.strip_suffix("-tone"))
+    {
+        Some(base) if !base.is_empty() && base.chars().count() <= 40 => base,
         _ => key,
     }
 }
@@ -966,26 +988,29 @@ fn reactions_of(e: &serde_json::Value, me: &str) -> Vec<Reaction> {
             pill.mine = true;
             pill.my_key = key.to_string();
         }
+        if !pill.variants.iter().any(|k| k == key) {
+            pill.variants.push(key.to_string());
+        }
         pill.users.extend(users);
     }
     for p in &mut pills {
         p.count = p.users.len();
         p.users.sort_by_key(|u| std::cmp::Reverse(u.time));
-        // Ours first, then by use.
-        let mut keys: Vec<(String, usize)> = Vec::new();
-        for u in &p.users {
-            match keys.iter_mut().find(|(k, _)| *k == u.key) {
-                Some(k) => k.1 += 1,
-                None => keys.push((u.key.clone(), 1)),
-            }
-        }
-        keys.sort_by_key(|(k, n)| (*k != p.my_key, std::cmp::Reverse(*n)));
-        p.variants = keys.into_iter().take(3).map(|(k, _)| k).collect();
+        p.kinds = p.variants.len();
+        p.variants = shown_variants(&p.variants, &p.my_key);
     }
     // Teams' order: pills with our reaction first, by count; then the rest
     // as listed.
     let (mut mine, rest): (Vec<_>, Vec<_>) = pills.into_iter().partition(|p| p.mine);
-    mine.sort_by_key(|p| std::cmp::Reverse(p.count));
+    // Equal counts: the one we reacted to first (Teams' `at`).
+    let my_time = |p: &Reaction| {
+        p.users
+            .iter()
+            .find(|u| u.me)
+            .map(|u| u.time)
+            .unwrap_or_default()
+    };
+    mine.sort_by(|a, b| b.count.cmp(&a.count).then(my_time(a).cmp(&my_time(b))));
     mine.extend(rest);
     mine
 }
@@ -1814,9 +1839,29 @@ mod quote_tests {
         assert_eq!(r[0].my_key, "yes-tone2");
         assert_eq!(r[0].count, 3);
         assert_eq!(r[0].variants, vec!["yes-tone2", "yes"]);
+        assert_eq!(r[0].kinds, 2);
+        let v = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            shown_variants(
+                &v(&["yes", "yes-tone1", "yes-tone3", "yes-tone4"]),
+                "yes-tone4"
+            ),
+            v(&["yes-tone1", "yes-tone3", "yes-tone4"])
+        );
+        assert_eq!(
+            shown_variants(&v(&["yes", "yes-tone1", "yes-tone3", "yes-tone4"]), "yes"),
+            v(&["yes", "yes-tone1", "yes-tone3"])
+        );
         let order: Vec<_> = r[0].users.iter().map(|u| u.mri.as_str()).collect();
         assert_eq!(order, vec!["b", "me", "c"]);
         assert_eq!(r[1].key, "heart");
+        let e = serde_json::json!([
+            {"key": "heart", "users": [{"mri": "me", "time": 9}]},
+            {"key": "fire", "users": [{"mri": "me", "time": 2}]},
+            {"key": "cry", "users": [{"mri": "a", "time": 1}, {"mri": "b", "time": 1}]}
+        ]);
+        let keys: Vec<_> = reactions_of(&e, "me").into_iter().map(|r| r.key).collect();
+        assert_eq!(keys, vec!["fire", "heart", "cry"]);
         assert_eq!(common_key("like-tone5"), "like");
         assert_eq!(common_key("handsinair-tone"), "handsinair-tone");
     }
@@ -2113,6 +2158,7 @@ mod tests {
                 count: 2,
                 mine: true,
                 variants: vec!["yes".into()],
+                kinds: 1,
                 my_key: "yes".into(),
                 users: vec![
                     Reactor {

@@ -601,6 +601,18 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 - Without that property, Recent is `recentReactions.defaultReactions` (live: surprised, cry, angry, hearteyes, cool, handsinair, fistbump, fire, … rock).
 - **Quick reactions** are the user property `defaultMessageReactions`; without it, like, heart, laugh and surprised.
 
+**Reaction overflow and pressed state** (live, with seven reactions from the test account)
+- Teams showed five pills plus `diverse-reaction-overflow-button` "+3" (aria "3 overflow reactions."). The button is 28 × 26 (padding 0 6, min-width 26) with a 0.67 px #E0E0E0 border and 12 px text.
+- The overflow hover list is titled "More reactions" and is 198 wide.
+  - Each row shows the reaction's emoji (20 px).
+  - Our own rows end in a Dismiss16 remove button 6 from the row end, with the emoji 14.7 before it. Its aria is "Remove reaction".
+  - Pill lists have no remove button.
+- Pill borders are 1.33 px in brand when the reaction is ours.
+- Hover-bar reactions we gave with exactly that id get a 14 × 2 #444791 underline (BrandForeground2), centred, 27 down; a toned Like does not press the plain one. More reactions is underlined when we reacted with something outside the quick reactions.
+- Teams' estimate (`xe`): a single-count pill is 34; otherwise emoji × 20 + 4 + digits × 8 (× 1.0676 when ours) + 14. Room is five slots × 36 (three under 480 wide).
+- Own pills sort by count, with ties going to the one we reacted to first; then the rest follow in arrival order.
+- A pill shows its first three variants in arrival order. When there are more and ours is toned, the first untoned one gives way (`Ne`).
+
 **Reaction keys** (77708, verified live)
 - Teams works in emoticon (client) ids and maps three to the service's keys: client `yes` is the service's `like`; client `like` is `likeWithFaceMSER`; client `star` is `starMSER`. Every other id is the same on both sides.
 - The summary groups by common key: the client id without a final `-tone{digit}` (at most 40 characters before it).

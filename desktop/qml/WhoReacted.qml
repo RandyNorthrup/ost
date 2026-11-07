@@ -17,10 +17,17 @@ import QtQuick.Controls.Basic
 Popup {
     id: root
     property string messageId
+    // One pill's reaction, or null for the overflow list ("More reactions"),
+    // which lists everyone hidden behind "+N" with their emoji.
     property var reaction: null
+    property var overflowUsers: []
     signal removeMine(string messageId, string key)
-    readonly property var users: reaction ? reaction.users : []
-    readonly property bool diverse: reaction ? reaction.variants.length > 1 : false
+    readonly property var users: reaction ? reaction.users : overflowUsers
+    readonly property bool diverse: reaction ? reaction.variants.length > 1 : true
+    // The overflow list can remove our own reactions (a Dismiss16 button at
+    // the row's end, the emoji 14.7 before it; measured).
+    readonly property bool removable: !reaction
+    readonly property string title: reaction ? backend.emoticonName(reaction.key) : "More reactions"
     // Rows size to the longest name, within Fluent's limits.
     property real nameWidth: 0
     width: Math.min(290, Math.max(189.7, 38 + nameWidth + 4 + (diverse ? 26 : 0) + 15.7)) + 8 + 1.3
@@ -41,7 +48,7 @@ Popup {
 
     Text {
         x: 16.7; y: 12.7; height: 16; verticalAlignment: Text.AlignVCenter
-        text: root.reaction ? backend.emoticonName(root.reaction.key) : ""
+        text: root.title
         font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.Light
         color: theme.textSecondary
     }
@@ -65,7 +72,7 @@ Popup {
             Avatar { x: 12; y: 6; size: 20; name: row.modelData.name; photoId: row.modelData.mri }
             Text {
                 x: 38; y: 6; height: 20; verticalAlignment: Text.AlignVCenter
-                width: row.width - 38 - 6 - (root.diverse ? 26 : 0)
+                width: row.width - 38 - 6 - (root.diverse ? 26 : 0) - (root.removable ? 30.7 : 0)
                 elide: Text.ElideRight
                 text: row.modelData.name
                 font.family: theme.font; font.pixelSize: theme.base
@@ -73,12 +80,21 @@ Popup {
             }
             Emoticon {
                 visible: root.diverse
-                x: row.width - 6 - 20; y: 6; key: row.modelData.key; named: "small"; size: 20
+                x: row.width - 6 - 20 - (root.removable ? 30.7 : 0); y: 6; key: row.modelData.key; named: "small"; size: 20
+            }
+            Item {
+                visible: root.removable && row.own
+                x: row.width - 6 - 16; y: 8; width: 16; height: 16
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: removeHover.hovered ? theme.text : theme.textStrong }
+                HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { root.removeMine(root.messageId, row.modelData.key); root.close() } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Remove reaction"
             }
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: root.chatWith(row.modelData) }
+            TapHandler { onTapped: (point) => { if (!(root.removable && row.own && point.position.x > row.width - 28)) root.chatWith(row.modelData) } }
             Accessible.role: Accessible.MenuItem
-            Accessible.name: "Chat with " + modelData.name
+            Accessible.name: root.diverse ? "Chat with " + modelData.name + ", " + backend.emoticonName(modelData.key) + "." : "Chat with " + modelData.name
             Accessible.description: own ? "Delete your reaction (Delete)" : ""
         }
         Keys.onReturnPressed: root.chatWith(root.users[currentIndex])
@@ -97,6 +113,6 @@ Popup {
     }
     contentItem: Item {
         Accessible.role: Accessible.PopupMenu
-        Accessible.name: root.reaction ? backend.emoticonName(root.reaction.key) : ""
+        Accessible.name: root.title
     }
 }
