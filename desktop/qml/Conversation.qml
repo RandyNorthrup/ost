@@ -101,6 +101,7 @@ Rectangle {
     // The thread's liveness entry (the chat list's liveCall) says so even
     // when the call's start isn't among the loaded messages.
     readonly property var liveCall: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.liveCall ? c.liveCall : null }
+    readonly property bool chatMuted: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return !!(c && c.muted) }
     readonly property bool callGoing: !!root.liveCall || root.messages.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
     readonly property bool inThisCall: backend.callState !== "" && backend.callThreadId === root.chatId
     readonly property bool callsDisabled: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) > 20
@@ -695,7 +696,7 @@ Rectangle {
         }
         // More chat options (chat-header-more-menu-trigger). Items Teams has
         // that are not built yet: Open in new window, Share screen, Move to
-        // section, Mute, Remove chat history.
+        // section, Remove chat history.
         HeaderAction {
             id: chatMore
             visible: !root.isChannel && !root.pane
@@ -709,11 +710,13 @@ Rectangle {
                     { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" },
                     { separator: true },
                     { key: "unread", label: "Mark as unread", icon: "mail-unread-20" },
+                    root.isSelf ? null : { key: "mute", label: root.chatMuted ? "Unmute" : "Mute", icon: root.chatMuted ? "alert-20" : "alert-off-20" },
                     { key: "link", label: "Copy link", icon: "link-20" }
-                ]
+                ].filter(i => i !== null)
                 onPicked: i => {
                     const k = items[i].key
-                    if (k === "meeting") root.scheduleMeeting()
+                    if (k === "mute") backend.setChatMuted(root.chatId, !root.chatMuted)
+                    else if (k === "meeting") root.scheduleMeeting()
                     else if (k === "link") backend.copyChatLink()
                     else if (k === "unread") { const m = root.messages.filter(m => m.kind === "message").pop(); if (m) backend.markMessageUnread(m.id, m.client_message_id || "") }
                 }

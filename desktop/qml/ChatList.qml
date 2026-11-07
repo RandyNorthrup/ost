@@ -321,10 +321,18 @@ Rectangle {
         }
     }
 
+    // Test hooks: a chat row's menu, by chat id.
+    property var rowsForTest: ({})
+    function openRowMenuForTest(id) { const r = rowsForTest[id]; if (r) r.openMenu(r.width - 50, 30) }
+    function closeRowMenuForTest() { for (const k in rowsForTest) if (rowsForTest[k].menuOpen) rowsForTest[k].closeMenu() }
+
     // One chat in a group: picture with presence, name, unread dot.
     component ChatRow: Item {
         id: row
         property var chat
+        readonly property bool menuOpen: rowMenu.opened
+        function closeMenu() { rowMenu.close() }
+        Component.onCompleted: root.rowsForTest[chat.id] = row
         readonly property bool selected: !root.draftsOpen && !root.mentionsOpen && chat.id === root.currentId
         readonly property bool unread: chat.unread === true && !selected
         width: list.width; height: 32
@@ -333,11 +341,20 @@ Rectangle {
             color: row.selected ? theme.selected : (hover.hovered ? theme.rowHover : "transparent")
         }
         Avatar {
+            visible: !row.chat.muted
             x: 32; y: 6
             size: 20; name: row.chat.name
             photoId: row.chat.peerMri || ""
             group: row.chat.isGroup === true && !row.chat.peerMri
             presence: row.chat.presence || ""
+        }
+        // Muted: Teams swaps the picture for a 20 px #E6E6E6 circle with the
+        // regular AlertOff icon (16, NeutralForeground3) at 2, 2.
+        Rectangle {
+            visible: !!row.chat.muted
+            x: 32; y: 6; width: 20; height: 20; radius: 10
+            color: theme.pick("#E6E6E6", "#3D3D3D")
+            FluentIcon { x: 2; y: 2; name: "alert-off-20"; size: 16; color: theme.textSecondary }
         }
         Text {
             x: 64; width: parent.width - 64 - 40; y: 6
@@ -351,23 +368,63 @@ Rectangle {
         // A call going on in the chat (Teams: the regular sound-wave 14 in
         // NeutralForeground3 at 244, 9 in the 288-wide row).
         FluentIcon {
-            visible: !!row.chat.liveCall
+            visible: !!row.chat.liveCall && !row.showMore
             x: parent.width - 60; y: 9
             name: "live-roster-14"; size: 14
             color: theme.textSecondary
         }
-        // Unread: bold name plus a brand dot, as in Teams.
+        // Unread: bold name plus a brand dot, as in Teams; muted chats keep
+        // the bold name but not the dot (they don't count toward badges).
         Rectangle {
-            visible: row.unread
+            visible: row.unread && !row.chat.muted && !row.showMore
             width: 8; height: 8; radius: 4
             x: parent.width - 16 - 8 - 12
             anchors.verticalCenter: parent.verticalCenter
             color: theme.brand
         }
+        // On hover (or with its menu open), Teams' ··· "More options" at
+        // 258, 6 in the 288-wide row.
+        readonly property bool showMore: hover.hovered || rowMenu.opened
+        Rectangle {
+            visible: row.showMore
+            x: parent.width - 46 - 4; y: 2; width: 28; height: 28; radius: 4
+            color: moreHover.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: moreHover.hovered ? "more-horizontal-20-filled" : "more-horizontal-20"; size: 20; color: theme.textStrong }
+            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: row.openMenu(parent.x, parent.y + parent.height) }
+            Accessible.role: Accessible.Button
+            Accessible.name: "More options"
+        }
         HoverHandler { id: hover }
-        TapHandler { onTapped: root.chatSelected(row.chat.id, row.chat.name) }
+        TapHandler { onTapped: if (!moreHover.hovered) root.chatSelected(row.chat.id, row.chat.name) }
+        TapHandler { acceptedButtons: Qt.RightButton; onTapped: ev => row.openMenu(ev.position.x, ev.position.y) }
+        // The chat's menu (Teams' chat list ···, measured on winpc): Mark as
+        // read / unread, Mute / Unmute, Copy link — the items OST has so far,
+        // in Teams' order (Open in new window, Move to section, Manage apps,
+        // Set workflows, Remove chat history and Hide are still to come).
+        function openMenu(px, py) {
+            rowMenu.items = [
+                { key: row.unread ? "read" : "unread", label: row.unread ? "Mark as read" : "Mark as unread", icon: row.unread ? "glasses-20" : "mail-unread-20" },
+                // Not for your own chat.
+                row.chat.isSelf ? null : { key: row.chat.muted ? "unmute" : "mute", label: row.chat.muted ? "Unmute" : "Mute", icon: row.chat.muted ? "alert-20" : "alert-off-20" },
+                { key: "link", label: "Copy link", icon: "link-20" }
+            ].filter(i => i !== null)
+            rowMenu.x = Math.min(px, row.width - rowMenu.implicitWidth - 8)
+            rowMenu.y = py
+            rowMenu.open()
+        }
+        MenuPopup {
+            id: rowMenu
+            separatorHeight: 8.6
+            onPicked: i => {
+                const k = items[i].key
+                if (k === "read" || k === "unread") backend.setChatUnread(row.chat.id, k === "unread")
+                else if (k === "mute" || k === "unmute") backend.setChatMuted(row.chat.id, k === "mute")
+                else if (k === "link") backend.copyLinkOfChat(row.chat.id, row.chat.name)
+            }
+        }
         Accessible.role: Accessible.Button
-        Accessible.name: row.chat.name + (row.unread ? ", unread" : "") + (row.chat.liveCall ? ", call in progress" : "")
+        Accessible.name: row.chat.name + (row.unread ? ", unread" : "") + (row.chat.muted ? ", muted" : "") + (row.chat.liveCall ? ", call in progress" : "")
     }
 
     // A row with an icon instead of a picture (Quick views).

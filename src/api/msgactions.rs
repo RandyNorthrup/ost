@@ -720,6 +720,25 @@ pub async fn set_chat_topic(client: &TeamsClient, chat_id: &str, topic: &str) ->
     Ok(())
 }
 
+/// Mute or unmute a chat as Teams does: the conversation property
+/// `alerts`, "false" when muted (`PUT /v1/users/ME/conversations/{id}/
+/// properties?name=alerts`, measured on winpc).
+pub async fn set_chat_muted(client: &TeamsClient, chat_id: &str, muted: bool) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/properties?name=alerts",
+        client.chat_service_url(),
+        chat_id
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "alerts": if muted { "false" } else { "true" } }),
+        )
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod chat_link_tests {
     #[test]

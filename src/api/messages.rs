@@ -1932,8 +1932,8 @@ pub fn apply_seen(timeline: &mut [MessageView], rule: Option<SeenRule>) {
     }
 }
 
-/// Mark a chat read up to its newest message (for "Mark all as read").
-pub async fn mark_chat_read_to_latest(client: &TeamsClient, chat_id: &str) -> Result<()> {
+/// A chat's newest message: its id and client message id.
+async fn latest_message(client: &TeamsClient, chat_id: &str) -> Result<(String, String)> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}?view=msnp24Equivalent",
         client.chat_service_url(),
@@ -1954,7 +1954,21 @@ pub async fn mark_chat_read_to_latest(client: &TeamsClient, chat_id: &str) -> Re
         .get("clientmessageid")
         .and_then(|i| i.as_str())
         .unwrap_or(id);
-    mark_read(client, chat_id, id, client_id).await
+    Ok((id.to_string(), client_id.to_string()))
+}
+
+/// Mark a chat read up to its newest message (for "Mark all as read").
+pub async fn mark_chat_read_to_latest(client: &TeamsClient, chat_id: &str) -> Result<()> {
+    let (id, client_id) = latest_message(client, chat_id).await?;
+    mark_read(client, chat_id, &id, &client_id).await
+}
+
+/// Mark a chat unread from its newest message, as the chat list's Mark as
+/// unread does (Teams' consumption-horizon bookmark).
+pub async fn mark_chat_unread_from_latest(client: &TeamsClient, chat_id: &str) -> Result<()> {
+    let (id, client_id) = latest_message(client, chat_id).await?;
+    let arrival = id.parse::<i64>().context("Message id is not a time")?;
+    super::msgactions::mark_unread(client, chat_id, arrival, &client_id).await
 }
 
 /// Whether read receipts are on (the `readReceiptsEnabled` user property;

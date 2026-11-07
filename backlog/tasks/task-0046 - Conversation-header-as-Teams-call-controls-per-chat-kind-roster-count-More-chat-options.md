@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T17:02:00Z'
+updated_date: '2026-11-07T17:36:00Z'
 labels:
   - desktop
   - header
@@ -44,4 +44,7 @@ Header gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/chat-list
 - Start rows name the initiator from the roster ("Randy Northrup started a meeting.").
 - Someone else's Meet now (HuddleMeetingStart push) shows Teams' toast: chat name, "{name} started a meeting", Join / Message. Message was verified via the notifier.
 - Left for the toast: the chat-mute and meeting-started-setting prechecks (OST has neither setting yet), and the MeetingStartedReminder sound.
+
+- Mute / Unmute (alerts property, measured on winpc), in the header ··· and in the new chat-list row menu. The row menu has right-click and the hover ···, with Mark as read/unread, Mute/Unmute and Copy link.
+- Muted rows look as in Teams. Muted chats count toward no badge and notify only for @mentions, and the Meet now toast skips them. Verified with --mute-test: server state round-trips, then unmuted.
 <!-- SECTION:NOTES:END -->

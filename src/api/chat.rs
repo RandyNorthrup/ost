@@ -22,6 +22,17 @@ struct Conversation {
     thread_properties: Option<ThreadProperties>,
     #[serde(rename = "lastMessage")]
     last_message: Option<NativeMessage>,
+    /// Your own properties for the chat (`alerts`, `consumptionhorizon`…).
+    properties: Option<std::collections::HashMap<String, serde_json::Value>>,
+}
+
+/// Whether you muted the chat: its `alerts` property is "false".
+fn is_muted(conv: &Conversation) -> bool {
+    conv.properties
+        .as_ref()
+        .and_then(|p| p.get("alerts"))
+        .and_then(|a| a.as_str())
+        == Some("false")
 }
 
 #[derive(Debug, Deserialize)]
@@ -568,6 +579,8 @@ pub struct ChatInfo {
     pub last_message_preview: Option<String>,
     /// The call going on in this chat.
     pub live_call: Option<LiveCall>,
+    /// You muted it.
+    pub muted: bool,
 }
 
 /// A single message for TUI display.
@@ -681,6 +694,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .thread_properties
                 .as_ref()
                 .and_then(|p| live_call(&p.extra, now_secs)),
+            muted: is_muted(conv),
         });
     }
 

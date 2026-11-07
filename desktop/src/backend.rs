@@ -231,6 +231,18 @@ pub mod qobject {
         /// Rename the open group chat (Teams' Name group chat).
         #[qinvokable]
         fn rename_chat(self: Pin<&mut Backend>, topic: &QString);
+
+        /// The chat list's Mark as read / Mark as unread for any chat.
+        #[qinvokable]
+        fn set_chat_unread(self: Pin<&mut Backend>, chat_id: &QString, unread: bool);
+
+        /// Copy a chat's link (Teams' Copy link), from its menu in the list.
+        #[qinvokable]
+        fn copy_link_of_chat(self: Pin<&mut Backend>, chat_id: &QString, chat_name: &QString);
+
+        /// Mute or unmute a chat (Teams' Mute / Unmute).
+        #[qinvokable]
+        fn set_chat_muted(self: Pin<&mut Backend>, chat_id: &QString, muted: bool);
         /// Save or unsave a message (Teams' Save this message).
         #[qinvokable]
         fn set_message_saved(self: Pin<&mut Backend>, message_id: &QString, save: bool);
@@ -1177,21 +1189,30 @@ fn camera_device() -> Option<String> {
 
 /// Whether a pushed message gets a desktop notification, as Teams decides
 /// by default: never your own, nor in the chat you're looking at; chat
-/// messages unless you asked for mentions only; channel posts only when
-/// they mention you.
+/// messages unless you asked for mentions only; channel posts and muted
+/// chats ("You're only notified of @Mentions") only when they mention you.
 fn should_notify(
     mine: bool,
     open: bool,
     empty: bool,
     banners_on: bool,
     mentions_only: bool,
-    channel: bool,
+    mentions_needed: bool,
     mentioned: bool,
 ) -> bool {
     if mine || open || empty || !banners_on {
         return false;
     }
-    mentioned || !(channel || mentions_only)
+    mentioned || !(mentions_needed || mentions_only)
+}
+
+/// Whether you muted the chat (the chat list's `muted`).
+fn chat_muted(chats: &[serde_json::Value], id: &str) -> bool {
+    chats
+        .iter()
+        .find(|c| c["id"].as_str() == Some(id))
+        .and_then(|c| c["muted"].as_bool())
+        .unwrap_or(false)
 }
 
 /// Teams' typing line (tmp_messages_typingIndicator_mf): "X is typing",
@@ -1312,6 +1333,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "sender": c.last_message_sender,
                 "preview": c.last_message_preview,
                 "liveCall": c.live_call,
+                "muted": c.muted,
                 "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
@@ -2804,13 +2826,14 @@ impl qobject::Backend {
             .as_deref()
             .is_some_and(|me| m.mentions.iter().any(|x| x.eq_ignore_ascii_case(me)));
         let channel = m.conversation_id.ends_with("@thread.tacv2");
+        let muted = chat_muted(&self.rust().chats, &m.conversation_id);
         if !should_notify(
             mine,
             open,
             m.text.is_empty(),
             banners_on,
             mentions_only,
-            channel,
+            channel || muted,
             mentioned,
         ) {
             return;
@@ -2885,8 +2908,9 @@ impl qobject::Backend {
 
     /// Teams' toast for Meet now started in a chat (527114 `uMe`): the chat's
     /// name (or "(No title)"), "{name} started a meeting", Join and Message.
-    /// As Teams does, once per call, not when we're already in that chat's
-    /// call, and by the same banner and presence rules as messages. The
+    /// As Teams does, once per call, not for muted chats nor when we're
+    /// already in that chat's call, and by the same banner and presence
+    /// rules as messages. The
     /// chat list reloads too: its liveness entry has changed.
     fn notify_meeting_start(
         mut self: Pin<&mut Self>,
@@ -2912,7 +2936,8 @@ impl qobject::Backend {
             .get("notifications")
             .and_then(|v| v.as_str())
             != Some("off");
-        if !first || mine || in_it || !banners_on {
+        let muted = chat_muted(&self.rust().chats, &start.thread_id);
+        if !first || mine || in_it || !banners_on || muted {
             return;
         }
         let availability = self
@@ -3762,13 +3787,19 @@ impl qobject::Backend {
         unsafe { ost_set_clipboard(url.as_ptr(), html.as_ptr()) };
     }
 
-    pub fn copy_chat_link(mut self: Pin<&mut Self>) {
-        let chat_id = self.rust().current_chat_id.to_string();
+    pub fn copy_chat_link(self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.clone();
+        let name = self.rust().current_chat_name.clone();
+        self.copy_link_of_chat(&chat_id, &name);
+    }
+
+    pub fn copy_link_of_chat(mut self: Pin<&mut Self>, chat_id: &QString, chat_name: &QString) {
+        let chat_id = chat_id.to_string();
         if chat_id.is_empty() {
             return;
         }
         let url = api::msgactions::chat_link(&chat_id);
-        let name = self.rust().current_chat_name.to_string();
+        let name = chat_name.to_string();
         let html = format!(
             "<a href=\"{}\">{}</a>",
             url.replace('"', "&quot;"),
@@ -3779,6 +3810,68 @@ impl qobject::Backend {
             unsafe { ost_set_clipboard(u.as_ptr(), h.as_ptr()) };
             self.as_mut().toast("Copied to clipboard", "success");
         }
+    }
+
+    pub fn set_chat_unread(mut self: Pin<&mut Self>, chat_id: &QString, unread: bool) {
+        let chat_id = chat_id.to_string();
+        if chat_id.is_empty() {
+            return;
+        }
+        let changed = if unread {
+            self.as_mut().rust_mut().unread.insert(chat_id.clone())
+        } else {
+            self.as_mut().rust_mut().unread.remove(&chat_id)
+        };
+        if changed {
+            self.as_mut().publish_chats();
+        }
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                if unread {
+                    api::messages::mark_chat_unread_from_latest(&client, &chat_id).await
+                } else {
+                    api::messages::mark_chat_read_to_latest(&client, &chat_id).await
+                }
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("mark read/unread failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn set_chat_muted(mut self: Pin<&mut Self>, chat_id: &QString, muted: bool) {
+        let chat_id = chat_id.to_string();
+        if chat_id.is_empty() || chat_id.starts_with("48:") {
+            return;
+        }
+        // Show it at once, as Teams does; the reload confirms or undoes it.
+        if let Some(c) = self
+            .as_mut()
+            .rust_mut()
+            .chats
+            .iter_mut()
+            .find(|c| c["id"].as_str() == Some(chat_id.as_str()))
+        {
+            c["muted"] = json!(muted);
+        }
+        self.as_mut().publish_chats();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_chat_muted(&client, &chat_id, muted).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if let Err(e) = &result {
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(e).as_str()));
+                }
+                this.as_mut().reload_chats();
+            });
+        });
     }
 
     pub fn rename_chat(mut self: Pin<&mut Self>, topic: &QString) {
@@ -6185,14 +6278,15 @@ mod toast_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{photo_target, should_notify};
+    use super::{chat_muted, photo_target, should_notify};
+    use serde_json::json;
     use teams_cli::api::directory::PhotoOwner;
 
     const OID: &str = "4287e791-1b98-4963-8b94-281c50472683";
 
     #[test]
     fn notifications_follow_teams_defaults() {
-        // (mine, open, empty, banners, mentions_only, channel, mentioned)
+        // (mine, open, empty, banners, mentions_only, mentions_needed, mentioned)
         assert!(should_notify(
             false, false, false, true, false, false, false
         ));
@@ -6211,6 +6305,13 @@ mod tests {
             false, false, false, true, true, false, false
         ));
         assert!(should_notify(false, false, false, true, true, false, true));
+        // Muted chats need a mention, as channel posts do.
+        let chats = vec![
+            json!({"id": "19:a@thread.v2", "muted": true}),
+            json!({"id": "19:b@thread.v2"}),
+        ];
+        assert!(chat_muted(&chats, "19:a@thread.v2"));
+        assert!(!chat_muted(&chats, "19:b@thread.v2"));
     }
 
     #[test]

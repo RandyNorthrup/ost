@@ -473,6 +473,18 @@ is absent). Order (each line only when its condition holds):
 | 13 | **Delete** | `canDelete` (below) |
 | 14 | **Hide** / **Unhide** | `canHide` and `enableSimpleCollabHideChat` (live on). (In the life build Hide sits above, before the divider.) |
 | 15 | **Block** / **Unblock** | `canBlock` (1:1 only) |
+
+**The menu and Mute, measured live** (winpc, ost-test1, "OST group test", 2026-11-07):
+- **The menu.** 170.2 wide; items 32 tall and 2 apart; dividers 12.7 between items.
+  - A group chat's menu reads: Open in new window | Mark as read, Move to section, Mute, Manage apps, Set workflows, Copy link | Remove chat history, Hide.
+  - Icons (regular): Open, Glasses (Mark as read), MailUnread (Mark as unread), Star (Move to section), AlertOff (Mute), Alert (Unmute), Link, Delete, EyeOff (Hide).
+- **Mute** writes `PUT {chatsvc}/v1/users/ME/conversations/{id}/properties?name=alerts` with `{"alerts":"false"}`; **Unmute** writes `{"alerts":"true"}`.
+  - The state comes back in the conversation list as `properties.alerts`.
+- **A muted row** replaces the picture with a 20 px #E6E6E6 circle holding the regular AlertOff icon (16, NeutralForeground3) at 2, 2.
+  - The name is still bold when unread, but there is no badge dot.
+  - Muted chats don't count toward the Chat badge.
+  - They notify only for @mentions ("You're only notified of @Mentions"); the Meet now toast is dropped for them (527114 `sMe` "ConversationMuted").
+- **On hover**, ··· ("More options", 20 px) shows at 258, 6 in the 288-wide row, in place of the charms.
 | — | divider, **Report a concern** | meeting chats with `canReportMeeting` and tenant policy `teamsMeetingConfiguration.reportMeeting == "ENABLED"` |
 | — | divider, **Copy Conversation ID** | developer mode |
 
