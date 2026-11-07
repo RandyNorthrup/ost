@@ -1656,6 +1656,27 @@ Window {
         }
     }
 
+    // --report-dialog-test with --open-chat=<id> --shots=<dir>: open the
+    // report dialog on the newest message from someone else, capture it
+    // and close it. Nothing is reported.
+    Timer {
+        running: Qt.application.arguments.indexOf("--report-dialog-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST report test"); return }
+            const theirs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.mine && !m.deleted).pop()
+            if (step === 0 && !theirs) return
+            const d = conversation.reportDialogForTest()
+            if (step === 0) { d.message = theirs; d.open() }
+            else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(dir + "report.png"))
+            else if (step === 2) { d.close(); Qt.quit() }
+            step++
+        }
+    }
+
     // --toast-test --shots=<dir>: show Teams' toast and capture it.
     Timer {
         running: Qt.application.arguments.indexOf("--toast-test") >= 0 && backend.signedIn

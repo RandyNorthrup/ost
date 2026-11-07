@@ -384,6 +384,52 @@ pub async fn forward(
     Ok(ids)
 }
 
+/// Teams' security report body for a message (`reportMessageToUnified`).
+pub fn security_report_body(
+    conv: &str,
+    message_id: &str,
+    comment: &str,
+    now_iso: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "reportTimestamp": now_iso,
+        "reportType": "message",
+        "threadId": conv,
+        "messageId": message_id.parse::<i64>().unwrap_or(0),
+        "actions": [],
+        "category": "Security",
+        "comment": comment,
+    })
+}
+
+/// Report a message as a security risk (Teams' unified report API:
+/// `POST {mt}/beta/reports`). This reaches the tenant's admins and
+/// Microsoft.
+pub async fn report_security(
+    client: &TeamsClient,
+    conv: &str,
+    message_id: &str,
+    comment: &str,
+) -> Result<()> {
+    let mt = client
+        .middle_tier_url()
+        .context("No middle-tier address for this account")?;
+    let token = super::directory::middle_tier_token().await?;
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let resp = client
+        .http()
+        .post(format!("{mt}/beta/reports"))
+        .bearer_auth(token)
+        .json(&security_report_body(conv, message_id, comment, &now))
+        .send()
+        .await
+        .context("report request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reporting", resp.status().as_u16());
+    }
+    Ok(())
+}
+
 /// An AAD token for CSA (the chat service aggregator's resource), cached
 /// for 45 minutes.
 async fn csa_token() -> Result<String> {
@@ -545,6 +591,16 @@ mod tests {
                 .0
                 .is_none()
         );
+    }
+
+    #[test]
+    fn security_reports_are_teams_body() {
+        let b = security_report_body("19:a@thread.v2", "1794", "spam", "2026-11-07T00:00:00.000Z");
+        assert_eq!(b["reportType"], "message");
+        assert_eq!(b["messageId"], 1794);
+        assert_eq!(b["category"], "Security");
+        assert_eq!(b["threadId"], "19:a@thread.v2");
+        assert_eq!(b["actions"], serde_json::json!([]));
     }
 
     #[test]

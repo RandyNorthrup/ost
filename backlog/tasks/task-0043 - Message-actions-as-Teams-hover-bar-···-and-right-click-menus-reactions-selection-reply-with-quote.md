@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T09:59:00Z'
+updated_date: '2026-11-07T10:43:00Z'
 labels:
   - desktop
   - messages
@@ -48,4 +48,7 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 - Teams' toast (measured: 288 x 46, bottom-left). Forwarded messages render as Teams' forward card; originalSentTime comes as ISO.
 - Verified live: forwarded to the Randy 1:1 (the service replied 200 with the new id), and the toast and the card match winpc.
 - Note: one early test attempt targeted a different directory "Randy Northrup" (Randy@techit.pw). Nothing was delivered: that thread didn't exist, and creating it wasn't implemented yet. The harness now picks by id.
+
+- Pinned banner, saved bookmark, Translation and Report added. Report this message: the dialog matches this tenant's security-only variant (measured); the submit is Teams' unified report API (POST {mt}/beta/reports), unit-tested.
+- A live report was NOT submitted: it reaches the tenant admins and Microsoft, so that needs the user's explicit OK.
 <!-- SECTION:NOTES:END -->

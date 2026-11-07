@@ -13,6 +13,8 @@ FluentSurface {
     id: root
     property var quote
     property bool dismissable: false
+    // The report dialog's card shows the name only.
+    property bool showTime: true
     property real maxWidth: 640
     signal dismissed()
     signal activated()
@@ -22,7 +24,7 @@ FluentSurface {
         const ms = parseInt(quote ? quote.message_id : "")
         return isNaN(ms) ? "" : Qt.formatDateTime(new Date(ms), "M/d/yyyy h:mm AP")
     }
-    readonly property real headerW: nameText.implicitWidth + 8 + timeText.implicitWidth + (dismissable ? 8 + 20 : 0)
+    readonly property real headerW: nameText.implicitWidth + (showTime ? 8 + timeText.implicitWidth : 0) + (dismissable ? 8 + 20 : 0)
     width: Math.min(maxWidth, 18 + Math.max(headerW, previewMetrics.advanceWidth) + 8)
     height: dismissable ? 56 : 52
     Rectangle { x: 4; y: 4; width: 2; height: parent.height - 8; radius: 1; color: theme.quoteBar }
@@ -35,7 +37,7 @@ FluentSurface {
     Text {
         id: timeText
         x: nameText.x + nameText.implicitWidth + 8; y: nameText.y
-        text: root.stamp
+        text: root.showTime ? root.stamp : ""
         font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
     }
     FontMetrics { id: previewFont; font.family: theme.font; font.pixelSize: theme.base }

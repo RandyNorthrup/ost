@@ -138,6 +138,8 @@ pub mod qobject {
         /// The open chat's newest pinned message for Teams' pinned banner:
         /// `{id, sender, sender_mri, text, time, count}`, or "".
         #[qproperty(QString, pinned_json)]
+        /// The last report's outcome: "", "sending", "ok" or "error".
+        #[qproperty(QString, report_result)]
         /// The user's quick reactions for the hover bar (Teams' roamed
         /// defaultMessageReactions, else its default four), as a JSON array.
         #[qproperty(QString, quick_reactions_json)]
@@ -235,6 +237,10 @@ pub mod qobject {
             targets_json: &QString,
             note: &QString,
         );
+        /// Report someone's message as a security concern (Teams' Report this
+        /// message); the outcome lands in reportResult ("ok" or "error").
+        #[qinvokable]
+        fn report_message(self: Pin<&mut Backend>, message_id: &QString, comment: &QString);
         /// Translate a message (Teams' Translate) or show its original.
         #[qinvokable]
         fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
@@ -772,6 +778,7 @@ pub struct BackendRust {
     message_readers_json: QString,
     toast_json: QString,
     pinned_json: QString,
+    report_result: QString,
     quick_reactions_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
@@ -3672,6 +3679,30 @@ impl qobject::Backend {
                     tracing::warn!("forward failed: {}", short_error(&e));
                     this.as_mut().toast("Failed to forward", "error");
                 }
+            });
+        });
+    }
+
+    pub fn report_message(mut self: Pin<&mut Self>, message_id: &QString, comment: &QString) {
+        let (chat_id, id, comment) = (
+            self.rust().current_chat_id.to_string(),
+            message_id.to_string(),
+            comment.to_string(),
+        );
+        self.as_mut().set_report_result(QString::from("sending"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::report_security(&client, &chat_id, &id, &comment).await
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("report failed: {}", short_error(e));
+            }
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_report_result(QString::from(if result.is_ok() { "ok" } else { "error" }))
             });
         });
     }

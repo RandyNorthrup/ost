@@ -88,6 +88,7 @@ Rectangle {
     function closePickerForTest() { reactionPicker.close() }
     function closeMessageMenuForTest() { messageMenu.close() }
     function forwardDialogForTest() { return forwardDialog }
+    function reportDialogForTest() { return reportDialog }
     function openReactionPicker(messageId, anchor) { reactionPicker.messageId = messageId; reactionPicker.parent = anchor; reactionPicker.open() }
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function plainText() { return input.getText(0, input.length) }
@@ -1749,6 +1750,11 @@ Rectangle {
         out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
         // Chats: the Translation submenu.
         if (!root.isChannel) out.push({ key: "translation", label: "Translation", icon: "translate-20", chevron: true })
+        // Report this message: someone else's, with its own divider.
+        if (!own) {
+            out.push({ separator: true })
+            out.push({ key: "report", label: "Report this message", icon: "report-message-20" })
+        }
         // More actions: the rest of the secondary items and apps' actions;
         // disabled while that list is empty.
         out.push({ separator: true })
@@ -1790,6 +1796,7 @@ Rectangle {
             else if (it.key === "edit") root.startEdit(m)
             else if (it.key === "delete") root.deleteMessage(m.id)
             else if (it.key === "forward") { forwardDialog.message = m; forwardDialog.open() }
+            else if (it.key === "report") { backend.reportResult = ""; reportDialog.message = m; reportDialog.open() }
             else if (it.key === "copy-link") backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.root_id || "" }), JSON.stringify({ team_id: root.teamId, team_name: root.teamName, channel_name: root.isChannel ? root.chatName : "" }))
             else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
             else if (it.key === "pin" || it.key === "unpin") backend.setMessagePinned(m.id, it.key === "pin")
@@ -1804,6 +1811,7 @@ Rectangle {
             else if (it.key === "read") { readersMenu.items = root.readersFor(m.id).readers.map(x => ({ key: x.mri, label: x.name })); readersMenu.parent = messageMenu.parent; readersMenu.x = messageMenu.x + messageMenu.width; readersMenu.y = messageMenu.y; readersMenu.open() }
         }
     }
+    ReportDialog { id: reportDialog }
     ForwardDialog {
         id: forwardDialog
         onForwardTo: (targets, note) => backend.forwardMessage(message.id, JSON.stringify(targets), note)
