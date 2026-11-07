@@ -439,6 +439,12 @@ Rectangle {
             }
         }
         // A Fluent dropdown of the flyout's pages (30 tall, as measured).
+        // Teams' "Reset status after" / "Clear status message after" trigger
+        // (clearStatusMenuTrigger on a Fluent secondary Button): 288 x 30,
+        // NeutralBackground3, no border, 14 px regular text at 12, a 20 px
+        // chevron 12 from the right; pressed NeutralBackground1Pressed; a 1 px
+        // brand bottom border while focused. Its menu (288 wide, radio items)
+        // opens on hover after Fluent's 500 ms delay, or on click.
         component Dropdown: Rectangle {
             id: dd
             property var options: []
@@ -446,57 +452,56 @@ Rectangle {
             property var leadColor
             property string leadIcon
             width: parent ? parent.width : 288; height: 30; radius: 4
-            color: theme.input
-            border.color: ddMenu.opened ? theme.brand : theme.stroke
-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.textSecondary; visible: !ddMenu.opened }
+            color: ddTap.pressed ? theme.pressed : ddHover.hovered ? theme.menuHover : theme.inputFilled
+            activeFocusOnTab: true
+            Rectangle {
+                anchors.bottom: parent.bottom; width: parent.width; height: 1; radius: 0
+                color: theme.brand; visible: dd.activeFocus
+            }
             FluentIcon { visible: !!dd.leadIcon; x: 12; anchors.verticalCenter: parent.verticalCenter; name: dd.leadIcon; size: 16; color: dd.leadColor || theme.text }
             Text {
                 x: dd.leadIcon ? 36 : 12; anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - x - 12 - 20 - 4; elide: Text.ElideRight
                 text: dd.options.length ? dd.options[dd.current].label : ""
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
             }
-            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.textStrong }
-            TapHandler { onTapped: ddMenu.open() }
+            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.text }
+            HoverHandler { id: ddHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { id: ddTap; onTapped: { dd.forceActiveFocus(); ddMenu.opened ? ddMenu.close() : ddMenu.open() } }
+            Keys.onPressed: e => { if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Down) { ddMenu.open(); e.accepted = true } }
+            // Fluent Menu openOnHover: open after the hover delay; close once
+            // the pointer has left both the trigger and the menu.
+            Timer { interval: 500; running: ddHover.hovered && !ddMenu.opened; onTriggered: ddMenu.open() }
+            Timer { interval: 500; running: ddMenu.opened && !ddHover.hovered && !ddMenu.hovered; onTriggered: ddMenu.close() }
             MenuPopup {
                 id: ddMenu
                 y: dd.height + 2; width: dd.width
                 items: dd.options.map((o, k) => ({ label: o.label, icon: o.icon, iconColor: o.color, checked: k === dd.current }))
                 onPicked: k => dd.current = k
+                onClosed: dd.forceActiveFocus()
             }
             Accessible.role: Accessible.ComboBox
-        }
-        component BackHeader: Item {
-            signal back()
-            width: parent ? parent.width : 288; height: 40
-            Row {
-                y: 10; spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-16"; size: 16; color: theme.textStrong }
-                Text { text: "Back"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: parent.parent.back() }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Back"
-            }
-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
+            Accessible.name: dd.options.length ? dd.options[dd.current].label : ""
         }
         component PrimaryButton: Rectangle {
             id: pb
             property string label
             signal clicked()
-            width: 96; height: 31.3; radius: 4
-            color: !enabled ? theme.disabled : pbh.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: pb.label; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+            width: 100; height: 32; radius: 4
+            color: !enabled ? theme.bgDisabled : pbh.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: pb.label; color: pb.enabled ? "white" : theme.disabled; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             HoverHandler { id: pbh; cursorShape: pb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: pb.enabled; onTapped: pb.clicked() }
             Accessible.role: Accessible.Button
             Accessible.name: label
         }
-        // Duration: Status and "Reset status after" (default Today), then Done.
-        Column {
+        // Duration, laid out as Teams' page (measured in the client, 320 x 273):
+        // "Back"; Status and "Reset status after" (default Today) as Fluent
+        // filled-darker Dropdowns; Done.
+        Item {
             id: durationPage
             visible: menu.page === "duration"
-            x: 16; y: 4; width: parent.width - 32
-            spacing: 0
+            width: 320; implicitHeight: 273 - 8
             readonly property var durations: [
                 { key: "HalfHour", label: "30 minutes" }, { key: "OneHour", label: "1 hour" },
                 { key: "TwoHours", label: "2 hours" }, { key: "Today", label: "Today" }, { key: "ThisWeek", label: "This week" }
@@ -505,120 +510,182 @@ Rectangle {
                 const i = root.statuses.findIndex(s => s.key.toLowerCase() === (root.presence || "Available").toLowerCase())
                 statusPick.current = Math.max(0, i)
                 durationPick.current = 3
+                statusPick.forceActiveFocus()
             }
-            BackHeader { onBack: menu.page = "main" }
-            Item { width: 1; height: 21 }
-            Text { text: "Status"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-            Item { width: 1; height: 5 }
-            Dropdown {
+            Rectangle {
+                x: 16; y: 18; width: 57; height: 21; radius: 4
+                color: durBack.hovered ? theme.menuHover : "transparent"
+                FluentIcon { x: 1; y: 1; name: "chevron-left-20"; size: 20; color: theme.textStrong }
+                Text { x: 27; y: 1; height: 20; verticalAlignment: Text.AlignVCenter; text: "Back"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+                HoverHandler { id: durBack; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: menu.page = "main" }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Back"
+            }
+            Rectangle { x: 11; y: 43; width: 298; height: 1; color: theme.divider }   // Fluent MenuDivider (NeutralStroke2)
+            Text { x: 16; y: 61; height: 20; verticalAlignment: Text.AlignVCenter; text: "Status"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            FilledDropdown {
                 id: statusPick
+                x: 16; y: 85
                 options: root.statuses.map(s => ({ label: s.label, icon: "presence-" + root.presenceKind(s.key) + "-16", color: root.presenceInk[root.presenceKind(s.key)] }))
                 leadIcon: options.length ? options[current].icon : ""
                 leadColor: options.length ? options[current].color : theme.text
             }
-            Item { width: 1; height: 26 }
-            Text { text: "Reset status after"; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
-            Item { width: 1; height: 5 }
-            Dropdown { id: durationPick; options: durationPage.durations }
-            Item { width: 1; height: 29 }
-            Item {
-                width: parent.width; height: 31.3
-                PrimaryButton {
-                    anchors.right: parent.right; label: "Done"
-                    onClicked: { menu.visible = false; root.setStatusUntil(root.statuses[statusPick.current].key, durationPage.durations[durationPick.current].key) }
-                }
+            Text { x: 16; y: 142; height: 20; verticalAlignment: Text.AlignVCenter; text: "Reset status after"; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
+            FilledDropdown { id: durationPick; x: 16; y: 166; options: durationPage.durations }
+            PrimaryButton {
+                x: 208; y: 226; width: 96
+                label: "Done"
+                onClicked: { menu.visible = false; root.setStatusUntil(root.statuses[statusPick.current].key, durationPage.durations[durationPick.current].key) }
             }
-            Item { width: 1; height: 12 }
         }
-        // Set status message: 280 characters, "Show when people message me",
-        // "Clear status message after" (default Never), Done / Saving...
-        Column {
+        // Fluent's Dropdown, filled-darker (as Teams' Duration page uses it):
+        // 288 x 32, NeutralBackground3, a transparent 1 px border; hover
+        // NeutralStroke1Hover with an accessible-hover bottom; pressed or
+        // focused the pressed strokes and a 2 px brand underline that scales
+        // in (200 ms) and out (50 ms); text 12 in, chevron 20 (#616161) 11 from
+        // the right.
+        component FilledDropdown: Rectangle {
+            id: fd
+            property var options: []
+            property int current: 0
+            property var leadColor
+            property string leadIcon
+            readonly property bool engaged: fd.activeFocus || fdMenu.opened
+            width: 288; height: 32; radius: 4
+            color: theme.inputFilled
+            activeFocusOnTab: true
+            border.width: 0
+            // Borders drawn per side (the bottom one differs).
+            Rectangle { anchors.fill: parent; radius: 4; color: "transparent"; border.width: 1; visible: fd.engaged || fdTap.pressed || fdHover.hovered
+                border.color: fd.engaged || fdTap.pressed ? theme.strokePressed : theme.strokeHover }
+            Rectangle { x: 2; width: parent.width - 4; height: 1; anchors.bottom: parent.bottom; visible: fd.engaged || fdTap.pressed || fdHover.hovered
+                color: fd.engaged || fdTap.pressed ? theme.strokeAccessiblePressed : theme.strokeAccessibleHover }
+            // Fluent's ::after: a 4 px bar with rounded bottom corners, of
+            // which only the bottom 2 px show, scaled from the centre.
+            Item {
+                y: parent.height - 2; width: parent.width; height: 2; clip: true
+                transform: Scale { origin.x: fd.width / 2; xScale: fd.engaged ? 1 : 0
+                    Behavior on xScale { NumberAnimation { duration: fd.engaged ? 200 : 50; easing.type: fd.engaged ? Easing.OutCubic : Easing.InCubic } } }
+                Rectangle { y: -2; width: parent.width; height: 4; radius: 4; color: theme.brand }
+            }
+            FluentIcon { visible: !!fd.leadIcon; x: 13; anchors.verticalCenter: parent.verticalCenter; name: fd.leadIcon; size: 16; color: fd.leadColor || theme.text }
+            Text {
+                x: fd.leadIcon ? 41 : 13; anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - x - 11 - 20 - 4; elide: Text.ElideRight
+                text: fd.options.length ? fd.options[fd.current].label : ""
+                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+            }
+            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 11; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
+            HoverHandler { id: fdHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { id: fdTap; onTapped: { fd.forceActiveFocus(); fdMenu.opened ? fdMenu.close() : fdMenu.open() } }
+            Keys.onPressed: e => { if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Down || (e.key === Qt.Key_Down && e.modifiers & Qt.AltModifier)) { fdMenu.open(); e.accepted = true } }
+            MenuPopup {
+                id: fdMenu
+                y: fd.height + 2; width: fd.width
+                items: fd.options.map((o, k) => ({ label: o.label, icon: o.icon, iconColor: o.color, checked: k === fd.current }))
+                onPicked: k => fd.current = k
+                onClosed: fd.forceActiveFocus()
+            }
+            Accessible.role: Accessible.ComboBox
+            Accessible.name: fd.options.length ? fd.options[fd.current].label : ""
+        }
+        // Set status message, laid out as Teams' page (measured in the client,
+        // 320 x 522): back button and title with your UPN; a 288 x 240 filled
+        // editor (280 characters, counter inside); "Show when people message
+        // me" with its info tooltip; "Clear status message after" (default
+        // Never); Done / Saving....
+        Item {
             id: notePage
             visible: menu.page === "note"
-            x: 16; y: 4; width: parent.width - 32
+            width: 320; implicitHeight: 522 - 8
             property bool saving: false
             readonly property var clearAfter: [
                 { key: "Never", label: "Never" }, { key: "Today", label: "Today" }, { key: "OneHour", label: "1 hour" },
                 { key: "FourHours", label: "4 hours" }, { key: "ThisWeek", label: "This week" }
             ]
-            function start() { saving = false; noteText.text = root.statusNote; pinBox.checked = root.statusNotePinned; clearPick.current = 0 }
-            BackHeader { onBack: menu.page = "main" }
-            Item { width: 1; height: 12 }
-            Text { text: "Set status message"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-            Text { text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
-            Item { width: 1; height: 10 }
+            // Teams focuses the editor when the page opens.
+            function start() { saving = false; noteText.text = root.statusNote; pinBox.checked = root.statusNotePinned; clearPick.current = 0; noteText.forceActiveFocus() }
             Rectangle {
-                width: parent.width; height: 96; radius: 4
-                color: theme.input; border.color: noteText.activeFocus ? theme.brand : theme.stroke
+                x: 16; y: 16; width: 21; height: 21; radius: 4
+                color: backHover.hovered ? theme.menuHover : "transparent"
+                FluentIcon { x: 1; y: 1; name: "chevron-left-20"; size: 20; color: theme.textStrong }
+                HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: menu.page = "main" }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Back"
+            }
+            Text { x: 53; y: 17; height: 20; verticalAlignment: Text.AlignVCenter; text: "Set status message"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 53; y: 37; height: 16; verticalAlignment: Text.AlignVCenter; text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+            Rectangle {
+                x: 16; y: 71; width: 288; height: 240; radius: 3
+                color: theme.editorFilled
+                clip: true
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand; visible: noteText.activeFocus }
                 TextEdit {
                     id: noteText
-                    x: 10; y: 8; width: parent.width - 20; height: parent.height - 30
+                    x: 8; y: 8; width: parent.width - 16; height: parent.height - 16 - 20
                     wrapMode: TextEdit.Wrap
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                     onTextChanged: if (text.length > 280) { const p = cursorPosition; text = text.slice(0, 280); cursorPosition = Math.min(p, 280) }
-                    Text { visible: !parent.text; text: "Type your status message here"; font: parent.font; color: theme.textSecondary }
-                    Accessible.name: "Status message"
+                    Text { visible: !parent.text; text: "Type @ to mention someone in your status"; font: parent.font; color: theme.textSecondary }
+                    Accessible.name: "Type @ to mention someone in your status"
                 }
                 Text {
-                    anchors.right: parent.right; anchors.rightMargin: 10; anchors.bottom: parent.bottom; anchors.bottomMargin: 6
+                    anchors.right: parent.right; anchors.rightMargin: 8; y: 211; height: 20
+                    verticalAlignment: Text.AlignVCenter
                     text: noteText.text.length + " / 280"
-                    font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
                 }
             }
-            Item { width: 1; height: 10 }
-            Row {
-                spacing: 8
+            Item {
+                x: 16; y: 341; width: 238; height: 39
                 Rectangle {
                     id: pinBox
                     property bool checked: false
-                    width: 16; height: 16; radius: 2
-                    color: checked ? theme.brandFill : "transparent"; border.color: checked ? theme.brandFill : theme.textStrong
-                    FluentIcon { anchors.centerIn: parent; visible: pinBox.checked; name: "checkmark-12"; size: 12; color: "white" }
-                    TapHandler { onTapped: pinBox.checked = !pinBox.checked }
+                    x: 2; y: 10; width: 16; height: 16; radius: 2
+                    color: checked ? theme.brandFill : "transparent"; border.color: checked ? theme.brandFill : theme.textSecondary; border.width: 1
+                    FluentIcon { anchors.centerIn: parent; visible: pinBox.checked; name: "checkmark-12-filled"; size: 12; color: "white" }
                     Accessible.role: Accessible.CheckBox
                     Accessible.checked: checked
                     Accessible.name: "Show when people message me"
                 }
-                Text {
-                    text: "Show when people message me"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-                    TapHandler { onTapped: pinBox.checked = !pinBox.checked }
-                }
-                FluentIcon {
-                    anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 16; color: theme.textStrong
-                    HoverHandler { id: infoHover }
-                    ToolTip {
-                        visible: infoHover.hovered; width: 240
-                        background: FluentSurface { depth: 16; radius: 4 }
-                        contentItem: Text { text: "Your status message will show above the compose message box when someone sends you a message or @mentions you."; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
-                    }
-                }
+                Text { x: 30; y: 8; text: "Show when people message me"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: pinBox.checked = !pinBox.checked }
             }
-            Item { width: 1; height: 14 }
-            Text { text: "Clear status message after"; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
-            Item { width: 1; height: 5 }
-            Dropdown { id: clearPick; options: notePage.clearAfter }
-            Item { width: 1; height: 18 }
-            Item {
-                width: parent.width; height: 31.3
-                // Teams' "Schedule out of office" opens its out-of-office dialog;
-                // shown once OST has that dialog (TASK-0041).
-                Text {
-                    visible: false
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Schedule out of office"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brandLink
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { menu.visible = false; root.openOutOfOffice() } }
-                    Accessible.role: Accessible.Link
-                    Accessible.name: "Schedule out of office"
+            Rectangle {
+                x: 254; y: 349; width: 24; height: 24; radius: 4
+                color: "transparent"
+                FluentIcon { x: 2; y: 2; name: "info-20"; size: 20; color: theme.textStrong }
+                HoverHandler { id: infoHover }
+                ToolTip {
+                    visible: infoHover.hovered; width: 240
+                    background: FluentSurface { depth: 16; radius: 4 }
+                    contentItem: Text { text: "Your status message will show above the compose message box when someone sends you a message or @mentions you."; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                 }
-                PrimaryButton {
-                    anchors.right: parent.right
-                    label: notePage.saving ? "Saving..." : "Done"
-                    enabled: !notePage.saving && (noteText.text.trim().length > 0 || root.statusNote.length > 0)
-                    onClicked: { notePage.saving = true; root.setStatusNote(noteText.text.trim(), pinBox.checked, notePage.clearAfter[clearPick.current].key) }
-                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Your status message will show above the compose message box when someone sends you a message or @mentions you."
             }
-            Item { width: 1; height: 12 }
+            Text { x: 16; y: 390; height: 20; verticalAlignment: Text.AlignVCenter; text: "Clear status message after"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+            Dropdown { id: clearPick; x: 16; y: 424; width: 288; options: notePage.clearAfter }
+            // Teams' "Schedule out of office" link (16, 478) opens its
+            // out-of-office dialog; shown once OST has that dialog (TASK-0041).
+            Text {
+                visible: false
+                x: 18; y: 480; height: 20; verticalAlignment: Text.AlignVCenter
+                text: "Schedule out of office"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { menu.visible = false; root.openOutOfOffice() } }
+                Accessible.role: Accessible.Link
+                Accessible.name: "Schedule out of office"
+            }
+            PrimaryButton {
+                x: 191; y: 474
+                label: notePage.saving ? "Saving..." : "Done"
+                enabled: !notePage.saving && (noteText.text.trim().length > 0 || root.statusNote.length > 0)
+                onClicked: { notePage.saving = true; root.setStatusNote(noteText.text.trim(), pinBox.checked, notePage.clearAfter[clearPick.current].key) }
+            }
         }
     }
     signal setStatusUntil(string status, string duration)

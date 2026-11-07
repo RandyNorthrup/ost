@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T05:46:00Z'
+updated_date: '2026-11-07T06:58:00Z'
 labels:
   - desktop
   - shell
@@ -27,6 +27,7 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 - [ ] #3 Presence goes Away when idle/locked/minimised and shows In a call / In a meeting / Presenting automatically, as Teams computes it
 - [x] #4 Do not disturb suppresses banners as Teams does (priority access aside)
 - [x] #5 Set status message dialog as Teams (expiry, show when people message me)
+- [ ] #6 Status message editor takes @mentions as Teams' (CKEditor) does, normalised to Teams' mention HTML
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -45,4 +46,8 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 - Verified: --status-test (Busy for 1 hour, Reset → service Available; note set pinned, then cleared). Left: DND toast filter (AC4); Pause notifications ›, Set work location ›, Add another account, Schedule out of office (link hidden until the OOF dialog exists); Teams' filled dropdown style on these pages.
 
 - DND toast rule (spec §Do not disturb): urgent shows (redacted "You have a new notification" while presenting); Presenting and Do not disturb drop; Busy shows. Built toast_decision + urgent flag on pushed messages (properties.importance). Unit-tested; live two-account check pending with the next live session. Priority-contacts list not in OST yet (empty).
+
+- Duration and Set status message pages rebuilt from live DOM measurements (read-only CDP on winpc); spec in docs/spec/presence.md "Profile flyout pages, as measured".
+- Note page: Teams' trigger button (clearStatusMenuTrigger) opening on hover; Duration page: Fluent filled-darker Dropdowns with the focus underline; side-by-side shots match.
+- Follow-up AC added: @mentions in the status message (Teams' editor is CKEditor with mentions).
 <!-- SECTION:NOTES:END -->

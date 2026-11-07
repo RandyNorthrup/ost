@@ -17,7 +17,9 @@ Popup {
     readonly property real labelX: hasIcons ? 30 : 6
     padding: 4
     implicitWidth: Math.min(290, Math.max(widest.value, 0)) + 8
-    background: FluentSurface { depth: 16; radius: 4 }
+    /// The pointer is over the menu (for menus that open on hover).
+    readonly property bool hovered: surfaceHover.hovered
+    background: FluentSurface { depth: 16; radius: 4; HoverHandler { id: surfaceHover } }
     QtObject {
         id: widest
         readonly property real value: {

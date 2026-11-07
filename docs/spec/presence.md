@@ -554,3 +554,39 @@ For a forced status, Never (the 9999 date) means **no**
 - [ ] CLI `set_presence` uses Graph `setUserPreferredPresence` with wrong
   activities (busy→InACall, dnd→Presenting; src/api/presence.rs:52-79).
   Teams uses `forceavailability`.
+
+## Profile flyout pages, as measured (winpc, 2026-11-06)
+These were read from the live client's DOM over read-only CDP. Values are CSS px relative to the 320-wide flyout surface; the devicePixelRatio of 1.5 is factored out.
+
+**Set status message** (`me-control-set-status-message`, 320 × 522)
+- Back button: 21 × 21 at (16, 16), ChevronLeft20Regular, colour #424242.
+- Title "Set status message" at (53, 17), 14/20 semibold #242424. The UPN is at (53, 37), 12/16 #616161.
+- Editor: a CKEditor (`ckeditor`, rich text for @mentions) at (16, 71), 288 × 240.
+  - Background #EBEBEB, radius 3, padding 8, text 14/20.
+  - It has no border at rest. When focused it gets a 2 px brand bottom border.
+  - It is focused when the page opens.
+  - Placeholder "Type @ to mention someone in your status" (#616161).
+- Counter "0 / 280": 14/20 #616161, its right edge 8 in from the editor's and its top at y 282.
+- Checkbox "Show when people message me": a 16 px indicator at (18, 351), radius 2, brand when checked, Checkmark12Filled. Label at (46, 349), 14 #242424.
+- Info button: 24 × 24 at (254, 349), Info20Regular #424242.
+- "Clear status message after" at (16, 390), 14/20 semibold #424242.
+- Trigger (`clearStatusMenuTrigger`): a Fluent Button at (16, 424), 288 × 30.
+  - NeutralBackground3, no border, radius 4, padding 5 × 12, 14 regular.
+  - ChevronDown20Regular at x 256, colour #242424.
+  - Hover NeutralBackground1Hover; pressed NeutralBackground1Pressed.
+  - Focus adds a 1 px brand bottom border.
+  - Its Menu (288 wide, radio items) opens on hover (`openOnHover`).
+- Done: primary, 100 × 32 at (191, 474). Disabled it is #F0F0F0 with #BDBDBD text.
+- "Schedule out of office": a link at (16, 478), 14 #5B5FC7.
+
+**Duration** (`me-control-set-availability`, 320 × 273)
+- "Back" button: 57 × 21 at (16, 18). Chevron at (17, 19); text "Back" at x 42.7, 14 semibold #424242.
+- MenuDivider: (11, 43), 298 × 1, NeutralStroke2.
+- "Status" at (16, 61), 14 #242424. Its Dropdown is at (16, 85); "Reset status after" is at (16, 142), 14 #424242; its Dropdown is at (16, 166).
+- Both are Fluent **Dropdown, filled-darker**, 288 × 32:
+  - At rest: NeutralBackground3 with a transparent 1 px border.
+  - Hover: NeutralStroke1Hover with a NeutralStrokeAccessibleHover bottom.
+  - Active or focus-within: NeutralStroke1Pressed with a NeutralStrokeAccessiblePressed bottom, plus the `::after` brand underline. That underline is 2 px, scaleX 0→1, taking durationNormal with curveDecelerateMid in and durationUltraFast out.
+  - Text 12 in from the border (41 after a 16 px presence icon at 13); chevron 20 (#616161) 11 from the right.
+  - The Status dropdown takes initial focus.
+- Done: primary, 96 × 32 at (208, 226).

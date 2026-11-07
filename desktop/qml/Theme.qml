@@ -29,6 +29,7 @@ QtObject {
     readonly property color menu: pick("#FFFFFF", "#292929")           // flyouts, tooltips
     readonly property color menuHover: pick("#F5F5F5", "#3D3D3D")      // NeutralBackground1Hover (menu items)
     readonly property color inputFilled: pick("#F5F5F5", "#141414")    // filled-darker inputs (dialogs)
+    readonly property color pressed: pick("#E0E0E0", "#1F1F1F")        // NeutralBackground1Pressed
     readonly property color brandLink: pick("#4F52B2", "#9EA2FF")      // transparent brand buttons ("About")
     // Fluent shadows: two layers each (ambient, key), as the client's CSS.
     readonly property color shadowAmbient: pick(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(0, 0, 0, 0.24))
@@ -39,6 +40,9 @@ QtObject {
     readonly property color dividerSoft: pick("#EBEBEB", "#3D3D3D")    // NeutralStroke3
     readonly property color stroke: pick("#D1D1D1", "#666666")         // NeutralStroke1 (chips)
     readonly property color strokeHover: pick("#C7C7C7", "#757575")
+    readonly property color strokePressed: pick("#B3B3B3", "#6B6B6B")       // NeutralStroke1Pressed
+    readonly property color strokeAccessibleHover: pick("#575757", "#BDBDBD")   // NeutralStrokeAccessibleHover
+    readonly property color strokeAccessiblePressed: pick("#4D4D4D", "#B3B3B3") // NeutralStrokeAccessiblePressed
     readonly property color edge: pick("#EFEFEF", "#232323")           // between panes
     readonly property color titleHairline: pick("#DDDDDD", "#1F1F1F")
 
@@ -51,6 +55,8 @@ QtObject {
     readonly property color textSecondary: pick("#616161", "#ADADAD")  // NeutralForeground3
     readonly property color textTertiary: pick("#707070", "#999999")   // NeutralForeground4
     readonly property color disabled: pick("#BDBDBD", "#5C5C5C")
+    readonly property color bgDisabled: pick("#F0F0F0", "#141414")     // NeutralBackgroundDisabled
+    readonly property color editorFilled: pick("#EBEBEB", "#1F1F1F")   // Teams' status-note editor (CKEditor)
     readonly property color icon: pick("#424242", "#D6D6D6")
     readonly property color badge: "#C4314B"
     readonly property color danger: pick("#C4314B", "#E37D80")

@@ -311,7 +311,8 @@ Window {
     }
 
     // --status-test: open the profile menu and its status choices, set Busy,
-    // then reset (capturing the menu).
+    // then reset (capturing the menu). With --shots-only it stops after the
+    // captures and changes nothing.
     Timer {
         running: Qt.application.arguments.indexOf("--status-test") >= 0 && backend.signedIn && backend.userMail.length > 0
         interval: 3000
@@ -325,6 +326,7 @@ Window {
             else if (step === 3) shot("duration")
             else if (step === 4) titleBar.profilePageForTest("note")
             else if (step === 5) shot("note")
+            else if (step === 6 && Qt.application.arguments.indexOf("--shots-only") >= 0) Qt.quit()
             else if (step === 6) { titleBar.closeProfileForTest(); backend.setMyStatusUntil("Busy", "OneHour", "") }
             else if (step === 8) { console.warn("STATUS after busy", titleBar.presence); backend.setMyStatus("Reset") }
             else if (step === 10) { console.warn("STATUS reset", titleBar.presence); backend.setStatusNote("OST test 42 status note", true, "OneHour", "") }
