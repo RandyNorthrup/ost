@@ -370,6 +370,29 @@ Rectangle {
         model: root.annotate(root.messages)
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        // Scrolling up to the oldest messages loads the page before them (as
+        // Teams pages back); the message at the top stays where it was.
+        property string keepId: ""
+        property real keepOffset: 0
+        function topIndex() { return indexAt(width / 2, contentY + 1) }
+        onContentYChanged: {
+            const i = topIndex()
+            if (i >= 0 && i >= count - 3 && backend.messagesHasOlder && !backend.messagesLoadingOlder && keepId === "") {
+                const m = model[i]
+                const item = itemAtIndex(i)
+                if (m && item) { keepId = m.id; keepOffset = item.y - contentY }
+                backend.loadOlderMessages()
+            }
+        }
+        onModelChanged: if (keepId !== "") Qt.callLater(() => {
+            const i = model.findIndex(m => m.id === keepId)
+            if (i >= 0) {
+                positionViewAtIndex(i, ListView.Beginning)
+                const item = itemAtIndex(i)
+                if (item) contentY = item.y - keepOffset
+            }
+            keepId = ""
+        })
         delegate: Item {
             id: msg
             required property var modelData

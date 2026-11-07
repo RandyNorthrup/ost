@@ -84,6 +84,10 @@ pub mod qobject {
         #[qproperty(QString, channel_tab_result)]
         /// About this tab: {app, about} once loaded.
         #[qproperty(QString, app_about_json)]
+        /// The open chat has older messages to load (scroll up).
+        #[qproperty(bool, messages_has_older)]
+        /// Older messages are being fetched.
+        #[qproperty(bool, messages_loading_older)]
         #[qproperty(bool, store_busy)]
         #[qproperty(QString, channel_files_json)]
         #[qproperty(bool, channel_files_busy)]
@@ -350,6 +354,9 @@ pub mod qobject {
         /// "OST Support Logs <time>" folder on the Desktop, then the Desktop opened.
         #[qinvokable]
         fn collect_support_files(self: &Backend);
+        /// Load the page of messages before the oldest shown.
+        #[qinvokable]
+        fn load_older_messages(self: Pin<&mut Backend>);
         /// About this tab: load the app's About (Teams' app definition).
         #[qinvokable]
         fn app_about_load(self: Pin<&mut Backend>, app_id: &QString);
@@ -611,6 +618,8 @@ pub struct BackendRust {
     channel_tabs_json: QString,
     channel_tab_result: QString,
     app_about_json: QString,
+    messages_has_older: bool,
+    messages_loading_older: bool,
     /// The channel name channel_tabs_load was last given (reloads reuse it).
     channel_tabs_name: String,
     store_busy: bool,
@@ -995,9 +1004,8 @@ const TYPING_SEND_INTERVAL_SECS: u64 = 3;
 /// How long an unanswered call rings before it counts as missed.
 const RING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// How many chats and messages to load per request.
+/// How many chats to load per request.
 const CHAT_LIMIT: usize = 50;
-const MESSAGE_LIMIT: usize = 50;
 
 fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -1080,7 +1088,19 @@ fn read_at_open() -> &'static std::sync::Mutex<HashMap<String, Option<u64>>> {
     MAP.get_or_init(Default::default)
 }
 
-async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(String, String)>)> {
+/// Each chat's older pages loaded so far (scrolling up), and the token
+/// for the page before them; none once the start of the chat is reached.
+type OlderPages = (Vec<api::messages::MessageView>, Option<String>);
+fn older_pages() -> &'static std::sync::Mutex<HashMap<String, OlderPages>> {
+    static MAP: OnceLock<std::sync::Mutex<HashMap<String, OlderPages>>> = OnceLock::new();
+    MAP.get_or_init(Default::default)
+}
+
+/// A chat's timeline: the newest page, under the older pages already
+/// loaded; with the newest message's ids and whether older ones remain.
+async fn load_messages(
+    chat_id: String,
+) -> anyhow::Result<(String, Option<(String, String)>, bool)> {
     let client = TeamsClient::new().await?;
     let known = read_at_open().lock().unwrap().get(&chat_id).copied();
     let opened_at = match known {
@@ -1096,7 +1116,18 @@ async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(Strin
             h
         }
     };
-    let mut timeline = api::messages::read_timeline(&client, &chat_id, MESSAGE_LIMIT).await?;
+    let page = api::messages::read_timeline_page(&client, &chat_id, api::messages::PAGE_SIZE, None)
+        .await?;
+    let (mut timeline, has_older) = {
+        let mut map = older_pages().lock().unwrap();
+        let entry = map
+            .entry(chat_id.clone())
+            .or_insert_with(|| (Vec::new(), page.older.clone()));
+        (
+            api::messages::merge_pages(&entry.0, page.messages),
+            entry.1.is_some(),
+        )
+    };
     api::messages::mark_first_unread(&mut timeline, opened_at);
     {
         let here = deleted_here().lock().unwrap();
@@ -1117,7 +1148,7 @@ async fn load_messages(chat_id: String) -> anyhow::Result<(String, Option<(Strin
         .rev()
         .find(|m| m.kind == "message")
         .map(|m| (m.id.clone(), m.client_message_id.clone()));
-    Ok((serde_json::to_string(&timeline)?, last_id))
+    Ok((serde_json::to_string(&timeline)?, last_id, has_older))
 }
 
 /// A call event arrived: ring for a new invitation; anything else about
@@ -2821,6 +2852,52 @@ impl qobject::Backend {
         });
     }
 
+    /// Scrolled to the top: load the page before (Teams pages back with the
+    /// syncState of the page's backwardLink), then show the merged timeline.
+    pub fn load_older_messages(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let token = older_pages()
+            .lock()
+            .unwrap()
+            .get(&chat_id)
+            .and_then(|e| e.1.clone());
+        let Some(token) = token else { return };
+        if self.rust().messages_loading_older {
+            return;
+        }
+        self.as_mut().set_messages_loading_older(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::messages::read_timeline_page(
+                    &client,
+                    &chat_id,
+                    api::messages::PAGE_SIZE,
+                    Some(&token),
+                )
+                .await
+            }
+            .await;
+            match result {
+                Ok(page) => {
+                    if let Some(entry) = older_pages().lock().unwrap().get_mut(&chat_id) {
+                        entry.0 = api::messages::merge_pages(
+                            &page.messages,
+                            std::mem::take(&mut entry.0),
+                        );
+                        entry.1 = page.older;
+                    }
+                    let _ = qt.queue(|mut this| this.as_mut().reload_messages());
+                }
+                Err(e) => {
+                    tracing::warn!("older messages: {}", short_error(&e));
+                    let _ = qt.queue(|mut this| this.as_mut().set_messages_loading_older(false));
+                }
+            }
+        });
+    }
+
     fn reload_messages(self: Pin<&mut Self>) {
         let chat_id = self.rust().current_chat_id.to_string();
         if chat_id.is_empty() {
@@ -2837,7 +2914,9 @@ impl qobject::Backend {
                     return;
                 }
                 match result {
-                    Ok((json, last_id)) => {
+                    Ok((json, last_id, has_older)) => {
+                        this.as_mut().set_messages_has_older(has_older);
+                        this.as_mut().set_messages_loading_older(false);
                         this.as_mut()
                             .set_messages_json(QString::from(json.as_str()));
                         this.as_mut().rust_mut().newest_message_id = last_id;

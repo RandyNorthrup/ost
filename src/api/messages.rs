@@ -85,18 +85,75 @@ pub fn reaction_emoji(key: &str) -> &'static str {
     }
 }
 
-/// Load a chat's timeline, oldest first.
+/// One page of a chat's history, oldest first, and the token for the
+/// page before it (none at the start of the chat).
+#[derive(Debug, Default)]
+pub struct TimelinePage {
+    pub messages: Vec<MessageView>,
+    pub older: Option<String>,
+}
+
+/// Teams' page size for a conversation's messages (its chat service cap).
+pub const PAGE_SIZE: usize = 200;
+
+/// The `syncState` of a chat service `_metadata.backwardLink` (the token
+/// Teams sends for the page before).
+pub fn backward_token(metadata: &serde_json::Value) -> Option<String> {
+    let link = metadata.get("backwardLink")?.as_str()?;
+    let url = reqwest::Url::parse(link).ok()?;
+    url.query_pairs()
+        .find(|(k, _)| k == "syncState")
+        .map(|(_, v)| v.into_owned())
+        .filter(|v| !v.is_empty())
+}
+
+/// The URL Teams asks for a conversation's messages with (worker module
+/// `ne`: view msnp24Equivalent, plus supportsMessageProperties for chats;
+/// pageSize; syncState for an older page; startTime=1, the start of time).
+pub fn messages_url(
+    base: &str,
+    chat_id: &str,
+    page_size: usize,
+    sync_state: Option<&str>,
+) -> String {
+    let enc = |v: &str| url::form_urlencoded::byte_serialize(v.as_bytes()).collect::<String>();
+    let channel = chat_id.ends_with("@thread.tacv2") || chat_id.ends_with("@thread.skype");
+    let mut url = format!(
+        "{base}/v1/users/ME/conversations/{}/messages?view=msnp24Equivalent{}&pageSize={page_size}",
+        enc(chat_id),
+        if channel {
+            ""
+        } else {
+            "|supportsMessageProperties"
+        }
+    );
+    if let Some(t) = sync_state {
+        url.push_str(&format!("&syncState={}", enc(t)));
+    }
+    url.push_str("&startTime=1");
+    url
+}
+
+/// Load a chat's timeline, oldest first (its newest page).
 pub async fn read_timeline(
     client: &TeamsClient,
     chat_id: &str,
     limit: usize,
 ) -> Result<Vec<MessageView>> {
-    let url = format!(
-        "{}/v1/users/ME/conversations/{}/messages?pageSize={}&view=msnp24Equivalent",
-        client.chat_service_url(),
-        chat_id,
-        limit
-    );
+    Ok(read_timeline_page(client, chat_id, limit, None)
+        .await?
+        .messages)
+}
+
+/// Load one page of a chat's history: the newest (`sync_state` none), or
+/// the page before the one whose token is given, as Teams pages back.
+pub async fn read_timeline_page(
+    client: &TeamsClient,
+    chat_id: &str,
+    page_size: usize,
+    sync_state: Option<&str>,
+) -> Result<TimelinePage> {
+    let url = messages_url(&client.chat_service_url(), chat_id, page_size, sync_state);
     let resp = match client.chat_get(&url).await {
         Ok(r) => r,
         // A 1:1 chat nobody has written in yet, or your own notes chat
@@ -106,7 +163,7 @@ pub async fn read_timeline(
             if e.to_string().contains("HTTP 404")
                 && (chat_id.ends_with("@unq.gbl.spaces") || chat_id == "48:notes") =>
         {
-            return Ok(Vec::new());
+            return Ok(TimelinePage::default());
         }
         Err(e) => return Err(e),
     };
@@ -123,13 +180,36 @@ pub async fn read_timeline(
         .flatten()
         .filter_map(|m| view_of(m, &me, &own_name))
         .collect();
-    // The service lists by last change (a reaction or edit moves a message
-    // up), so order by arrival time; ids are arrival milliseconds.
+    sort_by_arrival(&mut out);
+    let older = v.get("_metadata").and_then(backward_token);
+    Ok(TimelinePage {
+        messages: out,
+        older,
+    })
+}
+
+/// The service lists by last change (a reaction or edit moves a message
+/// up), so order by arrival time; ids are arrival milliseconds.
+pub fn sort_by_arrival(out: &mut [MessageView]) {
     out.sort_by(|a, b| {
         let key = |m: &MessageView| m.id.parse::<u64>().unwrap_or(0);
         key(a).cmp(&key(b)).then_with(|| a.time.cmp(&b.time))
     });
-    Ok(out)
+}
+
+/// Older pages loaded so far followed by the newest page, each message
+/// once (the newest page's copy wins: it has the latest edits and
+/// reactions), oldest first.
+pub fn merge_pages(older: &[MessageView], newest: Vec<MessageView>) -> Vec<MessageView> {
+    let ids: std::collections::HashSet<&str> = newest.iter().map(|m| m.id.as_str()).collect();
+    let mut all: Vec<MessageView> = older
+        .iter()
+        .filter(|m| !ids.contains(m.id.as_str()))
+        .cloned()
+        .collect();
+    all.extend(newest);
+    sort_by_arrival(&mut all);
+    all
 }
 
 fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageView> {
