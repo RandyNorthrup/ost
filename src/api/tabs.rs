@@ -61,6 +61,9 @@ pub struct Tab {
     pub website_url: String,
     pub order: f64,
     pub draggable: bool,
+    /// Teams opens website tabs in the browser (enableDeprecateWebsiteTab,
+    /// on in Teams): clicking one opens `website_url` and never selects it.
+    pub opens_in_browser: bool,
     /// The chevron menu of the selected tab.
     pub menu: Vec<MenuItem>,
     /// The right-click menu.
@@ -401,6 +404,152 @@ async fn declares_device_permissions(client: &TeamsClient, app_id: &str) -> bool
     v
 }
 
+/// What About this tab shows (Teams' About dialog: the app's name, icon,
+/// description, developer, and privacy / terms links), from the middle
+/// tier's app definition.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct AppAbout {
+    pub name: String,
+    pub icon: String,
+    pub description: String,
+    pub developer: String,
+    pub developer_url: String,
+    pub privacy_url: String,
+    pub terms_url: String,
+    /// Not full trust: Teams lists the identity information it gets.
+    pub needs_identity: bool,
+}
+
+/// An app's description as Teams shows it (module 160381: markdown-it's
+/// "zero" profile with link, emphasis, list, newline and escape, each line
+/// its own block), as Qt rich text: runs of text lines joined by line
+/// breaks, "- " / "* " / "+ " lines as a list, `[text](https://…)` links and
+/// `*` / `**` emphasis; everything else escaped.
+pub fn description_html(md: &str) -> String {
+    fn esc(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    }
+    fn inline(s: &str) -> String {
+        let mut out = String::new();
+        let mut rest = s;
+        while !rest.is_empty() {
+            if let Some(stripped) = rest.strip_prefix('\\')
+                && let Some(c) = stripped.chars().next().filter(|c| c.is_ascii_punctuation())
+            {
+                out.push_str(&esc(&c.to_string()));
+                rest = &stripped[c.len_utf8()..];
+                continue;
+            }
+            if rest.starts_with('[')
+                && let Some(close) = rest.find("](")
+                && let Some(end) = rest[close + 2..].find(')')
+                && rest[close + 2..].starts_with("https://")
+            {
+                let text = &rest[1..close];
+                let url = &rest[close + 2..close + 2 + end];
+                out.push_str(&format!("<a href=\"{}\">{}</a>", esc(url), esc(text)));
+                rest = &rest[close + 3 + end..];
+                continue;
+            }
+            let emphasis = [("**", "b"), ("*", "i")]
+                .into_iter()
+                .find_map(|(mark, tag)| {
+                    let body = rest.strip_prefix(mark)?;
+                    let end = body.find(mark).filter(|&e| e > 0)?;
+                    Some((
+                        format!("<{tag}>{}</{tag}>", esc(&body[..end])),
+                        &body[end + mark.len()..],
+                    ))
+                });
+            if let Some((html, after)) = emphasis {
+                out.push_str(&html);
+                rest = after;
+                continue;
+            }
+            let c = rest.chars().next().unwrap_or_default();
+            out.push_str(&esc(&c.to_string()));
+            rest = &rest[c.len_utf8()..];
+        }
+        out
+    }
+    let mut html = String::new();
+    let mut text: Vec<String> = Vec::new();
+    let mut items: Vec<String> = Vec::new();
+    let flush_text = |html: &mut String, text: &mut Vec<String>| {
+        if !text.is_empty() {
+            html.push_str(&format!("<p>{}</p>", text.join("<br/>")));
+            text.clear();
+        }
+    };
+    let flush_items = |html: &mut String, items: &mut Vec<String>| {
+        if !items.is_empty() {
+            html.push_str("<ul>");
+            for i in items.drain(..) {
+                html.push_str(&format!("<li>{i}</li>"));
+            }
+            html.push_str("</ul>");
+        }
+    };
+    for line in md.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            flush_text(&mut html, &mut text);
+            flush_items(&mut html, &mut items);
+        } else if let Some(item) = ["- ", "* ", "+ "].iter().find_map(|m| l.strip_prefix(m)) {
+            flush_text(&mut html, &mut text);
+            items.push(inline(item));
+        } else {
+            flush_items(&mut html, &mut items);
+            text.push(inline(l));
+        }
+    }
+    flush_text(&mut html, &mut text);
+    flush_items(&mut html, &mut items);
+    html
+}
+
+pub fn about_from(d: &serde_json::Value) -> AppAbout {
+    let s = |k: &str| https_only(d.get(k).and_then(|v| v.as_str()).unwrap_or_default());
+    let t = |k: &str| {
+        d.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    AppAbout {
+        name: t("name"),
+        icon: s("largeImageUrl"),
+        description: description_html(&t("longDescription")),
+        developer: t("developerName"),
+        developer_url: s("developerUrl"),
+        privacy_url: s("privacyUrl"),
+        terms_url: s("termsOfUseUrl"),
+        needs_identity: !d
+            .get("isFullTrust")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    }
+}
+
+/// An app's definition from the middle tier (Teams' GetAppDefinition).
+pub async fn app_about(client: &TeamsClient, app_id: &str) -> Result<AppAbout> {
+    let (base, token) = middle_tier(client).await?;
+    let enc: String = url::form_urlencoded::byte_serialize(app_id.as_bytes()).collect();
+    let d: serde_json::Value = client
+        .http()
+        .get(format!("{base}/beta/users/apps/definitions/{enc}"))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(about_from(&d))
+}
+
 /// Whether the signed-in user may change the channel's tabs (Teams'
 /// isAllowedToUpdateTabs for a standard channel: owners yes, guests no,
 /// members per the team's "create, update and remove tabs" setting; never
@@ -498,6 +647,7 @@ fn tabs_from(
         website_url: String::new(),
         order: 1.0,
         draggable: false,
+        opens_in_browser: false,
         menu: Vec::new(),
         context_menu: Vec::new(),
     }];
@@ -521,6 +671,7 @@ fn tabs_from(
             )),
             order: if files { 2.0 } else { order_of(t) },
             draggable: !files,
+            opens_in_browser: kind == Kind::Website,
             menu: Vec::new(),
             context_menu: Vec::new(),
             id,
@@ -791,6 +942,7 @@ mod tests {
             website_url: String::new(),
             order: 10.0,
             draggable: true,
+            opens_in_browser: false,
             menu: Vec::new(),
             context_menu: Vec::new(),
         };
@@ -807,6 +959,32 @@ mod tests {
             "https://teams.microsoft.com/l/entity/0d820ecd-def2-4297-adad-78056cde7c78/_djb2_msteams_prefix_{}?",
             djb2("0d820ecd-def2-4297-adad-78056cde7c78:NOTES")
         )));
+    }
+
+    #[test]
+    fn descriptions_render_as_teams_does() {
+        let d = "Intro line.\nSecond line:\n- One *a*[l](https://l.example)\n- Two **b**\nAfter [here](https://x.example/p) and [bad](http://x) \\* <b>.";
+        assert_eq!(
+            description_html(d),
+            "<p>Intro line.<br/>Second line:</p><ul><li>One <i>a</i><a href=\"https://l.example\">l</a></li><li>Two <b>b</b></li></ul>\
+             <p>After <a href=\"https://x.example/p\">here</a> and [bad](http://x) * &lt;b&gt;.</p>"
+        );
+    }
+
+    #[test]
+    fn about_comes_from_the_app_definition() {
+        let d = serde_json::json!({"name": "OneNote", "largeImageUrl": "https://res.cdn.office.net/x.png",
+            "longDescription": "**Notes**", "developerName": "Microsoft Corporation",
+            "developerUrl": "https://www.onenote.com/", "privacyUrl": "http://not-https/",
+            "termsOfUseUrl": "https://www.microsoft.com/servicesagreement", "isFullTrust": true});
+        let a = about_from(&d);
+        assert_eq!(
+            (a.name.as_str(), a.developer.as_str()),
+            ("OneNote", "Microsoft Corporation")
+        );
+        assert!(a.privacy_url.is_empty(), "https only");
+        assert!(!a.needs_identity);
+        assert!(about_from(&serde_json::json!({})).needs_identity);
     }
 
     #[test]

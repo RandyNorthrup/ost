@@ -60,6 +60,8 @@ pub mod qobject {
         /// The last tab change's outcome: {op, tab, ok} (its dialog shows
         /// Teams' failure text, or closes).
         #[qproperty(QString, channel_tab_result)]
+        /// About this tab: {app, about} once loaded.
+        #[qproperty(QString, app_about_json)]
         #[qproperty(bool, store_busy)]
         #[qproperty(QString, channel_files_json)]
         #[qproperty(bool, channel_files_busy)]
@@ -322,6 +324,9 @@ pub mod qobject {
             channel_name: &QString,
         );
 
+        /// About this tab: load the app's About (Teams' app definition).
+        #[qinvokable]
+        fn app_about_load(self: Pin<&mut Backend>, app_id: &QString);
         /// Copy link to tab: Teams' deep link, as rich text with the tab's
         /// name (`tab_json` is the tab as channelTabsJson gives it).
         #[qinvokable]
@@ -579,6 +584,7 @@ pub struct BackendRust {
     store_json: QString,
     channel_tabs_json: QString,
     channel_tab_result: QString,
+    app_about_json: QString,
     /// The channel name channel_tabs_load was last given (reloads reuse it).
     channel_tabs_name: String,
     store_busy: bool,
@@ -3303,6 +3309,23 @@ impl qobject::Backend {
         });
     }
 
+    pub fn app_about_load(self: Pin<&mut Self>, app_id: &QString) {
+        let app = app_id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result =
+                async { api::tabs::app_about(&TeamsClient::new().await?, &app).await }.await;
+            let _ = qt.queue(move |mut this| {
+                let text = match result {
+                    Ok(about) => json!({ "app": app, "about": about }).to_string(),
+                    Err(e) => json!({ "app": app, "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut()
+                    .set_app_about_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
     pub fn copy_tab_link(&self, team_id: &QString, channel_id: &QString, tab_json: &QString) {
         let Ok(tab) = serde_json::from_str::<serde_json::Value>(&tab_json.to_string()) else {
             return;
@@ -3323,6 +3346,7 @@ impl qobject::Backend {
             website_url: String::new(),
             order: 0.0,
             draggable: true,
+            opens_in_browser: false,
             menu: Vec::new(),
             context_menu: Vec::new(),
         };

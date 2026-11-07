@@ -775,15 +775,17 @@ Window {
             else if (step === 4) shot("rename")
             else if (step === 5) { conversation.tabDialogCloseForTest(); conversation.tabDialogForTest("remove", "OST tab A") }
             else if (step === 6) shot("remove")
-            else if (step === 7) { conversation.tabDialogCloseForTest(); conversation.tabChangeForTest("rename", "OST tab A", "OST tab A2") }
-            else if (step === 8) {
+            else if (step === 7) { conversation.tabDialogCloseForTest(); conversation.tabAboutForTest("Notes") }
+            else if (step === 8) { console.warn("TABS about", conversation.tabAboutStateForTest()); shot("about") }
+            else if (step === 9) { conversation.tabAboutCloseForTest(); conversation.tabChangeForTest("rename", "OST tab A", "OST tab A2") }
+            else if (step === 10) {
                 console.warn("TABS renamed", names)
                 const n = conversation.tabNames
                 conversation.tabChangeForTest(n.indexOf("OST tab A2") < n.indexOf("OST tab B") ? "right" : "left", "OST tab A2")
             }
-            else if (step === 9) { console.warn("TABS moved", names); conversation.tabChangeForTest("remove", "OST tab A2") }
-            else if (step === 10) { console.warn("TABS removed A", names); conversation.tabChangeForTest("remove", "OST tab B") }
-            else if (step === 11) { console.warn("TABS removed B", names); Qt.quit() }
+            else if (step === 11) { console.warn("TABS moved", names); conversation.tabChangeForTest("remove", "OST tab A2") }
+            else if (step === 12) { console.warn("TABS removed A", names); conversation.tabChangeForTest("remove", "OST tab B") }
+            else if (step === 13) { console.warn("TABS removed B", names); Qt.quit() }
             step++
         }
     }

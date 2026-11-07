@@ -249,8 +249,25 @@ Rectangle {
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
-                            if (tabItem.menuable) { tabMenu.show(tabItem.channelTab, tabItem.channelTab.menu, tabItem, 0, tabItem.height); return }
+                            const t = tabItem.channelTab
+                            // Teams opens website tabs in the browser; they never become the selected tab.
+                            if (t && t.opens_in_browser) { if (t.website_url) Qt.openUrlExternally(t.website_url); return }
+                            if (tabItem.menuable) { tabMenu.show(t, t.menu, tabItem, 0, tabItem.height); return }
                             root.tab = tabItem.index === 0 ? "" : tabItem.modelData
+                        }
+                    }
+                    // A website tab's tooltip: its address and the open-in-new-window icon.
+                    HoverHandler { id: tabHover }
+                    ToolTip {
+                        visible: tabHover.hovered && !!tabItem.channelTab && tabItem.channelTab.opens_in_browser && !!tabItem.channelTab.website_url
+                        delay: 500
+                        y: tabItem.height + 4
+                        padding: 8
+                        background: FluentSurface { depth: 16; radius: 4 }
+                        contentItem: Row {
+                            spacing: 4
+                            Text { text: tabItem.channelTab ? tabItem.channelTab.website_url : ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.text; anchors.verticalCenter: parent.verticalCenter }
+                            FluentIcon { name: "window-new-20"; size: 16; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
                         }
                     }
                     TapHandler {
@@ -977,6 +994,7 @@ Rectangle {
         else if (key === "moveLeft") backend.channelTabChange("left", root.teamId, root.chatId, t.id, "")
         else if (key === "moveRight") backend.channelTabChange("right", root.teamId, root.chatId, t.id, "")
         else if (key === "reloadTab") root.reloadTab(t)
+        else if (key === "aboutTab") aboutDialog.start(t)
     }
     signal reloadTab(var t)
     // Teams' platform dialog (Fluent Dialog, as measured): 600 wide,
@@ -1132,6 +1150,100 @@ Rectangle {
             }
         }
     }
+    // About this tab (Teams' About dialog, as measured): padding 27/32/42,
+    // the app's name as a 20 px semibold title and a close button; the
+    // app's 36 px logo (radius 4) beside its description and developer
+    // link; then the identity note (not full trust) and the privacy line.
+    Popup {
+        id: aboutDialog
+        property var tab: null
+        readonly property var about: {
+            const r = backend.appAboutJson ? JSON.parse(backend.appAboutJson) : null
+            return r && tab && r.app === tab.app_id && r.about ? r.about : null
+        }
+        function start(t) { tab = t; backend.appAboutLoad(t.app_id); open() }
+        anchors.centerIn: Overlay.overlay
+        modal: true; width: 600
+        topPadding: 27; leftPadding: 32; rightPadding: 32; bottomPadding: 42
+        height: Math.min(implicitHeight, (Overlay.overlay ? Overlay.overlay.height : 800) - 48)
+        background: FluentSurface { depth: 64; radius: 8 }
+        contentItem: Flickable {
+            implicitHeight: aboutCol.implicitHeight
+            contentHeight: aboutCol.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            Column {
+                id: aboutCol
+                width: parent.width
+                spacing: 16
+                Item {
+                    width: parent.width; height: 31.3
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: aboutDialog.about ? aboutDialog.about.name : ""
+                        font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
+                    }
+                    Rectangle {
+                        anchors.right: parent.right
+                        width: 32; height: 31.3; radius: 4
+                        color: aboutClose.hovered ? theme.menuHover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                        HoverHandler { id: aboutClose; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: aboutDialog.close() }
+                        Accessible.role: Accessible.Button; Accessible.name: "Close"
+                    }
+                }
+                Row {
+                    width: parent.width
+                    spacing: 15
+                    Image {
+                        width: 36; height: 36
+                        source: aboutDialog.about ? aboutDialog.about.icon : ""
+                        sourceSize: Qt.size(72, 72)
+                        // Teams rounds the logo's corners (4 px).
+                        RoundedCorners { anchors.fill: parent; radius: 4; background: theme.menu }
+                    }
+                    Column {
+                        width: parent.width - 36 - 15
+                        spacing: 0
+                        Text {
+                            width: parent.width; wrapMode: Text.Wrap
+                            // Teams' converted description; its own links keep
+                            // the browser default (#0000EE), as Teams shows them.
+                            textFormat: Text.RichText
+                            text: aboutDialog.about ? aboutDialog.about.description : ""
+                            font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                            linkColor: "#0000EE"
+                            onLinkActivated: link => { if (/^https:/.test(link)) Qt.openUrlExternally(link) }
+                        }
+                        Text {
+                            visible: !!aboutDialog.about && !!aboutDialog.about.developer && !!aboutDialog.about.developer_url
+                            textFormat: Text.StyledText
+                            text: aboutDialog.about ? "<a href=\"" + aboutDialog.about.developer_url + "\">" + aboutDialog.about.developer + "</a>" : ""
+                            font.family: theme.font; font.pixelSize: theme.base
+                            linkColor: theme.brandLink
+                            onLinkActivated: link => Qt.openUrlExternally(link)
+                        }
+                    }
+                }
+                Column {
+                    visible: !!aboutDialog.about && aboutDialog.about.needs_identity
+                    width: parent.width
+                    Text { width: parent.width; wrapMode: Text.Wrap; text: (aboutDialog.about ? aboutDialog.about.name : "") + " needs access to:"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.Bold; color: theme.text }
+                    Text { width: parent.width; wrapMode: Text.Wrap; text: "Team member's email addresses and information that can identify your team and organization name. Data may be sent to a third-party service"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                }
+                Text {
+                    visible: !!aboutDialog.about && !!aboutDialog.about.privacy_url && !!aboutDialog.about.terms_url
+                    width: parent.width; wrapMode: Text.Wrap
+                    textFormat: Text.StyledText
+                    text: aboutDialog.about ? "By using this tab, you agree to the developer's <a href=\"" + aboutDialog.about.privacy_url + "\">privacy policy</a> and <a href=\"" + aboutDialog.about.terms_url + "\">terms of use</a>." : ""
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                    linkColor: theme.brandLink
+                    onLinkActivated: link => Qt.openUrlExternally(link)
+                }
+            }
+        }
+    }
     // A tab change's outcome: close its dialog, or show Teams' failure text.
     Connections {
         target: backend
@@ -1165,6 +1277,9 @@ Rectangle {
     function tabMenuForTest(name) { const t = root.channelTabs.find(x => x.name === name); return t ? t.menu.map(e => e.enabled ? e.key : e.key + "(off)") : [] }
     function tabMenuShowForTest(name) { const i = root.tabNames.indexOf(name); const t = root.channelTabs[i]; if (t) tabMenu.show(t, t.menu, tabs.children[i], 0, 56) }
     function tabMenuCloseForTest() { tabMenu.close() }
+    function tabAboutForTest(name) { const t = root.channelTabs.find(x => x.name === name); if (t) aboutDialog.start(t); return !!t }
+    function tabAboutCloseForTest() { aboutDialog.close() }
+    function tabAboutStateForTest() { return JSON.stringify({ visible: aboutDialog.visible, opened: aboutDialog.opened, w: aboutDialog.width, h: aboutDialog.height, json: (backend.appAboutJson || "").slice(0, 120) }) }
     function tabDialogCloseForTest() { renameDialog.close(); removeDialog.close() }
     function tabDialogForTest(kind, name) { const t = root.channelTabs.find(x => x.name === name); if (!t) return false; if (kind === "rename") renameDialog.start(t); else removeDialog.start(t); return true }
     function tabChangeForTest(op, name, arg) { const t = root.channelTabs.find(x => x.name === name); if (t) backend.channelTabChange(op, root.teamId, root.chatId, t.id, arg || ""); return !!t }

@@ -136,6 +136,31 @@ debugger, with `[key](kind)` as the client names them:
   (`UpdatePinnedTabs`, module services-apps-platform). That is verified
   working from OST (commit f82a451).
 
+## Website tabs open in the browser (module 339525; flag `enableDeprecateWebsiteTab`, on live)
+With the flag on (as on winpc), a WebsiteTab:
+- gets `disableActive: true`, so it never becomes the selected tab and never shows a chevron;
+- opens `websiteUrl` in the system browser when clicked (`onWebsiteTab`; "Opening website tab in browser with url");
+- has a tooltip: the URL, then a WindowNew icon (module 787554);
+- keeps its right-click menu.
+
+So Teams itself shows no website inside the app. OST does the same.
+
+## About this tab (platform-modal `un` / `fi` / `Br`; about-tab-renderer 160381)
+- **Surface**: padding 27 / 32 / 42, width 600, radius 8, shadow 64.
+- **Header**: the app's name (20 semibold) and a close button ("Close").
+- **Body row**: the app's `largeImageUrl` logo, 36×36 with radius 4, then a column with:
+  - the description, converted as markdown-it's "zero" profile (link, emphasis, list,
+    newline and escape; each line its own block; `[#LI]x[/#LI]` becomes a bullet);
+  - the developer's name, linked to `developerUrl`, in brand colour with an underline.
+- **Not full trust**: "{{tabName}} needs access to:" in bold, then "Team member's email
+  addresses and information that can identify your team and organization name. Data may be sent to a
+  third-party service".
+- **Privacy line**, when the app has both URLs: "By using this tab, you agree to the developer's
+  privacy policy and terms of use.", with both links in brand colour.
+- **Source**: the app definition, `GET {mt}/beta/users/apps/definitions/{appId}`.
+  Teams' copy of OneNote's text has a stray "{:target=_blank}" after a link that the
+  middle tier's text doesn't have. → TODO: find which source Teams' About reads.
+
 ## Tab order (worker modules 80574, 66811, 61009)
 Constants: `orderLeftWall 100000`, `defaultOrderGap 10000`, `minOrderGap 50`,
 `staticTabOrderBeginning 100`, `staticTabOrderGap 100`, `legacyOrderGap 100`.
