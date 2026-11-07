@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T19:45:00Z'
+updated_date: '2026-11-07T21:52:00Z'
 labels:
   - desktop
   - messages
@@ -46,4 +46,11 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - Picks go into the compose box and are sent byte for byte as Teams sends them (emoticon span, GIF, sticker, AMS sticker). Verified on winpc, where Teams rendered OST's message.
 - Received GIFs and stickers render (earlier commit). Emoticon-only messages no longer vanish.
 - Left: the Custom (org emoji) section with Teams' Add emoji dialog; Teams' jumbo emoji-only messages; Fluent emoticon pictures inside message text; GIF and sticker order in mixed messages; GIFs and stickers in replies and edits.
+
+- Custom (org emoji) section with Teams' Add emoji dialog: done (add, send, react verified live on Teams web).
+- Big emoticons (1-3 emoticons/custom emoji alone at 50 px, no bubble) and Teams' Fluent emoticon pictures inside text: done (63a0563).
+
+- Pictures keep their place: text, GIFs, stickers and pictures show in the order written, with Teams' blank lines (measured on Teams web).
+- Edits keep emoticons, custom emoji, GIFs, stickers and pictures (edit_html/edit_media), verified live with two edits (4950794).
+- Left: GIFs/stickers in quoted replies (quote preview).
 <!-- SECTION:NOTES:END -->
