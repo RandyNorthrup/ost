@@ -12,6 +12,9 @@ Rectangle {
     signal call()
     property string chatPresence: ""
     property string typingText: ""
+    /// The typer whose avatar the typing indicator shows.
+    property string typingAvatar: ""
+    property string typingAvatarId: ""
     /// Channel conversations (posts) look different from chats in Teams.
     property bool isChannel: false
     property string teamName: ""
@@ -790,34 +793,51 @@ Rectangle {
         }
     }
 
-    // Typing indicator, as Teams draws it: the typist's avatar overlapping
-    // the compose box's top-left edge with three pulsing dots (the text is
-    // the accessible name).
-    Item {
+    // Typing indicator, as Teams draws it (chat-pane gutter box): the
+    // latest typer's avatar, 16 px into the compose box and 24 px above it,
+    // its bottom tucked under the box (declared before it, so drawn below);
+    // then in a group chat the label ("X and Y are typing", 12 px, one line,
+    // margin 0 0 4 12); then the pulsing dots. A 1:1 chat shows the avatar
+    // and dots only; the label is then for screen readers.
+    Row {
         id: typingRow
         visible: root.typingText.length > 0
-        z: 2
         x: compose.x + 16; y: compose.y - 24
-        width: 32 + 6 + 3 * 6 + 2 * 3; height: 32
+        height: 32
         Accessible.role: Accessible.StaticText
         Accessible.name: root.typingText
-        Avatar { size: 32; name: root.typingText.replace(/ is typing$/, "") }
-        Row {
-            x: 38; anchors.verticalCenter: parent.verticalCenter
-            spacing: 3
-            Repeater {
-                model: 3
-                Rectangle {
-                    required property int index
-                    width: 6; height: 6; radius: 3
-                    color: "#C8C6C4"
-                    SequentialAnimation on color {
-                        running: typingRow.visible
-                        loops: Animation.Infinite
-                        PauseAnimation { duration: index * 200 }
-                        ColorAnimation { to: theme.brand; duration: 200 }
-                        ColorAnimation { to: "#C8C6C4"; duration: 200 }
-                        PauseAnimation { duration: (2 - index) * 200 + 200 }
+        Avatar { size: 32; name: root.typingAvatar; photoId: root.typingAvatarId }
+        Text {
+            visible: root.isGroup
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: -2
+            leftPadding: 12
+            width: Math.min(implicitWidth, compose.width - 32 - 12 - 4 - 3 * 6 - 2 * 3 - 32)
+            text: root.typingText
+            elide: Text.ElideRight
+            maximumLineCount: 1
+            font.pixelSize: 12
+            color: theme.text
+        }
+        Item {
+            width: 6 + 3 * 6 + 2 * 3; height: parent.height
+            Row {
+                x: 6; anchors.verticalCenter: parent.verticalCenter
+                spacing: 3
+                Repeater {
+                    model: 3
+                    Rectangle {
+                        required property int index
+                        width: 6; height: 6; radius: 3
+                        color: "#C8C6C4"
+                        SequentialAnimation on color {
+                            running: typingRow.visible
+                            loops: Animation.Infinite
+                            PauseAnimation { duration: index * 200 }
+                            ColorAnimation { to: theme.brand; duration: 200 }
+                            ColorAnimation { to: "#C8C6C4"; duration: 200 }
+                            PauseAnimation { duration: (2 - index) * 200 + 200 }
+                        }
                     }
                 }
             }

@@ -359,13 +359,52 @@ pub async fn read_timeline_page(
     })
 }
 
+/// People's display names by MRI, learnt from messages, events and Graph
+/// and kept for the session (Teams resolves names from its person store).
+fn names() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    use std::sync::{Mutex, OnceLock};
+    static NAMES: OnceLock<Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
+    NAMES.get_or_init(Default::default)
+}
+
+/// A person's display name if already known.
+pub fn cached_name(mri: &str) -> Option<String> {
+    names().lock().unwrap().get(mri).cloned()
+}
+
+/// A person's display name: known, else from Graph (`8:orgid:` users).
+pub async fn person_name(client: &TeamsClient, mri: &str) -> Option<String> {
+    if let Some(n) = cached_name(mri) {
+        return Some(n);
+    }
+    let oid = mri.strip_prefix("8:orgid:")?;
+    uuid::Uuid::parse_str(oid).ok()?;
+    let v: serde_json::Value = client
+        .graph_get(&format!("/users/{oid}?$select=displayName"))
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let n = v.get("displayName")?.as_str()?.to_string();
+    names().lock().unwrap().insert(mri.to_string(), n.clone());
+    Some(n)
+}
+
 /// Fill in system events' sentences, resolving people's names (from the
 /// event, else Graph; remembered for the session).
 async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView]) {
-    use std::sync::{Mutex, OnceLock};
-    static NAMES: OnceLock<Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
-    let cache = NAMES.get_or_init(Default::default);
+    let cache = names();
     let mut wanted: Vec<String> = Vec::new();
+    {
+        let mut c = cache.lock().unwrap();
+        for m in out.iter() {
+            if !m.sender_mri.is_empty() && !m.sender.is_empty() {
+                c.entry(m.sender_mri.clone())
+                    .or_insert_with(|| m.sender.clone());
+            }
+        }
+    }
     for e in out.iter().filter_map(|m| m.event.as_ref()) {
         let mut c = cache.lock().unwrap();
         for (id, n) in &e.names {
@@ -378,24 +417,7 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
         }
     }
     for id in wanted {
-        let oid = id.trim_start_matches("8:orgid:");
-        if uuid::Uuid::parse_str(oid).is_err() {
-            continue;
-        }
-        let name = async {
-            let v: serde_json::Value = client
-                .graph_get(&format!("/users/{oid}?$select=displayName"))
-                .await
-                .ok()?
-                .json()
-                .await
-                .ok()?;
-            v.get("displayName")?.as_str().map(str::to_string)
-        }
-        .await;
-        if let Some(n) = name {
-            cache.lock().unwrap().insert(id, n);
-        }
+        person_name(client, &id).await;
     }
     let meeting = chat_id.starts_with("19:meeting_");
     let names = cache.lock().unwrap().clone();
@@ -990,7 +1012,7 @@ pub async fn mark_read(
 /// How far the other members of a chat have read: the highest message id
 /// in anyone else's consumption horizon. Teams only publishes horizons for
 /// members who have read receipts on, so `None` also means "not shared".
-pub async fn peer_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Option<u64>> {
+pub async fn peer_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Option<SeenRule>> {
     let url = format!(
         "{}/v1/threads/{}/consumptionhorizons",
         client.chat_service_url(),
@@ -1006,30 +1028,76 @@ pub async fn peer_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Op
         .object_id()
         .map(|o| format!("8:orgid:{o}"))
         .unwrap_or_default();
+    if let Some(n) = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("consumptionhorizons")?.as_array().map(Vec::len))
+    {
+        rosters().lock().unwrap().insert(chat_id.to_string(), n);
+    }
     Ok(peer_horizon(&text, &me))
 }
 
-/// The highest read message id among members other than `me` in a
-/// `/threads/{id}/consumptionhorizons` reply ("msgId;time;clientMsgId").
-pub fn peer_horizon(json: &str, me: &str) -> Option<u64> {
+fn rosters() -> &'static std::sync::Mutex<std::collections::HashMap<String, usize>> {
+    use std::sync::{Mutex, OnceLock};
+    static ROSTERS: OnceLock<Mutex<std::collections::HashMap<String, usize>>> = OnceLock::new();
+    ROSTERS.get_or_init(Default::default)
+}
+
+/// How many members a chat had when its read horizons were last read
+/// (each member has one).
+pub fn roster_size(chat_id: &str) -> Option<usize> {
+    rosters().lock().unwrap().get(chat_id).copied()
+}
+
+/// Teams' group-chat roster limit for typing indicators and read receipts
+/// (`maxRosterSizeInGroupChatChatServiceLimit`, live 20).
+pub const MAX_ROSTER: usize = 20;
+
+/// When a message counts as Seen, by Teams' rule (module 434910): read
+/// by every other member, `arrival ≤ min(their horizons)`, and not before
+/// any member could see it, `arrival ≥ max(their messageVisibilityTime)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeenRule {
+    pub read_to: u64,
+    pub visible_from: u64,
+}
+
+/// Teams' Seen rule from a `/threads/{id}/consumptionhorizons` reply
+/// ("arrivalMs;timestampMs;clientMsgId" each). None when receipts don't
+/// apply: fewer than 2 or more than 20 members, or another member has no
+/// horizon yet.
+pub fn peer_horizon(json: &str, me: &str) -> Option<SeenRule> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    v.get("consumptionhorizons")?
-        .as_array()?
-        .iter()
-        .filter(|h| {
-            h.get("id")
-                .and_then(|i| i.as_str())
-                .is_some_and(|i| !i.eq_ignore_ascii_case(me))
-        })
-        .filter_map(|h| {
-            h.get("consumptionhorizon")?
-                .as_str()?
-                .split(';')
-                .next()?
-                .parse()
-                .ok()
-        })
-        .max()
+    let all = v.get("consumptionhorizons")?.as_array()?;
+    if !(2..=MAX_ROSTER).contains(&all.len()) {
+        return None;
+    }
+    let mut read_to = u64::MAX;
+    let mut visible_from = 0u64;
+    for h in all.iter().filter(|h| {
+        h.get("id")
+            .and_then(|i| i.as_str())
+            .is_some_and(|i| !i.eq_ignore_ascii_case(me))
+    }) {
+        let at: u64 = h
+            .get("consumptionhorizon")
+            .and_then(|c| c.as_str())
+            .and_then(|c| c.split(';').next())
+            .and_then(|c| c.parse().ok())?;
+        read_to = read_to.min(at);
+        let vis = h
+            .get("messageVisibilityTime")
+            .and_then(|t| {
+                t.as_u64()
+                    .or_else(|| t.as_str().and_then(|s| s.parse().ok()))
+            })
+            .unwrap_or(0);
+        visible_from = visible_from.max(vis);
+    }
+    (read_to != u64::MAX).then_some(SeenRule {
+        read_to,
+        visible_from,
+    })
 }
 
 /// How far you had read a chat: the message id in your consumption horizon.
@@ -1067,10 +1135,12 @@ pub fn mark_first_unread(timeline: &mut [MessageView], horizon: Option<u64>) {
 }
 
 /// Mark your messages up to `horizon` as seen.
-pub fn apply_seen(timeline: &mut [MessageView], horizon: Option<u64>) {
-    let Some(h) = horizon else { return };
+pub fn apply_seen(timeline: &mut [MessageView], rule: Option<SeenRule>) {
+    let Some(r) = rule else { return };
     for m in timeline.iter_mut().filter(|m| m.mine) {
-        m.seen = m.id.parse::<u64>().is_ok_and(|id| id <= h);
+        m.seen =
+            m.id.parse::<u64>()
+                .is_ok_and(|id| id <= r.read_to && id >= r.visible_from);
     }
 }
 
@@ -1422,19 +1492,56 @@ mod tests {
     }
 
     #[test]
-    fn peer_horizon_ignores_my_own_entry() {
-        let json = r#"{"consumptionhorizons":[
+    fn seen_follows_teams_rule() {
+        use super::{SeenRule, peer_horizon};
+        // 1:1: the other member's horizon.
+        let one = r#"{"consumptionhorizons":[
             {"id":"8:orgid:me","consumptionhorizon":"900;1;a"},
             {"id":"8:orgid:peer","consumptionhorizon":"500;1;b"}]}"#;
-        assert_eq!(super::peer_horizon(json, "8:orgid:me"), Some(500));
         assert_eq!(
-            super::peer_horizon(
+            peer_horizon(one, "8:orgid:me"),
+            Some(SeenRule {
+                read_to: 500,
+                visible_from: 0
+            })
+        );
+        // Group: the lowest horizon among the others, the latest visibility.
+        let group = r#"{"consumptionhorizons":[
+            {"id":"8:orgid:me","consumptionhorizon":"900;1;a"},
+            {"id":"8:orgid:b","consumptionhorizon":"800;1;b","messageVisibilityTime":100},
+            {"id":"8:orgid:c","consumptionhorizon":"300;1;c","messageVisibilityTime":200}]}"#;
+        assert_eq!(
+            peer_horizon(group, "8:orgid:me"),
+            Some(SeenRule {
+                read_to: 300,
+                visible_from: 200
+            })
+        );
+        // Someone without a horizon yet: no receipts.
+        let missing = r#"{"consumptionhorizons":[
+            {"id":"8:orgid:me","consumptionhorizon":"900;1;a"},
+            {"id":"8:orgid:b","consumptionhorizon":"800;1;b"},
+            {"id":"8:orgid:c"}]}"#;
+        assert_eq!(peer_horizon(missing, "8:orgid:me"), None);
+        // Only me, or more than 20 members: no receipts.
+        assert_eq!(
+            peer_horizon(
                 r#"{"consumptionhorizons":[{"id":"8:orgid:me","consumptionhorizon":"900;1;a"}]}"#,
                 "8:orgid:me"
             ),
             None
         );
-        assert_eq!(super::peer_horizon("nonsense", "8:orgid:me"), None);
+        let big: Vec<String> = (0..21)
+            .map(|k| format!(r#"{{"id":"8:orgid:{k}","consumptionhorizon":"1;1;x"}}"#))
+            .collect();
+        assert_eq!(
+            peer_horizon(
+                &format!(r#"{{"consumptionhorizons":[{}]}}"#, big.join(",")),
+                "8:orgid:0"
+            ),
+            None
+        );
+        assert_eq!(peer_horizon("nonsense", "8:orgid:me"), None);
     }
 
     use super::*;

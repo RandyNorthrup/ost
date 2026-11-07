@@ -509,7 +509,9 @@ Window {
     // Used for pixel comparison against the reference client.
     property bool sentTest: false
     property bool signInShot: false
-    readonly property string shotPath: Qt.application.arguments.length > 1 ? Qt.application.arguments[1] : ""
+    // Positional arguments (never flags): <shot.png> [send text] [awaited text].
+    readonly property var positional: Qt.application.arguments.slice(1).filter(a => !a.startsWith("--"))
+    readonly property string shotPath: positional.length > 0 ? positional[0] : ""
     Timer {
         id: shotTimer
         interval: 15000
@@ -532,7 +534,7 @@ Window {
             const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
             // Push test: wait (unselected) for a chat to turn unread, capture
             // it, then open it and capture once the awaited text is shown.
-            const waitText = Qt.application.arguments.length > 3 ? Qt.application.arguments[3] : ""
+            const waitText = window.positional.length > 2 ? window.positional[2] : ""
             if (waitText) {
                 interval = 1000
                 if (!backend.currentChatId) {
@@ -564,7 +566,7 @@ Window {
                 restart()
                 return
             }
-            const sendText = Qt.application.arguments.length > 2 ? Qt.application.arguments[2] : ""
+            const sendText = window.positional.length > 1 ? window.positional[1] : ""
             if (sendText && !window.sentTest) {
                 window.sentTest = true
                 backend.sendMessage(sendText)
@@ -675,6 +677,9 @@ Window {
         chatPane.messages: conversation.messages
         chatPane.busy: backend.busy
         chatPane.typingText: backend.typingText
+        chatPane.typingAvatar: backend.typingAvatar
+        chatPane.typingAvatarId: backend.typingAvatarId
+        chatPane.isGroup: backend.currentChatId.endsWith("@thread.v2") || backend.currentChatId.indexOf("meeting_") >= 0
         chatPane.onSend: text => backend.sendMessage(text)
         chatPane.onTyping: backend.userTyping()
         chatPane.onReact: (id, key, on) => backend.toggleReaction(id, key, on)
@@ -1455,6 +1460,23 @@ Window {
         }
     }
 
+    // --typing-watch[=<dir>]: log each change of the typing line (and
+    // capture it there as typing-<n>.png) while someone types live.
+    readonly property string typingWatch: {
+        const a = Qt.application.arguments.find(a => a.startsWith("--typing-watch"))
+        return a === undefined ? "" : (a.indexOf("=") > 0 ? a.slice(a.indexOf("=") + 1) : ".")
+    }
+    property int typingShots: 0
+    Connections {
+        target: backend
+        enabled: window.typingWatch.length > 0
+        function onTypingTextChanged() {
+            const n = window.typingShots++
+            console.warn("TYPING-WATCH", n, new Date().toISOString(), JSON.stringify(backend.typingText))
+            window.contentItem.grabToImage(r => r.saveToFile(window.typingWatch + "/typing-" + n + ".png"))
+        }
+    }
+
     TitleBar {
         id: titleBar
         width: parent.width
@@ -1803,6 +1825,8 @@ Window {
         onDeleteMessage: id => backend.deleteMessage(id)
         onSendReply: (id, text) => backend.sendReply(id, text)
         typingText: backend.typingText
+        typingAvatar: backend.typingAvatar
+        typingAvatarId: backend.typingAvatarId
     }
 
     Rectangle {

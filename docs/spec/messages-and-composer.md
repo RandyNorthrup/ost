@@ -228,7 +228,14 @@ Griffel CSS (Teams sets `1rem = 10px`), not from measuring the live window.
   - Every variant starts with a leading space.
 - **UI**: `data-tid="typing-indicator"`, small text with an animated ellipsis, fades in and out.
   - It stays **3000 ms** after the typer list empties.
-  - An avatar shows only when the typer is a bot.
+  - It lives in the chat-pane gutter box (`data-tid="chat-pane-gutter-box"`) above the compose box.
+  - **Avatar**: the typer's avatar (`avatarUrl` from the `typingUsers` query, which is their photo) sits 16 px into the compose box and 24 px above it. The compose box covers its bottom 8 px.
+  - **Label** (`typingUsersLabel`): size small (12 px), one line with an ellipsis, margin `0 0 4px 12px`.
+    - In a **1:1** chat the label is screen-reader-only (`avatarOnlyTypingIndicator` = one-on-one, `isGroup: !oneOnOne`), so the indicator is the avatar plus dots.
+    - In a group chat the label shows between the avatar and the dots.
+  - **Dots**: 6 px dots on a 9 px pitch, starting about 6 px after the label (or after the avatar in a 1:1). They sit roughly on the avatar's centre line.
+  - All of this was measured in Teams web (same client) for "OST Test 1 is typing" in a 2-person group chat on 2026-11-06.
+  - The typer's name comes from their MRI (`from`). Group-chat typing events carry no `imdisplayname`.
   - Hidden in thread panes, in channels (except bots in L1 with a flag), when `disableTypingIndicator` is set, and above 20 members.
 - **Receive**: `Control/Typing` adds the user until
   `originalarrivaltime + typingIndicator.userTimeout` (live **22000 ms**). Any

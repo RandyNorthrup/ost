@@ -205,6 +205,8 @@ pub struct Typing {
     pub conversation_id: String,
     /// The typist's display name, if the event carries it.
     pub sender_name: String,
+    /// The typist's MRI (`from`), e.g. `8:orgid:<oid>`.
+    pub sender_mri: String,
     /// `Control/ClearTyping`: they stopped.
     pub stopped: bool,
 }
@@ -244,9 +246,16 @@ pub fn typing_events(json: &str) -> Vec<Typing> {
                 .and_then(|n| n.as_str())
                 .unwrap_or_default()
                 .to_string();
+            let sender_mri = r
+                .get("from")
+                .and_then(|f| f.as_str())
+                .and_then(|f| f.rsplit("/contacts/").next())
+                .unwrap_or_default()
+                .to_string();
             Some(Typing {
                 conversation_id,
                 sender_name,
+                sender_mri,
                 stopped,
             })
         })
@@ -325,12 +334,13 @@ mod tests {
 
     #[test]
     fn typing_events_start_and_stop() {
-        let start = r#"{"resourceType":"NewMessage","resource":{"messagetype":"Control/Typing","imdisplayname":"Randy Northrup","conversationLink":"https://x/v1/users/ME/conversations/19:a_b@unq.gbl.spaces"}}"#;
+        let start = r#"{"resourceType":"NewMessage","resource":{"messagetype":"Control/Typing","imdisplayname":"Randy Northrup","from":"https://x/v1/users/ME/contacts/8:orgid:abc","conversationLink":"https://x/v1/users/ME/conversations/19:a_b@unq.gbl.spaces"}}"#;
         assert_eq!(
             typing_events(start),
             vec![Typing {
                 conversation_id: "19:a_b@unq.gbl.spaces".into(),
                 sender_name: "Randy Northrup".into(),
+                sender_mri: "8:orgid:abc".into(),
                 stopped: false
             }]
         );
