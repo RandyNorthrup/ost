@@ -231,6 +231,26 @@ pub(crate) fn html_escape(text: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// A thread's members' MRIs (lowercase), from the chat service.
+pub async fn thread_member_ids(client: &TeamsClient, thread: &str) -> Result<Vec<String>> {
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        thread
+    );
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await?;
+    Ok(v.get("members")
+        .and_then(|m| m.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            m.get("id")
+                .and_then(|i| i.as_str())
+                .map(|i| i.to_ascii_lowercase())
+        })
+        .collect())
+}
+
 /// Start a group chat with `members` (MRIs such as `8:orgid:<oid>`, you
 /// included) and an optional name; returns the new chat's id. This is the
 /// chat service call Teams makes when you send the first message of a new
@@ -251,6 +271,46 @@ pub async fn create_group_chat(
     let text = resp.text().await.unwrap_or_default();
     thread_id_from_reply(location.as_deref(), &text)
         .context("The chat service didn't say which chat it created")
+}
+
+/// Make sure the 1:1 chat with `other` (an `8:orgid:` MRI) exists, creating
+/// it as Teams does (`createThread` with a fixed, unique roster) when it
+/// doesn't; returns its id.
+pub async fn ensure_one_on_one_chat(client: &TeamsClient, me: &str, other: &str) -> Result<String> {
+    let oid = |m: &str| m.trim_start_matches("8:orgid:").to_string();
+    let id = super::directory::one_on_one_chat_id(&oid(me), &oid(other));
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        id
+    );
+    match client.chat_get(&url).await {
+        Ok(_) => return Ok(id),
+        Err(e) if e.to_string().contains("HTTP 404") => {}
+        Err(e) => return Err(e),
+    }
+    let body = serde_json::json!({
+        "members": [
+            { "id": me.to_ascii_lowercase(), "role": "Admin" },
+            { "id": other.to_ascii_lowercase(), "role": "Admin" },
+        ],
+        "properties": {
+            "threadType": "chat",
+            "chatFilesIndexId": "2",
+            "fixedRoster": "true",
+            "uniquerosterthread": "true",
+        },
+    });
+    let resp = client
+        .chat_post(&format!("{}/v1/threads", client.chat_service_url()), &body)
+        .await?;
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let text = resp.text().await.unwrap_or_default();
+    Ok(thread_id_from_reply(location.as_deref(), &text).unwrap_or(id))
 }
 
 fn group_chat_body(members: &[String], topic: &str) -> Result<serde_json::Value> {

@@ -1586,6 +1586,49 @@ Window {
         }
     }
 
+    // --forward-test with --open-chat=<id> --shots=<dir>: forward the newest
+    // message from someone else to them (through Teams' forward), capturing
+    // the dialog, the toast and the forwarded card in their 1:1.
+    Timer {
+        running: Qt.application.arguments.indexOf("--forward-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var who: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "fwd-" + n + ".png"))
+            const d = conversation.forwardDialogForTest()
+            if (step === 0 && backend.currentChatId !== id) { backend.selectChat(id, "OST forward test"); return }
+            const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.deleted)
+            if (step === 0) { who = msgs.filter(m => !m.mine && !m.forward).pop(); if (!who) return; d.message = who; d.open() }
+            else if (step === 1) d.typeForTest(who.sender.split(" ")[0])
+            else if (step === 2) shot("suggest")
+            else if (step === 3) { if (!d.pickForTest(who.sender_mri.replace(/^8:orgid:/, ""))) { console.warn("FWD-TEST intended person not offered; stopping"); Qt.quit() } }
+            else if (step === 4) shot("picked")
+            else if (step === 5) { console.warn("FWD-TEST forwarding", who.id, JSON.stringify(d.picked)); d.forwardForTest() }
+            else if (step === 6) { console.warn("FWD-TEST toast", backend.toastJson); shot("toast") }
+            else if (step === 7) backend.openChatWith(who.sender_mri.replace(/^8:orgid:/, ""), who.sender)
+            else if (step === 9) { const f = JSON.parse(backend.messagesJson || "[]").filter(m => m.forward); console.warn("FWD-TEST forwards in 1:1", f.length, f.length ? JSON.stringify(f[f.length - 1].forward).slice(0, 200) : ""); shot("card") }
+            else if (step === 10) Qt.quit()
+            step++
+        }
+    }
+
+    // --toast-test --shots=<dir>: show Teams' toast and capture it.
+    Timer {
+        running: Qt.application.arguments.indexOf("--toast-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (step === 0) backend.toastJson = JSON.stringify({ id: 1, text: "Message forwarded", intent: "success" })
+            else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(dir + "toast.png"))
+            else Qt.quit()
+            step++
+        }
+    }
+
     // --typing-watch[=<dir>]: log each change of the typing line (and
     // capture it there as typing-<n>.png) while someone types live.
     readonly property string typingWatch: {
@@ -1600,6 +1643,47 @@ Window {
             const n = window.typingShots++
             console.warn("TYPING-WATCH", n, new Date().toISOString(), JSON.stringify(backend.typingText))
             window.contentItem.grabToImage(r => r.saveToFile(window.typingWatch + "/typing-" + n + ".png"))
+        }
+    }
+
+    // Teams' in-app toast (measured): a 288 x 46 card, radius 8, 83 from the
+    // window's left and 16 from its bottom. A 16 px intent icon at (13, 15),
+    // the title (14 semibold) at (37, 13), dismiss (24 x 20) at (251, 13).
+    // Success stays 5 s, errors 2 s.
+    Item {
+        id: toast
+        property var toastData: null
+        visible: toastData !== null
+        z: 200
+        x: 83; y: window.height - 16 - height
+        width: 288; height: 46
+        FluentSurface { anchors.fill: parent; depth: 16; radius: 8; color: theme.surface }
+        FluentIcon {
+            x: 13; y: 15; size: 16
+            name: toast.toastData && toast.toastData.intent === "error" ? "error-circle-20-filled" : "checkmark-circle-20-filled"
+            color: toast.toastData && toast.toastData.intent === "error" ? theme.redForeground1 : theme.successFg
+        }
+        Text { x: 37; y: 13; height: 20; verticalAlignment: Text.AlignVCenter; text: toast.toastData ? toast.toastData.text : ""; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+        Rectangle {
+            x: 251; y: 13; width: 24; height: 20; radius: 4
+            color: toastClose.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            HoverHandler { id: toastClose; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: toast.toastData = null }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Dismiss"
+        }
+        Timer { id: toastTimer; onTriggered: toast.toastData = null }
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: toastData ? toastData.text : ""
+        Connections {
+            target: backend
+            function onToastJsonChanged() {
+                if (!backend.toastJson) return
+                toast.toastData = JSON.parse(backend.toastJson)
+                toastTimer.interval = toast.toastData.intent === "error" ? 2000 : 5000
+                toastTimer.restart()
+            }
         }
     }
 

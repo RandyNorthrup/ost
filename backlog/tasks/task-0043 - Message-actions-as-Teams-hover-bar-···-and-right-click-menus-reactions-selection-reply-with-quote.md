@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T09:22:00Z'
+updated_date: '2026-11-07T09:59:00Z'
 labels:
   - desktop
   - messages
@@ -42,4 +42,10 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 
 - AC4: message text is selectable (a read-only TextEdit, kept to Teams' 20 px lines; the bubble now matches Teams' 35.3 px one-line height). Right-click with a selection gives Copy and Select all.
 - AC2 (in progress): the ··· and right-click menus are built to the live measurements: the reaction strip on right-click, Teams' order, icons and shortcut letters, and More actions disabled while it is empty. Working now: Reply with quote, Edit, Copy link (Teams' link and clipboard HTML), Save and Unsave (rcmetadata), Delete, Pin and Unpin (thread pinnedItems), Read by N of M (horizons, with a submenu that opens a 1:1), and Mark as unread (Teams' bookmark; the chat list honours it). Each was verified live against the service. Still to do: Forward, Share to Outlook, Translation, Report, Immersive Reader, and the pinned banner.
+
+- Forward: Teams' dialog rebuilt from live measurements. It searches people (directory), group chats and channels, picks recipients as pills, shows the forward-card preview and an optional note. The POST uses the source conversation with the target in the body, as the service expects.
+- A one-person forward creates the 1:1 first when it doesn't exist (Teams' createThread with a unique roster). Several people reuse a group chat with exactly those members, else a new one.
+- Teams' toast (measured: 288 x 46, bottom-left). Forwarded messages render as Teams' forward card; originalSentTime comes as ISO.
+- Verified live: forwarded to the Randy 1:1 (the service replied 200 with the new id), and the toast and the card match winpc.
+- Note: one early test attempt targeted a different directory "Randy Northrup" (Randy@techit.pw). Nothing was delivered: that thread didn't exist, and creating it wasn't implemented yet. The harness now picks by id.
 <!-- SECTION:NOTES:END -->

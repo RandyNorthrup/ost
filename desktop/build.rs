@@ -39,6 +39,8 @@ fn main() {
         "qml/Emoticon.qml",
         "qml/QuoteCard.qml",
         "qml/ReactionPicker.qml",
+        "qml/ForwardCard.qml",
+        "qml/ForwardDialog.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts", "assets/tray"] {

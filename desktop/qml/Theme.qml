@@ -65,6 +65,11 @@ QtObject {
     readonly property color badge: "#C4314B"
     readonly property color danger: pick("#C4314B", "#E37D80")
     readonly property color redForeground1: pick("#BC2F32", "#E37D80")  // colorPaletteRedForeground1 (failed sends)
+    readonly property color redForeground3: pick("#D13438", "#E37D80")  // colorPaletteRedForeground3 (required marks)
+    readonly property color brandForeground2: pick("#444791", "#9299F7")  // colorBrandForeground2 (forward card's time link)
+    readonly property color successFg: pick("#0E700E", "#54B054")       // colorStatusSuccessForeground1 (toast)
+    readonly property color inputFilledDark: pick("#F0F0F0", "#141414") // the forward dialog's picker
+    readonly property color disabledStrong: pick("#C7C7C7", "#5C5C5C")  // a disabled primary button's text
     readonly property color redBackground1: pick("#FDF6F6", "#3F1011")  // colorPaletteRedBackground1 (failed bubble)
     readonly property color redBorder1: pick("#F1BBBC", "#D13438")      // colorPaletteRedBorder1
     // Teams' raised-hand outline.

@@ -337,6 +337,53 @@ pub fn readers_from(v: &serde_json::Value, me: &str, arrival_ms: u64) -> (Vec<St
     (readers, all.len())
 }
 
+/// Forward messages (Teams' forward): `POST …/conversations/{SOURCE}/messages/forward`
+/// with the target in the body and the optional note as an ordinary message.
+/// Returns the new message ids.
+pub async fn forward(
+    client: &TeamsClient,
+    source: &str,
+    message_ids: &[String],
+    target: &str,
+    note_html: &str,
+) -> Result<Vec<String>> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages/forward",
+        client.chat_service_url(),
+        source
+    );
+    let additional = serde_json::json!({
+        "content": note_html,
+        "messagetype": "RichText/Html",
+        "contenttype": "Text",
+        "clientmessageid": super::outbox::new_client_message_id(),
+        "imdisplayname": client.display_name().unwrap_or_default(),
+        "properties": { "importance": "", "formatVariant": "TEAMS" },
+    });
+    let body = serde_json::json!({
+        "targetThreadIds": [target],
+        "messageIds": message_ids,
+        "additionalMessage": additional,
+        "templateId": "basic_forward_message_template",
+    });
+    let resp = client
+        .chat_request(reqwest::Method::POST, &url, &body)
+        .await?;
+    let v: serde_json::Value = resp.json().await.unwrap_or_default();
+    let results = v.as_array().cloned().unwrap_or_default();
+    let mut ids = Vec::new();
+    for r in &results {
+        let status = r.get("statusCode").and_then(|s| s.as_u64()).unwrap_or(200);
+        if !(200..300).contains(&status) || r.get("error").is_some_and(|e| !e.is_null()) {
+            anyhow::bail!("Failed to forward ({status})");
+        }
+        if let Some(id) = r.get("messageId") {
+            ids.push(id.to_string().trim_matches('"').to_string());
+        }
+    }
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,6 +416,30 @@ mod tests {
         assert_eq!(
             copy_link_html("https://x/?a=1&b=2", "Ann: <hi>", false),
             "<div itemprop=\"teams-copy-link\"><a href=\"https://x/?a=1&amp;b=2\">Ann: &lt;hi&gt;</a></div>"
+        );
+    }
+
+    #[test]
+    fn forwards_parse_as_teams_cards() {
+        let content = "<blockquote itemtype=\"http://schema.skype.com/Forward\"><p>hello</p></blockquote><p>note</p>";
+        let props: serde_json::Value = serde_json::json!({"originalMessageContext": "{\"originalSender\":\"8:orgid:a\",\"originalSentTime\":\"2026-11-07T06:26:55.852Z\",\"messageId\":\"1794032815852\",\"originalThreadId\":\"19:x@thread.v2\"}"});
+        let (f, rest) = super::super::messages::split_forward(content, Some(&props));
+        let f = f.unwrap();
+        assert_eq!(
+            (
+                f.sender_mri.as_str(),
+                f.arrival_ms,
+                f.text.as_str(),
+                f.thread_id.as_str()
+            ),
+            ("8:orgid:a", 1794032815852, "hello", "19:x@thread.v2")
+        );
+        assert_eq!(rest, "<p>note</p>");
+        // Without the context the blockquote stays ordinary HTML.
+        assert!(
+            super::super::messages::split_forward(content, None)
+                .0
+                .is_none()
         );
     }
 

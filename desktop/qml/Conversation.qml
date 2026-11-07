@@ -87,6 +87,7 @@ Rectangle {
     }
     function closePickerForTest() { reactionPicker.close() }
     function closeMessageMenuForTest() { messageMenu.close() }
+    function forwardDialogForTest() { return forwardDialog }
     function openReactionPicker(messageId, anchor) { reactionPicker.messageId = messageId; reactionPicker.parent = anchor; reactionPicker.open() }
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function plainText() { return input.getText(0, input.length) }
@@ -572,12 +573,15 @@ Rectangle {
                 readonly property real bodyH: showBody ? Math.max(1, body.lineCount) * 20 : 0
                 // A quoted reply's card sits at the top (Teams: 10.7 down, the
                 // text 4 under it).
-                readonly property real quoteShift: msg.modelData.quote ? 60.3 : 0
+                readonly property real quoteShift: msg.modelData.quote ? 60.3
+                    // A forward card sits 14.7 down; a note 4 under it, else
+                    // the bubble ends 9 under it (Teams).
+                    : msg.modelData.forward ? fwdCard.height + (showBody ? 12 : 8.4) : 0
                 readonly property real picsTop: showBody ? body.y + bodyH + 8 : (bare ? 0 : 8)
                 readonly property real picsH: imgs.length > 0 ? pics.implicitHeight : 0
                 readonly property real filesTop: imgs.length > 0 ? picsTop + picsH + 8 : (showBody ? body.y + bodyH + 8 : 8)
                 width: root.isChannel ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: bare && files.length === 0 ? picsH
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
@@ -637,6 +641,18 @@ Rectangle {
                         // falls back to the native one).
                         if (body.selectedText.length > 0) { textMenu.target = body; textMenu.popup(bubble, ev.position.x, ev.position.y); return }
                         root.openMessageMenu(msg.modelData, bubble, true, ev.position.x, ev.position.y)
+                    }
+                }
+                ForwardCard {
+                    id: fwdCard
+                    visible: !!msg.modelData.forward
+                    x: bubble.pad; y: 14.7
+                    forward: msg.modelData.forward || null
+                    maxWidth: msg.maxBubble - 2 * bubble.pad
+                    onOpenOriginal: {
+                        const f = msg.modelData.forward
+                        if (f.thread_id === root.chatId) root.jumpToMessage(f.message_id)
+                        else if (f.thread_id) backend.selectChat(f.thread_id, "")
                     }
                 }
                 QuoteCard {
@@ -1619,6 +1635,7 @@ Rectangle {
         // Core items, in Teams' registry order.
         if (rightClick || own) out.push({ key: "reply", label: "Reply with quote", icon: "quote-reply-20", keys: "Q" })
         if (rightClick && own) out.push({ key: "edit", label: "Edit", icon: "edit-20", keys: "E" })
+        out.push({ key: "forward", label: "Forward", icon: "share-forward-20", keys: "F" })
         out.push({ key: "copy-link", label: "Copy link", icon: "link-20" })
         out.push(m.saved
             ? { key: "unsave", label: "Unsave this message", icon: "bookmark-20-filled", keys: "S" }
@@ -1676,12 +1693,17 @@ Rectangle {
             if (it.key === "reply") root.replyWithQuote(m)
             else if (it.key === "edit") root.startEdit(m)
             else if (it.key === "delete") root.deleteMessage(m.id)
+            else if (it.key === "forward") { forwardDialog.message = m; forwardDialog.open() }
             else if (it.key === "copy-link") backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.root_id || "" }), JSON.stringify({ team_id: root.teamId, team_name: root.teamName, channel_name: root.isChannel ? root.chatName : "" }))
             else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
             else if (it.key === "pin" || it.key === "unpin") backend.setMessagePinned(m.id, it.key === "pin")
             else if (it.key === "unread") backend.markMessageUnread(m.id, m.client_message_id || "")
             else if (it.key === "read") { readersMenu.items = root.readersFor(m.id).readers.map(x => ({ key: x.mri, label: x.name })); readersMenu.parent = messageMenu.parent; readersMenu.x = messageMenu.x + messageMenu.width; readersMenu.y = messageMenu.y; readersMenu.open() }
         }
+    }
+    ForwardDialog {
+        id: forwardDialog
+        onForwardTo: (targets, note) => backend.forwardMessage(message.id, JSON.stringify(targets), note)
     }
     // Read by N of M's readers: one row per reader; a click opens a 1:1
     // chat with them.

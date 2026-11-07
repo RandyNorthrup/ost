@@ -132,6 +132,9 @@ pub mod qobject {
         #[qproperty(QString, recent_reactions_json)]
         /// `{message_id, total, readers: [{mri, name}]}` for Read by N of M.
         #[qproperty(QString, message_readers_json)]
+        /// Teams' in-app toast: `{id, text, intent}` (intent "success" or
+        /// "error"); a new id each time.
+        #[qproperty(QString, toast_json)]
         /// The user's quick reactions for the hover bar (Teams' roamed
         /// defaultMessageReactions, else its default four), as a JSON array.
         #[qproperty(QString, quick_reactions_json)]
@@ -219,6 +222,16 @@ pub mod qobject {
         /// Load who has read one of your messages into messageReadersJson.
         #[qinvokable]
         fn load_message_readers(self: Pin<&mut Backend>, message_id: &QString);
+        /// Forward a message of the open chat (Teams' Forward): `targets_json`
+        /// `[{kind: "person", oid, name} | {kind: "chat", id}]`, an optional
+        /// note. The outcome lands in toastJson.
+        #[qinvokable]
+        fn forward_message(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            targets_json: &QString,
+            note: &QString,
+        );
         /// Retry a failed message, by its clientmessageid.
         #[qinvokable]
         fn retry_failed_message(self: Pin<&mut Backend>, client_message_id: &QString);
@@ -751,6 +764,7 @@ pub struct BackendRust {
     emoticons_version: i32,
     recent_reactions_json: QString,
     message_readers_json: QString,
+    toast_json: QString,
     quick_reactions_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
@@ -3501,6 +3515,105 @@ impl qobject::Backend {
                 }
                 Err(e) => tracing::warn!("read receipts unavailable: {}", short_error(&e)),
             }
+        });
+    }
+
+    /// Show Teams' in-app toast.
+    fn toast(mut self: Pin<&mut Self>, text: &str, intent: &str) {
+        let id = chrono::Utc::now().timestamp_millis();
+        let v = json!({ "id": id, "text": text, "intent": intent }).to_string();
+        self.as_mut().set_toast_json(QString::from(v.as_str()));
+    }
+
+    pub fn forward_message(
+        self: Pin<&mut Self>,
+        message_id: &QString,
+        targets_json: &QString,
+        note: &QString,
+    ) {
+        let source = self.rust().current_chat_id.to_string();
+        let id = message_id.to_string();
+        let note = note.to_string();
+        let targets: Vec<serde_json::Value> =
+            serde_json::from_str(&targets_json.to_string()).unwrap_or_default();
+        let group_chats: Vec<String> =
+            serde_json::from_str::<Vec<serde_json::Value>>(&self.rust().chats_json.to_string())
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|c| c.get("id").and_then(|i| i.as_str()).map(str::to_string))
+                .filter(|i| i.ends_with("@thread.v2"))
+                .collect();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let me = client
+                    .object_id()
+                    .ok_or_else(|| anyhow::anyhow!("not signed in"))?;
+                let chats: Vec<&serde_json::Value> =
+                    targets.iter().filter(|t| t["kind"] == "chat").collect();
+                let people: Vec<String> = targets
+                    .iter()
+                    .filter(|t| t["kind"] == "person")
+                    .filter_map(|t| t["oid"].as_str().map(str::to_string))
+                    .collect();
+                // The target: a picked chat or channel; one person's 1:1;
+                // several people's group chat (an existing one with exactly
+                // those members, else a new one).
+                let target = if let Some(c) = chats.first() {
+                    c["id"].as_str().unwrap_or_default().to_string()
+                } else if people.len() == 1 {
+                    api::ensure_one_on_one_chat(
+                        &client,
+                        &format!("8:orgid:{me}"),
+                        &format!("8:orgid:{}", people[0]),
+                    )
+                    .await?
+                } else {
+                    let mut want: Vec<String> = people
+                        .iter()
+                        .chain(std::iter::once(&me))
+                        .map(|o| format!("8:orgid:{}", o.to_ascii_lowercase()))
+                        .collect();
+                    want.sort();
+                    want.dedup();
+                    let mut found = None;
+                    for chat in &group_chats {
+                        if let Ok(mut members) = api::thread_member_ids(&client, chat).await {
+                            members.sort();
+                            if members == want {
+                                found = Some(chat.clone());
+                                break;
+                            }
+                        }
+                    }
+                    match found {
+                        Some(c) => c,
+                        None => api::create_group_chat(&client, &want, "").await?,
+                    }
+                };
+                let note_html = if note.trim().is_empty() {
+                    String::new()
+                } else {
+                    api::outbox::plain_html(&note)
+                };
+                api::msgactions::forward(
+                    &client,
+                    &source,
+                    std::slice::from_ref(&id),
+                    &target,
+                    &note_html,
+                )
+                .await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(_) => this.as_mut().toast("Message forwarded", "success"),
+                Err(e) => {
+                    tracing::warn!("forward failed: {}", short_error(&e));
+                    this.as_mut().toast("Failed to forward", "error");
+                }
+            });
         });
     }
 

@@ -29,6 +29,97 @@ pub struct Quote {
     pub preview: String,
 }
 
+/// A forwarded message inside a message (Teams' forward card): the
+/// `<blockquote itemtype="http://schema.skype.com/Forward">` and its
+/// `properties.originalMessageContext`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Forwarded {
+    pub sender_mri: String,
+    /// Filled in from the person's name when known.
+    pub sender_name: String,
+    pub arrival_ms: i64,
+    pub message_id: String,
+    pub thread_id: String,
+    pub parent_id: String,
+    /// The original's sanitised HTML and plain text.
+    pub html: String,
+    pub text: String,
+    pub deleted: bool,
+}
+
+/// Split Teams' forward blockquote off a message's HTML, using the
+/// message's `originalMessageContext` (the card needs the original's id,
+/// sender and time; without them the blockquote stays ordinary HTML).
+pub fn split_forward(
+    content: &str,
+    props: Option<&serde_json::Value>,
+) -> (Option<Forwarded>, String) {
+    const START: &str = "<blockquote itemtype=\"http://schema.skype.com/Forward\">";
+    let Some(start) = content.find(START) else {
+        return (None, content.to_string());
+    };
+    let inner_start = start + START.len();
+    let Some(end) = content[inner_start..]
+        .rfind("</blockquote>")
+        .map(|i| inner_start + i)
+    else {
+        return (None, content.to_string());
+    };
+    let ctx: serde_json::Value = match props.and_then(|p| p.get("originalMessageContext")) {
+        Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+        Some(v) => v.clone(),
+        None => serde_json::Value::Null,
+    };
+    let get = |k: &str| {
+        ctx.get(k)
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| v.to_string())
+            })
+            .unwrap_or_default()
+    };
+    let (sender, message_id) = (get("originalSender"), get("messageId"));
+    let arrival_ms = ctx
+        .get("originalSentTime")
+        // Epoch ms, or (as the service writes it) an ISO time.
+        .and_then(|t| {
+            t.as_i64().or_else(|| {
+                let s = t.as_str()?;
+                s.parse().ok().or_else(|| {
+                    chrono::DateTime::parse_from_rfc3339(s)
+                        .ok()
+                        .map(|d| d.timestamp_millis())
+                })
+            })
+        })
+        .unwrap_or(0);
+    if sender.is_empty() || message_id.is_empty() || arrival_ms == 0 {
+        return (None, content.to_string());
+    }
+    let inner = &content[inner_start..end];
+    let fwd = Forwarded {
+        sender_mri: sender.clone(),
+        sender_name: cached_name(&sender).unwrap_or_default(),
+        arrival_ms,
+        message_id,
+        thread_id: get("originalThreadId"),
+        parent_id: get("parentMessageId"),
+        html: sanitize_html(inner),
+        text: super::strip_html(inner).trim().to_string(),
+        deleted: ctx
+            .get("isDeleted")
+            .and_then(|d| d.as_bool())
+            .unwrap_or(false),
+    };
+    let rest = format!(
+        "{}{}",
+        &content[..start],
+        &content[end + "</blockquote>".len()..]
+    );
+    (Some(fwd), rest)
+}
+
 /// Split a Teams quote card off the start of a message's HTML.
 pub fn split_quote(content: &str) -> (Option<Quote>, String) {
     let Some(start) = content.find("<blockquote") else {
@@ -197,6 +288,9 @@ pub struct MessageView {
     /// Pinned for everyone in the chat.
     #[serde(default)]
     pub pinned: bool,
+    /// The message it forwards (Teams' forward card).
+    #[serde(default)]
+    pub forward: Option<Forwarded>,
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module
@@ -539,8 +633,22 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
             }
         }
     }
+    // Forwarded messages' original senders too.
+    for f in out.iter().filter_map(|m| m.forward.as_ref()) {
+        if f.sender_name.is_empty()
+            && !wanted.contains(&f.sender_mri)
+            && cached_name(&f.sender_mri).is_none()
+        {
+            wanted.push(f.sender_mri.clone());
+        }
+    }
     for id in wanted {
         person_name(client, &id).await;
+    }
+    for f in out.iter_mut().filter_map(|m| m.forward.as_mut()) {
+        if f.sender_name.is_empty() {
+            f.sender_name = cached_name(&f.sender_mri).unwrap_or_else(|| "Unknown user".into());
+        }
     }
     let meeting = chat_id.starts_with("19:meeting_");
     let names = cache.lock().unwrap().clone();
@@ -664,6 +772,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         .and_then(|p| p.get("edittime"))
         .is_some_and(|e| !e.is_null() && e != "");
     let (quote, content) = split_quote(&s("/content"));
+    let (forward, content) = split_forward(&content, m.get("properties"));
     let reactions = props
         .and_then(|p| p.get("emotions"))
         .map(|e| reactions_of(e, me))
@@ -685,6 +794,14 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
             .map(super::files::parse_files)
             .unwrap_or_default()
     };
+    // A forward with no note of its own still shows (its card).
+    if forward.is_some() && text.is_empty() && images.is_empty() && files.is_empty() && !deleted {
+        return Some(MessageView {
+            quote,
+            forward,
+            ..base
+        });
+    }
     if (deleted && !mine) || (!deleted && text.is_empty() && images.is_empty() && files.is_empty())
     {
         return None;
@@ -698,6 +815,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let my_mentions = my_mention_ids(props, me);
     Some(MessageView {
         quote,
+        forward,
         images,
         files,
         mentions_me: !my_mentions.is_empty() && !deleted,
