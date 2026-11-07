@@ -2043,7 +2043,11 @@ pub fn teams_html_and_mentions(qt: &str) -> (String, Vec<OutMention>) {
             }
             ("a", false) => {
                 let href = editor_attr(tag, "href").unwrap_or_default();
-                if let Some(mri) = href.strip_prefix("mention:") {
+                let target = href
+                    .strip_prefix("mention-everyone:")
+                    .map(|c| (c, "everyone"))
+                    .or_else(|| href.strip_prefix("mention:").map(|m| (m, "person")));
+                if let Some((mri, mention_type)) = target {
                     let itemid = mentions.len();
                     out.push_str(&format!(
                         "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"{itemid}\">"
@@ -2052,7 +2056,7 @@ pub fn teams_html_and_mentions(qt: &str) -> (String, Vec<OutMention>) {
                         kind: "http://schema.skype.com/Mention",
                         itemid,
                         mri: mri.to_string(),
-                        mention_type: "person",
+                        mention_type,
                         display_name: String::new(),
                     });
                     anchors.push(true);
@@ -2232,6 +2236,17 @@ mod quote_tests {
         assert_eq!(m[0].mri, "8:orgid:abc");
         assert_eq!(m[0].display_name, "Randy Northrup");
         let j = serde_json::to_value(&m).unwrap();
+        let (_, e) = teams_html_and_mentions(
+            r#"<p><a href="mention-everyone:19:x@thread.v2">Everyone</a></p>"#,
+        );
+        assert_eq!(
+            (
+                e[0].mri.as_str(),
+                e[0].mention_type,
+                e[0].display_name.as_str()
+            ),
+            ("19:x@thread.v2", "everyone", "Everyone")
+        );
         assert_eq!(j[0]["@type"], "http://schema.skype.com/Mention");
         assert_eq!(j[0]["mentionType"], "person");
     }

@@ -251,6 +251,54 @@ pub async fn thread_member_ids(client: &TeamsClient, thread: &str) -> Result<Vec
         .collect())
 }
 
+/// A chat member as Teams lists people (the mention picker, the roster).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Member {
+    pub mri: String,
+    pub name: String,
+    pub mail: String,
+    /// Whether this is us.
+    pub me: bool,
+}
+
+/// A chat's members with their names and e-mail addresses (Graph, for
+/// `8:orgid:` users), us included and marked.
+pub async fn chat_members(client: &TeamsClient, thread: &str) -> Result<Vec<Member>> {
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}").to_ascii_lowercase())
+        .unwrap_or_default();
+    let ids = thread_member_ids(client, thread).await?;
+    let mut out = Vec::new();
+    for mri in ids {
+        let mut m = Member {
+            me: mri == me,
+            ..Default::default()
+        };
+        if let Some(oid) = mri.strip_prefix("8:orgid:")
+            && uuid::Uuid::parse_str(oid).is_ok()
+            && let Ok(resp) = client
+                .graph_get(&format!(
+                    "/users/{oid}?$select=displayName,mail,userPrincipalName"
+                ))
+                .await
+            && let Ok(v) = resp.json::<serde_json::Value>().await
+        {
+            m.name = v["displayName"].as_str().unwrap_or_default().to_string();
+            m.mail = v["mail"]
+                .as_str()
+                .or_else(|| v["userPrincipalName"].as_str())
+                .unwrap_or_default()
+                .to_string();
+        }
+        m.mri = mri;
+        if !m.name.is_empty() || m.me {
+            out.push(m);
+        }
+    }
+    Ok(out)
+}
+
 /// Start a group chat with `members` (MRIs such as `8:orgid:<oid>`, you
 /// included) and an optional name; returns the new chat's id. This is the
 /// chat service call Teams makes when you send the first message of a new

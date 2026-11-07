@@ -176,6 +176,8 @@ pub mod qobject {
         #[qproperty(QString, calendar_json)]
         /// People search results for the new-chat picker, as JSON.
         #[qproperty(QString, people_json)]
+        /// The open chat's members (Teams' roster): [{mri, name, mail, me}].
+        #[qproperty(QString, chat_members_json)]
         /// Joined teams and their channels, as JSON.
         #[qproperty(QString, teams_json)]
         type Backend = super::BackendRust;
@@ -836,6 +838,7 @@ pub struct BackendRust {
     calls_json: QString,
     calendar_json: QString,
     people_json: QString,
+    chat_members_json: QString,
     teams_json: QString,
     people_query_generation: u64,
     /// Bumped on every typing change so a stale clear timer does nothing.
@@ -3404,6 +3407,37 @@ impl qobject::Backend {
         self.as_mut().set_current_chat_name(chat_name.clone());
         self.as_mut().set_messages_json(QString::from("[]"));
         self.as_mut().reload_messages();
+        self.as_mut().load_chat_members();
+    }
+
+    /// Fetch the open chat's members (names and e-mail from Graph).
+    fn load_chat_members(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        self.as_mut().set_chat_members_json(QString::from("[]"));
+        if chat_id.is_empty() || chat_id.ends_with("@thread.tacv2") || chat_id.starts_with("48:") {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::chat_members(&client, &chat_id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().current_chat_id.to_string() != chat_id {
+                    return;
+                }
+                match result {
+                    Ok(members) => {
+                        let text = serde_json::to_string(&members).unwrap_or_else(|_| "[]".into());
+                        this.as_mut()
+                            .set_chat_members_json(QString::from(text.as_str()));
+                    }
+                    Err(e) => tracing::warn!("chat members unavailable: {}", short_error(&e)),
+                }
+            });
+        });
     }
 
     pub fn send_message(self: Pin<&mut Self>, text: &QString) {

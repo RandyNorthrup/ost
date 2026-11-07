@@ -40,6 +40,10 @@ Item {
     // Whether the picker also searches the directory (1:1 chats and
     // channels; group chats suggest their members, as Teams does).
     property bool mentionDirectory: true
+    // Everyone (group chats): the conversation id, and how many are in it
+    // (Teams: up to 250; two or fewer get plain text).
+    property string everyoneId: ""
+    property int memberCount: 0
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
     readonly property alias editor: input
@@ -480,6 +484,15 @@ Item {
     }
     function insertMention(person) {
         if (mentionAt < 0) return
+        if (person.everyone) {
+            const at0 = mentionAt, end0 = input.cursorPosition
+            mentionAt = -1; mentionPicker.close()
+            input.remove(at0, end0)
+            input.insert(at0, root.memberCount > 2 ? '<a href="mention-everyone:' + root.everyoneId + '" style="color:' + theme.brandForeground1 + '; text-decoration:none">Everyone</a>&nbsp;' : "Everyone&nbsp;")
+            input.cursorPosition = at0 + 9
+            input.forceActiveFocus()
+            return
+        }
         const words = String(person.name || "").split(/\s+/).filter(w => w)
         const style = 'style="color:' + theme.brandForeground1 + '; text-decoration:none"'
         const html = words.map(w => '<a href="mention:' + person.mri + '" ' + style + '>' + escapeHtml(w) + '</a>').join("&nbsp;") + "&nbsp;"
@@ -506,7 +519,10 @@ Item {
             const found = q.length >= 2 && root.mentionDirectory ? (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).map(p => ({ mri: "8:orgid:" + p.id, name: p.name, mail: p.mail || p.email || "" })) : []
             const out = fromRoster.slice()
             for (const p of found) if (!out.some(o => o.mri === p.mri)) out.push(p)
-            return out.slice(0, 20)
+            // Everyone, in group chats up to 250 people.
+            if (root.everyoneId && root.memberCount <= 250 && (!q || "everyone".startsWith(q)))
+                out.push({ everyone: true, name: "Everyone", mail: "Notify everyone in the chat" })
+            return out.slice(0, 21)
         }
         function move(d) { if (people.length) current = (current + d + people.length) % people.length }
         function pick() { if (people.length) root.insertMention(people[Math.max(0, Math.min(current, people.length - 1))]); else close() }
@@ -531,7 +547,8 @@ Item {
                     required property int index
                     width: 298.7; height: 47.3
                     color: index === mentionPicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : prowHover.hovered ? theme.menuHover : "transparent"
-                    Avatar { x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri }
+                    Avatar { visible: !prow.modelData.everyone; x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri || "" }
+                    FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.textStrong }
                     Text { x: 59.6; y: 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Text { visible: !!prow.modelData.mail; x: 59.6; y: 25.6; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     HoverHandler { id: prowHover; cursorShape: Qt.PointingHandCursor }

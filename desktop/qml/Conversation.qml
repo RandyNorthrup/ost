@@ -2038,8 +2038,11 @@ Rectangle {
         // Teams: not in channels; Urgent only in chats up to 20 people.
         deliveryOptions: !root.isChannel
         mentionDirectory: !root.isGroup
-        mentionables: participants.members.filter(m => !/\(You\)$/.test(m.name || "")).map(m => ({ mri: m.mri, name: m.name, mail: m.mail || "" }))
-        urgentAllowed: !root.isGroup || participants.members.length <= 20
+        everyoneId: root.isGroup ? root.chatId : ""
+        readonly property var roster: backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+        memberCount: roster.length
+        mentionables: roster.filter(m => !m.me).map(m => ({ mri: m.mri, name: m.name, mail: m.mail }))
+        urgentAllowed: !root.isGroup || (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) <= 20
         onScheduleMeetingRequested: root.scheduleMeeting()
         onCancelled: { root.quoting = null; root.pendingFiles = []; root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
         Connections {

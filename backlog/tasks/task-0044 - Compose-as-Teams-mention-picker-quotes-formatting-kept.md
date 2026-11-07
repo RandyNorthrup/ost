@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T14:48:00Z'
+updated_date: '2026-11-07T15:09:00Z'
 labels:
   - desktop
   - messages
@@ -35,4 +35,6 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - AC3: Enter rules as Teams (Ctrl+Enter sends; Enter sends only with the Default setting and the bar closed; Shift+Enter new line).
 - Delivery options via "+" (measured flyout and listbox), IMPORTANT!/URGENT! header, Ctrl+Shift+I, Urgent rules; importance sent with the message.
 - Left: AC1 @mention picker; the full formatting bar (highlight, colour, size, quote, link, code block, rich style, indent, rule, table, undo/redo, overflow); fun picker (GIFs, stickers); Attach menu (cloud files); Schedule message; Record video clip; Loop; installed apps in "+"; drafts sync; pre-send checks.
+
+- AC1 (partial): @ opens Teams' picker (measured); person mentions insert as per-word tokens and send in Teams' wire format (verified rendered by Teams). Left: Everyone / tags / channel / team mentions, Add someone to the chat, Share contact, member emails in rows, mentions kept when editing.
 <!-- SECTION:NOTES:END -->
