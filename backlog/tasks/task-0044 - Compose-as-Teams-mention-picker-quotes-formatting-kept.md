@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T23:02:00Z'
+updated_date: '2026-11-07T23:23:00Z'
 labels:
   - desktop
   - messages
@@ -67,4 +67,7 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 
 - Add someone to the chat (group chats) opens Teams' Add dialog; roster flyout rebuilt to Teams' measurements with Add people (451af76). Adding a member is unit-tested only; a live add needs a person the user approves.
 - Left in AC1: Add agent (bots), tags.
+
+- Add people verified live: randy@techit.pw (user's own account, approved) added to OST group test and removed again from OST; Teams web showed both control messages. Remove button + Teams' confirm dialog added.
+- Left: Leave (shown with >2 people), Add agents, presence for every member in the flyout.
 <!-- SECTION:NOTES:END -->
