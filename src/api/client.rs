@@ -440,6 +440,30 @@ impl TeamsClient {
         check_response(resp, url).await
     }
 
+    /// POST to the chat service and hand back the reply whatever its status
+    /// (the send pipeline classifies failures itself). Err only when no reply
+    /// came at all.
+    pub async fn chat_post_unchecked(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat POST {}", url);
+        let mut req = self
+            .http
+            .post(url)
+            .header("Authentication", format!("skypetoken={}", token))
+            .json(body);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        req.send()
+            .await
+            .with_context(|| format!("Chat POST {} failed", url))
+    }
+
     /// GET from Teams' media store (AMS), which wants `skype_token`.
     pub async fn ams_get(&self, url: &str) -> Result<Vec<u8>> {
         let token = self.skype_token()?;

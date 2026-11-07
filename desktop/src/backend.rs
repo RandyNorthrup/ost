@@ -184,6 +184,12 @@ pub mod qobject {
         /// Send a message to the open chat, then reload it.
         #[qinvokable]
         fn send_message(self: Pin<&mut Backend>, text: &QString);
+        /// Retry a failed message, by its clientmessageid.
+        #[qinvokable]
+        fn retry_failed_message(self: Pin<&mut Backend>, client_message_id: &QString);
+        /// Delete a failed message (local only, as Teams).
+        #[qinvokable]
+        fn delete_failed_message(self: Pin<&mut Backend>, client_message_id: &QString);
 
         /// Answer the ringing call, with or without video.
         #[qinvokable]
@@ -1174,6 +1180,43 @@ fn read_at_open() -> &'static std::sync::Mutex<HashMap<String, Option<u64>>> {
     MAP.get_or_init(Default::default)
 }
 
+/// Messages being sent (Teams' send pipeline and offline queue), kept in
+/// `$XDG_STATE_HOME/ost/outbox.json` so failed and queued sends survive a
+/// restart.
+fn outbox() -> &'static std::sync::Arc<api::outbox::Outbox> {
+    static OUTBOX: OnceLock<std::sync::Arc<api::outbox::Outbox>> = OnceLock::new();
+    OUTBOX.get_or_init(|| {
+        let base = std::env::var_os("XDG_STATE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+            })
+            .unwrap_or_else(std::env::temp_dir);
+        api::outbox::Outbox::open(Some(base.join("ost").join("outbox.json")))
+    })
+}
+
+/// Each chat's last timeline from the service, so the messages being sent
+/// can be redrawn over it without reloading.
+fn server_timelines() -> &'static std::sync::Mutex<HashMap<String, Vec<api::messages::MessageView>>>
+{
+    static MAP: OnceLock<std::sync::Mutex<HashMap<String, Vec<api::messages::MessageView>>>> =
+        OnceLock::new();
+    MAP.get_or_init(Default::default)
+}
+
+/// A chat's timeline with its messages being sent placed in it; those the
+/// service already has leave the outbox.
+fn with_lies(
+    chat_id: &str,
+    mut timeline: Vec<api::messages::MessageView>,
+) -> Vec<api::messages::MessageView> {
+    let lies = outbox().for_conversation(chat_id);
+    let arrived = api::outbox::merge_lies(&mut timeline, &lies);
+    outbox().arrived(&arrived);
+    timeline
+}
+
 /// Each chat's older pages loaded so far (scrolling up), and the token
 /// for the page before them; none once the start of the chat is reached.
 type OlderPages = (Vec<api::messages::MessageView>, Option<String>);
@@ -1234,6 +1277,11 @@ async fn load_messages(
         .rev()
         .find(|m| m.kind == "message")
         .map(|m| (m.id.clone(), m.client_message_id.clone()));
+    server_timelines()
+        .lock()
+        .unwrap()
+        .insert(chat_id.clone(), timeline.clone());
+    let timeline = with_lies(&chat_id, timeline);
     Ok((serde_json::to_string(&timeline)?, last_id, has_older))
 }
 
@@ -1798,6 +1846,24 @@ impl qobject::Backend {
             return;
         }
         let mut events = teams_cli::event_hub::subscribe();
+        // The outbox: redraw the open chat whenever a send changes state, and
+        // replay queued sends at startup and every 10 minutes (Teams'
+        // OfflineActionsSyncStrategy); Trouter connects replay too (below).
+        {
+            let qt = self.qt_thread();
+            let mut changes = outbox().changes();
+            runtime().spawn(async move {
+                while changes.changed().await.is_ok() {
+                    let _ = qt.queue(|mut this| this.as_mut().refresh_lies());
+                }
+            });
+            runtime().spawn(async {
+                loop {
+                    outbox().replay();
+                    tokio::time::sleep(api::outbox::REPLAY_INTERVAL).await;
+                }
+            });
+        }
         runtime().spawn(async {
             let opts = teams_cli::trouter::ListenOptions::EMBEDDED;
             if let Err(e) = teams_cli::trouter::listen(opts, std::future::pending).await {
@@ -1821,6 +1887,11 @@ impl qobject::Backend {
                     }
                     Err(RecvError::Closed) => return,
                 };
+                if ev.kind == EventKind::Connected {
+                    // Teams replays its offline queue when Trouter connects.
+                    outbox().replay();
+                    continue;
+                }
                 if ev.kind == EventKind::Call {
                     on_call_event(&qt, &ev.json).await;
                     continue;
@@ -3017,39 +3088,16 @@ impl qobject::Backend {
         self.as_mut().reload_messages();
     }
 
-    pub fn send_message(mut self: Pin<&mut Self>, text: &QString) {
+    pub fn send_message(self: Pin<&mut Self>, text: &QString) {
         let body = text.to_string();
         let chat_id = self.rust().current_chat_id.to_string();
         if body.trim().is_empty() || chat_id.is_empty() {
             return;
         }
-        self.as_mut().set_busy(true);
-        let qt = self.qt_thread();
-        let sent_chat = chat_id.clone();
-        runtime().spawn(async move {
-            let result = async {
-                let client = TeamsClient::new().await?;
-                api::send_message_with_client(&client, &chat_id, &body).await
-            }
-            .await;
-            let _ = qt.queue(move |mut this| {
-                this.as_mut().set_busy(false);
-                match result {
-                    Ok(()) => {
-                        // Sent: the draft for this chat is done.
-                        this.as_mut()
-                            .set_draft(&QString::from(sent_chat.as_str()), &QString::default());
-                        this.as_mut().reload_messages()
-                    }
-                    Err(e) => this
-                        .as_mut()
-                        .set_status_text(QString::from(short_error(&e).as_str())),
-                }
-            });
-        });
+        self.enqueue(chat_id, api::outbox::plain_html(&body));
     }
 
-    pub fn send_reply(mut self: Pin<&mut Self>, root_id: &QString, text: &QString) {
+    pub fn send_reply(self: Pin<&mut Self>, root_id: &QString, text: &QString) {
         let (root, body) = (root_id.to_string(), text.to_string());
         let channel = self.rust().current_chat_id.to_string();
         // Replies go to "<channel>;messageid=<post>"; post ids are digits.
@@ -3060,25 +3108,94 @@ impl qobject::Backend {
         {
             return;
         }
-        self.as_mut().set_busy(true);
-        let qt = self.qt_thread();
-        runtime().spawn(async move {
-            let result = async {
-                let client = TeamsClient::new().await?;
-                let thread = format!("{channel};messageid={root}");
-                api::send_message_with_client(&client, &thread, &body).await
-            }
-            .await;
-            let _ = qt.queue(move |mut this| {
-                this.as_mut().set_busy(false);
-                match result {
-                    Ok(()) => this.as_mut().reload_messages(),
-                    Err(e) => this
-                        .as_mut()
-                        .set_status_text(QString::from(short_error(&e).as_str())),
-                }
-            });
-        });
+        self.enqueue(
+            format!("{channel};messageid={root}"),
+            api::outbox::plain_html(&body),
+        );
+    }
+
+    /// Send as Teams does: the message shows at once (Sending) and goes
+    /// through the outbox, which retries and queues it as Teams' send
+    /// pipeline does (docs/spec/send-pipeline.md).
+    fn enqueue(mut self: Pin<&mut Self>, conversation: String, content: String) {
+        if content.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
+            self.as_mut()
+                .set_status_text(QString::from(api::outbox::TOO_LARGE_TO_SEND));
+            return;
+        }
+        let chat_id = self.rust().current_chat_id.to_string();
+        let now = chrono::Utc::now().timestamp_millis();
+        // The newest message in the chat, sent or still being sent.
+        let last_server = server_timelines()
+            .lock()
+            .unwrap()
+            .get(&chat_id)
+            .and_then(|t| t.iter().filter_map(|m| m.id.parse::<i64>().ok()).max());
+        let last_lie = outbox()
+            .for_conversation(&chat_id)
+            .iter()
+            .map(|o| o.arrival_ms)
+            .max();
+        let last = last_server.max(last_lie);
+        let o = api::outbox::Outgoing {
+            conversation_id: conversation,
+            client_message_id: api::outbox::new_client_message_id(),
+            content,
+            display_name: self.rust().user_name.to_string(),
+            sender_mri: self.rust().my_mri.clone().unwrap_or_default(),
+            compose_time: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            arrival_ms: api::outbox::lie_arrival(now, last),
+            created_ms: now,
+            state: api::outbox::SendState::Sending,
+            pipeline_status: None,
+            failures: 0,
+            queued: true,
+            server_id: None,
+        };
+        // Sent: the draft for this chat is done.
+        self.as_mut()
+            .set_draft(&QString::from(chat_id.as_str()), &QString::default());
+        let _rt = runtime().enter();
+        outbox().submit(o);
+    }
+
+    /// Redraw the open chat's messages being sent over its last timeline.
+    fn refresh_lies(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() {
+            return;
+        }
+        // A chat whose timeline could not load still shows what is being sent.
+        let timeline = server_timelines()
+            .lock()
+            .unwrap()
+            .get(&chat_id)
+            .cloned()
+            .unwrap_or_default();
+        let Ok(json) = serde_json::to_string(&with_lies(&chat_id, timeline)) else {
+            return;
+        };
+        if self.rust().messages_json.to_string() != json {
+            self.as_mut()
+                .set_messages_json(QString::from(json.as_str()));
+        }
+    }
+
+    /// Retry a failed message (Teams: same clientmessageid, sent again).
+    pub fn retry_failed_message(self: Pin<&mut Self>, client_message_id: &QString) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let last = server_timelines()
+            .lock()
+            .unwrap()
+            .get(&chat_id)
+            .and_then(|t| t.iter().filter_map(|m| m.id.parse::<i64>().ok()).max());
+        let _rt = runtime().enter();
+        outbox().retry(&client_message_id.to_string(), last);
+    }
+
+    /// Delete a failed message (Teams: local only).
+    pub fn delete_failed_message(self: Pin<&mut Self>, client_message_id: &QString) {
+        outbox().delete(&client_message_id.to_string());
     }
 
     /// Scrolled to the top: load the page before (Teams pages back with the
@@ -4706,35 +4823,13 @@ impl qobject::Backend {
         });
     }
 
-    pub fn send_rich(mut self: Pin<&mut Self>, editor_html: &QString) {
-        let html = editor_html.to_string();
+    pub fn send_rich(self: Pin<&mut Self>, editor_html: &QString) {
+        let html = api::messages::teams_html_from_editor(&editor_html.to_string());
         let chat_id = self.rust().current_chat_id.to_string();
         if chat_id.is_empty() || html.trim().is_empty() {
             return;
         }
-        self.as_mut().set_busy(true);
-        let qt = self.qt_thread();
-        let sent_chat = chat_id.clone();
-        runtime().spawn(async move {
-            let result = async {
-                let client = TeamsClient::new().await?;
-                api::send_html_with_client(&client, &chat_id, &html).await
-            }
-            .await;
-            let _ = qt.queue(move |mut this| {
-                this.as_mut().set_busy(false);
-                match result {
-                    Ok(()) => {
-                        this.as_mut()
-                            .set_draft(&QString::from(sent_chat.as_str()), &QString::default());
-                        this.as_mut().reload_messages()
-                    }
-                    Err(e) => this
-                        .as_mut()
-                        .set_status_text(QString::from(short_error(&e).as_str())),
-                }
-            });
-        });
+        self.enqueue(chat_id, html);
     }
 
     pub fn download_file(mut self: Pin<&mut Self>, file_json: &QString) {

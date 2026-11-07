@@ -239,9 +239,14 @@ States (worker `c` module 56805):
   `onMachineIdleStateChanged` acts only with
   `enableStatesAggregationForUserActivity` or `shouldCheckMachineIdleState`,
   and both are off.
-- → TODO: verify on winpc (idle 5+ minutes without locking, then watch
-  ost-test1 from another account) how the service decides Away. The client
-  code sends nothing for it.
+- **Verified on winpc (2026-11-06)**: the PC was left with no input and not
+  locked for more than 11 minutes (07:00–07:12 UTC). ost-test1 stayed
+  **Available** the whole time (read each minute from the client's own
+  status). So plain idleness never makes a desktop user Away; only lock,
+  sleep or a call changes presence. OST does the same.
+- **Calls, verified live (2026-11-06)**: Randy's Teams web called OST (as
+  ost-test1). While the call was up, ost-test1's status in the winpc
+  client read "In a call"; after the hang-up it read "Available".
 
 ### Calls, meetings, presenting
 - The calling stack emits `callingClientStateEvent {inCall,

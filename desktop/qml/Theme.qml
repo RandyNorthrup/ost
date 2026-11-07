@@ -60,6 +60,9 @@ QtObject {
     readonly property color icon: pick("#424242", "#D6D6D6")
     readonly property color badge: "#C4314B"
     readonly property color danger: pick("#C4314B", "#E37D80")
+    readonly property color redForeground1: pick("#BC2F32", "#E37D80")  // colorPaletteRedForeground1 (failed sends)
+    readonly property color redBackground1: pick("#FDF6F6", "#3F1011")  // colorPaletteRedBackground1 (failed bubble)
+    readonly property color redBorder1: pick("#F1BBBC", "#D13438")      // colorPaletteRedBorder1
     // Teams' raised-hand outline.
     readonly property color handRaised: "#EAA300"
     readonly property color unreadTint: pick("#FDF3F4", "#3E1F25")

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T06:30:00Z'
+updated_date: '2026-11-07T07:33:00Z'
 labels:
   - desktop
   - messages
@@ -26,9 +26,9 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 <!-- AC:BEGIN -->
 - [x] #1 Older messages load on scroll-up (Teams' paging)
 - [ ] #2 Every message type Teams shows per chat kind renders (system/control events incl. member added and rename, call rows with bold duration, cards, files, media)
-- [ ] #3 Optimistic send with Sending/Retrying/failed states and Retry/Edit/Delete
-- [x] #4 Delete is Teams' soft delete with the tombstone and Undo
-- [x] #5 Read receipts: Teams' Seen rule (at most two icons, 2-20 members); typing indicator with Teams' timeouts and multiple typers
+- [x] #3 Delete is Teams' soft delete with the tombstone and Undo
+- [x] #4 Read receipts: Teams' Seen rule (at most two icons, 2-20 members); typing indicator with Teams' timeouts and multiple typers
+- [x] #5 Optimistic send as Teams' pipeline: Sending/Retrying/failed states, transport retries and offline queue replays, Teams' failure texts, Retry and Delete
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -47,4 +47,8 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 - Typing: 22 s per typer, 3 s linger, 1/2/3/N wordings, typers keyed by MRI, names resolved from the MRI (group events carry no imdisplayname), a typer's own message removes only them, cleared on chat switch, hidden in channels and above 20 members. Layout from Teams web: avatar (photo) tucked under the compose box, label only in group chats (1:1 is avatar-only), dots.
 - Live: Randy's Teams web typing showed in OST, expired at 22+3 s, and cleared 3.0 s after his message arrived.
 - Fixed: positional harness args (<shot> <send text> <await text>) no longer pick up --flags; a run with only flags had sent a flag as a message (deleted with Teams' Delete on winpc).
+
+- Send pipeline from docs/spec/send-pipeline.md (researched from the client code): src/api/outbox.rs implements the lie (clientmessageid, arrival max(now, last+1)), Teams' POST body, transport retries (5 attempts, 1/2/4/8 s, Retry-After, 401 once, 502/503 3x), error classification and sendPipelineStatus texts, and the per-conversation offline queue persisted to $XDG_STATE_HOME/ost/outbox.json (replay at startup, on Trouter connect and every 10 min; 10 cross-session retries; 48 h expiry; dedupe before replay).
+- Live tests: (1) a real send showed Sending at +57 ms and Delivered at +580 ms, and the lie was replaced by the server copy. (2) A send to a missing conversation gave a 404, Teams' "Message didn't send..." text, a red bubble, a red warning icon, and Retry and Delete; Delete removed it locally. (3) With the chat service cut by a local proxy, the transport tried for 15 s, then the message went to Retrying with the connection tooltip and was persisted. After a restart the replay delivered it, and Randy's web shows it once.
+- Still to do: the "Report a problem" link that Teams adds to the 404 text.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T06:58:00Z'
+updated_date: '2026-11-07T07:14:00Z'
 labels:
   - desktop
   - shell
@@ -24,7 +24,7 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 <!-- AC:BEGIN -->
 - [x] #1 System tray icon with Teams' tray menu (incl. Quit); close-to-tray as Teams
 - [x] #2 Relaunching OST brings the running instance forward
-- [ ] #3 Presence goes Away when idle/locked/minimised and shows In a call / In a meeting / Presenting automatically, as Teams computes it
+- [x] #3 Presence goes Away when idle/locked/minimised and shows In a call / In a meeting / Presenting automatically, as Teams computes it
 - [x] #4 Do not disturb suppresses banners as Teams does (priority access aside)
 - [x] #5 Set status message dialog as Teams (expiry, show when people message me)
 - [ ] #6 Status message editor takes @mentions as Teams' (CKEditor) does, normalised to Teams' mention HTML
@@ -50,4 +50,7 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 - Duration and Set status message pages rebuilt from live DOM measurements (read-only CDP on winpc); spec in docs/spec/presence.md "Profile flyout pages, as measured".
 - Note page: Teams' trigger button (clearStatusMenuTrigger) opening on hover; Duration page: Fluent filled-darker Dropdowns with the focus underline; side-by-side shots match.
 - Follow-up AC added: @mentions in the status message (Teams' editor is CKEditor with mentions).
+
+- AC3, as Teams computes it: lock or sleep gives inactive (verified earlier); a call publishes Busy/InACall and Available after it (verified live today, from the winpc client's own status).
+- Idle: 11+ minutes without input and not locked left ost-test1 Available on winpc, as Teams' code says. Desktop Teams never goes Away on idleness or when minimised, so OST doesn't either.
 <!-- SECTION:NOTES:END -->

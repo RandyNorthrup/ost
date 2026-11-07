@@ -11,6 +11,7 @@ pub mod files;
 mod me;
 pub mod messages;
 pub mod onenote;
+pub mod outbox;
 pub mod planner;
 pub mod presence;
 pub mod store;

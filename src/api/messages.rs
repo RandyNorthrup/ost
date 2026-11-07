@@ -31,7 +31,7 @@ pub struct InlineImage {
 }
 
 /// A timeline item.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MessageView {
     pub id: String,
     /// The sender's own id for the message (read receipts refer to it).
@@ -74,6 +74,16 @@ pub struct MessageView {
     /// message renderer reads it; `text` then holds Teams' sentence.
     #[serde(default)]
     pub event: Option<ChatEvent>,
+    /// An own message still being sent: "sending", "retrying" or "failed"
+    /// (Teams' Sending / Retrying / Error); "" once delivered.
+    #[serde(default)]
+    pub send_state: String,
+    /// The pending icon's tooltip, or the failed message's text.
+    #[serde(default)]
+    pub send_note: String,
+    /// A failed message offers Retry.
+    #[serde(default)]
+    pub can_retry: bool,
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module
@@ -502,6 +512,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         root_id: s("/rootMessageId"),
         mentions_me: false,
         event: None,
+        ..Default::default()
     };
     if kind.starts_with("ThreadActivity/") {
         let event = chat_event(&kind, &s("/content"))?;
@@ -1473,6 +1484,7 @@ mod tests {
             root_id: String::new(),
             mentions_me: false,
             event: None,
+            ..Default::default()
         };
         let mut t = vec![
             mk("100", false),

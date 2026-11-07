@@ -243,6 +243,7 @@ where
     } else {
         tracing::info!("Trouter connected");
     }
+    crate::event_hub::publish(crate::event_hub::EventKind::Connected, String::new());
 
     let mut cdl_reregistered = false;
     let disconnect_reason = loop {

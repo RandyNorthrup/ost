@@ -1462,6 +1462,65 @@ Window {
         }
     }
 
+    // --send-test=<text> with --open-chat=<id>: send <text> once the chat
+    // is open, then log (and capture as send-<n>.png in --shots=<dir>) each
+    // send-state change of that message; with --delete-failed,
+    // delete it once it has failed. Quits 45 s after sending.
+    readonly property string sendTestText: (Qt.application.arguments.find(a => a.startsWith("--send-test=")) || "").slice(12)
+    property string sendTestCmid: ""
+    property string sendTestLast: "-"
+    property int sendTestShots: 0
+    Timer {
+        running: window.sendTestText.length > 0 && backend.signedIn && !window.sendTestCmid
+        interval: 4000; repeat: true
+        property bool sent: false
+        property real openedAt: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST send test"); openedAt = Date.now(); return }
+            // --send-delay=<ms>: wait that long after opening the chat.
+            const delay = parseInt((Qt.application.arguments.find(a => a.startsWith("--send-delay=")) || "--send-delay=0").slice(13))
+            if (sent || Date.now() - openedAt < delay) return
+            sent = true
+            console.warn("SEND-TEST sending", new Date().toISOString())
+            backend.sendMessage(window.sendTestText)
+            sendTestQuit.start()
+        }
+    }
+    Timer { id: sendTestQuit; interval: 45000; onTriggered: Qt.quit() }
+    Connections {
+        target: backend
+        enabled: window.sendTestText.length > 0
+        function onMessagesJsonChanged() {
+            const all = JSON.parse(backend.messagesJson || "[]")
+            const m = window.sendTestCmid ? all.find(x => x.client_message_id === window.sendTestCmid)
+                : all.find(x => x.mine && x.text === window.sendTestText && x.send_state === "sending")
+            if (!m) return
+            window.sendTestCmid = m.client_message_id
+            const st = (m.send_state || "delivered") + " | " + (m.send_note || "") + " | id " + m.id + " | retry " + m.can_retry
+            if (st === window.sendTestLast) return
+            window.sendTestLast = st
+            const n = window.sendTestShots++
+            console.warn("SEND-TEST", n, new Date().toISOString(), st)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            Qt.callLater(() => window.contentItem.grabToImage(r => r.saveToFile(dir + "send-" + n + ".png")))
+            if (m.send_state === "failed" && Qt.application.arguments.indexOf("--delete-failed") >= 0)
+                deleteFailedLater.start()
+        }
+    }
+    Timer {
+        id: deleteFailedLater; interval: 4000
+        onTriggered: { console.warn("SEND-TEST deleting", window.sendTestCmid); backend.deleteFailedMessage(window.sendTestCmid) }
+    }
+    // A settled capture of the failed message, once its icons have loaded.
+    Timer {
+        running: window.sendTestLast.indexOf("failed") === 0; interval: 2500
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            window.contentItem.grabToImage(r => r.saveToFile(dir + "send-failed-settled.png"))
+        }
+    }
+
     // --typing-watch[=<dir>]: log each change of the typing line (and
     // capture it there as typing-<n>.png) while someone types live.
     readonly property string typingWatch: {

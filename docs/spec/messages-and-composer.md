@@ -187,7 +187,7 @@ Griffel CSS (Teams sets `1rem = 10px`), not from measuring the live window.
 | delete failed | Delete failed | 436560 |
 | sending | Sending... / Retrying... (`message-sending-title`) | status Sending/Retrying and auto-send off (318259 `Rd`) |
 | failed | "Failed to send." / "Failed to edit." / "Failed to send. Message too large." / "Message didn't send. Check your connection or try again later." | status Error/Undeliverable. Bubble `--colorPaletteRedBackground1`, border `--colorPaletteRedBorder1`, red icon (533020, 213860) |
-| failed actions | Retry, Edit, Delete (`message-failed-retry`, `edit-restricted-message-button`, `message-failed-delete`) | 317519 |
+| failed actions | Retry and Delete (`message-failed-retry`, `message-failed-delete`). Edit (`edit-restricted-message-button`) appears only for a pasted image blocked by policy. See docs/spec/send-pipeline.md §5 | 317519 |
 | retry tooltips | "Retrying... Message delayed due to connection issues. Please check your network." / "Retrying... You've reached the current limit. Please wait a moment." | `enableSendPipelineEnhancedRetryTooltips` (live true) |
 | importance | **IMPORTANT** / **URGENT** (CSS uppercase), semibold base200, `--colorPaletteRedForeground3`, plus an icon decoration | `importance ≠ "Standard"` (924964, 318259 `Yc`) |
 

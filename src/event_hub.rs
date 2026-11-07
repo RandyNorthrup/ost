@@ -16,6 +16,9 @@ pub enum EventKind {
     Chat,
     /// A call notification (incoming call, call state).
     Call,
+    /// Trouter (re)connected; `json` is empty. Teams replays its offline
+    /// queue then.
+    Connected,
 }
 
 /// One pushed event; `json` is the decoded event body.

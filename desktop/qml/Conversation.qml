@@ -152,7 +152,7 @@ Rectangle {
         // Teams' receipts: your newest message carries the sent tick until
         // it is read; the newest one the other person has read gets the eye.
         for (let i = out.length - 1; i >= 0; i--) {
-            if (out[i].mine && out[i].kind === "message") { out[i].latestMine = true; break }
+            if (out[i].mine && out[i].kind === "message" && !out[i].send_state) { out[i].latestMine = true; break }
         }
         for (let i = out.length - 1; i >= 0; i--) {
             if (out[i].mine && out[i].kind === "message" && out[i].seen) { out[i].latestSeen = true; break }
@@ -411,11 +411,18 @@ Rectangle {
             // Grouped messages (same sender, within minutes) drop the
             // name/time line and avatar, and sit 2 px under the previous.
             readonly property bool grouped: modelData.grouped === true
+            // Teams' send states for your messages: pending (Sending /
+            // Retrying) shows the Circle icon; failed shows its text over the
+            // bubble, a red bubble, Retry and Delete to its left.
+            readonly property bool sendPending: modelData.send_state === "sending" || modelData.send_state === "retrying"
+            readonly property bool sendFailed: modelData.send_state === "failed"
+            // The name line shows for a failed message even within a group.
+            readonly property bool showMeta: (!grouped || sendFailed) && !isRow
             // Day divider and "Last read" line sit above the message.
             readonly property int dividerH: (modelData.dayDivider ? 30 : 0) + (modelData.lastRead ? 36 : 0)
             // Control and call rows sit flush, as in Teams (28 / 36 px rows).
             readonly property int topPad: dividerH + (isRow ? 0 : grouped ? 2 : 12)
-            readonly property int bubbleY: topPad + (grouped || isCall ? 0 : meta.height + 2)
+            readonly property int bubbleY: topPad + (!showMeta || isCall ? 0 : meta.height + 2)
             height: isRow ? topPad + (isCall ? 36 : 28)
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height + 4 : 0)
             readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : Math.min(640, list.width * 0.7)
@@ -506,15 +513,28 @@ Rectangle {
                 // Teams shows the sender's presence on message avatars too.
                 presence: msg.modelData.sender_mri && msg.modelData.sender_mri === root.chatPhotoId ? root.chatPresence : ""
             }
-            Text {
+            // Name line: [failed text] sender, time, details. A failed
+            // message's text replaces the details (Teams' statusMessage).
+            Row {
                 id: meta
-                visible: !msg.grouped && !msg.isRow
+                visible: msg.showMeta
                 y: msg.topPad
-                text: (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
-                    + (msg.modelData.edited ? "   Edited" : "")
-                font.family: theme.font; font.pixelSize: theme.small
-                color: theme.textSecondary
-                x: msg.mine ? parent.width - 72 - implicitWidth : 72
+                spacing: 8
+                x: msg.mine ? msg.width - 72 - width : 72
+                Text {
+                    visible: msg.sendFailed
+                    text: msg.modelData.send_note || ""
+                    font.family: theme.font; font.pixelSize: theme.small
+                    color: theme.redForeground1
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: text
+                }
+                Text {
+                    text: (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
+                        + (msg.modelData.edited && !msg.sendFailed ? "   Edited" : "")
+                    font.family: theme.font; font.pixelSize: theme.small
+                    color: theme.textSecondary
+                }
             }
             Rectangle {
                 id: bubble
@@ -549,8 +569,8 @@ Rectangle {
                 bottomLeftRadius: !msg.mine && joinDown ? 0 : r
                 topRightRadius: msg.mine && joinUp ? 0 : r
                 bottomRightRadius: msg.mine && joinDown ? 0 : r
-                color: bare ? "transparent" : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
-                border.color: root.isChannel ? theme.dividerSoft : "transparent"
+                color: bare ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
+                border.color: msg.sendFailed ? theme.redBorder1 : root.isChannel ? theme.dividerSoft : "transparent"
                 x: msg.mine ? parent.width - 72 - width : 72
                 // Inline pictures, scaled to fit the bubble (as in Teams).
                 Column {
@@ -782,13 +802,68 @@ Rectangle {
             }
             // Sent tick on your newest message, "Seen" eye on the newest one
             // the other person has read.
+            // Pending messages show the Circle ("Sending..." / "Retrying..."),
+            // failed ones the red warning ("Failed"); each icon has Teams'
+            // tooltip.
             FluentIcon {
+                id: statusIcon
                 readonly property bool seen: msg.modelData.latestSeen === true
-                visible: msg.mine && !msg.isRow && (seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
-                name: seen ? "seen-12" : "sent-12"; size: 12; color: theme.brand
+                readonly property string tip: msg.sendPending ? (msg.modelData.send_note || "")
+                    : msg.sendFailed ? "Failed"
+                    : seen ? (root.isGroup ? "Seen by everyone" : "Seen") : "Sent"
+                visible: msg.mine && !msg.isRow && (msg.sendPending || msg.sendFailed || seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
+                name: msg.sendPending ? "circle-12" : msg.sendFailed ? "warning-12-filled" : seen ? "seen-12" : "sent-12"
+                size: 12; color: msg.sendFailed ? theme.redForeground1 : theme.brand
                 x: bubble.x + bubble.width + 8
                 y: bubble.y + bubble.height - 14
-                Accessible.name: seen ? "Seen" : "Sent"
+                HoverHandler { id: statusHover }
+                ToolTip {
+                    visible: statusHover.hovered; delay: 500
+                    y: statusIcon.height + 4
+                    padding: 8
+                    background: FluentSurface { depth: 16; radius: 4 }
+                    contentItem: Text { text: statusIcon.tip; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                }
+                Accessible.name: tip
+            }
+            // A failed message's Retry and Delete, to the bubble's left
+            // (Teams' comfy layout: icon-only, transparent; Delete in red).
+            Row {
+                visible: msg.sendFailed
+                spacing: 4
+                x: bubble.x - 8 - width
+                y: bubble.y + Math.max(0, (Math.min(bubble.height, 36) - 24) / 2)
+                Repeater {
+                    model: [
+                        { key: "retry", icon: "arrow-clockwise-16", tip: "Retry", name: "Retry", show: msg.modelData.can_retry === true },
+                        { key: "delete", icon: "delete-16", tip: "Delete", name: "Delete this message", show: true }
+                    ].filter(b => b.show)
+                    Rectangle {
+                        id: failBtn
+                        required property var modelData
+                        width: 24; height: 24; radius: 4
+                        color: failHover.hovered ? theme.menuHover : "transparent"
+                        FluentIcon {
+                            anchors.centerIn: parent; size: 16; name: failBtn.modelData.icon
+                            color: failBtn.modelData.key === "delete" ? theme.redForeground1 : theme.textStrong
+                        }
+                        HoverHandler { id: failHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler {
+                            onTapped: failBtn.modelData.key === "retry"
+                                ? backend.retryFailedMessage(msg.modelData.client_message_id)
+                                : backend.deleteFailedMessage(msg.modelData.client_message_id)
+                        }
+                        ToolTip {
+                            visible: failHover.hovered; delay: 500
+                            y: parent.height + 4
+                            padding: 8
+                            background: FluentSurface { depth: 16; radius: 4 }
+                            contentItem: Text { text: failBtn.modelData.tip; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                        }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: modelData.name
+                    }
+                }
             }
         }
     }
