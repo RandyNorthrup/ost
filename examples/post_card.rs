@@ -16,14 +16,17 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| "application/vnd.microsoft.card.adaptive".into());
     let card: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(file)?)?;
     let id = format!("ostcard{}", std::process::id());
-    let cards = serde_json::json!([{ "cardClientId": id, "contentType": content_type, "content": card }]);
+    let cards =
+        serde_json::json!([{ "cardClientId": id, "contentType": content_type, "content": card }]);
     let client = TeamsClient::new().await?;
     let url = format!(
         "{}/v1/users/ME/conversations/{}/messages",
         client.chat_service_url(),
         chat
     );
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis();
     let body = serde_json::json!({
         "content": format!("<span itemid=\"{id}\" itemscope=\"\" itemtype=\"http://schema.skype.com/InputExtension\"><span itemprop=\"cardId\" content=\"{id}\"></span></span>"),
         "messagetype": "RichText/Html",
@@ -32,7 +35,9 @@ async fn main() -> anyhow::Result<()> {
         "imdisplayname": client.display_name().unwrap_or_default(),
         "properties": { "cards": cards.to_string(), "formatVariant": "TEAMS" },
     });
-    let resp = client.chat_request(reqwest::Method::POST, &url, &body).await?;
+    let resp = client
+        .chat_request(reqwest::Method::POST, &url, &body)
+        .await?;
     println!("{}", resp.status());
     Ok(())
 }
