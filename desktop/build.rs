@@ -41,6 +41,7 @@ fn main() {
         "qml/ReactionPicker.qml",
         "qml/EmojiPanel.qml",
         "qml/FunPicker.qml",
+        "qml/CustomEmojiAdd.qml",
         "qml/ForwardCard.qml",
         "qml/ForwardDialog.qml",
         "qml/ReportDialog.qml",

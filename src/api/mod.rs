@@ -5,6 +5,7 @@ pub mod calendar;
 mod chat;
 pub mod client;
 pub mod contacts;
+pub mod custom_emoji;
 pub mod directory;
 pub mod drive;
 pub mod emoticons;
@@ -40,6 +41,7 @@ pub use chat::{
     CallRecord, LiveCall, Member, ThreadMeeting, call_history, chat_meeting, chat_members,
     create_group_chat, ensure_one_on_one_chat, list_chats_data, read_messages_data,
     send_html_with_client, send_message_with_client, send_typing, strip_html, thread_member_ids,
+    user_display_name,
 };
 pub use me::whoami_data;
 pub use presence::get_presence_data;

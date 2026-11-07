@@ -187,6 +187,16 @@ pub mod qobject {
         /// The fun picker's GIF results: {query, items: [{url, preview,
         /// width, height, title}], error}.
         #[qproperty(QString, fun_results_json)]
+        /// The org's custom emoji: [{id, shortcut, document_id, creator,
+        /// created_on, creator_name}], newest first.
+        #[qproperty(QString, custom_emoji_json)]
+        /// The Add emoji dialog's outcome: "" | "adding" | "ok" |
+        /// "duplicate" | "limit:{n}" | "error".
+        #[qproperty(QString, custom_emoji_result)]
+        /// Your messaging policy lets you add / delete custom emoji
+        /// (createCustomEmojis / deleteCustomEmojis).
+        #[qproperty(bool, custom_emoji_can_add)]
+        #[qproperty(bool, custom_emoji_can_delete)]
         /// Joined teams and their channels, as JSON.
         #[qproperty(QString, teams_json)]
         type Backend = super::BackendRust;
@@ -248,6 +258,24 @@ pub mod qobject {
         /// Copy a chat's link (Teams' Copy link), from its menu in the list.
         #[qinvokable]
         fn copy_link_of_chat(self: Pin<&mut Backend>, chat_id: &QString, chat_name: &QString);
+
+        /// A custom emoji's picture URL as messages carry it (the asyncgw
+        /// imgt2_anim view).
+        #[qinvokable]
+        fn custom_emoji_send_url(self: &Backend, document_id: &QString) -> QString;
+
+        /// Load the org's custom emoji into customEmojiJson.
+        #[qinvokable]
+        fn load_custom_emoji(self: Pin<&mut Backend>);
+
+        /// Add a custom emoji for the org from a picture file (Teams' Add
+        /// emoji); the outcome lands in customEmojiResult.
+        #[qinvokable]
+        fn add_custom_emoji(self: Pin<&mut Backend>, name: &QString, path: &QString);
+
+        /// Delete a custom emoji for the org (by its "{name};{documentId}").
+        #[qinvokable]
+        fn delete_custom_emoji(self: Pin<&mut Backend>, id: &QString);
 
         /// Search GIFs for the fun picker; an empty query is GIPHY's
         /// trending list. The result lands in funResultsJson.
@@ -900,6 +928,10 @@ pub struct BackendRust {
     chat_members_json: QString,
     chat_meeting_json: QString,
     fun_results_json: QString,
+    custom_emoji_json: QString,
+    custom_emoji_result: QString,
+    custom_emoji_can_add: bool,
+    custom_emoji_can_delete: bool,
     teams_json: QString,
     people_query_generation: u64,
     /// Bumped on every typing change so a stale clear timer does nothing.
@@ -1579,6 +1611,9 @@ async fn load_messages(
             Err(e) => tracing::warn!("image download failed: {}", short_error(&e)),
         }
     }
+    for m in timeline.iter_mut() {
+        localize_custom_emoji(&client, m).await;
+    }
     let last_id = timeline
         .iter()
         .rev()
@@ -1814,6 +1849,50 @@ async fn seed_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoing
             });
         }
         Err(e) => tracing::info!("participants: {}", short_error(&e)),
+    }
+}
+
+/// Where a custom emoji's picture is cached (~/.cache/ost/custom-emoji).
+fn custom_emoji_path(document_id: &str) -> Option<std::path::PathBuf> {
+    document_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        .then(|| cache_base().join("custom-emoji").join(document_id))
+}
+
+fn custom_emoji_cached(document_id: &str) -> Option<std::path::PathBuf> {
+    custom_emoji_path(document_id).filter(|p| p.exists())
+}
+
+/// A custom emoji's picture, downloaded once into the private cache.
+async fn custom_emoji_file(
+    client: &TeamsClient,
+    document_id: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    let path = custom_emoji_path(document_id).context("Bad document id")?;
+    if path.exists() {
+        return Ok(path);
+    }
+    let bytes = api::custom_emoji::picture(client, document_id).await?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&path, bytes)?;
+    Ok(path)
+}
+
+/// Fill in the custom emoji pictures a message's HTML shows.
+async fn localize_custom_emoji(client: &TeamsClient, m: &mut api::messages::MessageView) {
+    for doc in api::messages::custom_emoji_docs(&m.html) {
+        match custom_emoji_file(client, &doc).await {
+            Ok(path) => {
+                m.html = m.html.replace(
+                    &format!("{}{doc}", api::messages::CUSTOM_EMOJI_SRC),
+                    &format!("file://{}", path.display()),
+                )
+            }
+            Err(e) => tracing::warn!("custom emoji picture failed: {}", short_error(&e)),
+        }
     }
 }
 
@@ -3921,6 +4000,125 @@ impl qobject::Backend {
         }
     }
 
+    pub fn custom_emoji_send_url(&self, document_id: &QString) -> QString {
+        let base = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.get_region_gtms())
+            .and_then(|g| {
+                g.get("amsV2")
+                    .and_then(|v| v.as_str())
+                    .map(|u| u.trim_end_matches('/').to_string())
+            })
+            .unwrap_or_else(|| "https://us-prod.asyncgw.teams.microsoft.com".into());
+        QString::from(
+            api::custom_emoji::picture_url(&base, &document_id.to_string(), true).as_str(),
+        )
+    }
+
+    pub fn load_custom_emoji(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let list = api::custom_emoji::list(&client).await?;
+                // Creators by name, for "Created by … on …".
+                let mut out = Vec::new();
+                for e in list {
+                    // `creator` may be "{prefix}_{oid without dashes}" (unconfirmed);
+                    // Graph takes the plain oid or MRI forms.
+                    let name = if e.creator.is_empty() { String::new() } else {
+                        api::user_display_name(&client, &e.creator).await.unwrap_or_default()
+                    };
+                    out.push(json!({"id": e.id, "shortcut": e.shortcut, "document_id": e.document_id, "creator": e.creator, "created_on": e.created_on, "creator_name": name}));
+                }
+                // What the policy allows (Teams: create on unless off,
+                // delete off unless on).
+                let policy = api::custom_emoji::messaging_policy(&client).await.unwrap_or_default();
+                let can_add = api::custom_emoji::find_bool(&policy, "createCustomEmojis").unwrap_or(true);
+                let can_delete = api::custom_emoji::find_bool(&policy, "deleteCustomEmojis").unwrap_or(false);
+                anyhow::Ok((out, can_add, can_delete))
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok((list, can_add, can_delete)) => {
+                    this.as_mut().set_custom_emoji_can_add(can_add);
+                    this.as_mut().set_custom_emoji_can_delete(can_delete);
+                    this.as_mut()
+                        .set_custom_emoji_json(QString::from(json!(list).to_string().as_str()))
+                }
+                Err(e) => tracing::warn!("custom emoji unavailable: {}", short_error(&e)),
+            });
+        });
+    }
+
+    pub fn add_custom_emoji(mut self: Pin<&mut Self>, name: &QString, path: &QString) {
+        let name = name.to_string().trim().to_string();
+        let path = path.to_string().trim_start_matches("file://").to_string();
+        if !api::custom_emoji::valid_name(&name) {
+            return;
+        }
+        self.as_mut()
+            .set_custom_emoji_result(QString::from("adding"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let bytes = std::fs::read(&path)
+                    .map_err(|e| api::custom_emoji::AddError::Other(e.to_string()))?;
+                let client = TeamsClient::new()
+                    .await
+                    .map_err(|e| api::custom_emoji::AddError::Other(format!("{e:#}")))?;
+                api::custom_emoji::add(&client, &name, bytes).await
+            }
+            .await;
+            let outcome = match &result {
+                Ok(_) => "ok".to_string(),
+                Err(api::custom_emoji::AddError::AlreadyPresent) => "duplicate".into(),
+                Err(api::custom_emoji::AddError::MaxLimitReached(n)) => format!("limit:{n}"),
+                Err(e) => {
+                    tracing::warn!("custom emoji not added: {e:?}");
+                    "error".into()
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                if outcome == "ok" {
+                    this.as_mut().toast(&format!("{name} was added"), "success");
+                    this.as_mut().load_custom_emoji();
+                }
+                this.as_mut()
+                    .set_custom_emoji_result(QString::from(outcome.as_str()));
+            });
+        });
+    }
+
+    pub fn delete_custom_emoji(self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let Some(e) = api::custom_emoji::CustomEmoji::from_id(&id) else {
+            return;
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::custom_emoji::delete(&client, &id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().toast(
+                        &format!("{} deleted for your organization.", e.shortcut),
+                        "success",
+                    );
+                    this.as_mut().load_custom_emoji();
+                }
+                Err(err) => {
+                    tracing::warn!("custom emoji not deleted: {}", short_error(&err));
+                    this.as_mut()
+                        .toast("Unable to delete. Please try again.", "error");
+                }
+            });
+        });
+    }
+
     pub fn search_gifs(self: Pin<&mut Self>, query: &QString) {
         static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
@@ -4586,6 +4784,47 @@ impl qobject::Backend {
         });
     }
 
+    /// A custom emoji's picture as a file URL, fetched (and cached) on
+    /// first use; "" until then (emoticonsVersion changes when it lands).
+    fn custom_emoji_picture(self: Pin<&mut Self>, document_id: &str) -> QString {
+        let key = format!("custom:{document_id}");
+        if let Some(f) = emoticon_files().lock().unwrap().get(&key) {
+            return QString::from(f.as_str());
+        }
+        if let Some(path) = custom_emoji_cached(document_id) {
+            let url = format!("file://{}", path.display());
+            emoticon_files().lock().unwrap().insert(key, url.clone());
+            return QString::from(url.as_str());
+        }
+        emoticon_files()
+            .lock()
+            .unwrap()
+            .insert(key.clone(), String::new());
+        let doc = document_id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                custom_emoji_file(&client, &doc).await
+            }
+            .await;
+            match result {
+                Ok(path) => {
+                    emoticon_files()
+                        .lock()
+                        .unwrap()
+                        .insert(key, format!("file://{}", path.display()));
+                    let _ = qt.queue(|mut this| {
+                        let v = this.rust().emoticons_version + 1;
+                        this.as_mut().set_emoticons_version(v);
+                    });
+                }
+                Err(e) => tracing::warn!("custom emoji picture failed: {}", short_error(&e)),
+            }
+        });
+        QString::default()
+    }
+
     pub fn emoticon_unicode(&self, key: &QString) -> QString {
         emoticon_catalog()
             .read()
@@ -4596,6 +4835,10 @@ impl qobject::Backend {
     }
 
     pub fn emoticon_url(self: Pin<&mut Self>, key: &QString, size: i32) -> QString {
+        // A custom emoji ("{name};{documentId}"): its cached picture.
+        if let Some(e) = api::custom_emoji::CustomEmoji::from_id(&key.to_string()) {
+            return self.custom_emoji_picture(&e.document_id);
+        }
         let catalog = emoticon_catalog().read().unwrap().clone();
         let qt = self.qt_thread();
         let Some(catalog) = catalog else {
@@ -4838,6 +5081,10 @@ impl qobject::Backend {
 
     pub fn emoticon_name(&self, key: &QString) -> QString {
         let key = key.to_string();
+        // A custom emoji's name is its shortcut (763654 `vt`).
+        if let Some(e) = api::custom_emoji::CustomEmoji::from_id(&key) {
+            return QString::from(e.shortcut.as_str());
+        }
         let name = match emoticon_catalog().read().unwrap().as_ref() {
             Some(c) => c.reaction_name(&key),
             None => api::emoticons::parse_key(&key).0,

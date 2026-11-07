@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T13:28:00Z'
+updated_date: '2026-11-07T20:24:00Z'
 labels:
   - desktop
   - messages
@@ -56,4 +56,11 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 - AC5: edit in place with the rebuilt compose (Teams' simplified compose, measured), Cancel/Done, Discard draft dialog, Escape inert, Urgent not editable, formatting and quote kept; the edit body matches a Teams edit read back from the service.
 
 - AC6: channel posts and replies use the shared hover bar (measured positions), reaction summary, ··· and right-click menus (ChannelPost / ChannelReply sets as measured), in-place edit spanning the card, and Follow / Unfollow thread (Teams' rcmetadata f plus follow emotion, verified on the wire). Left: Open conversation in new window (Teams pops the thread into a 588 x 493 child window with the channel header, the post and a Reply in thread compose; needs a second conversation view with its own thread data), Share to Outlook and Immersive Reader.
+
+- AC3, the org's custom emoji, verified live with "ost-test":
+  - list via CSA; Add emoji as Teams (measured dialog, resize, AMS upload for the tenant, metadata POST);
+  - rendering in messages and reactions, sending in compose, and reacting with one;
+  - the Custom section in both pickers, with the Add cell and right-click "Created by … on …";
+  - Delete for org, offered only when the messaging policy allows it.
+- ost-test1 isn't allowed to delete: DELETE answered 403, and Teams' policy default is off. An admin has to delete ost-test.
 <!-- SECTION:NOTES:END -->

@@ -306,10 +306,11 @@ Popup {
         visible: root.tab === "emoji"
         active: root.opened
         compose: true
+        customSection: true
         y: 52.7; width: root.width; height: 432.3
         onPicked: (key, on) => root.pickedEmoji(key)
         onCustomize: root.customize()
-        onAddCustomEmoji: root.addCustomEmoji()
+        onAddCustomEmoji: { root.close(); root.addCustomEmoji() }
         onDone: root.close()
     }
 

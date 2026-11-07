@@ -13,6 +13,7 @@ Popup {
     property bool customizing: false
     signal picked(string key, bool on)
     signal customize()
+    signal addCustomEmoji()
     width: 317; height: 372; padding: 0
     modal: false; focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -26,6 +27,9 @@ Popup {
         messageId: root.messageId
         mine: root.mine
         customizing: root.customizing
+        // The org's custom emoji react too (not when choosing defaults).
+        customSection: !root.customizing
+        onAddCustomEmoji: { root.close(); root.addCustomEmoji() }
         onPicked: (key, on) => root.picked(key, on)
         onCustomize: root.customize()
         onDone: root.close()

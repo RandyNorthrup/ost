@@ -379,6 +379,17 @@ impl TeamsClient {
             .map(|u| u.trim_end_matches('/').to_string())
     }
 
+    /// The AMS v2 gateway (asyncgw) base URL from region_gtms ("amsV2"),
+    /// where custom emoji pictures are served.
+    pub fn ams_v2_url(&self) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get("amsV2")?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
     /// The shared HTTP client.
     pub fn http(&self) -> &reqwest::Client {
         &self.http
@@ -517,6 +528,17 @@ impl TeamsClient {
     /// read permission for the conversation, then `PUT …/content/imgpsh`
     /// with the bytes. Returns the object id.
     pub async fn ams_upload_image(
+        &self,
+        conv: &str,
+        bytes: Vec<u8>,
+        filename: &str,
+    ) -> Result<String> {
+        self.ams_upload_image_for(conv, bytes, filename).await
+    }
+
+    /// As ams_upload_image, readable by `conv`: a conversation id, or
+    /// `*:tid:{tenant}` for the whole organisation (custom emoji).
+    pub async fn ams_upload_image_for(
         &self,
         conv: &str,
         bytes: Vec<u8>,

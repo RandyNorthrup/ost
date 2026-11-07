@@ -254,6 +254,12 @@ fn other_member_oid(chat_id: &str, me: &str) -> Option<String> {
     }
 }
 
+/// A user's display name from Graph (by object id or `8:orgid:` MRI).
+pub async fn user_display_name(client: &TeamsClient, user: &str) -> Option<String> {
+    let oid = user.trim_start_matches("8:orgid:");
+    resolve_user_name(client, oid, &mut Default::default()).await
+}
+
 /// Look up a user's display name in Graph, once per oid per listing.
 async fn resolve_user_name(
     client: &TeamsClient,

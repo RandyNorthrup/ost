@@ -260,6 +260,26 @@ ESP "what's new" cards (not core UI): "Introducing Custom Emoji", "Create your o
 | `enableCustomEmojiDBSchemaMigration` | unset (off) | per-record IndexedDB store `custom-emoji` instead of one blob |
 | `enableEmojiAnimationConfig` | false | trigger-based animation (static image until hover or viewport) |
 
+## Confirmed live (2026-11-07; "ost-test" added from OST as ost-test1, used, then left for an admin to delete)
+- **List**: `GET https://teams.microsoft.com/api/csa/api/v1/customemoji/metadata` with an AAD token for `https://chatsvcagg.teams.microsoft.com` answers `{categories:[{id:"customEmoji", title:"Custom Emoji", description, emoticons:[…]}], continuationToken:"<unix seconds>"}`.
+  - Each emoticon has `id`, `documentId`, `shortcuts`, `description`, `diverse:false`, `createdOn` (ms) and `creator`.
+  - `creator` is the creator's MRI (`8:orgid:{oid}`).
+- **Add**:
+  - First an AMS upload: `POST {ams}/v1/objects/` with `{type:"pish/image", permissions:{"*:tid:{tenant}":["read"]}, filename}`, then `PUT …/content/imgpsh`. AMS requires a User-Agent ending `Teams/{version}/{platform}`.
+  - Then `POST …/metadata {"shortcuts":["ost-test"],"documentId":"0-wus-d9-…"}`, which returned the record.
+- **In a message**:
+  - OST sent `<span contenteditable="false"><img alt="ost-test" itemid="ost-test;{doc}" itemtype="http://schema.skype.com/CustomEmoji" src="{amsV2}/v1/objects/{doc}/views/imgt2_anim" style="width:20px;height:20px;"></span>`; the service kept it.
+  - Teams desktop and web both rendered it at 20 px.
+  - Teams desktop loads it from the user-scoped URL `{amsV2}/v1/{oid}/objects/{doc}/views/imgt2_anim`, so `authenticatedUserId` is the object id.
+- **Reaction**:
+  - The key went on the wire unchanged (`"key":"ost-test;{doc}"`).
+  - Teams web showed the pill with the emoji ("1 ost-test reaction.").
+  - Teams desktop on winpc didn't show it until it refreshed.
+- **Delete**: `DELETE …/metadata/{id}` answered **403 "Http request forbidden"** for ost-test1.
+  - Its messaging policy reads `createCustomEmojis: true` and has no `deleteCustomEmojis`, so deleting is off by default; Teams shows the item only with that policy or for tenant admins.
+- **Policy**: `POST {middleTier}/beta/users/effectivePolicies` takes a JSON array of namespaces (`["teamsMessagingPolicy"]`; `"messagingPolicy"` is rejected with InvalidArguments).
+- **Sync**: other clients list a new emoji only after their next metadata sync. Teams web still showed none after a reload, because of the 24 h TTL on `continuationToken`.
+
 ## → TODO / unconfirmed
 - The exact list-response JSON (§2.2) and the create-response body: capture `GET {csa}/api/v1/customemoji/metadata` live on winpc.
 - Whether `{authenticatedUserId}` in user-scoped URLs is the oid, and which token `aadtokenauth` takes.

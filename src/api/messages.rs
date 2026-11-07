@@ -1137,8 +1137,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let follow_explicit = props
         .and_then(|p| p.get("emotions"))
         .and_then(|e| follow_of(e, me));
-    // From the sanitised HTML, so Teams emoticons count as their character.
-    let text = super::strip_html(&sanitize_html(&content))
+    // From the sanitised HTML, so Teams emoticons count as their character
+    // and custom emoji as Teams' text form `:name:`.
+    let text = super::strip_html(&custom_emoji_as_text(&sanitize_html(&content)))
         .trim()
         .to_string();
     // Teams shows "This message has been deleted" to its sender only (and
@@ -1458,6 +1459,23 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
             if tag.contains("AMSImage") || media_kind(tag).is_some() {
                 continue;
             }
+            // A custom emoji, rebuilt from its itemid alone (as Teams does):
+            // a 20 px picture whose src the client fills in
+            // (CUSTOM_EMOJI_SRC + document id).
+            if attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/CustomEmoji"))
+                && let Some(e) = attr(tag, "itemid")
+                    .and_then(|id| super::custom_emoji::CustomEmoji::from_id(&id))
+                && e.document_id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+            {
+                out.push_str(&format!(
+                    "<img src=\"{CUSTOM_EMOJI_SRC}{}\" width=\"20\" height=\"20\" alt=\"{}\">",
+                    e.document_id,
+                    escape(&e.shortcut)
+                ));
+                continue;
+            }
             if let Some(alt) = attr(tag, "alt") {
                 out.push_str(&escape(&alt));
             }
@@ -1518,6 +1536,38 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
         out.push_str("</a>");
         in_link -= 1;
     }
+    out
+}
+
+/// Where a custom emoji's picture goes in message HTML until the client
+/// puts its cached file there.
+pub const CUSTOM_EMOJI_SRC: &str = "ost-custom-emoji:";
+
+/// The custom emoji pictures (document ids) a message's HTML needs.
+pub fn custom_emoji_docs(html: &str) -> Vec<String> {
+    html.split(CUSTOM_EMOJI_SRC)
+        .skip(1)
+        .filter_map(|r| r.split('"').next())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Sanitised HTML with each custom emoji as `:name:` (Teams' plain-text
+/// form, as in previews and notifications).
+fn custom_emoji_as_text(html: &str) -> String {
+    let mut out = String::new();
+    let mut rest = html;
+    let marker = format!("<img src=\"{CUSTOM_EMOJI_SRC}");
+    while let Some(i) = rest.find(&marker) {
+        out.push_str(&rest[..i]);
+        let end = rest[i..].find('>').map(|e| i + e + 1).unwrap_or(rest.len());
+        let tag = &rest[i..end];
+        if let Some(name) = attr(tag, "alt") {
+            out.push_str(&format!(":{name}:"));
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
     out
 }
 
@@ -2167,6 +2217,14 @@ pub fn compose_media_html(m: &ComposeMedia) -> String {
                 id = escape(&m.id),
             )
         }
+        // A custom emoji (CustomEmojiSerializer): `id` "{name};{documentId}",
+        // `url` its imgt2_anim view, `title` its name.
+        "custom" => format!(
+            "<span contenteditable=\"false\"><img alt=\"{n}\" itemid=\"{id}\" itemtype=\"http://schema.skype.com/CustomEmoji\" src=\"{u}\" style=\"width:20px;height:20px;\"></span>",
+            n = escape(&m.title),
+            id = escape(&m.id),
+            u = escape(&m.url),
+        ),
         "sticker" => format!(
             "</p><p>&nbsp;</p>\n<img src=\"{}\" height=\"180\" alt=\"{}\" width=\"180\" itemtype=\"http://schema.skype.com/Sticker\">\n<p>&nbsp;</p><p>",
             escape(&m.url),
@@ -2974,6 +3032,18 @@ mod tests {
                 .expect("an emoticon shows")
                 .text,
             "😮"
+        );
+        // A custom emoji keeps its place, its picture filled in later.
+        let ce = r#"<p>hi <span contenteditable="false"><img alt="ost-test" itemid="ost-test;0-wus-d1-ab" itemtype="http://schema.skype.com/CustomEmoji" src="https://gw/v1/objects/0-wus-d1-ab/views/imgt2_anim" style="width:20px;height:20px;"></span></p>"#;
+        let v = view_of(&m(ce), "8:orgid:me", "Me").unwrap();
+        assert_eq!(custom_emoji_docs(&v.html), ["0-wus-d1-ab"]);
+        assert_eq!(v.text, "hi :ost-test:");
+        assert!(
+            v.html.contains(
+                r#"<img src="ost-custom-emoji:0-wus-d1-ab" width="20" height="20" alt="ost-test">"#
+            ),
+            "{}",
+            v.html
         );
         // The empty paragraphs around a GIF show as nothing.
         assert!(

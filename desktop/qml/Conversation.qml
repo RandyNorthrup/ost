@@ -68,6 +68,7 @@ Rectangle {
     // below 480 Find goes too. Live roster avatars show from 834.
     function openChatMenuForTest() { chatMenu.open() }
     function funPickerForTest() { return emojiPicker }
+    function customEmojiAddForTest() { return customEmojiAdd }
     function composeMediaForTest() { return compose.mediaInUse() }
     function closeChatMenuForTest() { chatMenu.close() }
     function toggleFind() { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
@@ -227,6 +228,7 @@ Rectangle {
     function openParticipantsForTest() { participants.visible = true }
     function findForTest(q) { root.finding = true; findField.text = q; return root.findHits.length }
     function sendForTest() { root.sendCompose() }
+    function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
         openedAt = new Date()
         tab = ""; finding = false; findField.text = ""; participants.visible = false; posting = false
@@ -2488,6 +2490,7 @@ Rectangle {
         margins: 8
         onPicked: (key, on) => { if (!on || mine.length < root.reactionLimit || mine.some(r => r.key === root.commonKey(key))) root.react(messageId, key, on) }
         onCustomize: customizeReactions.open()
+        onAddCustomEmoji: customEmojiAdd.start()
     }
     CustomizeReactions {
         id: customizeReactions
@@ -2496,15 +2499,28 @@ Rectangle {
         id: emojiPicker
         parent: compose
         x: parent ? parent.width - width : 0; y: -height - 8
-        // Emoticons show in the compose box as Teams' own 20 px picture.
-        onPickedEmoji: id => root.insertPicked({
-            src: "https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/" + id + "/default/20_f.png",
-            kind: "emoji", id: id, title: backend.emoticonName(id), unicode: backend.emoticonUnicode(id) })
+        // Emoticons show in the compose box as Teams' own 20 px picture;
+        // custom emoji ("{name};{documentId}") as their cached picture.
+        onPickedEmoji: id => {
+            const sep = id.indexOf(";")
+            if (sep > 0) {
+                const name = id.slice(0, sep), doc = id.slice(sep + 1), file = backend.emoticonUrl(id, 20)
+                if (!file) { (root.emojiTarget || compose).insertText(":" + name + ":"); return }
+                root.insertPicked({ src: file, kind: "custom", id: id, title: name, url: backend.customEmojiSendUrl(doc) })
+                return
+            }
+            root.insertPicked({
+                src: "https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/" + id + "/default/20_f.png",
+                kind: "emoji", id: id, title: backend.emoticonName(id), unicode: backend.emoticonUnicode(id) })
+        }
+        onAddCustomEmoji: customEmojiAdd.start()
         onPickedGif: g => root.insertPicked({ src: g.preview, kind: "gif", url: g.url, width: g.width, height: g.height, title: g.title })
         onPickedSticker: st => root.insertPicked({ src: st.preview, kind: "sticker", url: st.url, title: st.title })
         onPickedCaptioned: m => root.insertPicked(m)
         onCustomize: customizeReactions.open()
     }
+    // Teams' Add emoji flow (file, resize, "Name your emoji").
+    CustomEmojiAdd { id: customEmojiAdd }
     FileDialog {
         id: filePicker
         title: "Upload from this device"
