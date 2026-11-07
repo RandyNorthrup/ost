@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T18:03:00Z'
+updated_date: '2026-11-07T18:26:00Z'
 labels:
   - desktop
   - header
@@ -55,4 +55,12 @@ Header gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/chat-list
 - Meeting chat header: Join (measured; hidden when cancelled, disabled while in the meeting); tabs Chat, Shared and Recap; no rename pencil, Meet now or call pill. Verified: --meeting-chat-test joined the OST calendar test meeting from the header.
 - Chats with isemptyconversation aren't listed unless open, as in Teams.
 - Left: Meeting details (opens the event page, TASK-0050); the "+4" tab overflow (Attendance, Breakout Rooms, Q&A, Meeting Whiteboard); Add a tab; header breakpoints; the remaining ··· items.
+
+- Header breakpoints as measured on winpc (narrowed via VNC):
+  - below 720 the roster count moves into ··· as Participants;
+  - below 640 the title is 14 px with a tab dropdown under it, chat details moves into ··· as "In this chat" (Alt+P) and only Find stays inline; below 480 Find goes too;
+  - live-roster avatars show only from 834;
+  - the right side packs from the edge (···, context buttons, divider, actions).
+- Tabs overflow by width into "+N" with a menu.
+- Verified with --breakpoints-test at 892/781/681/604/460 for group and 1:1 chats, including the ··· menus.
 <!-- SECTION:NOTES:END -->

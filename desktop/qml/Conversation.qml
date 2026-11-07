@@ -59,6 +59,21 @@ Rectangle {
         // Rooms, Q&A and Meeting Whiteboard after them, under "+4").
         : isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? ["Chat", "Shared", "Recap"] : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
+    // The header's breakpoints (Teams 7.3: the header's own width). Below
+    // 720 the roster count moves into ··· as Participants; below 640 the
+    // tabs become a dropdown under a 14 px title, and chat details moves
+    // into ··· as "In this chat" (measured at 604: only Find stays inline);
+    // below 480 Find goes too. Live roster avatars show from 834.
+    function openChatMenuForTest() { chatMenu.open() }
+    function closeChatMenuForTest() { chatMenu.close() }
+    function toggleFind() { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
+    readonly property bool headerNarrow: width < 640
+    readonly property bool rosterInMenu: width < 720 && isGroup && !isChannel && !isSelf
+    readonly property int contextInline: isChannel || pane ? 2 : width >= 640 ? 2 : width >= 480 ? 1 : 0
+    // Right to left from ···: the inline context buttons (32 each), a
+    // 16 px divider, then the action items.
+    readonly property real contextLeft: width - 43 - 32 * contextInline
+    readonly property real actionRight: contextLeft - 16
     // The meeting chat's meeting (join link, iCalUid, cancelled).
     readonly property var meeting: isMeetingChat && backend.chatMeetingJson ? JSON.parse(backend.chatMeetingJson) : null
     // Load a channel's tabs once it's known which team it's in.
@@ -290,6 +305,14 @@ Rectangle {
         id: header
         width: parent.width; height: theme.headerHeight
         visible: root.chatName.length > 0
+        // Where the toolbar starts (its leftmost shown item, less Teams'
+        // 4 px toolbar padding): the tabs fit before it.
+        readonly property real toolbarLeft: {
+            let x = root.actionRight
+            for (const it of [callPrimary, oneToOnePeople, joinButton, meetNow, meetingJoin, rosterCount])
+                if (it && it.visible) x = Math.min(x, it.x)
+            return x - 4
+        }
         Text {
             visible: root.pane
             x: 16; anchors.verticalCenter: parent.verticalCenter
@@ -323,12 +346,17 @@ Rectangle {
         // Title, tabs and actions at Teams desktop's measured positions.
         Text {
             id: title
-            x: 61; anchors.verticalCenter: parent.verticalCenter
+            x: 61
+            // Below 640 Teams sets the title 14/700 (line 20) at 10, the
+            // tab dropdown under it.
+            y: root.headerNarrow && !root.isChannel ? 10 : (parent.height - height) / 2
+            height: root.headerNarrow && !root.isChannel ? 20 : implicitHeight
+            lineHeight: root.headerNarrow && !root.isChannel ? 20 : 1; lineHeightMode: root.headerNarrow && !root.isChannel ? Text.FixedHeight : Text.ProportionalHeight
             // Long names elide so the tabs and actions keep their place.
-            width: Math.min(implicitWidth, parent.width * 0.35)
+            width: Math.min(implicitWidth, root.headerNarrow && !root.isChannel ? header.toolbarLeft - x - 16 : parent.width * 0.35)
             elide: Text.ElideRight
             text: root.chatName
-            font.family: theme.font; font.pixelSize: theme.title; font.weight: Font.Bold
+            font.family: theme.font; font.pixelSize: root.headerNarrow && !root.isChannel ? 14 : theme.title; font.weight: Font.Bold
             color: theme.text
         }
         // Name group chat (chat-title-name-group-chat): group chats only,
@@ -405,8 +433,34 @@ Rectangle {
                 }
             }
         }
+        // Which tabs fit before the toolbar (Teams' Fluent overflow): all of
+        // them, or as many as fit from the left with the selected one kept
+        // and "+N" after them (10 px kept free, as Fluent's overflow does).
+        FontMetrics { id: tabFont; font.family: theme.font; font.pixelSize: theme.base }
+        FontMetrics { id: tabFontSel; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+        QtObject {
+          id: tabsFit
+          readonly property var shown: {
+            const names = root.tabNames
+            const selIdx = Math.max(0, names.indexOf(root.tab))
+            const w = names.map((n, i) => (i === selIdx ? tabFontSel : tabFont).advanceWidth(n) + 12 + 20 * (i === selIdx && !!root.channelTabs.find(t => t.name === n && t.menu.length > 0)))
+            const avail = (root.isChannel ? header.width - 160 : root.pane ? header.width - 48 : header.toolbarLeft) - tabs.x - 2 - 10
+            if (w.reduce((a, b) => a + b, 0) <= avail) return names.map((n, i) => i)
+            const plus = tabFont.advanceWidth("+" + names.length) + 4
+            let budget = avail - plus - w[selIdx]
+            const shown = [selIdx]
+            for (let i = 0; i < names.length; i++) {
+                if (i === selIdx) continue
+                if (w[i] > budget) break
+                budget -= w[i]; shown.push(i)
+            }
+            return shown.sort((a, b) => a - b)
+          }
+          readonly property var hidden: root.tabNames.map((n, i) => i).filter(i => shown.indexOf(i) < 0)
+        }
         Row {
             id: tabs
+            visible: !(root.headerNarrow && !root.isChannel)
             x: (renameButton.visible ? renameButton.x + renameButton.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {
@@ -422,12 +476,8 @@ Rectangle {
                     readonly property bool menuable: sel && !!channelTab && channelTab.menu.length > 0
                     // 6 px padding each side of the label.
                     width: tabText.implicitWidth + 12 + (menuable ? 20 : 0); height: parent.height
-                    // Tabs that would run under the header actions are hidden
-                    // (opacity, so the row's layout doesn't depend on it).
-                    readonly property bool fits: tabs.x + x + width <= header.width
-                        - (root.pane ? 48 : root.isSelf ? 115 : root.isChannel ? 160 : 247)
-                    opacity: fits ? 1 : 0
-                    enabled: fits
+                    // Tabs that don't fit go under "+N".
+                    visible: tabsFit.shown.indexOf(index) >= 0
                     Text {
                         id: tabText
                         x: 6; anchors.verticalCenter: parent.verticalCenter
@@ -482,6 +532,48 @@ Rectangle {
                     Accessible.selected: sel
                 }
             }
+            // "+N" (tab-overflow-button, measured): 14 px #616161, padding
+            // 0 2, 60.3 tall; its menu lists the tabs that didn't fit.
+            Item {
+                id: tabOverflow
+                visible: tabsFit.hidden.length > 0
+                y: -2; width: plusText.implicitWidth + 4; height: 60.3
+                Text { id: plusText; x: 2; anchors.verticalCenter: parent.verticalCenter; text: "+" + tabsFit.hidden.length; font.family: theme.font; font.pixelSize: theme.base; color: plusHover.hovered ? theme.text : theme.textSecondary }
+                HoverHandler { id: plusHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: tabOverflowMenu.open() }
+                Accessible.role: Accessible.Button
+                Accessible.name: tabsFit.hidden.length + " more tabs."
+                MenuPopup {
+                    id: tabOverflowMenu
+                    x: 5; y: parent.height + 5
+                    items: tabsFit.hidden.map(i => ({ label: root.tabNames[i] }))
+                    onPicked: k => { const i = tabsFit.hidden[k]; root.tab = i === 0 ? "" : root.tabNames[i] }
+                }
+            }
+        }
+        // Below 640: the tabs as a dropdown under the title (Teams'
+        // tab-overflow-button with the open tab's name, 12 px #424242 and a
+        // 12 px chevron 4 after it; a menu of the tabs, the open one checked).
+        Item {
+            id: tabDropdown
+            visible: root.headerNarrow && !root.isChannel && !root.pane
+            x: title.x; y: 28; width: ddRow.implicitWidth; height: 17.3
+            Row {
+                id: ddRow
+                anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                Text { anchors.verticalCenter: parent.verticalCenter; text: root.tab === "" ? (root.tabNames[0] || "") : root.tab; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
+            }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: tabDropdownMenu.open() }
+            Accessible.role: Accessible.Button
+            Accessible.name: root.tab === "" ? (root.tabNames[0] || "") : root.tab
+            MenuPopup {
+                id: tabDropdownMenu
+                y: parent.height + 4
+                items: root.tabNames.map((n, i) => ({ label: n, checked: (root.tab === "" ? 0 : root.tabNames.indexOf(root.tab)) === i }))
+                onPicked: i => root.tab = i === 0 ? "" : root.tabNames[i]
+            }
         }
         component HeaderAction: Rectangle {
             id: ha
@@ -503,14 +595,14 @@ Rectangle {
         HeaderAction {
             id: callPrimary
             visible: !root.isSelf && !root.isChannel && !root.isGroup
-            x: parent.width - 199; width: 24; height: 31.3
+            x: oneToOnePeople.x - 48; width: 24; height: 31.3
             icon: backend.headerCallVideo ? "video-20" : "call-20"
             onClicked: backend.headerCallVideo ? root.videoCall() : root.call()
             Accessible.name: backend.headerCallVideo ? "Video call" : "Audio call"
         }
         HeaderAction {
             visible: callPrimary.visible
-            x: parent.width - 175; width: 24; height: 31.3
+            x: oneToOnePeople.x - 24; width: 24; height: 31.3
             icon: "chevron-down-16"; iconSize: 16
             Accessible.name: "More call options"
             onClicked: callMenu.open()
@@ -522,8 +614,9 @@ Rectangle {
             }
         }
         HeaderAction {
+            id: oneToOnePeople
             visible: !root.isSelf && !root.isGroup
-            x: parent.width - 151; width: 28
+            x: root.isChannel ? parent.width - 151 : root.actionRight - 28; width: 28
             icon: "people-add-20"
             Accessible.name: root.isChannel ? "View participants" : "Start a group chat"
             onClicked: participants.visible = !participants.visible
@@ -559,7 +652,7 @@ Rectangle {
                 return out
             }
             readonly property int hidden: Math.max(0, callers.length - 5)
-            x: rosterCount.x - 8 - width; anchors.verticalCenter: parent.verticalCenter
+            x: rosterCount.leftEdge - 8 - width; anchors.verticalCenter: parent.verticalCenter
             width: pillRow.width + 2; height: 34; radius: 6
             gradient: Gradient {
                 orientation: Gradient.Horizontal
@@ -573,13 +666,15 @@ Rectangle {
                 x: 1; y: 1
                 Rectangle {
                     id: liveRoster
-                    width: 6 + 20 + 6 + avatars.width + 6; height: 32
+                    width: 6 + 20 + 6 + (avatars.visible ? avatars.width + 6 : 0); height: 32
                     topLeftRadius: 4; bottomLeftRadius: 4
                     topRightRadius: root.inThisCall ? 4 : 0; bottomRightRadius: root.inThisCall ? 4 : 0
                     color: rosterPillHover.hovered ? theme.hover : theme.surface
                     FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "live-roster-20-filled"; size: 20; color: theme.brand }
                     Row {
                         id: avatars
+                        // Teams shows the avatars only from 834 wide.
+                        visible: root.width >= 834
                         x: 32; anchors.verticalCenter: parent.verticalCenter
                         // Each overlaps the next by 10 (margin-right -10).
                         spacing: -10
@@ -625,7 +720,7 @@ Rectangle {
             id: meetNow
             visible: root.isGroup && !root.isChannel && !root.isSelf && !root.isMeetingChat && !joinButton.visible
             readonly property bool wide: root.width >= 834
-            x: rosterCount.x - 28 - width; anchors.verticalCenter: parent.verticalCenter
+            x: rosterCount.leftEdge - 28 - width; anchors.verticalCenter: parent.verticalCenter
             width: wide ? 101.8 : 32; height: 32; radius: 4
             color: meetHover.hovered && !root.callsDisabled ? theme.hover : "transparent"
             Row {
@@ -646,7 +741,7 @@ Rectangle {
         }
         Rectangle {
             visible: meetNow.visible
-            x: rosterCount.x - 28; anchors.verticalCenter: parent.verticalCenter
+            x: rosterCount.leftEdge - 28; anchors.verticalCenter: parent.verticalCenter
             width: 28; height: 36; radius: 4
             color: chevHover.hovered ? theme.hover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "chevron-down-16"; size: 16; color: root.callsDisabled ? theme.disabled : theme.textStrong }
@@ -675,7 +770,7 @@ Rectangle {
             id: meetingJoin
             visible: root.isMeetingChat && !!root.meeting && !root.meeting.cancelled
             readonly property bool can: !root.inThisCall && backend.callState === ""
-            x: rosterCount.x - 8 - width; anchors.verticalCenter: parent.verticalCenter
+            x: rosterCount.leftEdge - 8 - width; anchors.verticalCenter: parent.verticalCenter
             width: meetingJoinText.implicitWidth + 16; height: 31.3; radius: 4
             color: !can ? theme.bgDisabled : meetingJoinHover.hovered ? theme.brandHover : theme.brandFill
             Text { id: meetingJoinText; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: meetingJoin.can ? "white" : theme.disabledStrong }
@@ -687,10 +782,13 @@ Rectangle {
         // Group chats: the roster count (chat-header-participant-count):
         // PeopleAdd and the bold 12 px member count.
         Rectangle {
-            visible: root.isGroup && !root.isChannel && !root.isSelf
+            visible: root.isGroup && !root.isChannel && !root.isSelf && !root.rosterInMenu
             readonly property int count: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).length
             id: rosterCount
-            x: parent.width - 123 - width; anchors.verticalCenter: parent.verticalCenter
+            // Where the call controls end: the roster's left edge, or the
+            // action area's right edge when the roster is in ···.
+            readonly property real leftEdge: visible ? x : root.actionRight
+            x: root.actionRight - width; anchors.verticalCenter: parent.verticalCenter
             width: Math.max(28, 4 + 20 + 2 + countLabel.implicitWidth + 4); height: 32; radius: 4
             color: rosterHover.hovered ? theme.hover : "transparent"
             Row {
@@ -711,16 +809,18 @@ Rectangle {
         }
         Rectangle {
             visible: !root.isSelf
-            x: parent.width - 115; width: 1; height: 20
+            x: root.contextLeft - 8; width: 1; height: 20
             anchors.verticalCenter: parent.verticalCenter
             color: theme.divider
         }
         HeaderAction {
-            x: parent.width - 107; icon: "search-20"; Accessible.name: "Find in chat"
-            onClicked: { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
+            visible: root.contextInline >= 1
+            x: root.contextLeft; icon: "search-20"; Accessible.name: "Find in chat"
+            onClicked: root.toggleFind()
         }
         HeaderAction {
-            x: parent.width - 75; icon: "panel-left-20"; Accessible.name: "Open chat details"
+            visible: root.contextInline >= 2
+            x: root.contextLeft + 32; icon: "panel-left-20"; Accessible.name: "Open chat details"
             onClicked: participants.visible = !participants.visible
         }
         // More chat options (chat-header-more-menu-trigger). Items Teams has
@@ -735,16 +835,27 @@ Rectangle {
                 id: chatMenu
                 x: parent.width / 2 - width / 2; y: parent.height + 4
                 margins: 8
-                items: [
+                // Narrow headers put what didn't fit first (Teams' "Sidepane
+                // Features": chat details as "In this chat", then Find), then
+                // the action items that moved (Participants), a divider, and
+                // the chat's own items.
+                readonly property var moved: [
+                    root.contextInline < 1 ? { key: "find", label: "Find in chat", icon: "search-20" } : null,
+                    root.contextInline < 2 ? { key: "details", label: "In this chat", icon: "panel-left-20", keys: "Alt+P" } : null,
+                    root.rosterInMenu ? { key: "participants", label: "Participants", icon: "people-add-20" } : null
+                ].filter(i => i !== null)
+                items: (moved.length ? moved.concat([{ separator: true }]) : []).concat([
                     { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" },
                     { separator: true },
                     { key: "unread", label: "Mark as unread", icon: "mail-unread-20" },
                     root.isSelf ? null : { key: "mute", label: root.chatMuted ? "Unmute" : "Mute", icon: root.chatMuted ? "alert-20" : "alert-off-20" },
                     { key: "link", label: "Copy link", icon: "link-20" }
-                ].filter(i => i !== null)
+                ]).filter(i => i !== null)
                 onPicked: i => {
                     const k = items[i].key
-                    if (k === "mute") backend.setChatMuted(root.chatId, !root.chatMuted)
+                    if (k === "details" || k === "participants") participants.visible = !participants.visible
+                    else if (k === "find") root.toggleFind()
+                    else if (k === "mute") backend.setChatMuted(root.chatId, !root.chatMuted)
                     else if (k === "meeting") root.scheduleMeeting()
                     else if (k === "link") backend.copyChatLink()
                     else if (k === "unread") { const m = root.messages.filter(m => m.kind === "message").pop(); if (m) backend.markMessageUnread(m.id, m.client_message_id || "") }

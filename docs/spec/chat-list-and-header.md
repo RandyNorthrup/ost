@@ -647,6 +647,23 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
 | experience container ≥ 768 | Tab max width `15rem`, else `7rem` (`enableResponsiveFwDeprecation`, live on) |
 | window ≥ 1350 | An info pane in state "hidden" counts as open (filled icon, "Close …" label) |
 
+**Measured live** (winpc, the "OST calendar test" meeting chat, window narrowed via VNC, 2026-11-07):
+- **Header 781** (720–834): Join, the roster count, Meeting details, then the divider, Find, details and ···; tabs Chat then "+6".
+- **Header 681** (640–720): as 781 without the roster count; Join sits 8 before Meeting details.
+- **Header 604** (< 640):
+  - the title is 14/700 (line 20) at y 10;
+  - under it at y 28, `tab-overflow-button` shows the open tab ("Chat", 12/400 #424242) with a 12 px chevron 4 after it;
+  - inline: Join, the divider, **Find only** at W−75, and ···;
+  - the ··· menu (214 wide) reads: [Sidepane Features: **In this chat** `Alt+P` (chat details)], **Participants**, **Meeting details** | Open in new window `Ctrl+O` | Mark as unread, Move to section, Mute, Copy link | Report a concern.
+- **Right-side layout**, packed from the right edge:
+  - ··· at W−43;
+  - the inline context buttons, 32 each;
+  - a 16-wide divider;
+  - the action items: the call container (the button plus 8), the roster count, Meeting details.
+- **Tab overflow** is by width (Fluent overflow): the tabs that fit stay, the rest go under "+N" (14/400 #616161, padding 0 2, 60.3 tall).
+  - Its menu sits 5 below and 5 in.
+  - At 1280 the meeting chat showed Chat, Shared, Recap, then "+4".
+
 ### 7.4 1:1 chat
 
 - Title: `h2[data-tid="chat-title"]` with the person's name, avatar with
