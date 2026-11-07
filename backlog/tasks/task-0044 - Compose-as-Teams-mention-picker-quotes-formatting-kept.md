@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T22:45:00Z'
+updated_date: '2026-11-07T23:02:00Z'
 labels:
   - desktop
   - messages
@@ -64,4 +64,7 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - Share someone's contact info: dialog measured on winpc, wire byte for byte, render as Teams (899c8f5).
 - Mentions kept when editing (tokens back in the edit box; edits send their own mentions list); verified live on OST TEST 65.
 - Left in AC1: Add agent, Add someone to the chat (needs the Add people dialog), tags.
+
+- Add someone to the chat (group chats) opens Teams' Add dialog; roster flyout rebuilt to Teams' measurements with Add people (451af76). Adding a member is unit-tested only; a live add needs a person the user approves.
+- Left in AC1: Add agent (bots), tags.
 <!-- SECTION:NOTES:END -->
