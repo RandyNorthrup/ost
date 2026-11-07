@@ -51,6 +51,10 @@ pub struct Outgoing {
     /// Teams' delivery option: "" (standard), "high" or "urgent".
     #[serde(default)]
     pub importance: String,
+    /// `properties.mentions` as Teams sends it (a JSON string, "[]" when
+    /// none).
+    #[serde(default)]
+    pub mentions: String,
 }
 
 /// offlineActionsManagerDefaultCrossSessionRetries.
@@ -310,7 +314,7 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
             "importance": o.importance,
             "cards": "[]",
             "links": "[]",
-            "mentions": "[]",
+            "mentions": if o.mentions.is_empty() { "[]".to_string() } else { o.mentions.clone() },
             "onbehalfof": null,
             "files": "[]",
             "formatVariant": "TEAMS",
@@ -869,6 +873,7 @@ mod tests {
             server_id: None,
             quote: None,
             importance: "high".into(),
+            mentions: String::new(),
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["importance"], "high");

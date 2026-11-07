@@ -1695,7 +1695,7 @@ Rectangle {
         } else if (root.plainText().trim().length > 0) {
             // Formatted text goes as Teams HTML; plain text as before.
             const html = input.getFormattedText(0, input.length)
-            if (/font-weight:\s*[6-9]00|font-style:\s*italic|text-decoration:[^;"]*(underline|line-through)|<ul|<ol/.test(html)) backend.sendRich(html)
+            if (/font-weight:\s*[6-9]00|font-style:\s*italic|text-decoration:[^;"]*(underline|line-through)|<ul|<ol|href="mention:/.test(html)) backend.sendRich(html)
             else root.send(root.plainText())
         }
         input.clear()
@@ -2037,6 +2037,8 @@ Rectangle {
         onSubmit: root.sendCompose()
         // Teams: not in channels; Urgent only in chats up to 20 people.
         deliveryOptions: !root.isChannel
+        mentionDirectory: !root.isGroup
+        mentionables: participants.members.filter(m => !/\(You\)$/.test(m.name || "")).map(m => ({ mri: m.mri, name: m.name, mail: m.mail || "" }))
         urgentAllowed: !root.isGroup || participants.members.length <= 20
         onScheduleMeetingRequested: root.scheduleMeeting()
         onCancelled: { root.quoting = null; root.pendingFiles = []; root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }

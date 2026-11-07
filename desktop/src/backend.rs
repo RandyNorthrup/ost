@@ -3435,7 +3435,16 @@ impl qobject::Backend {
     /// Send as Teams does: the message shows at once (Sending) and goes
     /// through the outbox, which retries and queues it as Teams' send
     /// pipeline does (docs/spec/send-pipeline.md).
-    fn enqueue(mut self: Pin<&mut Self>, conversation: String, content: String) {
+    fn enqueue(self: Pin<&mut Self>, conversation: String, content: String) {
+        self.enqueue_with(conversation, content, String::new())
+    }
+
+    fn enqueue_with(
+        mut self: Pin<&mut Self>,
+        conversation: String,
+        content: String,
+        mentions: String,
+    ) {
         if content.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             self.as_mut()
                 .set_status_text(QString::from(api::outbox::TOO_LARGE_TO_SEND));
@@ -3477,6 +3486,7 @@ impl qobject::Backend {
             server_id: None,
             quote,
             importance,
+            mentions,
         };
         // Sent: the draft for this chat is done.
         self.as_mut()
@@ -5810,12 +5820,17 @@ impl qobject::Backend {
     }
 
     pub fn send_rich(self: Pin<&mut Self>, editor_html: &QString) {
-        let html = api::messages::teams_html_from_editor(&editor_html.to_string());
+        let (html, mentions) = api::messages::teams_html_and_mentions(&editor_html.to_string());
         let chat_id = self.rust().current_chat_id.to_string();
         if chat_id.is_empty() || html.trim().is_empty() {
             return;
         }
-        self.enqueue(chat_id, html);
+        let mentions = if mentions.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&mentions).unwrap_or_default()
+        };
+        self.enqueue_with(chat_id, html, mentions);
     }
 
     pub fn download_file(mut self: Pin<&mut Self>, file_json: &QString) {

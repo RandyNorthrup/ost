@@ -1930,6 +1930,33 @@ pub async fn set_read_receipts_enabled(client: &TeamsClient, on: bool) -> Result
 /// else (head, styles, fonts, colours, scripts) is dropped; text keeps the
 /// escaping Qt gave it.
 pub fn teams_html_from_editor(qt: &str) -> String {
+    teams_html_and_mentions(qt).0
+}
+
+/// A mention in a message we send (Teams' `properties.mentions` entry).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OutMention {
+    #[serde(rename = "@type")]
+    pub kind: &'static str,
+    pub itemid: usize,
+    pub mri: String,
+    #[serde(rename = "mentionType")]
+    pub mention_type: &'static str,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+}
+
+/// Editor HTML to Teams HTML, with the editor's mention tokens (links to
+/// `mention:{mri}`) turned into Teams' mention spans
+/// (`<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="N">`)
+/// and listed for `properties.mentions`.
+pub fn teams_html_and_mentions(qt: &str) -> (String, Vec<OutMention>) {
+    let mut mentions: Vec<OutMention> = Vec::new();
+    // For each open <a>: whether it is a mention (closed as </span>).
+    let mut anchors: Vec<bool> = Vec::new();
+    let mut mention_text: Option<String> = None;
+    // Where the open mention's span content starts (it is sent as plain text).
+    let mut mention_start = 0usize;
     let body = match (qt.find("<body"), qt.rfind("</body>")) {
         (Some(b), Some(e)) if b < e => {
             let start = qt[b..].find('>').map(|i| b + i + 1).unwrap_or(b);
@@ -1944,6 +1971,9 @@ pub fn teams_html_from_editor(qt: &str) -> String {
     while let Some(lt) = rest.find('<') {
         let text = &rest[..lt];
         out.push_str(&text.replace(['\n', '\r'], ""));
+        if let Some(t) = mention_text.as_mut() {
+            t.push_str(text);
+        }
         let Some(gt) = rest[lt..].find('>') else {
             break;
         };
@@ -2011,25 +2041,58 @@ pub fn teams_html_from_editor(qt: &str) -> String {
                     out.push('>');
                 }
             }
-            ("a", false) => match editor_attr(tag, "href")
-                .filter(|h| h.starts_with("https://") || h.starts_with("http://"))
-            {
-                Some(href) => {
+            ("a", false) => {
+                let href = editor_attr(tag, "href").unwrap_or_default();
+                if let Some(mri) = href.strip_prefix("mention:") {
+                    let itemid = mentions.len();
+                    out.push_str(&format!(
+                        "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"{itemid}\">"
+                    ));
+                    mentions.push(OutMention {
+                        kind: "http://schema.skype.com/Mention",
+                        itemid,
+                        mri: mri.to_string(),
+                        mention_type: "person",
+                        display_name: String::new(),
+                    });
+                    anchors.push(true);
+                    mention_text = Some(String::new());
+                    mention_start = out.len();
+                } else if href.starts_with("https://") || href.starts_with("http://") {
                     out.push_str("<a href=\"");
                     out.push_str(&href.replace('"', "&quot;"));
                     out.push_str("\">");
+                    anchors.push(false);
+                } else {
+                    out.push_str("<a>");
+                    anchors.push(false);
                 }
-                None => out.push_str("<a>"),
-            },
-            ("a", true) => out.push_str("</a>"),
+            }
+            ("a", true) => {
+                if anchors.pop().unwrap_or(false) {
+                    let name = super::strip_html(&mention_text.take().unwrap_or_default())
+                        .trim()
+                        .to_string();
+                    out.truncate(mention_start);
+                    out.push_str(&escape(&name));
+                    out.push_str("</span>");
+                    if let Some(m) = mentions.last_mut() {
+                        m.display_name = name;
+                    }
+                } else {
+                    out.push_str("</a>");
+                }
+            }
             _ => {}
         }
     }
     out.push_str(&rest.replace(['\n', '\r'], ""));
-    out.replace("<p></p>", "")
+    let html = out
+        .replace("<p></p>", "")
         .replace("<p><br></p>", "")
         .trim()
-        .to_string()
+        .to_string();
+    (html, mentions)
 }
 
 /// An attribute's value from a tag's text (`name="value"`).
@@ -2156,6 +2219,22 @@ fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
 #[cfg(test)]
 mod quote_tests {
     use super::*;
+
+    #[test]
+    fn editor_mentions_become_teams_mentions() {
+        let qt = r#"<html><body><p>Hi <a href="mention:8:orgid:abc"><span style=" font-weight:600;">Randy Northrup</span></a>, see <a href="https://x.y">this</a></p></body></html>"#;
+        let (html, m) = teams_html_and_mentions(qt);
+        assert_eq!(
+            html,
+            r#"<p>Hi <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Randy Northrup</span>, see <a href="https://x.y">this</a></p>"#
+        );
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].mri, "8:orgid:abc");
+        assert_eq!(m[0].display_name, "Randy Northrup");
+        let j = serde_json::to_value(&m).unwrap();
+        assert_eq!(j[0]["@type"], "http://schema.skype.com/Mention");
+        assert_eq!(j[0]["mentionType"], "person");
+    }
 
     #[test]
     fn card_messages_parse_as_teams_reads_them() {

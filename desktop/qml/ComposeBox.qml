@@ -35,6 +35,11 @@ Item {
     property bool deliveryOptions: true
     property bool urgentAllowed: true
     signal scheduleMeetingRequested()
+    // People who can be @mentioned here (the chat's members): [{mri, name, mail}].
+    property var mentionables: []
+    // Whether the picker also searches the directory (1:1 chats and
+    // channels; group chats suggest their members, as Teams does).
+    property bool mentionDirectory: true
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
     readonly property alias editor: input
@@ -205,7 +210,8 @@ Item {
                     text: root.placeholder
                     font: input.font; color: theme.textSecondary
                 }
-                onTextChanged: { if (length > 0) root.typed(); else root.grown = false }
+                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention() }
+                onCursorPositionChanged: root.checkMention()
                 onLineCountChanged: if (lineCount > 1) root.grown = true
                 onActiveFocusChanged: if (activeFocus) root.enterKey = backend.setting("enterKey") || "send"
                 Keys.onPressed: event => {
@@ -216,8 +222,12 @@ Item {
                     else if (event.key === Qt.Key_X && (event.modifiers & Qt.ShiftModifier)) { root.formatting = !root.formatting; event.accepted = true }
                     else if (event.key === Qt.Key_I && (event.modifiers & Qt.ShiftModifier) && root.deliveryOptions) { root.importance = root.importance === "high" ? "" : "high"; event.accepted = true }
                 }
-                Keys.onReturnPressed: event => root.enterPressed(event)
-                Keys.onEnterPressed: event => root.enterPressed(event)
+                Keys.onReturnPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }
+                Keys.onEnterPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }
+                Keys.onTabPressed: event => { if (mentionPicker.opened) mentionPicker.pick(); else event.accepted = false }
+                Keys.onUpPressed: event => { if (mentionPicker.opened) mentionPicker.move(-1); else event.accepted = false }
+                Keys.onDownPressed: event => { if (mentionPicker.opened) mentionPicker.move(1); else event.accepted = false }
+                Keys.onEscapePressed: event => { if (mentionPicker.opened) mentionPicker.close(); else event.accepted = false }
                 Accessible.role: Accessible.EditableText
                 Accessible.name: root.placeholder
             }
@@ -451,6 +461,91 @@ Item {
             }
         }
     }
+    // @mentions (930187, measured): typing "@" at a word start opens Teams'
+    // picker over the caret; picking inserts the name, each word its own
+    // mention token in BrandForeground1, then a space.
+    property int mentionAt: -1
+    property string mentionQuery: ""
+    function checkMention() {
+        const pos = input.cursorPosition
+        const before = input.getText(0, pos)
+        const at = before.lastIndexOf("@")
+        const q = at >= 0 ? before.slice(at + 1) : ""
+        const ok = at >= 0 && (at === 0 || /\s/.test(before[at - 1])) && !/[\n\u2029]/.test(q) && q.length <= 40 && (q.match(/ /g) || []).length <= 2
+        if (!ok) { mentionAt = -1; if (mentionPicker.opened) mentionPicker.close(); return }
+        mentionAt = at; mentionQuery = q
+        if (q.trim().length >= 2 && root.mentionDirectory) backend.searchPeople(q.trim())
+        if (!mentionPicker.opened) mentionPicker.open()
+        mentionPicker.current = 0
+    }
+    function insertMention(person) {
+        if (mentionAt < 0) return
+        const words = String(person.name || "").split(/\s+/).filter(w => w)
+        const style = 'style="color:' + theme.brandForeground1 + '; text-decoration:none"'
+        const html = words.map(w => '<a href="mention:' + person.mri + '" ' + style + '>' + escapeHtml(w) + '</a>').join("&nbsp;") + "&nbsp;"
+        const at = mentionAt, end = input.cursorPosition
+        mentionAt = -1
+        mentionPicker.close()
+        input.remove(at, end)
+        input.insert(at, html)
+        input.cursorPosition = at + words.join(" ").length + 1
+        mentionPicker.close()
+        input.forceActiveFocus()
+    }
+    Popup {
+        id: mentionPicker
+        parent: Overlay.overlay
+        width: 300; padding: 0
+        height: Math.min(310.3, (root.mentionQuery.trim() ? 8 : 43.2) + rowsCol.height + 8)
+        closePolicy: Popup.CloseOnPressOutside
+        focus: false
+        property int current: 0
+        readonly property var people: {
+            const q = root.mentionQuery.trim().toLowerCase()
+            const fromRoster = root.mentionables.filter(p => !q || (p.name || "").toLowerCase().split(/\s+/).some(w => w.startsWith(q)) || (p.name || "").toLowerCase().startsWith(q) || (p.mail || "").toLowerCase().startsWith(q))
+            const found = q.length >= 2 && root.mentionDirectory ? (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).map(p => ({ mri: "8:orgid:" + p.id, name: p.name, mail: p.mail || p.email || "" })) : []
+            const out = fromRoster.slice()
+            for (const p of found) if (!out.some(o => o.mri === p.mri)) out.push(p)
+            return out.slice(0, 20)
+        }
+        function move(d) { if (people.length) current = (current + d + people.length) % people.length }
+        function pick() { if (people.length) root.insertMention(people[Math.max(0, Math.min(current, people.length - 1))]); else close() }
+        readonly property rect caret: input.cursorRectangle
+        x: { const p = input.mapToItem(Overlay.overlay, input.positionToRectangle(Math.max(0, root.mentionAt)).x, 0); return Math.min(Overlay.overlay.width - width - 8, Math.max(8, p.x)) }
+        y: { const p = input.mapToItem(Overlay.overlay, 0, input.positionToRectangle(Math.max(0, root.mentionAt)).y); return Math.max(8, p.y - height - 1) }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        Text {
+            visible: !root.mentionQuery.trim()
+            x: 20.7; y: 10.7; height: 20; verticalAlignment: Text.AlignVCenter
+            text: "Suggestions"
+            font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+        }
+        Column {
+            id: rowsCol
+            x: 0.7; y: root.mentionQuery.trim() ? 8 : 43.2
+            Repeater {
+                model: mentionPicker.people
+                Rectangle {
+                    id: prow
+                    required property var modelData
+                    required property int index
+                    width: 298.7; height: 47.3
+                    color: index === mentionPicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : prowHover.hovered ? theme.menuHover : "transparent"
+                    Avatar { x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri }
+                    Text { x: 59.6; y: 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { visible: !!prow.modelData.mail; x: 59.6; y: 25.6; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    HoverHandler { id: prowHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.insertMention(prow.modelData) }
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: modelData.name + (modelData.mail ? " " + modelData.mail : "")
+                    Accessible.selected: index === mentionPicker.current
+                }
+            }
+        }
+    }
+    function mentionForTest(text) { input.insert(input.cursorPosition, text); input.cursorPosition = input.length }
+    function pickMentionForTest() { mentionPicker.pick() }
+
     function deliveryForTest() { deliveryPopup.anchorItem = sideTools; deliveryPopup.open() }
     function plusForTest() { plusFlyout.anchorItem = sideTools; plusFlyout.open() }
 

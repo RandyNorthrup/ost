@@ -1826,6 +1826,30 @@ Window {
         }
     }
 
+    // --mention-test=<query> with --open-chat=<id> --shots=<dir>: type a
+    // message with "@<query>", capture the picker, pick the first person,
+    // capture, send it and log the newest message.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--mention-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const q = (Qt.application.arguments.find(a => a.startsWith("--mention-test=")) || "").slice(15)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "mention-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST mention test"); return }
+            const c = conversation.composeForTest()
+            if (step === 0) { conversation.setPlain("OST test 54: mention for "); c.focusEditor(); c.mentionForTest("@" + q) }
+            else if (step === 1) shot("picker")
+            else if (step === 2) c.pickMentionForTest()
+            else if (step === 3) { c.insertText("check"); shot("picked"); console.warn("MENTION-TEST editor", c.formattedText().replace(/\n/g, " ").slice(-400)) }
+            else if (step === 4) conversation.sendForTest()
+            else if (step === 6) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => m.mine).pop(); console.warn("MENTION-TEST newest", JSON.stringify({ html: m.html, state: m.send_state })); Qt.quit() }
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu

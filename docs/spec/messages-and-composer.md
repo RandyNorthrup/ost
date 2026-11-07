@@ -852,6 +852,17 @@ Groups are separated by dividers; empty groups are skipped.
   - At most 20 channel results.
 - **Extra rows**: "Add someone to the chat" (group chats), "Share someone's contact info". Name suffixes "(You)" and "(External)".
 
+### Measured (winpc, 2026-11-07)
+- Typing "@" opens `AutocompletePopup-Mentions`: 300 wide, white, radius 4, a drop-shadow, its bottom at the caret line.
+  - "Suggestions" (14/20, #424242) sits at (20.7, 10.7).
+  - Person rows (`autocomplete-picker-item-{name}`, option) are 47.3 tall: a 32 px avatar at 20.3, the name 14/20 and email 12/16 at 60.3. The active row is #E6E6E6.
+  - Then Everyone ("Notify everyone in the chat"), Add agent to the chat, Add someone to the chat (`chat-add-members`) and Share someone's contact info.
+  - In a group chat, "@Ran" suggested only chat members.
+- A picked person goes in as **one mention token per word**: `<mention mri="…" type="person">Randy</mention>&nbsp;<mention …>Northrup</mention>`, coloured #4F52B2, weight 400.
+- Wire format (OST-sent and rendered by Teams as "Mentioned Randy"):
+  - the content has `<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Randy</span>&nbsp;<span … itemid="1">Northrup</span>`;
+  - `properties.mentions` is a JSON string, one entry per span: `{"@type":"http://schema.skype.com/Mention","itemid":N,"mri":"8:orgid:…","mentionType":"person","displayName":"Randy"}`.
+
 ## 20. Keyboard shortcuts (504800, Windows class `P`; per-flag, all live on unless noted)
 | key | command | key | command |
 |---|---|---|---|
