@@ -1721,6 +1721,58 @@ Window {
         }
     }
 
+    // --channel-bar-test with --open-chat=<channel id> --shots=<dir>: the
+    // newest post's hover bar and ··· menu, then the newest reply's;
+    // captured as channel-<step>.png. Nothing is changed.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-bar-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "channel-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "General"); return }
+            const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message")
+            const posts = msgs.filter(m => !m.root_id || m.root_id === m.id), replies = msgs.filter(m => m.root_id && m.root_id !== m.id)
+            const post = posts.find(p => replies.some(r => r.root_id === p.id)) || posts.pop(), reply = replies.filter(r => r.root_id === post.id).pop()
+            if (step === 0) conversation.forceChannelBarForTest(post.id)
+            else if (step === 1) shot("post-bar")
+            else if (step === 2) conversation.channelMenuForTest(post, "post")
+            else if (step === 3) shot("post-menu")
+            else if (step === 4 && reply) { conversation.closeMessageMenuForTest(); conversation.forceChannelBarForTest(reply.id) }
+            else if (step === 5) shot("reply-bar")
+            else if (step === 6 && reply) conversation.channelMenuForTest(reply, "reply")
+            else if (step === 7) shot("reply-menu")
+            else if (step === 8) Qt.quit()
+            step++
+        }
+    }
+
+    // --channel-edit-test=<text> with --open-chat=<channel id> --shots=<dir>:
+    // open the in-place editor on your newest reply (captured), then save
+    // <text> as its content and log the reply after.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--channel-edit-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var target: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const text = (Qt.application.arguments.find(a => a.startsWith("--channel-edit-test=")) || "").slice(20)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "General"); return }
+            const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message")
+            if (!target) { target = msgs.filter(m => m.mine && m.root_id && m.root_id !== m.id && !m.deleted).pop(); if (!target) return }
+            if (step === 0) conversation.startEdit(target)
+            else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(dir + "channel-edit-open.png"))
+            else if (step === 2) { conversation.editingId = ""; backend.editMessageRich(target.id, "<p>" + text + "</p>", "") }
+            else if (step === 4) { const m = msgs.find(m => m.id === target.id); console.warn("CHANNEL-EDIT after", JSON.stringify({ text: m.text, edited: m.edited })); window.contentItem.grabToImage(r => r.saveToFile(dir + "channel-edit-after.png")) }
+            else if (step === 5) Qt.quit()
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu

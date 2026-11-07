@@ -13,6 +13,8 @@ Item {
     property var messages: []
     property string myName: ""
     property bool busy: false
+    // The Conversation: its hover-bar rules, menus, pickers and edit state.
+    property var host: null
     signal reply(string rootId, string text)
     signal startPost()
     signal react(string messageId, string key, bool on)
@@ -83,15 +85,16 @@ Item {
                 // The post
                 Item {
                     width: parent.width
-                    height: card.post ? postBody.y + postBody.height + 56 : 44
+                    height: !card.post ? 44 : postEdit.active ? (postEdit.item ? postEdit.item.height : 0) + 8 : postBody.y + postBody.height + 51
                     Avatar {
                         id: av
-                        visible: !!card.post
+                        visible: !!card.post && !postEdit.active
                         x: 18; y: 16; size: 32
                         name: card.post ? card.post.sender : ""
                         photoId: card.post ? card.post.sender_mri : ""
                     }
                     Row {
+                        visible: !postEdit.active
                         x: card.post ? 60 : 18; y: card.post ? 22 : 14
                         spacing: 10
                         Text {
@@ -116,76 +119,46 @@ Item {
                     }
                     MessageText {
                         id: postBody
-                        visible: !!card.post
+                        visible: !!card.post && !postEdit.active
                         x: 18; y: 64; width: card.width - 36
                         message: card.post
                     }
-                    // Reactions, then add reaction.
-                    Row {
-                        visible: !!card.post
-                        x: 18; y: postBody.y + postBody.height + 16
-                        spacing: 4
-                        Repeater {
-                            model: card.post ? card.post.reactions : []
-                            Rectangle {
-                                required property var modelData
-                                width: rp.implicitWidth + 16; height: 26; radius: 13
-                                color: modelData.mine ? theme.brandTint : theme.surface
-                                border.color: modelData.mine ? theme.brand : theme.stroke
-                                Row {
-                                    id: rp
-                                    anchors.centerIn: parent; spacing: 4
-                                    Text { text: parent.parent.modelData.emoji; font.pixelSize: 14 }
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: parent.parent.modelData.count
-                                        font.family: theme.font; font.pixelSize: theme.small
-                                        color: theme.text
-                                    }
-                                }
-                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: root.react(card.post.id, modelData.mine ? modelData.my_key : modelData.key, !modelData.mine) }
-                                Accessible.role: Accessible.Button
-                                Accessible.name: modelData.count + " " + modelData.key + " reaction" + (modelData.mine ? ", including yours" : "")
-                            }
-                        }
-                        Rectangle {
-                            width: 34; height: 26; radius: 13
-                            color: arh.hovered ? theme.rowHover : theme.surface
-                            border.color: theme.divider
-                            FluentIcon { anchors.centerIn: parent; name: "emoji-add-20"; size: 16; color: theme.textStrong }
-                            HoverHandler { id: arh; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: reactMenu.open() }
-                            Accessible.role: Accessible.Button
-                            Accessible.name: "Add reaction"
-                            Popup {
-                                id: reactMenu
-                                y: -height - 4
-                                padding: 4
-                                background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
-                                contentItem: Row {
-                                    Repeater {
-                                        model: [["yes", "👍"], ["heart", "❤️"], ["laugh", "😆"], ["surprised", "😮"], ["sad", "😢"], ["angry", "😡"]]
-                                        Rectangle {
-                                            required property var modelData
-                                            width: 32; height: 32; radius: theme.radius
-                                            color: qh.hovered ? theme.rowHover : "transparent"
-                                            Text { anchors.centerIn: parent; text: parent.modelData[1]; font.pixelSize: 18 }
-                                            HoverHandler { id: qh; cursorShape: Qt.PointingHandCursor }
-                                            TapHandler {
-                                                onTapped: {
-                                                    const mine = (card.post.reactions || []).find(r => r.key === parent.modelData[0] && r.mine)
-                                                    root.react(card.post.id, mine ? mine.my_key : parent.modelData[0], !mine)
-                                                    reactMenu.close()
-                                                }
-                                            }
-                                            Accessible.role: Accessible.Button
-                                            Accessible.name: "React with " + modelData[0]
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    // Teams' reaction summary, 17 under the body; posts show the
+                    // add button even with no reactions.
+                    ReactionSummary {
+                        visible: !!card.post && !postEdit.active
+                        x: 18; y: postBody.y + postBody.height + 17
+                        host: root.host
+                        messageId: card.post ? card.post.id : ""
+                        reactions: card.post ? (card.post.reactions || []) : []
+                    }
+                    // Edit in place.
+                    Loader {
+                        id: postEdit
+                        active: !!card.post && !!root.host && root.host.editingId === card.post.id
+                        x: 0; y: 0; width: card.width
+                        sourceComponent: editComponent
+                        onLoaded: item.message = card.post
+                    }
+                    // Teams' hover bar, inside the card 10 from its end and 11
+                    // down (channel-message-action-menu, measured).
+                    HoverHandler { id: postHover }
+                    HoverBar {
+                        id: postBar
+                        visible: !!card.post && !!root.host && !card.post.deleted && !postEdit.active
+                            && (postHover.hovered || postBar.hovered || root.host.menuOpenFor(card.post.id, "post"))
+                        host: root.host
+                        message: card.post || ({})
+                        context: "post"
+                        acts: card.post && card.post.mine
+                            ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
+                            : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }]
+                        x: card.width - 10 - width; y: 11; z: 5
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.RightButton
+                        enabled: !!card.post && !!root.host
+                        onTapped: point => root.host.openMessageMenu(card.post, card, true, point.position.x, point.position.y, "post")
                     }
                 }
                 // Earlier replies, collapsed.
@@ -209,34 +182,88 @@ Item {
                         Accessible.name: text
                     }
                 }
-                // Replies
-                Repeater {
-                    model: card.shown
-                    Item {
-                        id: rep
-                        required property var modelData
-                        required property int index
-                        width: card.width
-                        height: repBody.y + repBody.height + 5
-                        // One divider above the replies, none between them.
-                        Rectangle {
-                            visible: rep.index === 0 && card.replies.length === card.shown.length
-                            width: parent.width; height: 1; color: theme.dividerSoft
-                        }
-                        Avatar {
-                            x: 18; y: 12; size: 20
-                            name: rep.modelData.sender; photoId: rep.modelData.sender_mri
-                        }
-                        Row {
-                            x: 50; y: 11
-                            spacing: 8
-                            Text { text: rep.modelData.sender; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
-                            Text { text: root.conversationStamp(rep.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
-                        }
-                        MessageText {
-                            id: repBody
-                            x: 50; y: 31; width: card.width - 68
-                            message: rep.modelData
+                // Replies (response-surface, measured): a NeutralStroke3 line on
+                // top, 8.7 in; each reply a 20 px avatar at 18, the name and
+                // time (12 px) at 50, the text 20 down, then 16 to the next.
+                Item {
+                    visible: card.shown.length > 0
+                    width: card.width
+                    height: visible ? 8.7 + replyCol.height - 16 + 8 : 0
+                    Rectangle {
+                        visible: card.replies.length === card.shown.length
+                        width: parent.width; height: 0.67; color: theme.quoteBorder
+                    }
+                    Column {
+                        id: replyCol
+                        y: 8.7
+                        width: parent.width
+                        Repeater {
+                            model: card.shown
+                            Item {
+                                id: rep
+                                required property var modelData
+                                required property int index
+                                readonly property bool editing: !!root.host && root.host.editingId === modelData.id
+                                width: card.width
+                                // Editing, Teams' compose spans the card in the reply's
+                                // place, from the line above it.
+                                height: editing ? (repEdit.item ? repEdit.item.height : 0) - 7.4 + 11.4
+                                    : 20 + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 16
+                                z: repHover.hovered || repBar.hovered ? 2 : 1
+                                Avatar {
+                                    visible: !rep.editing
+                                    x: 18; y: 0; size: 20
+                                    name: rep.modelData.sender; photoId: rep.modelData.sender_mri
+                                }
+                                Row {
+                                    visible: !rep.editing
+                                    x: 50; y: 1.4
+                                    spacing: 8
+                                    Text { text: rep.modelData.sender; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                                    Text { text: root.conversationStamp(rep.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                    Text { visible: rep.modelData.edited === true; text: "Edited"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                }
+                                MessageText {
+                                    id: repBody
+                                    visible: !rep.editing
+                                    x: 50; y: 20; width: card.width - 70
+                                    message: rep.modelData
+                                }
+                                Loader {
+                                    id: repEdit
+                                    active: rep.editing
+                                    x: 0; y: -7.4; width: card.width
+                                    sourceComponent: editComponent
+                                    onLoaded: item.message = rep.modelData
+                                }
+                                ReactionSummary {
+                                    visible: !rep.editing && (rep.modelData.reactions || []).length > 0
+                                    x: 50; y: repBody.y + repBody.height + 8
+                                    host: root.host
+                                    messageId: rep.modelData.id
+                                    reactions: rep.modelData.reactions || []
+                                }
+                                // Hover bar: at the card's end, its bottom 3.7
+                                // above the reply (measured).
+                                HoverHandler { id: repHover }
+                                HoverBar {
+                                    id: repBar
+                                    visible: !!root.host && !rep.modelData.deleted && !rep.editing
+                                        && (repHover.hovered || repBar.hovered || root.host.menuOpenFor(rep.modelData.id, "reply"))
+                                    host: root.host
+                                    message: rep.modelData
+                                    context: "reply"
+                                    acts: rep.modelData.mine
+                                        ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
+                                        : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }]
+                                    x: rep.width - width; y: -3.7 - height; z: 5
+                                }
+                                TapHandler {
+                                    acceptedButtons: Qt.RightButton
+                                    enabled: !!root.host
+                                    onTapped: point => root.host.openMessageMenu(rep.modelData, rep, true, point.position.x, point.position.y, "reply")
+                                }
+                            }
                         }
                     }
                 }
@@ -345,6 +372,22 @@ Item {
         TapHandler { onTapped: root.startPost() }
         Accessible.role: Accessible.Button
         Accessible.name: "Post in channel"
+    }
+
+    // The in-place editor for a post or reply (Teams' compose).
+    Component {
+        id: editComponent
+        ComposeBox {
+            id: box
+            property var message: null
+            editing: true
+            onMessageChanged: if (message) { quote = message.quote || null; setHtml(message.html || escapeHtml(message.text || "")); focusEditor() }
+            onQuoteDismissed: quote = null
+            onEmojiRequested: a => root.host.openEmojiFor(box)
+            onSettingsRequested: root.host.openChatSettings()
+            onSubmit: { backend.editMessageRich(message.id, formattedText(), quote ? JSON.stringify(quote) : ""); root.host.editingId = "" }
+            onCancelled: root.host.editingId = ""
+        }
     }
 
     // A message's text, as the chat draws it (the engine's safe HTML).

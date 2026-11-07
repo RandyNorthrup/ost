@@ -601,6 +601,19 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 - Without that property, Recent is `recentReactions.defaultReactions` (live: surprised, cry, angry, hearteyes, cool, handsinair, fistbump, fire, … rock).
 - **Quick reactions** are the user property `defaultMessageReactions`; without it, like, heart, laugh and surprised.
 
+**Channel posts and replies** (OST Test Team › General, a classic channel)
+- Card (`channel-pane-message`): 716 wide, white, radius 4, shadow 0 0 2 rgba(0,0,0,.12) + 0 1 2 rgba(0,0,0,.14), no border.
+  - The post: a 32 px avatar at (18, 16) with a 10 px presence badge at (40, 38). The name (14 px) is at (60, 21.8), with the time (12 px #616161) 10 after it.
+  - The text is at (18, 64), 680 wide. The reaction summary (`channel-message-reaction-summary`) sits 17 under the text; the add button always shows.
+  - Replies (`response-surface`): a 0.67 px #F0F0F0 line on top, 8.7 padding. Each reply has a 20 px avatar at 18 with a 6 px badge at (14, 14), the name and time (12 px, 8 apart) at 50, and the text 20 down (646 wide). Replies are 56 apart.
+  - "Reply in thread" (`quick-reply-placeholder-reply`, 14 px semibold #616161) sits in a 48 px row under a #F0F0F0 line, with your 20 px avatar at 18.
+- Hover bar (`channel-message-action-menu`, 241.3 × 32): Like, Heart, Laugh, Surprised, More reactions | Edit (yours), More options.
+  - On a post it sits inside the card, 10 from the end and 11 down.
+  - On a reply it sits at the card's end, its bottom 3.7 above the reply.
+- ··· on a post: Forward, Follow thread / Unfollow thread ("New" badge), Copy link, Save this message, Delete, Pin for everyone, Open conversation in new window | Mark as unread, Share to Outlook, Translate | More actions. 260 wide.
+- ··· on a reply: Forward, Copy link, Save this message, Delete | Share to Outlook, Translate, Immersive Reader | More actions. Content-sized (166.6).
+- Edit in place uses the multiline compose (always, even for one plain line). It spans the card in the item's place, from the line above it; the hint sits under it, then 11.4 to the next reply.
+
 **Reaction overflow and pressed state** (live, with seven reactions from the test account)
 - Teams showed five pills plus `diverse-reaction-overflow-button` "+3" (aria "3 overflow reactions."). The button is 28 × 26 (padding 0 6, min-width 26) with a 0.67 px #E0E0E0 border and 12 px text.
 - The overflow hover list is titled "More reactions" and is 198 wide.

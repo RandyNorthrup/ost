@@ -36,7 +36,8 @@ Item {
     // Once the text wraps the box stays multiline until it is empty again
     // (Teams 461103 / 458473).
     property bool grown: false
-    readonly property bool multiline: formatting || files.length > 0 || !!quote || grown
+    // Editing always uses the multiline layout (Teams, measured).
+    readonly property bool multiline: editing || formatting || files.length > 0 || !!quote || grown
     readonly property real boxHeight: multiline
         ? (formatting ? 43 : 0) + editorArea.height + 44.7
         : Math.max(45.3, input.contentHeight + 18 + 7.3)

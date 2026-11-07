@@ -151,6 +151,11 @@ Rectangle {
         }
         return null
     }
+    // Test hooks for channel posts: show a message's hover bar; open its
+    // ··· menu (post or reply).
+    property string forceChannelBarId: ""
+    function forceChannelBarForTest(id) { forceChannelBarId = id }
+    function channelMenuForTest(m, context) { openMessageMenu(m, channelPosts, false, channelPosts.width - 300, 120, context) }
     function closePickerForTest() { reactionPicker.close() }
     function closeMessageMenuForTest() { messageMenu.close() }
     function forwardDialogForTest() { return forwardDialog }
@@ -452,6 +457,7 @@ Rectangle {
         busy: root.busy
         onReply: (id, text) => root.sendReply(id, text)
         onReact: (id, key, on) => root.react(id, key, on)
+        host: root
         onStartPost: { root.posting = true; input.forceActiveFocus() }
     }
 
@@ -1702,17 +1708,42 @@ Rectangle {
     }
     // The message ··· menu (Teams' registry order; the hover bar's own
     // actions are left out when it opens from there, kept on right-click).
-    function messageMenuItems(m, rightClick) {
+    function messageMenuItems(m, rightClick, context) {
         const own = m.mine === true
         const out = []
+        const save = m.saved
+            ? { key: "unsave", label: "Unsave this message", icon: "bookmark-20-filled", keys: "S" }
+            : { key: "save", label: "Save this message", icon: "bookmark-20", keys: "S" }
+        const translate = m.translated
+            ? { key: "original", label: m.translated_from ? "See original message (" + m.translated_from + ")" : "See original message", icon: "translate-20" }
+            : { key: "translate", label: "Translate", icon: "translate-20" }
+        // Channel posts and replies (measured in a classic channel; Edit and
+        // Reply with quote are on the hover bar). Share to Outlook, Follow
+        // thread, Open conversation in new window and Immersive Reader are
+        // not built yet.
+        if (context === "post" || context === "reply") {
+            if (rightClick && own) out.push({ key: "edit", label: "Edit", icon: "edit-20", keys: "E" })
+            if (rightClick && !own) out.push({ key: "reply", label: "Reply with quote", icon: "quote-reply-20", keys: "Q" })
+            out.push({ key: "forward", label: "Forward", icon: "share-forward-20", keys: "F" })
+            out.push({ key: "copy-link", label: "Copy link", icon: "link-20" })
+            out.push(save)
+            if (own) out.push({ key: "delete", label: "Delete", icon: "delete-menu-20", keys: "Del" })
+            if (context === "post") out.push(m.pinned
+                ? { key: "unpin", label: "Unpin for everyone", icon: "pin-off-20", keys: "P" }
+                : { key: "pin", label: "Pin for everyone", icon: "pin-20", keys: "P" })
+            out.push({ separator: true })
+            if (context === "post") out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
+            out.push(translate)
+            out.push({ separator: true })
+            out.push({ key: "more", label: "More actions", chevron: true, enabled: false })
+            return out
+        }
         // Core items, in Teams' registry order.
         if (rightClick || own) out.push({ key: "reply", label: "Reply with quote", icon: "quote-reply-20", keys: "Q" })
         if (rightClick && own) out.push({ key: "edit", label: "Edit", icon: "edit-20", keys: "E" })
         out.push({ key: "forward", label: "Forward", icon: "share-forward-20", keys: "F" })
         out.push({ key: "copy-link", label: "Copy link", icon: "link-20" })
-        out.push(m.saved
-            ? { key: "unsave", label: "Unsave this message", icon: "bookmark-20-filled", keys: "S" }
-            : { key: "save", label: "Save this message", icon: "bookmark-20", keys: "S" })
+        out.push(save)
         if (own) out.push({ key: "delete", label: "Delete", icon: "delete-menu-20", keys: "Del" })
         out.push(m.pinned
             ? { key: "unpin", label: "Unpin for everyone", icon: "pin-off-20", keys: "P" }
@@ -1727,7 +1758,7 @@ Rectangle {
         out.push({ separator: true })
         out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
         // Chats: the Translation submenu.
-        if (!root.isChannel) out.push({ key: "translation", label: "Translation", icon: "translate-20", chevron: true })
+        out.push({ key: "translation", label: "Translation", icon: "translate-20", chevron: true })
         // Report this message: someone else's, with its own divider.
         if (!own) {
             out.push({ separator: true })
@@ -1743,6 +1774,8 @@ Rectangle {
         const r = backend.messageReadersJson ? JSON.parse(backend.messageReadersJson) : null
         return r && r.message_id === id ? r : null
     }
+    // Whether the ··· menu is open for this message (keeps its hover bar up).
+    function menuOpenFor(id, context) { return forceChannelBarId === id || messageMenu.opened && !messageMenu.rightClick && !!messageMenu.message && messageMenu.message.id === id && messageMenu.context === context }
     function openMessageMenu(m, anchor, rightClick, px, py, context) {
         if (m.mine && root.isGroup) backend.loadMessageReaders(m.id)
         messageMenu.message = m
@@ -1767,7 +1800,7 @@ Rectangle {
         Connections {
             target: backend
             function onMessageReadersJsonChanged() {
-                if (messageMenu.opened && messageMenu.message) messageMenu.items = root.messageMenuItems(messageMenu.message, messageMenu.rightClick)
+                if (messageMenu.opened && messageMenu.message) messageMenu.items = root.messageMenuItems(messageMenu.message, messageMenu.rightClick, messageMenu.context)
             }
         }
         onPicked: i => {
@@ -1781,6 +1814,7 @@ Rectangle {
             else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
             else if (it.key === "pin" || it.key === "unpin") backend.setMessagePinned(m.id, it.key === "pin")
             else if (it.key === "unread") backend.markMessageUnread(m.id, m.client_message_id || "")
+            else if (it.key === "translate" || it.key === "original") backend.translateMessage(m.id, it.key === "translate")
             else if (it.key === "translation") {
                 translationMenu.message = m
                 translationMenu.items = [m.translated
