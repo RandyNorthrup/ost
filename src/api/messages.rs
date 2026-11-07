@@ -291,6 +291,15 @@ pub struct MessageView {
     /// The message it forwards (Teams' forward card).
     #[serde(default)]
     pub forward: Option<Forwarded>,
+    /// Shown translated (Teams' on-demand translation); `translated_from`
+    /// is the source language when known.
+    #[serde(default)]
+    pub translated: bool,
+    #[serde(default)]
+    pub translated_from: String,
+    /// Translation was asked for and failed (Teams: "Failed to translate").
+    #[serde(default)]
+    pub translation_failed: bool,
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module

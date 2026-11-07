@@ -556,6 +556,30 @@ Rectangle {
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                 }
+                // Translated: Teams' icon with "Translated from …" (click: See
+                // original message). Failed: the error icon and its text.
+                FluentIcon {
+                    visible: msg.modelData.translated === true
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "translate-16"; size: 16; color: theme.textSecondary
+                    HoverHandler { id: trHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: backend.translateMessage(msg.modelData.id, false) }
+                    ToolTip {
+                        visible: trHover.hovered; delay: 500
+                        y: -height - 4; padding: 8
+                        background: FluentSurface { depth: 16; radius: 4 }
+                        contentItem: Text { text: msg.modelData.translated_from ? "Translated from " + msg.modelData.translated_from : "Translated"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: msg.modelData.translated_from ? "Translated from " + msg.modelData.translated_from : "Translated"
+                }
+                Row {
+                    visible: msg.modelData.translation_failed === true
+                    spacing: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.redForeground1 }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Failed to translate"; font.family: theme.font; font.pixelSize: theme.small; color: theme.redForeground1 }
+                }
                 // Saved by you: Teams' magenta bookmark at the line's end.
                 FluentIcon {
                     visible: msg.modelData.saved === true
@@ -1723,6 +1747,8 @@ Rectangle {
         // Secondary items.
         out.push({ separator: true })
         out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
+        // Chats: the Translation submenu.
+        if (!root.isChannel) out.push({ key: "translation", label: "Translation", icon: "translate-20", chevron: true })
         // More actions: the rest of the secondary items and apps' actions;
         // disabled while that list is empty.
         out.push({ separator: true })
@@ -1768,12 +1794,26 @@ Rectangle {
             else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
             else if (it.key === "pin" || it.key === "unpin") backend.setMessagePinned(m.id, it.key === "pin")
             else if (it.key === "unread") backend.markMessageUnread(m.id, m.client_message_id || "")
+            else if (it.key === "translation") {
+                translationMenu.message = m
+                translationMenu.items = [m.translated
+                    ? { key: "original", label: m.translated_from ? "See original message (" + m.translated_from + ")" : "See original message", icon: "translate-20" }
+                    : { key: "translate", label: "Translate", icon: "translate-20" }]
+                translationMenu.parent = messageMenu.parent; translationMenu.x = messageMenu.x + messageMenu.width; translationMenu.y = messageMenu.y; translationMenu.open()
+            }
             else if (it.key === "read") { readersMenu.items = root.readersFor(m.id).readers.map(x => ({ key: x.mri, label: x.name })); readersMenu.parent = messageMenu.parent; readersMenu.x = messageMenu.x + messageMenu.width; readersMenu.y = messageMenu.y; readersMenu.open() }
         }
     }
     ForwardDialog {
         id: forwardDialog
         onForwardTo: (targets, note) => backend.forwardMessage(message.id, JSON.stringify(targets), note)
+    }
+    // Translation ▸: Translate, or See original message.
+    MenuPopup {
+        id: translationMenu
+        property var message: null
+        margins: 8
+        onPicked: i => backend.translateMessage(message.id, items[i].key === "translate")
     }
     // Read by N of M's readers: one row per reader; a click opens a 1:1
     // chat with them.

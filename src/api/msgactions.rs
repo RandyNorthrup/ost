@@ -384,6 +384,110 @@ pub async fn forward(
     Ok(ids)
 }
 
+/// An AAD token for CSA (the chat service aggregator's resource), cached
+/// for 45 minutes.
+async fn csa_token() -> Result<String> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+    if let Some((t, at)) = CACHE.lock().unwrap().as_ref()
+        && at.elapsed() < Duration::from_secs(45 * 60)
+    {
+        return Ok(t.clone());
+    }
+    let t = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default")
+        .await?;
+    *CACHE.lock().unwrap() = Some((t.clone(), Instant::now()));
+    Ok(t)
+}
+
+/// One message's on-demand translation (CSA's reply item).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Translation {
+    /// Teams' status: Done, TranslationNotNeeded, MessageNotFound,
+    /// VersionNotFound, LanguageDetectionFailed or UnknownError.
+    pub status: String,
+    pub content: String,
+    pub detected_language: String,
+}
+
+/// Translate a chat message into `lang` on demand (Teams' Translate):
+/// `POST {csa}/api/v1/chats/{conv}/messages/languages/{lang}` with
+/// `[{"id": …}]`.
+pub async fn translate(
+    client: &TeamsClient,
+    conv: &str,
+    message_id: &str,
+    lang: &str,
+) -> Result<Translation> {
+    let url = format!(
+        "{}/api/v1/chats/{}/messages/languages/{}",
+        client.chatsvcagg_url(),
+        conv,
+        lang
+    );
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let token = csa_token().await?;
+    let resp = client
+        .http()
+        .post(&url)
+        .bearer_auth(token)
+        .header("x-ms-request-id", request_id.as_str())
+        .header("x-ms-use-acs-translation", "true")
+        .header("x-ms-on-demand-translation", "true")
+        .json(&serde_json::json!([{ "id": message_id }]))
+        .send()
+        .await
+        .context("translation request")?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        anyhow::bail!(
+            "HTTP {} translating: {}",
+            status.as_u16(),
+            text.chars().take(200).collect::<String>()
+        );
+    }
+    tracing::debug!(reply = %text, "translation reply");
+    let v: serde_json::Value = serde_json::from_str(&text).context("translation reply")?;
+    let item = v
+        .as_array()
+        .and_then(|a| {
+            a.iter().find(|i| {
+                i.get("id")
+                    .map(|x| x.to_string().trim_matches('"').to_string())
+                    == Some(message_id.to_string())
+            })
+        })
+        .cloned()
+        .unwrap_or_default();
+    let code = item
+        .get("resultCode")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default();
+    let status = match code {
+        "Success" => "Done",
+        "MessageNotFound" => "MessageNotFound",
+        "VersionNotFound" => "VersionNotFound",
+        "LanguageDetectionFailed" => "LanguageDetectionFailed",
+        "SkipTranslation" | "ContentIsEmpty" => "TranslationNotNeeded",
+        _ => "UnknownError",
+    };
+    Ok(Translation {
+        status: status.into(),
+        content: item
+            .get("translatedContent")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        detected_language: item
+            .pointer("/detectedLanguage/languageId")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

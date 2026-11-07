@@ -403,6 +403,30 @@ impl TeamsClient {
         check_response(resp, url).await
     }
 
+    /// POST to CSA (the chat service aggregator) with the same auth as
+    /// `csa_get`; the reply is returned whatever its status.
+    pub async fn csa_post(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("CSA POST {}", url);
+        let mut req = self
+            .http
+            .post(url)
+            .bearer_auth(&token)
+            .header("x-ms-client-version", "1416/1.0.0.2024050301")
+            .json(body);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        req.send()
+            .await
+            .with_context(|| format!("CSA POST {} failed", url))
+    }
+
     /// GET using `Authentication: skypetoken=...` header (native chat API).
     pub async fn chat_get(&self, url: &str) -> Result<reqwest::Response> {
         let token = self.skype_token()?;

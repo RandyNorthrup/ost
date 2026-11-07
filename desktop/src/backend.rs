@@ -235,6 +235,9 @@ pub mod qobject {
             targets_json: &QString,
             note: &QString,
         );
+        /// Translate a message (Teams' Translate) or show its original.
+        #[qinvokable]
+        fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
         /// Retry a failed message, by its clientmessageid.
         #[qinvokable]
         fn retry_failed_message(self: Pin<&mut Backend>, client_message_id: &QString);
@@ -1321,12 +1324,38 @@ fn pinned_order() -> &'static std::sync::Mutex<(String, Vec<String>)> {
     P.get_or_init(Default::default)
 }
 
+/// On-demand translations by (chat, message): the translation and whether
+/// it is shown (Teams caches it; See original only hides it).
+type Translated = HashMap<(String, String), (api::msgactions::Translation, bool)>;
+fn translations() -> &'static std::sync::Mutex<Translated> {
+    static T: OnceLock<std::sync::Mutex<Translated>> = OnceLock::new();
+    T.get_or_init(Default::default)
+}
+
+/// Show shown translations in a timeline.
+fn apply_translations(chat_id: &str, timeline: &mut [api::messages::MessageView]) {
+    let t = translations().lock().unwrap();
+    for m in timeline.iter_mut() {
+        match t.get(&(chat_id.to_string(), m.id.clone())) {
+            Some((tr, true)) if tr.status == "Done" => {
+                m.html = api::messages::sanitize_html(&tr.content);
+                m.text = api::strip_html(&tr.content).trim().to_string();
+                m.translated = true;
+                m.translated_from = tr.detected_language.clone();
+            }
+            Some((_, true)) => m.translation_failed = true,
+            _ => {}
+        }
+    }
+}
+
 /// A chat's timeline with its messages being sent placed in it; those the
 /// service already has leave the outbox.
 fn with_lies(
     chat_id: &str,
     mut timeline: Vec<api::messages::MessageView>,
 ) -> Vec<api::messages::MessageView> {
+    apply_translations(chat_id, &mut timeline);
     let lies = outbox().for_conversation(chat_id);
     let arrived = api::outbox::merge_lies(&mut timeline, &lies);
     outbox().arrived(&arrived);
@@ -3642,6 +3671,60 @@ impl qobject::Backend {
                 Err(e) => {
                     tracing::warn!("forward failed: {}", short_error(&e));
                     this.as_mut().toast("Failed to forward", "error");
+                }
+            });
+        });
+    }
+
+    pub fn translate_message(mut self: Pin<&mut Self>, message_id: &QString, on: bool) {
+        let (chat_id, id) = (
+            self.rust().current_chat_id.to_string(),
+            message_id.to_string(),
+        );
+        let key = (chat_id.clone(), id.clone());
+        // See original only hides the translation; Translate re-shows a
+        // cached one (Teams' TranslationJob).
+        {
+            let mut t = translations().lock().unwrap();
+            if let Some(entry) = t.get_mut(&key) {
+                entry.1 = on;
+                drop(t);
+                self.as_mut().refresh_lies();
+                return;
+            }
+        }
+        if !on {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                // The user's language: the UI locale's language.
+                let lang = std::env::var("LANG")
+                    .ok()
+                    .and_then(|l| l.split(['_', '.', '-']).next().map(str::to_string))
+                    .filter(|l| !l.is_empty() && l != "C" && l != "POSIX")
+                    .unwrap_or_else(|| "en".into());
+                api::msgactions::translate(&client, &chat_id, &id, &lang).await
+            }
+            .await;
+            // Done shows the translation; a failure shows Teams' "Failed to
+            // translate" by the time; "not needed" changes nothing.
+            let tr = match result {
+                Ok(tr) => tr,
+                Err(e) => {
+                    tracing::warn!("translation failed: {}", short_error(&e));
+                    api::msgactions::Translation {
+                        status: "UnknownError".into(),
+                        ..Default::default()
+                    }
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                if tr.status != "TranslationNotNeeded" {
+                    translations().lock().unwrap().insert(key, (tr, true));
+                    this.as_mut().refresh_lies();
                 }
             });
         });

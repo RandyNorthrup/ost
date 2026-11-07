@@ -1635,6 +1635,27 @@ Window {
         }
     }
 
+    // --translate-test=<message id> with --open-chat=<id> --shots=<dir>:
+    // translate the message, capture, show the original, capture.
+    Timer {
+        readonly property string target: (Qt.application.arguments.find(a => a.startsWith("--translate-test=")) || "").slice(17)
+        running: target.length > 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST translate test"); return }
+            const m = () => JSON.parse(backend.messagesJson || "[]").find(x => x.id === target)
+            if (step === 0 && !m()) return
+            if (step === 0) backend.translateMessage(target, true)
+            else if (step === 2) { console.warn("TRANSLATE-TEST", JSON.stringify({ text: m().text, translated: m().translated, failed: m().translation_failed })); window.contentItem.grabToImage(r => r.saveToFile(dir + "translated.png")) }
+            else if (step === 3) backend.translateMessage(target, false)
+            else if (step === 4) { console.warn("TRANSLATE-TEST original", m().text); Qt.quit() }
+            step++
+        }
+    }
+
     // --toast-test --shots=<dir>: show Teams' toast and capture it.
     Timer {
         running: Qt.application.arguments.indexOf("--toast-test") >= 0 && backend.signedIn
