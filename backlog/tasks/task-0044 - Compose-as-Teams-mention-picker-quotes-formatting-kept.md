@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T21:59:00Z'
+updated_date: '2026-11-07T22:25:00Z'
 labels:
   - desktop
   - messages
@@ -55,4 +55,9 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - Left: GIFs/stickers in quoted replies (quote preview).
 
 - Quoted replies: preview text as Teams' QuotedReplyContent (📷 for pictures, 🎥 video, emoticon chars, :custom:, list numbering); verified live, Teams web rendered OST's reply.
+
+- Channel picker: team and channel mention rows (measured), Teams' wire format verified byte for byte live; members-only suggestions in channels; matched text bold; "Suggestions" header always.
+- Channel post highlights (bar + badge, Teams' priority order), measured on winpc (799e0a1).
+- Fixed: Everyone mentions were sent as plain text.
+- Left in AC1: Share someone's contact info, Add agent, Add someone to the chat, tags, mentions kept when editing.
 <!-- SECTION:NOTES:END -->
