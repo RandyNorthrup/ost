@@ -181,6 +181,9 @@ pub mod qobject {
         #[qproperty(QString, people_json)]
         /// The open chat's members (Teams' roster): [{mri, name, mail, me}].
         #[qproperty(QString, chat_members_json)]
+        /// The open meeting chat's meeting: {subject, join_url, ical_uid,
+        /// cancelled, start, end, organizer_id}, or "" for other chats.
+        #[qproperty(QString, chat_meeting_json)]
         /// Joined teams and their channels, as JSON.
         #[qproperty(QString, teams_json)]
         type Backend = super::BackendRust;
@@ -877,6 +880,7 @@ pub struct BackendRust {
     calendar_json: QString,
     people_json: QString,
     chat_members_json: QString,
+    chat_meeting_json: QString,
     teams_json: QString,
     people_query_generation: u64,
     /// Bumped on every typing change so a stale clear timer does nothing.
@@ -1343,6 +1347,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "preview": c.last_message_preview,
                 "liveCall": c.live_call,
                 "muted": c.muted,
+                "empty": c.empty,
                 "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
@@ -3649,9 +3654,41 @@ impl qobject::Backend {
         self.as_mut().set_messages_json(QString::from("[]"));
         self.as_mut().reload_messages();
         self.as_mut().load_chat_members();
+        self.as_mut().load_chat_meeting();
     }
 
     /// Fetch the open chat's members (names and e-mail from Graph).
+    /// A meeting chat's meeting (for the header's Join).
+    fn load_chat_meeting(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        self.as_mut().set_chat_meeting_json(QString::default());
+        if !chat_id.starts_with("19:meeting_") {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::chat_meeting(&client, &chat_id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().current_chat_id.to_string() != chat_id {
+                    return;
+                }
+                match result {
+                    Ok(Some(m)) => {
+                        let text = serde_json::to_string(&m).unwrap_or_default();
+                        this.as_mut()
+                            .set_chat_meeting_json(QString::from(text.as_str()));
+                    }
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!("meeting unavailable: {}", short_error(&e)),
+                }
+            });
+        });
+    }
+
     fn load_chat_members(mut self: Pin<&mut Self>) {
         let chat_id = self.rust().current_chat_id.to_string();
         self.as_mut().set_chat_members_json(QString::from("[]"));

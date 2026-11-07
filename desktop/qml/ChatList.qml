@@ -34,6 +34,8 @@ Rectangle {
     function clearFilters() { chipFilter = ""; nameFilter = ""; filterField.text = ""; filtering = false }
     function nameMatches(n) { return !nameFilter || (n || "").toLowerCase().indexOf(nameFilter) >= 0 }
     function chatShown(c) {
+        // Teams doesn't list chats nothing has been said in, unless open.
+        if (c.empty && c.id !== root.currentId) return false
         if (chipFilter === "channels") return false
         if (chipFilter === "unread" && !c.unread) return false
         return nameMatches(c.name)

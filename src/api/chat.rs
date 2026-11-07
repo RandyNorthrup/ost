@@ -43,6 +43,63 @@ struct ThreadProperties {
     extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
+/// A meeting chat's meeting, from its thread's `meeting` property (a JSON
+/// string): what the header's Join and Meeting details need.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct ThreadMeeting {
+    pub subject: String,
+    pub join_url: String,
+    pub ical_uid: String,
+    pub cancelled: bool,
+    pub start: String,
+    pub end: String,
+    pub organizer_id: String,
+}
+
+/// The meeting in a thread's properties, if it has one with a join link.
+pub fn thread_meeting(properties: &serde_json::Value) -> Option<ThreadMeeting> {
+    let raw = properties.get("meeting")?;
+    let m: serde_json::Value = match raw {
+        serde_json::Value::String(s) => serde_json::from_str(s).ok()?,
+        other => other.clone(),
+    };
+    let s = |k: &str| {
+        m.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let meeting = ThreadMeeting {
+        subject: s("subject"),
+        join_url: s("meetingJoinUrl"),
+        ical_uid: s("iCalUid"),
+        cancelled: m
+            .get("isCancelled")
+            .and_then(|c| c.as_bool())
+            .unwrap_or(false),
+        start: s("startTime"),
+        end: s("endTime"),
+        organizer_id: s("organizerId"),
+    };
+    (!meeting.join_url.is_empty()).then_some(meeting)
+}
+
+/// A meeting chat's meeting (`GET /v1/threads/{id}`).
+pub async fn chat_meeting(client: &TeamsClient, thread: &str) -> Result<Option<ThreadMeeting>> {
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        thread
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Thread reply")?;
+    Ok(v.get("properties").and_then(thread_meeting))
+}
+
 /// A call going on in a chat, from the thread's liveness entry
 /// (`awareness_conversationLiveState:<message id>`, a JSON string), as
 /// Teams shows it in the chat list and the chat header.
@@ -581,6 +638,9 @@ pub struct ChatInfo {
     pub live_call: Option<LiveCall>,
     /// You muted it.
     pub muted: bool,
+    /// Nothing has been said in it yet (`isemptyconversation`); Teams
+    /// doesn't list such chats.
+    pub empty: bool,
 }
 
 /// A single message for TUI display.
@@ -695,6 +755,12 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .as_ref()
                 .and_then(|p| live_call(&p.extra, now_secs)),
             muted: is_muted(conv),
+            empty: conv
+                .properties
+                .as_ref()
+                .and_then(|p| p.get("isemptyconversation"))
+                .and_then(|e| e.as_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("true")),
         });
     }
 
@@ -954,7 +1020,24 @@ mod call_log_tests {
 
 #[cfg(test)]
 mod live_call_tests {
-    use super::live_call;
+    use super::{live_call, thread_meeting};
+
+    #[test]
+    fn a_meeting_chats_meeting_is_read() {
+        // As the OST calendar test meeting's thread has it.
+        let meeting = r#"{"subject":"OST calendar test: created from OST","startTime":"2026-11-06T23:00:00Z","endTime":"2026-11-06T23:30:00Z","iCalUid":"0400","isCancelled":false,"organizerId":"4287","meetingJoinUrl":"https://teams.microsoft.com/l/meetup-join/19%3ameeting_Y%40thread.v2/0?context=x"}"#;
+        let m = thread_meeting(&serde_json::json!({ "meeting": meeting })).unwrap();
+        assert_eq!(
+            (m.subject.as_str(), m.ical_uid.as_str(), m.cancelled),
+            ("OST calendar test: created from OST", "0400", false)
+        );
+        assert!(
+            m.join_url
+                .starts_with("https://teams.microsoft.com/l/meetup-join/")
+        );
+        // A group chat's Meet now "meeting" has a join link too; none at all: no meeting.
+        assert!(thread_meeting(&serde_json::json!({ "topic": "x" })).is_none());
+    }
 
     #[test]
     fn an_active_liveness_entry_is_a_call_going_on() {

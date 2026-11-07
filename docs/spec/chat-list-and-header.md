@@ -750,6 +750,14 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
   (report exists), Q&A (scheduled + flag), Meeting Whiteboard,
   Transcript / Recordings & Transcripts, Breakout Rooms (organizer),
   Speaker coach. Not Notes.
+- **Measured live** (winpc, "OST calendar test" meeting chat, 2026-11-07):
+  - **Join**: `chat-join-button`, 43.1 × 31.3 at W−238.3, brand fill, padding 5 8, 14/600 white, radius 4, 8 before the roster count;
+  - roster count at W−187.2 (32.2 wide);
+  - **Meeting details**: `chat-meeting-details`, 32 × 31.3 at W−155, TextBulletList icon;
+  - then the divider, Find, chat details and ··· as in group chats;
+  - tabs: Chat, Shared and Recap, then `tab-overflow-button` "+4" ("4 more tabs.", 21 wide) opening Attendance, Breakout Rooms, Q&A and Meeting Whiteboard, then Add a tab.
+- **Where the data comes from.** `GET /v1/threads/{id}` → `properties.meeting` (a JSON string) has `subject`, `startTime`, `endTime`, `iCalUid`, `isCancelled`, `organizerId` and `meetingJoinUrl`. The conversation list doesn't carry it.
+- **Empty chats.** A chat nothing has been said in (`properties.isemptyconversation` "True", e.g. a new meeting's chat) isn't in Teams' chat list. It appeared on winpc after the first message.
 - ···: as group, with **Report a concern** in its own group (policy
   `reportMeeting == "ENABLED"`, `enableReportMeeting`, not TFL), and
   **Leave**/**Delete** only when the user is not the meeting creator.

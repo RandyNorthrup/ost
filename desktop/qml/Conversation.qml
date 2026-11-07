@@ -55,7 +55,12 @@ Rectangle {
     }
     readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map(t => t.name) : ["Posts", "Shared"])
         // Teams (worker Ct): Storyline only in 1:1 chats.
-        : isSelf ? ["Chat", "Shared", "Storyline"] : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+        // Meeting chats: Chat, Shared, Recap (Teams lists Attendance, Breakout
+        // Rooms, Q&A and Meeting Whiteboard after them, under "+4").
+        : isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? ["Chat", "Shared", "Recap"] : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+    readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
+    // The meeting chat's meeting (join link, iCalUid, cancelled).
+    readonly property var meeting: isMeetingChat && backend.chatMeetingJson ? JSON.parse(backend.chatMeetingJson) : null
     // Load a channel's tabs once it's known which team it's in.
     readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
     onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
@@ -330,7 +335,7 @@ Rectangle {
         // 4 after the title.
         Rectangle {
             id: renameButton
-            visible: root.isGroup && !root.isChannel && !root.pane
+            visible: root.isGroup && !root.isChannel && !root.pane && !root.isMeetingChat
             x: title.x + title.width + 4; anchors.verticalCenter: parent.verticalCenter
             width: 21.3; height: 21.3; radius: 4
             color: renameHover.hovered ? theme.hover : "transparent"
@@ -536,7 +541,7 @@ Rectangle {
         // the call, only the roster.
         Rectangle {
             id: joinButton
-            visible: root.isGroup && !root.isChannel && !root.isSelf && (root.callGoing || root.inThisCall)
+            visible: root.isGroup && !root.isChannel && !root.isSelf && !root.isMeetingChat && (root.callGoing || root.inThisCall)
             readonly property var starts: root.messages.filter(m => m.kind === "call" && m.call_state === "started" && m.call_active)
             // Who is in the call: the roster while we're in it, otherwise who
             // started it. Teams shows at most 5, then a "+N" avatar.
@@ -618,7 +623,7 @@ Rectangle {
         }
         Rectangle {
             id: meetNow
-            visible: root.isGroup && !root.isChannel && !root.isSelf && !joinButton.visible
+            visible: root.isGroup && !root.isChannel && !root.isSelf && !root.isMeetingChat && !joinButton.visible
             readonly property bool wide: root.width >= 834
             x: rosterCount.x - 28 - width; anchors.verticalCenter: parent.verticalCenter
             width: wide ? 101.8 : 32; height: 32; radius: 4
@@ -661,6 +666,23 @@ Rectangle {
                 items: [{ label: "Audio call", icon: "call-20", enabled: !root.callsDisabled }]
                 onPicked: root.call()
             }
+        }
+        // Meeting chats: Teams' Join (chat-join-button, measured on winpc):
+        // primary, 43.1 x 31.3, padding 5 8, 14 semibold white on brand,
+        // 8 before the roster count; hidden when the meeting is cancelled,
+        // disabled while you're in it.
+        Rectangle {
+            id: meetingJoin
+            visible: root.isMeetingChat && !!root.meeting && !root.meeting.cancelled
+            readonly property bool can: !root.inThisCall && backend.callState === ""
+            x: rosterCount.x - 8 - width; anchors.verticalCenter: parent.verticalCenter
+            width: meetingJoinText.implicitWidth + 16; height: 31.3; radius: 4
+            color: !can ? theme.bgDisabled : meetingJoinHover.hovered ? theme.brandHover : theme.brandFill
+            Text { id: meetingJoinText; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: meetingJoin.can ? "white" : theme.disabledStrong }
+            HoverHandler { id: meetingJoinHover; cursorShape: meetingJoin.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: meetingJoin.can; onTapped: backend.joinMeeting(root.meeting.join_url, root.meeting.subject || root.chatName) }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Join"
         }
         // Group chats: the roster count (chat-header-participant-count):
         // PeopleAdd and the bold 12 px member count.
