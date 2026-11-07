@@ -883,9 +883,10 @@ Rectangle {
                     Accessible.name: msg.modelData.text
                 }
                 // Undo, 12 px after the tombstone text (14 px semibold brand), for
-                // your own message deleted in this session.
+                // your own message deleted in this session; never for Urgent
+                // (Teams 4584).
                 Text {
-                    visible: msg.modelData.deleted === true && msg.mine
+                    visible: msg.modelData.deleted === true && msg.mine && msg.modelData.importance !== "urgent"
                     x: body.x + body.contentWidth + 12; y: body.y
                     text: "Undo"
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
