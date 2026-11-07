@@ -414,7 +414,16 @@ Anything not confirmed from code is marked **(unconfirmed)**.
   - Input.Date is a DatePicker field, "Select a date..." with a calendar button.
 - Table: a 0.67 px #E0E0E0 frame and lines between rows (no vertical lines). Cells are padded 8, at least 36 tall; the header row is 600. A 1:2 split gave 138.2 / 276.4.
 - ImageSet: small images are 36, 10 apart. RichTextBlock bold is 600; highlight is #FFEDD6.
-- A hero card sent this way did not show in the desktop client, so hero/thumbnail rendering is still unmeasured.
+- Hero card (measured once winpc's client was restarted):
+  - The frame is 452 wide, white, with a 0.67 px #E0E0E0 border and radius 4. Content is 16.7 in; the title is 26.7 down.
+  - The title is 16/22, weight 600, #424242. The subtitle is 14/20, weight 600, #424242, 8 under the title.
+  - The image is 16:9 (object-fit cover), 8 under the subtitle. The text is 14/20 #242424, 8 under the image.
+  - The buttons come 4 under the text: 32 tall, padding 0 20, a 0.67 px #C5CBFA border, radius 4, white, 14/20 semibold #5B5FC7, 8 apart.
+- Card images arrive rewritten to Teams' URL proxy, `https://{region}.asyncgw.teams.microsoft.com/urlp/v1/url/content?url={encoded}`. It answers 401 without the skype token (`Authorization: skype_token …`, as AMS).
+- Important (`properties.importance: "high"`):
+  - The name line gets "IMPORTANT" (12/16, weight 600, #D13438, uppercase), 8 after the time.
+  - A 16 px Important20Filled badge in #D13438 sits 4 from the bubble, 12 down, on the bubble's start side for your own messages.
+  - Urgent was not sent live: it re-notifies the recipient every 2 minutes for 20.
 - Teams web showed such cards as a loading skeleton, then hid them; the desktop client rendered a card with display elements only. Inputs could not be compared live.
 
 ## 10. Cards inside `RichText/Html` messages (`properties.cards`)

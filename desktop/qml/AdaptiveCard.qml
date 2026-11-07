@@ -298,7 +298,7 @@ Item {
                 Image {
                     id: pic
                     anchors.fill: parent
-                    source: img.e.url || ""
+                    source: { backend.emoticonsVersion; return backend.cardImage(img.e.url || "") }
                     fillMode: card.lc(img.e.style, "") === "person" ? Image.PreserveAspectCrop : Image.PreserveAspectFit
                     asynchronous: true
                     smooth: true
@@ -332,7 +332,7 @@ Item {
                     required property var modelData
                     readonly property real side: card.imagePx[card.lc(parent.e.imageSize, "medium")] || 54
                     width: side; height: side
-                    source: modelData.url || ""
+                    source: { backend.emoticonsVersion; return backend.cardImage(modelData.url || "") }
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                 }
@@ -354,7 +354,7 @@ Item {
             Image {
                 visible: !!cont.e.backgroundImage
                 anchors.fill: parent
-                source: cont.e.backgroundImage ? (typeof cont.e.backgroundImage === "string" ? cont.e.backgroundImage : cont.e.backgroundImage.url) : ""
+                source: { backend.emoticonsVersion; return cont.e.backgroundImage ? backend.cardImage(typeof cont.e.backgroundImage === "string" ? cont.e.backgroundImage : cont.e.backgroundImage.url) : "" }
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
             }

@@ -94,6 +94,8 @@ Rectangle {
     function openEmojiFor(box) { emojiTarget = box; emojiPicker.parent = box; emojiPicker.open() }
     signal openChatSettings()
     // Go to a message (a quote card's target), if it is loaded.
+    // Card types drawn natively (Teams' supported set, so far).
+    readonly property var cardKinds: ["application/vnd.microsoft.card.adaptive", "application/vnd.microsoft.card.hero", "application/vnd.microsoft.card.thumbnail"]
     // Teams' per-user reaction limit (217146, enableMultipleReactionsPerUser).
     readonly property int reactionLimit: 20
     readonly property string limitText: "You\u2019ve reached the " + reactionLimit + "-reaction limit. Remove one to add another."
@@ -637,6 +639,16 @@ Rectangle {
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                 }
+                // Teams' delivery option label: IMPORTANT / URGENT, 12 px
+                // semibold, RedForeground3, 8 after the time (measured).
+                Text {
+                    visible: msg.modelData.importance === "high" || msg.modelData.importance === "urgent"
+                    text: msg.modelData.importance === "urgent" ? "URGENT" : "IMPORTANT"
+                    font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
+                    color: theme.redForeground3
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: msg.modelData.importance === "urgent" ? "Urgent message." : "Important message."
+                }
                 // Translated: Teams' icon with "Translated from …" (click: See
                 // original message). Failed: the error icon and its text.
                 FluentIcon {
@@ -709,8 +721,8 @@ Rectangle {
                 readonly property real pad: bare ? 0 : 15.7
                 readonly property var files: msg.modelData.files || []
                 // Cards (Adaptive Cards rendered natively; Teams' frame).
-                readonly property var cards: (msg.modelData.cards || []).filter(c => c.content_type === "application/vnd.microsoft.card.adaptive")
-                readonly property real cardW: list.width >= 720 ? 448 : 360
+                readonly property var cards: (msg.modelData.cards || []).filter(c => root.cardKinds.indexOf(c.content_type) >= 0)
+                readonly property real cardW: list.width >= 720 ? (cards.some(c => c.content_type !== "application/vnd.microsoft.card.adaptive") ? 452 : 448) : 360
                 // Text shows unless the message is only a picture, only files
                 // or only cards.
                 readonly property bool showBody: !imageOnly && (msg.modelData.deleted || ((msg.modelData.text || "").length > 0 && !(cards.length > 0 && !(msg.modelData.html || "").length)))
@@ -758,10 +770,22 @@ Rectangle {
                     spacing: 12
                     Repeater {
                         model: bubble.cards
-                        AdaptiveCard {
+                        Loader {
                             required property var modelData
-                            content: modelData.content
-                            cardWidth: bubble.cardW
+                            sourceComponent: modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp : heroComp
+                            Component {
+                                id: adaptiveComp
+                                AdaptiveCard { content: modelData.content; cardWidth: list.width >= 720 ? 448 : 360 }
+                            }
+                            Component {
+                                id: heroComp
+                                HeroCard {
+                                    content: modelData.content
+                                    thumbnail: modelData.content_type === "application/vnd.microsoft.card.thumbnail"
+                                    cardWidth: list.width >= 720 ? 452 : 360
+                                    onImBack: t => root.send(t)
+                                }
+                            }
                         }
                     }
                 }
@@ -968,6 +992,16 @@ Rectangle {
                 z: 5
                 y: bubble.y - height
                 x: bubble.x + bubble.width - width
+            }
+            // The delivery option's badge: a 16 px red icon 4 from the bubble,
+            // on its start side for your messages (measured), 12 down.
+            FluentIcon {
+                visible: !msg.isRow && !msg.editingThis && (msg.modelData.importance === "high" || msg.modelData.importance === "urgent")
+                name: msg.modelData.importance === "urgent" ? "alert-urgent-20-filled" : "important-20-filled"
+                size: 16; color: theme.redForeground3
+                x: msg.mine ? bubble.x - 4 - 16 : bubble.x + bubble.width + 4
+                y: bubble.y + 12
+                Accessible.name: msg.modelData.importance === "urgent" ? "Urgent badge" : "Important badge"
             }
             // Sent tick on your newest message, "Seen" eye on the newest one
             // the other person has read.

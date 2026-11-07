@@ -389,6 +389,54 @@ pub async fn load_catalog(cache_dir: &Path, locale: &str) -> Result<Catalog> {
     Ok(catalog)
 }
 
+/// A card's remote image on disk (Teams fetches these through its URL
+/// proxy), downloading it the first time; named by a hash of its URL.
+pub async fn remote_image_file(
+    url: &str,
+    cache_dir: &Path,
+    client: Option<&super::client::TeamsClient>,
+) -> Result<PathBuf> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut h);
+    let ext = url
+        .split(['?', '#'])
+        .next()
+        .and_then(|p| p.rsplit('.').next())
+        .filter(|e| e.len() <= 4 && e.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or("img");
+    let path = cache_dir
+        .join("card-images")
+        .join(format!("{:016x}.{ext}", h.finish()));
+    if path.exists() {
+        return Ok(path);
+    }
+    // The service rewrites card images to Teams' URL proxy
+    // (`…asyncgw.teams.microsoft.com/urlp/v1/url/content?url=…`), which, like
+    // the media store, wants the skype token.
+    let teams_host = url
+        .split('/')
+        .nth(2)
+        .is_some_and(|h| h.ends_with(".teams.microsoft.com") || h.ends_with(".asm.skype.com"));
+    let bytes: Vec<u8> = match client {
+        Some(c) if teams_host => c.ams_get(url).await?,
+        _ => reqwest::Client::new()
+            .get(url)
+            .header(reqwest::header::USER_AGENT, "Mozilla/5.0")
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?
+            .to_vec(),
+    };
+    std::fs::create_dir_all(path.parent().unwrap_or(cache_dir))?;
+    let tmp = path.with_extension("part");
+    std::fs::write(&tmp, &bytes)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(path)
+}
+
 /// An emoticon image on disk, downloading it the first time.
 pub async fn image_file(url: &str, cache_dir: &Path) -> Result<PathBuf> {
     let name: String = url

@@ -395,6 +395,11 @@ pub mod qobject {
         /// or "" until it has downloaded (emoticonsVersion then changes).
         #[qinvokable]
         fn emoticon_url(self: Pin<&mut Backend>, key: &QString, size: i32) -> QString;
+
+        /// A card image as a local file URL once downloaded (empty until
+        /// then; emoticonsVersion changes when it lands).
+        #[qinvokable]
+        fn card_image(self: Pin<&mut Backend>, url: &QString) -> QString;
         /// A picker category's icon (Teams' 20 x 40 single-colour sprite):
         /// a file URL, or "" until it has downloaded.
         #[qinvokable]
@@ -4122,6 +4127,41 @@ impl qobject::Backend {
                     });
                 }
                 Err(e) => tracing::warn!("emoticon image failed: {}", short_error(&e)),
+            }
+        });
+        QString::default()
+    }
+
+    pub fn card_image(self: Pin<&mut Self>, url: &QString) -> QString {
+        let url = url.to_string();
+        if url.starts_with("data:") {
+            return QString::from(url.as_str());
+        }
+        if !url.starts_with("https://") && !url.starts_with("http://") {
+            return QString::default();
+        }
+        if let Some(f) = emoticon_files().lock().unwrap().get(&url) {
+            return QString::from(f.as_str());
+        }
+        emoticon_files()
+            .lock()
+            .unwrap()
+            .insert(url.clone(), String::new());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let client = TeamsClient::new().await.ok();
+            match api::emoticons::remote_image_file(&url, &cache_base(), client.as_ref()).await {
+                Ok(path) => {
+                    emoticon_files()
+                        .lock()
+                        .unwrap()
+                        .insert(url, format!("file://{}", path.display()));
+                    let _ = qt.queue(|mut this| {
+                        let v = this.rust().emoticons_version + 1;
+                        this.as_mut().set_emoticons_version(v);
+                    });
+                }
+                Err(e) => tracing::warn!("card image failed: {}", short_error(&e)),
             }
         });
         QString::default()
