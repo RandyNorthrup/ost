@@ -45,6 +45,11 @@ fn main() {
         "qml/WhoReacted.qml",
         "qml/CustomizeReactions.qml",
         "qml/ComposeBox.qml",
+        "qml/HoverBar.qml",
+        "qml/ReactionSummary.qml",
+        "qml/BarButton.qml",
+        "qml/PressedLine.qml",
+        "qml/LimitTip.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in ["assets/icons", "assets/fonts", "assets/tray"] {

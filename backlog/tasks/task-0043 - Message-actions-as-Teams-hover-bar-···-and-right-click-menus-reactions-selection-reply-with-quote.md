@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T10:43:00Z'
+updated_date: '2026-11-07T12:48:00Z'
 labels:
   - desktop
   - messages
@@ -27,7 +27,7 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 - [ ] #2 ··· menu items, order and MRU top-level rule exactly as Teams; right-click opens it at the pointer with the reaction strip
 - [ ] #3 Every reaction key renders as its emoji; any emoji can be a reaction; who reacted
 - [x] #4 Message text can be selected and copied
-- [ ] #5 Reply with quote, Edit rules as Teams (no edit of Urgent; formatting kept)
+- [x] #5 Reply with quote, Edit rules as Teams (no edit of Urgent; formatting kept)
 - [ ] #6 Channel posts and replies get the same hover bar and menu
 <!-- AC:END -->
 
@@ -51,4 +51,7 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 
 - Pinned banner, saved bookmark, Translation and Report added. Report this message: the dialog matches this tenant's security-only variant (measured); the submit is Teams' unified report API (POST {mt}/beta/reports), unit-tested.
 - A live report was NOT submitted: it reaches the tenant admins and Microsoft, so that needs the user's explicit OK.
+
+- AC3: who reacted (hover/right-click list, measured), skin tones (preferredSkinToneIndex, six-tone chooser, toned quick Like), Customize default reactions (dialog, saves both properties; verified Teams desktop applies them live), Teams' client/service key mapping, overflow "+N" with its list and remove buttons, pressed underlines, the 20-reaction limit, serialised reaction writes. Left: Your org's emoji (custom emoji; research in progress) and the 413/400 HeaderInfoBanner.
+- AC5: edit in place with the rebuilt compose (Teams' simplified compose, measured), Cancel/Done, Discard draft dialog, Escape inert, Urgent not editable, formatting and quote kept; the edit body matches a Teams edit read back from the service.
 <!-- SECTION:NOTES:END -->
