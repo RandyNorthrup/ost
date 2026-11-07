@@ -9,6 +9,7 @@ pub mod directory;
 pub mod drive;
 pub mod emoticons;
 pub mod files;
+pub mod funstuff;
 mod me;
 pub mod messages;
 pub mod msgactions;

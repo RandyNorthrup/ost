@@ -198,6 +198,16 @@ Anything not confirmed from code is marked **(unconfirmed)**.
 - **Preview**: "Scheduled a call" (`skype_message_preview_scheduled_call`).
 - The worker also has `scheduledCallStatus` on messages (68245); the UI use of it is unconfirmed.
 
+## 5b. GIFs and stickers from Teams' fun picker (RichText/Html, measured live 2026-11-07)
+Sent from Teams web into "OST group test" and read back raw. Both are plain `RichText/Html` messages, `<p>&nbsp;</p>` around one `<img>`:
+- **GIF**: `<img src="https://media3.giphy.com/media/…/giphy.gif" width="444" height="250" alt="{GIPHY title} (GIF Image)" style="height:auto; margin-top:4px; max-width:100%">`. There is no itemtype; the URL is GIPHY's own.
+- **Sticker**: `<img src="https://teams.public.onecdn.static.microsoft/evergreen-assets/stickerassets/{pack}-250x250/en-us/{id}.gif?v=5" height="180" alt="{sticker name}" width="180" itemtype="http://schema.skype.com/Sticker">`. For example `clippy-250x250/en-us/Clippy_HelloThere.gif` with alt `Clippy says "Hello there"`. Meme stickers use `-500x500`.
+- **Rendering on winpc**:
+  - the GIF is shown at 404 × 227 (wider than 404 scales down), in a span with radius 6, without a bubble;
+  - the sticker sits in a 180 px frame;
+  - both were still (GIPHY's `giphy_s.gif`) under a play button: a 48 px circle `rgba(0,0,0,.8)` with a white play icon.
+- **Autoplay** (262200): `shouldAutoPlayGifs` = the message is newer than the chat's consumption horizon when it was opened. Otherwise it shows still with the play button, and clicking plays it.
+
 ## 6. RichText/UriObject — images, stickers, GIFs
 ### 6a. `Picture.1`, `Sticker.1` (289206 `SkypeImageDeserializer`)
 - **Wire**: `<URIObject type="Picture.1" uri="https://…/v1/objects/{id}" doc_id="{id}" width="…" height="…" alt="…"><OriginalName v="photo.jpg"/></URIObject>`.

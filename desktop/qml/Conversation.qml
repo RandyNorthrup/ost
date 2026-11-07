@@ -59,6 +59,8 @@ Rectangle {
         // Rooms, Q&A and Meeting Whiteboard after them, under "+4").
         : isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? ["Chat", "Shared", "Recap"] : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
+    // When this chat was opened (for GIF autoplay).
+    property date openedAt: new Date()
     // The header's breakpoints (Teams 7.3: the header's own width). Below
     // 720 the roster count moves into ··· as Participants; below 640 the
     // tabs become a dropdown under a 14 px title, and chat details moves
@@ -216,6 +218,7 @@ Rectangle {
     function findForTest(q) { root.finding = true; findField.text = q; return root.findHits.length }
     function sendForTest() { root.sendCompose() }
     onChatIdChanged: {
+        openedAt = new Date()
         tab = ""; finding = false; findField.text = ""; participants.visible = false; posting = false
         if (draftChat) backend.setDraft(draftChat, root.plainText())
         editingId = ""
@@ -269,6 +272,7 @@ Rectangle {
     function annotate(msgs) {
         // A call's start shows only for Meet now ("… started a meeting.").
         const out = msgs.filter(m => !(m.kind === "call" && m.call_state === "started" && !m.call_huddle)).map(m => Object.assign({}, m))
+        let unreadSeen = false
         for (let i = 0; i < out.length; i++) {
             const prev = i > 0 ? out[i - 1] : null, cur = out[i]
             // A day divider where the day changes (not above the very first
@@ -276,6 +280,10 @@ Rectangle {
             const day = new Date(cur.time).toDateString()
             cur.dayDivider = prev && new Date(prev.time).toDateString() !== day ? root.dayLabel(cur.time) : ""
             cur.lastRead = cur.first_unread === true && i > 0
+            // Unread when the chat opened, or arrived since (Teams autoplays
+            // GIFs only in those; the rest show still with a play button).
+            unreadSeen = unreadSeen || cur.first_unread === true
+            cur.autoplay = unreadSeen || new Date(cur.time) > root.openedAt
             if (!prev) continue
             const gap = new Date(cur.time) - new Date(prev.time)
             // Channel posts each get their own card and header; a divider
@@ -1144,7 +1152,8 @@ Rectangle {
                 id: bubble
                 visible: !msg.isRow && !msg.editingThis
                 y: msg.bubbleY
-                readonly property var imgs: msg.modelData.images || []
+                // Inline pictures, then GIFs and stickers.
+                readonly property var imgs: (msg.modelData.images || []).concat(msg.modelData.media || [])
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
                 // A picture on its own is shown bare, without the bubble.
                 readonly property bool bare: imageOnly && !root.isChannel
@@ -1228,25 +1237,56 @@ Rectangle {
                         model: bubble.imgs
                         // Rounded 4 px with a hairline border, as Teams draws them.
                         Item {
+                            id: pic
                             required property var modelData
-                            readonly property real maxW: msg.maxBubble - 2 * bubble.pad
+                            // A GIF or sticker (fun picker) rather than an AMS picture.
+                            readonly property bool fun: !!modelData.kind
+                            // Teams' image component scales anything wider
+                            // than 404 down to 404.
+                            readonly property real maxW: fun ? Math.min(404, msg.maxBubble - 2 * bubble.pad) : msg.maxBubble - 2 * bubble.pad
                             readonly property real w0: modelData.width > 0 ? modelData.width : 240
                             readonly property real h0: modelData.height > 0 ? modelData.height : 160
-                            width: Math.min(maxW, w0); height: width * h0 / w0
+                            width: Math.min(maxW, w0); height: fun ? Math.floor(width * h0 / w0) : width * h0 / w0
+                            // GIFs and stickers play when the message was new
+                            // (Teams' shouldAutoPlayGifs); clicking plays or stops.
+                            property bool playing: msg.modelData.autoplay === true
                             Image {
+                                visible: !pic.fun
                                 anchors.fill: parent
-                                source: parent.modelData.local_path || ""
+                                source: pic.fun ? "" : (parent.modelData.local_path || "")
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true
                             }
+                            AnimatedImage {
+                                id: funImage
+                                visible: pic.fun
+                                anchors.fill: parent
+                                source: pic.fun ? pic.modelData.url : ""
+                                fillMode: Image.PreserveAspectFit
+                                asynchronous: true
+                                cache: true
+                                playing: pic.playing && status === AnimatedImage.Ready
+                                paused: !pic.playing
+                            }
                             RoundedCorners {
                                 anchors.fill: parent
-                                radius: theme.radius
+                                radius: pic.fun ? 6 : theme.radius
                                 background: bubble.bare ? root.color : bubble.color
                             }
-                            Rectangle { anchors.fill: parent; color: "transparent"; border.color: theme.dividerSoft; radius: theme.radius }
-                            Accessible.role: Accessible.Graphic
-                            Accessible.name: "Image"
+                            Rectangle { visible: !pic.fun || pic.modelData.kind === "sticker"; anchors.fill: parent; color: "transparent"; border.color: theme.dividerSoft; radius: pic.fun ? 6 : theme.radius }
+                            // Teams' play button over a still GIF or sticker: a
+                            // 48 px circle, black at 80 %, white play icon.
+                            Rectangle {
+                                visible: pic.fun && !pic.playing && funImage.status === AnimatedImage.Ready
+                                anchors.centerIn: parent
+                                width: 48; height: 48; radius: 24
+                                color: "#CC000000"
+                                FluentIcon { anchors.centerIn: parent; anchors.horizontalCenterOffset: 2; name: "play-20-filled"; size: 24; color: "white" }
+                            }
+                            TapHandler { enabled: pic.fun; onTapped: pic.playing = !pic.playing }
+                            HoverHandler { enabled: pic.fun; cursorShape: Qt.PointingHandCursor }
+                            Accessible.role: pic.fun ? Accessible.Button : Accessible.Graphic
+                            Accessible.name: pic.fun ? (pic.modelData.alt || "") : "Image"
                         }
                     }
                 }

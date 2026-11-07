@@ -425,6 +425,19 @@ pub struct InlineImage {
     pub local_path: String,
 }
 
+/// A GIF or sticker in a message (Teams' fun picker sends both as a plain
+/// `<img>`: GIFs straight from GIPHY's media hosts, stickers from Teams'
+/// public CDN with `itemtype=".../Sticker"`). They load without our token.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MessageMedia {
+    /// "gif" or "sticker".
+    pub kind: String,
+    pub url: String,
+    pub width: u32,
+    pub height: u32,
+    pub alt: String,
+}
+
 /// A timeline item.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MessageView {
@@ -450,6 +463,9 @@ pub struct MessageView {
     pub reactions: Vec<Reaction>,
     /// Inline images (Teams' AMS objects), in order.
     pub images: Vec<InlineImage>,
+    /// GIFs and stickers, shown animated.
+    #[serde(default)]
+    pub media: Vec<MessageMedia>,
     /// For call events: "ended" (with duration), "missed" or "started".
     pub call_state: String,
     pub call_seconds: u64,
@@ -1130,6 +1146,11 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     } else {
         inline_images(&content)
     };
+    let media = if deleted {
+        Vec::new()
+    } else {
+        message_media(&content)
+    };
     let files = if deleted {
         Vec::new()
     } else {
@@ -1150,12 +1171,13 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         || (!deleted
             && text.is_empty()
             && images.is_empty()
+            && media.is_empty()
             && files.is_empty()
             && cards.is_empty())
     {
         return None;
     }
-    let text = if text.is_empty() && !images.is_empty() {
+    let text = if text.is_empty() && (!images.is_empty() || !media.is_empty()) {
         "Image".to_string()
     } else if text.is_empty() && !cards.is_empty() {
         // Teams' preview of a message that is only cards.
@@ -1170,6 +1192,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         quote,
         forward,
         images,
+        media,
         files,
         cards,
         carousel,
@@ -1427,8 +1450,9 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
             continue;
         }
         if name == "img" {
-            // Inline pictures are shown by the client from `images`.
-            if tag.contains("AMSImage") {
+            // Inline pictures, GIFs and stickers are shown by the client
+            // from `images` and `media`.
+            if tag.contains("AMSImage") || media_kind(tag).is_some() {
                 continue;
             }
             if let Some(alt) = attr(tag, "alt") {
@@ -1490,6 +1514,49 @@ pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
     while in_link > 0 {
         out.push_str("</a>");
         in_link -= 1;
+    }
+    out
+}
+
+/// Whether an `<img>` tag is a GIF or sticker from the fun picker, and which.
+fn media_kind(tag: &str) -> Option<&'static str> {
+    let src = attr(tag, "src")?;
+    let u = url::Url::parse(&src).ok()?;
+    if u.scheme() != "https" {
+        return None;
+    }
+    let host = u.host_str()?;
+    let sticker = attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/Sticker"));
+    if sticker && host == "teams.public.onecdn.static.microsoft" {
+        Some("sticker")
+    } else if host.starts_with("media") && host.ends_with(".giphy.com") {
+        Some("gif")
+    } else {
+        None
+    }
+}
+
+/// GIFs and stickers in a message's HTML.
+fn message_media(html: &str) -> Vec<MessageMedia> {
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find("<img") {
+        let end = rest[i..].find('>').map(|e| i + e).unwrap_or(rest.len());
+        let tag = &rest[i..end];
+        rest = &rest[end..];
+        let Some(kind) = media_kind(tag) else {
+            continue;
+        };
+        let num = |k: &str| attr(tag, k).and_then(|v| v.parse().ok()).unwrap_or(0);
+        out.push(MessageMedia {
+            kind: kind.to_string(),
+            url: attr(tag, "src").unwrap_or_default(),
+            width: num("width"),
+            height: num("height"),
+            alt: attr(tag, "alt")
+                .map(|a| super::strip_html(&a))
+                .unwrap_or_default(),
+        });
     }
     out
 }
@@ -2711,6 +2778,33 @@ mod tests {
             "8:orgid:me"
         ));
         assert!(is_unread(&conv("8:orgid:them", "200", None), "8:orgid:me"));
+    }
+
+    #[test]
+    fn gifs_and_stickers_are_media() {
+        // As Teams sent them from its fun picker.
+        let gif = r#"<p>&nbsp;</p>
+<img src="https://media3.giphy.com/media/v1.Y2lk/YRPBhd3vscg5Fxx1DQ/giphy.gif" width="444" height="250" alt="Pedro Pascal Laughing GIF by Crafture (GIF Image)" style="height:auto; margin-top:4px; max-width:100%">
+<p>&nbsp;</p>"#;
+        let sticker = r#"<p>&nbsp;</p>
+<img src="https://teams.public.onecdn.static.microsoft/evergreen-assets/stickerassets/clippy-250x250/en-us/Clippy_HelloThere.gif?v=5" height="180" alt="Clippy says &quot;Hello there&quot;" width="180" itemtype="http://schema.skype.com/Sticker">
+<p>&nbsp;</p>"#;
+        let m = |c: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": c, "from": "https://x/contacts/8:orgid:them", "imdisplayname": "Them"});
+        let g = view_of(&m(gif), "8:orgid:me", "Me").expect("a GIF message shows");
+        assert_eq!(
+            (g.media.len(), g.media[0].kind.as_str(), g.media[0].width),
+            (1, "gif", 444)
+        );
+        assert!(!g.html.contains("GIF Image"));
+        let st = view_of(&m(sticker), "8:orgid:me", "Me").expect("a sticker message shows");
+        assert_eq!(st.media[0].kind, "sticker");
+        assert_eq!(st.media[0].alt, "Clippy says \"Hello there\"");
+        // Other hosts aren't media (an untagged sticker host, a random site).
+        assert!(
+            message_media(r#"<img src="https://teams.public.onecdn.static.microsoft/x.gif">"#)
+                .is_empty()
+        );
+        assert!(message_media(r#"<img src="https://evil.example/giphy.gif">"#).is_empty());
     }
 
     #[test]
