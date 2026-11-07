@@ -997,6 +997,57 @@ pub async fn join_meeting(
     .await
 }
 
+/// How a group chat's call is placed (Teams' calling stack 361315 `KX`).
+pub enum GroupCallKind {
+    /// "Audio call": the members are rung (`participants.to`).
+    Ring,
+    /// Meet now: a `huddleGroupCall`; the members are nudged
+    /// (`participants.invitationType: "nudge"`), not rung.
+    Huddle,
+    /// Joining the chat's ongoing call (nobody is rung).
+    Join,
+}
+
+/// Start or join a group chat's call (`groupChat.threadId`), as Teams
+/// does for Meet now, Audio call and Join.
+pub async fn create_group_call(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    sdp_offer: &str,
+    members: &[String],
+    kind: GroupCallKind,
+) -> Result<(ConversationCreated, ConversationJoined)> {
+    let to: Vec<&str> = match kind {
+        GroupCallKind::Join => Vec::new(),
+        _ => members.iter().map(String::as_str).collect(),
+    };
+    let opts = CreateOptions {
+        group_chat: true,
+        meeting_message_id: None,
+        to,
+        conversation_type: match kind {
+            GroupCallKind::Huddle => Some("huddleGroupCall"),
+            _ => None,
+        },
+        invitation_type: match kind {
+            GroupCallKind::Huddle => Some("nudge"),
+            _ => None,
+        },
+        suppress_dialout: matches!(kind, GroupCallKind::Join),
+    };
+    create_call_with(http, epconv_url, params, sdp_offer, &opts).await
+}
+
+struct CreateOptions<'a> {
+    group_chat: bool,
+    meeting_message_id: Option<&'a str>,
+    to: Vec<&'a str>,
+    conversation_type: Option<&'a str>,
+    invitation_type: Option<&'a str>,
+    suppress_dialout: bool,
+}
+
 async fn create_call(
     http: &reqwest::Client,
     epconv_url: &str,
@@ -1005,24 +1056,44 @@ async fn create_call(
     callee_mri: Option<&str>,
     meeting_message_id: Option<&str>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
-    let group_chat = if callee_mri.is_some() {
-        serde_json::Value::Null
-    } else {
-        serde_json::json!({ "threadId": params.thread_id, "messageId": meeting_message_id })
+    let opts = CreateOptions {
+        group_chat: callee_mri.is_none(),
+        meeting_message_id,
+        to: callee_mri.into_iter().collect(),
+        conversation_type: None,
+        invitation_type: None,
+        // false = ring the callee; nobody is rung when joining a meeting.
+        suppress_dialout: meeting_message_id.is_some(),
     };
-    let to: Vec<serde_json::Value> = callee_mri
+    create_call_with(http, epconv_url, params, sdp_offer, &opts).await
+}
+
+async fn create_call_with(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    sdp_offer: &str,
+    opts: &CreateOptions<'_>,
+) -> Result<(ConversationCreated, ConversationJoined)> {
+    let meeting_message_id = opts.meeting_message_id;
+    let group_chat = if opts.group_chat {
+        serde_json::json!({ "threadId": params.thread_id, "messageId": meeting_message_id })
+    } else {
+        serde_json::Value::Null
+    };
+    let to: Vec<serde_json::Value> = opts
+        .to
+        .iter()
         .map(|id| serde_json::json!({ "id": id }))
-        .into_iter()
         .collect();
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
     let cause_id = &params.message_id[..8.min(params.message_id.len())];
 
     let payload = serde_json::json!({
         "conversationRequest": {
-            "conversationType": null,
+            "conversationType": opts.conversation_type,
             "subject": "",
-            // false = ring the callee; nobody is rung when joining a meeting.
-            "suppressDialout": meeting_message_id.is_some(),
+            "suppressDialout": opts.suppress_dialout,
             "roster": {
                 "type": "Delta",
                 "rosterUpdate": tc("conversation/rosterUpdate/")
@@ -1103,6 +1174,11 @@ async fn create_call(
             "causeId": cause_id
         }
     });
+
+    let mut payload = payload;
+    if let Some(t) = opts.invitation_type {
+        payload["participants"]["invitationType"] = t.into();
+    }
 
     tracing::info!(
         "1:1 call: POST {} (single-shot epconv with SDP)",

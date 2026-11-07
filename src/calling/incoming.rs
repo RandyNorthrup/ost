@@ -197,6 +197,13 @@ pub(crate) fn is_service_link(url: &str) -> bool {
         .any(|d| host.ends_with(d))
 }
 
+/// The content type of our answer to a re-offer: the offer's own. A group
+/// call's mixer re-offers `application/sdp-ngc-1.0` and ends the call
+/// ("AnswerContentTypeNotConsistent") when the answer says otherwise.
+fn reanswer_content_type(neg: &serde_json::Value) -> String {
+    str_at(neg, "/mediaContent/contentType").unwrap_or_else(|| "application/sdp".into())
+}
+
 /// Answer a re-offer from the other side. A plain re-offer (the same
 /// media, directions changed) gets our earlier SDP mirrored. A new offer
 /// (`newOffer`: Teams moving the call onto a media processor, as its Hold
@@ -237,7 +244,7 @@ pub(crate) async fn answer_renegotiation(
     debug_dump("sdp-reanswer", &sdp);
     let mut answer = serde_json::json!({
         "callModalities": neg.get("callModalities").cloned().unwrap_or(serde_json::json!(["audio"])),
-        "mediaContent": { "blob": sdp, "contentType": "application/sdp" },
+        "mediaContent": { "blob": sdp, "contentType": reanswer_content_type(neg) },
     });
     if let Some((sender, ack)) = me {
         answer["sender"] = sender;
@@ -1422,6 +1429,35 @@ pub fn is_renegotiation_event(json: &str) -> bool {
     })
 }
 
+/// Someone started Meet now in a group chat we're in: the call manager's
+/// `HuddleMeetingStart` notification (evt 128), which Teams shows as a
+/// toast with Join and Message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeetingStart {
+    pub thread_id: String,
+    pub call_id: String,
+    /// The initiator's MRI and display name.
+    pub initiator: String,
+    pub initiator_name: String,
+}
+
+/// A `HuddleMeetingStart` notification, if `json` is one with what Teams
+/// needs to show it (a notification type and a call id).
+pub fn meeting_start(json: &str) -> Option<MeetingStart> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    if v.get("notificationType")?.as_str()? != "HuddleMeetingStart" {
+        return None;
+    }
+    let s = |k: &str| str_at(&v, k).unwrap_or_default();
+    let m = MeetingStart {
+        thread_id: s("/threadId"),
+        call_id: s("/callId"),
+        initiator: s("/groupCallInitiator"),
+        initiator_name: s("/groupCallInitiatorDisplayName"),
+    };
+    (!m.call_id.is_empty() && !m.thread_id.is_empty()).then_some(m)
+}
+
 /// Whether a call event says the call is over (remote hang-up, cancel
 /// while ringing, or the conversation ending).
 pub fn is_call_end_event(json: &str) -> bool {
@@ -1511,6 +1547,37 @@ impl CallAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meet_now_start_notifications_are_read() {
+        // As the call manager pushed it when Randy started Meet now.
+        let n = r#"{"threadId":"19:ef21@thread.v2","callId":"1478","messageId":"0","notificationType":"HuddleMeetingStart","conversationId":"1478","groupCallInitiator":"8:orgid:5050","groupCallInitiatorDisplayName":"Randy Northrup","status":"Active","conversationType":"huddleGroupCall"}"#;
+        assert_eq!(
+            meeting_start(n),
+            Some(MeetingStart {
+                thread_id: "19:ef21@thread.v2".into(),
+                call_id: "1478".into(),
+                initiator: "8:orgid:5050".into(),
+                initiator_name: "Randy Northrup".into(),
+            })
+        );
+        assert!(meeting_start(&n.replace("HuddleMeetingStart", "MeetingStart")).is_none());
+        assert!(meeting_start(&n.replace("\"callId\":\"1478\"", "\"callId\":\"\"")).is_none());
+        assert!(meeting_start(r#"{"callInvitation":{}}"#).is_none());
+    }
+
+    #[test]
+    fn reanswer_keeps_the_offers_content_type() {
+        // A Meet now mixer's re-offer, as it arrives after joining.
+        let mixer: serde_json::Value = serde_json::from_str(
+            r#"{"mediaContent":{"contentType":"application/sdp-ngc-1.0","blob":"v=0","newOffer":false,"fromMixer":true}}"#,
+        )
+        .unwrap();
+        assert_eq!(reanswer_content_type(&mixer), "application/sdp-ngc-1.0");
+        let plain: serde_json::Value =
+            serde_json::from_str(r#"{"mediaContent":{"blob":"v=0"}}"#).unwrap();
+        assert_eq!(reanswer_content_type(&plain), "application/sdp");
+    }
 
     fn invitation(modalities: &str, name: &str) -> String {
         format!(

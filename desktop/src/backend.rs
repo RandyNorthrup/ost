@@ -283,6 +283,14 @@ pub mod qobject {
         #[qinvokable]
         fn start_call(self: Pin<&mut Backend>);
 
+        /// Group chats: Teams' Meet now (a huddle; members are nudged).
+        #[qinvokable]
+        fn meet_now(self: Pin<&mut Backend>);
+
+        /// Group chats: join the chat's ongoing call (Teams' Join).
+        #[qinvokable]
+        fn join_group_call(self: Pin<&mut Backend>);
+
         /// Join the Teams meeting with this join link; `title` is shown in
         /// the call window.
         #[qinvokable]
@@ -1303,6 +1311,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "time": c.last_message_time,
                 "sender": c.last_message_sender,
                 "preview": c.last_message_preview,
+                "liveCall": c.live_call,
                 "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
@@ -1532,6 +1541,12 @@ async fn load_messages(
 /// the current call is logged by shape (never by content) so call-end
 /// signalling can be recognised.
 async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
+    if let Some(start) = teams_cli::calling::incoming::meeting_start(json) {
+        tracing::info!(thread = %start.thread_id, "meeting started in a chat");
+        let qt2 = qt.clone();
+        let _ = qt.queue(move |mut this| this.as_mut().notify_meeting_start(start, qt2));
+        return;
+    }
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
         tracing::info!(changes = delta.len(), "roster update");
         let _ = qt.queue(move |mut this| {
@@ -1570,6 +1585,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         return;
     }
     if let Some(call) = IncomingCall::parse(json) {
+        tracing::debug!(payload = %json.chars().take(6000).collect::<String>(), "incoming call payload");
         let mut slot = call_slot().lock().await;
         if slot.ringing.is_some() || slot.active.is_some() {
             tracing::info!("second incoming call while busy; ignoring");
@@ -1691,6 +1707,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         return;
     }
     if teams_cli::calling::incoming::is_call_end_event(json) {
+        tracing::debug!(payload = %json, "call end payload");
         let mut slot = call_slot().lock().await;
         let was_ringing = slot.ringing.take().is_some();
         // The other side ended it: drop media without signalling an end.
@@ -1722,6 +1739,27 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         keys(&v, "", 4, &mut shape);
     }
     tracing::info!(?shape, "call event");
+    tracing::debug!(payload = %json, "call event payload");
+}
+
+/// Who was in the call before us (roster updates only carry changes):
+/// add the people the updates haven't told us about. The list carries
+/// names, not hands or roles.
+async fn seed_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoing::OutgoingCall) {
+    match call.participants().await {
+        Ok(people) => {
+            tracing::info!(count = people.len(), "call participants");
+            let _ = qt.queue(move |mut this| {
+                let known: Vec<String> = this.rust().roster.iter().map(|p| p.id.clone()).collect();
+                let missing = people
+                    .into_iter()
+                    .filter(|p| !known.contains(&p.id))
+                    .collect();
+                this.as_mut().apply_roster(missing)
+            });
+        }
+        Err(e) => tracing::info!("participants: {}", short_error(&e)),
+    }
 }
 
 /// Keep inline images in a private cache (~/.cache/ost/images, 0700/0600)
@@ -2240,8 +2278,13 @@ impl qobject::Backend {
             .and_then(|c| c.object_id())
             .unwrap_or_default();
         tracing::info!(chat = %chat_id, has_oid = !my_oid.is_empty(), "start call");
+        // In a group chat this is the chevron's Audio call: members are rung.
         if outgoing::is_group_chat(&chat_id) {
-            self.start_group_call(chat_id, peer);
+            self.start_group_call(
+                chat_id,
+                peer,
+                teams_cli::calling::signaling::GroupCallKind::Ring,
+            );
             return;
         }
         let Some(callee) = outgoing::callee_mri_for_chat(&chat_id, &my_oid) else {
@@ -2300,8 +2343,40 @@ impl qobject::Backend {
         });
     }
 
-    /// A group call in a group chat, shown with the meeting window.
-    fn start_group_call(mut self: Pin<&mut Self>, chat_id: String, title: QString) {
+    pub fn meet_now(self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let title = self.rust().current_chat_name.clone();
+        if !self.rust().call_state.is_empty() || !outgoing::is_group_chat(&chat_id) {
+            return;
+        }
+        self.start_group_call(
+            chat_id,
+            title,
+            teams_cli::calling::signaling::GroupCallKind::Huddle,
+        );
+    }
+
+    pub fn join_group_call(self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let title = self.rust().current_chat_name.clone();
+        if !self.rust().call_state.is_empty() || !outgoing::is_group_chat(&chat_id) {
+            return;
+        }
+        self.start_group_call(
+            chat_id,
+            title,
+            teams_cli::calling::signaling::GroupCallKind::Join,
+        );
+    }
+
+    /// A group chat's call (Meet now, Audio call or Join), shown with the
+    /// meeting window.
+    fn start_group_call(
+        mut self: Pin<&mut Self>,
+        chat_id: String,
+        title: QString,
+        kind: teams_cli::calling::signaling::GroupCallKind,
+    ) {
         self.as_mut().set_call_peer(title);
         self.as_mut().set_call_peer_id(QString::default());
         self.as_mut().rust_mut().roster.clear();
@@ -2316,7 +2391,7 @@ impl qobject::Backend {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
         runtime().spawn(async move {
-            let result = outgoing::start_group_call(&chat_id, cancel_rx).await;
+            let result = outgoing::start_group_call(&chat_id, kind, cancel_rx).await;
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
             match result {
@@ -2324,6 +2399,7 @@ impl qobject::Backend {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
                     tracing::info!(has_audio, can_dtmf, "group call started");
+                    seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
@@ -2391,24 +2467,7 @@ impl qobject::Backend {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
                     tracing::info!(has_audio, can_dtmf, "meeting joined");
-                    // Who was here before us (updates only carry changes).
-                    match call.participants().await {
-                        Ok(people) => {
-                            tracing::info!(count = people.len(), "meeting participants");
-                            // Only people the updates haven't told us about:
-                            // the list carries names, not hands or roles.
-                            let _ = qt.queue(move |mut this| {
-                                let known: Vec<String> =
-                                    this.rust().roster.iter().map(|p| p.id.clone()).collect();
-                                let missing = people
-                                    .into_iter()
-                                    .filter(|p| !known.contains(&p.id))
-                                    .collect();
-                                this.as_mut().apply_roster(missing)
-                            });
-                        }
-                        Err(e) => tracing::info!("participants: {}", short_error(&e)),
-                    }
+                    seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
@@ -2816,6 +2875,101 @@ impl qobject::Backend {
                                 &QString::from(chat_name.as_str()),
                             );
                             this.as_mut().activate_requested();
+                        });
+                    }
+                }),
+                Err(e) => tracing::warn!("notification failed: {e}"),
+            }
+        });
+    }
+
+    /// Teams' toast for Meet now started in a chat (527114 `uMe`): the chat's
+    /// name (or "(No title)"), "{name} started a meeting", Join and Message.
+    /// As Teams does, once per call, not when we're already in that chat's
+    /// call, and by the same banner and presence rules as messages. The
+    /// chat list reloads too: its liveness entry has changed.
+    fn notify_meeting_start(
+        mut self: Pin<&mut Self>,
+        start: teams_cli::calling::incoming::MeetingStart,
+        qt: cxx_qt::CxxQtThread<qobject::Backend>,
+    ) {
+        static SHOWN: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+            OnceLock::new();
+        self.as_mut().reload_chats();
+        let first = SHOWN
+            .get_or_init(Default::default)
+            .lock()
+            .map(|mut s| s.insert(start.call_id.clone()))
+            .unwrap_or(false);
+        let mine = self
+            .rust()
+            .my_mri
+            .as_deref()
+            .is_some_and(|me| me.eq_ignore_ascii_case(&start.initiator));
+        let in_it = !self.rust().call_state.is_empty()
+            && self.rust().call_thread_id.to_string() == start.thread_id;
+        let banners_on = load_settings()
+            .get("notifications")
+            .and_then(|v| v.as_str())
+            != Some("off");
+        if !first || mine || in_it || !banners_on {
+            return;
+        }
+        let availability = self
+            .rust()
+            .my_mri
+            .as_deref()
+            .and_then(|me| self.rust().presence.get(me).cloned())
+            .unwrap_or_default();
+        let presenting = teams_cli::api::presence::changes().borrow().call
+            == teams_cli::api::presence::CallState::Presenting;
+        let decision = toast_decision(&availability, presenting, false);
+        if decision == Toast::Drop {
+            return;
+        }
+        let chat_name = self
+            .rust()
+            .chats
+            .iter()
+            .find(|c| c["id"].as_str() == Some(start.thread_id.as_str()))
+            .and_then(|c| c["name"].as_str().map(str::to_string))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "(No title)".to_string());
+        let who = if start.initiator_name.is_empty() {
+            "Someone".to_string()
+        } else {
+            start.initiator_name.clone()
+        };
+        let (title, body) = if decision == Toast::Redacted {
+            ("You have a new notification".to_string(), String::new())
+        } else {
+            (chat_name.clone(), format!("{who} started a meeting"))
+        };
+        let chat_id = start.thread_id.clone();
+        std::thread::spawn(move || {
+            let shown = notify_rust::Notification::new()
+                .appname("OST")
+                .summary(&title)
+                .body(&body)
+                .icon("ost-desktop")
+                .action("join", "Join")
+                .action("message", "Message")
+                .action("default", "Open")
+                .hint(notify_rust::Hint::Category("call".into()))
+                .show();
+            match shown {
+                Ok(handle) => handle.wait_for_action(|action| {
+                    let join = action == "join";
+                    if join || action == "message" || action == "default" {
+                        let _ = qt.queue(move |mut this| {
+                            this.as_mut().select_chat(
+                                &QString::from(chat_id.as_str()),
+                                &QString::from(chat_name.as_str()),
+                            );
+                            this.as_mut().activate_requested();
+                            if join {
+                                this.as_mut().join_group_call();
+                            }
                         });
                     }
                 }),

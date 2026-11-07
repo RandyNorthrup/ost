@@ -348,6 +348,14 @@ Rectangle {
             font.weight: row.unread ? Font.DemiBold : Font.Normal
             color: row.selected || row.unread ? theme.text : theme.textSecondary
         }
+        // A call going on in the chat (Teams: the regular sound-wave 14 in
+        // NeutralForeground3 at 244, 9 in the 288-wide row).
+        FluentIcon {
+            visible: !!row.chat.liveCall
+            x: parent.width - 60; y: 9
+            name: "live-roster-14"; size: 14
+            color: theme.textSecondary
+        }
         // Unread: bold name plus a brand dot, as in Teams.
         Rectangle {
             visible: row.unread
@@ -359,7 +367,7 @@ Rectangle {
         HoverHandler { id: hover }
         TapHandler { onTapped: root.chatSelected(row.chat.id, row.chat.name) }
         Accessible.role: Accessible.Button
-        Accessible.name: row.chat.name + (row.unread ? ", unread" : "")
+        Accessible.name: row.chat.name + (row.unread ? ", unread" : "") + (row.chat.liveCall ? ", call in progress" : "")
     }
 
     // A row with an icon instead of a picture (Quick views).

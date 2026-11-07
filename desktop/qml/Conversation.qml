@@ -96,6 +96,20 @@ Rectangle {
     signal openChatSettings()
     signal scheduleMeeting()
     // Go to a message (a quote card's target), if it is loaded.
+    // The chat's call: one going on (a start with no end), whether we're in
+    // it, and Teams' 20-member limit for calls in group chats.
+    // The thread's liveness entry (the chat list's liveCall) says so even
+    // when the call's start isn't among the loaded messages.
+    readonly property var liveCall: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.liveCall ? c.liveCall : null }
+    readonly property bool callGoing: !!root.liveCall || root.messages.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
+    readonly property bool inThisCall: backend.callState !== "" && backend.callThreadId === root.chatId
+    readonly property bool callsDisabled: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) > 20
+    // A member's name by MRI: call events name people only by MRI, and
+    // Teams shows them by their roster name.
+    function memberName(mri) {
+        const m = (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).find(p => (p.mri || "").toLowerCase() === String(mri || "").toLowerCase())
+        return m ? m.name : ""
+    }
     // Card types drawn natively (Teams' supported set, so far).
     readonly property var cardKinds: ["application/vnd.microsoft.card.adaptive", "application/vnd.microsoft.card.hero", "application/vnd.microsoft.card.thumbnail"]
     // Teams' per-user reaction limit (217146, enableMultipleReactionsPerUser).
@@ -231,7 +245,8 @@ Rectangle {
     }
 
     function annotate(msgs) {
-        const out = msgs.map(m => Object.assign({}, m))
+        // A call's start shows only for Meet now ("… started a meeting.").
+        const out = msgs.filter(m => !(m.kind === "call" && m.call_state === "started" && !m.call_huddle)).map(m => Object.assign({}, m))
         for (let i = 0; i < out.length; i++) {
             const prev = i > 0 ? out[i - 1] : null, cur = out[i]
             // A day divider where the day changes (not above the very first
@@ -474,15 +489,15 @@ Rectangle {
             FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: theme.textStrong }
         }
         HeaderAction {
-            visible: !root.isSelf && !root.isChannel
-            x: parent.width - 199 - 32 - (root.isGroup ? 8 : 0); width: 24
+            visible: !root.isSelf && !root.isChannel && !root.isGroup
+            x: parent.width - 199; width: 24
             icon: "call-20"
             onClicked: root.call()
             Accessible.name: "Audio call"
         }
         HeaderAction {
-            visible: !root.isSelf && !root.isChannel
-            x: parent.width - 175 - 32 - (root.isGroup ? 8 : 0); width: 24
+            visible: !root.isSelf && !root.isChannel && !root.isGroup
+            x: parent.width - 175; width: 24
             icon: "chevron-down-16"; iconSize: 16
             Accessible.name: "More call options"
             onClicked: callMenu.open()
@@ -495,17 +510,157 @@ Rectangle {
         }
         HeaderAction {
             visible: !root.isSelf && !root.isGroup
-            x: parent.width - 151 - 32; width: 28
+            x: parent.width - 151; width: 28
             icon: "people-add-20"
             Accessible.name: root.isChannel ? "View participants" : "Start a group chat"
             onClicked: participants.visible = !participants.visible
+        }
+        // Group chats' call control (Teams 944031 `Ln`): Meet now (a huddle;
+        // the video icon and its text from 834 wide, 101.8 x 32) and its
+        // chevron (28 x 36) with Audio call; Join while the chat has a call.
+        // Above 20 members both are disabled with Teams' tooltip.
+        // While the chat has a call (Teams' audio drop-in pill, measured on
+        // winpc): a 1 px gradient frame (262.6 deg: #3EB0F0 19.9 %, #AB9EFF
+        // 43.1 %, #2200FF 67.8 %, #AD00FF), radius 6, 34 tall, holding the
+        // live roster button ("View participants": the brand sound-wave 20
+        // at 6, then 24 px avatars at 32, padding 4 6), a 0.67 px
+        // NeutralStroke1 divider and Join (14 semibold, padding 6 10); in
+        // the call, only the roster.
+        Rectangle {
+            id: joinButton
+            visible: root.isGroup && !root.isChannel && !root.isSelf && (root.callGoing || root.inThisCall)
+            readonly property var starts: root.messages.filter(m => m.kind === "call" && m.call_state === "started" && m.call_active)
+            // Who is in the call: the roster while we're in it, otherwise who
+            // started it. Teams shows at most 5, then a "+N" avatar.
+            readonly property var callers: {
+                const out = []
+                if (root.inThisCall) {
+                    for (const p of (backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []))
+                        if (p.active) out.push({ mri: p.id, name: p.name || root.memberName(p.id) })
+                } else if (root.liveCall && root.liveCall.initiator) {
+                    out.push({ mri: root.liveCall.initiator, name: root.liveCall.initiator_name || root.memberName(root.liveCall.initiator) })
+                } else {
+                    const seen = {}
+                    for (const m of starts) if (m.sender_mri && !seen[m.sender_mri]) { seen[m.sender_mri] = true; out.push({ mri: m.sender_mri, name: m.sender || root.memberName(m.sender_mri) }) }
+                }
+                return out
+            }
+            readonly property int hidden: Math.max(0, callers.length - 5)
+            x: rosterCount.x - 8 - width; anchors.verticalCenter: parent.verticalCenter
+            width: pillRow.width + 2; height: 34; radius: 6
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0; color: "#AD00FF" }
+                GradientStop { position: 0.3225; color: "#2200FF" }
+                GradientStop { position: 0.5689; color: "#AB9EFF" }
+                GradientStop { position: 0.8007; color: "#3EB0F0" }
+            }
+            Row {
+                id: pillRow
+                x: 1; y: 1
+                Rectangle {
+                    id: liveRoster
+                    width: 6 + 20 + 6 + avatars.width + 6; height: 32
+                    topLeftRadius: 4; bottomLeftRadius: 4
+                    topRightRadius: root.inThisCall ? 4 : 0; bottomRightRadius: root.inThisCall ? 4 : 0
+                    color: rosterPillHover.hovered ? theme.hover : theme.surface
+                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "live-roster-20-filled"; size: 20; color: theme.brand }
+                    Row {
+                        id: avatars
+                        x: 32; anchors.verticalCenter: parent.verticalCenter
+                        // Each overlaps the next by 10 (margin-right -10).
+                        spacing: -10
+                        Repeater {
+                            model: joinButton.callers.slice(0, 5)
+                            Avatar { required property var modelData; size: 24; name: modelData.name || "?"; photoId: modelData.mri }
+                        }
+                        Rectangle {
+                            visible: joinButton.hidden > 0
+                            width: 24; height: 24; radius: 12
+                            // Fluent's neutral avatar: NeutralBackground6,
+                            // NeutralForeground3, 10 px semibold at size 24.
+                            color: theme.pick("#EBEBEB", "#333333")
+                            Text { anchors.centerIn: parent; text: "+" + joinButton.hidden; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.pick("#616161", "#ADADAD") }
+                        }
+                    }
+                    HoverHandler { id: rosterPillHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: participants.visible = !participants.visible }
+                    ToolTip {
+                        visible: rosterPillHover.hovered; delay: 500
+                        y: parent.height + 4; padding: 8
+                        background: FluentSurface { depth: 16; radius: 4 }
+                        contentItem: Text { text: "View participants"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "View participants"
+                }
+                Rectangle { visible: !root.inThisCall; width: 0.67; height: 32; color: theme.stroke }
+                Rectangle {
+                    visible: !root.inThisCall
+                    width: joinText.implicitWidth + 20; height: 32
+                    topRightRadius: 4; bottomRightRadius: 4
+                    color: joinHover.hovered ? theme.hover : theme.surface
+                    Text { id: joinText; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: joinHover.hovered ? theme.brand : theme.textStrong }
+                    HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: backend.callState === ""; onTapped: backend.joinGroupCall() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Join"
+                }
+            }
+        }
+        Rectangle {
+            id: meetNow
+            visible: root.isGroup && !root.isChannel && !root.isSelf && !joinButton.visible
+            readonly property bool wide: root.width >= 834
+            x: rosterCount.x - 28 - width; anchors.verticalCenter: parent.verticalCenter
+            width: wide ? 101.8 : 32; height: 32; radius: 4
+            color: meetHover.hovered && !root.callsDisabled ? theme.hover : "transparent"
+            Row {
+                anchors.centerIn: parent; spacing: 6
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: meetHover.hovered && !root.callsDisabled ? "video-20-filled" : "video-20"; size: 20; color: root.callsDisabled ? theme.disabled : meetHover.hovered ? theme.brand : theme.textStrong }
+                Text { visible: meetNow.wide; anchors.verticalCenter: parent.verticalCenter; text: "Meet now"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.callsDisabled ? theme.disabled : meetHover.hovered ? theme.brand : theme.textStrong }
+            }
+            HoverHandler { id: meetHover; cursorShape: root.callsDisabled ? Qt.ArrowCursor : Qt.PointingHandCursor }
+            TapHandler { enabled: !root.callsDisabled && backend.callState === ""; onTapped: backend.meetNow() }
+            ToolTip {
+                visible: meetHover.hovered && (!meetNow.wide || root.callsDisabled); delay: 500
+                y: parent.height + 4; padding: 8
+                background: FluentSurface { depth: 16; radius: 4 }
+                contentItem: Text { text: root.callsDisabled ? "Calls aren't available in chats with more than 20 people" : "Meet now"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Meet now"
+        }
+        Rectangle {
+            visible: meetNow.visible
+            x: rosterCount.x - 28; anchors.verticalCenter: parent.verticalCenter
+            width: 28; height: 36; radius: 4
+            color: chevHover.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "chevron-down-16"; size: 16; color: root.callsDisabled ? theme.disabled : theme.textStrong }
+            HoverHandler { id: chevHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: groupCallMenu.open() }
+            ToolTip {
+                visible: chevHover.hovered; delay: 500
+                y: parent.height + 4; padding: 8
+                background: FluentSurface { depth: 16; radius: 4 }
+                contentItem: Text { text: "More call options"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: "More call options"
+            MenuPopup {
+                id: groupCallMenu
+                x: parent.width - width; y: parent.height + 4
+                items: [{ label: "Audio call", icon: "call-20", enabled: !root.callsDisabled }]
+                onPicked: root.call()
+            }
         }
         // Group chats: the roster count (chat-header-participant-count):
         // PeopleAdd and the bold 12 px member count.
         Rectangle {
             visible: root.isGroup && !root.isChannel && !root.isSelf
             readonly property int count: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).length
-            x: parent.width - 151 - 32 - (width - 28); anchors.verticalCenter: parent.verticalCenter
+            id: rosterCount
+            x: parent.width - 123 - width; anchors.verticalCenter: parent.verticalCenter
             width: Math.max(28, 4 + 20 + 2 + countLabel.implicitWidth + 4); height: 32; radius: 4
             color: rosterHover.hovered ? theme.hover : "transparent"
             Row {
@@ -526,16 +681,16 @@ Rectangle {
         }
         Rectangle {
             visible: !root.isSelf
-            x: parent.width - 116 - (root.isChannel ? 0 : 32); width: 1; height: 20
+            x: parent.width - 115; width: 1; height: 20
             anchors.verticalCenter: parent.verticalCenter
             color: theme.divider
         }
         HeaderAction {
-            x: parent.width - 107 - (root.isChannel ? 0 : 32); icon: "search-20"; Accessible.name: "Find in chat"
+            x: parent.width - 107; icon: "search-20"; Accessible.name: "Find in chat"
             onClicked: { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
         }
         HeaderAction {
-            x: parent.width - 75 - (root.isChannel ? 0 : 32); icon: "panel-left-20"; Accessible.name: "Open chat details"
+            x: parent.width - 75; icon: "panel-left-20"; Accessible.name: "Open chat details"
             onClicked: participants.visible = !participants.visible
         }
         // More chat options (chat-header-more-menu-trigger). Items Teams has
@@ -544,7 +699,7 @@ Rectangle {
         HeaderAction {
             id: chatMore
             visible: !root.isChannel && !root.pane
-            x: parent.width - 75; icon: "more-horizontal-20"; Accessible.name: "More chat options"
+            x: parent.width - 43; icon: "more-horizontal-20"; Accessible.name: "More chat options"
             onClicked: chatMenu.open()
             MenuPopup {
                 id: chatMenu
@@ -702,7 +857,7 @@ Rectangle {
                 visible: msg.isRow
                 x: 38; y: msg.topPad + 8
                 size: 20
-                name: msg.isCall ? (msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
+                name: msg.isCall ? (msg.modelData.call_huddle ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
                     : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20",
                          PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
                          MemberRenamed: "person-edit-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
@@ -725,11 +880,16 @@ Rectangle {
                     textFormat: msg.isCall ? Text.StyledText : Text.PlainText
                     text: {
                         if (msg.isEvent) return msg.modelData.text
+                        // Meet now (Teams: "You started a meeting." /
+                        // "{{initiator}} started a meeting.", then
+                        // "Meeting ended" with the duration).
+                        if (msg.modelData.call_state === "started")
+                            return msg.mine ? "You started a meeting." : root.escapeHtml(msg.modelData.sender || root.memberName(msg.modelData.sender_mri) || "Someone") + " started a meeting."
                         if (msg.modelData.call_state === "missed") return "Call missed"
                         const s = msg.modelData.call_seconds
                         const parts = [[Math.floor(s / 3600), "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
                             .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
-                        return "Call ended&nbsp;<b>" + parts + "</b>"
+                        return (msg.modelData.call_huddle ? "Meeting ended" : "Call ended") + "&nbsp;<b>" + parts + "</b>"
                     }
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary

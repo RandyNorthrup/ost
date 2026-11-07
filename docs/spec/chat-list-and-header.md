@@ -808,6 +808,29 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
 - More chat options (214 wide): Open in new window (Ctrl+O) | Schedule meeting, Share screen (Ctrl+Shift+E) | Mark as unread, Move to section ▸, Mute, Copy link | Remove chat history.
 - Rename goes through `PUT /v1/threads/{id}/properties?name=topic` with `{"topic": …}`, verified from OST; the chat list picks up the new name.
 
+### 7.9b A call going on in a group chat (winpc and Teams web, 2026-11-07)
+- **Where Teams learns of it.** The thread property `awareness_conversationLiveState:<messageId>` (`:0` in group chats) is a JSON string:
+  - fields: `conversationUrl`, `conversationId` (the call id), `groupCallInitiator` (MRI), `groupCallInitiatorDisplayName`, `expiration` (seconds), `status` (`Active`), `callStartTime`, `conversationType` (`huddleGroupCall` for Meet now), `isHostless`, `meetingInfo`;
+  - it comes with the conversation list (`threadProperties`), so the chat list knows without loading messages;
+  - 527114 `getCallInfo` / `hasActiveCall` treat it as live while `expiration` hasn't passed.
+- **The header pill** replaces Meet now (`chat-calling-meeting-buttons`, 126.4 × 34 with Join):
+  - frame: 1 px padding on a `linear-gradient(262.62deg, #3EB0F0 19.93%, #AB9EFF 43.11%, #2200FF 67.75%, #AD00FF 100%)`, radius 6, shadow `0 0 2px rgba(0,0,0,.12)`;
+  - live roster (`audio-drop-in-live-roster-button`, "View participants"): white, radius 4 0 0 4, padding 4 6; the filled sound-wave icon (20, brand #5B5FC7) at 6, then `participants-live-roster-list` at 32;
+  - avatars: 24 px, each with `margin-right: -10px` (14 apart), at most 5 (`maxVisibleParticipants`), then a "+N" avatar;
+  - one avatar: 62 wide; two: 76;
+  - divider: 0.67 × 32, NeutralStroke1 (#D1D1D1);
+  - **Join** (`audio-drop-in-join-button`): 45.7 × 32, radius 0 4 4 0, padding 6 10, "Join" 14/600 #242424 on white;
+  - in the call, only the live roster shows.
+- **The chat list row** shows the regular sound-wave icon (14, NeutralForeground3) at (244, 9) in the 288 × 32 row. It sits beside the unread dot when both apply.
+- **Timeline rows.** Start events name the initiator only by MRI (`<name>8:orgid:…</name>`, no display name). Teams shows "{name} started a meeting." with the name from the roster.
+- **Joining** goes through `POST epconv` with `groupChat {threadId, messageId: null}`, no `to`, `suppressDialout: true`:
+  - the service puts you in the thread's live conversation; the response's `roster` lists who is already there;
+  - about 8 s later the mixer re-offers (`mediaRenegotiation`, `fromMixer: true`, an added `x-data` m-line) with content type `application/sdp-ngc-1.0`;
+  - the answer must carry the same content type, or the call ends with 410/301029 "AnswerContentTypeNotConsistent".
+- **Toast** (527114 `uMe`): someone else's Meet now arrives as a call-manager push (evt 128, gzipped `cp`) with `notificationType: "HuddleMeetingStart"`, the liveness fields, `threadId` and `messageId` "0".
+  - Content: the chat topic (else "(No title)"), the subtitle "{{audioDropInCaller}} started a meeting" (name fallback "Someone"), and the buttons **Join** (`calling_nudge_button_join`) and **Message** (`calling_meeting_started_secondary_button`).
+  - It is dropped when the type or call id is missing, for a duplicate call id, when the user setting is off, when the chat is muted, and when you're already in that call.
+
 ### 7.10 Header TODOs
 - Live 1:1, group and meeting headers (code + live flags only so far).
 - Labels for header Mark as read/unread (708158) and Manage

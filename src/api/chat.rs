@@ -27,6 +27,56 @@ struct Conversation {
 #[derive(Debug, Deserialize)]
 struct ThreadProperties {
     topic: Option<String>,
+    /// Everything else, for the call liveness entries.
+    #[serde(flatten)]
+    extra: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// A call going on in a chat, from the thread's liveness entry
+/// (`awareness_conversationLiveState:<message id>`, a JSON string), as
+/// Teams shows it in the chat list and the chat header.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct LiveCall {
+    /// The call's id (`conversationId`).
+    pub call_id: String,
+    pub conversation_url: String,
+    /// `huddleGroupCall` for Meet now.
+    pub conversation_type: String,
+    pub initiator: String,
+    pub initiator_name: String,
+}
+
+/// The call going on in a thread, if any: an `Active` liveness entry that
+/// hasn't expired (`expiration` is in seconds) at `now_secs`.
+pub fn live_call(
+    properties: &std::collections::HashMap<String, serde_json::Value>,
+    now_secs: u64,
+) -> Option<LiveCall> {
+    properties
+        .iter()
+        .filter(|(k, _)| k.starts_with("awareness_conversationLiveState"))
+        .filter_map(|(_, v)| serde_json::from_str::<serde_json::Value>(v.as_str()?).ok())
+        .find(|v| {
+            v.get("status").and_then(|s| s.as_str()) == Some("Active")
+                && v.get("expiration")
+                    .and_then(|e| e.as_u64())
+                    .is_some_and(|e| e > now_secs)
+        })
+        .map(|v| {
+            let s = |k: &str| {
+                v.get(k)
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            LiveCall {
+                call_id: s("conversationId"),
+                conversation_url: s("conversationUrl"),
+                conversation_type: s("conversationType"),
+                initiator: s("groupCallInitiator"),
+                initiator_name: s("groupCallInitiatorDisplayName"),
+            }
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -516,6 +566,8 @@ pub struct ChatInfo {
     pub last_message_time: Option<String>,
     pub last_message_sender: Option<String>,
     pub last_message_preview: Option<String>,
+    /// The call going on in this chat.
+    pub live_call: Option<LiveCall>,
 }
 
 /// A single message for TUI display.
@@ -568,6 +620,10 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
     let conversations = body.conversations.unwrap_or_default();
 
     let own_oid = client.object_id();
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
     let mut names: std::collections::HashMap<String, Option<String>> = Default::default();
     let mut chats = Vec::new();
     for conv in &conversations {
@@ -621,6 +677,10 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             last_message_time: last_time,
             last_message_sender: last_sender,
             last_message_preview: last_preview,
+            live_call: conv
+                .thread_properties
+                .as_ref()
+                .and_then(|p| live_call(&p.extra, now_secs)),
         });
     }
 
@@ -875,5 +935,41 @@ mod call_log_tests {
         // Target is us here, so the peer falls back to the originator.
         assert_eq!(r.peer_mri, "8:orgid:them");
         assert!(parse_call_log("{}", "x").is_none());
+    }
+}
+
+#[cfg(test)]
+mod live_call_tests {
+    use super::live_call;
+
+    #[test]
+    fn an_active_liveness_entry_is_a_call_going_on() {
+        // As the group chat's thread had it during a Meet now call.
+        let entry = r#"{"conversationUrl":"https://conv/x","conversationId":"f649","groupCallInitiator":"8:orgid:r","groupCallInitiatorDisplayName":"Randy Northrup","expiration":1794075286,"status":"Active","conversationType":"huddleGroupCall"}"#;
+        let props: std::collections::HashMap<String, serde_json::Value> = [
+            (
+                "awareness_conversationLiveState:0".to_string(),
+                serde_json::json!(entry),
+            ),
+            ("topic".to_string(), serde_json::json!("OST group test")),
+        ]
+        .into();
+        let call = live_call(&props, 1_794_070_000).unwrap();
+        assert_eq!(
+            (
+                call.call_id.as_str(),
+                call.initiator_name.as_str(),
+                call.conversation_type.as_str()
+            ),
+            ("f649", "Randy Northrup", "huddleGroupCall")
+        );
+        // Expired, or no longer active: no call.
+        assert!(live_call(&props, 1_794_075_287).is_none());
+        let ended: std::collections::HashMap<String, serde_json::Value> = [(
+            "awareness_conversationLiveState:0".to_string(),
+            serde_json::json!(entry.replace("Active", "Ended")),
+        )]
+        .into();
+        assert!(live_call(&ended, 1_794_070_000).is_none());
     }
 }

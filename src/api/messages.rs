@@ -450,9 +450,22 @@ pub struct MessageView {
     pub reactions: Vec<Reaction>,
     /// Inline images (Teams' AMS objects), in order.
     pub images: Vec<InlineImage>,
-    /// For call events: "ended" (with duration) or "missed".
+    /// For call events: "ended" (with duration), "missed" or "started".
     pub call_state: String,
     pub call_seconds: u64,
+    /// The call's id (`<callId>`), linking its started and ended events.
+    #[serde(default)]
+    pub call_id: String,
+    /// A Meet now call (`conversationType` "huddleGroupCall"); its end shows
+    /// as "Meeting ended".
+    #[serde(default)]
+    pub call_huddle: bool,
+    /// Who started the call (a started event's participant).
+    #[serde(default)]
+    pub call_initiator: String,
+    /// A started call with no end in the loaded timeline (Teams' Join).
+    #[serde(default)]
+    pub call_active: bool,
     /// Your message, and the other person has read up to it (Teams' "Seen").
     pub seen: bool,
     /// The first message that arrived after you last read the chat (Teams
@@ -936,6 +949,29 @@ pub fn sort_by_arrival(out: &mut [MessageView]) {
         let key = |m: &MessageView| m.id.parse::<u64>().unwrap_or(0);
         key(a).cmp(&key(b)).then_with(|| a.time.cmp(&b.time))
     });
+    link_calls(out);
+}
+
+/// Pair calls' started and ended events by call id: an end of a Meet now
+/// call is a meeting end, and a start with no end is still going on.
+pub fn link_calls(out: &mut [MessageView]) {
+    let huddles: std::collections::HashSet<String> = out
+        .iter()
+        .filter(|m| m.call_state == "started" && m.call_huddle && !m.call_id.is_empty())
+        .map(|m| m.call_id.clone())
+        .collect();
+    let ended: std::collections::HashSet<String> = out
+        .iter()
+        .filter(|m| m.kind == "call" && m.call_state != "started" && !m.call_id.is_empty())
+        .map(|m| m.call_id.clone())
+        .collect();
+    for m in out.iter_mut().filter(|m| m.kind == "call") {
+        if m.call_state == "started" {
+            m.call_active = !m.call_id.is_empty() && !ended.contains(&m.call_id);
+        } else if huddles.contains(&m.call_id) {
+            m.call_huddle = true;
+        }
+    }
 }
 
 /// Older pages loaded so far followed by the newest page, each message
@@ -1010,7 +1046,34 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     }
     if kind == "Event/Call" {
         let content = s("/content");
-        // Only the end of a call goes in the timeline, as in Teams.
+        let call_id = content
+            .split("<callId>")
+            .nth(1)
+            .and_then(|r| r.split('<').next())
+            .unwrap_or_default()
+            .to_string();
+        // A start: Teams shows Meet now's ("… started a meeting."); other
+        // starts only tell that a call is going on.
+        if content.contains("callStarted") && !content.contains("<ended/>") {
+            // Starts name the initiator only by MRI (`<name>8:orgid:…`);
+            // a display name, when one is there, is the person's name.
+            let initiator = content
+                .split("<displayName>")
+                .nth(1)
+                .and_then(|r| r.split('<').next())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            return Some(MessageView {
+                kind: "call".into(),
+                call_state: "started".into(),
+                call_huddle: content.contains("\"huddleGroupCall\""),
+                call_initiator: initiator,
+                call_id,
+                ..base
+            });
+        }
+        // Otherwise only the end of a call goes in the timeline, as in Teams.
         if !content.contains("<ended/>") {
             return None;
         }
@@ -1025,6 +1088,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
             kind: "call".into(),
             call_state: state.into(),
             call_seconds: seconds,
+            call_id,
             ..base
         });
     }
@@ -2318,6 +2382,42 @@ mod quote_tests {
         let r = reactions_of(&e, "me");
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].key, "yes");
+    }
+
+    #[test]
+    fn meet_now_events_pair_as_teams_shows_them() {
+        let started = serde_json::json!({"id": "1", "messagetype": "Event/Call", "from": "https://x/contacts/8:orgid:me",
+            "content": "<partlist type=\"started\" alt=\"\"><part identity=\"8:orgid:me\"><name>8:orgid:me</name></part></partlist><conversationType>\"huddleGroupCall\"</conversationType><callEventType>callStarted</callEventType><callId>c1</callId>"});
+        let ended = serde_json::json!({"id": "2", "messagetype": "Event/Call", "from": "https://x/contacts/8:orgid:me",
+            "content": "<ended/><partlist alt=\"\" count=\"1\"><part identity=\"8:orgid:me\"><duration>134</duration></part></partlist><callEventType>callEnded</callEventType><callId>c1</callId>"});
+        let other = serde_json::json!({"id": "3", "messagetype": "Event/Call", "from": "https://x/contacts/8:orgid:me",
+            "content": "<partlist alt=\"\"></partlist><callEventType>callStarted</callEventType><callId>c2</callId>"});
+        let mut v: Vec<MessageView> = [started, ended, other]
+            .iter()
+            .filter_map(|m| view_of(m, "8:orgid:me", "Me"))
+            .collect();
+        sort_by_arrival(&mut v);
+        assert_eq!(
+            (
+                v[0].call_state.as_str(),
+                v[0].call_huddle,
+                v[0].call_active,
+                v[0].call_initiator.as_str()
+            ),
+            ("started", true, false, "")
+        );
+        assert_eq!(
+            (
+                v[1].call_state.as_str(),
+                v[1].call_huddle,
+                v[1].call_seconds
+            ),
+            ("ended", true, 134)
+        );
+        assert_eq!(
+            (v[2].call_state.as_str(), v[2].call_huddle, v[2].call_active),
+            ("started", false, true)
+        );
     }
 
     #[test]

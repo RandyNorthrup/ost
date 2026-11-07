@@ -640,16 +640,18 @@ pub async fn join_meeting(
     start(&link.thread_id, Target::Meeting(&link.message_id), cancel).await
 }
 
-/// Start a group call in a group chat (`19:…@thread.v2`): the call is
-/// tied to the chat, so Teams rings its members and they join it.
+/// Start or join a group chat's call (`19:…@thread.v2`), as Teams does:
+/// Meet now (a huddle; members are nudged), Audio call (members are rung)
+/// or Join (the chat's ongoing call).
 pub async fn start_group_call(
     thread_id: &str,
+    kind: signaling::GroupCallKind,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
     if !is_group_chat(thread_id) {
         bail!("Not a group chat");
     }
-    start(thread_id, Target::Group, cancel).await
+    start(thread_id, Target::Group(kind), cancel).await
 }
 
 /// Group chats (not meetings, channels or 1:1 chats).
@@ -662,8 +664,8 @@ pub fn is_group_chat(thread_id: &str) -> bool {
 enum Target<'a> {
     /// A 1:1 call to this MRI.
     Person(&'a str),
-    /// A group call in a group chat (Teams rings its members).
-    Group,
+    /// A group chat's call: Meet now, Audio call or Join.
+    Group(signaling::GroupCallKind),
     /// The meeting with this message id on the thread.
     Meeting(&'a str),
 }
@@ -729,13 +731,36 @@ async fn start(
 
     // Listen before placing the call so the answer cannot be missed.
     let mut events = event_hub::subscribe();
+    // A group call names the chat's members (rung, or nudged for Meet now).
+    let members: Vec<String> = if matches!(target, Target::Group(_)) {
+        match crate::api::client::TeamsClient::new().await {
+            Ok(client) => match crate::api::files::member_oids(&client, thread_id).await {
+                Ok(oids) => oids
+                    .iter()
+                    .take(MAX_RING)
+                    .map(|o| format!("8:orgid:{o}"))
+                    .collect(),
+                Err(e) => {
+                    tracing::warn!("Group members unavailable: {:#}", e);
+                    Vec::new()
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Group members unavailable: {:#}", e);
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
     let (created, _joined) = match target {
         Target::Person(callee) => {
             signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
                 .await?
         }
-        Target::Group => {
-            signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, None).await?
+        Target::Group(kind) => {
+            signaling::create_group_call(&http, &epconv_url, &params, &offer, &members, kind)
+                .await?
         }
         Target::Meeting(message_id) => {
             signaling::join_meeting(&http, &epconv_url, &params, &offer, message_id).await?
@@ -748,32 +773,7 @@ async fn start(
         conversation_link(&created.response_body, "removeState"),
     );
     let all_participants = conversation_link(&created.response_body, "getAllParticipants");
-    // A group call rings the chat's members, as Teams' does.
-    if matches!(target, Target::Group) {
-        match crate::api::client::TeamsClient::new().await {
-            Ok(client) => match crate::api::files::member_oids(&client, thread_id).await {
-                Ok(oids) => {
-                    for oid in oids.iter().take(MAX_RING) {
-                        let mri = format!("8:orgid:{oid}");
-                        if let Err(e) = signaling::invite_user(
-                            &http,
-                            &created.conversation_controller,
-                            &params,
-                            &mri,
-                            false,
-                        )
-                        .await
-                        {
-                            tracing::warn!("Ringing a member failed: {:#}", e);
-                        }
-                    }
-                    tracing::info!(rung = oids.len().min(MAX_RING), "group call members rung");
-                }
-                Err(e) => tracing::warn!("Group members unavailable: {:#}", e),
-            },
-            Err(e) => tracing::warn!("Group members unavailable: {:#}", e),
-        }
-    }
+    tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
 
     let wait_answer = async {
