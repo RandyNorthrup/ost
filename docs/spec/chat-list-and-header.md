@@ -794,6 +794,20 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
 | **Storyline** | 1:1 with Engage/Storyline flags |
 | **Photos** | `enablePhotosTab` (off) |
 
+### 7.9a Group chat header, measured live (winpc, 2026-11-07)
+- The header is 61 tall, white, with a 0.67 px #E0E0E0 bottom border.
+- Left to right:
+  - the 32 px avatar at (20, 14.2) (`tfw-group-chat-avatar-button`, "Change the group profile picture", with a 12 px camera icon);
+  - the title (18/25.7, weight 700) at 62;
+  - the rename pencil (21.3) 4 after the title;
+  - the tabs Chat, Shared, Notes, Recap and "Add a tab" (no Storyline in group chats).
+- The toolbar (`entity-header-toolbar`) holds:
+  - Meet now (`audio-drop-in-button`, 101.8 × 32, video icon plus "Meet now" 14 semibold #424242) and its chevron (28 × 36);
+  - the participant count (32.2 × 32, PeopleAdd plus a bold 12 px count, aria "View and add participants, 2 participants");
+  - Find in chat, Open chat details, and More chat options (32 each).
+- More chat options (214 wide): Open in new window (Ctrl+O) | Schedule meeting, Share screen (Ctrl+Shift+E) | Mark as unread, Move to section ▸, Mute, Copy link | Remove chat history.
+- Rename goes through `PUT /v1/threads/{id}/properties?name=topic` with `{"topic": …}`, verified from OST; the chat list picks up the new name.
+
 ### 7.10 Header TODOs
 - Live 1:1, group and meeting headers (code + live flags only so far).
 - Labels for header Mark as read/unread (708158) and Manage

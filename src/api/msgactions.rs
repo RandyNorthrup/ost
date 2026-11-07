@@ -677,3 +677,56 @@ mod tests {
         );
     }
 }
+
+/// Teams' link to a chat (Copy link in the chat's ··· menu).
+pub fn chat_link(chat_id: &str) -> String {
+    let enc: String = chat_id
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    format!(
+        "https://teams.microsoft.com/l/chat/{enc}/conversations?context=%7B%22contextType%22%3A%22chat%22%7D"
+    )
+}
+
+/// Rename a group chat as Teams does: `PUT /v1/threads/{id}/properties?name=topic`.
+pub async fn set_chat_topic(client: &TeamsClient, chat_id: &str, topic: &str) -> Result<()> {
+    let url = format!(
+        "{}/v1/threads/{}/properties?name=topic",
+        client.chat_service_url(),
+        chat_id
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "topic": topic }),
+        )
+        .await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod chat_link_tests {
+    #[test]
+    fn chat_links_are_teams_links() {
+        assert_eq!(
+            super::chat_link("19:ef21@thread.v2"),
+            "https://teams.microsoft.com/l/chat/19%3Aef21%40thread.v2/conversations?context=%7B%22contextType%22%3A%22chat%22%7D"
+        );
+    }
+}

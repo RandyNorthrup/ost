@@ -222,6 +222,15 @@ pub mod qobject {
         /// `place_json`: {team_id, team_name, channel_name} for a channel.
         #[qinvokable]
         fn copy_message_link(self: &Backend, message_json: &QString, place_json: &QString);
+
+        /// Copy the open chat's link as Teams does (rich text named after
+        /// the chat), with Teams' toast.
+        #[qinvokable]
+        fn copy_chat_link(self: Pin<&mut Backend>);
+
+        /// Rename the open group chat (Teams' Name group chat).
+        #[qinvokable]
+        fn rename_chat(self: Pin<&mut Backend>, topic: &QString);
         /// Save or unsave a message (Teams' Save this message).
         #[qinvokable]
         fn set_message_saved(self: Pin<&mut Backend>, message_id: &QString, save: bool);
@@ -3597,6 +3606,53 @@ impl qobject::Backend {
         };
         // SAFETY: two NUL-terminated strings, copied by Qt before returning.
         unsafe { ost_set_clipboard(url.as_ptr(), html.as_ptr()) };
+    }
+
+    pub fn copy_chat_link(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() {
+            return;
+        }
+        let url = api::msgactions::chat_link(&chat_id);
+        let name = self.rust().current_chat_name.to_string();
+        let html = format!(
+            "<a href=\"{}\">{}</a>",
+            url.replace('"', "&quot;"),
+            name.replace('&', "&amp;").replace('<', "&lt;")
+        );
+        if let (Ok(u), Ok(h)) = (std::ffi::CString::new(url), std::ffi::CString::new(html)) {
+            // SAFETY: two NUL-terminated strings, copied by Qt before returning.
+            unsafe { ost_set_clipboard(u.as_ptr(), h.as_ptr()) };
+            self.as_mut().toast("Copied to clipboard", "success");
+        }
+    }
+
+    pub fn rename_chat(mut self: Pin<&mut Self>, topic: &QString) {
+        let topic = topic.to_string().trim().to_string();
+        let chat_id = self.rust().current_chat_id.to_string();
+        if topic.is_empty()
+            || topic.chars().count() > 250
+            || topic.contains(':')
+            || chat_id.is_empty()
+        {
+            return;
+        }
+        self.as_mut()
+            .set_current_chat_name(QString::from(topic.as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_chat_topic(&client, &chat_id, &topic).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().reload_chats(),
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
+            });
+        });
     }
 
     /// Change a flag on a message in the open chat's last timeline, then

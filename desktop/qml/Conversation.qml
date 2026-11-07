@@ -53,7 +53,8 @@ Rectangle {
         return r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
     }
     readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map(t => t.name) : ["Posts", "Shared"])
-        : isSelf ? ["Chat", "Shared", "Storyline"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+        // Teams (worker Ct): Storyline only in 1:1 chats.
+        : isSelf ? ["Chat", "Shared", "Storyline"] : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
     // Load a channel's tabs once it's known which team it's in.
     readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
     onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
@@ -308,9 +309,83 @@ Rectangle {
             font.family: theme.font; font.pixelSize: theme.title; font.weight: Font.Bold
             color: theme.text
         }
+        // Name group chat (chat-title-name-group-chat): group chats only,
+        // 4 after the title.
+        Rectangle {
+            id: renameButton
+            visible: root.isGroup && !root.isChannel && !root.pane
+            x: title.x + title.width + 4; anchors.verticalCenter: parent.verticalCenter
+            width: 21.3; height: 21.3; radius: 4
+            color: renameHover.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: renamePopup.opened || renameHover.hovered ? "edit-16-filled" : "edit-16"; size: 16; color: theme.textStrong }
+            HoverHandler { id: renameHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: renamePopup.open() }
+            ToolTip {
+                visible: renameHover.hovered; delay: 500
+                y: parent.height + 4; padding: 8
+                background: FluentSurface { depth: 16; radius: 4 }
+                contentItem: Text { text: "Name group chat"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Name group chat"
+            // The rename popover (Teams: below the title, 40rem, "Group
+            // name", Cancel / Save, Teams' two validation messages).
+            Popup {
+                id: renamePopup
+                x: -title.width - 4; y: parent.height + 9
+                width: 400; padding: 0
+                height: 16 + 20 + 4 + 32 + (renameError.visible ? 4 + 16 : 0) + 16 + 32 + 16
+                focus: true
+                background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                onOpened: { nameField.text = root.chatName; nameField.selectAll(); nameField.forceActiveFocus() }
+                readonly property string error: nameField.text.length > 250 ? "Your group name can't be longer than 250 characters."
+                    : nameField.text.indexOf(":") >= 0 ? "':' is not a valid character in group names." : ""
+                Text { x: 16; y: 16; height: 20; verticalAlignment: Text.AlignVCenter; text: "Group name"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Rectangle {
+                    x: 16; y: 40; width: parent.width - 32; height: 32; radius: 4
+                    color: theme.surface
+                    border.color: nameField.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
+                    Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: nameField.activeFocus ? 2 : 0.67; color: nameField.activeFocus ? theme.brand : theme.textSecondary }
+                    TextInput {
+                        id: nameField
+                        x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                        Text { visible: !nameField.text; text: "Type a group name"; font: nameField.font; color: theme.textSecondary }
+                        Keys.onReturnPressed: if (!renamePopup.error && nameField.text.trim()) { backend.renameChat(nameField.text); renamePopup.close() }
+                        Accessible.role: Accessible.EditableText
+                        Accessible.name: "Group name"
+                    }
+                }
+                Text { id: renameError; visible: !!renamePopup.error; x: 16; y: 76; text: renamePopup.error; font.family: theme.font; font.pixelSize: 12; color: theme.redForeground1 }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: 16
+                    y: parent.height - 16 - 32
+                    spacing: 8
+                    Rectangle {
+                        width: 96; height: 32; radius: 4
+                        color: rcHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
+                        Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        HoverHandler { id: rcHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: renamePopup.close() }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Cancel"
+                    }
+                    Rectangle {
+                        readonly property bool can: !renamePopup.error && nameField.text.trim().length > 0
+                        width: 96; height: 32; radius: 4
+                        color: !can ? theme.bgDisabled : rsHover.hovered ? theme.brandHover : theme.brandFill
+                        Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.can ? "white" : theme.disabledStrong }
+                        HoverHandler { id: rsHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { enabled: parent.can; onTapped: { backend.renameChat(nameField.text); renamePopup.close() } }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Save"
+                    }
+                }
+            }
+        }
         Row {
             id: tabs
-            x: title.x + title.width + 2
+            x: (renameButton.visible ? renameButton.x + renameButton.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {
                 model: root.tabNames
@@ -328,7 +403,7 @@ Rectangle {
                     // Tabs that would run under the header actions are hidden
                     // (opacity, so the row's layout doesn't depend on it).
                     readonly property bool fits: tabs.x + x + width <= header.width
-                        - (root.pane ? 48 : root.isSelf ? 115 : root.isChannel ? 160 : 207)
+                        - (root.pane ? 48 : root.isSelf ? 115 : root.isChannel ? 160 : 247)
                     opacity: fits ? 1 : 0
                     enabled: fits
                     Text {
@@ -400,14 +475,14 @@ Rectangle {
         }
         HeaderAction {
             visible: !root.isSelf && !root.isChannel
-            x: parent.width - 199; width: 24
+            x: parent.width - 199 - 32 - (root.isGroup ? 8 : 0); width: 24
             icon: "call-20"
             onClicked: root.call()
             Accessible.name: "Audio call"
         }
         HeaderAction {
             visible: !root.isSelf && !root.isChannel
-            x: parent.width - 175; width: 24
+            x: parent.width - 175 - 32 - (root.isGroup ? 8 : 0); width: 24
             icon: "chevron-down-16"; iconSize: 16
             Accessible.name: "More call options"
             onClicked: callMenu.open()
@@ -419,25 +494,75 @@ Rectangle {
             }
         }
         HeaderAction {
-            visible: !root.isSelf
-            x: parent.width - 151; width: 28
+            visible: !root.isSelf && !root.isGroup
+            x: parent.width - 151 - 32; width: 28
             icon: "people-add-20"
-            Accessible.name: "View participants"
+            Accessible.name: root.isChannel ? "View participants" : "Start a group chat"
             onClicked: participants.visible = !participants.visible
+        }
+        // Group chats: the roster count (chat-header-participant-count):
+        // PeopleAdd and the bold 12 px member count.
+        Rectangle {
+            visible: root.isGroup && !root.isChannel && !root.isSelf
+            readonly property int count: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).length
+            x: parent.width - 151 - 32 - (width - 28); anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(28, 4 + 20 + 2 + countLabel.implicitWidth + 4); height: 32; radius: 4
+            color: rosterHover.hovered ? theme.hover : "transparent"
+            Row {
+                anchors.centerIn: parent; spacing: 2
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "people-add-20"; size: 20; color: theme.textStrong }
+                Text { id: countLabel; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.count; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; color: theme.textStrong }
+            }
+            HoverHandler { id: rosterHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: participants.visible = !participants.visible }
+            ToolTip {
+                visible: rosterHover.hovered; delay: 500
+                y: parent.height + 4; padding: 8
+                background: FluentSurface { depth: 16; radius: 4 }
+                contentItem: Text { text: "View and add participants"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: "View and add participants, " + count + " participants"
         }
         Rectangle {
             visible: !root.isSelf
-            x: parent.width - 116; width: 1; height: 20
+            x: parent.width - 116 - (root.isChannel ? 0 : 32); width: 1; height: 20
             anchors.verticalCenter: parent.verticalCenter
             color: theme.divider
         }
         HeaderAction {
-            x: parent.width - 107; icon: "search-20"; Accessible.name: "Find in chat"
+            x: parent.width - 107 - (root.isChannel ? 0 : 32); icon: "search-20"; Accessible.name: "Find in chat"
             onClicked: { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
         }
         HeaderAction {
-            x: parent.width - 75; icon: "panel-left-20"; Accessible.name: "Open chat details"
+            x: parent.width - 75 - (root.isChannel ? 0 : 32); icon: "panel-left-20"; Accessible.name: "Open chat details"
             onClicked: participants.visible = !participants.visible
+        }
+        // More chat options (chat-header-more-menu-trigger). Items Teams has
+        // that are not built yet: Open in new window, Share screen, Move to
+        // section, Mute, Remove chat history.
+        HeaderAction {
+            id: chatMore
+            visible: !root.isChannel && !root.pane
+            x: parent.width - 75; icon: "more-horizontal-20"; Accessible.name: "More chat options"
+            onClicked: chatMenu.open()
+            MenuPopup {
+                id: chatMenu
+                x: parent.width / 2 - width / 2; y: parent.height + 4
+                margins: 8
+                items: [
+                    { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" },
+                    { separator: true },
+                    { key: "unread", label: "Mark as unread", icon: "mail-unread-20" },
+                    { key: "link", label: "Copy link", icon: "link-20" }
+                ]
+                onPicked: i => {
+                    const k = items[i].key
+                    if (k === "meeting") root.scheduleMeeting()
+                    else if (k === "link") backend.copyChatLink()
+                    else if (k === "unread") { const m = root.messages.filter(m => m.kind === "message").pop(); if (m) backend.markMessageUnread(m.id, m.client_message_id || "") }
+                }
+            }
         }
         }
         Rectangle { width: parent.width; height: 1; anchors.bottom: parent.bottom; color: theme.dividerSoft }

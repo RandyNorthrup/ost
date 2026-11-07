@@ -1850,6 +1850,22 @@ Window {
         }
     }
 
+    // --rename-test=<name> with --open-chat=<id>: rename the group chat,
+    // log the chat list's name for it, then quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--rename-test=")) && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--rename-test=")) || "").slice(14)
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST rename test"); return }
+            if (step === 0) backend.renameChat(name)
+            else if (step === 2) { const c = JSON.parse(backend.chatsJson || "[]").find(c => c.id === id); console.warn("RENAME-TEST", c ? c.name : "?", backend.currentChatName); Qt.quit() }
+            step++
+        }
+    }
+
     // --menu-actions-test with --open-chat=<id> --shots=<dir>: in a test
     // chat, save the newest message from someone else, unsave saved ones,
     // pin then unpin it, load your newest message's readers, open the menu
