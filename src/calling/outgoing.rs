@@ -25,6 +25,11 @@ pub struct OutgoingCall {
     http: reqwest::Client,
     /// A meeting's updateMediaDescriptions link, and the last request id.
     media_descriptions: Option<(String, std::sync::atomic::AtomicU64)>,
+    /// The call's id (our chain id) and how many screens we've shared:
+    /// Teams tags each share "<callId>;ss_<n>".
+    call_id: String,
+    shares: std::sync::atomic::AtomicU64,
+    described_sharing: std::sync::atomic::AtomicBool,
     /// The join response's roster (people and their streams).
     joined_roster: Vec<super::roster::Participant>,
     skype_token: String,
@@ -378,6 +383,20 @@ impl OutgoingCall {
         }
     }
 
+    /// The processor asks for one of our streams (controlVideoStreaming).
+    pub fn control_video(&self, source_id: i64, fmt_params: &str) {
+        if let Some(m) = &self.media {
+            m.control_video(source_id, fmt_params);
+        }
+    }
+
+    /// Whether this call's camera and screen go on and off by media
+    /// descriptions (a meeting's or group call's media processor), not
+    /// re-offers.
+    pub fn describes_media(&self) -> bool {
+        self.media_descriptions.is_some()
+    }
+
     /// In a meeting: tell the conversation what our camera and sharing
     /// lines now do, as Teams posts UpdateMediaDescriptions when they
     /// change (the roster then shows our camera, so others ask for it).
@@ -386,7 +405,19 @@ impl OutgoingCall {
             return Ok(());
         };
         let request_id = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        let body = media_descriptions_body(camera, sharing, request_id);
+        // Each share gets the next number; describing an ongoing share
+        // again keeps its tag.
+        use std::sync::atomic::Ordering::Relaxed;
+        let was_sharing = self.described_sharing.swap(sharing, Relaxed);
+        let tag = sharing.then(|| {
+            let n = if was_sharing {
+                self.shares.load(Relaxed)
+            } else {
+                self.shares.fetch_add(1, Relaxed) + 1
+            };
+            format!("{};ss_{n}", self.call_id)
+        });
+        let body = media_descriptions_body(camera, tag.as_deref(), request_id);
         cc_post(
             &self.http,
             &self.skype_token,
@@ -762,26 +793,37 @@ fn reaction_body(
     })
 }
 
-/// Teams' MuteAllSync body: scope "all" (everyone but you) with an empty
-/// list, audio only (Teams' muteAllParticipants passes MuteScope.All, []).
-/// Teams' UpdateMediaDescriptions: the lines our SDP lets send (a line
-/// it has receive-only can't be described: 1047 "Invalid
-/// MediaDescriptions"), with what they do now.
-fn media_descriptions_body(camera: bool, sharing: bool, request_id: u64) -> serde_json::Value {
+/// Teams' UpdateMediaDescriptions: what our camera and sharing lines do
+/// (both are sendrecv in our offer; a line described sending must be, else
+/// 1047 "Invalid MediaDescriptions"). Off, a line is "recvonly"; a shared
+/// screen is "sendonly", tagged with the call's id and the share's number
+/// (Teams: "<callId>;ss_<n>").
+fn media_descriptions_body(
+    camera: bool,
+    sharing: Option<&str>,
+    request_id: u64,
+) -> serde_json::Value {
     use super::meeting_media::{CAMERA_MID, SHARE_MID};
-    let mut d = vec![
-        serde_json::json!({"mid": CAMERA_MID, "direction": if camera { "sendrecv" } else { "recvonly" }, "label": "main-video"}),
-    ];
-    if sharing {
-        d.push(serde_json::json!({"mid": SHARE_MID, "direction": "sendrecv", "label": "applicationsharing-video"}));
+    let camera = if camera {
+        serde_json::json!({"mid": CAMERA_MID, "direction": "sendrecv", "label": "main-video"})
+    } else {
+        serde_json::json!({"mid": CAMERA_MID, "direction": "recvonly"})
+    };
+    let share = if sharing.is_some() {
+        serde_json::json!({"mid": SHARE_MID, "direction": "sendonly", "label": "applicationsharing-video"})
+    } else {
+        serde_json::json!({"mid": SHARE_MID, "direction": "recvonly"})
+    };
+    let mut descriptions =
+        serde_json::json!({"descriptions": [camera, share], "requestId": request_id});
+    if let Some(tag) = sharing {
+        descriptions["negotiationTag"] = tag.into();
     }
-    serde_json::json!({
-        "UpdateMediaDescriptions": {
-            "mediaDescriptions": {"descriptions": d, "requestId": request_id}
-        }
-    })
+    serde_json::json!({"UpdateMediaDescriptions": {"mediaDescriptions": descriptions}})
 }
 
+/// Teams' MuteAllSync body: scope "all" (everyone but you) with an empty
+/// list, audio only (Teams' muteAllParticipants passes MuteScope.All, []).
 fn mute_all_body(me: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "from": me,
@@ -1134,7 +1176,33 @@ async fn start(
     };
     let caller_mri = format!("8:orgid:{oid}");
     let participant_id = uuid::Uuid::new_v4().to_string();
-    let chain_id = uuid::Uuid::new_v4().to_string();
+    // Joining a call that's going on (a meeting's, or a chat's), Teams
+    // uses that call's id as the chain id: it's the call's id for
+    // everyone in it (shares are tagged with it). A new call gets a new id.
+    let joins_ongoing = matches!(
+        target,
+        Target::Meeting(_) | Target::Group(signaling::GroupCallKind::Join)
+    );
+    let ongoing = if joins_ongoing {
+        match crate::api::client::TeamsClient::new().await {
+            Ok(client) => crate::api::thread_live_call(&client, thread_id)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Ongoing call unknown: {:#}", e);
+                    None
+                }),
+            Err(e) => {
+                tracing::warn!("Ongoing call unknown: {:#}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let chain_id = ongoing
+        .map(|c| c.call_id)
+        .filter(|id| !id.is_empty())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let message_id = uuid::Uuid::new_v4().to_string();
     let params = signaling::ConversationCallParams {
         ic3_token: &ic3_token,
@@ -1288,6 +1356,9 @@ async fn start(
             .filter(|_| meeting_media)
             .map(|l| (l, std::sync::atomic::AtomicU64::new(1))),
         joined_roster: super::roster::joined(&created.response_body),
+        call_id: chain_id.clone(),
+        shares: std::sync::atomic::AtomicU64::new(0),
+        described_sharing: std::sync::atomic::AtomicBool::new(false),
         http,
         skype_token,
         end_url: acceptance.end,
@@ -1366,21 +1437,28 @@ mod tests {
 
     #[test]
     fn media_descriptions_say_what_the_lines_do() {
-        let b = media_descriptions_body(true, false, 2);
+        let b = media_descriptions_body(true, None, 2);
         let d = &b["UpdateMediaDescriptions"]["mediaDescriptions"];
         assert_eq!(d["requestId"], 2);
-        assert_eq!(d["descriptions"][0]["direction"], "sendrecv");
-        assert_eq!(d["descriptions"][0]["label"], "main-video");
         assert_eq!(
-            d["descriptions"].as_array().unwrap().len(),
-            1,
-            "a receive-only line isn't described"
+            d["descriptions"],
+            serde_json::json!([
+                {"mid": "1", "direction": "sendrecv", "label": "main-video"},
+                {"mid": "11", "direction": "recvonly"}
+            ])
         );
-        let s = media_descriptions_body(false, true, 3);
+        assert!(d.get("negotiationTag").is_none());
+        // A share is "sendonly", tagged as Teams tags it.
+        let s = media_descriptions_body(false, Some("f74ff03b;ss_2"), 3);
+        let d = &s["UpdateMediaDescriptions"]["mediaDescriptions"];
         assert_eq!(
-            s["UpdateMediaDescriptions"]["mediaDescriptions"]["descriptions"][1]["mid"],
-            "11"
+            d["descriptions"],
+            serde_json::json!([
+                {"mid": "1", "direction": "recvonly"},
+                {"mid": "11", "direction": "sendonly", "label": "applicationsharing-video"}
+            ])
         );
+        assert_eq!(d["negotiationTag"], "f74ff03b;ss_2");
     }
 
     #[test]

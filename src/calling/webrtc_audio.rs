@@ -36,6 +36,11 @@ use super::audio;
 const PT_PCMU: u8 = 0;
 /// Our H.264 payload type when we offer video.
 const PT_H264_OFFER: u8 = 107;
+/// What a meeting asks of a stream we send: (its stream id, its layers
+/// as `vdclc` writes them).
+#[cfg(feature = "video")]
+type VideoControl = dyn Fn(i64, &[String]) + Send + Sync;
+
 /// The H.264 payload type we offer for screen sharing (its own, so the
 /// two video streams can be told apart).
 const PT_H264_SHARE_OFFER: u8 = 102;
@@ -126,6 +131,8 @@ pub struct WebRtcOffer {
     pub data_stream: Option<i64>,
     /// … and the screen-sharing line, as a slot.
     pub share_slot: Option<super::meeting_media::Slot>,
+    /// … and its stream id for our camera line.
+    pub camera_stream: Option<i64>,
 }
 
 /// The payload type of `telephone-event/8000` in an audio section.
@@ -396,9 +403,11 @@ fn video_line(sdp: &str, mid: &str, avoid: Option<u8>) -> Option<OfferedVideo> {
         let f = fmtp(*pt);
         f.contains("packetization-mode=1") && f.contains(&format!("profile-level-id={profile}"))
     };
+    // Constrained Baseline (42e0…, or 42c0… as media processors write
+    // it), then Baseline.
     let ranked: Vec<u8> = h264
         .iter()
-        .filter(|pt| usable(pt, "42e0"))
+        .filter(|pt| usable(pt, "42e0") || usable(pt, "42c0"))
         .chain(h264.iter().filter(|pt| usable(pt, "4200")))
         .copied()
         .collect();
@@ -628,6 +637,7 @@ impl WebRtcOffer {
             slots: super::meeting_media::answered_slots(sdp),
             data_stream: super::meeting_media::data_stream(sdp),
             share_slot: super::meeting_media::answered_share(sdp),
+            camera_stream: super::meeting_media::stream_id(sdp, super::meeting_media::CAMERA_MID),
             sections,
             audio_mid,
             setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
@@ -803,11 +813,10 @@ impl LocalAudio {
                 setup: "actpass",
                 pt: PT_H264_OFFER,
                 profile: "42e01f",
-                direction: if self.camera_on {
-                    "sendrecv"
-                } else {
-                    "recvonly"
-                },
+                // Teams offers its camera and sharing lines sendrecv and
+                // turns them on and off with media descriptions, not
+                // re-offers (a line described sending must be sendrecv).
+                direction: "sendrecv",
                 label: "main-video",
                 ssrc: self.video_ssrc,
             },
@@ -836,8 +845,8 @@ impl LocalAudio {
                 setup: "actpass",
                 pt: PT_H264_SHARE_OFFER,
                 profile: "42e01f",
-                // Receiving whoever presents, as Teams' meeting offers do.
-                direction: "recvonly",
+                // Receiving whoever presents, and sending when we do.
+                direction: "sendrecv",
                 label: "applicationsharing-video",
                 ssrc: self.share_ssrc,
             },
@@ -1089,9 +1098,16 @@ pub struct WebRtcAudioSession {
     _video_rx: Vec<Arc<super::webrtc_video::VideoReceiver>>,
     /// In a meeting: others' video and the control plane asking for it.
     meeting_video: Option<super::meeting_media::MeetingVideo>,
+    /// A meeting's requests for what we send (see [`Self::control_video`]).
+    #[cfg(feature = "video")]
+    video_control: Option<Arc<VideoControl>>,
     /// What a meeting's processor asks our camera for.
     #[cfg(feature = "video")]
     send_control: Arc<super::webrtc_video::SendControl>,
+    /// … and our screen.
+    #[cfg(feature = "video")]
+    #[cfg_attr(not(feature = "screencast"), allow(dead_code))]
+    share_control: Arc<super::webrtc_video::SendControl>,
     /// The receive slots' SSRC ranges by mid, which re-offers may move.
     #[cfg(feature = "video")]
     slot_ranges: Vec<(String, Arc<std::sync::atomic::AtomicU64>)>,
@@ -1198,6 +1214,19 @@ impl WebRtcAudioSession {
             .as_ref()
             .map(|v| v.show(sources))
             .unwrap_or_default()
+    }
+
+    /// A meeting's controlVideoStreaming request for one of our streams
+    /// (`sourceId`, and its `fmtParams` as "max-fs=…;max-br=…;…"): send it
+    /// within those limits, starting with a keyframe for whoever now
+    /// watches, as Teams' media stack does.
+    pub fn control_video(&self, source_id: i64, fmt_params: &str) {
+        #[cfg(feature = "video")]
+        if let Some(h) = &self.video_control {
+            h(source_id, &[format!("KeyFrame=1;{fmt_params}")]);
+        }
+        #[cfg(not(feature = "video"))]
+        let _ = (source_id, fmt_params);
     }
 
     /// In a meeting: receive this presenter's screen (their
@@ -1426,8 +1455,14 @@ impl WebRtcAudioSession {
             .as_ref()
             .context("This call has no screen-sharing line")?;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-        let sender =
-            super::webrtc_video::VideoSender::start_screen(tx, v.pt, v.ssrc, capture, frames)?;
+        let sender = super::webrtc_video::VideoSender::start_screen(
+            tx,
+            v.pt,
+            v.ssrc,
+            capture,
+            frames,
+            Some(self.share_control.clone()),
+        )?;
         *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender.keyframe.clone());
         let (socket, peer, srtp) = (v.socket.clone(), v.peer, v.srtp.clone());
         let fwd = tokio::spawn(async move {
@@ -1492,9 +1527,17 @@ impl WebRtcAudioSession {
         // Our video offers carry a sharing line. An answer that turned it
         // down (an audio-only answer drops its mid) still leaves it ours to
         // re-offer later, as Teams does when someone shares.
+        let (video_mid, share_mid) = if local.meeting {
+            (
+                super::meeting_media::CAMERA_MID,
+                super::meeting_media::SHARE_MID,
+            )
+        } else {
+            (VIDEO_MID, SHARE_MID)
+        };
         if local.receive_video && answer.video.is_none() {
             answer.video = Some(OfferedVideo {
-                mid: VIDEO_MID.into(),
+                mid: video_mid.into(),
                 payload_type: PT_H264_OFFER,
                 profile: "42e01f".into(),
                 ssrc: None,
@@ -1504,7 +1547,7 @@ impl WebRtcAudioSession {
         }
         if local.receive_video && answer.sharing.is_none() {
             answer.sharing = Some(OfferedVideo {
-                mid: SHARE_MID.into(),
+                mid: share_mid.into(),
                 payload_type: PT_H264_SHARE_OFFER,
                 profile: "42e01f".into(),
                 ssrc: None,
@@ -1552,6 +1595,8 @@ impl WebRtcAudioSession {
         // What a meeting's processor asks our camera for.
         #[cfg(feature = "video")]
         let send_control: Arc<super::webrtc_video::SendControl> = Arc::default();
+        #[cfg(feature = "video")]
+        let share_control: Arc<super::webrtc_video::SendControl> = Arc::default();
         #[cfg(feature = "video")]
         let share_keyframe_req: KeyframeSlot = Default::default();
         // The peer's video, when the answer accepted it.
@@ -1699,6 +1744,38 @@ impl WebRtcAudioSession {
         tracing::info!("DTLS-SRTP established");
         // A meeting's media control plane: a data channel in this DTLS
         // session, when the processor took our data line.
+        // The processor's layer requests for what we send, by stream: its
+        // size, bitrate and frame rate, and keyframes. They come over the
+        // media control plane (`vdclc`) or as controlVideoStreaming events.
+        #[cfg(feature = "video")]
+        let video_control: Option<Arc<VideoControl>> = local.meeting.then(|| {
+            // Requests for the sharing line's stream are for our screen;
+            // the rest for our camera.
+            let share_stream = offer.share_slot.as_ref().map(|s| s.stream_msid);
+            let camera = (send_control.clone(), keyframe_req.clone());
+            let screen = (share_control.clone(), share_keyframe_req.clone());
+            let handler: Arc<VideoControl> = Arc::new(move |stream: i64, layers: &[String]| {
+                let (control, slot) = if Some(stream) == share_stream {
+                    &screen
+                } else {
+                    &camera
+                };
+                let parsed: Vec<_> = layers
+                    .iter()
+                    .filter_map(|l| super::webrtc_video::parse_layer(l))
+                    .collect();
+                // One stream: the largest layer asked for.
+                if let Some((limits, _)) = parsed.iter().max_by_key(|(l, _)| l.max_fs) {
+                    control.set(*limits);
+                }
+                if parsed.iter().any(|(_, key)| *key)
+                    && let Some(flag) = slot.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+                {
+                    flag.store(true, Ordering::Relaxed);
+                }
+            });
+            handler
+        });
         let meeting_video = match offer.data_stream {
             Some(stream_id) if local.meeting => {
                 let mut dtls = dtls;
@@ -1710,30 +1787,16 @@ impl WebRtcAudioSession {
                 );
                 let (tx, events) =
                     super::datachannel::open(dtls, super::meeting_media::DATA_LABEL, 0);
-                // The processor's layer requests for our camera: its size,
-                // bitrate and frame rate, and keyframes.
                 #[cfg(feature = "video")]
-                let on_layers: super::meeting_media::LayerHandler = {
-                    let (control, slot) = (send_control.clone(), keyframe_req.clone());
-                    Box::new(move |layers: &[String]| {
-                        let parsed: Vec<_> = layers
-                            .iter()
-                            .filter_map(|l| super::webrtc_video::parse_layer(l))
-                            .collect();
-                        // One stream: the largest layer asked for.
-                        if let Some((limits, _)) = parsed.iter().max_by_key(|(l, _)| l.max_fs) {
-                            control.set(*limits);
-                        }
-                        if parsed.iter().any(|(_, key)| *key)
-                            && let Some(flag) =
-                                slot.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
-                        {
-                            flag.store(true, Ordering::Relaxed);
-                        }
-                    })
+                let on_layers: super::meeting_media::LayerHandler = match &video_control {
+                    Some(h) => {
+                        let h = h.clone();
+                        Box::new(move |stream: i64, layers: &[String]| h(stream, layers))
+                    }
+                    None => Box::new(|_, _| {}),
                 };
                 #[cfg(not(feature = "video"))]
-                let on_layers: super::meeting_media::LayerHandler = Box::new(|_| {});
+                let on_layers: super::meeting_media::LayerHandler = Box::new(|_, _| {});
                 Some(super::meeting_media::MeetingVideo::start(
                     offer.slots.clone(),
                     offer.share_slot.clone(),
@@ -1887,7 +1950,11 @@ impl WebRtcAudioSession {
             _video_rx: video_rx.into_iter().map(|v| v.rx).collect(),
             meeting_video,
             #[cfg(feature = "video")]
+            video_control,
+            #[cfg(feature = "video")]
             send_control,
+            #[cfg(feature = "video")]
+            share_control,
             #[cfg(feature = "video")]
             slot_ranges,
             muted,
@@ -2054,13 +2121,14 @@ async fn recv_loop(ctx: RecvCtx) {
                     s.packets_received += 1;
                     s.bytes_received += len as u64;
                 }
-                #[cfg(feature = "video")]
                 // A meeting slot by its SSRC range, else the line by its
                 // payload type (RTX on a slot's range falls through).
+                #[cfg(feature = "video")]
                 let ssrc = plain
                     .get(8..12)
                     .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
                     .unwrap_or(0);
+                #[cfg(feature = "video")]
                 if let Some(stream) = ctx
                     .video
                     .iter()
@@ -2382,6 +2450,35 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert_eq!(o.candidates.len(), 1);
         assert!(o.offers_pcmu(OFFER));
         assert!(WebRtcOffer::parse("v=0\r\nm=audio 1 RTP/SAVP 0\r\na=crypto:1 x\r\n").is_none());
+    }
+
+    #[test]
+    fn a_media_processors_constrained_baseline_line_is_usable() {
+        // A meeting answer's camera and sharing lines, as the processor
+        // writes them (profile 42C01E): we send with its payload type.
+        let line = |mid: &str, label: &str| {
+            format!(
+                "m=video 3478 RTP/SAVP 107\r\na=label:{label}\r\na=mid:{mid}\r\n\
+                 a=rtpmap:107 H264/90000\r\n\
+                 a=fmtp:107 profile-level-id=42C01E;packetization-mode=1;max-fs=3600\r\n"
+            )
+        };
+        let sdp = format!(
+            "v=0\r\n{}{}",
+            line("1", "main-video"),
+            line("11", "applicationsharing-video")
+        );
+        let camera = video_line(&sdp, "1", None).unwrap();
+        assert_eq!(
+            (camera.payload_type, camera.profile.as_str()),
+            (107, "42c01e")
+        );
+        let sections = vec![
+            ("1".to_string(), "video".to_string(), String::new()),
+            ("11".to_string(), "video".to_string(), String::new()),
+        ];
+        let share = offered_sharing(&sdp, &sections, Some(107)).unwrap();
+        assert_eq!((share.mid.as_str(), share.payload_type), ("11", 107));
     }
 
     #[test]

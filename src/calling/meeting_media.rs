@@ -35,6 +35,33 @@ pub fn slot_mids() -> impl Iterator<Item = String> {
     (2..2 + SLOT_COUNT).map(|m| m.to_string())
 }
 
+/// A `call/controlVideoStreaming/` event's requests for streams we send:
+/// (`sourceId`, `fmtParams`). The processor asks this way when someone
+/// starts watching our screen.
+pub fn video_control_requests(json: &str) -> Vec<(i64, String)> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    if v["callAgentPath"] != "call/controlVideoStreaming/" {
+        return Vec::new();
+    }
+    let info = &v["body"]["controlVideoStreaming"]["controlInfo"];
+    // One request, or a list of them.
+    let list = match info {
+        serde_json::Value::Array(a) => a.clone(),
+        serde_json::Value::Object(_) => vec![info.clone()],
+        _ => Vec::new(),
+    };
+    list.iter()
+        .filter_map(|c| {
+            Some((
+                c["sourceId"].as_i64()?,
+                c["fmtParams"].as_str().unwrap_or_default().to_string(),
+            ))
+        })
+        .collect()
+}
+
 /// The frame key a slot's decoded video is published under.
 pub fn frame_key(mid: &str) -> String {
     format!("slot-{mid}")
@@ -193,9 +220,17 @@ impl Drop for MeetingVideo {
     }
 }
 
-/// What to do with the processor's layer requests for our camera (its
-/// `vdclc` strings).
-pub type LayerHandler = Box<dyn Fn(&[String]) + Send + Sync>;
+/// What to do with the processor's layer requests for one of our streams
+/// (its stream id, and its `vdclc` strings).
+pub type LayerHandler = Box<dyn Fn(i64, &[String]) + Send + Sync>;
+
+/// The processor's stream id (`x-source-streamid`) for one of our lines.
+pub fn stream_id(sdp: &str, mid: &str) -> Option<i64> {
+    sections(sdp)
+        .into_iter()
+        .find(|(m, s)| m == mid && !rejected(s))
+        .and_then(|(_, s)| attr(s, "a=x-source-streamid:")?.trim().parse().ok())
+}
 
 impl MeetingVideo {
     /// Run the media control plane on an open data channel.
@@ -428,7 +463,7 @@ async fn run(
                             }
                             Incoming::SendLayers { stream, layers } => {
                                 tracing::debug!(stream, ?layers, "MCP send layers");
-                                on_layers(&layers);
+                                on_layers(stream, &layers);
                             }
                             Incoming::Bandwidth { total, video } => {
                                 tracing::debug!(total, ?video, "MCP bandwidth");
@@ -534,7 +569,7 @@ m=x-data 3478 RTP/SAVP 127 126\r\na=x-source-streamid:639\r\na=mid:12\r\n";
             None,
             super::super::datachannel::DataSender::for_test(tx),
             erx,
-            Box::new(|_| {}),
+            Box::new(|_, _| {}),
         );
         let w = |ids: &[i64]| ids.iter().map(|i| (*i, 450)).collect::<Vec<_>>();
         let a = v.show(&w(&[2244, 2031]));
@@ -601,5 +636,23 @@ m=x-data 3478 RTP/SAVP 127 126\r\na=x-source-streamid:639\r\na=mid:12\r\n";
                 pt: 107
             })
         );
+    }
+
+    #[test]
+    fn video_control_events_ask_for_our_streams() {
+        // As the processor sent it when a guest started watching our screen.
+        let e = r#"{"body":{"controlVideoStreaming":{"controlInfo":[{"control":0,"fmtParams":"max-fs=8160;max-fps=1500;profile-level-id=42C02A;packetization-mode=1;max-br=1003;max-mbps=135000","sourceId":20977}],"globalTimeStamp":"11/08/2026 10:09:49","sequenceNumber":1},"debugContent":null},"callAgentPath":"call/controlVideoStreaming/"}"#;
+        let r = video_control_requests(e);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].0, 20977);
+        #[cfg(feature = "video")]
+        let (limits, _) =
+            crate::calling::webrtc_video::parse_layer(&format!("KeyFrame=1;{}", r[0].1)).unwrap();
+        #[cfg(feature = "video")]
+        assert_eq!(
+            (limits.max_fs, limits.max_kbps, limits.max_fps),
+            (8160, 1003, 15)
+        );
+        assert!(video_control_requests(r#"{"callAgentPath":"call/end/"}"#).is_empty());
     }
 }

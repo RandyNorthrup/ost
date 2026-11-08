@@ -22,7 +22,7 @@ chrono = "0.4.45"
 futures = "0.3"
 zbus = "5.19"
 # The tray icon and menu (StatusNotifierItem + DBus menu).
-ksni = "0.3"
+ksni = { version = "0.3", default-features = false, features = ["async-io"] }
 png = "0.17"
 
 [build-dependencies]

@@ -1116,6 +1116,12 @@ impl MediaCall<'_> {
         either!(self, c => c.can_reoffer())
     }
 
+    /// A meeting's (or group call's) camera and screen go on and off by
+    /// media descriptions, as Teams does, not re-offers.
+    fn describes_media(&self) -> bool {
+        matches!(self, MediaCall::Placed(c) if c.describes_media())
+    }
+
     fn can_share(&self) -> bool {
         either!(self, c => c.can_share())
     }
@@ -1157,9 +1163,19 @@ impl MediaCall<'_> {
     }
 }
 
+/// Tell a meeting what our camera and sharing lines now do, as Teams
+/// does when either changes.
+async fn describe_media(call: Option<&OutgoingCall>) -> anyhow::Result<()> {
+    match call {
+        Some(o) => o.describe_media(o.camera_on(), o.is_sharing()).await,
+        None => Ok(()),
+    }
+}
+
 /// Ask the desktop what to share (its picker), then offer it to the call.
-/// Sending starts when Teams answers ([`reoffer_reply`]).
-async fn offer_screen() -> anyhow::Result<()> {
+/// Sending starts when Teams answers ([`reoffer_reply`]); in a meeting it
+/// starts at once and the meeting is told (returns true).
+async fn offer_screen() -> anyhow::Result<bool> {
     // Only open the desktop's picker when the call can take a screen.
     {
         let mut slot = call_slot().lock().await;
@@ -1169,12 +1185,20 @@ async fn offer_screen() -> anyhow::Result<()> {
     let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::start().await?;
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
-    MediaCall::of(slot)
-        .context("The call has ended")?
-        .offer_media(Reoffer::Share(true))
-        .await?;
+    let mut call = MediaCall::of(slot).context("The call has ended")?;
+    if call.describes_media() {
+        call.start_share(capture, frames)?;
+        if let Err(e) = describe_media(slot.outgoing.as_ref()).await {
+            if let Some(mut call) = MediaCall::of(slot) {
+                call.stop_share();
+            }
+            return Err(e);
+        }
+        return Ok(true);
+    }
+    call.offer_media(Reoffer::Share(true)).await?;
     slot.share_pending = Some((capture, frames));
-    Ok(())
+    Ok(false)
 }
 
 /// Stop sending our screen and tell the call.
@@ -1184,6 +1208,9 @@ async fn stop_screen() -> anyhow::Result<()> {
     slot.share_pending = None;
     let mut call = MediaCall::of(slot).context("The call has ended")?;
     call.stop_share();
+    if call.describes_media() {
+        return describe_media(slot.outgoing.as_ref()).await;
+    }
     call.offer_media(Reoffer::Share(false)).await
 }
 
@@ -1235,12 +1262,6 @@ async fn reoffer_reply(
     };
     // A meeting is told what our camera and sharing lines now do, as Teams
     // does, so its roster shows them and others can ask for them.
-    if result.is_ok()
-        && let Some(o) = slot.outgoing.as_ref()
-        && let Err(e) = o.describe_media(o.camera_on(), o.is_sharing()).await
-    {
-        tracing::warn!("media descriptions: {}", short_error(&e));
-    }
     drop(guard);
     match result {
         Ok((camera, sharing)) => {
@@ -1769,6 +1790,18 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |this| {
                 this.meeting_reaction(QString::from(mri.as_str()), QString::from(name.as_str()))
             });
+        }
+        return;
+    }
+    // The media processor asks for a stream we send (someone started
+    // watching our screen): its limits, and a keyframe.
+    let requests = teams_cli::calling::meeting_media::video_control_requests(json);
+    if !requests.is_empty() {
+        if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
+            for (source, params) in &requests {
+                tracing::info!(source, params, "video control request");
+                call.control_video(*source, params);
+            }
         }
         return;
     }
@@ -3121,7 +3154,22 @@ impl qobject::Backend {
             // is on: turning it on is offered first (it starts once
             // answered, in reoffer_reply); turning it off stops it, then
             // tells the call.
-            let result = if call.can_reoffer() {
+            let result = if call.describes_media() {
+                // A meeting: the camera starts (or stops), then the
+                // meeting is told.
+                match either!(&mut call, c => c.set_camera(on, device)) {
+                    Ok(()) => match describe_media(slot.outgoing.as_ref()).await {
+                        Ok(()) => Ok(Some(on)),
+                        Err(e) => {
+                            if on && let Some(mut call) = MediaCall::of(slot) {
+                                let _ = either!(&mut call, c => c.set_camera(false, None));
+                            }
+                            Err(e)
+                        }
+                    },
+                    Err(e) => Err(e),
+                }
+            } else if call.can_reoffer() {
                 if on {
                     call.offer_media(Reoffer::Camera(true)).await.map(|()| None)
                 } else {
@@ -3199,9 +3247,13 @@ impl qobject::Backend {
             let result = if on {
                 offer_screen().await
             } else {
-                stop_screen().await
+                stop_screen().await.map(|()| false)
             };
-            if let Err(e) = result {
+            if let Ok(true) = result {
+                // Sharing in a meeting: it started at once.
+                let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(true));
+                spawn_share_watch(qt.clone());
+            } else if let Err(e) = result {
                 tracing::warn!("share: {}", short_error(&e));
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_status_text(QString::from(

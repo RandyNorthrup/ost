@@ -484,7 +484,14 @@ impl VideoSender {
             .name("ost-video-tx".into())
             .spawn(move || {
                 let _camera = camera;
-                send_loop(frames, out, pt, ssrc, &stop2, &key2, CAMERA, control);
+                send_loop(
+                    frames,
+                    RtpOut { tx: out, pt, ssrc },
+                    &stop2,
+                    &key2,
+                    CAMERA,
+                    control,
+                );
                 super::frames::clear("self");
             })?;
         Ok(Self { stop, keyframe })
@@ -498,6 +505,7 @@ impl VideoSender {
         ssrc: u32,
         capture: super::screencast::ScreenCapture,
         frames: mpsc::Receiver<super::camera::YuvFrame>,
+        control: Option<Arc<SendControl>>,
     ) -> anyhow::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let keyframe = Arc::new(AtomicBool::new(true));
@@ -506,7 +514,14 @@ impl VideoSender {
             .name("ost-share-tx".into())
             .spawn(move || {
                 let _capture = capture;
-                send_loop(frames, out, pt, ssrc, &stop2, &key2, SCREEN, None);
+                send_loop(
+                    frames,
+                    RtpOut { tx: out, pt, ssrc },
+                    &stop2,
+                    &key2,
+                    SCREEN,
+                    control,
+                );
                 // The capture ended (or we were stopped): say so.
                 stop2.store(true, Ordering::Relaxed);
             })?;
@@ -527,11 +542,16 @@ impl Drop for VideoSender {
     }
 }
 
-fn send_loop(
-    frames: mpsc::Receiver<super::camera::YuvFrame>,
-    out: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+/// Where a sender's RTP goes: the channel, its payload type and SSRC.
+struct RtpOut {
+    tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     pt: u8,
     ssrc: u32,
+}
+
+fn send_loop(
+    frames: mpsc::Receiver<super::camera::YuvFrame>,
+    out: RtpOut,
     stop: &AtomicBool,
     keyframe: &AtomicBool,
     cfg: SendConfig,
@@ -542,6 +562,7 @@ fn send_loop(
     let mut last: Option<super::camera::YuvFrame> = None;
     let mut last_sent = std::time::Instant::now();
     let started = std::time::Instant::now();
+    let RtpOut { tx: out, pt, ssrc } = out;
     let mut seq: u16 = (ssrc >> 7) as u16;
     let mut sent = 0u64;
     let mut last_frame: Option<std::time::Instant> = None;

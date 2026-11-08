@@ -100,6 +100,31 @@ pub async fn chat_meeting(client: &TeamsClient, thread: &str) -> Result<Option<T
     Ok(v.get("properties").and_then(thread_meeting))
 }
 
+/// The call going on in a chat, from its thread's liveness entry
+/// (`GET /v1/threads/{id}`): Teams joins it by its id.
+pub async fn thread_live_call(client: &TeamsClient, thread: &str) -> Result<Option<LiveCall>> {
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        thread
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Thread reply")?;
+    let properties: std::collections::HashMap<String, serde_json::Value> = v
+        .get("properties")
+        .and_then(|p| serde_json::from_value(p.clone()).ok())
+        .unwrap_or_default();
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Ok(live_call(&properties, now_secs))
+}
+
 /// A call going on in a chat, from the thread's liveness entry
 /// (`awareness_conversationLiveState:<message id>`, a JSON string), as
 /// Teams shows it in the chat list and the chat header.

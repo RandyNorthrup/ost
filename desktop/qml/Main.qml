@@ -1151,6 +1151,10 @@ Window {
             } else if (step === 8 && Qt.application.arguments.indexOf("--join-camera") >= 0) {
                 // --join-camera: turn the camera on in the meeting.
                 backend.toggleCamera()
+            } else if (step === 16 && Qt.application.arguments.indexOf("--join-camera-off") >= 0) {
+                // --join-camera-off: and off again.
+                console.warn("JOIN camera off")
+                backend.toggleCamera()
             } else if (step === 7 && Qt.application.arguments.indexOf("--join-admit") >= 0) {
                 // --join-admit: admit the first person waiting in the lobby.
                 const lobby = JSON.parse(backend.callLobbyJson || "[]")

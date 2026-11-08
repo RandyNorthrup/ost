@@ -131,7 +131,7 @@ The MP re-offers after lobby admission (`call/mediaRenegotiation`); the client a
 
 ## OST's implementation (2026-11-07, verified live)
 
-- **Offer.** OST offers audio, the camera line (mid 1), nine `main-video` recvonly receive slots (mids 2–10, `x-ssrc-range:1-1`), sharing (mid 11, recvonly) and the `x-data` SCTP line (mid 12), in Teams' RTP/SAVP dialect.
+- **Offer.** OST offers audio, the camera line (mid 1, sendrecv), nine `main-video` recvonly receive slots (mids 2–10, `x-ssrc-range:1-1`), sharing (mid 11, sendrecv) and the `x-data` SCTP line (mid 12), in Teams' RTP/SAVP dialect.
 - **No `mediaDescriptions` or `sendSideBWSeed`.** OST's SDP states every direction as meant. With either field the processor ends the join with 410, subCode 300400.
 - **SCTP.** The processor opens an association from its side too (both ends send INIT), so OST accepts the peer's association as well as its own and uses the first that comes up. `main-channel` is stream 0, opened with DCEP. The MCP id in `ack` equals the answer's data-line `x-source-streamid`.
 - **Rosters.** The first roster update after joining names people without their streams. OST seeds the roster from the join response's `roster`, and later updates that carry no endpoints keep the stream fields.
@@ -152,6 +152,18 @@ Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framin
   - Name tag: 24 tall, rgba(0,0,0,.5), radius 4, 6 px padding, 14 px white, 8 px from the bottom-left.
   - Speaking ("voice-level-stream-outline"): 4 px #5B5FC7, radius 6, with a 0.67 px #F5F5F5 line 4 px in (radius 3).
   - Avatar: 124 px at a 249 px tile height.
+
+## Sending: camera and screen (2026-11-08, verified live)
+
+- **Lines.** Teams offers its camera and sharing lines `sendrecv` from the start. It switches them with `UpdateMediaDescriptions` on the acceptance's `updateMediaDescriptions` link, never with a re-offer. A line described as sending must be `sendrecv` in the SDP; a `sendonly` share line from a re-offer gets 400, operationFailure 1047 "Invalid MediaDescriptions", and the processor ends the call (410 InvalidUpdatedMediaDescriptions).
+- **Descriptions** (captured from Teams web): every video line Teams sends on, each time.
+  - Camera on: `{"mid":<camera>,"direction":"sendrecv","label":"main-video"}`; off: `{"mid":<camera>,"direction":"recvonly"}`.
+  - Sharing: `{"mid":<share>,"direction":"sendonly","label":"applicationsharing-video"}` with `"negotiationTag":"<callId>;ss_<n>"` beside `descriptions`; stopped: `{"mid":<share>,"direction":"recvonly"}`.
+  - `n` counts the shares in the call (1, 2, …). `callId` is the meeting call's id, the same for everyone in it.
+- **The call's id.** Joining a call that's going on, Teams uses that call's id as its `x-microsoft-skype-chain-id`. The id is the `conversationId` of the chat thread's `awareness_conversationLiveState:*` entry. A new call gets a new id. The processor's events carry it as `correlationId`.
+- **Watching our screen.** When someone starts watching, the processor sends `call/controlVideoStreaming/` (not MCP): `{"controlVideoStreaming":{"controlInfo":[{"control":0,"fmtParams":"max-fs=8160;max-fps=1500;profile-level-id=42C02A;packetization-mode=1;max-br=1003;max-mbps=135000","sourceId":<our share stream>}],…}}`. Teams' media stack applies it; OST caps the encoder to it and sends a keyframe. The camera's requests come as MCP `vdclc`.
+- **Payload types.** The processor's answer writes `profile-level-id=42C01E` (Constrained Baseline as `42C0…`) and payload type 107 on both lines. OST sends with that type; it receives the share with its own offered 102.
+- **Verified.** A guest on Teams web saw OST's camera (on, then off) and OST's shared window (shown, then back to the gallery on stop).
 
 ## Still to establish
 
