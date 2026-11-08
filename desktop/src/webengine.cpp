@@ -3,6 +3,7 @@
 // it, so this one call is plain C++.
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #include <QtCore/QCoreApplication>
+#include <QtWidgets/QApplication>
 #include <QtGui/QKeyEvent>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
@@ -10,6 +11,28 @@
 extern "C" void ost_webengine_initialize()
 {
     QtWebEngineQuick::initialize();
+}
+
+// The application object. A QApplication, not just a QGuiApplication:
+// Qt Labs Platform's tray menu falls back to a widget menu where the
+// platform has no native one (Plasma), and that needs Qt Widgets.
+// `phase(data, 0)` runs once the application exists, `phase(data, 1)`
+// after its event loop, while it still exists. Returns exec()'s exit code.
+extern "C" int ost_application_run(const char *name, const char *version,
+                                   const char *desktop_file,
+                                   void (*phase)(void *, int), void *data)
+{
+    static int argc = 1;
+    static char arg0[] = "ost-desktop";
+    static char *argv[] = {arg0, nullptr};
+    QApplication app(argc, argv);
+    QGuiApplication::setDesktopFileName(QString::fromUtf8(desktop_file));
+    QCoreApplication::setApplicationName(QString::fromUtf8(name));
+    QCoreApplication::setApplicationVersion(QString::fromUtf8(version));
+    phase(data, 0);
+    const int code = app.exec();
+    phase(data, 1);
+    return code;
 }
 
 // Type text into the window of `item` (a KeyTyper) as real key presses:

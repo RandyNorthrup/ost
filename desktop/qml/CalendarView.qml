@@ -593,6 +593,7 @@ Item {
             Text { text: newEvent.editingId ? "Edit meeting" : "New meeting"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
             component Field: Rectangle {
                 property alias input: fi
+                property alias text: fi.text
                 property string hint
                 width: 380; height: 32; radius: theme.radius
                 color: theme.input; border.color: fi.activeFocus ? theme.brand : theme.stroke
@@ -603,8 +604,8 @@ Item {
                     Text { visible: !fi.text; text: parent.parent.hint; color: theme.textTertiary; font: fi.font }
                 }
             }
-            Field { id: titleField; hint: "Add title"; property alias text: titleField.input.text }
-            Field { id: whoField; visible: !newEvent.editingId; hint: "Invite people (e-mail addresses, comma separated)"; property alias text: whoField.input.text }
+            Field { id: titleField; hint: "Add title" }
+            Field { id: whoField; visible: !newEvent.editingId; hint: "Invite people (e-mail addresses, comma separated)" }
             // The day, and the start in half-hour steps.
             Row {
                 spacing: 8

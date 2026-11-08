@@ -6,12 +6,41 @@ mod lock_watch;
 mod rich_text;
 mod video_item;
 
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
+use cxx_qt_lib::{QQmlApplicationEngine, QUrl};
 use tracing_subscriber::EnvFilter;
 
 unsafe extern "C" {
     /// QtWebEngineQuick::initialize() (src/webengine.cpp).
     fn ost_webengine_initialize();
+    /// Make the QApplication and run its event loop, calling
+    /// `phase(data, 0)` before it and `phase(data, 1)` after it
+    /// (src/webengine.cpp).
+    fn ost_application_run(
+        name: *const std::ffi::c_char,
+        version: *const std::ffi::c_char,
+        desktop_file: *const std::ffi::c_char,
+        phase: extern "C" fn(*mut std::ffi::c_void, std::ffi::c_int),
+        data: *mut std::ffi::c_void,
+    ) -> std::ffi::c_int;
+}
+
+/// Load the main window once the application exists (phase 0), and drop
+/// the engine when the event loop has ended, before the application goes
+/// (phase 1). The engine lives in `data`, a
+/// `*mut Option<UniquePtr<QQmlApplicationEngine>>`.
+extern "C" fn main_window_phase(data: *mut std::ffi::c_void, phase: std::ffi::c_int) {
+    // SAFETY: `data` is the `&mut` main passes to ost_application_run,
+    // alive for the whole call, and only used on this thread.
+    let slot = unsafe { &mut *data.cast::<Option<cxx::UniquePtr<QQmlApplicationEngine>>>() };
+    if phase != 0 {
+        *slot = None;
+        return;
+    }
+    let mut engine = QQmlApplicationEngine::new();
+    if let Some(engine) = engine.as_mut() {
+        engine.load(&QUrl::from("qrc:/qt/qml/com/ost/desktop/qml/Main.qml"));
+    }
+    *slot = Some(engine);
 }
 
 /// OST's log file (what Help › Collect Support Files packs up):
@@ -100,22 +129,21 @@ fn main() {
     // Before the application: Teams' web apps (Whiteboard…) are embedded.
     // SAFETY: a plain Qt call with no arguments, made once, before Qt starts.
     unsafe { ost_webengine_initialize() };
-    let mut app = QGuiApplication::new();
     // Wayland compositors match windows to ost-desktop.desktop by app id,
     // which is how the window gets the OST cheese icon.
-    QGuiApplication::set_desktop_file_name(&QString::from("ost-desktop"));
-    if let Some(mut app) = app.as_mut() {
-        app.as_mut().set_application_name(&QString::from("OST"));
-        app.as_mut()
-            .set_application_version(&QString::from(env!("CARGO_PKG_VERSION")));
-    }
-    let mut engine = QQmlApplicationEngine::new();
-    if let Some(engine) = engine.as_mut() {
-        engine.load(&QUrl::from("qrc:/qt/qml/com/ost/desktop/qml/Main.qml"));
-    }
-    if let Some(app) = app.as_mut() {
-        app.exec();
-    }
+    let version = std::ffi::CString::new(env!("CARGO_PKG_VERSION")).unwrap_or_default();
+    let mut engine: Option<cxx::UniquePtr<QQmlApplicationEngine>> = None;
+    // SAFETY: the strings are NUL-terminated and outlive the call; `engine`
+    // outlives it too, and the callbacks run on this thread inside it.
+    unsafe {
+        ost_application_run(
+            c"OST".as_ptr(),
+            version.as_ptr(),
+            c"ost-desktop".as_ptr(),
+            main_window_phase,
+            (&raw mut engine).cast(),
+        )
+    };
     // Quit: later launches start afresh.
     if std::env::args().len() <= 1
         && let Some(path) = instance_socket()
