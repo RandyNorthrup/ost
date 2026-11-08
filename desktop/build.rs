@@ -64,7 +64,7 @@ fn main() {
         "qml/LobbyToast.qml",
         "qml/AdmitSuspectedDialog.qml",
         "qml/PeoplePane.qml",
-        "qml/EndMeetingDialog.qml",
+        "qml/ConfirmDialog.qml",
         "qml/AudioFlyout.qml",
         "qml/InviteDialog.qml",
     ];

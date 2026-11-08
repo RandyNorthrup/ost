@@ -376,6 +376,9 @@ pub mod qobject {
         /// End the meeting for everyone (organizers; Teams' End meeting).
         #[qinvokable]
         fn end_meeting(self: Pin<&mut Backend>);
+        /// Mute everyone else in the meeting (Teams' Mute all).
+        #[qinvokable]
+        fn mute_all(self: Pin<&mut Backend>);
 
         /// Load calendar events between two UTC instants (ISO 8601).
         #[qinvokable]
@@ -2861,6 +2864,18 @@ impl qobject::Backend {
             let result = async { CallAuth::load().await?.hang_up(call).await }.await;
             if let Err(e) = result {
                 tracing::warn!("hang up failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn mute_all(self: Pin<&mut Self>) {
+        runtime().spawn(async move {
+            let result = match call_slot().lock().await.outgoing.as_ref() {
+                Some(call) => call.mute_all().await,
+                None => return,
+            };
+            if let Err(e) = result {
+                tracing::warn!("mute all failed: {}", short_error(&e));
             }
         });
     }

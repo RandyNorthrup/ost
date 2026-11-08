@@ -16,6 +16,9 @@ Rectangle {
     /// The meeting's link to share; Teams' Share invite shows with it.
     property string inviteUrl: ""
     signal shareInvite()
+    /// Teams' Mute all on "In this meeting".
+    property bool canMuteAll: false
+    signal muteAll()
     signal closed()
     signal admit(string id, string name)
     /// A suspected guest: Teams asks first.
@@ -62,7 +65,7 @@ Rectangle {
             }
         }
         const here = people.filter(p => matches(p.name))
-        out.push({ kind: "section", key: "here", title: (meeting ? "In this meeting (" : "In this call (") + here.length + ")", action: "", level: 0 })
+        out.push({ kind: "section", key: "here", title: (meeting ? "In this meeting (" : "In this call (") + here.length + ")", action: canMuteAll ? "Mute all" : "", level: 0 })
         if (!collapsed.here) here.forEach(p => out.push({ kind: "person", p: p, level: 1 }))
         return out
     }
@@ -201,7 +204,8 @@ Rectangle {
                 HoverHandler { id: actionHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: {
-                        if (entry.key === "lobby") root.admitAll()
+                        if (entry.key === "here") root.muteAll()
+                        else if (entry.key === "lobby") root.admitAll()
                         else if (entry.key === "waiting") root.admitEach(entry.list.map(p => ({ id: p.id, name: p.name })))
                         else if (entry.key === "threats") root.denyEach(entry.list.map(p => ({ id: p.id, name: p.name })))
                     }

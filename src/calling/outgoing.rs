@@ -57,6 +57,8 @@ pub struct OutgoingCall {
     /// The meeting's join link as Teams shares it (`meetingDetails`
     /// shortJoinUrl, else joinUrl): the People pane's Share invite.
     invite_url: Option<String>,
+    /// The conversation's mute link (Mute all).
+    mute_link: Option<String>,
 }
 
 /// Someone waiting in a meeting's lobby.
@@ -498,6 +500,18 @@ impl OutgoingCall {
         }
     }
 
+    /// Mute everyone else (Teams' Mute all: the conversation's mute link
+    /// with scope "all" and no one named).
+    pub async fn mute_all(&self) -> Result<()> {
+        let link = self
+            .mute_link
+            .clone()
+            .context("This meeting can't mute others")?;
+        let body = mute_all_body(&self.me.0);
+        cc_post(&self.http, &self.skype_token, &link, &body, "Mute all").await?;
+        Ok(())
+    }
+
     /// The meeting's link to share (Teams' Share invite).
     pub fn invite_url(&self) -> Option<&str> {
         self.invite_url.as_deref()
@@ -650,6 +664,17 @@ fn lobby_people(reply: &serde_json::Value) -> Vec<LobbyPerson> {
         serde_json::Value::Object(m) => m.iter().map(|(id, p)| person(id, p)).collect(),
         _ => Vec::new(),
     }
+}
+
+/// Teams' MuteAllSync body: scope "all" (everyone but you) with an empty
+/// list, audio only (Teams' muteAllParticipants passes MuteScope.All, []).
+fn mute_all_body(me: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "from": me,
+        "scope": "all",
+        "muteParticipants": [],
+        "mediaTypes": ["audio"],
+    })
 }
 
 /// Teams' body for deleting the conversation controller (End meeting).
@@ -1052,6 +1077,7 @@ async fn start(
     let remove_link = conversation_link(&created.response_body, "removeParticipant");
     let controller = controller_link(&created.response_body);
     let invite_url = invite_url(&created.response_body);
+    let mute_link = conversation_link(&created.response_body, "mute");
     tracing::info!(has_invite = invite_url.is_some(), "meeting link");
     tracing::info!(
         has_controller = controller.is_some(),
@@ -1168,6 +1194,7 @@ async fn start(
         properties_link,
         controller,
         invite_url,
+        mute_link,
     })
 }
 
@@ -1191,6 +1218,14 @@ mod tests {
         assert!(!people[1].suspected);
         // Only anonymous guests are screened.
         assert!(!people[2].suspected);
+    }
+
+    #[test]
+    fn mute_all_names_everyone_else() {
+        let body = mute_all_body(&serde_json::json!({ "id": "8:orgid:me" }));
+        assert_eq!(body["scope"], "all");
+        assert_eq!(body["muteParticipants"].as_array().map(Vec::len), Some(0));
+        assert_eq!(body["mediaTypes"][0], "audio");
     }
 
     #[test]

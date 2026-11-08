@@ -38,6 +38,12 @@ Window {
     signal admitAllLobby()
     /// Organizers: Teams' End meeting (after its confirmation).
     signal endMeeting()
+    /// Teams' Mute all (after its confirmation).
+    signal muteAll()
+    // Teams offers Mute all in meetings to organizers and presenters
+    // while someone else is connected and not muted by the meeting.
+    readonly property bool canMuteAll: meeting && ["organizer", "presenter"].indexOf(((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase()) >= 0
+        && others.some(p => p.active !== false && !p.server_muted)
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
     readonly property var others: roster.filter(p => p.id !== selfId)
@@ -550,6 +556,8 @@ Window {
             onAdmitEach: list => list.forEach(p => win.admitLobby(p.id, p.name, false))
             onDenyEach: list => list.forEach(p => win.denyLobby(p.id, p.name))
             inviteUrl: win.inviteUrl
+            canMuteAll: win.canMuteAll
+            onMuteAll: muteAllAsk.open()
             onShareInvite: inviteDialog.open()
         }
     }
@@ -612,7 +620,15 @@ Window {
             }
         }
     }
-    EndMeetingDialog { id: endAsk; onConfirmed: win.endMeeting() }
+    ConfirmDialog { id: endAsk; onConfirmed: win.endMeeting() }
+    // Teams' Mute all confirmation ("All" scope).
+    ConfirmDialog {
+        id: muteAllAsk
+        title: "Mute everyone?"
+        body: "This will mute everyone in the meeting but you."
+        confirmText: "Mute"
+        onConfirmed: win.muteAll()
+    }
     InviteDialog { id: inviteDialog; link: win.inviteUrl }
 
     // Mic ▾: Teams' audio options, right-aligned to the chevron at the

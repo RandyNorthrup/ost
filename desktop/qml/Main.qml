@@ -682,6 +682,7 @@ Window {
         onDenyLobby: (id, name) => backend.denyFromLobby(id, name)
         onAdmitAllLobby: backend.admitAllFromLobby()
         onEndMeeting: backend.endMeeting()
+        onMuteAll: backend.muteAll()
         inviteUrl: backend.callInviteUrl
         selfId: backend.userMri
         // Chat: the 1:1 chat with the person in the call, or the meeting chat.
@@ -1100,6 +1101,18 @@ Window {
                 console.warn("JOIN admitting", JSON.stringify(lobby))
                 // --join-admit-notbot: as if "This isn't a bot" was ticked.
                 if (lobby.length) backend.admitFromLobby(lobby[0].id, lobby[0].name, Qt.application.arguments.indexOf("--join-admit-notbot") >= 0)
+            } else if (step === 7 && Qt.application.arguments.indexOf("--join-mute-all") >= 0) {
+                // --join-mute-all: admit each guest waiting (Admit all leaves
+                // suspected ones), then (step 10) Mute all.
+                JSON.parse(backend.callLobbyJson || "[]").forEach(p => backend.admitFromLobby(p.id, p.name, false))
+            } else if (step === 10 && Qt.application.arguments.indexOf("--join-mute-all") >= 0) {
+                console.warn("JOIN before mute all", backend.callRosterJson, "can", callWindow.canMuteAll)
+                callWindow.side = "people"
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-muteall-before.png")))
+                backend.muteAll()
+            } else if (step === 11 && Qt.application.arguments.indexOf("--join-mute-all") >= 0) {
+                console.warn("JOIN after mute all", backend.callRosterJson, "can", callWindow.canMuteAll)
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-muteall-after.png")))
             } else if (step === 7 && Qt.application.arguments.indexOf("--join-deny") >= 0) {
                 // --join-deny: deny the last person waiting in the lobby.
                 const lobby = JSON.parse(backend.callLobbyJson || "[]")
