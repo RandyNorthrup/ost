@@ -83,6 +83,8 @@ Window {
     signal admitAllLobby()
     /// Organizers: Teams' End meeting (after its confirmation).
     signal endMeeting()
+    /// Teams' "Leave on all my devices".
+    signal leaveOnAllDevices()
     /// Teams' Mute all (after its confirmation).
     signal muteAll()
     /// Meeting reactions (Teams: like, heart, applause, laugh, surprised).
@@ -333,7 +335,8 @@ Window {
                 id: leaveButton
                 icon: "call-leave-filled"; label: "Leave"; strong: true
                 iconColor: "#B10E1C"
-                split: win.meeting
+                // Teams splits Leave only when its menu has more than Leave.
+                split: win.meeting && win.leaveItems.length > 1
                 chevronLabel: "More options"
                 chevronChecked: leaveMenu.visible
                 onClicked: win.leave()
@@ -908,23 +911,35 @@ Window {
         onDeny: (id, name) => win.denyLobby(id, name)
         onViewLobby: win.side = "people"
     }
-    // Leave's options (hangup-button-more-options-menu, measured): a 171.3
-    // wide surface right-aligned to the chevron, 6 below it, padding 16;
-    // 138 x 32 items, 14 px #424242, 2 apart. End meeting is the
-    // organizer's, after Teams' confirmation.
+    // Leave's options (hangup-button-more-options-menu, measured): a
+    // surface right-aligned to the chevron, 6 below it, padding 16, a 0.67
+    // edge; 32 px items 2 apart, as wide as the longest label + 20 (at
+    // least 138), 14 px #424242 at 12. Leave; "Leave on all my devices"
+    // when more than one of your devices is in the call; End meeting for
+    // the organizer, after Teams' confirmation.
+    readonly property int myDevices: { const me = roster.find(p => p.id === selfId); return me ? (me.devices || 0) : 0 }
+    readonly property var leaveItems: [{ k: "leave", t: "Leave" }]
+        .concat(myDevices > 1 ? [{ k: "all", t: "Leave on all my devices" }] : [])
+        .concat(organizer ? [{ k: "end", t: "End meeting" }] : [])
     Popup {
         id: leaveMenu
         parent: leaveButton
         x: leaveButton.width - width; y: 60
-        width: 171.3; padding: 16
+        width: leaveItemW + 33.3; padding: 16
+        readonly property real leaveItemW: Math.max(138, leaveMetrics.width + 20)
+        TextMetrics {
+            id: leaveMetrics
+            font.family: theme.font; font.pixelSize: 14
+            text: win.leaveItems.reduce((a, b) => b.t.length > a.length ? b.t : a, "")
+        }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         contentItem: Column {
             spacing: 2
             Repeater {
-                model: win.organizer ? [{ k: "leave", t: "Leave" }, { k: "end", t: "End meeting" }] : [{ k: "leave", t: "Leave" }]
+                model: win.leaveItems
                 Rectangle {
                     required property var modelData
-                    width: 138; height: 32; radius: 4
+                    width: leaveMenu.leaveItemW; height: 32; radius: 4
                     color: lmHover.hovered ? theme.menuHover : theme.surface
                     Text {
                         // Teams: 6 px padding, then the label's own 4 + 2 inset.
@@ -938,6 +953,7 @@ Window {
                         onTapped: {
                             leaveMenu.close()
                             if (parent.modelData.k === "end") endAsk.open()
+                            else if (parent.modelData.k === "all") win.leaveOnAllDevices()
                             else win.leave()
                         }
                     }

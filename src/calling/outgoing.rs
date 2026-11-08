@@ -366,6 +366,36 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// Teams' "Leave on all my devices": remove our other devices from the
+    /// call (removeParticipant, scope "all" with this endpoint), then leave.
+    pub async fn remove_my_other_devices(&self) -> Result<()> {
+        let link = self
+            .remove_link
+            .clone()
+            .context("This call can't remove devices")?;
+        let cb = |p: &str| signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, p);
+        let body = serde_json::json!({
+            "participants": {
+                "from": self.me.0,
+                "scope": "all",
+                "toEndpoints": [{ "id": self.me.0["id"], "endpointId": self.me.0["endpointId"] }],
+            },
+            "links": {
+                "removeParticipantSuccess": cb("conversation/removeParticipantSuccess/"),
+                "removeParticipantFailure": cb("conversation/removeParticipantFailure/"),
+            },
+        });
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "Remove my other devices",
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Admit everyone waiting (Teams' admitAll link).
     pub async fn admit_all(&self) -> Result<()> {
         let link = self

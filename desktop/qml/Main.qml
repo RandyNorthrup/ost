@@ -693,6 +693,7 @@ Window {
         onDenyLobby: (id, name) => backend.denyFromLobby(id, name)
         onAdmitAllLobby: backend.admitAllFromLobby()
         onEndMeeting: backend.endMeeting()
+        onLeaveOnAllDevices: backend.leaveOnAllDevices()
         onMuteAll: backend.muteAll()
         onSendReaction: name => backend.sendReaction(name)
         inviteUrl: backend.callInviteUrl
@@ -1181,6 +1182,15 @@ Window {
             } else if (step === 8 && Qt.application.arguments.indexOf("--join-camera") >= 0) {
                 // --join-camera: turn the camera on in the meeting.
                 backend.toggleCamera()
+            } else if (step === 10 && Qt.application.arguments.indexOf("--join-leave-all") >= 0) {
+                // --join-leave-all: open Leave's menu, capture it, then
+                // (step 12) Leave on all my devices.
+                callWindow.leaveMenuForTest()
+            } else if (step === 11 && Qt.application.arguments.indexOf("--join-leave-all") >= 0) {
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-leavemenu.png")))
+                console.warn("JOIN leave items", JSON.stringify(callWindow.leaveItems))
+            } else if (step === 12 && Qt.application.arguments.indexOf("--join-leave-all") >= 0) {
+                backend.leaveOnAllDevices()
             } else if ((step === 10 || step === 16) && Qt.application.arguments.indexOf("--join-mute-cycle") >= 0) {
                 // --join-mute-cycle: unmute, then (step 16) mute again.
                 console.warn("JOIN toggle mute, muted", backend.callMuted)

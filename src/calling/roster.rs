@@ -17,6 +17,9 @@ pub struct Participant {
     pub active: bool,
     /// Muted by the meeting (server mute) on every endpoint.
     pub server_muted: bool,
+    /// How many of their devices are in the call (endpoints with a call):
+    /// with more than one of yours, Teams offers "Leave on all my devices".
+    pub devices: usize,
     /// Muted, as Teams shows it: no endpoint has an audio stream that is
     /// neither server-muted nor muted by its owner (`endpointState.state.
     /// isMuted`).
@@ -150,6 +153,12 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                             .iter()
                             .all(|m| m.get("serverMuted").and_then(|b| b.as_bool()) == Some(true)),
                     muted,
+                    devices: p
+                        .get("endpoints")
+                        .and_then(|e| e.as_object())
+                        .map_or(0, |e| {
+                            e.values().filter(|ep| ep.get("call").is_some()).count()
+                        }),
                     hand: p
                         .get("publishedStates")
                         .and_then(|s| s.as_array())
@@ -276,6 +285,7 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
                     p.audio_source = x.audio_source;
                     p.server_muted = x.server_muted;
                     p.muted = x.muted;
+                    p.devices = x.devices;
                     p.on_hold = x.on_hold;
                     p.streams_known = x.streams_known;
                 }

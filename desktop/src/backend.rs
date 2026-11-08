@@ -400,6 +400,9 @@ pub mod qobject {
         /// End the current call.
         #[qinvokable]
         fn hang_up(self: Pin<&mut Backend>);
+        /// Teams' "Leave on all my devices".
+        #[qinvokable]
+        fn leave_on_all_devices(self: Pin<&mut Backend>);
         /// End the meeting for everyone (organizers; Teams' End meeting).
         #[qinvokable]
         fn end_meeting(self: Pin<&mut Backend>);
@@ -3180,6 +3183,19 @@ impl qobject::Backend {
                     });
                 }
             }
+        });
+    }
+
+    pub fn leave_on_all_devices(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            if let Some(call) = call_slot().lock().await.outgoing.as_ref()
+                && let Err(e) = call.remove_my_other_devices().await
+            {
+                tracing::warn!("leave on all devices: {}", short_error(&e));
+            }
+            // Then leave, as Teams does.
+            let _ = qt.queue(|this| this.hang_up());
         });
     }
 
