@@ -24,6 +24,14 @@ Rectangle {
     signal shareInvite()
     /// Teams' Mute all on "In this meeting".
     property bool canMuteAll: false
+    /// You can manage others (organizer): the participant ··· menu offers
+    /// Mute, Spotlight, roles and Remove; everyone can Pin for themselves.
+    property bool canManage: false
+    /// Who you pinned (Pin for me), if anyone.
+    property string pinnedId: ""
+    /// A participant ··· menu choice: "mute", "pin", "unpin", "spotlight",
+    /// "unspotlight", "attendee", "presenter" or "remove".
+    signal participantAction(string action, string id, string name, string stateId)
     signal muteAll()
     signal closed()
     signal admit(string id, string name)
@@ -309,14 +317,105 @@ Rectangle {
                 anchors.right: parent.right; anchors.rightMargin: 64; anchors.verticalCenter: parent.verticalCenter
                 text: "\u270B"; font.pixelSize: 16
             }
+            // Pinned (Pin for me): Teams' 20 px pin, 8 before the mic.
             FluentIcon {
-                visible: !p.chatOnly
+                visible: !p.chatOnly && !p.you && p.id === root.pinnedId
+                x: parent.width - 68; anchors.verticalCenter: parent.verticalCenter
+                name: "pin-20"; size: 20; color: theme.textStrong
+            }
+            HoverHandler { id: rowHover }
+            FluentIcon {
+                visible: !p.chatOnly && !(moreButton.visible)
                 x: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
                 name: p.mutedNow ? "mic-off-20" : "roster-mic-20"; size: 20
                 color: theme.text
             }
+            // Hovering someone else: Teams' ··· (24 x 23.33) in the mic's
+            // place opens their menu.
+            Rectangle {
+                id: moreButton
+                visible: !p.chatOnly && !p.you && root.meeting && (rowHover.hovered || participantMenu.forId === (p.id || ""))
+                x: parent.width - 42; anchors.verticalCenter: parent.verticalCenter
+                width: 24; height: 23.33; radius: 4
+                color: moreHover.hovered ? theme.hover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: participantMenu.forId === (p.id || "") ? theme.brand : theme.textStrong }
+                HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: participantMenu.openFor(moreButton, p) }
+                Accessible.role: Accessible.Button
+                Accessible.name: "More options"
+            }
             Accessible.role: Accessible.ListItem
             Accessible.name: (p.name || "") + (p.hand ? ", hand raised" : "") + (p.mutedNow ? ", muted" : "")
+        }
+    }
+
+    // A participant's ··· menu (measured on winpc): 187.21 wide, padding
+    // 4 inside a 0.67 edge, radius 4, flush under the ··· and right-aligned
+    // to it; 177.88 x 32 items 2 apart, the 20 px glyph at 6 and the label
+    // (14 px #424242) at 30; a separator before Remove; Mute is disabled
+    // (#BDBDBD) for someone already muted.
+    Popup {
+        id: participantMenu
+        property var who: ({})
+        property string forId: ""
+        width: 187.21; padding: 4.67
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        onClosed: forId = ""
+        function openFor(button, person) {
+            who = person; forId = person.id || ""
+            const pt = button.mapToItem(root, button.width - width, button.height)
+            x = pt.x; y = pt.y
+            open()
+        }
+        readonly property var items: {
+            const w = who
+            const out = []
+            if (root.canManage) out.push({ k: "mute", t: "Mute participant", icon: "mic-off-20", off: !!w.mutedNow })
+            out.push(w.id === root.pinnedId ? { k: "unpin", t: "Unpin for me", icon: "pin-off-20" } : { k: "pin", t: "Pin for me", icon: "pin-20" })
+            if (root.canManage) {
+                out.push(w.spotlight ? { k: "unspotlight", t: "Stop spotlighting", icon: "spotlight-20" } : { k: "spotlight", t: "Spotlight for everyone", icon: "spotlight-20" })
+                if ((w.role || "").toLowerCase() !== "organizer")
+                    out.push((w.role || "").toLowerCase() === "attendee"
+                        ? { k: "presenter", t: "Make a presenter", icon: "presenter-off-20" }
+                        : { k: "attendee", t: "Make an attendee", icon: "presenter-off-20" })
+                out.push({ sep: true })
+                out.push({ k: "remove", t: "Remove from meeting", icon: "person-remove-20" })
+            }
+            return out
+        }
+        contentItem: Column {
+            spacing: 2
+            Repeater {
+                model: participantMenu.items
+                Item {
+                    required property var modelData
+                    width: 177.88; height: modelData.sep ? 8.67 : 32
+                    Rectangle { visible: !!parent.modelData.sep; y: 4; width: parent.width; height: 0.67; color: theme.divider }
+                    Rectangle {
+                        visible: !parent.modelData.sep
+                        anchors.fill: parent; radius: 4
+                        color: pmHover.hovered && !parent.modelData.off ? theme.menuHover : "transparent"
+                        FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: parent.parent.modelData.icon || ""; size: 20; color: parent.parent.modelData.off ? theme.disabled : theme.textStrong }
+                        Text {
+                            x: 30; anchors.verticalCenter: parent.verticalCenter
+                            text: parent.parent.modelData.t || ""
+                            font.family: theme.font; font.pixelSize: 14
+                            color: parent.parent.modelData.off ? theme.disabled : pmHover.hovered ? theme.text : theme.textStrong
+                        }
+                        HoverHandler { id: pmHover; cursorShape: parent.parent.modelData.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                        TapHandler {
+                            enabled: !parent.parent.modelData.sep && !parent.parent.modelData.off
+                            onTapped: {
+                                const w = participantMenu.who
+                                participantMenu.close()
+                                root.participantAction(parent.parent.modelData.k, w.id || "", w.name || "", w.spotlight || "")
+                            }
+                        }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: parent.parent.modelData.t || ""
+                    }
+                }
+            }
         }
     }
 
@@ -338,5 +437,7 @@ Rectangle {
     }
 
     // Test hooks.
+    function closeMenusForTest() { participantMenu.close() }
+    function participantMenuForTest(person) { participantMenu.who = person; participantMenu.forId = person.id; participantMenu.x = root.width - 4 - participantMenu.width; participantMenu.y = 220; participantMenu.open() }
     function rowsForTest() { return JSON.stringify(rows) }
 }

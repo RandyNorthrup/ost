@@ -29,6 +29,9 @@ pub struct Participant {
     pub on_hold: bool,
     /// Their raised hand's state id (Teams' "raiseHands" published state).
     pub hand: Option<String>,
+    /// Their spotlight's state id (Teams' "spotlight" published state):
+    /// spotlighted for everyone.
+    pub spotlight: Option<String>,
     /// An anonymous guest (Teams shows its Unverified trust icon).
     pub guest: bool,
     /// A guest Teams' join shield flagged as a bot (Teams keeps the app
@@ -169,6 +172,18 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                             s.get("stateId")
                                 .and_then(|i| i.as_str())
                                 .unwrap_or("raised")
+                                .to_string()
+                        }),
+                    spotlight: p
+                        .get("publishedStates")
+                        .and_then(|s| s.as_array())
+                        .into_iter()
+                        .flatten()
+                        .find(|s| s.get("stateType").and_then(|t| t.as_str()) == Some("spotlight"))
+                        .map(|s| {
+                            s.get("stateId")
+                                .and_then(|i| i.as_str())
+                                .unwrap_or("spotlight")
                                 .to_string()
                         }),
                     on_hold: !streams.is_empty()

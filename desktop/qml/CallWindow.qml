@@ -124,6 +124,13 @@ Window {
         && others.some(p => p.active !== false && !p.muted)
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
+    // Pin for me: who you pinned (yours only); Spotlight for everyone: who
+    // the meeting spotlights. Either takes the stage as in Speaker view.
+    property string pinnedId: ""
+    readonly property var spotlighted: roster.filter(p => p.active !== false && !!p.spotlight)
+    /// A participant menu action for the meeting (mute, roles, spotlight,
+    /// remove).
+    signal participantAction(string action, string id, string name, string stateId)
     readonly property var others: roster.filter(p => p.id !== selfId)
     // Teams shows Controls and Rooms to the meeting's organizer only.
     readonly property bool organizer: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase() === "organizer"
@@ -137,7 +144,7 @@ Window {
     readonly property var people: meeting
         ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
              role: (roster.find(p => p.id === selfId) || {}).role || "" }]
-          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected })))
+          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected, spotlight: p.spotlight || "" })))
         : [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
     /// Hold: you put the call on hold, or the other person did.
@@ -468,8 +475,16 @@ Window {
             id: tiles
             visible: win.meeting && win.others.length > 0 && (win.layout !== "focus" || win.presenting)
             anchors { fill: parent; margins: 2.67 }
-            readonly property bool speakerView: win.layout === "speaker"
+            // Spotlight (for everyone) and Pin for me put that person on
+            // the stage, everyone else in the side gallery.
+            readonly property var featured: {
+                const sp = win.spotlighted.length ? win.spotlighted[0] : null
+                if (sp) return sp.id === win.selfId ? win.selfEntry : sp
+                return win.others.find(p => p.id === win.pinnedId) || null
+            }
+            readonly property bool speakerView: win.layout === "speaker" || !!featured
             readonly property var speaker: {
+                if (featured) return featured
                 const pool = win.speakerMeInGallery && !win.hideMe ? win.others.concat([win.selfEntry]) : win.others
                 return pool.find(p => p.id === win.speakerId) || win.othersOrdered[0]
             }
@@ -620,6 +635,9 @@ Window {
                         required property var modelData
                         call: win
                         person: modelData
+                        // Side gallery tiles are small: Teams drops the
+                        // names from their tags.
+                        compact: true
                         width: parent.slotW; height: parent.slotH
                     }
                 }
@@ -805,6 +823,7 @@ Window {
             onClosePane: win.side = ""
         }
         PeoplePane {
+            id: peoplePane
             visible: win.side === "people"
             anchors.fill: parent
             people: win.people
@@ -821,6 +840,13 @@ Window {
             inviteUrl: win.inviteUrl
             canMuteAll: win.canMuteAll
             onMuteAll: muteAllAsk.open()
+            canManage: win.organizer
+            pinnedId: win.pinnedId
+            onParticipantAction: (action, id, name, stateId) => {
+                if (action === "pin") win.pinnedId = id
+                else if (action === "unpin") win.pinnedId = ""
+                else win.participantAction(action, id, name, stateId)
+            }
             onShareInvite: inviteDialog.open()
         }
     }
@@ -872,7 +898,7 @@ Window {
             }
         }
     }
-    function closeMenusForTest() { viewMenu.close() }
+    function closeMenusForTest() { viewMenu.close(); peoplePane.closeMenusForTest() }
     /// For the --join-view harness: open the View menu (and a submenu row).
     function viewMenuForTest(sub) {
         viewMenu.parent = meeting ? viewBtnM : viewBtn
@@ -973,6 +999,7 @@ Window {
     }
     function minimizeForTest() { win.showMinimized() }
     function compactViewForTest() { return compactView }
+    function participantMenuForTest(id) { const p = win.people.find(x => x.id === id); if (p) peoplePane.participantMenuForTest(p) }
     // Teams' Mute all confirmation ("All" scope).
     ConfirmDialog {
         id: muteAllAsk

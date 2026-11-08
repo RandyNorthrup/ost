@@ -60,6 +60,9 @@ pub struct OutgoingCall {
     /// The conversation's updateParticipantProperties link (marking a
     /// screened guest "not a bot" when admitting them).
     properties_link: Option<String>,
+    /// The conversation's updateParticipantRole link (Make an attendee /
+    /// Make a presenter).
+    role_link: Option<String>,
     /// The conversation controller (`conversationController`): deleting it
     /// ends the meeting for everyone.
     controller: Option<String>,
@@ -363,6 +366,94 @@ impl OutgoingCall {
             },
         });
         cc_post(&self.http, &self.skype_token, &link, &body, "Remove").await?;
+        Ok(())
+    }
+
+    /// Mute one participant (Teams' Mute participant: the mute link, scope
+    /// "specified").
+    pub async fn mute_participant(&self, id: &str) -> Result<()> {
+        let link = self
+            .mute_link
+            .clone()
+            .context("This meeting can't mute others")?;
+        let body = serde_json::json!({
+            "from": self.me.0,
+            "scope": "specified",
+            "muteParticipants": [id],
+            "mediaTypes": ["audio"],
+        });
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "Mute participant",
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Change someone's meeting role (Teams' Make an attendee / Make a
+    /// presenter: updateParticipantRole, scope "specified").
+    pub async fn set_role(&self, id: &str, role: &str) -> Result<()> {
+        let link = self
+            .role_link
+            .clone()
+            .context("This meeting can't change roles")?;
+        let body = serde_json::json!({
+            "from": {
+                "id": self.me.0["id"],
+                "endpointId": self.me.0["endpointId"],
+                "participantId": self.me.0["participantId"],
+                "languageId": self.me.0["languageId"],
+            },
+            "scope": "specified",
+            "to": [{ "id": id, "meetingRole": role }],
+        });
+        cc_post(&self.http, &self.skype_token, &link, &body, "Meeting role").await?;
+        Ok(())
+    }
+
+    /// Spotlight someone for everyone (Teams' publishState: "spotlight" at
+    /// user level, scope "specified" with them), or stop (removeState of
+    /// that state).
+    pub async fn spotlight(&mut self, id: &str, state_id: Option<&str>) -> Result<()> {
+        self.state_seq += 1;
+        let from = self.me.0.clone();
+        if let Some(state) = state_id {
+            let link = self
+                .state_links
+                .1
+                .clone()
+                .context("This meeting can't stop a spotlight")?;
+            let body = serde_json::json!({ "from": from, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [state] });
+            cc_post(
+                &self.http,
+                &self.skype_token,
+                &link,
+                &body,
+                "Stop spotlight",
+            )
+            .await?;
+            return Ok(());
+        }
+        let link = self
+            .state_links
+            .0
+            .clone()
+            .context("This meeting can't spotlight")?;
+        let body = serde_json::json!({
+            "from": from,
+            "publishedState": {
+                "content": "{}",
+                "level": "user",
+                "stateType": "spotlight",
+                "sequenceNumber": self.state_seq,
+            },
+            "scope": "specified",
+            "to": [{ "id": id }],
+        });
+        cc_post(&self.http, &self.skype_token, &link, &body, "Spotlight").await?;
         Ok(())
     }
 
@@ -1396,6 +1487,7 @@ async fn start(
         "conversation controller"
     );
     let properties_link = conversation_link(&created.response_body, "updateParticipantProperties");
+    let role_link = conversation_link(&created.response_body, "updateParticipantRole");
     tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
 
@@ -1513,6 +1605,7 @@ async fn start(
         admit_links,
         remove_link,
         properties_link,
+        role_link,
         controller,
         invite_url,
         mute_link,

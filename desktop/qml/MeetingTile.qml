@@ -135,6 +135,7 @@ Item {
             Row {
                 id: tagRow
                 anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
+                readonly property bool pinned: !!mt.call && !mt.self && !!mt.call.pinnedId && mt.person.id === mt.call.pinnedId
                 readonly property bool micOff: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.muted
                 Text {
                     visible: !mt.compact
@@ -158,6 +159,13 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: tagRow.micOff
                     name: "mic-off-20-filled"; size: 16; color: "white"
+                }
+                // Pinned for you: Teams' 16 px pin, 6 on.
+                Item { visible: tagRow.pinned; width: 6; height: 1 }
+                FluentIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: tagRow.pinned
+                    name: "pin-20"; size: 16; color: "white"
                 }
             }
         }

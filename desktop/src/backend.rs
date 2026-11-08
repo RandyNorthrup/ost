@@ -403,6 +403,16 @@ pub mod qobject {
         /// Teams' "Leave on all my devices".
         #[qinvokable]
         fn leave_on_all_devices(self: Pin<&mut Backend>);
+        /// A meeting participant's ··· menu: "mute", "spotlight",
+        /// "unspotlight", "attendee", "presenter" or "remove".
+        #[qinvokable]
+        fn participant_action(
+            self: Pin<&mut Backend>,
+            action: &QString,
+            id: &QString,
+            name: &QString,
+            state_id: &QString,
+        );
         /// End the meeting for everyone (organizers; Teams' End meeting).
         #[qinvokable]
         fn end_meeting(self: Pin<&mut Backend>);
@@ -3186,6 +3196,44 @@ impl qobject::Backend {
                         this.as_mut().end_call_ui();
                     });
                 }
+            }
+        });
+    }
+
+    pub fn participant_action(
+        self: Pin<&mut Self>,
+        action: &QString,
+        id: &QString,
+        name: &QString,
+        state_id: &QString,
+    ) {
+        let (action, id, name, state) = (
+            action.to_string(),
+            id.to_string(),
+            name.to_string(),
+            state_id.to_string(),
+        );
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_mut() else {
+                return;
+            };
+            let result = match action.as_str() {
+                "mute" => call.mute_participant(&id).await,
+                "spotlight" => call.spotlight(&id, None).await,
+                "unspotlight" => call.spotlight(&id, Some(&state)).await,
+                "attendee" | "presenter" => call.set_role(&id, &action).await,
+                "remove" => call.remove(&id, &name).await,
+                _ => Ok(()),
+            };
+            drop(slot);
+            if let Err(e) = result {
+                tracing::warn!(action, "participant action: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()))
+                });
             }
         });
     }

@@ -701,6 +701,7 @@ Window {
         onDenyLobby: (id, name) => backend.denyFromLobby(id, name)
         onAdmitAllLobby: backend.admitAllFromLobby()
         onEndMeeting: backend.endMeeting()
+        onParticipantAction: (action, id, name, stateId) => backend.participantAction(action, id, name, stateId)
         onLeaveOnAllDevices: backend.leaveOnAllDevices()
         onMuteAll: backend.muteAll()
         onSendReaction: name => backend.sendReaction(name)
@@ -1193,6 +1194,24 @@ Window {
             } else if (step === 8 && Qt.application.arguments.indexOf("--join-camera") >= 0) {
                 // --join-camera: turn the camera on in the meeting.
                 backend.toggleCamera()
+            } else if (step >= 8 && step <= 24 && Qt.application.arguments.indexOf("--join-people") >= 0) {
+                // --join-people: the participant menu on the first guest:
+                // capture it, Pin (capture), Unpin, Spotlight (capture),
+                // Stop spotlighting, Make an attendee, Make a presenter.
+                const g = callWindow.others.find(p => p.guest)
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-people-" + n + ".png")))
+                if (!g) { if (step === 8) console.warn("JOIN people: no guest"); }
+                else if (step === 8) callWindow.side = "people"
+                else if (step === 9) callWindow.participantMenuForTest(g.id)
+                else if (step === 10) { shot("menu"); console.warn("JOIN people menu for", g.name) }
+                else if (step === 11) { callWindow.closeMenusForTest(); callWindow.pinnedId = g.id }
+                else if (step === 12) shot("pinned")
+                else if (step === 13) { callWindow.pinnedId = ""; callWindow.participantAction("spotlight", g.id, g.name, "") }
+                else if (step === 16) { shot("spotlight"); console.warn("JOIN people spotlight", JSON.stringify(callWindow.spotlighted.map(p => [p.name, p.spotlight]))) }
+                else if (step === 17) callWindow.participantAction("unspotlight", g.id, g.name, (callWindow.roster.find(p => p.id === g.id) || {}).spotlight || "")
+                else if (step === 19) { console.warn("JOIN people after unspotlight", callWindow.spotlighted.length); callWindow.participantAction("attendee", g.id, g.name, "") }
+                else if (step === 21) { console.warn("JOIN people role", (callWindow.roster.find(p => p.id === g.id) || {}).role); callWindow.participantAction("presenter", g.id, g.name, "") }
+                else if (step === 23) console.warn("JOIN people role back", (callWindow.roster.find(p => p.id === g.id) || {}).role)
             } else if (step === 9 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
                 // --join-compact: minimise the meeting window, capture the
                 // compact view (step 12), then restore (step 14).

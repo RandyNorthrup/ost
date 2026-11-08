@@ -49,8 +49,10 @@ pub fn csrcs(rtp: &[u8]) -> Vec<u32> {
     let cc = usize::from(rtp.first().copied().unwrap_or(0) & 0x0f);
     rtp.get(12..12 + 4 * cc)
         .unwrap_or_default()
-        .chunks_exact(4)
-        .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_be_bytes(*b))
         .collect()
 }
 
