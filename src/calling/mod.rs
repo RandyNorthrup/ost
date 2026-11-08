@@ -4,7 +4,10 @@
 
 pub mod active_speakers;
 #[cfg(feature = "audio")]
+pub mod apm;
+#[cfg(feature = "audio")]
 pub mod audio;
+pub mod audio_codec;
 pub mod call_test;
 #[cfg(feature = "video")]
 pub mod camera;

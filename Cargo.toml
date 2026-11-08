@@ -71,6 +71,8 @@ unicode-width = "0.2"
 
 # Audio I/O (optional — requires ALSA headers on Linux)
 cpal = { version = "0.18", optional = true }
+# Wideband call audio (Teams offers Opus first; system libopus).
+opus = { version = "0.4", optional = true }
 
 # Video capture/display (optional — requires V4L2, SDL2, nasm on Linux)
 v4l = { version = "0.14", optional = true }
@@ -85,7 +87,7 @@ pipewire = { version = "0.10", optional = true }
 [features]
 default = []
 # PipeWire: real sinks and sources by name (the ALSA host lists plugins).
-audio = ["cpal", "cpal/pipewire", "pipewire"]
+audio = ["cpal", "cpal/pipewire", "pipewire", "opus"]
 # Camera and H.264 (the desktop app); video-capture adds the SDL viewer.
 video = ["v4l", "openh264", "openh264-sys2"]
 video-capture = ["video", "sdl2"]
@@ -96,6 +98,10 @@ screencast = ["video", "ashpd", "pipewire"]
 # builds too.
 [profile.dev.package.openh264]
 opt-level = 3
+
+[build-dependencies]
+cc = "1"
+pkg-config = "0.3"
 
 [dev-dependencies]
 tokio-test = "0.4"

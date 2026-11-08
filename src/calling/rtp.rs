@@ -93,6 +93,52 @@ pub fn encode(payload_type: u8, seq: u16, timestamp: u32, ssrc: u32, payload: &[
     buf
 }
 
+/// An RTP packet with one-byte header extensions (RFC 8285): each
+/// `(id, data)` with 1–16 bytes of data.
+pub fn encode_with_extensions(
+    payload_type: u8,
+    seq: u16,
+    timestamp: u32,
+    ssrc: u32,
+    extensions: &[(u8, &[u8])],
+    payload: &[u8],
+) -> Vec<u8> {
+    if extensions.is_empty() {
+        return encode(payload_type, seq, timestamp, ssrc, payload);
+    }
+    let mut ext = Vec::new();
+    for (id, data) in extensions {
+        ext.push((id << 4) | ((data.len().clamp(1, 16) - 1) as u8));
+        ext.extend_from_slice(data);
+    }
+    while ext.len() % 4 != 0 {
+        ext.push(0);
+    }
+    let mut buf = Vec::with_capacity(RTP_HEADER_SIZE + 4 + ext.len() + payload.len());
+    buf.push(0x90); // V=2, X=1
+    buf.push(payload_type & 0x7F);
+    buf.extend_from_slice(&seq.to_be_bytes());
+    buf.extend_from_slice(&timestamp.to_be_bytes());
+    buf.extend_from_slice(&ssrc.to_be_bytes());
+    buf.extend_from_slice(&[0xBE, 0xDE]);
+    buf.extend_from_slice(&((ext.len() / 4) as u16).to_be_bytes());
+    buf.extend_from_slice(&ext);
+    buf.extend_from_slice(payload);
+    buf
+}
+
+/// RFC 6464's audio level byte for a frame: the voice-activity bit and the
+/// level in -dBov (0 loudest, 127 silence).
+pub fn audio_level(samples: &[i16], voice: bool) -> u8 {
+    let level = if samples.is_empty() {
+        127
+    } else {
+        let rms = (samples.iter().map(|&s| (s as f64 / 32768.0).powi(2)).sum::<f64>() / samples.len() as f64).sqrt();
+        if rms <= 0.0 { 127 } else { (-20.0 * rms.log10()).round().clamp(0.0, 127.0) as u8 }
+    };
+    (u8::from(voice) << 7) | level
+}
+
 /// Decode bytes into an RTP packet.
 pub fn decode(data: &[u8]) -> Result<RtpPacket> {
     if data.len() < RTP_HEADER_SIZE {
@@ -337,6 +383,19 @@ mod tests {
                 decoded,
             );
         }
+    }
+
+    #[test]
+    fn audio_level_extension_round_trips() {
+        let p = encode_with_extensions(111, 7, 960, 42, &[(1, &[audio_level(&[16384; 960], true)])], b"xyz");
+        assert_eq!(p[0], 0x90);
+        assert_eq!(&p[12..14], &[0xBE, 0xDE]);
+        assert_eq!(&p[14..16], &[0, 1]);
+        assert_eq!(p[16], 0x10);
+        assert_eq!(p[17], 0x80 | 6, "half scale is -6 dBov with voice");
+        let d = decode(&p).unwrap();
+        assert_eq!(d.payload, b"xyz");
+        assert_eq!(audio_level(&[0; 960], false), 127);
     }
 
     #[test]

@@ -49,6 +49,10 @@ const VIDEO_MID: &str = "1";
 const SHARE_MID: &str = "2";
 /// Our payload type for DTMF (RFC 4733 telephone-event/8000) when we offer.
 const PT_DTMF_DEFAULT: u8 = 101;
+/// Our payload types for Opus and telephone-event/48000 when we offer
+/// (Teams web's numbers).
+const PT_OPUS: u8 = 111;
+const PT_DTMF_48K: u8 = 110;
 /// How long one dial-pad tone lasts, in 20 ms packets (160 ms).
 const DTMF_PACKETS: u32 = 8;
 /// SRTP profile negotiated in the DTLS `use_srtp` extension.
@@ -123,6 +127,11 @@ pub struct WebRtcOffer {
     pub video: Option<OfferedVideo>,
     /// The peer's telephone-event/8000 payload type (dial-pad tones).
     pub dtmf_pt: Option<u8>,
+    /// … and its telephone-event/48000 one (tones alongside Opus).
+    pub dtmf48_pt: Option<u8>,
+    /// The peer's Opus payload type, when it takes Opus (Teams offers it
+    /// first; the call then sends Opus instead of PCMU).
+    pub opus_pt: Option<u8>,
     /// The screen-sharing video line, if offered (even inactive).
     pub sharing: Option<OfferedVideo>,
     /// A media processor's answer to a meeting offer: our receive slots.
@@ -634,6 +643,8 @@ impl WebRtcOffer {
                 offered_sharing(sdp, &sections, main_pt)
             },
             dtmf_pt: dtmf_payload_type(&audio),
+            dtmf48_pt: super::audio_codec::dtmf_payload_type(&audio, 48000),
+            opus_pt: super::audio_codec::opus_payload_type(&audio),
             slots: super::meeting_media::answered_slots(sdp),
             data_stream: super::meeting_media::data_stream(sdp),
             share_slot: super::meeting_media::answered_share(sdp),
@@ -642,6 +653,26 @@ impl WebRtcOffer {
             audio_mid,
             setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
         })
+    }
+
+    /// The codec the call sends with: Opus when the peer takes it, else
+    /// PCMU.
+    pub fn codec(&self) -> super::audio_codec::Codec {
+        // OST_AUDIO_CODEC=pcmu: send G.711 even when Opus is offered
+        // (diagnostics).
+        let pcmu_only = std::env::var("OST_AUDIO_CODEC").is_ok_and(|v| v.eq_ignore_ascii_case("pcmu"));
+        match self.opus_pt {
+            Some(pt) if cfg!(feature = "audio") && !pcmu_only => super::audio_codec::Codec::Opus(pt),
+            _ => super::audio_codec::Codec::Pcmu,
+        }
+    }
+
+    /// The telephone-event payload type matching [`Self::codec`]'s clock.
+    pub fn dtmf_for_codec(&self) -> Option<u8> {
+        match self.codec() {
+            super::audio_codec::Codec::Opus(_) => self.dtmf48_pt,
+            super::audio_codec::Codec::Pcmu => self.dtmf_pt,
+        }
     }
 
     /// Whether the peer offered PCMU, the codec we send.
@@ -733,7 +764,7 @@ impl LocalAudio {
         s.push_str("s=-\r\nt=0 0\r\n");
         s.push_str("a=group:BUNDLE 0\r\n");
         s.push_str("a=msid-semantic: WMS ost\r\n");
-        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
+        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt, None));
         s
     }
 
@@ -750,7 +781,7 @@ impl LocalAudio {
         s.push_str("s=-\r\nt=0 0\r\n");
         s.push_str("a=group:BUNDLE 0 1 2\r\n");
         s.push_str("a=msid-semantic: WMS ost\r\n");
-        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
+        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt, None));
         s.push_str(&self.video_section(
             port,
             &addr,
@@ -804,7 +835,7 @@ impl LocalAudio {
         s.push_str("s=-\r\nt=0 0\r\n");
         s.push_str(&format!("a=group:BUNDLE 0 {}\r\n", mids.join(" ")));
         s.push_str("a=msid-semantic: WMS ost\r\n");
-        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
+        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt, None));
         s.push_str(&self.video_section(
             port,
             &addr,
@@ -920,7 +951,10 @@ impl LocalAudio {
         s
     }
 
-    /// Our audio m-line; `dtmf` adds telephone-event with that payload type.
+    /// Our audio m-line. Offering (`answering` None): Opus first, as Teams
+    /// offers it, then PCMU, with telephone-event at both clocks when
+    /// `dtmf` is set. Answering: the codec we'll send (Opus when the peer
+    /// offered it) and the peer's telephone-event at its clock.
     fn audio_section(
         &self,
         port: u16,
@@ -928,12 +962,40 @@ impl LocalAudio {
         mid: &str,
         setup: &str,
         dtmf: Option<u8>,
+        answering: Option<&WebRtcOffer>,
     ) -> String {
-        let mut s = String::new();
-        match dtmf {
-            Some(d) => s.push_str(&format!("m=audio {port} RTP/SAVP {PT_PCMU} {d}\r\n")),
-            None => s.push_str(&format!("m=audio {port} RTP/SAVP {PT_PCMU}\r\n")),
+        let opus = cfg!(feature = "audio");
+        // (payload type, rtpmap, fmtp)
+        let mut formats: Vec<(u8, String, Option<String>)> = Vec::new();
+        match answering {
+            None => {
+                if opus {
+                    formats.push((PT_OPUS, "opus/48000/2".into(), Some("minptime=10;useinbandfec=1".into())));
+                }
+                formats.push((PT_PCMU, "PCMU/8000".into(), None));
+                if let Some(d) = dtmf {
+                    if opus {
+                        formats.push((PT_DTMF_48K, "telephone-event/48000".into(), Some("0-15".into())));
+                    }
+                    formats.push((d, "telephone-event/8000".into(), Some("0-15".into())));
+                }
+            }
+            Some(offer) => {
+                match offer.codec() {
+                    super::audio_codec::Codec::Opus(pt) => {
+                        formats.push((pt, "opus/48000/2".into(), Some("minptime=10;useinbandfec=1".into())))
+                    }
+                    super::audio_codec::Codec::Pcmu => formats.push((PT_PCMU, "PCMU/8000".into(), None)),
+                }
+                if let Some(d) = offer.dtmf_for_codec() {
+                    let clock = offer.codec().dtmf_clock();
+                    formats.push((d, format!("telephone-event/{clock}"), Some("0-15".into())));
+                }
+            }
         }
+        let mut s = String::new();
+        let pts: Vec<String> = formats.iter().map(|f| f.0.to_string()).collect();
+        s.push_str(&format!("m=audio {port} RTP/SAVP {}\r\n", pts.join(" ")));
         s.push_str(&format!("c=IN IP4 {addr}\r\n"));
         for c in &self.candidates {
             // to_sdp_line() omits the "a=" prefix.
@@ -948,10 +1010,13 @@ impl LocalAudio {
         s.push_str(&format!("a=mid:{mid}\r\n"));
         s.push_str("a=sendrecv\r\n");
         s.push_str("a=rtcp-mux\r\n");
-        s.push_str(&format!("a=rtpmap:{PT_PCMU} PCMU/8000\r\n"));
-        if let Some(d) = dtmf {
-            s.push_str(&format!("a=rtpmap:{d} telephone-event/8000\r\n"));
-            s.push_str(&format!("a=fmtp:{d} 0-15\r\n"));
+        for (pt, map, _) in &formats {
+            s.push_str(&format!("a=rtpmap:{pt} {map}\r\n"));
+        }
+        for (pt, _, fmtp) in &formats {
+            if let Some(f) = fmtp {
+                s.push_str(&format!("a=fmtp:{pt} {f}\r\n"));
+            }
         }
         // We take dominant speaker history (Teams' audio lines say so).
         s.push_str("a=x-signaling-fb:* x-message app recv:dsh\r\n");
@@ -1001,7 +1066,7 @@ impl LocalAudio {
         for (mid, kind, proto_fmts) in &offer.sections {
             if *mid == offer.audio_mid {
                 // DTMF only with the payload type the peer offered.
-                s.push_str(&self.audio_section(port, &addr, mid, "active", offer.dtmf_pt));
+                s.push_str(&self.audio_section(port, &addr, mid, "active", offer.dtmf_pt, Some(offer)));
             } else if let Some(v) = video.filter(|v| v.mid == *mid) {
                 s.push_str(&self.video_section(
                     port,
@@ -1055,6 +1120,8 @@ impl LocalAudio {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WebRtcStats {
     pub packets_sent: u64,
+    /// Audio payload bytes sent (Opus grows with speech).
+    pub audio_bytes_sent: u64,
     pub packets_received: u64,
     pub bytes_received: u64,
     /// RTP packets that arrived but didn't decrypt (diagnostics).
@@ -1145,6 +1212,8 @@ impl Drop for WebRtcAudioSession {
         for t in &self.tasks {
             t.abort();
         }
+        #[cfg(feature = "audio")]
+        super::apm::stop();
         #[cfg(feature = "video")]
         if let Some((_, fwd)) = self.camera.take() {
             fwd.abort();
@@ -1572,15 +1641,20 @@ impl WebRtcAudioSession {
         let stats = Arc::new(Mutex::new(WebRtcStats::default()));
         let remote: Arc<Mutex<Option<SocketAddr>>> = Arc::new(Mutex::new(None));
 
+        // Echo cancellation, noise suppression and gain for this call.
         #[cfg(feature = "audio")]
-        let (capture, mic_rx) = match audio::AudioCapture::start() {
+        if super::apm::start().is_none() {
+            tracing::warn!("Audio processing unavailable: no echo cancellation");
+        }
+        #[cfg(feature = "audio")]
+        let (capture, mic_rx) = match audio::AudioCapture::start_at(super::audio_codec::CALL_RATE) {
             Some((c, rx)) => (Some(c), Some(rx)),
             None => (None, None),
         };
         #[cfg(not(feature = "audio"))]
         let mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>> = None;
         #[cfg(feature = "audio")]
-        let (playback, spk_tx) = match audio::AudioPlayback::start() {
+        let (playback, spk_tx) = match audio::AudioPlayback::start_at(super::audio_codec::CALL_RATE) {
             Some((p, tx)) => (Some(p), Some(tx)),
             None => (None, None),
         };
@@ -1707,6 +1781,11 @@ impl WebRtcAudioSession {
             srtp: srtp_ctx.clone(),
             stats: stats.clone(),
             spk_tx,
+            audio_ssrc: local.ssrc,
+            opus_pt: match offer.codec() {
+                super::audio_codec::Codec::Opus(pt) => Some(pt),
+                super::audio_codec::Codec::Pcmu => None,
+            },
             held: held.clone(),
             twcc: twcc.clone(),
             speakers,
@@ -1840,7 +1919,9 @@ impl WebRtcAudioSession {
 
         let muted = Arc::new(AtomicBool::new(false));
         let (dtmf_tx, dtmf_rx) = mpsc::unbounded_channel::<u8>();
-        let dtmf_tx = offer.dtmf_pt.map(|_| dtmf_tx);
+        let dtmf_tx = offer.dtmf_for_codec().map(|_| dtmf_tx);
+        let codec = offer.codec();
+        tracing::info!(?codec, dtmf = ?offer.dtmf_for_codec(), "call audio codec");
 
         // Send audio every 20 ms.
         tasks.push(tokio::spawn(send_loop(SendCtx {
@@ -1852,7 +1933,8 @@ impl WebRtcAudioSession {
             mic_rx,
             muted: muted.clone(),
             held: held.clone(),
-            dtmf: offer.dtmf_pt.map(|pt| (pt, dtmf_rx)),
+            dtmf: offer.dtmf_for_codec().map(|pt| (pt, dtmf_rx)),
+            encoder: super::audio_codec::Encoder::new(codec),
         })));
 
         // Ask for a keyframe (RTCP PLI) whenever the video decoder needs one.
@@ -2036,6 +2118,10 @@ struct RecvCtx {
     srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     stats: Arc<Mutex<WebRtcStats>>,
     spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
+    /// The peer's Opus payload type (else only PCMU is played).
+    opus_pt: Option<u8>,
+    /// Our audio SSRC: the peer's receiver reports on it are logged.
+    audio_ssrc: u32,
     /// On hold: the peer's audio isn't played.
     held: Arc<AtomicBool>,
     /// In a meeting: arrival times for transport-wide congestion control,
@@ -2062,6 +2148,8 @@ type KeyframeSlot = Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>;
 
 async fn recv_loop(ctx: RecvCtx) {
     let mut buf = vec![0u8; 2048];
+    let mut decoder = super::audio_codec::Decoder::new(ctx.opus_pt);
+    let mut rr_logged = std::time::Instant::now() - Duration::from_secs(10);
     let mut announced = false;
     // Video streams seen, and streams nothing took, noted once each
     // (diagnostics).
@@ -2093,6 +2181,18 @@ async fn recv_loop(ctx: RecvCtx) {
                 // RTCP (payload types 200-204 after the marker bit) is
                 // not decoded yet.
                 let pt = data.get(1).map(|b| b & 0x7f).unwrap_or(0);
+                // Receiver reports on our audio (diagnostics): what the
+                // peer got of it.
+                if (pt == 72 || pt == 73) && tracing::enabled!(tracing::Level::DEBUG) {
+                    let plain = ctx.srtp.lock().await.as_mut().and_then(|c| c.unprotect_rtcp(data).ok());
+                    if let Some(p) = plain
+                        && let Some(rb) = report_block(&p, ctx.audio_ssrc)
+                        && rr_logged.elapsed() > Duration::from_secs(5)
+                    {
+                        rr_logged = std::time::Instant::now();
+                        tracing::debug!(lost = rb.1, highest_seq = rb.2, jitter = rb.3, "receiver report on our audio");
+                    }
+                }
                 if (72..=76).contains(&pt) {
                     // RTCP: only keyframe requests for what we send matter.
                     #[cfg(feature = "video")]
@@ -2182,14 +2282,14 @@ async fn recv_loop(ctx: RecvCtx) {
                     }
                     continue;
                 }
-                if pt != PT_PCMU
+                if !decoder.handles(pt)
                     && let Ok(pkt) = rtp::decode(&plain)
                     && noted.insert((pkt.ssrc, pt))
                 {
                     tracing::debug!(ssrc = pkt.ssrc, pt, len, "RTP stream nothing receives");
                 }
                 // A meeting's mix names who is in it: the speakers.
-                if pt == PT_PCMU
+                if decoder.handles(pt)
                     && let Some(speakers) = &ctx.speakers
                 {
                     let csrcs = super::active_speakers::csrcs(&plain);
@@ -2199,15 +2299,16 @@ async fn recv_loop(ctx: RecvCtx) {
                         .record(&csrcs, std::time::Instant::now());
                 }
                 if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain))
-                    && pkt.payload_type == PT_PCMU
+                    && decoder.handles(pkt.payload_type)
                     && !ctx.held.load(Ordering::Relaxed)
                 {
-                    let pcm: Vec<i16> = pkt
-                        .payload
-                        .iter()
-                        .map(|&b| rtp::ulaw_to_linear(b))
-                        .collect();
-                    let _ = tx.try_send(pcm);
+                    let pcm = decoder.decode(pkt.payload_type, &pkt.payload);
+                    if noted.insert((pkt.ssrc, pkt.payload_type)) {
+                        tracing::debug!(ssrc = pkt.ssrc, pt = pkt.payload_type, len = pkt.payload.len(), samples = pcm.len(), "audio stream played");
+                    }
+                    if !pcm.is_empty() {
+                        let _ = tx.try_send(pcm);
+                    }
                 }
             }
             _ => {}
@@ -2226,6 +2327,36 @@ struct SendCtx {
     held: Arc<AtomicBool>,
     /// The telephone-event payload type and the keys to send.
     dtmf: Option<(u8, mpsc::UnboundedReceiver<u8>)>,
+    /// Encodes the microphone (Opus or PCMU, as negotiated).
+    encoder: super::audio_codec::Encoder,
+}
+
+/// The report block on `ssrc` in a compound RTCP packet (SR or RR):
+/// (fraction lost, cumulative lost, extended highest sequence, jitter).
+fn report_block(rtcp: &[u8], ssrc: u32) -> Option<(u8, u32, u32, u32)> {
+    let mut at = 0;
+    while at + 8 <= rtcp.len() {
+        let rc = usize::from(rtcp[at] & 0x1f);
+        let pt = rtcp[at + 1];
+        let len = (usize::from(u16::from_be_bytes([rtcp[at + 2], rtcp[at + 3]])) + 1) * 4;
+        let blocks = match pt {
+            200 => at + 28,
+            201 => at + 8,
+            _ => {
+                at += len;
+                continue;
+            }
+        };
+        for i in 0..rc {
+            let b = rtcp.get(blocks + i * 24..blocks + i * 24 + 24)?;
+            if u32::from_be_bytes([b[0], b[1], b[2], b[3]]) == ssrc {
+                let lost = u32::from_be_bytes([0, b[5], b[6], b[7]]);
+                return Some((b[4], lost, u32::from_be_bytes([b[8], b[9], b[10], b[11]]), u32::from_be_bytes([b[12], b[13], b[14], b[15]])));
+            }
+        }
+        at += len.max(4);
+    }
+    None
 }
 
 /// A dial-pad tone being sent: its event, start timestamp and packets sent.
@@ -2237,13 +2368,13 @@ struct Tone {
 
 /// The packets of one tone: DTMF_PACKETS growing ones, the last marked end,
 /// then the end packet twice more (RFC 4733 2.5.1.4 asks for three).
-fn tone_packet(tone: &Tone) -> Option<(bool, [u8; 4])> {
+fn tone_packet(tone: &Tone, step: u32) -> Option<(bool, [u8; 4])> {
     let end_at = DTMF_PACKETS - 1;
     if tone.sent > end_at + 2 {
         return None;
     }
     let n = tone.sent.min(end_at);
-    let duration = ((n + 1) * rtp::TIMESTAMP_INCREMENT) as u16;
+    let duration = ((n + 1) * step).min(u16::MAX as u32) as u16;
     Some((
         tone.sent == 0,
         dtmf_payload(tone.event, tone.sent >= end_at, duration),
@@ -2255,6 +2386,7 @@ async fn send_loop(mut ctx: SendCtx) {
     let (mut seq, mut ts) = (r as u16, (r >> 16) as u32);
     let mut tick = tokio::time::interval(Duration::from_millis(rtp::PACKET_INTERVAL_MS));
     let mut tone: Option<Tone> = None;
+    let (mut sent_packets, mut sent_octets) = (0u32, 0u32);
     loop {
         tick.tick().await;
         let frame = ctx.mic_rx.as_ref().and_then(|rx| rx.try_recv().ok());
@@ -2268,7 +2400,8 @@ async fn send_loop(mut ctx: SendCtx) {
                 sent: 0,
             });
         }
-        let packet = match (tone.as_ref().and_then(tone_packet), ctx.dtmf.as_ref()) {
+        let step = ctx.encoder.codec().timestamp_step();
+        let packet = match (tone.as_ref().and_then(|t| tone_packet(t, step)), ctx.dtmf.as_ref()) {
             (Some((first, payload)), Some((pt, _))) => {
                 let t = tone.as_mut().map(|t| {
                     t.sent += 1;
@@ -2282,19 +2415,9 @@ async fn send_loop(mut ctx: SendCtx) {
             }
             _ => {
                 tone = None;
-                let payload = match frame {
-                    Some(samples)
-                        if !ctx.muted.load(Ordering::Relaxed)
-                            && !ctx.held.load(Ordering::Relaxed) =>
-                    {
-                        let mut enc: Vec<u8> =
-                            samples.iter().map(|&s| rtp::linear_to_ulaw(s)).collect();
-                        enc.resize(rtp::SAMPLES_PER_PACKET, 0xFF);
-                        enc
-                    }
-                    _ => rtp::silence_payload(),
-                };
-                rtp::encode(PT_PCMU, seq, ts, ctx.ssrc, &payload)
+                let live = !ctx.muted.load(Ordering::Relaxed) && !ctx.held.load(Ordering::Relaxed);
+                let payload = ctx.encoder.encode(frame.as_deref().filter(|_| live));
+                rtp::encode(ctx.encoder.codec().payload_type(), seq, ts, ctx.ssrc, &payload)
             }
         };
         let protected = {
@@ -2305,10 +2428,36 @@ async fn send_loop(mut ctx: SendCtx) {
         if let (Some(p), Some(to)) = (protected, target)
             && ctx.socket.send_to(&p, to).await.is_ok()
         {
-            ctx.stats.lock().await.packets_sent += 1;
+            let mut st = ctx.stats.lock().await;
+            st.packets_sent += 1;
+            st.audio_bytes_sent += packet.len().saturating_sub(12) as u64;
+            sent_packets = sent_packets.wrapping_add(1);
+            sent_octets = sent_octets.wrapping_add(packet.len().saturating_sub(12) as u32);
+        }
+        // An RTCP sender report on our audio every 5 s, as WebRTC
+        // stacks send them (a media processor maps our stream's clock and
+        // counts with them).
+        if seq % 250 == 0
+            && let Some(to) = target
+        {
+            let sr = super::rtcp::build_sender_report(
+                &super::rtcp::RtpSendStats {
+                    packets_sent: sent_packets,
+                    bytes_sent: sent_octets,
+                    ssrc: ctx.ssrc,
+                    last_rtp_timestamp: ts,
+                },
+                &super::rtcp::RtpRecvStats::default(),
+                0,
+                "ost",
+            );
+            let protected = ctx.srtp.lock().await.as_mut().and_then(|c| c.protect_rtcp(&sr).ok());
+            if let Some(p) = protected {
+                let _ = ctx.socket.send_to(&p, to).await;
+            }
         }
         seq = seq.wrapping_add(1);
-        ts = ts.wrapping_add(rtp::TIMESTAMP_INCREMENT);
+        ts = ts.wrapping_add(step);
     }
 }
 
@@ -2937,7 +3086,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             sent: 0,
         };
         let mut packets = Vec::new();
-        while let Some(p) = tone_packet(&t) {
+        while let Some(p) = tone_packet(&t, rtp::TIMESTAMP_INCREMENT) {
             packets.push(p);
             t.sent += 1;
         }

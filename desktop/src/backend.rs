@@ -1449,6 +1449,10 @@ fn spawn_call_stats_logger() {
                         received = s.packets_received,
                         undecryptable = s.packets_undecryptable,
                         muted = call.is_muted(),
+                        audio_bytes = s.audio_bytes_sent,
+                        played_peak = teams_cli::calling::audio::take_speaker_peak(),
+                        mic = teams_cli::calling::audio::mic_level(),
+                        mic_out = teams_cli::calling::audio::take_mic_out_peak(),
                         "call audio"
                     );
                 }
