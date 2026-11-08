@@ -68,6 +68,9 @@ pub struct OutgoingCall {
     invite_url: Option<String>,
     /// The conversation's mute link (Mute all).
     mute_link: Option<String>,
+    /// A meeting's lobby chat (`activeModalities.groupChat.lobbyThreadId`):
+    /// where the organizer and people waiting in the lobby talk.
+    lobby_thread: Option<String>,
     /// The conversation's unmute link: unmuting yourself after the meeting
     /// muted you.
     unmute_link: Option<String>,
@@ -100,6 +103,11 @@ impl OutgoingCall {
         if let Some(m) = &self.media {
             m.set_muted(muted);
         }
+    }
+
+    /// A meeting's lobby chat thread, if it has one.
+    pub fn lobby_thread(&self) -> Option<&str> {
+        self.lobby_thread.as_deref()
     }
 
     /// Our endpoint id (the roster lists our endpoint under it).
@@ -974,6 +982,18 @@ fn conversation_link(create_response: &str, name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// A field of the conversation's group chat (`activeModalities.groupChat`):
+/// threadId, messageId, lobbyThreadId…
+fn group_chat_field(create_response: &str, name: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(create_response).ok()?;
+    ["", "/conversationResponse"]
+        .iter()
+        .find_map(|p| v.pointer(&format!("{p}/activeModalities/groupChat/{name}")))
+        .and_then(|t| t.as_str())
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+}
+
 /// The conversation's `leave` link from the create response.
 fn leave_link(create_response: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(create_response).ok()?;
@@ -1335,6 +1355,8 @@ async fn start(
     let invite_url = invite_url(&created.response_body);
     let mute_link = conversation_link(&created.response_body, "mute");
     let unmute_link = conversation_link(&created.response_body, "unmute");
+    let lobby_thread = group_chat_field(&created.response_body, "lobbyThreadId");
+    tracing::debug!(?lobby_thread, "meeting lobby chat");
     let message_link = conversation_link(&created.response_body, "sendMessage");
     let endpoint_state = conversation_link(&created.response_body, "updateEndpointState")
         .map(|l| (l, std::sync::atomic::AtomicU64::new(0)));
@@ -1465,6 +1487,7 @@ async fn start(
         invite_url,
         mute_link,
         unmute_link,
+        lobby_thread,
         server_muted: std::sync::atomic::AtomicBool::new(false),
         message_link,
         endpoint_state,
