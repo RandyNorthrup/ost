@@ -1086,6 +1086,12 @@ Window {
                 preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio)
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
+                console.warn("JOIN lobby", backend.callLobbyJson)
+            } else if (step === 7 && Qt.application.arguments.indexOf("--join-admit") >= 0) {
+                // --join-admit: admit the first person waiting in the lobby.
+                const lobby = JSON.parse(backend.callLobbyJson || "[]")
+                console.warn("JOIN admitting", JSON.stringify(lobby))
+                if (lobby.length) backend.admitFromLobby(lobby[0].id, lobby[0].name)
             } else if (window.joinRaise && step === 8) {
                 // --join-raise: raise your hand, then lower it.
                 backend.toggleHand()

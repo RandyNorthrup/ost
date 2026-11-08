@@ -109,6 +109,8 @@ pub mod qobject {
         #[qproperty(bool, call_meeting)]
         /// The meeting's participants: [{id, name, role, active, server_muted}].
         #[qproperty(QString, call_roster_json)]
+        /// Who waits in the meeting's lobby: [{id, name}].
+        #[qproperty(QString, call_lobby_json)]
         /// Your own MRI (`8:orgid:<oid>`, lowercase), once signed in.
         #[qproperty(QString, user_mri)]
         /// The meeting's chat thread (for the call window's Chat pane).
@@ -458,6 +460,12 @@ pub mod qobject {
         /// Raise or lower your hand in the meeting.
         #[qinvokable]
         fn toggle_hand(self: Pin<&mut Backend>);
+        /// Admit someone waiting in the lobby (Teams' Admit).
+        #[qinvokable]
+        fn admit_from_lobby(self: Pin<&mut Backend>, id: &QString, name: &QString);
+        /// Admit everyone in the lobby (Teams' Admit all).
+        #[qinvokable]
+        fn admit_all_from_lobby(self: Pin<&mut Backend>);
 
         /// Transfer the call to a person (AAD object id).
         #[qinvokable]
@@ -901,6 +909,7 @@ pub struct BackendRust {
     call_can_video: bool,
     call_camera_on: bool,
     call_roster_json: QString,
+    call_lobby_json: QString,
     call_thread_id: QString,
     user_mri: QString,
     roster: Vec<teams_cli::calling::roster::Participant>,
@@ -1641,6 +1650,31 @@ async fn load_messages(
     Ok((serde_json::to_string(&timeline)?, last_id, has_older))
 }
 
+/// Fetch who waits in the lobby of the current meeting into callLobbyJson.
+async fn refresh_lobby(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
+    let people = match call_slot().lock().await.outgoing.as_ref() {
+        Some(call) => call.lobby().await,
+        None => return,
+    };
+    match people {
+        Ok(list) => {
+            let json = serde_json::to_string(
+                &list
+                    .iter()
+                    .map(|(id, name)| json!({ "id": id, "name": name }))
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap_or_else(|_| "[]".into());
+            tracing::info!(waiting = list.len(), "lobby");
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_call_lobby_json(QString::from(json.as_str()))
+            });
+        }
+        Err(e) => tracing::warn!("lobby list failed: {}", short_error(&e)),
+    }
+}
+
 /// A call event arrived: ring for a new invitation; anything else about
 /// the current call is logged by shape (never by content) so call-end
 /// signalling can be recognised.
@@ -1650,6 +1684,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let qt2 = qt.clone();
         let _ = qt.queue(move |mut this| this.as_mut().notify_meeting_start(start, qt2));
         return;
+    }
+    // The lobby count changed: ask who waits there (Teams does the same).
+    if teams_cli::calling::roster::lobby_count(json).is_some() {
+        let qt2 = qt.clone();
+        runtime().spawn(async move { refresh_lobby(qt2).await });
     }
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
         tracing::info!(changes = delta.len(), "roster update");
@@ -2663,6 +2702,7 @@ impl qobject::Backend {
         self.as_mut().set_call_peer_id(QString::default());
         self.as_mut().rust_mut().roster.clear();
         self.as_mut().set_call_roster_json(QString::from("[]"));
+        self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut()
             .set_call_thread_id(QString::from(chat_id.as_str()));
         self.as_mut().set_call_meeting(true);
@@ -2725,6 +2765,7 @@ impl qobject::Backend {
         self.as_mut().set_call_peer_id(QString::default());
         self.as_mut().rust_mut().roster.clear();
         self.as_mut().set_call_roster_json(QString::from("[]"));
+        self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut()
             .set_call_thread_id(QString::from(link.thread_id.as_str()));
         self.as_mut().set_call_options_url(QString::from(
@@ -2919,6 +2960,35 @@ impl qobject::Backend {
             if let Some(call) = slot.active.as_ref() {
                 call.set_held(true);
             }
+        });
+    }
+
+    pub fn admit_from_lobby(self: Pin<&mut Self>, id: &QString, name: &QString) {
+        let (id, name) = (id.to_string(), name.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = match call_slot().lock().await.outgoing.as_ref() {
+                Some(call) => call.admit(&id, &name).await,
+                None => return,
+            };
+            if let Err(e) = result {
+                tracing::warn!("admit failed: {}", short_error(&e));
+            }
+            refresh_lobby(qt).await;
+        });
+    }
+
+    pub fn admit_all_from_lobby(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = match call_slot().lock().await.outgoing.as_ref() {
+                Some(call) => call.admit_all().await,
+                None => return,
+            };
+            if let Err(e) = result {
+                tracing::warn!("admit all failed: {}", short_error(&e));
+            }
+            refresh_lobby(qt).await;
         });
     }
 

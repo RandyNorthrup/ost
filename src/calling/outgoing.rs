@@ -44,6 +44,8 @@ pub struct OutgoingCall {
     state_seq: u64,
     /// The conversation's getAllParticipants link (who's already here).
     all_participants: Option<String>,
+    /// Meetings: the conversation's admit and admitAll links (the lobby).
+    admit_links: (Option<String>, Option<String>),
 }
 
 impl OutgoingCall {
@@ -172,6 +174,57 @@ impl OutgoingCall {
             .collect();
         let event = serde_json::json!({ "callAgentPath": "conversation/rosterUpdate/", "body": { "participants": by_mri } });
         Ok(super::roster::roster_delta(&event.to_string()).unwrap_or_default())
+    }
+
+    /// Who is waiting in the meeting's lobby: (MRI, name), as Teams asks
+    /// for them (getAllParticipants with scope "lobby").
+    pub async fn lobby(&self) -> Result<Vec<(String, String)>> {
+        let link = self
+            .all_participants
+            .clone()
+            .context("No participant list for this call")?;
+        let body = serde_json::json!({ "from": self.me.0, "scope": "lobby", "scenario": 0 });
+        let reply = cc_post(&self.http, &self.skype_token, &link, &body, "Lobby").await?;
+        tracing::debug!("lobby reply {reply}");
+        Ok(lobby_people(&reply))
+    }
+
+    /// Admit someone from the lobby (Teams' admit link).
+    pub async fn admit(&self, id: &str, name: &str) -> Result<()> {
+        let link = self
+            .admit_links
+            .0
+            .clone()
+            .context("This meeting has no lobby to admit from")?;
+        let cb = |p: &str| signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, p);
+        let body = serde_json::json!({
+            "participants": { "from": self.me.0, "to": [{ "id": id, "displayName": name }] },
+            "links": {
+                "admitFailure": cb("conversation/admitParticipantFailure/"),
+                "admitSuccess": cb("conversation/admitParticipantSuccess/"),
+            },
+            "debugContent": { "causeId": uuid::Uuid::new_v4().to_string() },
+        });
+        cc_post(&self.http, &self.skype_token, &link, &body, "Admit").await?;
+        Ok(())
+    }
+
+    /// Admit everyone waiting (Teams' admitAll link).
+    pub async fn admit_all(&self) -> Result<()> {
+        let link = self
+            .admit_links
+            .1
+            .clone()
+            .context("This meeting has no lobby to admit from")?;
+        let op = uuid::Uuid::new_v4().to_string();
+        let body = serde_json::json!({
+            "participants": { "from": self.me.0 },
+            "links": { "admitAllStatus": signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/admitAllStatus/") },
+            "operationId": op,
+            "debugContent": { "causeId": op },
+        });
+        cc_post(&self.http, &self.skype_token, &link, &body, "Admit all").await?;
+        Ok(())
     }
 
     /// Our raised hand's state id, learned from the roster when the
@@ -449,6 +502,31 @@ async fn cc_post(
     }
     tracing::info!("{what}: HTTP {status}");
     Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
+/// The people in a getAllParticipants reply: an array of {id, displayName}
+/// or a map of roster entries keyed by MRI.
+fn lobby_people(reply: &serde_json::Value) -> Vec<(String, String)> {
+    let list = reply
+        .pointer("/response/participants")
+        .or_else(|| reply.get("participants"))
+        .cloned()
+        .unwrap_or_default();
+    let name_of = |p: &serde_json::Value| {
+        p.get("displayName")
+            .or_else(|| p.pointer("/details/displayName"))
+            .and_then(|n| n.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    match list {
+        serde_json::Value::Array(a) => a
+            .iter()
+            .filter_map(|p| Some((p.get("id")?.as_str()?.to_string(), name_of(p))))
+            .collect(),
+        serde_json::Value::Object(m) => m.iter().map(|(id, p)| (id.clone(), name_of(p))).collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// A conversation link (`leave`, `publishState`, `removeState`…) from the
@@ -777,6 +855,10 @@ async fn start(
         conversation_link(&created.response_body, "removeState"),
     );
     let all_participants = conversation_link(&created.response_body, "getAllParticipants");
+    let admit_links = (
+        conversation_link(&created.response_body, "admit"),
+        conversation_link(&created.response_body, "admitAll"),
+    );
     tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
 
@@ -882,6 +964,7 @@ async fn start(
         hand: None,
         state_seq: 0,
         all_participants,
+        admit_links,
     })
 }
 

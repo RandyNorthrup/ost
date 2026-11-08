@@ -34,6 +34,7 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
         return None;
     }
     let participants = v.pointer("/body/participants")?.as_object()?;
+    tracing::debug!(target: "teams_cli::calling::roster", "rosterUpdate {}", json);
     Some(
         participants
             .iter()
@@ -90,6 +91,21 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
     )
 }
 
+/// How many wait in the lobby, when a roster update says
+/// (`body.participantCounts.lobbyParticipants`).
+pub fn lobby_count(json: &str) -> Option<u64> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    if !v
+        .get("callAgentPath")?
+        .as_str()?
+        .starts_with("conversation/rosterUpdate")
+    {
+        return None;
+    }
+    v.pointer("/body/participantCounts/lobbyParticipants")?
+        .as_u64()
+}
+
 /// Apply a delta to a roster kept in join order.
 pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
     for p in delta {
@@ -118,6 +134,19 @@ mod tests {
             } } }
         })
         .to_string()
+    }
+
+    #[test]
+    fn lobby_counts_come_from_roster_updates() {
+        // As the conversation service sent it with OST Guest 1 waiting.
+        let json = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participantCounts":{"lobbyParticipants":1,"totalParticipants":2,"unverifiedUsersInLobby":1},"participants":{},"sequenceNumber":4,"type":"Delta"}}"#;
+        assert_eq!(lobby_count(json), Some(1));
+        assert_eq!(
+            lobby_count(
+                r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{}}}"#
+            ),
+            None
+        );
     }
 
     #[test]
