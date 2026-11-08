@@ -1,11 +1,11 @@
 ---
 id: TASK-0034
 title: 'Desktop: screen sharing in calls and meetings'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-06T04:53:00Z'
-updated_date: '2026-11-06T15:57:00Z'
+updated_date: '2026-11-08T17:05:00Z'
 labels:
   - desktop
   - calling
@@ -21,7 +21,7 @@ Share is the last greyed control on the call bar. Teams shares a screen as a sec
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Share in a 1:1 call shows the picked screen or window in Teams web
-- [ ] #2 Share in a meeting shows it to the other participants
+- [x] #2 Share in a meeting shows it to the other participants
 - [x] #3 Stop sharing ends the stream on both sides
 - [x] #4 A screen shared by the other person in a call shows on OST's stage, and is taken down when they stop
 <!-- AC:END -->
@@ -49,4 +49,17 @@ Share is the last greyed control on the call bar. Teams shares a screen as a sec
 
 - Calls OST places: our video offer now has a sharing line (mid 2, inactive, as Teams' own). An answer that turns it down (audio-only answers drop its mid) still leaves it ours to re-offer: the re-offer puts the whole section back from our original description and re-bundles it. Tested live (Randy accepted with audio, OST shared, then stopped).
 - Placed calls now offer in application/sdp-ngc-1.0 too: the call controller ended a call whose re-offer changed the content type (OfferContentTypeNotConsistent). This also made Teams accept OST's video line in placed calls (relevant to TASK-0036). Meeting join re-tested with it.
+
+- 2026-11-08: share in meetings verified with a Teams web guest (shown and stopped), and both ways in a group call (TASK-0047, commits 446b44f, 6413c1d).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Screen sharing in 1:1 calls, meetings and group calls, both directions.
+
+- 1:1: share via re-offer; receive the other side's screen on the stage.
+- Meetings/group calls (TASK-0047): the sharing line is offered sendrecv and switched with UpdateMediaDescriptions (sendonly + negotiationTag); viewers' controlVideoStreaming requests cap the encoder and get keyframes; others' shares come on the share slot with the presenting layout and Pop out.
+
+Verified live with Teams web (1:1, meeting guest, group call).
+<!-- SECTION:FINAL_SUMMARY:END -->
