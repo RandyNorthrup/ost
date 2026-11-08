@@ -1189,7 +1189,15 @@ Rectangle {
                 readonly property string textStyle: "<style>a { color: " + theme.brand + "; text-decoration: none; } "
                     + ".mention { color: " + theme.brandForeground1 + "; } "
                     + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; } "
-                    + "p, div, li, body { line-height: " + (bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; }</style>"
+                    + "p, div, li, body { line-height: " + (bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; } "
+                    // Measured (winpc, "OST TEST 70"): headings 18 light / 14 bold
+                    // / 12 bold on 25.7 / 20 / 17.1 lines, 3 above and below;
+                    // inline code Cascadia Mono on white (Teams also draws a
+                    // hairline box, which Qt's rich text can't).
+                    + "code { font-family: '" + theme.mono + "'; background-color: " + theme.surface + "; } "
+                    + "p.h1 { font-size: 18px; font-weight: 300; line-height: 26px; -qt-line-height-type: fixed; margin-top: 3px; margin-bottom: 3px; } "
+                    + "p.h2 { font-size: 14px; font-weight: 700; line-height: 20px; -qt-line-height-type: fixed; margin-top: 3px; margin-bottom: 3px; } "
+                    + "p.h3 { font-size: 12px; font-weight: 700; line-height: 17px; -qt-line-height-type: fixed; margin-top: 3px; margin-bottom: 3px; }</style>"
                 // Teams' lines are 20 px; big emoticons (50 px) set their own.
                 readonly property bool bigEmoticons: (msg.modelData.html || "").indexOf("width=\"50\" height=\"50\"") >= 0
                 // Bigger text, headings, rules and tables set their own heights.
@@ -2463,8 +2471,9 @@ Rectangle {
             backend.sendRichMedia(input.getFormattedText(0, input.length), JSON.stringify(compose.mediaInUse()))
         } else if (root.plainText().trim().length > 0) {
             // Formatted text goes as Teams HTML; plain text as before.
-            const html = input.getFormattedText(0, input.length)
-            if (/font-weight:\s*[6-9]00|font-style:\s*italic|text-decoration:[^;"]*(underline|line-through)|<ul|<ol|href="mention[-:]/.test(html)) backend.sendRich(html)
+            // Formatting goes as Teams HTML; plain text as before.
+            const html = compose.formattedText()
+            if (/<(b|i|u|s|ul|ol|h[123]|hr|blockquote|pre|code|span|a)[ >]|margin-left/.test(html)) backend.sendRich(html)
             else root.send(root.plainText())
         }
         compose.clear()

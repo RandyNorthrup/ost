@@ -40,6 +40,7 @@ fn main() {
         "qml/QuoteCard.qml",
         "qml/ReactionPicker.qml",
         "qml/ShareContactDialog.qml",
+        "qml/FormatBar.qml",
         "qml/PeopleTagPicker.qml",
         "qml/AddPeopleDialog.qml",
         "qml/EmojiPanel.qml",
@@ -85,6 +86,7 @@ fn main() {
         .file("src/backend.rs")
         .file("src/video_item.rs")
         .file("src/key_typer.rs")
+        .file("src/rich_text.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
         .qt_module("WebEngineQuick")
@@ -94,9 +96,11 @@ fn main() {
         builder.cc_builder(|cc| {
             cc.file("src/webengine.cpp");
             cc.file("src/native.cpp");
+            cc.file("src/richtext.cpp");
         })
     };
     println!("cargo::rerun-if-changed=src/webengine.cpp");
     println!("cargo::rerun-if-changed=src/native.cpp");
+    println!("cargo::rerun-if-changed=src/richtext.cpp");
     builder.build();
 }

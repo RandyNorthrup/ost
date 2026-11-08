@@ -762,6 +762,32 @@ Groups are separated by dividers; empty groups are skipped.
   - Fit is measured by the Fluent toolbar; there are no fixed widths.
   - Container-query CSS sets the slot column gap to `calc(100% − 28rem)` (≥240px), `− 38.5rem` (≥480px) and `− 49rem` (≥640px; threaded channel `− 52.7rem`). The bar has max-width 940px.
 
+### Measured (winpc, 2026-11-07)
+- **Bar.** `simplified-formatting-toolbar` is 43 tall. Buttons are 32 px from x 6, y 9. Groups are 8.7 apart with a divider. At 746.7 wide it shows Bold … Code block, then More options at 416 (no divider), with Discard at the end.
+  - The bar is a flex row with `column-gap: calc(100% − 49rem)` (rem = 10 px; 38.5rem from 480 wide, 28rem from 240). So the buttons' toolbar is 490 − 32 = 458 wide from 640 up (measured 458 at 746.7); items that don't fit, with More options, go to the menu.
+  - Every button's icon was copied from Teams' DOM into `fmt-*.svg` (Teams draws Fluent 20 px icons in a "2 2 16 16" viewBox).
+- **More options menu.** 247 wide, max 306 tall (it scrolls), padding 8/0, radius 4, shadow 16.
+  - Rows are 32 tall with a 16 px icon at 15.7 and the label at 41.7. Rich style is 34.3 tall with a 20 px icon and its label at 45.7.
+  - Dividers are 16.7. Rich style shows the current style ("Paragraph") and opens its menu beside it.
+  - Labels: "Code (Ctrl+Shift+C)", "Clear all formatting", "Decrease indent", "Increase indent", "Insert horizontal rule", "Insert table", "Insert column or row", "Delete column, row, or table", "Undo typing", "Repeat typing".
+- **Highlight and Font color.** A 125.3 × 101.7 popover centred over the button, its bottom at the button.
+  - "No highlight" / "Automatic": 100 × 24.3 at (12.7, 8.7), with a #D1D1D1 hairline.
+  - Eight 16 px swatches, 28 apart, from (12.7, 45), radius 4, border rgba(37,36,36,.2).
+  - Highlight colours: Kobi red #DF9299, Rose bud #F4A593, Goldenrod #FDD472, Primrose #E5F18F, Mantis #82CDA8, Regent St. blue #9DD9DB, Periwinkle gray #C7D4E8, Pale rose #EBD3E1.
+  - Font colours: Red #B6424C, Tuscan orange #CD5937, Sunglow #FDC030, Pear #BDCB4C, Eucalyptus #2B9B62, Faded jade #37797B, Fun blue #1E53A3, Tyrian purple #A5397A.
+- **Font size** (`compose-font-size`). 104.8 × 113.3, padding 8/4. Large / Medium / Small rows are 91.5 × 28, 32 apart, label at 12. Large sends `font-size:x-large`, Small `small`; Medium removes the size.
+- **Rich style.** 130.4 × 150.3. Heading 1 is 18/300 (row 33), Heading 2 14/700, Heading 3 12/700, Paragraph 14/400 (rows 28), all #424242. They send `<h1>`–`<h3>`.
+- **Insert link.** A 303.3 × 262.7 popover over the button: "Insert link", "Text to display" and "Address" inputs (270 × 32, #F5F5F5, radius 4, placeholders "Text to display" / "Link to an existing file or web page"), then Cancel and Insert (96 × 31.3) at 208.7. Insert is disabled until there is an address.
+  - Links go out as `<a href rel="noreferrer noopener" target="_blank" title>`.
+- **Code block.** An embedded editor with a "Plain Text ⌄" language menu (Teams' 44 languages), line numbers and a ··· menu. It sends the CodeBlockEditor paragraph plus `<pre class="language-…" itemid>`.
+- **Headings and inline code as received** ("OST TEST 70"):
+  - h1 is 18/300 on a 25.7 line, h2 14/700 on 20, h3 12/700 on 17.1, each with margin 3/0;
+  - `code` is Cascadia Mono 14, white, 0.67 #D1D1D1, radius 4, padding 4, margin 0/2.
+- **OST.** `RichText` (src/richtext.cpp) edits the compose box's QTextDocument and exports clean HTML, which `teams_html_with_media` turns into Teams' HTML.
+  - Quotes and code blocks are marked paragraphs. QML draws the quote box and code card behind them, because QQuickTextEdit crashes on frames added while it shows the document.
+  - "OST TEST 69", sent from OST with every format, matched Teams' wire format, and Teams web drew it exactly as its own messages.
+- **Not done yet.** Tables (Insert table, rows and columns), the code card's ··· menu, syntax colours, and the inline-code hairline box when receiving (Qt rich text can't draw one).
+
 ## 17. "+" Actions and apps, Attach, fun picker
 - **"+" flyout** (930874; native apps first in list view, `simplifiedComposeViewType` live "list"):
 

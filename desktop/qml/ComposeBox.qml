@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import com.ost.desktop
 
 // Teams' simplified compose (266342), measured on winpc. The same box is the
 // chat's compose and the in-place editor of a message (Teams edits in place
@@ -77,7 +78,40 @@ Item {
     height: boxHeight + 2 + 16
 
     function plainText() { return input.getText(0, input.length) }
-    function formattedText() { return input.getFormattedText(0, input.length) }
+    // The text as clean HTML (RichText), for Teams' message HTML.
+    function formattedText() { return rich.exportHtml() }
+    // What applies at the cursor (the formatting bar's pressed buttons),
+    // and where the quotes and code blocks are.
+    property var richState: ({})
+    property var richRegions: []
+    function refreshRichState() {
+        try { richState = JSON.parse(rich.state(input.cursorPosition)) } catch (e) { richState = ({}) }
+        try { richRegions = JSON.parse(rich.regions()) } catch (e) { richRegions = [] }
+    }
+    // Teams' code block languages (id, name), as its editor lists them.
+    readonly property var codeLanguages: [["plaintext", "Plain Text"], ["bash", "Bash"], ["c", "C"], ["cpp", "C++"], ["csharp", "C#"], ["css", "CSS"],
+        ["dart", "Dart"], ["dockerfile", "DockerFile"], ["dos", "DOS"], ["go", "Go"], ["graphql", "GraphQL"], ["html", "HTML"], ["http", "HTTP"],
+        ["java", "Java"], ["javascript", "JavaScript"], ["json", "JSON"], ["jsp", "JSP"], ["jsx", "JSX"], ["kotlin", "Kotlin"], ["kql", "KQL"],
+        ["latex", "LaTeX"], ["lisp", "Lisp"], ["markdown", "Markdown"], ["objectivec", "Objective-C"], ["octave", "Octave"], ["perl", "Perl"],
+        ["php", "PHP"], ["powershell", "PowerShell"], ["python", "Python"], ["r", "R"], ["ruby", "Ruby"], ["rust", "Rust"], ["scala", "Scala"],
+        ["scss", "SCSS"], ["shell", "Shell"], ["sql", "SQL"], ["swift", "Swift"], ["typescript", "TypeScript"], ["vbnet", "VB.NET"],
+        ["vbscript", "VBScript"], ["verilog", "Verilog"], ["vhdl", "VHDL"], ["xml", "XML"], ["yaml", "YAML"]]
+    function codeLanguageName(id) { const l = codeLanguages.find(l => l[0] === id); return l ? l[1] : "Plain Text" }
+    MenuPopup {
+        id: langMenu
+        parent: Overlay.overlay
+        property var region: null
+        items: root.codeLanguages.map(l => ({ label: l[1], checked: !!langMenu.region && langMenu.region.lang === l[0] }))
+        height: Math.min(implicitHeight, 320)
+        onPicked: i => { if (region) { rich.apply(region.start, region.start, "lang", root.codeLanguages[i][0]); root.refreshRichState() } }
+    }
+    // A formatting bar command on the selection (or the word at the cursor).
+    function format(op, arg) {
+        const a = input.selectionStart, b = input.selectionEnd
+        rich.apply(a, b, op, arg || "")
+        input.forceActiveFocus()
+        refreshRichState()
+    }
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
@@ -117,14 +151,7 @@ Item {
     }
     function focusEditor() { input.forceActiveFocus() }
     function wrapSelection(tag) {
-        const a = input.selectionStart, b = input.selectionEnd
-        if (a === b) return
-        const sel = escapeHtml(input.getText(a, b))
-        input.remove(a, b)
-        const html = tag === "ul" || tag === "ol" ? "<" + tag + "><li>" + sel.replace(/<br>/g, "</li><li>") + "</li></" + tag + ">"
-            : "<" + tag + ">" + sel + "</" + tag + ">"
-        input.insert(a, html)
-        input.forceActiveFocus()
+        format({ b: "bold", i: "italic", u: "underline", s: "strike", ul: "ul", ol: "ol" }[tag] || tag, "")
     }
     function requestCancel() { discardDialog.open() }
 
@@ -146,46 +173,18 @@ Item {
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
             color: root.importance === "urgent" ? theme.redForeground3 : theme.pick("#DA3B01", "#E9835E")
         }
-        // The formatting bar.
-        Item {
+        // The formatting bar (Teams' simplified-formatting-toolbar).
+        FormatBar {
             id: formatBar
             visible: root.formatting
-            x: 0; y: root.headerH; width: parent.width; height: 43
-            Row {
-                x: 6.7; y: 9.7
-                spacing: 0
-                Repeater {
-                    model: [
-                        [{ icon: "text-bold-20", tag: "b", label: "Bold" }, { icon: "text-italic-20", tag: "i", label: "Italic" },
-                         { icon: "text-underline-20", tag: "u", label: "Underline" }, { icon: "text-strike-20", tag: "s", label: "Strikethrough" }],
-                        [{ icon: "text-bullets-20", tag: "ul", label: "Bulleted list" }, { icon: "text-numbers-20", tag: "ol", label: "Numbered list" }]
-                    ]
-                    Row {
-                        id: group
-                        required property var modelData
-                        required property int index
-                        Item {
-                            visible: group.index > 0
-                            width: 8.6; height: 32
-                            Rectangle { x: 4; y: 6; width: 1; height: 20; color: theme.stroke }
-                        }
-                        Repeater {
-                            model: group.modelData
-                            ToolButton32 {
-                                required property var modelData
-                                icon: modelData.icon; label: modelData.label
-                                onClicked: root.wrapSelection(modelData.tag)
-                            }
-                        }
-                    }
-                }
-            }
-            ToolButton32 {
-                x: parent.width - 6.7 - 32; y: 9.7
-                icon: root.editing ? "dismiss-20" : "delete-20"
-                label: root.editing ? "Cancel" : "Discard"
-                onClicked: root.requestCancel()
-            }
+            x: 0; y: root.headerH; width: parent.width
+            editing: root.editing
+            st: root.richState
+            selectedText: input.selectedText
+            onCommand: (op, arg) => root.format(op, arg)
+            onDiscardRequested: root.requestCancel()
+            onUndoRequested: { input.undo(); input.forceActiveFocus() }
+            onRedoRequested: { input.redo(); input.forceActiveFocus() }
         }
 
         // The editor: across the box (multiline) or left of the side toolbar.
@@ -195,6 +194,58 @@ Item {
             y: root.headerH + (root.formatting ? 43 : 0.67)
             width: root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
             height: Math.max(root.formatting ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
+            // Teams' quote box and code card behind the text's quote and
+            // code runs (RichText marks them; their margins make room).
+            Repeater {
+                model: root.richRegions
+                Item {
+                    id: region
+                    required property var modelData
+                    readonly property rect r0: input.positionToRectangle(modelData.start)
+                    readonly property rect r1: input.positionToRectangle(modelData.end)
+                    readonly property bool code: modelData.kind === "code"
+                    x: input.x; width: input.width
+                    y: input.y + r0.y - (code ? 40 : 7)
+                    height: r1.y + r1.height + (code ? 8 : 7) - (r0.y - (code ? 40 : 7))
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: region.code ? 8 : 4
+                        color: theme.surface
+                        border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+                    }
+                    // The quote's bar.
+                    Rectangle { visible: !region.code; x: 3; y: 3; width: 2.67; height: parent.height - 6; radius: 1.5; color: theme.pick("#D1D1D1", "#666666") }
+                    // The code card's header: icon, language (a menu), and
+                    // the line under it; line numbers in the gutter.
+                    Item {
+                        visible: region.code
+                        width: parent.width; height: 32
+                        FluentIcon { x: 10.7; anchors.verticalCenter: parent.verticalCenter; name: "code-block-20"; size: 20; color: theme.textSecondary }
+                        Row {
+                            x: 36.7; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                            Text {
+                                text: region.modelData.lang ? root.codeLanguageName(region.modelData.lang) : "Plain Text"
+                                font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                            }
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textSecondary }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { langMenu.region = region.modelData; const p = region.mapToItem(Overlay.overlay, 36.7, 32); langMenu.x = p.x; langMenu.y = p.y; langMenu.open() } }
+                        }
+                        Rectangle { y: 31.3; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#666666") }
+                    }
+                    Repeater {
+                        model: region.code ? region.modelData.lines : 0
+                        Text {
+                            required property int index
+                            x: 12; width: 30; height: 24
+                            y: 40 + index * 24
+                            horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter
+                            text: index + 1
+                            font.family: theme.mono; font.pixelSize: 14; color: theme.pick("#8A8886", "#ADADAD")
+                        }
+                    }
+                }
+            }
             QuoteCard {
                 id: quoteCard
                 visible: !!root.quote
@@ -253,17 +304,29 @@ Item {
                     text: root.placeholder
                     font: input.font; color: theme.textSecondary
                 }
-                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention() }
-                onCursorPositionChanged: root.checkMention()
+                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention(); root.refreshRichState() }
+                onCursorPositionChanged: { root.checkMention(); root.refreshRichState() }
+                // The formatting bar's commands act on this text's document.
+                RichText { id: rich }
                 onLineCountChanged: if (lineCount > 1) root.grown = true
                 onActiveFocusChanged: if (activeFocus) root.enterKey = backend.setting("enterKey") || "send"
                 Keys.onPressed: event => {
                     if (!(event.modifiers & Qt.ControlModifier)) return
-                    if (event.key === Qt.Key_B) { root.wrapSelection("b"); event.accepted = true }
-                    else if (event.key === Qt.Key_I) { root.wrapSelection("i"); event.accepted = true }
-                    else if (event.key === Qt.Key_U) { root.wrapSelection("u"); event.accepted = true }
-                    else if (event.key === Qt.Key_X && (event.modifiers & Qt.ShiftModifier)) { root.formatting = !root.formatting; event.accepted = true }
-                    else if (event.key === Qt.Key_I && (event.modifiers & Qt.ShiftModifier) && root.deliveryOptions) { root.importance = root.importance === "high" ? "" : "high"; event.accepted = true }
+                    const shift = event.modifiers & Qt.ShiftModifier
+                    const alt = event.modifiers & Qt.AltModifier
+                    // Teams: Ctrl+Shift+X the bar, Ctrl+Shift+C inline code,
+                    // Ctrl+Shift+B code block, Ctrl+Alt+X strikethrough,
+                    // Ctrl+Shift+I Important.
+                    if (shift && event.key === Qt.Key_X) root.formatting = !root.formatting
+                    else if (shift && event.key === Qt.Key_C) root.format("code", "")
+                    else if (shift && event.key === Qt.Key_B) root.format("codeblock", "")
+                    else if (shift && event.key === Qt.Key_I && root.deliveryOptions) root.importance = root.importance === "high" ? "" : "high"
+                    else if (alt && event.key === Qt.Key_X) root.format("strike", "")
+                    else if (!shift && !alt && event.key === Qt.Key_B) root.wrapSelection("b")
+                    else if (!shift && !alt && event.key === Qt.Key_I) root.wrapSelection("i")
+                    else if (!shift && !alt && event.key === Qt.Key_U) root.wrapSelection("u")
+                    else return
+                    event.accepted = true
                 }
                 Keys.onReturnPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }
                 Keys.onEnterPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }
@@ -681,6 +744,16 @@ Item {
         onClosed: input.forceActiveFocus()
     }
     function shareContactForTest() { return shareContact }
+    function formatBarForTest() { return formatBar }
+    // Type a line and format all of it (the formatting bar on a selection).
+    function formatLineForTest(text, op, arg) {
+        if (input.length > 0) rich.apply(input.length, input.length, "newblock", "")
+        const a = input.length
+        input.insert(a, escapeHtml(text))
+        input.select(a, input.length)
+        if (op) format(op, arg)
+        input.cursorPosition = input.length
+    }
     function pickShareForTest() { insertMention({ kind: "share" }) }
     function mentionForTest(text) { input.insert(input.cursorPosition, text); input.cursorPosition = input.length }
     function pickMentionForTest() { mentionPicker.pick() }

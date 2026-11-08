@@ -2151,6 +2151,45 @@ Window {
         }
     }
 
+    // --format-bar-test=<label> with --open-chat=<id> --shots=<dir>: open the
+    // formatting bar, capture it and its More options, build a message with
+    // a highlight, a colour, Large, a quote, inline code and a code block
+    // through the bar's commands, capture it, send it (with --format-send)
+    // and log what went out.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--format-bar-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const label = (Qt.application.arguments.find(a => a.startsWith("--format-bar-test=")) || "").slice(18)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "fmt-" + n + ".png"))
+            if (backend.currentChatId !== id) { const c0 = chatList.chats.find(c => c.id === id); backend.selectChat(id, c0 ? c0.name : "OST format test"); return }
+            const c = conversation.composeForTest()
+            const bar = c.formatBarForTest()
+            // --format-skip=quote,codeblock leaves those out.
+            const skip = (Qt.application.arguments.find(a => a.startsWith("--format-skip=")) || "--format-skip=").slice(14).split(",")
+            const line = (t, op, arg) => { if (skip.indexOf(op) < 0) { console.warn("FMT-TEST", op); c.formatLineForTest(t, op, arg) } }
+            if (step === 0) { c.clear(); c.formatting = true; c.focusEditor() }
+            else if (step === 1) shot("bar")
+            else if (step === 2) bar.openOverflowForTest()
+            else if (step === 3) shot("more")
+            else if (step === 4) line(label + " highlighted", "bg", "#FDD472")
+            else if (step === 5) line("red text", "fg", "#B6424C")
+            else if (step === 6) line("large text", "size", "24")
+            else if (step === 7) line("a quote", "quote", "")
+            else if (step === 8) line("inline code", "code", "")
+            else if (step === 9) line("Heading two", "heading", "2")
+            else if (step === 10) { line("", "codeblock", ""); if (skip.indexOf("codeblock") < 0) c.insertText("let x = 1;") }
+            else if (step === 11) { shot("compose"); console.warn("FMT-TEST export", c.formattedText()) }
+            else if (step === 12) { if (Qt.application.arguments.indexOf("--format-send") >= 0) conversation.sendForTest(); else Qt.quit() }
+            else if (step === 16) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => m.mine).pop(); console.warn("FMT-TEST sent", JSON.stringify({ html: m.html, flow: m.flow })); shot("sent") }
+            else if (step === 17) Qt.quit()
+            step++
+        }
+    }
+
     // --rename-test=<name> with --open-chat=<id>: rename the group chat,
     // log the chat list's name for it, then quit.
     Timer {

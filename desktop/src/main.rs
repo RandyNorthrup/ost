@@ -3,6 +3,7 @@
 mod backend;
 mod key_typer;
 mod lock_watch;
+mod rich_text;
 mod video_item;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};

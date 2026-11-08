@@ -3083,6 +3083,40 @@ pub fn compose_media_html(m: &ComposeMedia) -> String {
     }
 }
 
+/// The highlight, font colour and size of a compose span (`style`, lower
+/// case without spaces) as Teams writes them: `background-color:#FDD472;
+/// color:#B6424C; font-size:x-large` (Large 24 px, Small 13 px).
+fn teams_text_style(style: &str) -> Option<String> {
+    let get = |k: &str| {
+        style
+            .split(';')
+            .find_map(|d| d.strip_prefix(k))
+            .map(|v| v.trim().to_string())
+    };
+    let hex = |v: String| {
+        (v.starts_with('#') && v.len() == 7 && v[1..].chars().all(|c| c.is_ascii_hexdigit()))
+            .then(|| v.to_ascii_uppercase())
+    };
+    let mut out: Vec<String> = Vec::new();
+    if let Some(c) = get("background-color:").and_then(hex) {
+        out.push(format!("background-color:{c}"));
+    }
+    if let Some(c) = get("color:").and_then(hex) {
+        out.push(format!("color:{c}"));
+    }
+    if let Some(px) = get("font-size:").and_then(|v| v.trim_end_matches("px").parse::<u32>().ok()) {
+        out.push(format!(
+            "font-size:{}",
+            match px {
+                24 => "x-large".to_string(),
+                13 => "small".to_string(),
+                n => format!("{n}px"),
+            }
+        ));
+    }
+    (!out.is_empty()).then(|| out.join("; "))
+}
+
 /// `w` x `h` scaled down to fit `max_w` x `max_h`, rounded.
 fn fit(w: u32, h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     if w == 0 || h == 0 {
@@ -3120,10 +3154,16 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
     let mut out = String::new();
     // For each open <span>, the tags it opened (closed in reverse).
     let mut spans: Vec<Vec<&'static str>> = Vec::new();
+    // Inside a code block, line breaks are the code's.
+    let mut in_pre = false;
     let mut rest = body;
     while let Some(lt) = rest.find('<') {
         let text = &rest[..lt];
-        out.push_str(&text.replace(['\n', '\r'], ""));
+        if in_pre {
+            out.push_str(text);
+        } else {
+            out.push_str(&text.replace(['\n', '\r'], ""));
+        }
         if let Some(t) = mention_text.as_mut() {
             t.push_str(text);
         }
@@ -3144,8 +3184,57 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
             .to_ascii_lowercase()
             .replace(' ', "");
         match (name.as_str(), closing) {
+            // Teams' code block editor's paragraph before the block.
+            ("p", false)
+                if editor_attr(tag, "itemtype").as_deref()
+                    == Some("http://schema.skype.com/CodeBlockEditor") =>
+            {
+                out.push_str(&format!(
+                    "<p itemtype=\"http://schema.skype.com/CodeBlockEditor\" id=\"{}\">",
+                    escape(&editor_attr(tag, "id").unwrap_or_default())
+                ));
+            }
+            // An indented paragraph (the formatting bar's Increase indent).
+            ("p", false) if style.starts_with("margin-left:") => {
+                let px: u32 = style["margin-left:".len()..]
+                    .trim_end_matches(';')
+                    .trim_end_matches("px")
+                    .parse()
+                    .unwrap_or(0);
+                if px > 0 {
+                    out.push_str(&format!("<p style=\"margin-left:{px}px\">"));
+                } else {
+                    out.push_str("<p>");
+                }
+            }
             ("p", false) => out.push_str("<p>"),
             ("p", true) => out.push_str("</p>"),
+            ("h1" | "h2" | "h3" | "blockquote" | "code", _) => {
+                out.push('<');
+                if closing {
+                    out.push('/');
+                }
+                out.push_str(&name);
+                out.push('>');
+            }
+            ("hr", false) => out.push_str("<hr>"),
+            // A code block (its language and the editor's id).
+            ("pre", false) => {
+                let lang = editor_attr(tag, "class")
+                    .and_then(|c| c.strip_prefix("language-").map(str::to_string))
+                    .filter(|l| l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+                    .unwrap_or_else(|| "plaintext".into());
+                out.push_str(&format!("<pre class=\"language-{lang}\""));
+                if let Some(id) = editor_attr(tag, "itemid") {
+                    out.push_str(&format!(" itemid=\"{}\"", escape(&id)));
+                }
+                out.push('>');
+                in_pre = true;
+            }
+            ("pre", true) => {
+                out.push_str("</pre>");
+                in_pre = false;
+            }
             ("br", _) => out.push_str("<br>"),
             ("ul" | "ol" | "li", false) => {
                 out.push('<');
@@ -3184,6 +3273,14 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                     out.push('<');
                     out.push_str(t);
                     out.push('>');
+                }
+                // Highlight, font colour and size, as Teams writes them (a
+                // link's own colour isn't one).
+                if anchors.is_empty()
+                    && let Some(css) = teams_text_style(&style)
+                {
+                    out.push_str(&format!("<span style=\"{css}\">"));
+                    opened.push("span");
                 }
                 spans.push(opened);
             }
@@ -3238,9 +3335,11 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                     mention_text = Some(String::new());
                     mention_start = out.len();
                 } else if href.starts_with("https://") || href.starts_with("http://") {
-                    out.push_str("<a href=\"");
-                    out.push_str(&href.replace('"', "&quot;"));
-                    out.push_str("\">");
+                    // As Teams' compose writes a link.
+                    let h = href.replace('"', "&quot;");
+                    out.push_str(&format!(
+                        "<a href=\"{h}\" rel=\"noreferrer noopener\" target=\"_blank\" title=\"{h}\">"
+                    ));
                     anchors.push(false);
                 } else {
                     out.push_str("<a>");
@@ -3284,6 +3383,25 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
 #[cfg(test)]
 mod compose_media_tests {
     use super::*;
+
+    #[test]
+    fn formatting_bar_output_is_sent_as_teams_sends_it() {
+        // What the compose box's RichText exports for "OST TEST 66"…
+        let ours = r#"<blockquote><p><span style="background-color:#FDD472">OST TEST 66 highlighted</span></p></blockquote><p><span style="background-color:#FDD472; color:#B6424C">red text</span></p><p><span style="font-size:24px">large text</span></p>"#;
+        let (html, _) = teams_html_and_mentions(ours);
+        // …goes out as Teams sent it (its line breaks aside; Teams' reset
+        // of the colours to inherit isn't needed).
+        assert_eq!(
+            html,
+            r#"<blockquote><p><span style="background-color:#FDD472">OST TEST 66 highlighted</span></p></blockquote><p><span style="background-color:#FDD472; color:#B6424C">red text</span></p><p><span style="font-size:x-large">large text</span></p>"#
+        );
+        // A code block keeps its lines, language and the editor's id.
+        let code = "<p>see</p><p itemtype=\"http://schema.skype.com/CodeBlockEditor\" id=\"codeBlockEditor-1\">&nbsp;</p><pre class=\"language-rust\" itemid=\"codeBlockEditor-1\"><code>let x = 1;\nlet y = x &lt; 2;</code></pre>";
+        assert_eq!(teams_html_and_mentions(code).0, code);
+        // Headings, rules, inline code and indents pass through.
+        let rest = r#"<h2>Plan</h2><hr><p>run <code>cargo</code></p><p style="margin-left:40px">later</p>"#;
+        assert_eq!(teams_html_and_mentions(rest).0, rest);
+    }
 
     #[test]
     fn picked_items_are_sent_as_teams_sends_them() {
@@ -3466,7 +3584,7 @@ mod quote_tests {
         let (html, m) = teams_html_and_mentions(qt);
         assert_eq!(
             html,
-            r#"<p>Hi <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Randy Northrup</span>, see <a href="https://x.y">this</a></p>"#
+            r#"<p>Hi <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Randy Northrup</span>, see <a href="https://x.y" rel="noreferrer noopener" target="_blank" title="https://x.y">this</a></p>"#
         );
         assert_eq!(m.len(), 1);
         assert_eq!(m[0].mri, "8:orgid:abc");
@@ -3846,7 +3964,7 @@ mod tests {
         let h = super::teams_html_from_editor(qt);
         assert_eq!(
             h,
-            "<p>Hello <b>bold</b> and <i><u>both</u></i> &lt;tag&gt;</p><ul><li>one</li></ul><p><a href=\"https://example.com/x\"><u>link</u></a> <a>bad</a>evil()</p>"
+            "<p>Hello <b>bold</b> and <i><u>both</u></i> &lt;tag&gt;</p><ul><li>one</li></ul><p><a href=\"https://example.com/x\" rel=\"noreferrer noopener\" target=\"_blank\" title=\"https://example.com/x\"><u>link</u></a> <a>bad</a>evil()</p>"
         );
         assert!(super::editor_has_formatting(qt));
         let plain = r#"<html><body><p>just text</p></body></html>"#;

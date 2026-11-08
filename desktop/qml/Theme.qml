@@ -7,8 +7,11 @@ QtObject {
     property bool dark: false
     function pick(light, darkValue) { return dark ? darkValue : light }
     // Message HTML as shown: a shared contact's card icon in brand colour.
+    // Headings as paragraphs of class h1-h3: Qt adds its own heading size on
+    // top of a stylesheet's, so only Teams' measured sizes apply this way.
     function messageHtml(h) {
         return String(h || "").replace(/src="ost-contact-card"/g, 'style="vertical-align: middle" src="' + Qt.resolvedUrl("../assets/icons/contact-card-inline-" + (dark ? "dark" : "light") + ".svg") + '"')
+            .replace(/<h([123])>/g, '<p class="h$1">').replace(/<\/h[123]>/g, "</p>")
     }
 
     // Brand
