@@ -657,6 +657,7 @@ Window {
                 reactionShot.restart()
         }
     }
+    Timer { id: nsiPopShot; interval: 600; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nsi-popover.png"))) }
     Timer { id: reactionShot; interval: 400; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-their-reaction.png"))) }
     CallWindow {
         id: callWindow
@@ -714,6 +715,7 @@ Window {
         onParticipantAction: (action, id, name, stateId) => backend.participantAction(action, id, name, stateId)
         onLeaveOnAllDevices: backend.leaveOnAllDevices()
         locked: backend.callMeetingLocked
+        networkStrength: backend.callNetworkStrength || "Good"
         scheduled: backend.callScheduled
         attendeeRestrictions: backend.callAttendeeRestrictions
         lockNotices: backend.callLockNotices
@@ -1316,6 +1318,17 @@ Window {
                 else if (step === 22) { shot("on-a2"); backend.toggleCamera() }
                 else if (step === 23) callWindow.audioOptionsForTest()
                 else if (step === 24) shot("audio-flyout")
+            } else if (step >= 8 && step <= 60 && Qt.application.arguments.indexOf("--join-nsi") >= 0) {
+                // --join-nsi: log the network strength each step while loss
+                // is applied from outside; capture the bars and popover once
+                // it isn't Good.
+                console.warn("JOIN nsi", step, backend.callNetworkStrength, callWindow.nsiShown)
+                if (callWindow.nsiShown && !callWindow.nsiCaptured) {
+                    callWindow.nsiCaptured = true
+                    callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nsi-tile.png")))
+                    callWindow.networkPopoverForTest()
+                    nsiPopShot.start()
+                }
             } else if (step === 9 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
                 // --join-compact: minimise the meeting window, capture the
                 // compact view (step 12), then restore (step 14).

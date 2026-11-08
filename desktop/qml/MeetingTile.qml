@@ -137,6 +137,30 @@ Item {
                 anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
                 readonly property bool pinned: !!mt.call && !mt.self && !!mt.call.pinnedId && mt.person.id === mt.call.pinnedId
                 readonly property bool micOff: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.muted
+                // Your network strength (Teams' local-nsi): three 2 px bars
+                // at 4/8/12 in an 18 px glyph, unlit ones at 30 %, then 3 px.
+                Item {
+                    id: nsi
+                    visible: mt.self && !!mt.call && mt.call.nsiShown
+                    width: 21; height: 18
+                    anchors.verticalCenter: parent.verticalCenter
+                    readonly property int lit: !mt.call ? 3 : mt.call.networkStrength === "Bad" ? 1 : mt.call.networkStrength === "Poor" ? 2 : 3
+                    Repeater {
+                        model: 3
+                        Rectangle {
+                            required property int index
+                            x: 4 + index * 4; y: 16 - height
+                            width: 2; height: [4, 7, 10][index]; radius: 1
+                            color: "white"
+                            opacity: index < nsi.lit ? 1 : 0.3
+                        }
+                    }
+                    HoverHandler {
+                        onHoveredChanged: if (hovered) mt.call.showNetworkPopover(nsi); else mt.call.leaveNetworkPopover()
+                    }
+                    Accessible.role: Accessible.Graphic
+                    Accessible.name: mt.call ? mt.call.networkHeading : ""
+                }
                 Text {
                     visible: !mt.compact
                     anchors.verticalCenter: parent.verticalCenter

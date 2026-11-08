@@ -1122,6 +1122,14 @@ pub struct WebRtcStats {
     pub packets_sent: u64,
     /// Audio payload bytes sent (Opus grows with speech).
     pub audio_bytes_sent: u64,
+    /// Audio samples decoded so far, and the arrivals of this second (for
+    /// Teams' network strength).
+    pub audio_samples_received: u64,
+    pub audio_loss: super::network_quality::LossCounter,
+    /// The peer's latest report on our audio: jitter (seconds) and the
+    /// fraction lost.
+    pub remote_jitter: Option<f64>,
+    pub remote_loss: Option<f64>,
     pub packets_received: u64,
     pub bytes_received: u64,
     /// RTP packets that arrived but didn't decrypt (diagnostics).
@@ -1131,6 +1139,9 @@ pub struct WebRtcStats {
 /// A running WebRTC audio session; dropping it stops the media.
 pub struct WebRtcAudioSession {
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    /// Teams' network strength for this call (0 Good, 1 Poor, 2 Bad),
+    /// rated every second.
+    strength: Arc<std::sync::atomic::AtomicU8>,
     /// What sending our camera needs: the socket, the peer, SRTP, and the
     /// negotiated video payload type and our SSRC.
     #[cfg(feature = "video")]
@@ -1329,6 +1340,15 @@ impl WebRtcAudioSession {
 
     pub async fn stats(&self) -> WebRtcStats {
         *self.stats.lock().await
+    }
+
+    /// Teams' network strength for this call.
+    pub fn network_strength(&self) -> super::network_quality::Strength {
+        match self.strength.load(Ordering::Relaxed) {
+            0 => super::network_quality::Strength::Good,
+            1 => super::network_quality::Strength::Poor,
+            _ => super::network_quality::Strength::Bad,
+        }
     }
 
     /// Whether this call negotiated video we can send.
@@ -1663,6 +1683,34 @@ impl WebRtcAudioSession {
 
         let mut tasks = Vec::new();
         let held = Arc::new(AtomicBool::new(false));
+        // Teams' network strength, from this call's measurements each second.
+        let strength = Arc::new(std::sync::atomic::AtomicU8::new(0));
+        {
+            let (stats, strength) = (stats.clone(), strength.clone());
+            tasks.push(tokio::spawn(async move {
+                let mut rater = super::network_quality::Rater::default();
+                let started = std::time::Instant::now();
+                let mut tick = tokio::time::interval(Duration::from_secs(1));
+                loop {
+                    tick.tick().await;
+                    let sample = {
+                        let mut st = stats.lock().await;
+                        super::network_quality::Sample {
+                            samples_received: st.audio_samples_received,
+                            missing_ratio: st.audio_loss.take_ratio(),
+                            packets_sent: st.packets_sent,
+                            remote_jitter: st.remote_jitter,
+                            remote_loss: st.remote_loss,
+                        }
+                    };
+                    let level = rater.sample(sample, started.elapsed().as_millis() as u64);
+                    let code = level as u8;
+                    if strength.swap(code, Ordering::Relaxed) != code {
+                        tracing::info!(strength = level.name(), "network strength");
+                    }
+                }
+            }));
+        }
 
         #[cfg(feature = "video")]
         let keyframe_req: KeyframeSlot = Default::default();
@@ -1782,6 +1830,10 @@ impl WebRtcAudioSession {
             stats: stats.clone(),
             spk_tx,
             audio_ssrc: local.ssrc,
+            audio_clock: match offer.codec() {
+                super::audio_codec::Codec::Opus(_) => 48_000,
+                super::audio_codec::Codec::Pcmu => 8_000,
+            },
             opus_pt: match offer.codec() {
                 super::audio_codec::Codec::Opus(pt) => Some(pt),
                 super::audio_codec::Codec::Pcmu => None,
@@ -2037,6 +2089,7 @@ impl WebRtcAudioSession {
         });
         Ok(Self {
             tasks,
+            strength,
             #[cfg(feature = "video")]
             video_out,
             #[cfg(feature = "video")]
@@ -2120,8 +2173,10 @@ struct RecvCtx {
     spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
     /// The peer's Opus payload type (else only PCMU is played).
     opus_pt: Option<u8>,
-    /// Our audio SSRC: the peer's receiver reports on it are logged.
+    /// Our audio SSRC (the peer's receiver reports on it) and its RTP
+    /// clock rate.
     audio_ssrc: u32,
+    audio_clock: u32,
     /// On hold: the peer's audio isn't played.
     held: Arc<AtomicBool>,
     /// In a meeting: arrival times for transport-wide congestion control,
@@ -2183,14 +2238,20 @@ async fn recv_loop(ctx: RecvCtx) {
                 let pt = data.get(1).map(|b| b & 0x7f).unwrap_or(0);
                 // Receiver reports on our audio (diagnostics): what the
                 // peer got of it.
-                if (pt == 72 || pt == 73) && tracing::enabled!(tracing::Level::DEBUG) {
+                if pt == 72 || pt == 73 {
                     let plain = ctx.srtp.lock().await.as_mut().and_then(|c| c.unprotect_rtcp(data).ok());
                     if let Some(p) = plain
                         && let Some(rb) = report_block(&p, ctx.audio_ssrc)
-                        && rr_logged.elapsed() > Duration::from_secs(5)
                     {
-                        rr_logged = std::time::Instant::now();
-                        tracing::debug!(lost = rb.1, highest_seq = rb.2, jitter = rb.3, "receiver report on our audio");
+                        {
+                            let mut st = ctx.stats.lock().await;
+                            st.remote_loss = Some(f64::from(rb.0) / 256.0);
+                            st.remote_jitter = Some(f64::from(rb.3) / f64::from(ctx.audio_clock));
+                        }
+                        if rr_logged.elapsed() > Duration::from_secs(5) {
+                            rr_logged = std::time::Instant::now();
+                            tracing::debug!(fraction = rb.0, lost = rb.1, highest_seq = rb.2, jitter = rb.3, "receiver report on our audio");
+                        }
                     }
                 }
                 if (72..=76).contains(&pt) {
@@ -2303,6 +2364,11 @@ async fn recv_loop(ctx: RecvCtx) {
                     && !ctx.held.load(Ordering::Relaxed)
                 {
                     let pcm = decoder.decode(pkt.payload_type, &pkt.payload);
+                    {
+                        let mut st = ctx.stats.lock().await;
+                        st.audio_loss.on_packet(pkt.sequence_number);
+                        st.audio_samples_received += pcm.len() as u64;
+                    }
                     if noted.insert((pkt.ssrc, pkt.payload_type)) {
                         tracing::debug!(ssrc = pkt.ssrc, pt = pkt.payload_type, len = pkt.payload.len(), samples = pcm.len(), "audio stream played");
                     }

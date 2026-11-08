@@ -135,6 +135,39 @@ Window {
     // Teams shows Controls and Rooms to the meeting's organizer only.
     readonly property bool organizer: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase() === "organizer"
     readonly property string myRole: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase()
+    // Teams' network strength indicator (your name tag's bars): shown while
+    // the strength isn't Good, and for 120 s after it is again.
+    property string networkStrength: "Good"
+    /// Your connection is wired (Teams' tip then mentions the cable).
+    property bool wired: false
+    property bool nsiShown: false
+    property bool nsiCaptured: false
+    Timer { id: nsiHide; interval: 120000; onTriggered: win.nsiShown = false }
+    onNetworkStrengthChanged: {
+        if (networkStrength === "Poor" || networkStrength === "Bad") { nsiShown = true; nsiHide.stop() }
+        else if (nsiShown && !nsiHide.running) nsiHide.start()
+    }
+    /// Turned off by "Turn off all video" (Teams then offers to turn it on).
+    property bool nsiVideoOff: false
+    readonly property string networkHeading: networkStrength === "Bad" ? "Connection is weak"
+        : networkStrength === "Poor" ? "Connection is unstable" : "Connection is good"
+    readonly property string networkTip: {
+        const p2p = !meeting, cam = cameraOn, inc = !incomingVideoOff
+        if (networkStrength === "Bad") {
+            if (cam && inc) return p2p ? "One or both participants may have network problems. Try turning off your camera and incoming video to use less bandwidth." : "Try turning off your camera and incoming video to use less bandwidth."
+            if (cam) return p2p ? "One or both participants may have network problems. Try turning off your camera to use less bandwidth." : "Try turning off your camera to use less bandwidth."
+            if (inc) return p2p ? "One or both participants may have network problems. Try turning off incoming video to use less bandwidth." : "Try turning off incoming video to use less bandwidth."
+            return p2p ? "One or both participants may have network problems. This might impact the quality of the call." : "This may impact the quality of your call."
+        }
+        if (networkStrength === "Poor")
+            return wired ? "Check your cable connection or try turning off other apps."
+                : p2p ? "One or both participants may have network problems. This might impact the quality of the call." : "This may impact the quality of your call."
+        return "Turn on your camera and video anytime."
+    }
+    function showNetworkPopover(item) { networkPopoverClose.stop(); if (!networkPopover.opened) { networkPopover.anchorItem = item; networkPopover.open() } }
+    function leaveNetworkPopover() { networkPopoverClose.restart() }
+    function networkPopoverForTest() { networkPopover.anchorItem = timerText; networkPopover.open() }
+    Timer { id: networkPopoverClose; interval: 250; onTriggered: if (!networkPopover.hovered) networkPopover.close() }
     /// The meeting is locked (Teams' Lock the meeting), and what attendees
     /// may not do (bits: mic 1, camera 2).
     property bool locked: false
@@ -1147,6 +1180,11 @@ Window {
         maxHeight: win.height - 60 - 5
     }
     function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
+    NetworkPopover {
+        id: networkPopover
+        call: win
+        onLeft: networkPopoverClose.restart()
+    }
     VideoFlyout {
         id: videoFlyout
         cameraOn: win.cameraOn

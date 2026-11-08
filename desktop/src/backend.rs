@@ -122,6 +122,8 @@ pub mod qobject {
         /// Bumped when the meeting mutes us while we're talking (Teams'
         /// "You've been muted" alert).
         #[qproperty(i32, call_muted_remotely)]
+        /// Teams' network strength for the call: "Good", "Poor" or "Bad".
+        #[qproperty(QString, call_network_strength)]
         /// The meeting is locked (Teams' Lock the meeting).
         #[qproperty(bool, call_meeting_locked)]
         /// The call is a scheduled meeting joined from its link (not a
@@ -1062,6 +1064,7 @@ pub struct BackendRust {
     chat_live_roster_json: QString,
     call_muted_remotely: i32,
     call_meeting_locked: bool,
+    call_network_strength: QString,
     call_scheduled: bool,
     call_lobby_presenter: bool,
     call_attendee_restrictions: i32,
@@ -1438,10 +1441,31 @@ fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
 }
 
 /// Log media health every 5 s while a call lasts.
-fn spawn_call_stats_logger() {
-    runtime().spawn(async {
+fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
+    runtime().spawn(async move {
+        let mut tick = 0u64;
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tick += 1;
+            // Teams' network strength (your name tag's bars), each second.
+            let strength = {
+                let slot = call_slot().lock().await;
+                if let Some(call) = slot.active.as_ref() {
+                    Some(call.network_strength())
+                } else {
+                    slot.outgoing.as_ref().map(|c| c.network_strength())
+                }
+            };
+            let Some(strength) = strength else { return };
+            let name = strength.name();
+            let _ = qt.queue(move |mut this| {
+                if this.rust().call_network_strength.to_string() != name {
+                    this.as_mut().set_call_network_strength(QString::from(name));
+                }
+            });
+            if tick % 5 != 0 {
+                continue;
+            }
             let slot = call_slot().lock().await;
             if let Some(call) = slot.active.as_ref() {
                 if let Some(s) = call.audio_stats().await {
@@ -2935,7 +2959,7 @@ impl qobject::Backend {
                     let can_share = active.can_share();
                     tracing::info!(has_audio, can_video, camera, can_share, "call answered");
                     call_slot().lock().await.active = Some(active);
-                    spawn_call_stats_logger();
+                    spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_video(can_video);
@@ -3069,7 +3093,7 @@ impl qobject::Backend {
                     );
                     slot.outgoing = Some(call);
                     drop(slot);
-                    spawn_call_stats_logger();
+                    spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
@@ -3205,7 +3229,7 @@ impl qobject::Backend {
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
-                    spawn_call_stats_logger();
+                    spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
@@ -3289,7 +3313,7 @@ impl qobject::Backend {
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
-                    spawn_call_stats_logger();
+                    spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
                         this.as_mut()
                             .set_call_invite_url(QString::from(invite.as_str()));
@@ -4006,6 +4030,7 @@ impl qobject::Backend {
             self.as_mut().set_call_state(QString::from("ended"));
         }
         self.as_mut().set_call_camera_on(false);
+        self.as_mut().set_call_network_strength(QString::from("Good"));
         self.as_mut().set_call_can_video(false);
         self.as_mut().set_call_can_share(false);
         self.as_mut().set_call_sharing(false);

@@ -76,6 +76,7 @@ fn main() {
         "qml/LockMeetingDialog.qml",
         "qml/RoleChangeDialog.qml",
         "qml/VideoFlyout.qml",
+        "qml/NetworkPopover.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

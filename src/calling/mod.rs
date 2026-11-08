@@ -21,6 +21,7 @@ pub mod ice;
 pub mod incoming;
 pub mod live_roster;
 pub mod mcp;
+pub mod network_quality;
 pub mod media;
 pub mod meeting_media;
 pub mod meeting_options;

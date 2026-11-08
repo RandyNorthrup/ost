@@ -876,6 +876,13 @@ impl ActiveCall {
         self.webrtc.as_ref().is_some_and(|w| w.can_send_video())
     }
 
+    /// Teams' network strength for this call (Good while there's no media).
+    pub fn network_strength(&self) -> super::network_quality::Strength {
+        self.webrtc
+            .as_ref()
+            .map_or(super::network_quality::Strength::Good, |m| m.network_strength())
+    }
+
     /// Turn the camera on or off.
     pub fn set_camera(&mut self, on: bool, device: Option<String>) -> Result<()> {
         self.webrtc
