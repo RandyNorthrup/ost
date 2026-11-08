@@ -3,7 +3,7 @@ id: TASK-0047
 title: >-
   Meeting media as Teams: video, screen share and active speaker in meetings and
   group calls
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
@@ -56,3 +56,30 @@ Calls/meetings P1 gaps (docs/parity/gaps-calls-meetings.md): meetings and group 
 - 2026-11-08 (group call): Meet now in "OST group test" with Randy's Teams web (camera and mic off): OST's shared kitty window showed in Teams web (controlVideoStreaming capped the encoder as the bandwidth rose); Randy's shared example.com tab showed in OST's presenting layout, twice in a row. Logs once per video stream where it is routed.
 - Gallery pages (gallery size, ‹ n/m ›) and Teams' name tags (12 px, guest glyph, filled mic-off), measured on winpc: commit 58fb147. Voice-level outline from the mix's CSRCs: 7c6c7e0.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Meetings and group calls now carry video, screen sharing and the active speaker, as Teams does.
+
+Receiving:
+- The media control plane (SCTP data channel over the call's DTLS; MCP framing; syn/ack/heartbeat; source requests; vdclc; dsh). Nine receive slots plus the sharing line, routed by answered SSRC range.
+- Transport-wide congestion control feedback, so the processor sends 960x540 layers.
+- Teams' gallery (16:9 fitting, pages of the gallery size with ‹ n/m ›), Speaker view, the View menu, room mode, the presenting layout and Pop out.
+- The voice-level outline from the mix's CSRCs; Speaker view from dsh.
+
+Sending:
+- The camera and sharing lines are offered sendrecv and switched with UpdateMediaDescriptions only (share sendonly, negotiationTag "<callId>;ss_<n>").
+- Joins of an ongoing call use its id as the chain id.
+- controlVideoStreaming and vdclc cap the encoder and ask for keyframes.
+- The processor's 42C0xx H.264 profile is recognised.
+
+Tests:
+- Unit tests for SCTP/DCEP, MCP, twcc, descriptions, control events, profiles and CSRC tracking.
+- Live in the test meeting with up to four Teams web guests and winpc: cameras, shares and speaking both ways, plus gallery pages.
+- Live in a group call (Meet now with Teams web): shares both ways.
+
+Spec: docs/spec/meeting-video.md.
+
+Follow-ups: TASK-0058 (others' own mute state), TASK-0059 (your mic waveform).
+<!-- SECTION:FINAL_SUMMARY:END -->
