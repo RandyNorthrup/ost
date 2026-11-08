@@ -676,6 +676,10 @@ Window {
         onClosing: if (backend.callState !== "ended") backend.hangUp()
         meeting: backend.callMeeting
         roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
+        lobby: backend.callLobbyJson ? JSON.parse(backend.callLobbyJson) : []
+        onAdmitLobby: (id, name, notBot) => backend.admitFromLobby(id, name, notBot)
+        onDenyLobby: (id, name) => backend.denyFromLobby(id, name)
+        onAdmitAllLobby: backend.admitAllFromLobby()
         selfId: backend.userMri
         // Chat: the 1:1 chat with the person in the call, or the meeting chat.
         onOpenChat: {
@@ -1091,7 +1095,13 @@ Window {
                 // --join-admit: admit the first person waiting in the lobby.
                 const lobby = JSON.parse(backend.callLobbyJson || "[]")
                 console.warn("JOIN admitting", JSON.stringify(lobby))
-                if (lobby.length) backend.admitFromLobby(lobby[0].id, lobby[0].name)
+                // --join-admit-notbot: as if "This isn't a bot" was ticked.
+                if (lobby.length) backend.admitFromLobby(lobby[0].id, lobby[0].name, Qt.application.arguments.indexOf("--join-admit-notbot") >= 0)
+            } else if (step === 7 && Qt.application.arguments.indexOf("--join-deny") >= 0) {
+                // --join-deny: deny the last person waiting in the lobby.
+                const lobby = JSON.parse(backend.callLobbyJson || "[]")
+                console.warn("JOIN denying", JSON.stringify(lobby))
+                if (lobby.length) backend.denyFromLobby(lobby[lobby.length - 1].id, lobby[lobby.length - 1].name)
             } else if (window.joinRaise && step === 8) {
                 // --join-raise: raise your hand, then lower it.
                 backend.toggleHand()

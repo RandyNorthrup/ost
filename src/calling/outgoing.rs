@@ -46,6 +46,21 @@ pub struct OutgoingCall {
     all_participants: Option<String>,
     /// Meetings: the conversation's admit and admitAll links (the lobby).
     admit_links: (Option<String>, Option<String>),
+    /// The conversation's removeParticipant link (Deny, Remove).
+    remove_link: Option<String>,
+    /// The conversation's updateParticipantProperties link (marking a
+    /// screened guest "not a bot" when admitting them).
+    properties_link: Option<String>,
+}
+
+/// Someone waiting in a meeting's lobby.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LobbyPerson {
+    pub id: String,
+    pub name: String,
+    /// Teams' join shield flagged this anonymous guest as a bot: Teams
+    /// lists them under "Suspected threats" with an Unverified badge.
+    pub suspected: bool,
 }
 
 impl OutgoingCall {
@@ -178,7 +193,7 @@ impl OutgoingCall {
 
     /// Who is waiting in the meeting's lobby: (MRI, name), as Teams asks
     /// for them (getAllParticipants with scope "lobby").
-    pub async fn lobby(&self) -> Result<Vec<(String, String)>> {
+    pub async fn lobby(&self) -> Result<Vec<LobbyPerson>> {
         let link = self
             .all_participants
             .clone()
@@ -189,8 +204,10 @@ impl OutgoingCall {
         Ok(lobby_people(&reply))
     }
 
-    /// Admit someone from the lobby (Teams' admit link).
-    pub async fn admit(&self, id: &str, name: &str) -> Result<()> {
+    /// Admit someone from the lobby (Teams' admit link). `not_bot`: the
+    /// organizer ticked "This isn't a bot" for a suspected guest, so their
+    /// screening is cleared afterwards, as Teams does.
+    pub async fn admit(&self, id: &str, name: &str, not_bot: bool) -> Result<()> {
         let link = self
             .admit_links
             .0
@@ -206,6 +223,56 @@ impl OutgoingCall {
             "debugContent": { "causeId": uuid::Uuid::new_v4().to_string() },
         });
         cc_post(&self.http, &self.skype_token, &link, &body, "Admit").await?;
+        if not_bot {
+            self.mark_not_bot(id).await?;
+        }
+        Ok(())
+    }
+
+    /// Clear a guest's bot screening (Teams' markParticipantAsNotBot: an
+    /// updateParticipantsProperties for that participant).
+    async fn mark_not_bot(&self, id: &str) -> Result<()> {
+        let link = self
+            .properties_link
+            .clone()
+            .context("This meeting can't update participants")?;
+        let op = uuid::Uuid::new_v4().to_string();
+        let from = serde_json::json!({
+            "id": self.me.0["id"],
+            "endpointId": self.me.0["endpointId"],
+            "participantId": self.me.0["participantId"],
+        });
+        let body = not_bot_body(
+            from,
+            id,
+            &op,
+            &chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            &signaling::trouter_callback(
+                &self.callbacks.0,
+                &self.callbacks.1,
+                "conversation/updateParticipantPropertiesStatus/",
+            ),
+        );
+        cc_post(&self.http, &self.skype_token, &link, &body, "Not a bot").await?;
+        Ok(())
+    }
+
+    /// Deny someone in the lobby, or remove them from the meeting (Teams'
+    /// removeParticipant with `to`).
+    pub async fn remove(&self, id: &str, name: &str) -> Result<()> {
+        let link = self
+            .remove_link
+            .clone()
+            .context("This call can't remove people")?;
+        let cb = |p: &str| signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, p);
+        let body = serde_json::json!({
+            "participants": { "from": self.me.0, "to": [{ "id": id, "displayName": name }] },
+            "links": {
+                "removeParticipantSuccess": cb("conversation/removeParticipantSuccess/"),
+                "removeParticipantFailure": cb("conversation/removeParticipantFailure/"),
+            },
+        });
+        cc_post(&self.http, &self.skype_token, &link, &body, "Remove").await?;
         Ok(())
     }
 
@@ -504,29 +571,65 @@ async fn cc_post(
     Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
 }
 
-/// The people in a getAllParticipants reply: an array of {id, displayName}
-/// or a map of roster entries keyed by MRI.
-fn lobby_people(reply: &serde_json::Value) -> Vec<(String, String)> {
+/// The people in a getAllParticipants reply: an array of {id, displayName,
+/// participantScreening} or a map of roster entries keyed by MRI.
+fn lobby_people(reply: &serde_json::Value) -> Vec<LobbyPerson> {
     let list = reply
         .pointer("/response/participants")
         .or_else(|| reply.get("participants"))
         .cloned()
         .unwrap_or_default();
-    let name_of = |p: &serde_json::Value| {
-        p.get("displayName")
+    let person = |id: &str, p: &serde_json::Value| {
+        let name = p
+            .get("displayName")
             .or_else(|| p.pointer("/details/displayName"))
             .and_then(|n| n.as_str())
             .unwrap_or_default()
-            .to_string()
+            .to_string();
+        let flagged = p
+            .pointer("/participantScreening/isBot")
+            .or_else(|| p.pointer("/details/propertyBag/participantScreening/value/isBot"))
+            .and_then(|b| b.as_bool())
+            .unwrap_or(false);
+        // Teams: only anonymous guests are screened (JOIN_SHIELD).
+        LobbyPerson {
+            id: id.to_string(),
+            name,
+            suspected: flagged && id.starts_with("8:teamsvisitor:"),
+        }
     };
     match list {
         serde_json::Value::Array(a) => a
             .iter()
-            .filter_map(|p| Some((p.get("id")?.as_str()?.to_string(), name_of(p))))
+            .filter_map(|p| Some(person(p.get("id")?.as_str()?, p)))
             .collect(),
-        serde_json::Value::Object(m) => m.iter().map(|(id, p)| (id.clone(), name_of(p))).collect(),
+        serde_json::Value::Object(m) => m.iter().map(|(id, p)| person(id, p)).collect(),
         _ => Vec::new(),
     }
+}
+
+/// Teams' updateParticipantsProperties body clearing a guest's screening.
+fn not_bot_body(
+    from: serde_json::Value,
+    id: &str,
+    op: &str,
+    now: &str,
+    status_link: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "from": from,
+        "to": [{
+            "id": id,
+            "propertyBag": {
+                "participantScreening": {
+                    "value": { "isBot": false, "source": "JoinShield", "detectedAt": now, "markedBy": "admitter" },
+                    "sequenceNumber": 1,
+                },
+            },
+        }],
+        "links": { "updateParticipantPropertiesStatus": status_link },
+        "operationId": op,
+    })
 }
 
 /// A conversation link (`leave`, `publishState`, `removeState`…) from the
@@ -859,6 +962,8 @@ async fn start(
         conversation_link(&created.response_body, "admit"),
         conversation_link(&created.response_body, "admitAll"),
     );
+    let remove_link = conversation_link(&created.response_body, "removeParticipant");
+    let properties_link = conversation_link(&created.response_body, "updateParticipantProperties");
     tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
 
@@ -965,12 +1070,48 @@ async fn start(
         state_seq: 0,
         all_participants,
         admit_links,
+        remove_link,
+        properties_link,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lobby_replies_mark_screened_guests() {
+        // As the meeting's getAllParticipants (scope "lobby") answered.
+        let reply = serde_json::json!({ "participants": [
+            { "displayName": "OST Guest 1", "id": "8:teamsvisitor:8fec5b863b244e208df046cb684e190e",
+              "participantScreening": { "detectedAt": "2026-11-08T01:29:46.0294623Z", "isBot": true, "source": "JoinShield" } },
+            { "displayName": "Ada", "id": "8:teamsvisitor:aa" },
+            { "displayName": "Bea", "id": "8:orgid:bb", "participantScreening": { "isBot": true } },
+        ]});
+        let people = lobby_people(&reply);
+        assert_eq!(people.len(), 3);
+        assert!(people[0].suspected);
+        assert_eq!(people[0].name, "OST Guest 1");
+        assert!(!people[1].suspected);
+        // Only anonymous guests are screened.
+        assert!(!people[2].suspected);
+    }
+
+    #[test]
+    fn not_bot_update_clears_the_screening() {
+        let body = not_bot_body(
+            serde_json::json!({ "id": "8:orgid:me" }),
+            "8:teamsvisitor:x",
+            "op",
+            "now",
+            "cb",
+        );
+        let bag = &body["to"][0]["propertyBag"]["participantScreening"];
+        assert_eq!(bag["value"]["isBot"], false);
+        assert_eq!(bag["value"]["markedBy"], "admitter");
+        assert_eq!(bag["sequenceNumber"], 1);
+        assert_eq!(body["links"]["updateParticipantPropertiesStatus"], "cb");
+    }
 
     #[test]
     fn callee_is_the_other_member_of_a_1to1_chat() {

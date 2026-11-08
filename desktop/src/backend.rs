@@ -460,12 +460,16 @@ pub mod qobject {
         /// Raise or lower your hand in the meeting.
         #[qinvokable]
         fn toggle_hand(self: Pin<&mut Backend>);
-        /// Admit someone waiting in the lobby (Teams' Admit).
+        /// Admit someone waiting in the lobby (Teams' Admit); `not_bot`:
+        /// "This isn't a bot" was ticked for a suspected guest.
         #[qinvokable]
-        fn admit_from_lobby(self: Pin<&mut Backend>, id: &QString, name: &QString);
+        fn admit_from_lobby(self: Pin<&mut Backend>, id: &QString, name: &QString, not_bot: bool);
         /// Admit everyone in the lobby (Teams' Admit all).
         #[qinvokable]
         fn admit_all_from_lobby(self: Pin<&mut Backend>);
+        /// Deny someone waiting in the lobby (Teams' Deny).
+        #[qinvokable]
+        fn deny_from_lobby(self: Pin<&mut Backend>, id: &QString, name: &QString);
 
         /// Transfer the call to a person (AAD object id).
         #[qinvokable]
@@ -1661,7 +1665,7 @@ async fn refresh_lobby(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
             let json = serde_json::to_string(
                 &list
                     .iter()
-                    .map(|(id, name)| json!({ "id": id, "name": name }))
+                    .map(|p| json!({ "id": p.id, "name": p.name, "suspected": p.suspected }))
                     .collect::<Vec<_>>(),
             )
             .unwrap_or_else(|_| "[]".into());
@@ -2963,16 +2967,31 @@ impl qobject::Backend {
         });
     }
 
-    pub fn admit_from_lobby(self: Pin<&mut Self>, id: &QString, name: &QString) {
+    pub fn admit_from_lobby(self: Pin<&mut Self>, id: &QString, name: &QString, not_bot: bool) {
         let (id, name) = (id.to_string(), name.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = match call_slot().lock().await.outgoing.as_ref() {
-                Some(call) => call.admit(&id, &name).await,
+                Some(call) => call.admit(&id, &name, not_bot).await,
                 None => return,
             };
             if let Err(e) = result {
                 tracing::warn!("admit failed: {}", short_error(&e));
+            }
+            refresh_lobby(qt).await;
+        });
+    }
+
+    pub fn deny_from_lobby(self: Pin<&mut Self>, id: &QString, name: &QString) {
+        let (id, name) = (id.to_string(), name.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = match call_slot().lock().await.outgoing.as_ref() {
+                Some(call) => call.remove(&id, &name).await,
+                None => return,
+            };
+            if let Err(e) = result {
+                tracing::warn!("deny failed: {}", short_error(&e));
             }
             refresh_lobby(qt).await;
         });

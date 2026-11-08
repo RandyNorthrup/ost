@@ -29,6 +29,11 @@ Window {
     property bool meeting: false
     /// The meeting's participants (from the roster): [{id, name, role}].
     property var roster: []
+    /// Who waits in the meeting's lobby: [{id, name, suspected}].
+    property var lobby: []
+    signal admitLobby(string id, string name, bool notBot)
+    signal denyLobby(string id, string name)
+    signal admitAllLobby()
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
     readonly property var others: roster.filter(p => p.id !== selfId)
@@ -98,6 +103,8 @@ Window {
     onStateChanged: {
         if (state === "connected") { connectedAt = Date.now(); seconds = 0 }
         else consulting = null
+        // A new call: lobby notifications are on again.
+        if (state === "calling") lobbyToast.resetForCall()
     }
 
     function clock(s) {
@@ -137,9 +144,10 @@ Window {
             }
             BarButton {
                 icon: "people"; label: "People"; checked: win.side === "people"
-                // Teams: raised hands as a red count, else how many are here.
-                badge: win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
-                badgeAlert: win.hands.length > 0
+                // Teams: people waiting in the lobby, or raised hands, as a
+                // red count; else how many are here.
+                badge: win.lobby.length > 0 ? win.lobby.length : win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
+                badgeAlert: win.lobby.length > 0 || win.hands.length > 0
                 onClicked: win.side = win.side === "people" ? "" : "people"
             }
             BarButton {
@@ -502,10 +510,10 @@ Window {
     Rectangle {
         id: sidePane
         visible: win.side !== ""
-        anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom; margins: 6 }
-        width: 320; radius: 6
-        color: theme.surface
-        border.color: theme.dividerSoft
+        // Teams' calling-right-side-panel: 360 wide, flush with the window.
+        anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
+        width: 360
+        color: win.side === "people" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -514,72 +522,41 @@ Window {
             pane: true
             onClosePane: win.side = ""
         }
-        Item {
+        PeoplePane {
             visible: win.side === "people"
             anchors.fill: parent
-            Text {
-                x: 16; y: 18
-                text: "Participants"
-                font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
-                color: theme.text
-            }
-            Rectangle {
-                x: parent.width - 44; y: 12; width: 32; height: 32; radius: theme.radius
-                color: pch.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
-                HoverHandler { id: pch; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: win.side = "" }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Close participants"
-            }
-            Text {
-                x: 16; y: 64
-                text: (win.meeting ? "In this meeting (" : "In this call (") + win.people.length + ")"
-                font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
-                color: theme.textSecondary
-            }
-            Column {
-                x: 8; y: 88; width: parent.width - 16
-                Repeater {
-                    model: win.people
-                    Item {
-                        required property var modelData
-                        width: parent.width; height: 48
-                        Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 32; name: modelData.name; photoId: modelData.id }
-                        Column {
-                            x: 52; anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 96
-                            Text {
-                                width: parent.width; elide: Text.ElideRight
-                                text: modelData.name + (modelData.you ? " (You)" : "")
-                                font.family: theme.font; font.pixelSize: theme.base
-                                color: theme.text
-                            }
-                            Text {
-                                visible: !!modelData.role
-                                text: (modelData.role || "").charAt(0).toUpperCase() + (modelData.role || "").slice(1)
-                                font.family: theme.font; font.pixelSize: theme.small
-                                color: theme.textSecondary
-                            }
-                        }
-                        Text {
-                            visible: !!modelData.hand
-                            anchors.right: parent.right; anchors.rightMargin: 40; anchors.verticalCenter: parent.verticalCenter
-                            text: "\u270B"; font.pixelSize: 16
-                        }
-                        FluentIcon {
-                            anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
-                            name: modelData.mutedNow ? "mic-off-24" : "mic-24"; size: 20
-                            color: theme.textStrong
-                        }
-                        Accessible.role: Accessible.ListItem
-                        Accessible.name: modelData.name + (modelData.hand ? ", hand raised" : "") + (modelData.mutedNow ? ", muted" : "")
-                    }
-                }
-            }
+            people: win.people
+            lobby: win.lobby
+            meeting: win.meeting
+            onClosed: win.side = ""
+            onAdmit: (id, name) => win.admitLobby(id, name, false)
+            onAdmitSuspected: (id, name) => admitAsk.ask(id, name)
+            onDeny: (id, name) => win.denyLobby(id, name)
+            onAdmitAll: win.admitAllLobby()
+            onAdmitEach: list => list.forEach(p => win.admitLobby(p.id, p.name, false))
+            onDenyEach: list => list.forEach(p => win.denyLobby(p.id, p.name))
         }
     }
 
+    // Teams asks before admitting a guest its join shield flagged.
+    AdmitSuspectedDialog {
+        id: admitAsk
+        onAdmit: (id, name, notBot) => win.admitLobby(id, name, notBot)
+        onDeny: (id, name) => win.denyLobby(id, name)
+    }
+
+    // The lobby notification, 8 px below the top of the stage, centred on it.
+    LobbyToast {
+        id: lobbyToast
+        x: stage.x + (stage.width - width) / 2
+        y: bar.height + 10.7
+        z: 5
+        lobby: win.lobby
+        rosterOpen: win.side === "people"
+        onAdmit: (id, name) => win.admitLobby(id, name, false)
+        onDeny: (id, name) => win.denyLobby(id, name)
+        onViewLobby: win.side = "people"
+    }
     component Divider: Rectangle {
         width: 17; height: 32
         color: "transparent"
@@ -801,18 +778,29 @@ Window {
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {
                 name: bb.icon; size: 20; color: bb.iconColor; anchors.horizontalCenter: parent.horizontalCenter
+                // Teams' alert badge (roster-button-badge): 18 px with a
+                // 2 px white ring, #C50F1F, 10/700 white, 16 px right of
+                // and 1.8 px above the glyph's corner.
                 Rectangle {
-                    visible: bb.badge > 0
-                    x: bb.badgeAlert ? parent.width - 6 : parent.width + 2; y: bb.badgeAlert ? -6 : -2
-                    width: Math.max(16, bbText.implicitWidth + (bb.badgeAlert ? 8 : 0)); height: 16; radius: 8
-                    color: bb.badgeAlert ? theme.danger : "transparent"
+                    visible: bb.badge > 0 && bb.badgeAlert
+                    x: 16; y: -1.8
+                    width: Math.max(18, bbAlert.implicitWidth + 8); height: 18; radius: 10
+                    color: "#C50F1F"
+                    border.color: "white"; border.width: 2
                     Text {
-                        id: bbText
+                        id: bbAlert
                         anchors.centerIn: parent
                         text: bb.badge
-                        font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
-                        color: bb.badgeAlert ? "white" : theme.text
+                        font.family: theme.font; font.pixelSize: 10; font.weight: Font.Bold
+                        color: "white"
                     }
+                }
+                Text {
+                    visible: bb.badge > 0 && !bb.badgeAlert
+                    x: parent.width + 2; y: -2
+                    text: bb.badge
+                    font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
+                    color: theme.text
                 }
             }
             Text {

@@ -59,6 +59,11 @@ fn main() {
         "qml/BarButton.qml",
         "qml/PressedLine.qml",
         "qml/LimitTip.qml",
+        "qml/UnverifiedBadge.qml",
+        "qml/GuestAvatar.qml",
+        "qml/LobbyToast.qml",
+        "qml/AdmitSuspectedDialog.qml",
+        "qml/PeoplePane.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [
@@ -66,6 +71,7 @@ fn main() {
         "assets/fonts",
         "assets/tray",
         "assets/funstuff",
+        "assets/lobby",
     ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();
