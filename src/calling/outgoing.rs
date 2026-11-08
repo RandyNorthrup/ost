@@ -362,11 +362,18 @@ impl OutgoingCall {
     /// In a meeting or group call: show these cameras (roster
     /// `main-video` sourceIds, most wanted first). Returns sourceId ->
     /// frame key for each that has a receive slot.
-    pub fn show_videos(&self, sources: &[i64]) -> std::collections::HashMap<i64, String> {
+    pub fn show_videos(&self, sources: &[(i64, u32)]) -> std::collections::HashMap<i64, String> {
         self.media
             .as_ref()
             .map(|m| m.show_videos(sources))
             .unwrap_or_default()
+    }
+
+    /// In a meeting or group call: receive this presenter's screen, or stop.
+    pub fn show_share(&self, source: Option<i64>) {
+        if let Some(m) = &self.media {
+            m.show_share(source);
+        }
     }
 
     pub fn can_send_video(&self) -> bool {

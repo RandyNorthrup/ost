@@ -32,6 +32,9 @@ pub struct Participant {
     pub video_source: Option<i64>,
     /// Their audio stream's sourceId (dominant speaker updates name it).
     pub audio_source: Option<i64>,
+    /// Their shared screen's stream (`applicationsharing-video` sourceId)
+    /// while they present.
+    pub share_source: Option<i64>,
     /// The update listed their endpoints' streams; one that didn't (Teams'
     /// first update after joining names people only) leaves the
     /// stream-derived fields as they were.
@@ -131,6 +134,7 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
                         .get("endpoints")
                         .is_some_and(|e| e.as_object().is_some_and(|o| !o.is_empty())),
                     video_source: sending_source(&all_streams, "main-video"),
+                    share_source: sending_source(&all_streams, "applicationsharing-video"),
                     audio_source: all_streams
                         .iter()
                         .find(|m| m.get("label").and_then(|l| l.as_str()) == Some("main-audio"))
@@ -202,6 +206,7 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
             Some(x) => {
                 if !p.streams_known {
                     p.video_source = x.video_source;
+                    p.share_source = x.share_source;
                     p.audio_source = x.audio_source;
                     p.server_muted = x.server_muted;
                     p.on_hold = x.on_hold;

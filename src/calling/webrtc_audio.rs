@@ -124,6 +124,8 @@ pub struct WebRtcOffer {
     pub slots: Vec<super::meeting_media::Slot>,
     /// … and its stream id for our data line, when it took it.
     pub data_stream: Option<i64>,
+    /// … and the screen-sharing line, as a slot.
+    pub share_slot: Option<super::meeting_media::Slot>,
 }
 
 /// The payload type of `telephone-event/8000` in an audio section.
@@ -625,6 +627,7 @@ impl WebRtcOffer {
             dtmf_pt: dtmf_payload_type(&audio),
             slots: super::meeting_media::answered_slots(sdp),
             data_stream: super::meeting_media::data_stream(sdp),
+            share_slot: super::meeting_media::answered_share(sdp),
             sections,
             audio_mid,
             setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
@@ -1171,14 +1174,15 @@ impl WebRtcAudioSession {
         }
         // A media processor's re-offer may renumber the receive slots.
         let slots = super::meeting_media::answered_slots(offer);
+        let share = super::meeting_media::answered_share(offer);
         #[cfg(feature = "video")]
-        for slot in &slots {
+        for slot in slots.iter().chain(share.iter()) {
             if let Some((_, r)) = self.slot_ranges.iter().find(|(m, _)| *m == slot.mid) {
                 r.store(pack_range(slot.ssrcs), Ordering::Relaxed);
             }
         }
         if let Some(v) = &self.meeting_video {
-            v.update_slots(slots);
+            v.update_slots(slots, share);
         }
         Ok(sdp)
     }
@@ -1186,11 +1190,19 @@ impl WebRtcAudioSession {
     /// In a meeting: show these video sources (roster `main-video`
     /// sourceIds, most wanted first); returns sourceId -> frame key for
     /// those that got a slot.
-    pub fn show_videos(&self, sources: &[i64]) -> std::collections::HashMap<i64, String> {
+    pub fn show_videos(&self, sources: &[(i64, u32)]) -> std::collections::HashMap<i64, String> {
         self.meeting_video
             .as_ref()
             .map(|v| v.show(sources))
             .unwrap_or_default()
+    }
+
+    /// In a meeting: receive this presenter's screen (their
+    /// applicationsharing-video sourceId), or stop.
+    pub fn show_share(&self, source: Option<i64>) {
+        if let Some(v) = &self.meeting_video {
+            v.show_share(source);
+        }
     }
 
     /// The other side has the call on hold.
@@ -1547,11 +1559,20 @@ impl WebRtcAudioSession {
         ]
         .into_iter()
         .filter_map(|(v, key)| {
+            // In a meeting the sharing line is a slot too: the processor
+            // sends the presenter's screen on its SSRC range.
+            let share = (key == "share" && local.meeting)
+                .then(|| offer.share_slot.clone())
+                .flatten();
+            // (The processor sends with the payload types of our offer.)
             v.map(|v| VideoStream {
-                pt: v.payload_type,
+                pt: share
+                    .as_ref()
+                    .map_or(v.payload_type, |_| PT_H264_SHARE_OFFER),
                 rx: Arc::new(super::webrtc_video::VideoReceiver::start(key)),
                 ssrc: Arc::new(std::sync::atomic::AtomicU32::new(v.ssrc.unwrap_or(0))),
-                range: None,
+                range: share
+                    .map(|s| Arc::new(std::sync::atomic::AtomicU64::new(pack_range(s.ssrcs)))),
             })
         })
         .chain(
@@ -1561,7 +1582,8 @@ impl WebRtcAudioSession {
                 .iter()
                 .filter(|_| local.meeting)
                 .map(|slot| VideoStream {
-                    pt: slot.pt,
+                    // Our offer's H.264 payload type: what it's sent with.
+                    pt: PT_H264_OFFER,
                     rx: Arc::new(super::webrtc_video::VideoReceiver::start(
                         &super::meeting_media::frame_key(&slot.mid),
                     )),
@@ -1574,8 +1596,10 @@ impl WebRtcAudioSession {
         .collect();
         #[cfg(feature = "video")]
         let slot_ranges: Vec<(String, Arc<std::sync::atomic::AtomicU64>)> = offer
-            .slots
+            .share_slot
             .iter()
+            .filter(|_| local.meeting)
+            .chain(offer.slots.iter().filter(|_| local.meeting))
             .zip(video_rx.iter().filter_map(|v| v.range.clone()))
             .map(|(slot, r)| (slot.mid.clone(), r))
             .collect();
@@ -1676,6 +1700,7 @@ impl WebRtcAudioSession {
                     super::datachannel::open(dtls, super::meeting_media::DATA_LABEL, 0);
                 Some(super::meeting_media::MeetingVideo::start(
                     offer.slots.clone(),
+                    offer.share_slot.clone(),
                     tx,
                     events,
                 ))
@@ -1900,6 +1925,8 @@ type KeyframeSlot = Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>;
 async fn recv_loop(ctx: RecvCtx) {
     let mut buf = vec![0u8; 2048];
     let mut announced = false;
+    // Streams nothing took, noted once each (diagnostics).
+    let mut unrouted = std::collections::HashSet::<(u32, u8)>::new();
     loop {
         let Ok((len, from)) = ctx.socket.recv_from(&mut buf).await else {
             continue;
@@ -2011,6 +2038,12 @@ async fn recv_loop(ctx: RecvCtx) {
                         });
                     }
                     continue;
+                }
+                if pt != PT_PCMU
+                    && let Ok(pkt) = rtp::decode(&plain)
+                    && unrouted.insert((pkt.ssrc, pt))
+                {
+                    tracing::debug!(ssrc = pkt.ssrc, pt, len, "RTP stream nothing receives");
                 }
                 if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain))
                     && pkt.payload_type == PT_PCMU

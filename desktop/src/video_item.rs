@@ -29,6 +29,9 @@ pub mod qobject {
         #[qproperty(bool, fit)]
         /// Rounded corners (Teams' meeting tiles round theirs by 6).
         #[qproperty(f64, radius)]
+        /// With `fit`: fill the bars around the picture (#1F1F1F, as
+        /// Teams' 1:1 presenting stage); off, they show what's behind.
+        #[qproperty(bool, letterbox)]
         type VideoFrame = super::VideoFrameRust;
     }
 
@@ -60,7 +63,6 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::{ClipOperation, QImage, QImageFormat, QPainterRenderHint, QRect, QString};
 use teams_cli::calling::frames;
 
-#[derive(Default)]
 pub struct VideoFrameRust {
     source: QString,
     has_frame: bool,
@@ -70,8 +72,24 @@ pub struct VideoFrameRust {
     fit: bool,
     /// Corner radius to clip to (0: square).
     radius: f64,
+    letterbox: bool,
     /// The frame sequence last drawn.
     shown: u64,
+}
+
+impl Default for VideoFrameRust {
+    fn default() -> Self {
+        Self {
+            source: QString::default(),
+            has_frame: false,
+            frame_width: 0,
+            frame_height: 0,
+            fit: false,
+            radius: 0.0,
+            letterbox: true,
+            shown: 0,
+        }
+    }
 }
 
 impl cxx_qt::Constructor<()> for qobject::VideoFrame {
@@ -169,7 +187,7 @@ impl qobject::VideoFrame {
             );
         }
         // Letterbox bars are near-black, as Teams' presenting stage.
-        if self.rust().fit {
+        if self.rust().fit && self.rust().letterbox {
             painter.as_mut().fill_rect(
                 &cxx_qt_lib::QRectF::new(0.0, 0.0, w, h),
                 &cxx_qt_lib::QColor::from_rgb(0x1f, 0x1f, 0x1f),

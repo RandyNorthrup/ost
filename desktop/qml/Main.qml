@@ -682,6 +682,8 @@ Window {
         roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
         videoKeys: backend.callVideoJson ? JSON.parse(backend.callVideoJson) : ({})
         onIncomingVideoOffChanged: backend.setIncomingVideo(!incomingVideoOff)
+        shareId: backend.callShareMri
+        onVideoWidthsChanged: backend.setVideoWidths(JSON.stringify(videoWidths))
         chatMembers: backend.callChatMembersJson ? JSON.parse(backend.callChatMembersJson) : []
         speakerId: backend.callSpeakerMri
         lobby: backend.callLobbyJson ? JSON.parse(backend.callLobbyJson) : []
@@ -1099,7 +1101,12 @@ Window {
             ["videos-off", () => { callWindow.hideMe = false; callWindow.incomingVideoOff = true }],
             ["videos-on", () => { callWindow.incomingVideoOff = false }],
             ["room", () => { callWindow.roomMode = true }],
-            ["room-off", () => { callWindow.roomMode = false }]
+            ["room-off", () => { callWindow.roomMode = false }],
+            ["presenting", () => {}],
+            ["popout", () => { callWindow.contentPoppedOut = callWindow.presenting }],
+            ["popin", () => { callWindow.contentPoppedOut = false }],
+            ["focus", () => { callWindow.layout = callWindow.presenting ? "focus" : callWindow.layout }],
+            ["unfocus", () => { callWindow.layout = "gallery" }]
         ]
         // Even ticks act, odd ticks capture what that action left.
         onTriggered: {
@@ -1112,7 +1119,7 @@ Window {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-view-" + name + ".png")))
                 if (name === "room" && callWindow.roomWindow)
                     callWindow.roomWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-view-room-window.png")))
-                console.warn("VIEW", name, "layout", callWindow.layout, "videos", backend.callVideoJson)
+                console.warn("VIEW", name, "layout", callWindow.layout, "share", backend.callShareMri, "videos", backend.callVideoJson)
             }
             step++
         }

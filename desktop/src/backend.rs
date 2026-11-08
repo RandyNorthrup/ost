@@ -113,6 +113,8 @@ pub mod qobject {
         #[qproperty(QString, call_video_json)]
         /// The meeting's dominant speaker (the media processor's history).
         #[qproperty(QString, call_speaker_mri)]
+        /// Who presents their screen in the meeting (empty: nobody).
+        #[qproperty(QString, call_share_mri)]
         /// Who waits in the meeting's lobby: [{id, name}].
         #[qproperty(QString, call_lobby_json)]
         /// Your own MRI (`8:orgid:<oid>`, lowercase), once signed in.
@@ -390,6 +392,10 @@ pub mod qobject {
         /// others' cameras.
         #[qinvokable]
         fn set_incoming_video(self: Pin<&mut Backend>, on: bool);
+        /// How wide each tile is drawn: {mri: px} (Teams asks for video to
+        /// fit its tiles).
+        #[qinvokable]
+        fn set_video_widths(self: Pin<&mut Backend>, json: &QString);
         /// Send a meeting reaction: like, heart, applause, laugh, surprised.
         #[qinvokable]
         fn send_reaction(self: Pin<&mut Backend>, name: &QString);
@@ -965,6 +971,10 @@ pub struct BackendRust {
     call_roster_json: QString,
     call_video_json: QString,
     call_speaker_mri: QString,
+    call_share_mri: QString,
+    /// How wide each person's tile is drawn ({mri: px}), for the size of
+    /// video to ask for.
+    video_widths: std::collections::HashMap<String, f64>,
     call_lobby_json: QString,
     call_thread_id: QString,
     user_mri: QString,
@@ -2828,6 +2838,7 @@ impl qobject::Backend {
         self.as_mut().set_call_roster_json(QString::from("[]"));
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
+        self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
@@ -2895,6 +2906,7 @@ impl qobject::Backend {
         self.as_mut().set_call_roster_json(QString::from("[]"));
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
+        self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
@@ -2988,6 +3000,18 @@ impl qobject::Backend {
                 tracing::warn!("reaction failed: {}", short_error(&e));
             }
         });
+    }
+
+    pub fn set_video_widths(mut self: Pin<&mut Self>, json: &QString) {
+        let widths: std::collections::HashMap<String, f64> =
+            serde_json::from_str(&json.to_string()).unwrap_or_default();
+        if widths == self.rust().video_widths {
+            return;
+        }
+        self.as_mut().rust_mut().video_widths = widths;
+        // Later, not inside the QML binding update that called us (the
+        // roster sets properties that binding depends on).
+        let _ = self.qt_thread().queue(|this| this.apply_roster(Vec::new()));
     }
 
     pub fn set_incoming_video(mut self: Pin<&mut Self>, on: bool) {
@@ -3319,25 +3343,43 @@ impl qobject::Backend {
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
         let off = self.rust().incoming_video_off;
-        let cameras: Vec<(String, i64)> = roster
+        let widths = self.rust().video_widths.clone();
+        let cameras: Vec<(String, i64, u32)> = roster
             .iter()
             .filter(|p| p.id != me && !off)
-            .filter_map(|p| p.video_source.map(|s| (p.id.clone(), s)))
+            .filter_map(|p| {
+                let w = widths.get(&p.id).copied().unwrap_or(1280.0).round() as u32;
+                p.video_source.map(|s| (p.id.clone(), s, w))
+            })
             .collect();
+        // The presenter: whoever else shares their screen.
+        let presenter = roster
+            .iter()
+            .find(|p| p.id != me && p.share_source.is_some())
+            .map(|p| (p.id.clone(), p.share_source));
+        let share_mri = presenter.as_ref().map(|p| p.0.clone()).unwrap_or_default();
+        if self.rust().call_share_mri.to_string() != share_mri {
+            self.as_mut()
+                .set_call_share_mri(QString::from(share_mri.as_str()));
+        }
+        let share_source = presenter.and_then(|p| p.1);
         self.as_mut().rust_mut().roster = roster;
         self.as_mut()
             .set_call_roster_json(QString::from(json.as_str()));
         if self.rust().call_meeting {
             let qt = self.qt_thread();
             runtime().spawn(async move {
-                let sources: Vec<i64> = cameras.iter().map(|c| c.1).collect();
+                let sources: Vec<(i64, u32)> = cameras.iter().map(|c| (c.1, c.2)).collect();
                 let shown = match call_slot().lock().await.outgoing.as_ref() {
-                    Some(call) => call.show_videos(&sources),
+                    Some(call) => {
+                        call.show_share(share_source);
+                        call.show_videos(&sources)
+                    }
                     None => return,
                 };
                 let keys: serde_json::Map<String, serde_json::Value> = cameras
                     .iter()
-                    .filter_map(|(mri, src)| Some((mri.clone(), shown.get(src)?.clone().into())))
+                    .filter_map(|(mri, src, _)| Some((mri.clone(), shown.get(src)?.clone().into())))
                     .collect();
                 let json = serde_json::Value::Object(keys).to_string();
                 let _ = qt.queue(move |mut this| {

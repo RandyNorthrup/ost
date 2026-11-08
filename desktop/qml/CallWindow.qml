@@ -58,6 +58,13 @@ Window {
     property var videoKeys: ({})
     /// The meeting's dominant speaker (Speaker view puts them on stage).
     property string speakerId: ""
+    /// Who presents their screen in the meeting (empty: nobody).
+    property string shareId: ""
+    readonly property bool presenting: meeting && shareId !== ""
+    /// Pop out: the shared content shows in its own window.
+    property bool contentPoppedOut: false
+    onPresentingChanged: if (!presenting) contentPoppedOut = false
+    readonly property string presenterName: (others.find(p => p.id === shareId) || {}).name || ""
     /// The meeting's link to share (Share invite).
     property string inviteUrl: ""
     /// Who waits in the meeting's lobby: [{id, name, suspected}].
@@ -146,6 +153,20 @@ Window {
     property bool roomMode: false
     /// Your tile entry, as the layouts use it.
     readonly property var selfEntry: ({ id: selfId, name: selfName || "You", self: true })
+    /// How wide each person's tile is drawn ({mri: px}): the size of video
+    /// to ask for (Teams asks to fit its tiles).
+    readonly property var videoWidths: {
+        const out = {}
+        if (!meeting) return out
+        const sideSlot = tiles.atTop ? tiles.sideH * 16 / 9 : tiles.sideW
+        for (const p of tiles.side) out[p.id] = sideSlot
+        if (layout === "speaker" && !presenting && tiles.speaker)
+            out[tiles.speaker.id] = Math.min(tiles.mainW, tiles.mainH * 16 / 9)
+        if (layout !== "speaker" && !presenting)
+            for (const p of tiles.gallery) out[p.id] = galleryTileWidth
+        return out
+    }
+    property real galleryTileWidth: 0
     /// Someone has video on (or it's you with the camera on).
     function hasVideo(p) { return p.self ? cameraOn : !!videoKeys[p.id] }
     /// The others in gallery order (videos first, when asked).
@@ -229,6 +250,13 @@ Window {
             visible: win.meeting
             anchors { right: leaveGroup.left; rightMargin: 17; top: parent.top }
             spacing: 0
+            // Teams' Pop out, while someone presents: the content in a
+            // window of its own.
+            BarButton {
+                visible: win.presenting && !win.contentPoppedOut
+                icon: "call-popout"; label: "Pop out"
+                onClicked: win.contentPoppedOut = true
+            }
             BarButton {
                 icon: "call-chat"; label: "Chat"; checked: win.side === "chat"
                 onClicked: { win.side = win.side === "chat" ? "" : "chat"; if (win.side === "chat") win.openChat() }
@@ -423,14 +451,21 @@ Window {
         // divider with a 1 px #D1D1D1 line resizes it.
         Item {
             id: tiles
-            visible: win.meeting && win.others.length > 0 && win.layout !== "focus"
+            visible: win.meeting && win.others.length > 0 && (win.layout !== "focus" || win.presenting)
             anchors { fill: parent; margins: 2.67 }
             readonly property bool speakerView: win.layout === "speaker"
             readonly property var speaker: {
                 const pool = win.speakerMeInGallery && !win.hideMe ? win.others.concat([win.selfEntry]) : win.others
                 return pool.find(p => p.id === win.speakerId) || win.othersOrdered[0]
             }
-            readonly property var side: speakerView
+            // Presenting: the content on stage, everyone in the side gallery
+            // (no one in Focus on content).
+            // (Popped out, the content has its own window and the stage
+            // goes back to people.)
+            readonly property bool content: win.presenting && !win.contentPoppedOut
+            readonly property var side: content
+                ? (win.layout === "focus" ? [] : win.othersOrdered.concat(win.hideMe ? [] : [win.selfEntry]))
+                : speakerView
                 ? win.othersOrdered.filter(p => p !== speaker).concat(win.hideMe || speaker.self ? [] : [win.selfEntry])
                 : (win.hideMe || win.meInGallery ? [] : [win.selfEntry])
             readonly property var gallery: (win.hideMe || !win.meInGallery ? [] : [win.selfEntry]).concat(win.othersOrdered).slice(0, win.gallerySize)
@@ -446,7 +481,7 @@ Window {
             readonly property real mainH: atTop ? height - sideH : height
             // Speaker: one 16:9 tile, centred.
             MeetingTile {
-                visible: tiles.speakerView
+                visible: tiles.speakerView && !tiles.content
                 call: win
                 person: tiles.speaker || ({})
                 width: Math.min(tiles.mainW, tiles.mainH * 16 / 9); height: width * 9 / 16
@@ -454,10 +489,41 @@ Window {
             }
             // Gallery.
             GalleryGrid {
-                visible: !tiles.speakerView
+                id: galleryGrid
+                visible: !tiles.speakerView && !tiles.content
                 x: tiles.mainX; y: tiles.mainY; width: tiles.mainW; height: tiles.mainH
+                onTileWChanged: win.galleryTileWidth = tileW
                 call: win
                 people: tiles.gallery
+            }
+            // The shared content, as Teams' content tile: the main area,
+            // inset 2, the screen fitted in it, the presenter's name tag.
+            Item {
+                id: contentTile
+                visible: tiles.content
+                x: tiles.mainX + 2; y: tiles.mainY + 2
+                width: tiles.mainW - 4; height: tiles.mainH - 4
+                VideoFrame {
+                    id: meetingShare
+                    source: "share"
+                    fit: true
+                    letterbox: false
+                    anchors.fill: parent
+                    Timer {
+                        interval: 33; repeat: true
+                        running: win.visible && contentTile.visible
+                        onTriggered: meetingShare.refresh()
+                    }
+                }
+                Rectangle {
+                    anchors { left: parent.left; bottom: parent.bottom; leftMargin: 8; bottomMargin: 8 }
+                    height: 24; radius: 4
+                    width: contentName.implicitWidth + 12
+                    color: Qt.rgba(0, 0, 0, 0.5)
+                    Text { id: contentName; x: 6; anchors.verticalCenter: parent.verticalCenter; text: win.presenterName; color: "white"; font.family: theme.font; font.pixelSize: 14 }
+                }
+                Accessible.role: Accessible.Graphic
+                Accessible.name: win.presenterName + " is presenting"
             }
             // The side gallery.
             Grid {
@@ -529,7 +595,7 @@ Window {
             fit: true
             anchors.fill: parent
             z: 1
-            visible: hasFrame && win.state === "connected" && !win.held && !win.heldByPeer
+            visible: !win.meeting && hasFrame && win.state === "connected" && !win.held && !win.heldByPeer
         }
         Rectangle {
             visible: shareVideo.visible
@@ -695,6 +761,36 @@ Window {
         sourceComponent: Component { SharedDisplayWindow { call: win; visible: true } }
     }
     readonly property var roomWindow: roomLoader.item
+    // Pop out: Teams' "Shared content | <meeting>" window, the screen
+    // fitted on the stage with the presenter's name tag; closing it docks
+    // the content again.
+    Loader {
+        active: win.contentPoppedOut
+        sourceComponent: Component {
+            Window {
+                title: "Shared content | " + win.peer + " | OST"
+                width: 1280; height: 680
+                visible: true
+                color: "#F5F5F5"
+                onClosing: win.contentPoppedOut = false
+                VideoFrame {
+                    id: poppedShare
+                    x: 2.67; y: 2.67; width: parent.width - 5.33; height: parent.height - 5.33
+                    source: "share"
+                    fit: true
+                    letterbox: false
+                    Timer { interval: 33; repeat: true; running: true; onTriggered: poppedShare.refresh() }
+                }
+                Rectangle {
+                    x: 10.67; anchors.bottom: parent.bottom; anchors.bottomMargin: 10.67
+                    height: 24; radius: 4
+                    width: poppedName.implicitWidth + 12
+                    color: Qt.rgba(0, 0, 0, 0.5)
+                    Text { id: poppedName; x: 6; anchors.verticalCenter: parent.verticalCenter; text: win.presenterName; color: "white"; font.family: theme.font; font.pixelSize: 14 }
+                }
+            }
+        }
+    }
     function closeMenusForTest() { viewMenu.close() }
     /// For the --join-view harness: open the View menu (and a submenu row).
     function viewMenuForTest(sub) {

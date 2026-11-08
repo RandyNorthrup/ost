@@ -95,6 +95,17 @@ fn main() {
     let module = QmlModule::new("com.ost.desktop")
         .qml_files(qml)
         .qml_file(QmlFile::from("qml/IconCache.qml").singleton(true));
+    // qt-build-utils runs qmlcachegen before qmltyperegistrar writes this
+    // build's plugin.qmltypes, so an incremental build would compile the
+    // QML against the previous build's types: after a Rust QObject gains a
+    // property or method, the compiled QML calls the wrong meta-method
+    // index and crashes. Without the old file, every build compiles as a
+    // clean one does.
+    if let Some(out) = std::env::var_os("OUT_DIR") {
+        let stale = std::path::Path::new(&out)
+            .join("qt-build-utils/qml_modules/com/ost/desktop/plugin.qmltypes");
+        let _ = std::fs::remove_file(stale);
+    }
     let builder = CxxQtBuilder::new_qml_module(module)
         .file("src/backend.rs")
         .file("src/video_item.rs")
