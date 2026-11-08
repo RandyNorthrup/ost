@@ -60,6 +60,13 @@ Window {
     property string speakerId: ""
     // Who is speaking now (Teams' voice-level outline).
     property var speakingIds: []
+    // The meeting muted us while we talked: Teams' "You've been muted",
+    // for 30 s, until dismissed, or until we're unmuted.
+    property int mutedRemotely: 0
+    property bool mutedNoticeShown: false
+    onMutedRemotelyChanged: if (mutedRemotely > 0) { mutedNoticeShown = true; mutedNoticeTimer.restart() }
+    onMutedChanged: if (!muted) mutedNoticeShown = false
+    Timer { id: mutedNoticeTimer; interval: 30000; onTriggered: win.mutedNoticeShown = false }
     /// Who presents their screen in the meeting (empty: nobody).
     property string shareId: ""
     readonly property bool presenting: meeting && shareId !== ""
@@ -881,6 +888,14 @@ Window {
         y: bar.height + 10.7
         z: 5
         onDismissed: win.roomNoticeDismissed = true
+    }
+    MutedNotice {
+        visible: win.mutedNoticeShown
+        x: stage.x + (stage.width - width) / 2
+        y: bar.height + 10.7
+        z: 5
+        onDismissed: win.mutedNoticeShown = false
+        onUnmute: { win.mutedNoticeShown = false; win.toggleMute() }
     }
     LobbyToast {
         id: lobbyToast

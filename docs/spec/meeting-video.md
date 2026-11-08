@@ -190,6 +190,15 @@ Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framin
   - A Teams web guest saw OST's tag switch between mic-off and mic (with the speaking outline) as OST unmuted and muted, including lifting a server mute left from Mute all.
   - OST's tiles showed Guest 1's own mute and unmute.
 
+- **"You've been muted"** (alert MicMutedRemotely, measured on Teams web, styled by Fluent tokens):
+  - Teams shows it when the meeting mutes you while you're unmuted (`micMutedRemotely`: not muted, not streaming, not audio-restricted).
+  - It closes after 30 s (`CL = 3e4`), when you dismiss it, or once you're unmuted. Unmute in it toggles the mic, as the Mic button does.
+  - Look, in the same notice family as RoomNotice on winpc:
+    - 320 wide, NeutralBackground2, a NeutralStroke3 edge, radius 8.
+    - The filled mic-off glyph (20) and a 12 px NeutralForeground1 title; dismiss (16, NeutralForeground3).
+    - "You have been muted." in 14/20 NeutralForeground3.
+    - A full-width primary "Unmute" button (32 tall, radius 4, 14/600).
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.

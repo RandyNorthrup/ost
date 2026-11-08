@@ -115,6 +115,11 @@ pub mod qobject {
         #[qproperty(QString, call_speaker_mri)]
         /// Who is speaking now (Teams' voice-level outline): [mri].
         #[qproperty(QString, call_speaking_json)]
+        /// The meeting has muted us.
+        #[qproperty(bool, call_muted_by_meeting)]
+        /// Bumped when the meeting mutes us while we're talking (Teams'
+        /// "You've been muted" alert).
+        #[qproperty(i32, call_muted_remotely)]
         /// Who presents their screen in the meeting (empty: nobody).
         #[qproperty(QString, call_share_mri)]
         /// Who waits in the meeting's lobby: [{id, name}].
@@ -974,6 +979,8 @@ pub struct BackendRust {
     call_video_json: QString,
     call_speaker_mri: QString,
     call_speaking_json: QString,
+    call_muted_by_meeting: bool,
+    call_muted_remotely: i32,
     call_share_mri: QString,
     /// How wide each person's tile is drawn ({mri: px}), for the size of
     /// video to ask for.
@@ -1882,6 +1889,14 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             }
             drop(slot);
             let _ = qt.queue(move |mut this| {
+                if this.rust().call_muted_by_meeting != server_muted {
+                    this.as_mut().set_call_muted_by_meeting(server_muted);
+                }
+                // Teams alerts only when it mutes you while you're unmuted.
+                if server_muted && !this.rust().call_muted && this.rust().call_has_audio {
+                    let n = this.rust().call_muted_remotely + 1;
+                    this.as_mut().set_call_muted_remotely(n);
+                }
                 if server_muted && !this.rust().call_muted {
                     this.as_mut().set_call_muted(true);
                     runtime().spawn(async {
@@ -2946,6 +2961,7 @@ impl qobject::Backend {
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
         self.as_mut().set_call_speaking_json(QString::from("[]"));
+        self.as_mut().set_call_muted_by_meeting(false);
         self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
@@ -3015,6 +3031,7 @@ impl qobject::Backend {
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
         self.as_mut().set_call_speaking_json(QString::from("[]"));
+        self.as_mut().set_call_muted_by_meeting(false);
         self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
