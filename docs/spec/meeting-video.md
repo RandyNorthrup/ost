@@ -56,6 +56,27 @@ The client also states what its own camera can send, per mid, with `maxVideoSend
 
 Screen sharing has its own line (mid 3, `applicationsharingVideo-<ssrc>`). The presenter's `applicationsharing-video` stream turns to sending in the roster. OST already receives this line in 1:1 calls.
 
+## What a client offer gets (OST, 2026-11-07)
+
+OST's own offer (audio, a recvonly `main-video` line and an inactive `applicationsharing-video` line, RTP/SAVP with DTLS, as Teams desktop's offers look) is accepted by the meeting's media processor. It answers in Skype's model, not the per-slot WebRTC one:
+
+- `main-video` comes back `sendonly` with one SSRC range for everything it may send, e.g. `a=x-ssrc-range:68418-68517`, H.264 107 `42C01E`, and `a=x-signaling-fb:* x-message app send:src,csrc,vc recv:src`.
+- About 8 s later it re-offers with its full codec list and an `m=x-data` line (mid 4, `a=rtcp-fb:* x-message app`, `x-bwealgorithm:rmestimator bwc packetpair webrtc`).
+- The acceptance links include `controlVideoStreaming` and `applyChannelParameters`.
+- Its RTCP names the first SSRC of the main-video range as a sender (SR) with 0 packets, and carries Microsoft's profile extensions (TURN bandwidth `0x0008`, peer info `0x000C`, modality send limit `0x000E`).
+
+Source requests tried, all for the guests' roster `main-video` sourceIds; none made it send video:
+
+| Route | Body | Result |
+|---|---|---|
+| `controlVideoStreaming` link | `{controlVideoStreaming:{sequenceNumber, globalTimeStamp, controlInfo:[{control:"start", sourceId, streamMsid, fmtParams}]}}` (Teams' `getVideoControlMessage`) | 400 while `streamMsid` isn't an integer ("Could not convert string to integer"); 202 with an SSRC from the MP's range, our range, or the line's `x-source-streamid`; no RTP |
+| `applyChannelParameters` link | `{applyChannelParameters:{multiChannelParameter:{mids:["1"], mediaParameter:"{controlVideoStreaming:{…, controlInfo:{sourceId, streamMsid, fmtParams:[…], subStreamIndex}}}"}}}` | 202, no RTP |
+| RTCP | MS-RTP Video Source Request (PSFB FMT 15, AFB type 1, MSI = sourceId, one H.264 entry up to 1280×720), with RR and REMB every second, `goog-remb` offered | no RTP |
+
+Teams desktop (winpc, in the same meeting) makes no HTTP or WebSocket request when a guest's camera comes back on, so its source requests travel inside its native media stack: most likely the `x-data` line, which OST declines. The guest browsers (Teams web) get video through the server-offer flow above.
+
+Next: accept the `x-data` line and find the message format on it, or move meetings to the server-offer flow Teams web uses (join with no SDP, answer the media processor's offer, subscribe slots on `applyChannelParameters`).
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.
