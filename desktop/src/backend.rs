@@ -493,6 +493,10 @@ pub mod qobject {
         /// Turn the camera on or off in the current call.
         #[qinvokable]
         fn toggle_camera(self: Pin<&mut Backend>);
+        /// Pre-join: show your camera as the "self" preview, or stop.
+        /// False when the camera can't be opened.
+        #[qinvokable]
+        fn set_camera_preview(self: Pin<&mut Backend>, on: bool) -> bool;
 
         /// Put the call on hold, or resume it.
         #[qinvokable]
@@ -3334,6 +3338,30 @@ impl qobject::Backend {
                 tracing::warn!("end meeting failed: {}", short_error(&e));
             }
         });
+    }
+
+    pub fn set_camera_preview(self: Pin<&mut Self>, on: bool) -> bool {
+        static PREVIEW: OnceLock<
+            std::sync::Mutex<Option<teams_cli::calling::webrtc_video::CameraPreview>>,
+        > = OnceLock::new();
+        let mut p = PREVIEW
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *p = None;
+        if !on {
+            return true;
+        }
+        match teams_cli::calling::webrtc_video::CameraPreview::start(camera_device()) {
+            Ok(preview) => {
+                *p = Some(preview);
+                true
+            }
+            Err(e) => {
+                tracing::info!("camera preview: {}", short_error(&e));
+                false
+            }
+        }
     }
 
     pub fn toggle_camera(self: Pin<&mut Self>) {

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import com.ost.desktop
 
 // The pre-join window, as Teams desktop shows it before a meeting
 // (measured at 1x): "Meeting join | <title>", the logo, title and time;
@@ -13,9 +14,11 @@ Window {
     property date startTime
     property date endTime
     property bool micOn: true
+    /// Your camera (Teams' pre-join switch): a live preview while on.
+    property bool cameraOn: false
     /// Teams' audio choices: "computer", "room" or "none" (Don't use audio).
     property string audio: "computer"
-    signal join(bool micOn, bool withAudio)
+    signal join(bool micOn, bool withAudio, bool cameraOn)
     signal cancelled()
 
     width: 1280; height: 680
@@ -27,13 +30,16 @@ Window {
         joinUrl = url; subject = subj
         startTime = start ? new Date(start) : new Date()
         endTime = end ? new Date(end) : new Date()
-        micOn = true; audio = "computer"
+        micOn = true; audio = "computer"; cameraOn = false
         show(); raise(); requestActivate()
     }
     readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : "Default microphone" }
     readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : "Default speaker" }
 
     Shortcut { sequence: "Escape"; onActivated: { win.close(); win.cancelled() } }
+    onCameraOnChanged: if (cameraOn && !backend.setCameraPreview(true)) cameraOn = false; else if (!cameraOn) backend.setCameraPreview(false)
+    // The camera is free again for the call (or for nobody) once we go.
+    onVisibleChanged: if (!visible && cameraOn) backend.setCameraPreview(false)
     Rectangle { anchors.fill: parent; color: theme.pane }
 
     Column {
@@ -65,23 +71,39 @@ Window {
         anchors.horizontalCenter: parent.horizontalCenter
         y: 211
         spacing: 16
-        // Camera (off; OST has no video yet)
+        // Camera: off, or your live preview (Teams' prejoin-v2-video-
+        // preview: mirrored, filling the panel above its bar, inside the
+        // 1 px edge).
         Rectangle {
             width: 508; height: 329; radius: 4
             color: theme.surface; border.color: theme.dividerSoft
+            VideoFrame {
+                id: preview
+                visible: win.cameraOn && hasFrame
+                source: win.cameraOn ? "self" : ""
+                x: 1; y: 1; width: parent.width - 2; height: parent.height - 45
+                radius: 3
+                transform: Scale { origin.x: preview.width / 2; xScale: -1 }
+                Timer { interval: 33; repeat: true; running: win.visible && win.cameraOn; onTriggered: preview.refresh() }
+            }
             Column {
+                visible: !preview.visible
                 anchors.centerIn: parent; anchors.verticalCenterOffset: -22
                 spacing: 8
                 FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "video-off"; size: 20; color: theme.textStrong }
-                Text { text: "Your camera is turned off"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+                Text { text: win.cameraOn ? "Starting your camera…" : "Your camera is turned off"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
             }
             Rectangle { y: parent.height - 44; width: parent.width; height: 1; color: theme.dividerSoft }
             Row {
                 x: 16; y: parent.height - 44; height: 44
                 spacing: 12
-                opacity: 0.45
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-off"; size: 20; color: theme.textStrong }
-                Toggle { on: false; usable: false; anchors.verticalCenter: parent.verticalCenter }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: win.cameraOn ? "video-20-filled" : "video-off"; size: 20; color: theme.textStrong }
+                Toggle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    on: win.cameraOn
+                    onToggled: v => win.cameraOn = v
+                    Accessible.name: "Camera"
+                }
             }
         }
         // Audio
@@ -168,7 +190,7 @@ Window {
             Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
             HoverHandler { id: jnh; cursorShape: Qt.PointingHandCursor }
             // Room audio found no room: Teams then joins with computer audio.
-            TapHandler { onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none") } }
+            TapHandler { onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none", win.cameraOn) } }
             Accessible.role: Accessible.Button
             Accessible.name: "Join now"
         }

@@ -607,9 +607,10 @@ Window {
     }
     PreJoin {
         id: preJoin
-        onJoin: (micOn, withAudio) => {
+        onJoin: (micOn, withAudio, cameraOn) => {
             window.muteOnJoin = !micOn
             window.noAudioOnJoin = !withAudio
+            window.cameraOnJoin = !!cameraOn
             backend.joinMeeting(joinUrl, subject)
         }
     }
@@ -617,12 +618,19 @@ Window {
     property bool muteOnJoin: false
     // "Don't use audio": no sound either way once connected.
     property bool noAudioOnJoin: false
+    // Joining with the camera on (pre-join switch): turn it on once
+    // connected.
+    property bool cameraOnJoin: false
     Connections {
         target: backend
         function onCallStateChanged() {
             if (backend.callState === "connected" && window.muteOnJoin) {
                 window.muteOnJoin = false
                 if (!backend.callMuted) backend.toggleMute()
+            }
+            if (backend.callState === "connected" && window.cameraOnJoin) {
+                window.cameraOnJoin = false
+                if (!backend.callCameraOn) backend.toggleCamera()
             }
             if (backend.callState === "connected" && window.noAudioOnJoin) {
                 window.noAudioOnJoin = false
@@ -1167,6 +1175,8 @@ Window {
                 const ev = JSON.parse(backend.calendarJson).find(e => e.subject.indexOf("OST calendar test") === 0 && e.join_url)
                 console.warn("JOIN event found", !!ev)
                 calendarView.joinMeeting(ev.join_url, ev.subject)
+                // --join-prejoin-camera: turn the camera on in pre-join.
+                if (Qt.application.arguments.indexOf("--join-prejoin-camera") >= 0) preJoin.cameraOn = true
             } else if (step === 1) {
                 if (Qt.application.arguments.indexOf("--join-noaudio") >= 0) preJoin.audio = "room"
                 preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-prejoin.png")))
@@ -1175,7 +1185,8 @@ Window {
                 if (Qt.application.arguments.indexOf("--join-noaudio") >= 0) preJoin.audio = "none"
                 // --join-muted: switch the mic off in pre-join.
                 const noAudio = preJoin.audio === "none"
-                preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio)
+                const cam = preJoin.cameraOn
+                preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio, cam)
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
                 console.warn("JOIN lobby", backend.callLobbyJson)

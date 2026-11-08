@@ -317,6 +317,44 @@ pub fn wants_keyframe(rtcp: &[u8], ours: u32) -> bool {
 
 /// Our camera, encoded and handed out as plain RTP packets; drop it to
 /// stop. The newest picture is also published as the "self" frame.
+/// Your camera before a call: its picture as the "self" preview (Teams'
+/// pre-join preview), until dropped.
+pub struct CameraPreview {
+    stop: Arc<AtomicBool>,
+}
+
+impl CameraPreview {
+    pub fn start(device: Option<String>) -> anyhow::Result<Self> {
+        let (camera, frames) =
+            super::camera::CameraCapture::start(device.as_deref(), SEND_W, SEND_H, SEND_FPS)?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop2 = stop.clone();
+        std::thread::Builder::new()
+            .name("ost-camera-preview".into())
+            .spawn(move || {
+                let _camera = camera;
+                while !stop2.load(Ordering::Relaxed) {
+                    if let Ok(f) = frames.recv_timeout(std::time::Duration::from_millis(250)) {
+                        super::frames::publish(
+                            "self",
+                            f.width / 2,
+                            f.height / 2,
+                            preview_rgba(&f.data, f.width, f.height),
+                        );
+                    }
+                }
+                super::frames::clear("self");
+            })?;
+        Ok(Self { stop })
+    }
+}
+
+impl Drop for CameraPreview {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
 pub struct VideoSender {
     stop: Arc<AtomicBool>,
     /// Set when the peer asked for a keyframe.
