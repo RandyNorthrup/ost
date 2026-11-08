@@ -64,6 +64,7 @@ fn main() {
         "qml/LobbyToast.qml",
         "qml/AdmitSuspectedDialog.qml",
         "qml/PeoplePane.qml",
+        "qml/EndMeetingDialog.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

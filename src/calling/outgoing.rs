@@ -51,6 +51,9 @@ pub struct OutgoingCall {
     /// The conversation's updateParticipantProperties link (marking a
     /// screened guest "not a bot" when admitting them).
     properties_link: Option<String>,
+    /// The conversation controller (`conversationController`): deleting it
+    /// ends the meeting for everyone.
+    controller: Option<String>,
 }
 
 /// Someone waiting in a meeting's lobby.
@@ -492,6 +495,34 @@ impl OutgoingCall {
         }
     }
 
+    /// End the meeting for everyone (Teams' End meeting: a DELETE of the
+    /// conversation controller saying ConversationEndForAllInitiated), then
+    /// stop our media.
+    pub async fn end_for_everyone(mut self) -> Result<()> {
+        let url = self
+            .controller
+            .clone()
+            .context("This call can't be ended for everyone")?;
+        if !super::incoming::is_service_link(&url) {
+            bail!("End meeting: not a Teams service link");
+        }
+        let resp = self
+            .http
+            .delete(&url)
+            .header("X-Skypetoken", &self.skype_token)
+            .json(&end_for_all_body(&self.me.0))
+            .send()
+            .await
+            .context("End meeting failed to send")?;
+        let status = resp.status();
+        self.media = None;
+        if !status.is_success() {
+            bail!("End meeting failed: HTTP {status}");
+        }
+        tracing::info!("End meeting: HTTP {status}");
+        Ok(())
+    }
+
     /// Stop media and end the call for both sides.
     pub async fn hang_up(mut self) -> Result<()> {
         self.media = None;
@@ -611,6 +642,31 @@ fn lobby_people(reply: &serde_json::Value) -> Vec<LobbyPerson> {
         serde_json::Value::Object(m) => m.iter().map(|(id, p)| person(id, p)).collect(),
         _ => Vec::new(),
     }
+}
+
+/// Teams' body for deleting the conversation controller (End meeting).
+fn end_for_all_body(me: &serde_json::Value) -> serde_json::Value {
+    let reason = serde_json::json!({
+        "code": 0,
+        "subCode": 0,
+        "phrase": "ConversationEndForAllInitiated",
+        "resultCategories": ["Success"],
+    });
+    serde_json::json!({
+        "participants": { "from": me },
+        "conversationTransactionEnd": { "reason": "noError", "code": 0, "phrase": "ConversationEndForAllInitiated" },
+        "callTransactionEnd": reason,
+    })
+}
+
+/// The conversation controller URL from the create response.
+fn controller_link(create_response: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(create_response).ok()?;
+    v.pointer("/conversationController")
+        .or_else(|| v.pointer("/conversationResponse/conversationController"))
+        .and_then(|u| u.as_str())
+        .filter(|u| super::incoming::is_service_link(u))
+        .map(str::to_string)
 }
 
 /// Teams' updateParticipantsProperties body clearing a guest's screening.
@@ -968,6 +1024,11 @@ async fn start(
         conversation_link(&created.response_body, "admitAll"),
     );
     let remove_link = conversation_link(&created.response_body, "removeParticipant");
+    let controller = controller_link(&created.response_body);
+    tracing::info!(
+        has_controller = controller.is_some(),
+        "conversation controller"
+    );
     let properties_link = conversation_link(&created.response_body, "updateParticipantProperties");
     tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
@@ -1077,6 +1138,7 @@ async fn start(
         admit_links,
         remove_link,
         properties_link,
+        controller,
     })
 }
 

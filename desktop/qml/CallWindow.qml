@@ -34,6 +34,8 @@ Window {
     signal admitLobby(string id, string name, bool notBot)
     signal denyLobby(string id, string name)
     signal admitAllLobby()
+    /// Organizers: Teams' End meeting (after its confirmation).
+    signal endMeeting()
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
     readonly property var others: roster.filter(p => p.id !== selfId)
@@ -192,9 +194,14 @@ Window {
             id: leaveGroup
             anchors { right: parent.right; rightMargin: 14; top: parent.top }
             BarButton {
+                id: leaveButton
                 icon: "call-leave-filled"; label: "Leave"; strong: true
                 iconColor: "#B10E1C"
+                split: win.meeting
+                chevronLabel: "More options"
+                chevronChecked: leaveMenu.visible
                 onClicked: win.leave()
+                onChevronClicked: leaveMenu.open()
             }
         }
         Row {
@@ -554,6 +561,47 @@ Window {
         onDeny: (id, name) => win.denyLobby(id, name)
         onViewLobby: win.side = "people"
     }
+    // Leave's options (hangup-button-more-options-menu, measured): a 171.3
+    // wide surface right-aligned to the chevron, 6 below it, padding 16;
+    // 138 x 32 items, 14 px #424242, 2 apart. End meeting is the
+    // organizer's, after Teams' confirmation.
+    Popup {
+        id: leaveMenu
+        parent: leaveButton
+        x: leaveButton.width - width; y: 60
+        width: 171.3; padding: 16
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        contentItem: Column {
+            spacing: 2
+            Repeater {
+                model: win.organizer ? [{ k: "leave", t: "Leave" }, { k: "end", t: "End meeting" }] : [{ k: "leave", t: "Leave" }]
+                Rectangle {
+                    required property var modelData
+                    width: 138; height: 32; radius: 4
+                    color: lmHover.hovered ? theme.menuHover : theme.surface
+                    Text {
+                        // Teams: 6 px padding, then the label's own 4 + 2 inset.
+                        x: 12; anchors.verticalCenter: parent.verticalCenter
+                        text: parent.modelData.t
+                        font.family: theme.font; font.pixelSize: 14
+                        color: lmHover.hovered ? theme.text : theme.textStrong
+                    }
+                    HoverHandler { id: lmHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            leaveMenu.close()
+                            if (parent.modelData.k === "end") endAsk.open()
+                            else win.leave()
+                        }
+                    }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: modelData.t
+                }
+            }
+        }
+    }
+    EndMeetingDialog { id: endAsk; onConfirmed: win.endMeeting() }
+
     component Divider: Item {
         width: 17; height: 60
         Rectangle { x: 8; y: 13.5; width: 0.67; height: 33; color: theme.stroke }
@@ -751,6 +799,7 @@ Window {
     function consultForTest(oid, name) { consulting = { id: oid, name: name }; consult(oid, name) }
     function transferFromConsultForTest() { const c = consulting; consulting = null; transfer(c.id, c.name) }
     function dialPadForTest() { dialPad.open() }
+    function leaveMenuForTest() { leaveMenu.open() }
     function closeDialPadForTest() { dialPad.close() }
     function pressForTest(keys) { for (const k of keys) dialPad.press(k) }
 
@@ -771,10 +820,29 @@ Window {
         property int badge: 0
         /// Show the count as Teams' red alert badge (raised hands, lobby).
         property bool badgeAlert: false
+        /// Teams' split buttons (Leave, Camera, Mic): a 22 px chevron
+        /// after the 48 px button, in a 74 px slot.
+        property bool split: false
+        property string chevronLabel: ""
+        property bool chevronChecked: false
         signal clicked()
-        width: 56; height: 60
+        signal chevronClicked()
+        width: split ? 74 : 56; height: 60
         Rectangle {
-            x: 4; y: 6; width: 48; height: 48; radius: 4
+            visible: bb.split
+            x: 52; y: 6; width: 22; height: 48
+            topRightRadius: 4; bottomRightRadius: 4
+            color: (chevHover.hovered || bb.chevronChecked) ? theme.rowHover : "transparent"
+            FluentIcon { x: 3; y: 16; name: "call-chevron"; size: 16; color: theme.text }
+            HoverHandler { id: chevHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: bb.chevronClicked() }
+            Accessible.role: Accessible.Button
+            Accessible.name: bb.chevronLabel
+        }
+        Rectangle {
+            x: 4; y: 6; width: 48; height: 48
+            radius: 4
+            topRightRadius: bb.split ? 0 : 4; bottomRightRadius: bb.split ? 0 : 4
             color: bbHover.hovered && bb.enabled ? theme.rowHover : "transparent"
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {

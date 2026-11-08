@@ -371,6 +371,9 @@ pub mod qobject {
         /// End the current call.
         #[qinvokable]
         fn hang_up(self: Pin<&mut Backend>);
+        /// End the meeting for everyone (organizers; Teams' End meeting).
+        #[qinvokable]
+        fn end_meeting(self: Pin<&mut Backend>);
 
         /// Load calendar events between two UTC instants (ISO 8601).
         #[qinvokable]
@@ -2842,6 +2845,20 @@ impl qobject::Backend {
             let result = async { CallAuth::load().await?.hang_up(call).await }.await;
             if let Err(e) = result {
                 tracing::warn!("hang up failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn end_meeting(mut self: Pin<&mut Self>) {
+        self.as_mut().end_call_ui();
+        runtime().spawn(async {
+            let mut slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.take() else {
+                return;
+            };
+            drop(slot);
+            if let Err(e) = call.end_for_everyone().await {
+                tracing::warn!("end meeting failed: {}", short_error(&e));
             }
         });
     }

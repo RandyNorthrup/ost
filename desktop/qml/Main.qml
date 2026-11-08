@@ -681,6 +681,7 @@ Window {
         onAdmitLobby: (id, name, notBot) => backend.admitFromLobby(id, name, notBot)
         onDenyLobby: (id, name) => backend.denyFromLobby(id, name)
         onAdmitAllLobby: backend.admitAllFromLobby()
+        onEndMeeting: backend.endMeeting()
         selfId: backend.userMri
         // Chat: the 1:1 chat with the person in the call, or the meeting chat.
         onOpenChat: {
@@ -1119,7 +1120,14 @@ Window {
                 callWindow.side = "people"
             } else if (step === 13 + window.joinStay) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-people.png")))
-            } else if (step === 14 + window.joinStay) { backend.hangUp() }
+                // --join-end: open Leave's menu (captured next), then End meeting.
+                if (Qt.application.arguments.indexOf("--join-end") >= 0) callWindow.leaveMenuForTest()
+            } else if (step === 14 + window.joinStay) {
+                if (Qt.application.arguments.indexOf("--join-end") >= 0) {
+                    callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-leavemenu.png")))
+                    backend.endMeeting()
+                } else backend.hangUp()
+            }
             else if (step === 16 + window.joinStay) { Qt.quit() }
             step++
         }
