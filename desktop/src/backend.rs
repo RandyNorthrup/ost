@@ -124,6 +124,9 @@ pub mod qobject {
         #[qproperty(i32, call_muted_remotely)]
         /// The meeting is locked (Teams' Lock the meeting).
         #[qproperty(bool, call_meeting_locked)]
+        /// The call is a scheduled meeting joined from its link (not a
+        /// chat's group call or Meet now).
+        #[qproperty(bool, call_scheduled)]
         /// What attendees may not do (bits: mic 1, camera 2, chat 4).
         #[qproperty(i32, call_attendee_restrictions)]
         /// Bumped when the meeting is locked or unlocked while we're in it
@@ -616,6 +619,18 @@ pub mod qobject {
         /// then; emoticonsVersion changes when it lands).
         #[qinvokable]
         fn card_image(self: Pin<&mut Backend>, url: &QString) -> QString;
+        /// The call bar as Teams builds it from its layout config: `facts`
+        /// (JSON, see teams_cli::calling::ubar::Facts), each control's
+        /// width (JSON {name: px}), a divider's width and the middle slot's
+        /// room. Returns JSON {bar, end, overflowed, more, onHold}.
+        #[qinvokable]
+        fn ubar_arrange(
+            self: &Backend,
+            facts: &QString,
+            widths: &QString,
+            divider: f64,
+            available: f64,
+        ) -> QString;
         /// A picker category's icon (Teams' 20 x 40 single-colour sprite):
         /// a file URL, or "" until it has downloaded.
         #[qinvokable]
@@ -1034,6 +1049,7 @@ pub struct BackendRust {
     chat_live_roster_json: QString,
     call_muted_remotely: i32,
     call_meeting_locked: bool,
+    call_scheduled: bool,
     call_attendee_restrictions: i32,
     call_lock_notices: i32,
     /// Who joined and left the meeting we're in (the attendance list).
@@ -2088,6 +2104,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 .set_call_peer_id(QString::from(peer_id.as_str()));
             this.as_mut().set_call_video_offered(video);
             this.as_mut().set_call_meeting(false);
+            this.as_mut().set_call_scheduled(false);
             this.as_mut().set_call_state(QString::from("ringing"));
         });
         // Teams web's calls only say they're video calls in the full
@@ -2973,6 +2990,7 @@ impl qobject::Backend {
             .set_call_peer_id(QString::from(callee.as_str()));
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_meeting(false);
+        self.as_mut().set_call_scheduled(false);
         self.as_mut().set_call_muted(false);
         self.as_mut().set_call_state(QString::from("calling"));
         let qt = self.qt_thread();
@@ -3124,6 +3142,7 @@ impl qobject::Backend {
         self.as_mut()
             .set_call_thread_id(QString::from(chat_id.as_str()));
         self.as_mut().load_call_chat_members();
+        self.as_mut().set_call_scheduled(false);
         self.as_mut().set_call_meeting(true);
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
@@ -3203,6 +3222,7 @@ impl qobject::Backend {
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
         self.as_mut().rust_mut().attendance = Default::default();
+        self.as_mut().set_call_scheduled(true);
         self.as_mut().set_call_meeting_locked(false);
         self.as_mut().set_call_attendee_restrictions(0);
         self.as_mut().set_call_state(QString::from("connecting"));
@@ -5979,6 +5999,25 @@ impl qobject::Backend {
             }
         });
         QString::default()
+    }
+
+    pub fn ubar_arrange(
+        &self,
+        facts: &QString,
+        widths: &QString,
+        divider: f64,
+        available: f64,
+    ) -> QString {
+        use teams_cli::calling::ubar;
+        let facts: ubar::Facts = serde_json::from_str(&facts.to_string()).unwrap_or_default();
+        let widths: HashMap<String, f64> = serde_json::from_str(&widths.to_string()).unwrap_or_default();
+        let arranged = ubar::arrange(
+            &facts,
+            &|n| widths.get(n).copied().unwrap_or(56.0),
+            divider,
+            available,
+        );
+        QString::from(serde_json::to_string(&arranged).unwrap_or_default().as_str())
     }
 
     pub fn card_image(self: Pin<&mut Self>, url: &QString) -> QString {

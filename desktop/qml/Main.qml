@@ -705,6 +705,7 @@ Window {
         onParticipantAction: (action, id, name, stateId) => backend.participantAction(action, id, name, stateId)
         onLeaveOnAllDevices: backend.leaveOnAllDevices()
         locked: backend.callMeetingLocked
+        scheduled: backend.callScheduled
         attendeeRestrictions: backend.callAttendeeRestrictions
         lockNotices: backend.callLockNotices
         onMeetingAction: action => backend.meetingAction(action)
@@ -1261,6 +1262,26 @@ Window {
                 else if (step === 61) shot("unlockdlg")
                 else if (step === 62) callWindow.confirmOpenDialogForTest()
                 else if (step === 64) { log("unlocked"); shot("unlocked") }
+            } else if (step >= 8 && step <= 20 && Qt.application.arguments.indexOf("--join-bar") >= 0) {
+                // --join-bar: the bar from Teams' layout config: wide (with
+                // the Mic tooltip), then narrowed to 700 so controls move
+                // into More (captured open), then back.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-bar-" + n + ".png")))
+                const log = t => console.warn("JOIN bar", t, callWindow.width, JSON.stringify(callWindow.ubar))
+                if (step === 8) { callWindow.side = "people"; log("wide"); callWindow.tipForTest("MicrophoneButton") }
+                else if (step === 9) shot("wide")
+                else if (step === 10) callWindow.width = 700
+                else if (step === 12) { log("narrow"); shot("narrow"); callWindow.runControl("MoreButton") }
+                else if (step === 13) shot("narrow-more")
+                else if (step === 14) { callWindow.closeMenusForTest(); callWindow.width = 900 }
+                else if (step === 16) { log("900"); shot("900") }
+                else if (step === 17) callWindow.width = 1280
+                else if (step === 19) { log("restored"); shot("restored") }
+            } else if (step >= 8 && step <= 30 && Qt.application.arguments.indexOf("--join-keys") >= 0) {
+                // --join-keys: log the state each step while keys are sent
+                // from outside (Teams' call shortcuts).
+                if (step === 8) { callWindow.raise(); callWindow.requestActivate() }
+                console.warn("JOIN keys", step, JSON.stringify({ muted: backend.callMuted, hand: callWindow.handRaised, camera: backend.callCameraOn, state: backend.callState, talk: callWindow.talkHeld }))
             } else if (step === 9 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
                 // --join-compact: minimise the meeting window, capture the
                 // compact view (step 12), then restore (step 14).

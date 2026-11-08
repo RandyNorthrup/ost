@@ -255,6 +255,10 @@ For the live preset, items leave the bar in this order:
 
 More, Camera, Mic, Volume, Share, Pause share and Leave never overflow.
 
+**Measured on winpc (2026-11-08).** Fluent's Overflow keeps **10 px** free at the end of the container: a control stays only while the visible content is at most the slot's width − 10 (Chat came back at a 455.86 px slot for 445 px of content, not at 453.86). The middle slot starts 4 px after the indicator toolbar and ends 4 px before the end slot; button wrappers are 56 (48 + 4 either side), split buttons 74, dividers 17. Overflowed controls are More's first rows, in bar order, followed by a divider; their menu text: "Chat", "People" / "Hide people", "Raise hand" / "Lower hand", "Send a reaction", "View ▸", "Controls ▸", "Open notes", "Breakout rooms", "Get more apps and agents".
+
+**Tooltips** (Fluent Tooltip): 10 px below the 48 px button, the left edge on the button's, or the right edge on the button's when it would leave the window; 12/16 text, padding 4 / 11 / 6, radius 4, a 12 px arrow at the button's centre, shadows 2 and 8; "{tooltip} ({shortcut})". Texts: Chat "Show conversation" / "Hide conversation"; People "{n} participants. Show participants" / "… Hide participants"; Raise "Raise your hand" / "Lower your hand" (Ctrl+Shift+K); React "Send a reaction"; View "Change your view"; Controls none; Notes "Open notes"; Rooms "Create breakout rooms"; Apps "Find apps and more" / "Close apps"; More "More actions"; Camera "Turn camera on" / "Turn camera off" (Ctrl+Shift+O); its chevron "Open video options"; Mic "Mute mic" / "Unmute mic", or "Turn audio on" without audio (Ctrl+Shift+M); its chevron "Open audio options"; Share "Share content" (Ctrl+Shift+E); Leave "Leave" (Ctrl+Shift+H); Leave's chevron none; 1:1: "Hold", "Dial pad", "Transfer", "Consult then transfer", "Resume", "Pop out".
+
 Group dividers are overflow items with priority AsFirst, and are hidden when
 their group empties. Indicators overflow into "More status indicators" after 4
 items, but only with `enableIndicatorOverflowInUbar` (live false). Mutations of
@@ -304,6 +308,8 @@ dividers. Its contents, top to bottom:
    and visible by its rule. A submenu shows only when at least one child is
    visible (`hierarchy.hasVisibleNodes`).
 
+On winpc (meeting, nothing overflowed) More reads: Record and transcribe ▸, Meeting info, Timer, Video effects and settings, Audio settings, Language and speech ▸, Settings ▸, divider, Report a concern, Help. Sections follow the bar's MergeWithNext rule (a section of one merges into the next without a divider). The menu is View's style (padding 16, 230 px rows) at the More button's left, 5.33 below it.
+
 Menu item text is the control's `title` when it has one (the menu renderer `VC`
 drops `buttonLabel`); otherwise its label.
 
@@ -329,7 +335,7 @@ drops `buttonLabel`); otherwise its label.
 | | Settings ▸ | "Settings" → group 1: "Devices" (DeviceSettingsButton, title "Device settings"), "Privacy mode", "Call health", "Meeting options", "Accessibility"; group 2: "Chat bubbles", "Notifications", "Hide meeting controls"; group 3: "Data" ("Collect my meeting data") | Devices: **hidden when `enableAVFramework`** (live true), except for a town hall Attendee; Call health `enableCallHealthForMeetings` (true); Meeting options = organizer legacy rule (§1.4); Accessibility `enableAccessibilityView` (true); Chat bubbles `enableChatBubbles` (true); Notifications `enableMuteNotifications` (true), labels "Mute notifications"/"Allow notifications"; Hide controls `enableHideUbar` (false) |
 | callingOverflow | (flat; see note) | "Call me" (PstnButton, PSTN call-me-back), "Dial pad", "Hold", "Upgrade" ("Upgrade to video call"), "Transfer" (V1), "Merge Calls", "Park Call", "Lock Call"/"Unlock Call" (SLA lock) | `CallMenuControl` ("Call ▸") is in **no** live layout's `available` list. Its children are therefore promoted into More itself, as a flat "callingOverflow" group. `CallTransferMenuControl` ("Transfer ▸": Transfer / Consult then transfer) exists only in the 1:1 and PSTN layouts, and is hidden when `enableUbarTransferButtonOnL1` is on (live) |
 | reportMeeting | ReportMeetingButton | "Report a concern" (short "Report") | `enableReportMeeting`, private/ad hoc/Meet now meeting, not town hall, webinar, 1:1 or group call |
-| help | ReportProblemButton | "Report a problem" | always available → `openFeedbackDialog` |
+| help | ReportProblemButton | "Report a problem" | not in the `default` layout's `available` list, so not shown in meetings (verified on winpc: More ends with "Report a concern", "Help") |
 | | MeetingHelpButton | "Help" | |
 
 In the 1:1 layout, Hold, Dial pad and Transfer are on the bar (§1.4). Call ▸ then

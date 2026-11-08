@@ -291,6 +291,121 @@ Window {
         return (h > 0 ? h + ":" + two(m) : two(m)) + ":" + two(sec)
     }
 
+    // The bar, from Teams' layout config (see the middle slot below).
+    readonly property bool pstnCall: !meeting && (backend.callPeerId || "").indexOf("4:") === 0
+    /// A scheduled meeting (joined from its link), not a chat's group call.
+    property bool scheduled: false
+    readonly property var ubarFacts: ({
+        p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled,
+        organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true
+    })
+    TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
+    // Each control's slot (button 48 + 4 either side; split buttons 74).
+    readonly property var ubarWidths: ({ MicrophoneButton: 74, ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8 })
+    // The middle slot's room: from 4 past the indicators (shield, timer)
+    // to 17 before Leave.
+    readonly property real ubarRoom: leaveGroup.x - 17 - (timerText.x + timerText.implicitWidth + 6.67 + 4)
+    readonly property var ubar: JSON.parse(backend.ubarArrange(JSON.stringify(ubarFacts), JSON.stringify(ubarWidths), 17,
+                                                               ubarRoom - 10) || '{"bar":[],"end":[],"overflowed":[],"more":[],"onHold":[]}')
+    /// Teams disables what isn't marked usable on hold.
+    function holdOk(name) { return !held || ubar.onHold.indexOf(name) >= 0 }
+    property var barItems: ({})
+    function registerBarItem(name, item) { barItems[name] = item }
+    /// The control on the bar, or More when it has overflowed.
+    function barItem(name) {
+        const n = ubar.bar.indexOf(name) >= 0 ? name : "MoreButton"
+        return barItems[n] || bar
+    }
+    function barComponent(name) {
+        return ({
+            PopoutContentButton: cPopout, ResumeButton: cResume, CallTransferButtonV2: cTransfer,
+            CallConsultativeTransferButtonV2: cConsult, DialpadButton: cDialpad, HoldButton: cHold,
+            ChatButton: cChat, RosterButton: cPeople, RaiseHandsButton: cRaise, ReactionButton: cReact,
+            ViewModeButton: cView, OrganizerControlButton: cControls, MeetingDetailsButton: cNotes,
+            StartBreakoutRoomButton: cRooms, MeetingAppsAddButton: cApps, MoreButton: cMore,
+            VideoButton: cCamera, MicrophoneButton: cMic, ShareButton: cShare
+        })[name] || null
+    }
+    // What each control does, from the bar or from More.
+    function runControl(name) {
+        if (name === "ChatButton") { side = side === "chat" ? "" : "chat"; if (side === "chat") openChat() }
+        else if (name === "RosterButton") side = side === "people" ? "" : "people"
+        else if (name === "RaiseHandsButton") toggleHand()
+        else if (name === "ReactionButton") { reactMenu.parent = barItem(name); reactMenu.open() }
+        else if (name === "ViewModeButton") { viewMenu.parent = barItem(name); viewMenu.open() }
+        else if (name === "OrganizerControlButton") Qt.openUrlExternally(optionsUrl)
+        else if (name === "MeetingDetailsButton") Qt.openUrlExternally(chatUrl)
+        else if (name === "MeetingAppsAddButton") { appsMenu.parent = barItem(name); appsMenu.open() }
+        else if (name === "MoreButton") { moreMenu.parent = barItem(name); moreMenu.open() }
+        else if (name === "VideoButton") toggleCamera()
+        else if (name === "MicrophoneButton") toggleMute()
+        else if (name === "ShareButton") toggleShare()
+        else if (name === "PopoutContentButton") contentPoppedOut = true
+        else if (name === "CallTransferButtonV2" || name === "CallConsultativeTransferButtonV2") {
+            picker.mode = name === "CallTransferButtonV2" ? "transfer" : "consult"
+            picker.parent = barItem(name); picker.open()
+        }
+        else if (name === "DialpadButton") { if (dialPad.visible) dialPad.close(); else { dialPad.parent = barItem(name); dialPad.open() } }
+        else if (name === "HoldButton" || name === "ResumeButton") toggleHold()
+        else if (name === "CameraEffectsButton" || name === "AudioSettingsButton") deviceSettings()
+    }
+    function controlEnabled(name) {
+        if (!holdOk(name)) return false
+        if (["RaiseHandsButton", "ReactionButton", "CallTransferButtonV2", "CallConsultativeTransferButtonV2"].indexOf(name) >= 0) return live
+        if (name === "OrganizerControlButton") return optionsUrl.length > 0
+        if (name === "MeetingDetailsButton") return chatUrl.length > 0
+        if (name === "StartBreakoutRoomButton") return false
+        if (name === "VideoButton") return canVideo
+        if (name === "MicrophoneButton") return hasAudio
+        if (name === "ShareButton") return canShare || sharing
+        if (name === "DialpadButton") return live && canDtmf
+        if (name === "HoldButton") return live && hasAudio
+        return true
+    }
+    // An overflowed control in More, as Teams names it there (the menu
+    // uses the control's title, else its label).
+    function overflowItem(name) {
+        const m = {
+            ChatButton: { label: "Chat", icon: "call-chat", checked: side === "chat" },
+            RosterButton: { label: side === "people" ? "Hide people" : "People", icon: "call-people", checked: side === "people" },
+            RaiseHandsButton: { label: handRaised ? "Lower hand" : "Raise hand", icon: "call-raise" },
+            ReactionButton: { label: "Send a reaction", icon: "call-react" },
+            ViewModeButton: { label: "View", icon: "call-view", chevron: true },
+            OrganizerControlButton: { label: "Controls", icon: "call-controls", chevron: true },
+            MeetingDetailsButton: { label: "Open notes", icon: "call-notes" },
+            StartBreakoutRoomButton: { label: "Breakout rooms", icon: "call-rooms" },
+            MeetingAppsAddButton: { label: "Get more apps and agents", icon: "call-apps" },
+            PopoutContentButton: { label: "Pop out", icon: "call-popout" },
+            CallTransferButtonV2: { label: "Transfer", icon: "call-transfer" },
+            CallConsultativeTransferButtonV2: { label: "Consult then transfer", icon: "consult" },
+            DialpadButton: { label: "Dial pad", icon: "dialpad" },
+            HoldButton: { label: "Hold", icon: "pause" },
+            ResumeButton: { label: "Resume", icon: "play-20" }
+        }[name]
+        if (!m) return null
+        m.name = name
+        m.enabled = controlEnabled(name)
+        return m
+    }
+    readonly property var moreLabels: ({
+        CameraEffectsButton: { label: "Video effects and settings", icon: "video-background-effect-20" },
+        AudioSettingsButton: { label: "Audio settings", icon: "speaker-settings-20" }
+    })
+    /// More's rows: what overflowed, a divider, then More's own sections
+    /// (a section of one merges into the next, as on the bar).
+    readonly property var barMoreItems: {
+        const out = []
+        for (const n of ubar.overflowed) { const it = overflowItem(n); if (it) out.push(it) }
+        const sections = ubar.more.map(sec => sec.items.map(i => i.name).filter(n => !!moreLabels[n]))
+                                  .filter(sec => sec.length > 0)
+        if (out.length > 0 && sections.length > 0) out.push({ separator: true })
+        sections.forEach((sec, i) => {
+            sec.forEach(n => out.push(Object.assign({ name: n }, moreLabels[n])))
+            if (i < sections.length - 1 && sec.length > 1) out.push({ separator: true })
+        })
+        return out
+    }
+
     Rectangle { anchors.fill: parent; color: theme.surface }
 
     // Meeting bar
@@ -307,79 +422,29 @@ Window {
             name: "call-shield"; size: 20; color: theme.textStrong
         }
         Text {
+            id: timerText
             x: win.meeting ? 44.7 : 16; anchors.verticalCenter: parent.verticalCenter
             text: win.state === "connected" ? win.clock(win.seconds) : "--:--"
             color: theme.textStrong
             font.family: theme.font; font.pixelSize: 14
         }
-        // A meeting's controls, as Teams desktop lays them out (56 px slots,
-        // right-aligned 4 px before the Leave group). Those OST can't do yet
-        // are shown disabled.
+        // The controls, as Teams' layout engine places them
+        // (teams_cli::calling::ubar over Teams' layout config): which show,
+        // their order and dividers come from the config and the call; the
+        // slot is right-aligned 4 px before the end slot and whatever
+        // doesn't fit (Fluent's overflow, keeping 10 px free) moves to the
+        // top of More.
         Row {
-            visible: win.meeting
+            id: middleSlot
             anchors { right: leaveGroup.left; rightMargin: 17; top: parent.top }
             spacing: 0
-            // Teams' Pop out, while someone presents: the content in a
-            // window of its own.
-            BarButton {
-                visible: win.presenting && !win.contentPoppedOut
-                icon: "call-popout"; label: "Pop out"
-                onClicked: win.contentPoppedOut = true
-            }
-            BarButton {
-                icon: "call-chat"; label: "Chat"; checked: win.side === "chat"
-                onClicked: { win.side = win.side === "chat" ? "" : "chat"; if (win.side === "chat") win.openChat() }
-            }
-            BarButton {
-                icon: "call-people"; label: "People"; checked: win.side === "people"
-                // Teams: people waiting in the lobby, or raised hands, as a
-                // red count; else how many are here.
-                badge: win.lobby.length > 0 ? win.lobby.length : win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
-                badgeAlert: win.lobby.length > 0 || win.hands.length > 0
-                onClicked: win.side = win.side === "people" ? "" : "people"
-            }
-            BarButton {
-                icon: "call-raise"; label: win.handRaised ? "Lower" : "Raise"
-                enabled: win.live
-                checked: win.handRaised
-                onClicked: win.toggleHand()
-            }
-            BarButton {
-                id: reactButton
-                icon: "call-react"; label: "React"
-                enabled: win.live
-                checked: reactMenu.visible
-                onClicked: reactMenu.open()
-            }
-            BarButton { id: viewBtnM; icon: "call-view"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtnM; onClicked: { viewMenu.parent = viewBtnM; viewMenu.open() } }
-            // Controls: the meeting options (organizers), as Teams opens them.
-            BarButton { visible: win.organizer; icon: "call-controls"; label: "Controls"; enabled: win.optionsUrl.length > 0; onClicked: Qt.openUrlExternally(win.optionsUrl) }
-            // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
-            BarButton { icon: "call-notes"; label: "Notes"; enabled: win.chatUrl.length > 0; onClicked: Qt.openUrlExternally(win.chatUrl) }
-            BarButton { visible: win.organizer; icon: "call-rooms"; label: "Rooms"; enabled: false }
-            BarButton { id: appsBtnM; icon: "call-apps"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtnM; onClicked: { appsMenu.parent = appsBtnM; appsMenu.open() } }
-            BarButton { id: moreBtnM; icon: "call-more"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtnM; onClicked: { moreMenu.parent = moreBtnM; moreMenu.open() } }
-            Divider {}
-            BarButton {
-                icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true
-                enabled: win.canVideo
-                onClicked: win.toggleCamera()
-            }
-            BarButton {
-                id: micButtonM
-                icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
-                enabled: win.hasAudio
-                split: true; chevronLabel: "Open audio options"
-                chevronChecked: audioFlyout.visible && audioFlyout.parent === micButtonM
-                onClicked: win.toggleMute()
-                onChevronClicked: win.openAudioOptions(micButtonM)
-            }
-            BarButton {
-                icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
-                label: win.sharing ? "Stop sharing" : "Share"; strong: true
-                iconColor: win.sharing ? "#B10E1C" : theme.text
-                enabled: win.canShare || win.sharing
-                onClicked: win.toggleShare()
+            Repeater {
+                model: win.ubar.bar
+                Loader {
+                    required property string modelData
+                    sourceComponent: modelData === "|" ? barDivider : win.barComponent(modelData)
+                    onLoaded: if (modelData !== "|") win.registerBarItem(modelData, item)
+                }
             }
         }
         // Leave: 13 px in from the middle group's end, 14 from the window edge.
@@ -390,97 +455,13 @@ Window {
                 id: leaveButton
                 icon: "call-leave-filled"; label: "Leave"; strong: true
                 iconColor: "#B10E1C"
+                tip: "Leave"; shortcut: "Ctrl+Shift+H"
                 // Teams splits Leave only when its menu has more than Leave.
                 split: win.meeting && win.leaveItems.length > 1
                 chevronLabel: "More options"
                 chevronChecked: leaveMenu.visible
                 onClicked: win.leave()
                 onChevronClicked: leaveMenu.open()
-            }
-        }
-        Row {
-            visible: !win.meeting
-            anchors { right: leaveGroup.left; rightMargin: 17; top: parent.top }
-            spacing: 0
-            BarButton {
-                id: transferBtn
-                icon: "call-transfer"; label: "Transfer"
-                enabled: win.live
-                checked: picker.visible && picker.mode === "transfer"
-                onClicked: { picker.mode = "transfer"; picker.parent = transferBtn; picker.open() }
-            }
-            BarButton {
-                id: consultBtn
-                icon: "consult"; label: "Consult"
-                enabled: win.live
-                checked: picker.visible && picker.mode === "consult"
-                onClicked: { picker.mode = "consult"; picker.parent = consultBtn; picker.open() }
-            }
-            Divider {}
-            BarButton {
-                id: padBtn
-                icon: "dialpad"; label: "Dial pad"
-                enabled: win.live && win.canDtmf && !win.held
-                checked: dialPad.visible
-                onClicked: dialPad.visible ? dialPad.close() : dialPad.open()
-            }
-            BarButton {
-                visible: !win.held
-                icon: "pause"; label: "Hold"
-                enabled: win.live && win.hasAudio
-                onClicked: win.toggleHold()
-            }
-            // Held: Teams swaps Hold for a bordered "Resume" pill.
-            Rectangle {
-                visible: win.held
-                anchors.verticalCenter: parent.verticalCenter
-                width: resumeRow.implicitWidth + 40; height: 48; radius: theme.radius
-                color: rph.hovered ? theme.pane : theme.rowHover
-                border.color: theme.stroke
-                Row {
-                    id: resumeRow
-                    anchors.centerIn: parent; spacing: 8
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.text }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                }
-                HoverHandler { id: rph; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: win.toggleHold() }
-                Accessible.role: Accessible.Button
-                Accessible.name: "Resume"
-            }
-            Divider {}
-            BarButton {
-                icon: "call-chat"; label: "Chat"; checked: win.side === "chat"
-                onClicked: { win.side = win.side === "chat" ? "" : "chat"; if (win.side === "chat") win.openChat() }
-            }
-            BarButton {
-                icon: "call-people"; label: "People"; checked: win.side === "people"
-                onClicked: win.side = win.side === "people" ? "" : "people"
-            }
-            BarButton { id: viewBtn; icon: "call-view"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtn; onClicked: { viewMenu.parent = viewBtn; viewMenu.open() } }
-            BarButton { id: appsBtn; icon: "call-apps"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtn; onClicked: { appsMenu.parent = appsBtn; appsMenu.open() } }
-            BarButton { id: moreBtn; icon: "call-more"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtn; onClicked: { moreMenu.parent = moreBtn; moreMenu.open() } }
-            Divider {}
-            BarButton {
-                icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true
-                enabled: win.canVideo && !win.held
-                onClicked: win.toggleCamera()
-            }
-            BarButton {
-                id: micButton1
-                icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
-                enabled: win.hasAudio && !win.held
-                split: true; chevronLabel: "Open audio options"
-                chevronChecked: audioFlyout.visible && audioFlyout.parent === micButton1
-                onClicked: win.toggleMute()
-                onChevronClicked: win.openAudioOptions(micButton1)
-            }
-            BarButton {
-                icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
-                label: win.sharing ? "Stop sharing" : "Share"; strong: true
-                iconColor: win.sharing ? "#B10E1C" : theme.text
-                enabled: win.canShare || win.sharing
-                onClicked: win.toggleShare()
             }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
@@ -952,10 +933,10 @@ Window {
             }
         }
     }
-    function closeMenusForTest() { viewMenu.close(); peoplePane.closeMenusForTest() }
+    function closeMenusForTest() { viewMenu.close(); moreMenu.close(); peoplePane.closeMenusForTest() }
     /// For the --join-view harness: open the View menu (and a submenu row).
     function viewMenuForTest(sub) {
-        viewMenu.parent = meeting ? viewBtnM : viewBtn
+        viewMenu.parent = barItem("ViewModeButton")
         viewMenu.open()
         if (sub >= 0) viewMenuSubTimer.sub = sub, viewMenuSubTimer.start()
     }
@@ -1141,6 +1122,7 @@ Window {
     }
     function moreMenuForTest() { side = "people"; peoplePane.moreMenuForTest() }
     function peopleRowsForTest() { return peoplePane.rowsForTest() }
+    function tipForTest(name) { const b = barItems[name]; if (b && b.tipForTest) b.tipForTest() }
     function askRoleForTest(action, id, name) { roleAsk.ask(action, id, name) }
     // Confirm whichever More actions dialog is open.
     function confirmOpenDialogForTest() {
@@ -1165,7 +1147,6 @@ Window {
     // 12 apart holding Teams' 24 px reaction pictures.
     Popup {
         id: reactMenu
-        parent: reactButton
         x: 4; y: 59.3
         width: 249.3; height: 73.3
         padding: 0
@@ -1262,6 +1243,33 @@ Window {
         }
     }
     Shortcut { sequence: "F11"; enabled: win.meeting; onActivated: win.toggleFullScreen() }
+    // Teams' call shortcuts (§13). Mute, camera and leave work app-wide
+    // (Main.qml); the rest in the call window.
+    readonly property bool inCall: state === "connected" || state === "calling" || state === "connecting"
+    Shortcut { sequence: "Ctrl+Shift+K"; enabled: win.live && win.ubar.bar.concat(win.ubar.overflowed).indexOf("RaiseHandsButton") >= 0; onActivated: win.toggleHand() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: win.live && (win.canShare || win.sharing); onActivated: win.toggleShare() }
+    // Admit the person the lobby notification shows.
+    Shortcut {
+        sequence: "Ctrl+Shift+Y"
+        enabled: lobbyToast.visible && win.lobby.length === 1 && !win.lobby[0].suspected
+        onActivated: win.admitLobby(win.lobby[0].id, win.lobby[0].name, false)
+    }
+    // Ctrl+Space: talk while held when muted (Teams' temporary unmute).
+    property bool talkHeld: false
+    Item {
+        focus: true
+        Keys.onPressed: e => {
+            if (e.key === Qt.Key_Space && e.modifiers === Qt.ControlModifier && !e.isAutoRepeat
+                && win.live && win.hasAudio && win.muted) {
+                win.talkHeld = true; win.toggleMute(); e.accepted = true
+            }
+        }
+        Keys.onReleased: e => {
+            if (e.key === Qt.Key_Space && !e.isAutoRepeat && win.talkHeld) {
+                win.talkHeld = false; if (!win.muted) win.toggleMute(); e.accepted = true
+            }
+        }
+    }
     // Apps: what Teams offers in a call. Planner and OneNote open in the
     // main window; Whiteboard and Clipchamp are web apps.
     MenuPopup {
@@ -1281,22 +1289,24 @@ Window {
             else win.openApp(l.toLowerCase())
         }
     }
-    // More: settings and window actions.
+    // More (Teams' "More actions" menu, measured on winpc): View's menu
+    // style, at the button's left 5.3 px under it; what overflowed off the
+    // bar first, then More's own items from Teams' config.
     MenuPopup {
         id: moreMenu
-        x: parent ? parent.width - width : 0; y: parent ? parent.height + 4 : 0
-        width: 240
-        items: [
-            { label: "Device settings", icon: "settings-20" },
-            { label: win.visibility === Window.FullScreen ? "Exit full screen" : "Full screen", icon: "full-screen-maximize-20" }
-        ]
-        onPicked: i => i === 0 ? win.deviceSettings() : win.toggleFullScreen()
+        viewStyle: true
+        x: 4; y: 59.3
+        items: win.barMoreItems
+        onPicked: i => {
+            const it = win.barMoreItems[i]
+            // Overflowed menus open from More's place on the bar.
+            win.runControl(it.name)
+        }
     }
     // Dial pad: Teams' keypad under the button; keys send tones.
     Popup {
         id: dialPad
-        parent: padBtn
-        x: (padBtn.width - width) / 2; y: padBtn.height + 4
+        x: parent ? (parent.width - width) / 2 : 0; y: parent ? parent.height + 4 : 0
         width: 236; padding: 12
         property string dialed: ""
         onOpened: dialed = ""
@@ -1435,7 +1445,7 @@ Window {
     function transferFromConsultForTest() { const c = consulting; consulting = null; transfer(c.id, c.name) }
     function dialPadForTest() { dialPad.open() }
     function leaveMenuForTest() { leaveMenu.open() }
-    function audioOptionsForTest() { openAudioOptions(micButtonM) }
+    function audioOptionsForTest() { openAudioOptions(barItem("MicrophoneButton")) }
     function inviteForTest() { side = "people"; inviteDialog.open() }
     function closeDialPadForTest() { dialPad.close() }
     function pressForTest(keys) { for (const k of keys) dialPad.press(k) }
@@ -1445,6 +1455,87 @@ Window {
     // (11.5, 3.5) over an 11 px label; #424242 at rest (#242424 for the
     // media buttons), #EBEBEB behind and #242424 on hover; a 2 px brand
     // line under it while its pane is open.
+    // The bar's controls (see barComponent), with Teams' labels and
+    // tooltips (titles and shortcuts as Teams shows them).
+    Component { id: barDivider; Item { width: 17; height: 60; Rectangle { x: 8; y: 13.5; width: 0.67; height: 33; color: theme.stroke } } }
+    Component { id: cPopout; BarButton { icon: "call-popout"; label: "Pop out"; tip: "Pop out"; onClicked: win.runControl("PopoutContentButton") } }
+    Component { id: cTransfer; BarButton { icon: "call-transfer"; label: "Transfer"; tip: "Transfer"; enabled: win.controlEnabled("CallTransferButtonV2"); checked: picker.visible && picker.mode === "transfer"; onClicked: win.runControl("CallTransferButtonV2") } }
+    Component { id: cConsult; BarButton { icon: "consult"; label: "Consult"; tip: "Consult then transfer"; enabled: win.controlEnabled("CallConsultativeTransferButtonV2"); checked: picker.visible && picker.mode === "consult"; onClicked: win.runControl("CallConsultativeTransferButtonV2") } }
+    Component { id: cDialpad; BarButton { icon: "dialpad"; label: "Dial pad"; tip: "Dial pad"; enabled: win.controlEnabled("DialpadButton"); checked: dialPad.visible; onClicked: win.runControl("DialpadButton") } }
+    Component { id: cHold; BarButton { icon: "pause"; label: "Hold"; tip: "Hold"; enabled: win.controlEnabled("HoldButton"); onClicked: win.runControl("HoldButton") } }
+    // Held: Teams' "Resume" text button in the contextual group.
+    Component {
+        id: cResume
+        Item {
+            width: win.ubarWidths.ResumeButton; height: 60
+            Rectangle {
+                x: 4; anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - 8; height: 48; radius: theme.radius
+                color: rph.hovered ? theme.pane : theme.rowHover
+                border.color: theme.stroke
+                Row {
+                    anchors.centerIn: parent; spacing: 8
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                }
+                HoverHandler { id: rph; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: win.runControl("ResumeButton") }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Resume"
+            }
+        }
+    }
+    Component { id: cChat; BarButton { icon: "call-chat"; label: "Chat"; checked: win.side === "chat"; tip: win.side === "chat" ? "Hide conversation" : "Show conversation"; enabled: win.controlEnabled("ChatButton"); onClicked: win.runControl("ChatButton") } }
+    Component {
+        id: cPeople
+        BarButton {
+            icon: "call-people"; label: "People"; checked: win.side === "people"
+            readonly property int count: win.roster.length
+            tip: (count === 0 ? "" : count === 1 ? "1 participant. " : count + " participants. ") + (win.side === "people" ? "Hide participants" : "Show participants")
+            // Teams: people waiting in the lobby, or raised hands, as a
+            // red count; else how many are here (meetings).
+            badge: !win.meeting ? 0 : win.lobby.length > 0 ? win.lobby.length : win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
+            badgeAlert: win.lobby.length > 0 || win.hands.length > 0
+            enabled: win.controlEnabled("RosterButton")
+            onClicked: win.runControl("RosterButton")
+        }
+    }
+    Component { id: cRaise; BarButton { icon: "call-raise"; label: win.handRaised ? "Lower" : "Raise"; checked: win.handRaised; tip: win.handRaised ? "Lower your hand" : "Raise your hand"; shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
+    Component { id: cReact; BarButton { icon: "call-react"; label: "React"; checked: reactMenu.visible; tip: "Send a reaction"; enabled: win.controlEnabled("ReactionButton"); onClicked: win.runControl("ReactionButton") } }
+    Component { id: cView; BarButton { id: viewB; icon: "call-view"; label: "View"; tip: "Change your view"; checked: viewMenu.visible && viewMenu.parent === viewB; enabled: win.controlEnabled("ViewModeButton"); onClicked: win.runControl("ViewModeButton") } }
+    // Controls: the meeting options (organizers), as Teams opens them.
+    Component { id: cControls; BarButton { icon: "call-controls"; label: "Controls"; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton") } }
+    // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
+    Component { id: cNotes; BarButton { icon: "call-notes"; label: "Notes"; tip: "Open notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
+    Component { id: cRooms; BarButton { icon: "call-rooms"; label: "Rooms"; tip: "Create breakout rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton") } }
+    Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
+    Component { id: cMore; BarButton { icon: "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible; onClicked: win.runControl("MoreButton") } }
+    Component { id: cCamera; BarButton { icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true; tip: win.cameraOn ? "Turn camera off" : "Turn camera on"; shortcut: "Ctrl+Shift+O"; enabled: win.controlEnabled("VideoButton"); onClicked: win.runControl("VideoButton") } }
+    Component {
+        id: cMic
+        BarButton {
+            id: micB
+            icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
+            tip: !win.hasAudio ? "Turn audio on" : win.muted ? "Unmute mic" : "Mute mic"; shortcut: "Ctrl+Shift+M"
+            enabled: win.controlEnabled("MicrophoneButton")
+            split: true; chevronLabel: "Open audio options"
+            chevronChecked: audioFlyout.visible && audioFlyout.parent === micB
+            onClicked: win.runControl("MicrophoneButton")
+            onChevronClicked: win.openAudioOptions(micB)
+        }
+    }
+    Component {
+        id: cShare
+        BarButton {
+            icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
+            label: win.sharing ? "Stop sharing" : "Share"; strong: true
+            iconColor: win.sharing ? "#B10E1C" : theme.text
+            tip: win.sharing ? "Stop sharing" : "Share content"; shortcut: "Ctrl+Shift+E"
+            enabled: win.controlEnabled("ShareButton")
+            onClicked: win.runControl("ShareButton")
+        }
+    }
+
     component BarButton: Item {
         id: bb
         property string icon
@@ -1462,9 +1553,45 @@ Window {
         property bool split: false
         property string chevronLabel: ""
         property bool chevronChecked: false
+        /// Teams' tooltip and its keyboard shortcut ("{tip} ({shortcut})").
+        property string tip: ""
+        property string shortcut: ""
         signal clicked()
         signal chevronClicked()
         width: split ? 74 : 56; height: 60
+        // Teams' bar tooltip (Fluent Tooltip, measured on winpc): 10 below
+        // the button, its left edge on the button's (or its right edge on
+        // the button's when it would leave the window); 12/16 text,
+        // padding 4 / 11 / 6, radius 4, a 12 px arrow at the button's
+        // centre, shadows 2 and 8.
+        function tipForTest() { bbTip.open() }
+        ToolTip {
+            id: bbTip
+            parent: bb
+            visible: bb.tip.length > 0 && bbHover.hovered
+            delay: 250
+            topPadding: 4; bottomPadding: 6; leftPadding: 11; rightPadding: 11
+            readonly property bool flip: bb.mapToItem(null, 4 + implicitWidth, 0).x > (bb.Window.window ? bb.Window.window.width : 1e9)
+            x: flip ? 52 - implicitWidth : 4
+            y: 64
+            contentItem: Text {
+                text: bb.tip + (bb.shortcut.length > 0 ? " (" + bb.shortcut + ")" : "")
+                font.family: theme.font; font.pixelSize: 12
+                lineHeight: 16; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                wrapMode: Text.Wrap
+                width: Math.min(implicitWidth, 218)
+            }
+            background: Item {
+                FluentSurface { anchors.fill: parent; depth: 8; radius: 4; color: theme.surface }
+                Rectangle {
+                    width: 8.48; height: 8.48; rotation: 45
+                    color: theme.surface
+                    x: (bbTip.flip ? bbTip.implicitWidth - 24 : 24) - width / 2 - 0.67
+                    y: -width / 2
+                }
+            }
+        }
         Rectangle {
             visible: bb.split
             x: 52; y: 6; width: 22; height: 48
