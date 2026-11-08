@@ -328,7 +328,12 @@ Item {
                     else return
                     event.accepted = true
                 }
-                Keys.onReturnPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }
+                Keys.onReturnPressed: event => {
+                    if (mentionPicker.opened) { mentionPicker.pick(); return }
+                    // Teams: Enter on an empty quote line leaves the quote.
+                    if (root.richState.quote && root.richState.empty && !(event.modifiers & Qt.ControlModifier)) { root.format("quote", ""); return }
+                    root.enterPressed(event)
+                }
                 Keys.onEnterPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }
                 Keys.onTabPressed: event => { if (mentionPicker.opened) mentionPicker.pick(); else event.accepted = false }
                 Keys.onUpPressed: event => { if (mentionPicker.opened) mentionPicker.move(-1); else event.accepted = false }

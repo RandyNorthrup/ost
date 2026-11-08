@@ -521,7 +521,7 @@ extern "C" char *ost_rich_state(void *helper, int pos)
     if (QTextList *l = blk.textList())
         list = l->format().style() == QTextListFormat::ListDecimal ? QStringLiteral("ol") : QStringLiteral("ul");
     const bool headingWeight = f.boolProperty(HeadingWeight);
-    return dup(QStringLiteral("{\"bold\":%1,\"italic\":%2,\"underline\":%3,\"strike\":%4,\"code\":%5,\"heading\":%6,\"quote\":%7,\"codeBlock\":%8,\"lang\":\"%9\",\"list\":\"%10\"}")
+    return dup(QStringLiteral("{\"empty\":%11,\"bold\":%1,\"italic\":%2,\"underline\":%3,\"strike\":%4,\"code\":%5,\"heading\":%6,\"quote\":%7,\"codeBlock\":%8,\"lang\":\"%9\",\"list\":\"%10\"}")
                    .arg(!headingWeight && f.fontWeight() >= QFont::DemiBold ? "true" : "false",
                         f.fontItalic() ? "true" : "false",
                         f.fontUnderline() && !f.isAnchor() ? "true" : "false",
@@ -531,7 +531,8 @@ extern "C" char *ost_rich_state(void *helper, int pos)
                    .arg(blk.blockFormat().boolProperty(QuoteBlock) ? "true" : "false",
                         code ? "true" : "false",
                         code ? blk.blockFormat().stringProperty(BlockLang) : QString(),
-                        list));
+                        list)
+                   .arg(blk.length() <= 1 ? "true" : "false"));
 }
 
 // The document as clean HTML: p/h1-3/hr/blockquote/pre/ul/ol, b/i/u/s,
