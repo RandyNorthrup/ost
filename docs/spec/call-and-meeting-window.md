@@ -441,6 +441,7 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
 | InLobby, a presenter is present | `jF` | "Hi, {{userName}}. Someone will let you in shortly." |
 | InLobby, no presenter | `MM` | "Hi, {{userName}}. Someone will let you in when the meeting starts." |
 
+- **Held in the lobby, the protocol** (captured from a Teams web guest in the test meeting, 2026-11-08): the join response gives our endpoint a `lobby` modality (no `call`), `activeModalities` is null and the conversation links are few (leave, updateEndpointState, publishState…). The media processor still accepts the call with an SDP answer but `acceptedCallModalities: []`. Admission is a `conversation/conversationUpdate` with `activeModalities.call` (and `lobby: null`) carrying the full links, then the roster moves the endpoint to `call` and the media processor renegotiates (`call/mediaRenegotiation` offer, answered on the negotiation link). Teams' lobby text uses `isPresenterConnected`; OST takes the conversation's `state.isMeetingActivated`.
 - In the lobby, the audio option headers are disabled; the mic and camera toggles still work. Join is disabled and the speaker toggle is disabled.
 - Teams Free variants: "We've let the organizer know you're waiting." / "When the meeting starts, we'll let the organizer know you're waiting."
 - Overflow/streaming: "Attendee mics and cameras are turned off by default for this event." / "The meeting has reached capacity. You are joining in audio-only mode."

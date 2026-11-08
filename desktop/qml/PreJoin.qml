@@ -18,8 +18,18 @@ Window {
     property bool cameraOn: false
     /// Teams' audio choices: "computer", "room" or "none" (Don't use audio).
     property string audio: "computer"
+    /// Held in the meeting's lobby (Teams' InLobby pre-join state): the
+    /// title says someone will let you in, Join now and the audio choices
+    /// are disabled; the mic and camera switches still work.
+    property bool lobby: false
+    /// Someone is in the meeting (else Teams says "when the meeting
+    /// starts").
+    property bool presenterConnected: true
+    property string userName: ""
     signal join(bool micOn, bool withAudio, bool cameraOn)
     signal cancelled()
+    /// Leave the lobby (Cancel, Escape).
+    signal leaveLobby()
 
     width: 1280; height: 680
     minimumWidth: 1000; minimumHeight: 640
@@ -36,7 +46,11 @@ Window {
     readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : "Default microphone" }
     readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : "Default speaker" }
 
-    Shortcut { sequence: "Escape"; onActivated: { win.close(); win.cancelled() } }
+    Shortcut { sequence: "Escape"; onActivated: win.cancel() }
+    function cancel() {
+        win.close()
+        if (win.lobby) win.leaveLobby(); else win.cancelled()
+    }
     onCameraOnChanged: if (cameraOn && !backend.setCameraPreview(true)) cameraOn = false; else if (!cameraOn) backend.setCameraPreview(false)
     // The camera is free again for the call (or for nobody) once we go.
     onVisibleChanged: if (!visible && cameraOn) backend.setCameraPreview(false)
@@ -52,9 +66,12 @@ Window {
             sourceSize: Qt.size(80, 80); fillMode: Image.PreserveAspectFit; smooth: true
         }
         Item { width: 1; height: 8 }
+        // The title, or in the lobby Teams' lobby text in its place.
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: win.subject
+            text: !win.lobby ? win.subject
+                : win.presenterConnected ? "Hi, " + win.userName + ". Someone will let you in shortly."
+                : "Hi, " + win.userName + ". Someone will let you in when the meeting starts."
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             color: theme.text
         }
@@ -117,7 +134,8 @@ Window {
                 color: theme.surface; border.color: theme.dividerSoft
                 Radio {
                     x: 16; y: 18; on: win.audio === "computer"; label: "Computer audio"
-                    TapHandler { onTapped: win.audio = "computer" }
+                    opacity: win.lobby ? 0.45 : 1
+                    TapHandler { enabled: !win.lobby; onTapped: win.audio = "computer" }
                 }
                 Rectangle { y: 54; width: parent.width; height: 1; color: theme.dividerSoft }
                 Rectangle { y: 55; width: parent.width; height: parent.height - 56; color: theme.pane }
@@ -153,7 +171,7 @@ Window {
                     Radio {
                         x: 16; y: 10
                         on: win.audio === parent.modelData.key; label: parent.modelData.label
-                        opacity: parent.modelData.usable ? 1 : 0.45
+                        opacity: parent.modelData.usable && !win.lobby ? 1 : 0.45
                     }
                     // Room audio: Teams looks for a Teams Room nearby to pair with.
                     Text {
@@ -163,7 +181,7 @@ Window {
                         font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
                     }
                     HoverHandler { cursorShape: parent.modelData.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                    TapHandler { enabled: parent.modelData.usable; onTapped: win.audio = parent.modelData.key }
+                    TapHandler { enabled: parent.modelData.usable && !win.lobby; onTapped: win.audio = parent.modelData.key }
                     Accessible.role: Accessible.RadioButton
                     Accessible.name: modelData.label
                     Accessible.checked: win.audio === modelData.key
@@ -180,17 +198,19 @@ Window {
             color: cxh.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
             Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
             HoverHandler { id: cxh; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: { win.close(); win.cancelled() } }
+            TapHandler { onTapped: win.cancel() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
             width: 96; height: 32; radius: theme.radius
-            color: jnh.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
-            HoverHandler { id: jnh; cursorShape: Qt.PointingHandCursor }
+            // Disabled in the lobby (Fluent's disabled primary button).
+            color: win.lobby ? theme.pick("#F0F0F0", "#141414") : jnh.hovered ? theme.brandHover : theme.brandFill
+            border.color: win.lobby ? theme.pick("#E0E0E0", "#424242") : "transparent"
+            Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: win.lobby ? theme.pick("#BDBDBD", "#5C5C5C") : "white" }
+            HoverHandler { id: jnh; cursorShape: win.lobby ? Qt.ArrowCursor : Qt.PointingHandCursor }
             // Room audio found no room: Teams then joins with computer audio.
-            TapHandler { onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none", win.cameraOn) } }
+            TapHandler { enabled: !win.lobby; onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none", win.cameraOn) } }
             Accessible.role: Accessible.Button
             Accessible.name: "Join now"
         }

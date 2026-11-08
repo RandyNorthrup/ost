@@ -91,6 +91,11 @@ pub struct OutgoingCall {
     /// The conversation's updateEndpointState link (our mute, as others
     /// see it), and the last sequence number posted.
     endpoint_state: Option<(String, std::sync::atomic::AtomicU64)>,
+    /// Held in the meeting's lobby until someone admits us.
+    in_lobby: bool,
+    /// The meeting has started (`state.isMeetingActivated`): Teams' lobby
+    /// text says someone will let you in shortly, else when it starts.
+    meeting_started: bool,
 }
 
 /// Someone waiting in a meeting's lobby.
@@ -461,6 +466,45 @@ impl OutgoingCall {
         });
         cc_post(&self.http, &self.skype_token, &link, &body, "Spotlight").await?;
         Ok(())
+    }
+
+    /// Held in the meeting's lobby.
+    pub fn in_lobby(&self) -> bool {
+        self.in_lobby
+    }
+
+    /// The meeting has started (someone is in it).
+    pub fn meeting_started(&self) -> bool {
+        self.meeting_started
+    }
+
+    /// Admitted from the lobby: take the conversation's links from the
+    /// update that admitted us (the lobby's join response has only a few).
+    pub fn admit_from_lobby(&mut self, update: &serde_json::Value) {
+        let body = update.to_string();
+        let link = |name: &str| conversation_link(&body, name);
+        self.state_links = (link("publishState").or(self.state_links.0.take()), link("removeState"));
+        self.all_participants = link("getAllParticipants");
+        self.admit_links = (link("admit"), link("admitAll"));
+        self.remove_link = link("removeParticipant");
+        self.properties_link = link("updateParticipantProperties");
+        self.role_link = link("updateParticipantRole");
+        self.settings_link = link("updateMeetingSettings");
+        self.mute_link = link("mute");
+        self.unmute_link = link("unmute");
+        self.message_link = link("sendMessage");
+        if let Some(l) = link("updateEndpointState") {
+            self.endpoint_state = Some((l, std::sync::atomic::AtomicU64::new(0)));
+        }
+        if let Some(c) = controller_link(&body) {
+            self.controller = Some(c);
+        }
+        if let Some(c) = super::meeting_options::meeting_capability(update) {
+            self.capability = c;
+        }
+        self.lobby_thread = group_chat_field(&body, "lobbyThreadId").or(self.lobby_thread.take());
+        self.in_lobby = false;
+        tracing::info!(has_mute = self.mute_link.is_some(), has_admit = self.admit_links.0.is_some(), "admitted from the lobby");
     }
 
     /// The meeting's lock and attendee restrictions, as last reported.
@@ -1206,6 +1250,10 @@ struct Acceptance {
     /// Where a meeting is told what our lines do (Teams' camera and screen
     /// changes go there).
     media_descriptions: Option<String>,
+    /// A meeting holding us in its lobby: the media processor accepts the
+    /// call with no call modalities (Teams then shows "Someone will let you
+    /// in shortly"); admitting us brings the call modality.
+    in_lobby: bool,
 }
 
 /// Read a callee answer, a rejection, or a call end from a call event.
@@ -1254,7 +1302,26 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
         renegotiation: link("mediaRenegotiation"),
         end: link("end"),
         media_descriptions: link("updateMediaDescriptions"),
+        in_lobby: body
+            .pointer("/callAcceptance/acceptedCallModalities")
+            .and_then(|m| m.as_array())
+            .is_some_and(|m| m.is_empty()),
     }))
+}
+
+/// A conversation update admitting us from a meeting's lobby (the call
+/// modality appears in `activeModalities`): its body, whose links replace
+/// the lobby's few.
+pub fn lobby_admission(json: &str) -> Option<serde_json::Value> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let path = v.get("callAgentPath")?.as_str()?;
+    if !path.starts_with("conversation/conversationUpdate") {
+        return None;
+    }
+    let body = v.get("body")?;
+    body.pointer("/activeModalities/call")
+        .filter(|c| c.is_object())
+        .map(|_| body.clone())
 }
 
 /// Call a Teams user. Resolves once the callee answers and audio is set
@@ -1603,7 +1670,7 @@ async fn start(
         _ = tokio::time::sleep(RING_TIMEOUT) => return Err(withdraw(408, "No answer").await),
         _ = &mut cancel => return Err(withdraw(487, "Call cancelled").await),
     };
-    tracing::info!("callee answered");
+    tracing::info!(in_lobby = acceptance.in_lobby, "callee answered");
 
     if let Some(ack) = &acceptance.acknowledgement
         && let Err(e) = signaling::acknowledge_call_acceptance(&http, ack, &params).await
@@ -1690,12 +1757,39 @@ async fn start(
         server_muted: std::sync::atomic::AtomicBool::new(false),
         message_link,
         endpoint_state,
+        in_lobby: acceptance.in_lobby,
+        meeting_started: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| {
+                ["/state/isMeetingActivated", "/conversationResponse/state/isMeetingActivated"]
+                    .iter()
+                    .find_map(|p| v.pointer(p).and_then(|b| b.as_bool()))
+            })
+            .unwrap_or(true),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Shapes from a Teams web guest held in the test meeting's lobby
+    /// (2026-11-08): the media processor accepts with no call modalities;
+    /// admission is a conversation update carrying the call modality.
+    #[test]
+    fn lobby_acceptance_and_admission() {
+        let lobby = r#"{"callAgentPath":"call/acceptance/","body":{"callAcceptance":{"acceptedCallModalities":[],"links":{"acknowledgement":"https://cc.skype.com/ack"},"mediaContent":{"contentType":"application/sdp-ngc-1.0","blob":"v=0"}}}}"#;
+        let a = read_answer(lobby).expect("answer").expect("accepted");
+        assert!(a.in_lobby);
+        let joined = lobby.replace(r#""acceptedCallModalities":[]"#, r#""acceptedCallModalities":["Audio"]"#);
+        assert!(!read_answer(&joined).expect("answer").expect("accepted").in_lobby);
+        let admitted = r#"{"callAgentPath":"conversation/conversationUpdate/","body":{"activeModalities":{"call":{"links":{}},"lobby":null},"links":{"mute":"https://conv.skype.com/mute","admit":"https://conv.skype.com/admit"}}}"#;
+        let body = lobby_admission(admitted).expect("admission");
+        assert_eq!(conversation_link(&body.to_string(), "mute").as_deref(), Some("https://conv.skype.com/mute"));
+        let still_waiting = r#"{"callAgentPath":"conversation/conversationUpdate/","body":{"activeModalities":null}}"#;
+        assert!(lobby_admission(still_waiting).is_none());
+        assert!(lobby_admission(r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"activeModalities":{"call":{}}}}"#).is_none());
+    }
 
     #[test]
     fn lobby_replies_mark_screened_guests() {

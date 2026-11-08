@@ -127,6 +127,9 @@ pub mod qobject {
         /// The call is a scheduled meeting joined from its link (not a
         /// chat's group call or Meet now).
         #[qproperty(bool, call_scheduled)]
+        /// Held in a meeting's lobby (call_state "lobby"): someone is in
+        /// the meeting, so Teams says they'll let you in shortly.
+        #[qproperty(bool, call_lobby_presenter)]
         /// What attendees may not do (bits: mic 1, camera 2, chat 4).
         #[qproperty(i32, call_attendee_restrictions)]
         /// Bumped when the meeting is locked or unlocked while we're in it
@@ -1050,6 +1053,7 @@ pub struct BackendRust {
     call_muted_remotely: i32,
     call_meeting_locked: bool,
     call_scheduled: bool,
+    call_lobby_presenter: bool,
     call_attendee_restrictions: i32,
     call_lock_notices: i32,
     /// Who joined and left the meeting we're in (the attendance list).
@@ -1984,6 +1988,23 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     if teams_cli::calling::roster::lobby_count(json).is_some() {
         let qt2 = qt.clone();
         runtime().spawn(async move { refresh_lobby(qt2).await });
+    }
+    // Admitted from the lobby: the call modality arrives with the
+    // conversation's links; Teams then shows the meeting.
+    if let Some(update) = teams_cli::calling::outgoing::lobby_admission(json) {
+        let admitted = match call_slot().lock().await.outgoing.as_mut() {
+            Some(call) if call.in_lobby() => {
+                call.admit_from_lobby(&update);
+                Some(call.capability())
+            }
+            _ => None,
+        };
+        if let Some(cap) = admitted {
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().show_capability(cap, false);
+                this.as_mut().set_call_state(QString::from("connected"));
+            });
+        }
     }
     // The meeting locked or unlocked, or changed what attendees may do.
     if json.contains("conversationUpdate") || json.contains("meetingCapability") {
@@ -3240,7 +3261,9 @@ impl qobject::Backend {
                     let can_dtmf = call.can_dtmf();
                     let invite = call.invite_url().unwrap_or_default().to_string();
                     let capability = call.capability();
-                    tracing::info!(has_audio, can_dtmf, "meeting joined");
+                    let in_lobby = call.in_lobby();
+                    let started = call.meeting_started();
+                    tracing::info!(has_audio, can_dtmf, in_lobby, "meeting joined");
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
@@ -3251,7 +3274,10 @@ impl qobject::Backend {
                         this.as_mut().show_capability(capability, false);
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
-                        this.as_mut().set_call_state(QString::from("connected"));
+                        this.as_mut().set_call_lobby_presenter(started);
+                        // Held in the lobby: Teams keeps the pre-join
+                        // screen until someone admits us.
+                        this.as_mut().set_call_state(QString::from(if in_lobby { "lobby" } else { "connected" }));
                     });
                 }
                 Err(e) => {

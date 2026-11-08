@@ -90,7 +90,7 @@ Window {
     Shortcut { sequence: "Alt+Shift+V"; onActivated: if (conversation.visible && !backend.callState) backend.startVideoCall() }
     // Call keys work from the call window and the toast too.
     Shortcut { sequence: "Ctrl+Shift+M"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") backend.toggleMute() }
-    Shortcut { sequence: "Ctrl+Shift+H"; context: Qt.ApplicationShortcut; onActivated: if (["calling", "connecting", "connected"].indexOf(backend.callState) >= 0) backend.hangUp() }
+    Shortcut { sequence: "Ctrl+Shift+H"; context: Qt.ApplicationShortcut; onActivated: if (["calling", "connecting", "connected", "lobby"].indexOf(backend.callState) >= 0) backend.hangUp() }
     Shortcut { sequence: "Ctrl+Shift+S"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(false) }
     Shortcut { sequence: "Ctrl+Shift+A"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(backend.callVideoOffered) }
     Shortcut { sequence: "Ctrl+Shift+D"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.declineCall() }
@@ -607,12 +607,21 @@ Window {
     }
     PreJoin {
         id: preJoin
+        // Held in the lobby: Teams shows this screen again until we're let in.
+        lobby: backend.callState === "lobby"
+        presenterConnected: backend.callLobbyPresenter
+        userName: backend.userName
+        onLobbyChanged: if (lobby) { show(); raise() } else if (visible) close()
         onJoin: (micOn, withAudio, cameraOn) => {
             window.muteOnJoin = !micOn
             window.noAudioOnJoin = !withAudio
             window.cameraOnJoin = !!cameraOn
             backend.joinMeeting(joinUrl, subject)
         }
+        // The switches still count in the lobby: they apply once admitted.
+        onMicOnChanged: if (lobby) window.muteOnJoin = !micOn
+        onCameraOnChanged: if (lobby) window.cameraOnJoin = cameraOn
+        onLeaveLobby: backend.hangUp()
     }
     // Joining with the mic off (pre-join switch): mute once connected.
     property bool muteOnJoin: false
@@ -1180,7 +1189,16 @@ Window {
         interval: 2000; repeat: true
         property int step: 0
         onTriggered: {
-            if (step === 0) {
+            if (step >= 1 && step <= 5 && Qt.application.arguments.indexOf("--lobby-screen") >= 0) {
+                // --lobby-screen: the pre-join screen as Teams shows it in
+                // the lobby (both texts), captured, then cancelled.
+                const grab = n => preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + n + ".png")))
+                if (step === 1) preJoin.lobby = true
+                else if (step === 2) grab("lobby")
+                else if (step === 3) preJoin.presenterConnected = false
+                else if (step === 4) grab("lobby-nostart")
+                else Qt.quit()
+            } else if (step === 0) {
                 const ev = JSON.parse(backend.calendarJson).find(e => e.subject.indexOf("OST calendar test") === 0 && e.join_url)
                 console.warn("JOIN event found", !!ev)
                 calendarView.joinMeeting(ev.join_url, ev.subject)
