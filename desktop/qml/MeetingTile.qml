@@ -81,7 +81,7 @@ Item {
         // Speaking: Teams' voice-level outline.
         Rectangle {
             anchors.fill: parent
-            visible: !mt.self && !!mt.call && mt.person.id === mt.call.speakerId
+            visible: !mt.self && !!mt.call && mt.call.speakingIds.indexOf(mt.person.id) >= 0
             radius: 6; color: "transparent"
             border.width: 4; border.color: "#5B5FC7"
             Rectangle {

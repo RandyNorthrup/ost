@@ -58,6 +58,8 @@ Window {
     property var videoKeys: ({})
     /// The meeting's dominant speaker (Speaker view puts them on stage).
     property string speakerId: ""
+    // Who is speaking now (Teams' voice-level outline).
+    property var speakingIds: []
     /// Who presents their screen in the meeting (empty: nobody).
     property string shareId: ""
     readonly property bool presenting: meeting && shareId !== ""

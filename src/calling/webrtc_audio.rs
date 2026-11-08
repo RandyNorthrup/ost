@@ -1670,6 +1670,34 @@ impl WebRtcAudioSession {
             )
         });
 
+        // Meetings: who speaks, from the mix's contributing sources (Teams'
+        // voice-level outline), reported as they change.
+        let speakers = local.meeting.then(|| {
+            let tracker: Arc<std::sync::Mutex<super::active_speakers::Tracker>> = Arc::default();
+            let t = tracker.clone();
+            tasks.push(tokio::spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_millis(50));
+                loop {
+                    tick.tick().await;
+                    let changed = t
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .changed(std::time::Instant::now());
+                    if let Some(ids) = changed {
+                        crate::event_hub::publish(
+                            crate::event_hub::EventKind::Call,
+                            serde_json::json!({
+                                "callAgentPath": "ost/activeSpeakers/",
+                                "body": {"sourceIds": ids},
+                            })
+                            .to_string(),
+                        );
+                    }
+                }
+            }));
+            tracker
+        });
+
         // Receive and demultiplex.
         tasks.push(tokio::spawn(recv_loop(RecvCtx {
             socket: socket.clone(),
@@ -1681,6 +1709,7 @@ impl WebRtcAudioSession {
             spk_tx,
             held: held.clone(),
             twcc: twcc.clone(),
+            speakers,
             #[cfg(feature = "video")]
             video: video_rx.clone(),
             #[cfg(feature = "video")]
@@ -2014,6 +2043,8 @@ struct RecvCtx {
         Arc<std::sync::Mutex<super::twcc::Recorder>>,
         Arc<std::sync::atomic::AtomicU32>,
     )>,
+    /// In a meeting: who the mixed audio says is speaking.
+    speakers: Option<Arc<std::sync::Mutex<super::active_speakers::Tracker>>>,
     /// The video payload type and its receiver.
     #[cfg(feature = "video")]
     video: Vec<VideoStream>,
@@ -2151,6 +2182,16 @@ async fn recv_loop(ctx: RecvCtx) {
                     && unrouted.insert((pkt.ssrc, pt))
                 {
                     tracing::debug!(ssrc = pkt.ssrc, pt, len, "RTP stream nothing receives");
+                }
+                // A meeting's mix names who is in it: the speakers.
+                if pt == PT_PCMU
+                    && let Some(speakers) = &ctx.speakers
+                {
+                    let csrcs = super::active_speakers::csrcs(&plain);
+                    speakers
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .record(&csrcs, std::time::Instant::now());
                 }
                 if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain))
                     && pkt.payload_type == PT_PCMU

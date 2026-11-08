@@ -165,6 +165,13 @@ Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framin
 - **Payload types.** The processor's answer writes `profile-level-id=42C01E` (Constrained Baseline as `42C0…`) and payload type 107 on both lines. OST sends with that type; it receives the share with its own offered 102.
 - **Verified.** A guest on Teams web saw OST's camera (on, then off) and OST's shared window (shown, then back to the gallery on stop).
 
+## Who is speaking (2026-11-08, verified live)
+
+- Teams' voice-level outline: a participant's `voiceLevel` is 1 while their roster audio `sourceId` is among the contributing sources (RTP CSRCs) of the mixed audio the processor sends, else 0 (`onContributingSourcesChanged` → `updateVoiceLevel`). The tile outline shows when it's above 0. `dsh` (dominant speaker history) drives Speaker view instead.
+- Your own tile gets no outline in Teams web's meeting stage.
+- Measured on Teams web: the outline goes off about 60 ms after the speaker's CSRCs stop arriving (180–220 ms after they mute). Gaps of up to about 120 ms in the CSRCs don't turn it off.
+- OST: `src/calling/active_speakers.rs` keeps each CSRC for 150 ms after its last packet and reports the set as it changes (event `ost/activeSpeakers/`). The backend maps the sources to people through the roster (`callSpeakingJson`).
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.

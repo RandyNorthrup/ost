@@ -2,6 +2,7 @@
 //!
 //! This handles signaling only (no media streaming).
 
+pub mod active_speakers;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod call_test;

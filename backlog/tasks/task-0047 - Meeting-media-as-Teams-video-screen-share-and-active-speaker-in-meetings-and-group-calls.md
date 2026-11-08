@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-08T07:11:00Z'
+updated_date: '2026-11-08T10:35:00Z'
 labels:
   - calls
   - meetings
@@ -24,8 +24,8 @@ Calls/meetings P1 gaps (docs/parity/gaps-calls-meetings.md): meetings and group 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Video tiles in meetings/group calls (subscriptions via the media processor), self view, Teams' grid fitting
-- [ ] #2 Active speaker from Teams' speaker updates drives Speaker view
+- [x] #1 Video tiles in meetings/group calls (subscriptions via the media processor), self view, Teams' grid fitting
+- [x] #2 Active speaker from Teams' speaker updates drives Speaker view
 - [ ] #3 Share and receive screen share in meetings and group calls
 <!-- AC:END -->
 
@@ -49,4 +49,7 @@ Calls/meetings P1 gaps (docs/parity/gaps-calls-meetings.md): meetings and group 
 - 2026-11-07 (later): Implemented Teams' media control plane natively: SCTP data channel over the call DTLS (sctp-proto), MCP client, multi-slot meeting offer, slot routing by SSRC range, roster seeded from the join response. Live: both guests' cameras show in OST's meeting tiles (sr_res ok). Remaining: dsh/active speaker (capture its shape), Teams' tile look and grid fitting, video in the speaker strip, our camera into meetings (vdclc/simulcast), screen share in meetings.
 
 - 2026-11-07: Quality: transport-cc feedback (twcc.rs) lifts the processor's estimate; 960x540 layers arrive (was 284x160). Gallery rebuilt to Teams' measured 16:9 layout (MeetingTile.qml), self first, name tags, voice-level outline from MCP dsh. Remaining: Speaker-view strip videos, our camera into meetings (vdclc layers), screen share in meetings, voice-level from audio levels rather than dsh alone.
+
+- 2026-11-08: Sending in meetings as Teams does: camera and share lines sendrecv from the join, switched by UpdateMediaDescriptions only (both lines each time; share sendonly + negotiationTag "<callId>;ss_<n>"). Joins of an ongoing call use its id as chain id (thread liveness conversationId). controlVideoStreaming events (a viewer starts watching our screen) cap the encoder and force a keyframe. The processor answers H.264 as 42C01E; recognising it makes the share go out with the answer's PT 107 (was 102, dropped). Live from a Teams web guest: OST's shared window shown, then gallery on stop; camera on then off. Commit 446b44f.
+- Still open for #3: a live check in a group call (same code path as meetings). Also open: voice-level outline from audio levels, gallery pages beyond the gallery size.
 <!-- SECTION:NOTES:END -->

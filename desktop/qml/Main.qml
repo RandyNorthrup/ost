@@ -686,6 +686,7 @@ Window {
         onVideoWidthsChanged: backend.setVideoWidths(JSON.stringify(videoWidths))
         chatMembers: backend.callChatMembersJson ? JSON.parse(backend.callChatMembersJson) : []
         speakerId: backend.callSpeakerMri
+        speakingIds: JSON.parse(backend.callSpeakingJson || "[]")
         lobby: backend.callLobbyJson ? JSON.parse(backend.callLobbyJson) : []
         onAdmitLobby: (id, name, notBot) => backend.admitFromLobby(id, name, notBot)
         onDenyLobby: (id, name) => backend.denyFromLobby(id, name)

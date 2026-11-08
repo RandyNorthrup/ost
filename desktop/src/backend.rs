@@ -113,6 +113,8 @@ pub mod qobject {
         #[qproperty(QString, call_video_json)]
         /// The meeting's dominant speaker (the media processor's history).
         #[qproperty(QString, call_speaker_mri)]
+        /// Who is speaking now (Teams' voice-level outline): [mri].
+        #[qproperty(QString, call_speaking_json)]
         /// Who presents their screen in the meeting (empty: nobody).
         #[qproperty(QString, call_share_mri)]
         /// Who waits in the meeting's lobby: [{id, name}].
@@ -971,6 +973,7 @@ pub struct BackendRust {
     call_roster_json: QString,
     call_video_json: QString,
     call_speaker_mri: QString,
+    call_speaking_json: QString,
     call_share_mri: QString,
     /// How wide each person's tile is drawn ({mri: px}), for the size of
     /// video to ask for.
@@ -1777,6 +1780,18 @@ async fn refresh_lobby(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
 /// A call event arrived: ring for a new invitation; anything else about
 /// the current call is logged by shape (never by content) so call-end
 /// signalling can be recognised.
+/// The source ids of one of OST's own call events (`path`), if `json` is
+/// one.
+fn call_event_source_ids(json: &str, path: &str) -> Option<Vec<i64>> {
+    let v = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    (v["callAgentPath"] == path).then(|| {
+        v["body"]["sourceIds"]
+            .as_array()
+            .map(|a| a.iter().filter_map(serde_json::Value::as_i64).collect())
+            .unwrap_or_default()
+    })
+}
+
 async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     if let Some(start) = teams_cli::calling::incoming::meeting_start(json) {
         tracing::info!(thread = %start.thread_id, "meeting started in a chat");
@@ -1805,18 +1820,28 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         }
         return;
     }
+    // Who speaks now: the people whose audio sources are in the mix.
+    if let Some(ids) = call_event_source_ids(json, "ost/activeSpeakers/") {
+        let _ = qt.queue(move |mut this| {
+            let mris: Vec<&str> = this
+                .rust()
+                .roster
+                .iter()
+                .filter(|p| p.audio_source.is_some_and(|a| ids.contains(&a)))
+                .map(|p| p.id.as_str())
+                .collect();
+            let json = serde_json::to_string(&mris).unwrap_or_else(|_| "[]".into());
+            if this.rust().call_speaking_json.to_string() != json {
+                tracing::debug!(speaking = %json, "voice levels");
+                this.as_mut()
+                    .set_call_speaking_json(QString::from(json.as_str()));
+            }
+        });
+        return;
+    }
     // The media processor's dominant speaker: whose audio source it is.
-    if let Some(ids) = serde_json::from_str::<serde_json::Value>(json)
-        .ok()
-        .filter(|v| v["callAgentPath"] == "ost/dominantSpeakers/")
-        .map(|v| {
-            v["body"]["sourceIds"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-        })
-    {
-        let first = ids.first().and_then(serde_json::Value::as_i64);
+    if let Some(ids) = call_event_source_ids(json, "ost/dominantSpeakers/") {
+        let first = ids.first().copied();
         let _ = qt.queue(move |mut this| {
             let mri = first
                 .and_then(|id| {
@@ -2879,6 +2904,7 @@ impl qobject::Backend {
         self.as_mut().set_call_roster_json(QString::from("[]"));
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
+        self.as_mut().set_call_speaking_json(QString::from("[]"));
         self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
@@ -2947,6 +2973,7 @@ impl qobject::Backend {
         self.as_mut().set_call_roster_json(QString::from("[]"));
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
+        self.as_mut().set_call_speaking_json(QString::from("[]"));
         self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
