@@ -1086,10 +1086,17 @@ Window {
     // --join-view: walk Teams' View menu options in a joined meeting,
     // capturing the stage after each (with --join-test --join-stay=…).
     Timer {
-        running: Qt.application.arguments.indexOf("--join-view") >= 0 && backend.callState === "connected" && backend.callRosterJson.length > 4
+        running: (Qt.application.arguments.indexOf("--join-view") >= 0 || Qt.application.arguments.indexOf("--join-pages") >= 0)
+            && backend.callState === "connected" && backend.callRosterJson.length > 4
         interval: 3000; repeat: true
         property int step: 0
-        readonly property var plan: [
+        // --join-pages: the gallery's pages (gallery size 4, then page 2).
+        readonly property var plan: Qt.application.arguments.indexOf("--join-pages") >= 0 ? [
+            ["pages-16", () => {}],
+            ["pages-4", () => { callWindow.gallerySize = 4 }],
+            ["pages-4-next", () => { callWindow.galleryPage = 1 }],
+            ["pages-4-back", () => { callWindow.galleryPage = 0 }]
+        ] : [
             ["gallery", () => {}],
             ["menu", () => callWindow.viewMenuForTest(-1)],
             ["menu-size", () => callWindow.viewMenuForTest(4)],

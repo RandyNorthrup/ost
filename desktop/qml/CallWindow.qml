@@ -143,6 +143,9 @@ Window {
     property bool incomingVideoOff: false
     // Teams' View menu settings for meetings.
     property int gallerySize: 16
+    // Which page of the gallery shows, when more people are in it than its
+    // size (Teams' "‹ 1/2 ›" under the tiles).
+    property int galleryPage: 0
     property bool videosFirst: false
     property bool galleryAtTop: false
     property bool hideMe: false
@@ -470,7 +473,13 @@ Window {
                 : speakerView
                 ? win.othersOrdered.filter(p => p !== speaker).concat(win.hideMe || speaker.self ? [] : [win.selfEntry])
                 : (win.hideMe || win.meInGallery ? [] : [win.selfEntry])
-            readonly property var gallery: (win.hideMe || !win.meInGallery ? [] : [win.selfEntry]).concat(win.othersOrdered).slice(0, win.gallerySize)
+            // Everyone in the gallery, in pages of the gallery size.
+            readonly property var galleryAll: (win.hideMe || !win.meInGallery ? [] : [win.selfEntry]).concat(win.othersOrdered)
+            readonly property int pageCount: Math.max(1, Math.ceil(galleryAll.length / win.gallerySize))
+            readonly property int page: Math.min(win.galleryPage, pageCount - 1)
+            readonly property var gallery: galleryAll.slice(page * win.gallerySize, (page + 1) * win.gallerySize)
+            // Teams' pager row: 34 tall under the tiles, 2 from the bottom.
+            readonly property real pagerH: pageCount > 1 && !speakerView && !content ? 36 : 0
             readonly property bool atTop: win.galleryAtTop
             property real sideWidth: 160
             property real sideHeight: 90
@@ -493,10 +502,70 @@ Window {
             GalleryGrid {
                 id: galleryGrid
                 visible: !tiles.speakerView && !tiles.content
-                x: tiles.mainX; y: tiles.mainY; width: tiles.mainW; height: tiles.mainH
+                x: tiles.mainX; y: tiles.mainY; width: tiles.mainW; height: tiles.mainH - tiles.pagerH
                 onTileWChanged: win.galleryTileWidth = tileW
                 call: win
                 people: tiles.gallery
+            }
+            // Teams' video pages: ‹ n/m › centred under the tiles; 32 px
+            // buttons (radius 4, 20 px chevrons, #242424; #BDBDBD when
+            // there's no page that way) around the 14 px counter.
+            Item {
+                id: pager
+                visible: tiles.pagerH > 0
+                x: tiles.mainX; y: tiles.mainY + tiles.mainH - tiles.pagerH
+                width: tiles.mainW; height: 34
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    Repeater {
+                        model: [
+                            { icon: "chevron-left-20", tip: "Previous page", step: -1 },
+                            { counter: true },
+                            { icon: "chevron-right-20", tip: "Next page", step: 1 }
+                        ]
+                        Item {
+                            id: pagerItem
+                            required property var modelData
+                            readonly property bool enabledStep: !modelData.counter
+                                && tiles.page + modelData.step >= 0 && tiles.page + modelData.step < tiles.pageCount
+                            width: modelData.counter ? counterText.implicitWidth : 32
+                            height: 34
+                            Text {
+                                id: counterText
+                                visible: !!pagerItem.modelData.counter
+                                y: 7; height: 20
+                                verticalAlignment: Text.AlignVCenter
+                                text: (tiles.page + 1) + "/" + tiles.pageCount
+                                color: "#252423"
+                                font.family: theme.font; font.pixelSize: 14
+                            }
+                            Rectangle {
+                                visible: !pagerItem.modelData.counter
+                                y: 2; width: 32; height: 32; radius: 4
+                                color: pagerHover.hovered ? "#F5F5F5" : "transparent"
+                                FluentIcon {
+                                    anchors.centerIn: parent
+                                    name: pagerItem.modelData.icon || ""
+                                    color: pagerItem.enabledStep ? "#242424" : "#BDBDBD"
+                                }
+                                HoverHandler { id: pagerHover; enabled: !pagerItem.modelData.counter }
+                                TapHandler {
+                                    enabled: pagerItem.enabledStep
+                                    onTapped: win.galleryPage = tiles.page + pagerItem.modelData.step
+                                }
+                                ToolTip {
+                                    visible: pagerHover.hovered && !pagerItem.modelData.counter; delay: 500
+                                    y: parent.height + 4; padding: 8
+                                    background: FluentSurface { depth: 16; radius: 4 }
+                                    contentItem: Text { text: pagerItem.modelData.tip || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: (pagerItem.modelData.step < 0 ? "Navigate to previous video page. Currently " : "Navigate to next video page. Currently ")
+                                    + (tiles.page + 1) + "/" + tiles.pageCount
+                            }
+                        }
+                    }
+                }
             }
             // The shared content, as Teams' content tile: the main area,
             // inset 2, the screen fitted in it, the presenter's name tag.

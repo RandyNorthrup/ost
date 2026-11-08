@@ -121,7 +121,10 @@ Item {
             Accessible.role: Accessible.Graphic
             Accessible.name: mt.reaction
         }
-        // Teams' name tag: 24 tall, 50% black, 8 px in from the corner.
+        // Teams' name tag (participant-info-nametag): 24 tall, 50% black,
+        // radius 4, padding 6, 8 px in from the corner. The name is 12 px
+        // white; a guest's person-question glyph follows 4 px on; the
+        // mic-off glyph (16 px, filled) 8 px on, after 6 more for you.
         Rectangle {
             anchors { left: parent.left; bottom: parent.bottom; leftMargin: 8; bottomMargin: 8 }
             height: 24; radius: 4
@@ -130,12 +133,26 @@ Item {
             Row {
                 id: tagRow
                 anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
-                spacing: 6
-                Text { anchors.verticalCenter: parent.verticalCenter; text: mt.person.name || ""; color: "white"; font.family: theme.font; font.pixelSize: 14 }
+                readonly property bool micOff: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.server_muted
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 16; verticalAlignment: Text.AlignVCenter
+                    text: mt.person.name || ""; color: "white"
+                    font.family: theme.font; font.pixelSize: 12
+                }
+                Item { visible: !!mt.person.guest; width: 4; height: 1 }
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.server_muted
-                    name: "mic-off-20"; size: 16; color: "white"
+                    visible: !!mt.person.guest
+                    name: "person-unverified-16-filled"; size: 16; color: "white"
+                    Accessible.role: Accessible.Graphic
+                    Accessible.name: "Unverified"
+                }
+                Item { visible: tagRow.micOff; width: mt.self ? 14 : 8; height: 1 }
+                FluentIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: tagRow.micOff
+                    name: "mic-off-20-filled"; size: 16; color: "white"
                 }
             }
         }

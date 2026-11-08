@@ -152,6 +152,14 @@ Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framin
   - Name tag: 24 tall, rgba(0,0,0,.5), radius 4, 6 px padding, 14 px white, 8 px from the bottom-left.
   - Speaking ("voice-level-stream-outline"): 4 px #5B5FC7, radius 6, with a 0.67 px #F5F5F5 line 4 px in (radius 3).
   - Avatar: 124 px at a 249 px tile height.
+- **Gallery pages** (measured on winpc 2026-11-08: gallery size 4, five people, a 1260.66×576 stage):
+  - The gallery shows the gallery size's worth of people per page. The tiles fill `only-videos-wrapper` (1260.66×540), laid out by the same fitting. The last page holds the rest; one person alone gets one large tile.
+  - Under the tiles, a 34 px row (`calling-pagination`), 2 px above the stage's bottom: centred `‹ n/m ›`.
+    - The buttons (`calling-pagination-prev-button` / `-next-button`) are 32×32, radius 4, padding 5, 2 px below the row's top. Each has a 20 px Fluent chevron (left/right, regular; it stays regular on hover).
+    - Colours: #242424 when there's a page that way, #BDBDBD (disabled) when not. Hover background #F5F5F5.
+    - Tooltips "Previous page" / "Next page". Accessible names: "Navigate to previous video page. Currently n/m" and "Navigate to next video page. Currently n/m".
+    - The counter (`calling-pagination-counter`) is 14 px regular #252423, 20 tall, between the buttons with no gap.
+  - OST asks for video only for the people on the shown page (its tiles' widths drive the source requests).
 
 ## Sending: camera and screen (2026-11-08, verified live)
 
