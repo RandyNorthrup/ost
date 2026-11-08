@@ -75,22 +75,40 @@ Rectangle {
         onClicked: root.toggleRail()
     }
     BarButton {
-        icon: "chevron-left-20"; x: search.x - 70; anchors.verticalCenter: parent.verticalCenter
+        icon: "chevron-left-20"; x: 68; anchors.verticalCenter: parent.verticalCenter
         usable: root.canGoBack
         Accessible.name: "Back"
         onClicked: root.goBack()
     }
     BarButton {
-        icon: "chevron-right-20"; x: search.x - 38; anchors.verticalCenter: parent.verticalCenter
+        icon: "chevron-right-20"; x: 100; anchors.verticalCenter: parent.verticalCenter
         usable: root.canGoForward
         Accessible.name: "Forward"
         onClicked: root.goForward()
     }
 
+    // Teams' title-bar search (measured on winpc at 800-1280 px, widths
+    // from its responsiveSearchAndSERPWidths config): below 1024 px it
+    // starts at x 138 and is at most 468 wide, ending 9 px before
+    // "Settings and more"; from 1024 px it is centred in the window, 468
+    // wide, then 624 from 1280, 664 from 1440 and 760 from 1680. Below
+    // 720 px it folds into a search button until clicked.
+    readonly property bool searchFolded: width < 720
+    property bool searchOpen: false
+    readonly property real searchRoomEnd: moreButton.x - 9
+    readonly property real searchWide: width >= 1680 ? 760 : width >= 1440 ? 664 : width >= 1280 ? 624 : 468
+    BarButton {
+        id: searchButton
+        visible: root.searchFolded && !root.searchOpen
+        icon: "search-20"; x: 150; anchors.verticalCenter: parent.verticalCenter
+        Accessible.name: "Search"
+        onClicked: { root.searchOpen = true; field.forceActiveFocus() }
+    }
     Rectangle {
         id: search
-        // Teams: 624 x 32 at x 326.5, shrinking on narrow windows.
-        x: 327; width: Math.max(200, Math.min(624, parent.width - 327 - 330))
+        visible: !root.searchFolded || root.searchOpen
+        x: root.width >= 1024 ? Math.max(138, (root.width - root.searchWide - 15) / 2 + 6) : 138
+        width: Math.max(0, Math.min(root.width >= 1024 ? root.searchWide : 468, root.searchRoomEnd - x))
         height: 32; radius: theme.radius
         anchors.verticalCenter: parent.verticalCenter
         color: theme.searchFill
@@ -105,7 +123,8 @@ Rectangle {
             color: theme.text
             clip: true
             onTextEdited: peopleDebounce.restart()
-            Keys.onEscapePressed: { text = ""; focus = false }
+            Keys.onEscapePressed: { text = ""; focus = false; root.searchOpen = false }
+            onActiveFocusChanged: if (!activeFocus && text.length === 0) root.searchOpen = false
             Keys.onReturnPressed: {
                 const first = suggestions.items[0]
                 if (first) suggestions.choose(first)

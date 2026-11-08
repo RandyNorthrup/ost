@@ -22,6 +22,11 @@ pub struct Participant {
     pub on_hold: bool,
     /// Their raised hand's state id (Teams' "raiseHands" published state).
     pub hand: Option<String>,
+    /// An anonymous guest (Teams shows its Unverified trust icon).
+    pub guest: bool,
+    /// A guest Teams' join shield flagged as a bot (Teams keeps the app
+    /// avatar for them).
+    pub suspected: bool,
 }
 
 /// The participants a roster update changes, or `None` for other events.
@@ -85,6 +90,11 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
                         && streams.iter().all(|m| {
                             m.get("direction").and_then(|d| d.as_str()) == Some("inactive")
                         }),
+                    guest: mri.starts_with("8:teamsvisitor:"),
+                    suspected: mri.starts_with("8:teamsvisitor:")
+                        && p.pointer("/details/propertyBag/participantScreening/value/isBot")
+                            .and_then(|b| b.as_bool())
+                            == Some(true),
                 }
             })
             .collect(),
@@ -134,6 +144,22 @@ mod tests {
             } } }
         })
         .to_string()
+    }
+
+    #[test]
+    fn guests_and_their_screening_come_from_the_roster() {
+        // As a meeting's rosterUpdate carried two admitted guests (trimmed).
+        let json = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "8:teamsvisitor:311b":{"state":"active","details":{"displayName":"OST Guest 1",
+                "propertyBag":{"participantScreening":{"sequenceNumber":1,"value":{"isBot":true,"source":"JoinShield"}}}}},
+            "8:teamsvisitor:43cf":{"state":"active","details":{"displayName":"OST Guest 2",
+                "propertyBag":{"participantScreening":{"sequenceNumber":2,"value":{"isBot":false,"markedBy":"admitter","source":"JoinShield"}}}}},
+            "8:orgid:4287":{"state":"active","details":{"displayName":"OST Test 1"}}}}}"#;
+        let people = roster_delta(json).unwrap();
+        let by = |id: &str| people.iter().find(|p| p.id == id).unwrap().clone();
+        assert!(by("8:teamsvisitor:311b").guest && by("8:teamsvisitor:311b").suspected);
+        assert!(by("8:teamsvisitor:43cf").guest && !by("8:teamsvisitor:43cf").suspected);
+        assert!(!by("8:orgid:4287").guest);
     }
 
     #[test]

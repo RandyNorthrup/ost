@@ -49,7 +49,7 @@ Window {
     readonly property var people: meeting
         ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
              role: (roster.find(p => p.id === selfId) || {}).role || "" }]
-          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.server_muted, role: p.role, hand: !!p.hand })))
+          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.server_muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected })))
         : [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
     /// Hold: you put the call on hold, or the other person did.
@@ -120,30 +120,33 @@ Window {
         id: bar
         width: parent.width; height: 60
         color: theme.surface
-        // Meetings: Teams' shield (meeting info) beside the timer.
+        // Meetings: Teams' shield (meeting info) beside the timer: a 30 x 32
+        // indicator at x 8 with its 20 px glyph, then the duration in
+        // 14 px #424242 with 6.7 px of padding.
         FluentIcon {
             visible: win.meeting
-            x: 16; anchors.verticalCenter: parent.verticalCenter
-            name: "shield-24"; size: 20; color: theme.textStrong
+            x: 13; y: 20
+            name: "call-shield"; size: 20; color: theme.textStrong
         }
         Text {
-            x: win.meeting ? 48 : 16; anchors.verticalCenter: parent.verticalCenter
+            x: win.meeting ? 44.7 : 16; anchors.verticalCenter: parent.verticalCenter
             text: win.state === "connected" ? win.clock(win.seconds) : "--:--"
-            color: theme.text
+            color: theme.textStrong
             font.family: theme.font; font.pixelSize: 14
         }
-        // A meeting's controls, as Teams desktop lays them out. Those OST
-        // can't do yet are shown disabled.
+        // A meeting's controls, as Teams desktop lays them out (56 px slots,
+        // right-aligned 4 px before the Leave group). Those OST can't do yet
+        // are shown disabled.
         Row {
             visible: win.meeting
-            anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+            anchors { right: leaveGroup.left; rightMargin: 17; top: parent.top }
             spacing: 0
             BarButton {
-                icon: "chat-24"; label: "Chat"; checked: win.side === "chat"
+                icon: "call-chat"; label: "Chat"; checked: win.side === "chat"
                 onClicked: { win.side = win.side === "chat" ? "" : "chat"; if (win.side === "chat") win.openChat() }
             }
             BarButton {
-                icon: "people"; label: "People"; checked: win.side === "people"
+                icon: "call-people"; label: "People"; checked: win.side === "people"
                 // Teams: people waiting in the lobby, or raised hands, as a
                 // red count; else how many are here.
                 badge: win.lobby.length > 0 ? win.lobby.length : win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
@@ -151,50 +154,52 @@ Window {
                 onClicked: win.side = win.side === "people" ? "" : "people"
             }
             BarButton {
-                icon: "hand-left-24"; label: win.handRaised ? "Lower" : "Raise"
+                icon: "call-raise"; label: win.handRaised ? "Lower" : "Raise"
                 enabled: win.live
                 checked: win.handRaised
                 onClicked: win.toggleHand()
             }
-            BarButton { icon: "emoji-24"; label: "React"; enabled: false }
-            BarButton { id: viewBtnM; icon: "grid"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtnM; onClicked: { viewMenu.parent = viewBtnM; viewMenu.open() } }
+            BarButton { icon: "call-react"; label: "React"; enabled: false }
+            BarButton { id: viewBtnM; icon: "call-view"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtnM; onClicked: { viewMenu.parent = viewBtnM; viewMenu.open() } }
             // Controls: the meeting options (organizers), as Teams opens them.
-            BarButton { visible: win.organizer; icon: "shield-task-24"; label: "Controls"; enabled: win.optionsUrl.length > 0; onClicked: Qt.openUrlExternally(win.optionsUrl) }
+            BarButton { visible: win.organizer; icon: "call-controls"; label: "Controls"; enabled: win.optionsUrl.length > 0; onClicked: Qt.openUrlExternally(win.optionsUrl) }
             // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
-            BarButton { icon: "notepad-24"; label: "Notes"; enabled: win.chatUrl.length > 0; onClicked: Qt.openUrlExternally(win.chatUrl) }
-            BarButton { visible: win.organizer; icon: "conference-room-24"; label: "Rooms"; enabled: false }
-            BarButton { id: appsBtnM; icon: "apps-add"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtnM; onClicked: { appsMenu.parent = appsBtnM; appsMenu.open() } }
-            BarButton { id: moreBtnM; icon: "more-24"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtnM; onClicked: { moreMenu.parent = moreBtnM; moreMenu.open() } }
+            BarButton { icon: "call-notes"; label: "Notes"; enabled: win.chatUrl.length > 0; onClicked: Qt.openUrlExternally(win.chatUrl) }
+            BarButton { visible: win.organizer; icon: "call-rooms"; label: "Rooms"; enabled: false }
+            BarButton { id: appsBtnM; icon: "call-apps"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtnM; onClicked: { appsMenu.parent = appsBtnM; appsMenu.open() } }
+            BarButton { id: moreBtnM; icon: "call-more"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtnM; onClicked: { moreMenu.parent = moreBtnM; moreMenu.open() } }
             Divider {}
             BarButton {
-                icon: win.cameraOn ? "video" : "video-off"; label: "Camera"
+                icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true
                 enabled: win.canVideo
-                checked: win.cameraOn
                 onClicked: win.toggleCamera()
             }
             BarButton {
-                icon: win.muted ? "mic-off-24" : "mic-24"; label: "Mic"
+                icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
                 enabled: win.hasAudio
-                checked: !win.muted
                 onClicked: win.toggleMute()
             }
             BarButton {
-                icon: win.sharing ? "share-screen-stop" : "share-screen"
-                label: win.sharing ? "Stop sharing" : "Share"
-                iconColor: win.sharing ? theme.leave : theme.text
+                icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
+                label: win.sharing ? "Stop sharing" : "Share"; strong: true
+                iconColor: win.sharing ? "#B10E1C" : theme.text
                 enabled: win.canShare || win.sharing
                 onClicked: win.toggleShare()
             }
-            Divider {}
+        }
+        // Leave: 13 px in from the middle group's end, 14 from the window edge.
+        Row {
+            id: leaveGroup
+            anchors { right: parent.right; rightMargin: 14; top: parent.top }
             BarButton {
-                icon: "call-end-24"; label: "Leave"
-                iconColor: theme.leave
+                icon: "call-leave-filled"; label: "Leave"; strong: true
+                iconColor: "#B10E1C"
                 onClicked: win.leave()
             }
         }
         Row {
             visible: !win.meeting
-            anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+            anchors { right: leaveGroup.left; rightMargin: 17; top: parent.top }
             spacing: 0
             BarButton {
                 id: transferBtn
@@ -244,44 +249,36 @@ Window {
             }
             Divider {}
             BarButton {
-                icon: "chat-24"; label: "Chat"; checked: win.side === "chat"
+                icon: "call-chat"; label: "Chat"; checked: win.side === "chat"
                 onClicked: { win.side = win.side === "chat" ? "" : "chat"; if (win.side === "chat") win.openChat() }
             }
             BarButton {
-                icon: "people"; label: "People"; checked: win.side === "people"
+                icon: "call-people"; label: "People"; checked: win.side === "people"
                 onClicked: win.side = win.side === "people" ? "" : "people"
             }
-            BarButton { id: viewBtn; icon: "grid"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtn; onClicked: { viewMenu.parent = viewBtn; viewMenu.open() } }
-            BarButton { id: appsBtn; icon: "apps-add"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtn; onClicked: { appsMenu.parent = appsBtn; appsMenu.open() } }
-            BarButton { id: moreBtn; icon: "more-24"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtn; onClicked: { moreMenu.parent = moreBtn; moreMenu.open() } }
+            BarButton { id: viewBtn; icon: "call-view"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtn; onClicked: { viewMenu.parent = viewBtn; viewMenu.open() } }
+            BarButton { id: appsBtn; icon: "call-apps"; label: "Apps"; checked: appsMenu.visible && appsMenu.parent === appsBtn; onClicked: { appsMenu.parent = appsBtn; appsMenu.open() } }
+            BarButton { id: moreBtn; icon: "call-more"; label: "More"; checked: moreMenu.visible && moreMenu.parent === moreBtn; onClicked: { moreMenu.parent = moreBtn; moreMenu.open() } }
             Divider {}
             BarButton {
-                icon: win.cameraOn ? "video" : "video-off"; label: "Camera"
+                icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true
                 enabled: win.canVideo && !win.held
-                checked: win.cameraOn
                 onClicked: win.toggleCamera()
             }
             BarButton {
-                icon: win.muted ? "mic-off-24" : "mic-24"; label: "Mic"
+                icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
                 enabled: win.hasAudio && !win.held
-                checked: !win.muted
                 onClicked: win.toggleMute()
             }
             BarButton {
-                icon: win.sharing ? "share-screen-stop" : "share-screen"
-                label: win.sharing ? "Stop sharing" : "Share"
-                iconColor: win.sharing ? theme.leave : theme.text
+                icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
+                label: win.sharing ? "Stop sharing" : "Share"; strong: true
+                iconColor: win.sharing ? "#B10E1C" : theme.text
                 enabled: win.canShare || win.sharing
                 onClicked: win.toggleShare()
             }
-            Divider {}
-            BarButton {
-                icon: "call-end-24"; label: "Leave"
-                iconColor: theme.leave
-                onClicked: win.leave()
-            }
         }
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
 
     // Stage
@@ -557,11 +554,9 @@ Window {
         onDeny: (id, name) => win.denyLobby(id, name)
         onViewLobby: win.side = "people"
     }
-    component Divider: Rectangle {
-        width: 17; height: 32
-        color: "transparent"
-        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-        Rectangle { anchors.centerIn: parent; width: 1; height: 32; color: theme.divider }
+    component Divider: Item {
+        width: 17; height: 60
+        Rectangle { x: 8; y: 13.5; width: 0.67; height: 33; color: theme.stroke }
     }
 
     // View: Teams' layout menu.
@@ -759,25 +754,32 @@ Window {
     function closeDialPadForTest() { dialPad.close() }
     function pressForTest(keys) { for (const k of keys) dialPad.press(k) }
 
-    component BarButton: Rectangle {
+    // Teams' call toolbar button (ubar, measured on winpc): a 56 px slot
+    // holding a 48 x 48 button 6 px from the top; a 25 px glyph at
+    // (11.5, 3.5) over an 11 px label; #424242 at rest (#242424 for the
+    // media buttons), #EBEBEB behind and #242424 on hover; a 2 px brand
+    // line under it while its pane is open.
+    component BarButton: Item {
         id: bb
         property string icon
         property string label
         property bool checked: false
-        property color iconColor: theme.text
+        /// Camera, Mic, Share and Leave: #242424 at rest.
+        property bool strong: false
+        property color iconColor: bb.strong || bbHover.hovered ? theme.text : theme.textStrong
         /// A count beside the icon (People: how many are in the meeting).
         property int badge: 0
-        /// Show the count as Teams' red alert badge (raised hands).
+        /// Show the count as Teams' red alert badge (raised hands, lobby).
         property bool badgeAlert: false
         signal clicked()
-        width: Math.max(56, bbLabel.implicitWidth + 12); height: 52; radius: theme.radius
-        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-        color: bb.checked ? theme.pane : (bbHover.hovered && bb.enabled ? theme.pane : "transparent")
-        Column {
-            anchors.centerIn: parent; spacing: 3
+        width: 56; height: 60
+        Rectangle {
+            x: 4; y: 6; width: 48; height: 48; radius: 4
+            color: bbHover.hovered && bb.enabled ? theme.rowHover : "transparent"
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {
-                name: bb.icon; size: 20; color: bb.iconColor; anchors.horizontalCenter: parent.horizontalCenter
+                x: 11.5; y: 3.5
+                name: bb.icon; size: 25; color: bb.iconColor
                 // Teams' alert badge (roster-button-badge): 18 px with a
                 // 2 px white ring, #C50F1F, 10/700 white, 16 px right of
                 // and 1.8 px above the glyph's corner.
@@ -797,22 +799,28 @@ Window {
                 }
                 Text {
                     visible: bb.badge > 0 && !bb.badgeAlert
-                    x: parent.width + 2; y: -2
+                    x: parent.width - 2; y: -1
                     text: bb.badge
-                    font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
-                    color: theme.text
+                    font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold
+                    color: bb.iconColor
                 }
             }
             Text {
-                id: bbLabel
+                x: 0.7; y: 30.3; width: 46.7; height: 16
+                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 text: bb.label
-                color: theme.text
-                font.family: theme.font; font.pixelSize: theme.small
-                anchors.horizontalCenter: parent.horizontalCenter
+                elide: Text.ElideRight
+                color: bb.strong || bbHover.hovered ? theme.text : theme.textStrong
+                font.family: theme.font; font.pixelSize: 11
             }
+            Rectangle {
+                visible: bb.checked
+                x: 0.7; y: 50.3; width: 46.7; height: 2; radius: 1
+                color: theme.brand
+            }
+            HoverHandler { id: bbHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { onTapped: if (bb.enabled) bb.clicked() }
         }
-        HoverHandler { id: bbHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
-        TapHandler { onTapped: if (bb.enabled) bb.clicked() }
         Accessible.role: Accessible.Button
         Accessible.name: bb.label
     }

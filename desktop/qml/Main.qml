@@ -15,7 +15,8 @@ Window {
     }
     width: startSize[0]
     height: startSize[1]
-    minimumWidth: Math.min(960, startSize[0])
+    // Teams desktop won't shrink below 800 px wide (measured on winpc).
+    minimumWidth: Math.min(800, startSize[0])
     minimumHeight: Math.min(600, startSize[1])
     visible: true
     title: backend.currentChatName ? backend.currentChatName + " | OST" : "OST"

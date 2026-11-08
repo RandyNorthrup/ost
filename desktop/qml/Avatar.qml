@@ -58,16 +58,24 @@ Rectangle {
         visible: false
         source: root.photo
         asynchronous: true
-        // Decode at the size shown (sharp, and no full-size copies kept).
-        sourceSize.width: Math.ceil(root.size * Screen.devicePixelRatio)
-        sourceSize.height: Math.ceil(root.size * Screen.devicePixelRatio)
+        // Decode at the canvas' resolution (sharp, and no full-size copies kept).
+        sourceSize.width: Math.ceil(pic.width * Math.max(1, Screen.devicePixelRatio))
+        sourceSize.height: Math.ceil(pic.height * Math.max(1, Screen.devicePixelRatio))
         // The pixels reach the canvas a moment after Ready; paint again then.
         onStatusChanged: { pic.requestPaint(); if (status === Image.Ready) repaint.restart() }
     }
     Timer { id: repaint; interval: 50; onTriggered: pic.requestPaint() }
+    // Painted at twice the avatar's size and scaled down, so the picture
+    // (often Teams' small initials image) stays sharp on scaled screens
+    // where a canvas the avatar's size would be stretched and blurred.
     Canvas {
         id: pic
-        anchors.fill: parent
+        readonly property real oversample: 2
+        width: root.width * oversample; height: root.height * oversample
+        scale: 1 / oversample
+        transformOrigin: Item.TopLeft
+        smooth: true
+        antialiasing: true
         visible: root.photo.length > 0 && src.status === Image.Ready
         onVisibleChanged: requestPaint()
         onPaint: {
@@ -76,7 +84,7 @@ Rectangle {
             if (src.status !== Image.Ready) return
             ctx.beginPath()
             if (root.square) {
-                ctx.roundedRect(0, 0, width, height, theme.radius, theme.radius)
+                ctx.roundedRect(0, 0, width, height, theme.radius * oversample, theme.radius * oversample)
             } else {
                 ctx.arc(width / 2, height / 2, width / 2, 0, 2 * Math.PI)
             }

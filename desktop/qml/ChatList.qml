@@ -359,7 +359,10 @@ Rectangle {
             FluentIcon { x: 2; y: 2; name: "alert-off-20"; size: 16; color: theme.textSecondary }
         }
         Text {
-            x: 64; width: parent.width - 64 - 40; y: 6
+            // Teams ends the name 14 px before a trailing indicator (its 12 px
+            // padding plus 2), so the call icon or unread dot never covers it.
+            x: 64; y: 6
+            width: (liveIcon.visible ? liveIcon.x - 14 : unreadDot.visible ? unreadDot.x - 14 : parent.width - 40) - x
             text: row.chat.name
             elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: theme.base
@@ -370,6 +373,7 @@ Rectangle {
         // A call going on in the chat (Teams: the regular sound-wave 14 in
         // NeutralForeground3 at 244, 9 in the 288-wide row).
         FluentIcon {
+            id: liveIcon
             visible: !!row.chat.liveCall && !row.showMore
             x: parent.width - 60; y: 9
             name: "live-roster-14"; size: 14
@@ -378,6 +382,7 @@ Rectangle {
         // Unread: bold name plus a brand dot, as in Teams; muted chats keep
         // the bold name but not the dot (they don't count toward badges).
         Rectangle {
+            id: unreadDot
             visible: row.unread && !row.chat.muted && !row.showMore
             width: 8; height: 8; radius: 4
             x: parent.width - 16 - 8 - 12

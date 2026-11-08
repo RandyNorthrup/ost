@@ -233,33 +233,43 @@ Rectangle {
             property var entry: ({ p: {} })
             readonly property var p: entry.p || ({})
             height: 48
-            Avatar { x: 21.7; y: 8; size: 32; name: p.name || ""; photoId: p.id || "" }
+            Avatar { visible: !p.suspected; x: 21.7; y: 8; size: 32; name: p.name || ""; photoId: p.guest ? "" : (p.id || "") }
+            GuestAvatar { visible: !!p.suspected; x: 21.7; y: 8; personId: p.id || "" }
             Column {
                 x: 65.7; anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 65.7 - 46
-                Text {
-                    width: parent.width; elide: Text.ElideRight
-                    height: 18.7; verticalAlignment: Text.AlignVCenter
-                    text: p.name || ""
-                    font.family: theme.font; font.pixelSize: 14
-                    color: theme.text
+                // The name, and for an anonymous guest Teams' 16 px
+                // Unverified trust icon 4 px after it.
+                Row {
+                    height: 18.7; spacing: 4
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.min(implicitWidth, personRowColumn.width - (trust.visible ? 20 : 0))
+                        elide: Text.ElideRight
+                        text: p.name || ""
+                        font.family: theme.font; font.pixelSize: 14
+                        color: theme.text
+                    }
+                    FluentIcon { id: trust; visible: !!p.guest; anchors.verticalCenter: parent.verticalCenter; name: "person-unverified-16"; size: 16; color: theme.text }
                 }
+                // Teams names only the organizer here.
                 Text {
-                    visible: !!p.role
+                    visible: (p.role || "").toLowerCase() === "organizer"
                     height: 16; verticalAlignment: Text.AlignVCenter
-                    text: (p.role || "").charAt(0).toUpperCase() + (p.role || "").slice(1)
+                    text: "Organizer"
                     font.family: theme.font; font.pixelSize: 12
                     color: theme.textStrong
                 }
+                id: personRowColumn
             }
             Text {
                 visible: !!p.hand
                 anchors.right: parent.right; anchors.rightMargin: 64; anchors.verticalCenter: parent.verticalCenter
-                text: "✋"; font.pixelSize: 16
+                text: "\u270B"; font.pixelSize: 16
             }
             FluentIcon {
                 x: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
-                name: p.mutedNow ? "mic-off-20" : "mic-24"; size: 20
+                name: p.mutedNow ? "mic-off-20" : "roster-mic-20"; size: 20
                 color: theme.text
             }
             Accessible.role: Accessible.ListItem

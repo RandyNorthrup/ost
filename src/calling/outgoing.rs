@@ -169,8 +169,8 @@ impl OutgoingCall {
             .or_else(|| reply.get("participants"))
             .cloned()
             .unwrap_or_default();
-        // An array of {id, displayName}: put it in roster-update form
-        // (keyed by MRI, with details and state).
+        // An array of {id, displayName, participantScreening}: put it in
+        // roster-update form (keyed by MRI, with details and state).
         let by_mri: serde_json::Map<String, serde_json::Value> = list
             .as_array()
             .into_iter()
@@ -181,9 +181,14 @@ impl OutgoingCall {
                     .get("displayName")
                     .and_then(|n| n.as_str())
                     .unwrap_or_default();
+                let mut details = serde_json::json!({ "displayName": name });
+                if let Some(screening) = p.get("participantScreening") {
+                    details["propertyBag"] =
+                        serde_json::json!({ "participantScreening": { "value": screening } });
+                }
                 Some((
                     id,
-                    serde_json::json!({ "state": "active", "details": { "displayName": name } }),
+                    serde_json::json!({ "state": "active", "details": details }),
                 ))
             })
             .collect();
