@@ -109,6 +109,10 @@ pub mod qobject {
         #[qproperty(bool, call_meeting)]
         /// The meeting's participants: [{id, name, role, active, server_muted}].
         #[qproperty(QString, call_roster_json)]
+        /// Whose camera shows where in a meeting: {mri: frame key}.
+        #[qproperty(QString, call_video_json)]
+        /// The meeting's dominant speaker (the media processor's history).
+        #[qproperty(QString, call_speaker_mri)]
         /// Who waits in the meeting's lobby: [{id, name}].
         #[qproperty(QString, call_lobby_json)]
         /// Your own MRI (`8:orgid:<oid>`, lowercase), once signed in.
@@ -937,6 +941,8 @@ pub struct BackendRust {
     call_can_video: bool,
     call_camera_on: bool,
     call_roster_json: QString,
+    call_video_json: QString,
+    call_speaker_mri: QString,
     call_lobby_json: QString,
     call_thread_id: QString,
     user_mri: QString,
@@ -1723,6 +1729,35 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         }
         return;
     }
+    // The media processor's dominant speaker: whose audio source it is.
+    if let Some(ids) = serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .filter(|v| v["callAgentPath"] == "ost/dominantSpeakers/")
+        .map(|v| {
+            v["body"]["sourceIds"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+    {
+        let first = ids.first().and_then(serde_json::Value::as_i64);
+        let _ = qt.queue(move |mut this| {
+            let mri = first
+                .and_then(|id| {
+                    this.rust()
+                        .roster
+                        .iter()
+                        .find(|p| p.audio_source == Some(id))
+                })
+                .map(|p| p.id.clone())
+                .unwrap_or_default();
+            if this.rust().call_speaker_mri.to_string() != mri {
+                this.as_mut()
+                    .set_call_speaker_mri(QString::from(mri.as_str()));
+            }
+        });
+        return;
+    }
     // The lobby count changed: ask who waits there (Teams does the same).
     if teams_cli::calling::roster::lobby_count(json).is_some() {
         let qt2 = qt.clone();
@@ -1927,6 +1962,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
 /// add the people the updates haven't told us about. The list carries
 /// names, not hands or roles.
 async fn seed_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoing::OutgoingCall) {
+    // The join response's roster first: it has everyone's streams.
+    let joined = call.joined_roster();
+    tracing::info!(count = joined.len(), "joined roster");
+    let _ = qt.queue(move |mut this| this.as_mut().apply_roster(joined));
     match call.participants().await {
         Ok(people) => {
             tracing::info!(count = people.len(), "call participants");
@@ -2740,6 +2779,8 @@ impl qobject::Backend {
         self.as_mut().set_call_peer_id(QString::default());
         self.as_mut().rust_mut().roster.clear();
         self.as_mut().set_call_roster_json(QString::from("[]"));
+        self.as_mut().set_call_video_json(QString::from("{}"));
+        self.as_mut().set_call_speaker_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
@@ -2804,6 +2845,8 @@ impl qobject::Backend {
         self.as_mut().set_call_peer_id(QString::default());
         self.as_mut().rust_mut().roster.clear();
         self.as_mut().set_call_roster_json(QString::from("[]"));
+        self.as_mut().set_call_video_json(QString::from("{}"));
+        self.as_mut().set_call_speaker_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
@@ -3159,14 +3202,44 @@ impl qobject::Backend {
         });
     }
 
-    /// Apply roster changes and publish the roster to QML.
+    /// Apply roster changes and publish the roster to QML; in a meeting,
+    /// ask for the cameras that are on (as Teams' gallery does, in the
+    /// roster's order).
     fn apply_roster(mut self: Pin<&mut Self>, delta: Vec<teams_cli::calling::roster::Participant>) {
         let mut roster = std::mem::take(&mut self.as_mut().rust_mut().roster);
         teams_cli::calling::roster::apply(&mut roster, delta);
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
+        let me = self.rust().user_mri.to_string().to_ascii_lowercase();
+        let cameras: Vec<(String, i64)> = roster
+            .iter()
+            .filter(|p| p.id != me)
+            .filter_map(|p| p.video_source.map(|s| (p.id.clone(), s)))
+            .collect();
         self.as_mut().rust_mut().roster = roster;
         self.as_mut()
             .set_call_roster_json(QString::from(json.as_str()));
+        if self.rust().call_meeting {
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                let sources: Vec<i64> = cameras.iter().map(|c| c.1).collect();
+                let shown = match call_slot().lock().await.outgoing.as_ref() {
+                    Some(call) => call.show_videos(&sources),
+                    None => return,
+                };
+                let keys: serde_json::Map<String, serde_json::Value> = cameras
+                    .iter()
+                    .filter_map(|(mri, src)| Some((mri.clone(), shown.get(src)?.clone().into())))
+                    .collect();
+                let json = serde_json::Value::Object(keys).to_string();
+                let _ = qt.queue(move |mut this| {
+                    if this.rust().call_video_json.to_string() != json {
+                        tracing::info!(videos = %json, "meeting videos");
+                        this.as_mut()
+                            .set_call_video_json(QString::from(json.as_str()));
+                    }
+                });
+            });
+        }
     }
 
     /// Show the call as over; the UI fades it out from "ended".

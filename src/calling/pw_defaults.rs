@@ -68,15 +68,15 @@ fn query() -> Option<(Option<String>, Option<String>)> {
                 match global.type_ {
                     ObjectType::Node => {
                         let class = props.get(*pw::keys::MEDIA_CLASS).unwrap_or_default();
-                        if class == "Audio/Sink" || class == "Audio/Source" {
-                            if let (Some(name), Some(desc)) = (
+                        if (class == "Audio/Sink" || class == "Audio/Source")
+                            && let (Some(name), Some(desc)) = (
                                 props.get(*pw::keys::NODE_NAME),
                                 props.get(*pw::keys::NODE_DESCRIPTION),
-                            ) {
-                                names
-                                    .borrow_mut()
-                                    .insert(name.to_string(), desc.to_string());
-                            }
+                            )
+                        {
+                            names
+                                .borrow_mut()
+                                .insert(name.to_string(), desc.to_string());
                         }
                     }
                     ObjectType::Metadata => {

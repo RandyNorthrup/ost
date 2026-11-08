@@ -27,6 +27,30 @@ pub struct Participant {
     /// A guest Teams' join shield flagged as a bot (Teams keeps the app
     /// avatar for them).
     pub suspected: bool,
+    /// Their camera's stream (`main-video` sourceId) while it sends: what
+    /// a meeting's source requests name.
+    pub video_source: Option<i64>,
+    /// Their audio stream's sourceId (dominant speaker updates name it).
+    pub audio_source: Option<i64>,
+    /// The update listed their endpoints' streams; one that didn't (Teams'
+    /// first update after joining names people only) leaves the
+    /// stream-derived fields as they were.
+    #[serde(skip)]
+    pub streams_known: bool,
+}
+
+/// The sourceId of an endpoint stream labelled `label`, when it sends.
+fn sending_source(streams: &[&serde_json::Value], label: &str) -> Option<i64> {
+    streams
+        .iter()
+        .filter(|m| m.get("label").and_then(|l| l.as_str()) == Some(label))
+        .find(|m| {
+            matches!(
+                m.get("direction").and_then(|d| d.as_str()),
+                Some("sendrecv" | "sendonly")
+            )
+        })
+        .and_then(|m| m.get("sourceId")?.as_i64())
 }
 
 /// The participants a roster update changes, or `None` for other events.
@@ -52,6 +76,14 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
             })
             .map(|(mri, p)| {
                 let s = |ptr: &str| p.pointer(ptr).and_then(|x| x.as_str()).unwrap_or_default();
+                let all_streams: Vec<&serde_json::Value> = p
+                    .get("endpoints")
+                    .and_then(|e| e.as_object())
+                    .into_iter()
+                    .flat_map(|e| e.values())
+                    .filter_map(|ep| ep.pointer("/call/mediaStreams")?.as_array())
+                    .flatten()
+                    .collect();
                 let streams: Vec<&serde_json::Value> = p
                     .get("endpoints")
                     .and_then(|e| e.as_object())
@@ -95,6 +127,14 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
                         && p.pointer("/details/propertyBag/participantScreening/value/isBot")
                             .and_then(|b| b.as_bool())
                             == Some(true),
+                    streams_known: p
+                        .get("endpoints")
+                        .is_some_and(|e| e.as_object().is_some_and(|o| !o.is_empty())),
+                    video_source: sending_source(&all_streams, "main-video"),
+                    audio_source: all_streams
+                        .iter()
+                        .find(|m| m.get("label").and_then(|l| l.as_str()) == Some("main-audio"))
+                        .and_then(|m| m.get("sourceId")?.as_i64()),
                 }
             })
             .collect(),
@@ -157,13 +197,38 @@ pub fn lobby_count(json: &str) -> Option<u64> {
 
 /// Apply a delta to a roster kept in join order.
 pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
-    for p in delta {
+    for mut p in delta {
         match roster.iter_mut().find(|x| x.id == p.id) {
-            Some(x) => *x = p,
+            Some(x) => {
+                if !p.streams_known {
+                    p.video_source = x.video_source;
+                    p.audio_source = x.audio_source;
+                    p.server_muted = x.server_muted;
+                    p.on_hold = x.on_hold;
+                    p.streams_known = x.streams_known;
+                }
+                *x = p
+            }
             None => roster.push(p),
         }
     }
     roster.retain(|p| p.active);
+}
+
+/// Everyone in a conversation the join response's `roster` lists, with
+/// their streams (later roster updates may name people without them).
+pub fn joined(create_response: &str) -> Vec<Participant> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(create_response) else {
+        return Vec::new();
+    };
+    let Some(participants) = v.pointer("/roster/participants") else {
+        return Vec::new();
+    };
+    let event = serde_json::json!({
+        "callAgentPath": "conversation/rosterUpdate/",
+        "body": {"participants": participants},
+    });
+    roster_delta(&event.to_string()).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -199,6 +264,59 @@ mod tests {
         assert!(by("8:teamsvisitor:311b").guest && by("8:teamsvisitor:311b").suspected);
         assert!(by("8:teamsvisitor:43cf").guest && !by("8:teamsvisitor:43cf").suspected);
         assert!(!by("8:orgid:4287").guest);
+    }
+
+    #[test]
+    fn sending_cameras_and_audio_sources_come_from_the_streams() {
+        // As the join roster listed a guest with the camera on, and Teams
+        // desktop receiving only (trimmed).
+        let json = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "8:teamsvisitor:43cf":{"state":"active","details":{"displayName":"OST Guest 2"},
+                "endpoints":{"c129":{"call":{"mediaStreams":[
+                    {"direction":"sendrecv","label":"main-audio","sourceId":2030,"type":"audio"},
+                    {"direction":"sendrecv","label":"main-video","sourceId":2031,"type":"video"},
+                    {"direction":"recvonly","label":"applicationsharing-video","sourceId":2041,"type":"applicationsharing-video"}]}}}},
+            "8:orgid:4287":{"state":"active","details":{"displayName":"OST Test 1"},
+                "endpoints":{"f648":{"call":{"mediaStreams":[
+                    {"direction":"sendrecv","label":"main-audio","sourceId":201,"type":"audio"},
+                    {"direction":"recvonly","label":"main-video","sourceId":202,"type":"video"}]}}}}}}}"#;
+        let people = roster_delta(json).unwrap();
+        let by = |id: &str| people.iter().find(|p| p.id == id).unwrap().clone();
+        assert_eq!(by("8:teamsvisitor:43cf").video_source, Some(2031));
+        assert_eq!(by("8:teamsvisitor:43cf").audio_source, Some(2030));
+        assert_eq!(
+            by("8:orgid:4287").video_source,
+            None,
+            "a camera that's off isn't a source"
+        );
+        assert_eq!(by("8:orgid:4287").audio_source, Some(201));
+    }
+
+    #[test]
+    fn updates_without_streams_keep_what_the_join_roster_said() {
+        let joined = joined(
+            r#"{"roster":{"participants":{
+            "8:teamsvisitor:43cf":{"state":"active","details":{"displayName":"OST Guest 2"},
+                "endpoints":{"c129":{"call":{"mediaStreams":[
+                    {"direction":"sendrecv","label":"main-audio","sourceId":2030},
+                    {"direction":"sendrecv","label":"main-video","sourceId":2031}]}}}}}}}"#,
+        );
+        assert_eq!(joined[0].video_source, Some(2031));
+        let mut r = Vec::new();
+        apply(&mut r, joined);
+        // Teams' first update after joining: names only.
+        let names = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "8:teamsvisitor:43cf":{"state":"active","details":{"displayName":"OST Guest 2"}}}}}"#;
+        apply(&mut r, roster_delta(names).unwrap());
+        assert_eq!(r[0].video_source, Some(2031));
+        assert_eq!(r[0].audio_source, Some(2030));
+        // Their camera goes off: the update lists the stream as receiving.
+        let off = names.replace(
+            r#""details":{"displayName":"OST Guest 2"}"#,
+            r#""details":{"displayName":"OST Guest 2"},"endpoints":{"c129":{"call":{"mediaStreams":[{"direction":"recvonly","label":"main-video","sourceId":2031}]}}}"#,
+        );
+        apply(&mut r, roster_delta(&off).unwrap());
+        assert_eq!(r[0].video_source, None);
     }
 
     #[test]

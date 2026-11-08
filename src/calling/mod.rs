@@ -4,20 +4,23 @@
 
 #[cfg(feature = "audio")]
 pub mod audio;
-#[cfg(all(feature = "audio", target_os = "linux"))]
-pub mod pw_defaults;
 pub mod call_test;
 #[cfg(feature = "video")]
 pub mod camera;
 #[cfg(feature = "video")]
 pub mod codec;
+pub mod datachannel;
 #[cfg(feature = "video-capture")]
 pub mod display;
 pub mod frames;
 pub mod ice;
 pub mod incoming;
+pub mod mcp;
 pub mod media;
+pub mod meeting_media;
 pub mod outgoing;
+#[cfg(all(feature = "audio", target_os = "linux"))]
+pub mod pw_defaults;
 pub mod recording;
 #[cfg(feature = "audio")]
 pub mod ringtone;

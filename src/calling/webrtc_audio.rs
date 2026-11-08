@@ -120,6 +120,10 @@ pub struct WebRtcOffer {
     pub dtmf_pt: Option<u8>,
     /// The screen-sharing video line, if offered (even inactive).
     pub sharing: Option<OfferedVideo>,
+    /// A media processor's answer to a meeting offer: our receive slots.
+    pub slots: Vec<super::meeting_media::Slot>,
+    /// … and its stream id for our data line, when it took it.
+    pub data_stream: Option<i64>,
 }
 
 /// The payload type of `telephone-event/8000` in an audio section.
@@ -619,6 +623,8 @@ impl WebRtcOffer {
                 offered_sharing(sdp, &sections, main_pt)
             },
             dtmf_pt: dtmf_payload_type(&audio),
+            slots: super::meeting_media::answered_slots(sdp),
+            data_stream: super::meeting_media::data_stream(sdp),
             sections,
             audio_mid,
             setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
@@ -660,6 +666,9 @@ pub struct LocalAudio {
     /// The telephone-event payload type to put in our SDP (the peer's when
     /// answering, ours when offering); None leaves DTMF out.
     pub dtmf_pt: Option<u8>,
+    /// A meeting or group call: our offer has receive slots and a data
+    /// line, and others' video comes through the media control plane.
+    pub meeting: bool,
 }
 
 impl LocalAudio {
@@ -696,6 +705,7 @@ impl LocalAudio {
             receive_video: false,
             camera_on: false,
             dtmf_pt: Some(PT_DTMF_DEFAULT),
+            meeting: false,
         })
     }
 
@@ -759,6 +769,83 @@ impl LocalAudio {
                 label: "applicationsharing-video",
                 ssrc: self.share_ssrc,
             },
+        ));
+        s
+    }
+
+    /// A meeting or group call offer, as Teams makes it: audio, our camera
+    /// line, receive slots for others' video, screen sharing, and the
+    /// data line the media control plane runs on.
+    pub fn offer_sdp_meeting(&self) -> String {
+        use super::meeting_media as mm;
+        let port = self.socket.local_addr().map(|a| a.port()).unwrap_or(9);
+        let addr = self.public_address();
+        let session_id = u64::from(self.ssrc) << 16 | 1;
+        let mids: Vec<String> = std::iter::once(mm::CAMERA_MID.to_string())
+            .chain(mm::slot_mids())
+            .chain([mm::SHARE_MID.to_string(), mm::DATA_MID.to_string()])
+            .collect();
+        let mut s = String::new();
+        s.push_str("v=0\r\n");
+        s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
+        s.push_str("s=-\r\nt=0 0\r\n");
+        s.push_str(&format!("a=group:BUNDLE 0 {}\r\n", mids.join(" ")));
+        s.push_str("a=msid-semantic: WMS ost\r\n");
+        s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt));
+        s.push_str(&self.video_section(
+            port,
+            &addr,
+            VideoLine {
+                mid: mm::CAMERA_MID,
+                setup: "actpass",
+                pt: PT_H264_OFFER,
+                profile: "42e01f",
+                direction: if self.camera_on {
+                    "sendrecv"
+                } else {
+                    "recvonly"
+                },
+                label: "main-video",
+                ssrc: self.video_ssrc,
+            },
+        ));
+        for mid in mm::slot_mids() {
+            // Receive only: Teams writes these with the SSRC range 1-1.
+            s.push_str(&self.video_section(
+                port,
+                &addr,
+                VideoLine {
+                    mid: &mid,
+                    setup: "actpass",
+                    pt: PT_H264_OFFER,
+                    profile: "42e01f",
+                    direction: "recvonly",
+                    label: "main-video",
+                    ssrc: 1,
+                },
+            ));
+        }
+        s.push_str(&self.video_section(
+            port,
+            &addr,
+            VideoLine {
+                mid: mm::SHARE_MID,
+                setup: "actpass",
+                pt: PT_H264_SHARE_OFFER,
+                profile: "42e01f",
+                // Receiving whoever presents, as Teams' meeting offers do.
+                direction: "recvonly",
+                label: "applicationsharing-video",
+                ssrc: self.share_ssrc,
+            },
+        ));
+        s.push_str(&mm::data_section(
+            port,
+            &addr,
+            &self.ufrag,
+            &self.pwd,
+            &self.identity.fingerprint,
+            self.ssrc.wrapping_add(1),
         ));
         s
     }
@@ -979,6 +1066,11 @@ pub struct WebRtcAudioSession {
     /// The peer's video, decoded and published as the "remote" frame.
     #[cfg(feature = "video")]
     _video_rx: Vec<Arc<super::webrtc_video::VideoReceiver>>,
+    /// In a meeting: others' video and the control plane asking for it.
+    meeting_video: Option<super::meeting_media::MeetingVideo>,
+    /// The receive slots' SSRC ranges by mid, which re-offers may move.
+    #[cfg(feature = "video")]
+    slot_ranges: Vec<(String, Arc<std::sync::atomic::AtomicU64>)>,
     muted: Arc<AtomicBool>,
     /// On hold: nothing is sent or played until it's resumed.
     held: Arc<AtomicBool>,
@@ -1059,7 +1151,28 @@ impl WebRtcAudioSession {
         if !offer_shares(offer) {
             super::frames::clear("share");
         }
+        // A media processor's re-offer may renumber the receive slots.
+        let slots = super::meeting_media::answered_slots(offer);
+        #[cfg(feature = "video")]
+        for slot in &slots {
+            if let Some((_, r)) = self.slot_ranges.iter().find(|(m, _)| *m == slot.mid) {
+                r.store(pack_range(slot.ssrcs), Ordering::Relaxed);
+            }
+        }
+        if let Some(v) = &self.meeting_video {
+            v.update_slots(slots);
+        }
         Ok(sdp)
+    }
+
+    /// In a meeting: show these video sources (roster `main-video`
+    /// sourceIds, most wanted first); returns sourceId -> frame key for
+    /// those that got a slot.
+    pub fn show_videos(&self, sources: &[i64]) -> std::collections::HashMap<i64, String> {
+        self.meeting_video
+            .as_ref()
+            .map(|v| v.show(sources))
+            .unwrap_or_default()
     }
 
     /// The other side has the call on hold.
@@ -1420,9 +1533,34 @@ impl WebRtcAudioSession {
                 pt: v.payload_type,
                 rx: Arc::new(super::webrtc_video::VideoReceiver::start(key)),
                 ssrc: Arc::new(std::sync::atomic::AtomicU32::new(v.ssrc.unwrap_or(0))),
+                range: None,
             })
         })
+        .chain(
+            // Others' video in a meeting, one decoder per receive slot.
+            offer
+                .slots
+                .iter()
+                .filter(|_| local.meeting)
+                .map(|slot| VideoStream {
+                    pt: slot.pt,
+                    rx: Arc::new(super::webrtc_video::VideoReceiver::start(
+                        &super::meeting_media::frame_key(&slot.mid),
+                    )),
+                    ssrc: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                    range: Some(Arc::new(std::sync::atomic::AtomicU64::new(pack_range(
+                        slot.ssrcs,
+                    )))),
+                }),
+        )
         .collect();
+        #[cfg(feature = "video")]
+        let slot_ranges: Vec<(String, Arc<std::sync::atomic::AtomicU64>)> = offer
+            .slots
+            .iter()
+            .zip(video_rx.iter().filter_map(|v| v.range.clone()))
+            .map(|(slot, r)| (slot.mid.clone(), r))
+            .collect();
 
         // Receive and demultiplex.
         tasks.push(tokio::spawn(recv_loop(RecvCtx {
@@ -1483,7 +1621,7 @@ impl WebRtcAudioSession {
         tracing::info!(%peer, "ICE connected");
 
         // DTLS (client, since we answered setup:active).
-        let keys = {
+        let (keys, dtls) = {
             let socket = socket.clone();
             let identity = local.identity;
             let expected = offer.fingerprint.clone();
@@ -1495,6 +1633,27 @@ impl WebRtcAudioSession {
         };
         *srtp_ctx.lock().await = Some(srtp::SrtpStreams::new(&keys.0, &keys.1)?);
         tracing::info!("DTLS-SRTP established");
+        // A meeting's media control plane: a data channel in this DTLS
+        // session, when the processor took our data line.
+        let meeting_video = match offer.data_stream {
+            Some(stream_id) if local.meeting => {
+                let mut dtls = dtls;
+                dtls.get_mut().wait = super::datachannel::RECV_WAIT;
+                tracing::info!(
+                    stream_id,
+                    slots = offer.slots.len(),
+                    "Opening the media control plane"
+                );
+                let (tx, events) =
+                    super::datachannel::open(dtls, super::meeting_media::DATA_LABEL, 0);
+                Some(super::meeting_media::MeetingVideo::start(
+                    offer.slots.clone(),
+                    tx,
+                    events,
+                ))
+            }
+            _ => None,
+        };
 
         let muted = Arc::new(AtomicBool::new(false));
         let (dtmf_tx, dtmf_rx) = mpsc::unbounded_channel::<u8>();
@@ -1612,6 +1771,9 @@ impl WebRtcAudioSession {
             video_mid: offer.video.as_ref().map(|v| v.mid.clone()),
             #[cfg(feature = "video")]
             _video_rx: video_rx.into_iter().map(|v| v.rx).collect(),
+            meeting_video,
+            #[cfg(feature = "video")]
+            slot_ranges,
             muted,
             held,
             dtmf_tx,
@@ -1636,6 +1798,21 @@ struct VideoStream {
     pt: u8,
     rx: Arc<super::webrtc_video::VideoReceiver>,
     ssrc: Arc<std::sync::atomic::AtomicU32>,
+    /// A meeting receive slot: the SSRC range the processor sends it with
+    /// (low << 32 | high; a re-offer may move it).
+    range: Option<Arc<std::sync::atomic::AtomicU64>>,
+}
+
+/// An SSRC range packed for an AtomicU64.
+#[cfg(feature = "video")]
+fn pack_range((lo, hi): (u32, u32)) -> u64 {
+    u64::from(lo) << 32 | u64::from(hi)
+}
+
+#[cfg(feature = "video")]
+fn in_range(range: &std::sync::atomic::AtomicU64, ssrc: u32) -> bool {
+    let r = range.load(Ordering::Relaxed);
+    ((r >> 32) as u32..=r as u32).contains(&ssrc)
 }
 
 struct RecvCtx {
@@ -1740,7 +1917,18 @@ async fn recv_loop(ctx: RecvCtx) {
                     s.bytes_received += len as u64;
                 }
                 #[cfg(feature = "video")]
-                if let Some(stream) = ctx.video.iter().find(|v| v.pt == pt) {
+                // A meeting slot by its SSRC range, else the line by its
+                // payload type (RTX on a slot's range falls through).
+                let ssrc = plain
+                    .get(8..12)
+                    .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+                    .unwrap_or(0);
+                if let Some(stream) = ctx
+                    .video
+                    .iter()
+                    .find(|v| v.pt == pt && v.range.as_ref().is_some_and(|r| in_range(r, ssrc)))
+                    .or_else(|| ctx.video.iter().find(|v| v.pt == pt && v.range.is_none()))
+                {
                     if let Ok(pkt) = rtp::decode(&plain) {
                         stream.ssrc.store(pkt.ssrc, Ordering::Relaxed);
                         stream.rx.push(super::webrtc_video::VideoPacket {
@@ -1872,11 +2060,13 @@ struct DtlsIo {
     socket: Arc<UdpSocket>,
     peer: SocketAddr,
     rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    /// How long a read waits for a datagram.
+    wait: Duration,
 }
 
 impl std::io::Read for DtlsIo {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self.rx.recv_timeout(Duration::from_millis(200)) {
+        match self.rx.recv_timeout(self.wait) {
             Ok(pkt) => {
                 let n = pkt.len().min(buf.len());
                 buf[..n].copy_from_slice(&pkt[..n]);
@@ -1903,8 +2093,8 @@ impl std::io::Write for DtlsIo {
     }
 }
 
-/// Run the DTLS client handshake and export SRTP keys:
-/// (our keying material, the peer's keying material).
+/// Run the DTLS handshake and export SRTP keys: (our keying material, the
+/// peer's), and the session (a meeting's data channel runs in it).
 fn dtls_handshake(
     socket: Arc<UdpSocket>,
     peer: SocketAddr,
@@ -1912,7 +2102,10 @@ fn dtls_handshake(
     identity: &DtlsIdentity,
     expected_fingerprint: &str,
     client: bool,
-) -> Result<(srtp::SrtpKeyingMaterial, srtp::SrtpKeyingMaterial)> {
+) -> Result<(
+    (srtp::SrtpKeyingMaterial, srtp::SrtpKeyingMaterial),
+    openssl::ssl::SslStream<DtlsIo>,
+)> {
     let mut ctx = SslContext::builder(SslMethod::dtls())?;
     ctx.set_certificate(&identity.cert)?;
     ctx.set_private_key(&identity.key)?;
@@ -1924,7 +2117,12 @@ fn dtls_handshake(
     let ctx = ctx.build();
     let ssl = openssl::ssl::Ssl::new(&ctx)?;
 
-    let io = DtlsIo { socket, peer, rx };
+    let io = DtlsIo {
+        socket,
+        peer,
+        rx,
+        wait: Duration::from_millis(200),
+    };
     let deadline = std::time::Instant::now() + DTLS_TIMEOUT;
     let mut attempt = if client {
         ssl.connect(io)
@@ -1976,7 +2174,7 @@ fn dtls_handshake(
     }
     let mut km = [0u8; SRTP_KEYING_LEN];
     ssl.export_keying_material(&mut km, "EXTRACTOR-dtls_srtp", None)?;
-    Ok(split_srtp_keys(&km, client))
+    Ok((split_srtp_keys(&km, client), stream))
 }
 
 /// The raw `SSL*` behind an `SslRef`.
@@ -2118,7 +2316,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             })
         };
         let client_id = DtlsIdentity::generate().unwrap();
-        let (local, remote) = tokio::task::spawn_blocking(move || {
+        let ((local, remote), _session) = tokio::task::spawn_blocking(move || {
             dtls_handshake(a, b_addr, rx, &client_id, &server_fp, true)
         })
         .await
@@ -2184,7 +2382,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
             })
         };
         let server_id = DtlsIdentity::generate().unwrap();
-        let (local, remote) = tokio::task::spawn_blocking(move || {
+        let ((local, remote), _session) = tokio::task::spawn_blocking(move || {
             dtls_handshake(a, b_addr, rx, &server_id, &client_fp, false)
         })
         .await
@@ -2483,6 +2681,7 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
                 receive_video: false,
                 camera_on: false,
                 dtmf_pt: Some(PT_DTMF_DEFAULT),
+                meeting: false,
                 candidates: vec![ice::IceCandidate {
                     foundation: "1".into(),
                     component: 1,
@@ -2509,5 +2708,33 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         let parsed = WebRtcOffer::parse(&offer).unwrap();
         assert_eq!(parsed.setup, "actpass");
         assert_eq!(parsed.ice_ufrag, "abcd");
+    }
+
+    #[test]
+    fn meeting_offers_have_slots_and_a_data_line_as_teams() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let local = rt.block_on(async {
+            let mut l = LocalAudio::prepare().await.unwrap();
+            l.meeting = true;
+            l
+        });
+        let o = local.offer_sdp_meeting();
+        assert!(o.contains("a=group:BUNDLE 0 1 2 3 4 5 6 7 8 9 10 11 12\r\n"));
+        let sections: Vec<&str> = o.split("\r\nm=").skip(1).collect();
+        assert_eq!(sections.len(), 13);
+        // Our camera, nine receive slots, sharing, data.
+        assert!(sections[1].contains("a=mid:1") && sections[1].contains("a=label:main-video"));
+        for (i, sec) in sections[2..11].iter().enumerate() {
+            assert!(sec.contains(&format!("a=mid:{}\r\n", i + 2)));
+            assert!(sec.contains("a=recvonly") && sec.contains("a=label:main-video"));
+            assert!(sec.contains("a=x-ssrc-range:1-1"));
+            assert!(sec.contains("a=x-signaling-fb:* x-message app send:src recv:src,vc"));
+        }
+        assert!(sections[11].contains("a=label:applicationsharing-video"));
+        assert!(
+            sections[12].starts_with("x-data ") && sections[12].contains("a=x-data-protocol:sctp")
+        );
+        // Every line carries the DTLS fingerprint the data channel uses.
+        assert_eq!(o.matches("a=fingerprint:").count(), 13);
     }
 }

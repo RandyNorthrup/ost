@@ -52,6 +52,9 @@ directories = "6"
 toml = "1"
 # DTLS-SRTP for WebRTC call media (already in the tree via native-tls)
 openssl = "0.10"
+# SCTP for WebRTC data channels (meeting media control plane).
+sctp-proto = "0.10"
+bytes = "1"
 openssl-sys = "0.9"
 foreign-types = "0.3"
 # Desktop keyring (Secret Service on Linux) for tokens

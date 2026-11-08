@@ -23,6 +23,8 @@ const RING_TIMEOUT: Duration = Duration::from_secs(60);
 /// A placed call that the callee answered.
 pub struct OutgoingCall {
     http: reqwest::Client,
+    /// The join response's roster (people and their streams).
+    joined_roster: Vec<super::roster::Participant>,
     skype_token: String,
     end_url: Option<String>,
     call_leg: Option<String>,
@@ -167,6 +169,12 @@ impl OutgoingCall {
 
     /// Everyone already in the conversation (roster updates only carry
     /// changes, so people who joined before us need this, as Teams does).
+    /// Who was in the conversation when we joined, with their streams
+    /// (the join response's roster).
+    pub fn joined_roster(&self) -> Vec<super::roster::Participant> {
+        self.joined_roster.clone()
+    }
+
     pub async fn participants(&self) -> Result<Vec<super::roster::Participant>> {
         let link = self
             .all_participants
@@ -351,6 +359,16 @@ impl OutgoingCall {
     }
 
     /// The call negotiated video we can send (camera button usable).
+    /// In a meeting or group call: show these cameras (roster
+    /// `main-video` sourceIds, most wanted first). Returns sourceId ->
+    /// frame key for each that has a receive slot.
+    pub fn show_videos(&self, sources: &[i64]) -> std::collections::HashMap<i64, String> {
+        self.media
+            .as_ref()
+            .map(|m| m.show_videos(sources))
+            .unwrap_or_default()
+    }
+
     pub fn can_send_video(&self) -> bool {
         self.media.as_ref().is_some_and(|m| m.can_send_video())
     }
@@ -1044,10 +1062,17 @@ async fn start(
     // 1:1 calls offer video too (Teams' calls do); meetings and group
     // calls stay audio-only, since a media processor sends video only to
     // those who subscribe to it.
+    // Meetings and group calls offer receive slots and a data line, as
+    // Teams does: others' video comes as the media control plane asks.
+    let meeting_media = cfg!(feature = "video") && !matches!(target, Target::Person(..));
     let offer = if let (Target::Person(_, video), true) = (&target, cfg!(feature = "video")) {
         local.receive_video = true;
         local.camera_on = *video;
         local.offer_sdp_with_video()
+    } else if meeting_media {
+        local.receive_video = true;
+        local.meeting = true;
+        local.offer_sdp_meeting()
     } else {
         local.offer_sdp()
     };
@@ -1201,6 +1226,7 @@ async fn start(
     };
 
     Ok(OutgoingCall {
+        joined_roster: super::roster::joined(&created.response_body),
         http,
         skype_token,
         end_url: acceptance.end,

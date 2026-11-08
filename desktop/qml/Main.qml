@@ -696,6 +696,8 @@ Window {
         onClosing: if (backend.callState !== "ended") backend.hangUp()
         meeting: backend.callMeeting
         roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
+        videoKeys: backend.callVideoJson ? JSON.parse(backend.callVideoJson) : ({})
+        speakerId: backend.callSpeakerMri
         lobby: backend.callLobbyJson ? JSON.parse(backend.callLobbyJson) : []
         onAdmitLobby: (id, name, notBot) => backend.admitFromLobby(id, name, notBot)
         onDenyLobby: (id, name) => backend.denyFromLobby(id, name)

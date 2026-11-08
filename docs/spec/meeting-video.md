@@ -129,6 +129,17 @@ The MP's id is `0xfffffffc`. The client is `0xfffffffe` until the `ack`, then it
 
 The MP re-offers after lobby admission (`call/mediaRenegotiation`); the client answers on the `negotiations` link, and a new MCP session (new `syn`) starts on the new data channel.
 
+## OST's implementation (2026-11-07, verified live)
+
+- **Offer.** OST offers audio, the camera line (mid 1), nine `main-video` recvonly receive slots (mids 2–10, `x-ssrc-range:1-1`), sharing (mid 11, recvonly) and the `x-data` SCTP line (mid 12), in Teams' RTP/SAVP dialect.
+- **No `mediaDescriptions` or `sendSideBWSeed`.** OST's SDP states every direction as meant. With either field the processor ends the join with 410, subCode 300400.
+- **SCTP.** The processor opens an association from its side too (both ends send INIT), so OST accepts the peer's association as well as its own and uses the first that comes up. `main-channel` is stream 0, opened with DCEP. The MCP id in `ack` equals the answer's data-line `x-source-streamid`.
+- **Rosters.** The first roster update after joining names people without their streams. OST seeds the roster from the join response's `roster`, and later updates that carry no endpoints keep the stream fields.
+- **Receiving.** Each slot's video arrives on the first SSRC of its answered range (its RTX on the second), so OST routes packets by range plus payload type.
+- **Verified.** Both guests' cameras showed in OST's tiles in the test meeting, with `sr_res ok` for each request.
+
+Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framing and messages), `src/calling/meeting_media.rs` (slots, subscriptions), `webrtc_audio::offer_sdp_meeting`.
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.

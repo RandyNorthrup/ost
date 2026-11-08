@@ -29,6 +29,10 @@ Window {
     property bool meeting: false
     /// The meeting's participants (from the roster): [{id, name, role}].
     property var roster: []
+    /// In a meeting: whose camera shows where ({mri: frame key}).
+    property var videoKeys: ({})
+    /// The meeting's dominant speaker (Speaker view puts them on stage).
+    property string speakerId: ""
     /// The meeting's link to share (Share invite).
     property string inviteUrl: ""
     /// Who waits in the meeting's lobby: [{id, name, suspected}].
@@ -374,7 +378,8 @@ Window {
             visible: win.meeting && win.others.length > 0
             anchors { fill: parent; margins: 8; bottomMargin: strip.visible ? strip.height + 16 : 8 }
             // Speaker: one large tile (the others in a strip below).
-            readonly property var shown: win.layout === "speaker" ? win.others.slice(0, 1) : win.others
+            readonly property var speaker: win.others.find(p => p.id === win.speakerId) || win.others[0]
+            readonly property var shown: win.layout === "speaker" ? [speaker] : win.others
             columns: Math.max(1, Math.ceil(Math.sqrt(shown.length)))
             readonly property int rowsN: Math.max(1, Math.ceil(shown.length / columns))
             spacing: 8
@@ -390,7 +395,19 @@ Window {
                     readonly property int handAt: win.hands.indexOf(modelData.id)
                     border.color: handAt >= 0 ? theme.handRaised : theme.dividerSoft
                     border.width: handAt >= 0 ? 3 : 1
-                    Avatar { anchors.centerIn: parent; size: Math.min(144, parent.height * 0.45); name: parent.modelData.name; photoId: parent.modelData.id }
+                    Avatar { anchors.centerIn: parent; size: Math.min(144, parent.height * 0.45); name: parent.modelData.name; photoId: parent.modelData.id; visible: !tileVideo.visible }
+                    // Their camera, cropped to fill the tile as Teams' gallery does.
+                    VideoFrame {
+                        id: tileVideo
+                        source: win.videoKeys[parent.modelData.id] || ""
+                        anchors.fill: parent; anchors.margins: parent.border.width
+                        visible: source !== "" && hasFrame
+                        Timer {
+                            interval: 33; repeat: true
+                            running: win.visible && tileVideo.source !== ""
+                            onTriggered: tileVideo.refresh()
+                        }
+                    }
                     Rectangle {
                         visible: parent.handAt >= 0
                         anchors { left: parent.left; top: parent.top; margins: 10 }
@@ -423,7 +440,7 @@ Window {
             anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 8 }
             height: 96; spacing: 8
             Repeater {
-                model: strip.visible ? win.others.slice(1) : []
+                model: strip.visible ? win.others.filter(p => p !== tiles.speaker) : []
                 Rectangle {
                     required property var modelData
                     width: 160; height: 96; radius: 6
