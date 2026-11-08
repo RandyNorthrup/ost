@@ -1309,6 +1309,27 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
     }))
 }
 
+/// Whether the join response holds our endpoint in the meeting's lobby:
+/// its roster entry has the `lobby` modality and no `call` (the media
+/// processor's acceptance carries no modalities either way, so it can't
+/// tell).
+fn endpoint_in_lobby(create_response: &str, endpoint_id: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(create_response) else {
+        return false;
+    };
+    let Some(participants) = ["/roster/participants", "/conversationResponse/roster/participants"]
+        .iter()
+        .find_map(|p| v.pointer(p))
+        .and_then(|p| p.as_object())
+    else {
+        return false;
+    };
+    participants
+        .values()
+        .filter_map(|p| p.pointer(&format!("/endpoints/{endpoint_id}")))
+        .any(|ep| ep.get("lobby").is_some() && ep.get("call").is_none())
+}
+
 /// A conversation update admitting us from a meeting's lobby (the call
 /// modality appears in `activeModalities`): its body, whose links replace
 /// the lobby's few.
@@ -1757,7 +1778,11 @@ async fn start(
         server_muted: std::sync::atomic::AtomicBool::new(false),
         message_link,
         endpoint_state,
-        in_lobby: acceptance.in_lobby,
+        in_lobby: {
+            let held = endpoint_in_lobby(&created.response_body, params.endpoint_id);
+            tracing::info!(held, acceptance_without_modalities = acceptance.in_lobby, "lobby check");
+            held
+        },
         meeting_started: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
             .and_then(|v| {
@@ -1786,6 +1811,10 @@ mod tests {
         let admitted = r#"{"callAgentPath":"conversation/conversationUpdate/","body":{"activeModalities":{"call":{"links":{}},"lobby":null},"links":{"mute":"https://conv.skype.com/mute","admit":"https://conv.skype.com/admit"}}}"#;
         let body = lobby_admission(admitted).expect("admission");
         assert_eq!(conversation_link(&body.to_string(), "mute").as_deref(), Some("https://conv.skype.com/mute"));
+        let roster = r#"{"roster":{"participants":{"8:teamsvisitor:x":{"endpoints":{"ep1":{"lobby":{}}}},"8:orgid:y":{"endpoints":{"ep2":{"call":{}}}}}}}"#;
+        assert!(endpoint_in_lobby(roster, "ep1"));
+        assert!(!endpoint_in_lobby(roster, "ep2"));
+        assert!(!endpoint_in_lobby(roster, "ep3"));
         let still_waiting = r#"{"callAgentPath":"conversation/conversationUpdate/","body":{"activeModalities":null}}"#;
         assert!(lobby_admission(still_waiting).is_none());
         assert!(lobby_admission(r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"activeModalities":{"call":{}}}}"#).is_none());

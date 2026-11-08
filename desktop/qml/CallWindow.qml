@@ -139,6 +139,10 @@ Window {
     /// may not do (bits: mic 1, camera 2).
     property bool locked: false
     property int attendeeRestrictions: 0
+    /// You're an attendee and the meeting has disabled attendees' mic or
+    /// camera (Teams then disables the button with its reason).
+    readonly property bool micRestricted: meeting && myRole === "attendee" && (attendeeRestrictions & 1) !== 0 && muted
+    readonly property bool videoRestricted: meeting && myRole === "attendee" && (attendeeRestrictions & 2) !== 0 && !cameraOn
     /// Bumped by the backend when the meeting locks or unlocks.
     property int lockNotices: 0
     /// The People pane's More actions, as Teams offers them
@@ -301,7 +305,7 @@ Window {
     })
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
-    readonly property var ubarWidths: ({ MicrophoneButton: 74, ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8 })
+    readonly property var ubarWidths: ({ MicrophoneButton: 74, VideoButton: 74, ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8 })
     // The middle slot's room: from 4 past the indicators (shield, timer)
     // to 17 before Leave.
     readonly property real ubarRoom: leaveGroup.x - 17 - (timerText.x + timerText.implicitWidth + 6.67 + 4)
@@ -933,7 +937,7 @@ Window {
             }
         }
     }
-    function closeMenusForTest() { viewMenu.close(); moreMenu.close(); peoplePane.closeMenusForTest() }
+    function closeMenusForTest() { viewMenu.close(); moreMenu.close(); videoFlyout.close(); audioFlyout.close(); peoplePane.closeMenusForTest() }
     /// For the --join-view harness: open the View menu (and a submenu row).
     function viewMenuForTest(sub) {
         viewMenu.parent = barItem("ViewModeButton")
@@ -1136,11 +1140,22 @@ Window {
         id: audioFlyout
         muted: win.muted || !win.hasAudio
         onToggleMute: win.toggleMute()
+        // Teams opens its Audio settings pane (TASK-0062); OST's device settings for now.
+        onMoreAudioSettings: win.deviceSettings()
         x: parent ? parent.width - width : 0
         y: 60
         maxHeight: win.height - 60 - 5
     }
     function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
+    VideoFlyout {
+        id: videoFlyout
+        cameraOn: win.cameraOn
+        x: parent ? parent.width - width : 0
+        y: 60
+        // Teams opens its Video effects and settings pane (TASK-0062).
+        onMoreVideoSettings: win.deviceSettings()
+    }
+    function videoOptionsForTest() { videoFlyout.parent = barItem("VideoButton"); videoFlyout.open() }
 
     // React (reaction-menu-button-toolbox, measured on winpc): a 249.3 x
     // 73.3 surface under the React button, padding 16, five 32 px buttons
@@ -1510,14 +1525,33 @@ Window {
     Component { id: cRooms; BarButton { icon: "call-rooms"; label: "Rooms"; tip: "Create breakout rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton") } }
     Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
     Component { id: cMore; BarButton { icon: "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible; onClicked: win.runControl("MoreButton") } }
-    Component { id: cCamera; BarButton { icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true; tip: win.cameraOn ? "Turn camera off" : "Turn camera on"; shortcut: "Ctrl+Shift+O"; enabled: win.controlEnabled("VideoButton"); onClicked: win.runControl("VideoButton") } }
+    Component {
+        id: cCamera
+        BarButton {
+            id: camB
+            icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true
+            // Teams' disabled reasons, first match wins (§3).
+            readonly property string disabledReason: !win.canVideo ? "No available camera found"
+                : win.videoRestricted ? "Only select participants can share video" : ""
+            tip: disabledReason.length > 0 ? disabledReason : win.cameraOn ? "Turn camera off" : "Turn camera on"
+            shortcut: disabledReason.length > 0 ? "" : "Ctrl+Shift+O"
+            enabled: win.controlEnabled("VideoButton") && !win.videoRestricted
+            // Teams' Camera ▾ (video-button-configure, "Open video options").
+            split: true; chevronLabel: "Open video options"
+            chevronChecked: videoFlyout.visible && videoFlyout.parent === camB
+            onClicked: win.runControl("VideoButton")
+            onChevronClicked: { videoFlyout.parent = camB; videoFlyout.open() }
+        }
+    }
     Component {
         id: cMic
         BarButton {
             id: micB
             icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
-            tip: !win.hasAudio ? "Turn audio on" : win.muted ? "Unmute mic" : "Mute mic"; shortcut: "Ctrl+Shift+M"
-            enabled: win.controlEnabled("MicrophoneButton")
+            tip: win.micRestricted ? "Only select participants can unmute"
+                : !win.hasAudio ? "Turn audio on" : win.muted ? "Unmute mic" : "Mute mic"
+            shortcut: win.micRestricted ? "" : "Ctrl+Shift+M"
+            enabled: win.controlEnabled("MicrophoneButton") && !win.micRestricted
             split: true; chevronLabel: "Open audio options"
             chevronChecked: audioFlyout.visible && audioFlyout.parent === micB
             onClicked: win.runControl("MicrophoneButton")
@@ -1597,9 +1631,11 @@ Window {
             x: 52; y: 6; width: 22; height: 48
             topRightRadius: 4; bottomRightRadius: 4
             color: (chevHover.hovered || bb.chevronChecked) ? theme.rowHover : "transparent"
+            // Disabled together with the button (Teams' split buttons).
+            opacity: bb.enabled ? 1 : 0.45
             FluentIcon { x: 3; y: 16; name: "call-chevron"; size: 16; color: theme.text }
-            HoverHandler { id: chevHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: bb.chevronClicked() }
+            HoverHandler { id: chevHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: bb.enabled; onTapped: bb.chevronClicked() }
             Accessible.role: Accessible.Button
             Accessible.name: bb.chevronLabel
         }

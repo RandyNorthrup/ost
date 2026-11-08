@@ -1300,6 +1300,22 @@ Window {
                 // from outside (Teams' call shortcuts).
                 if (step === 8) { callWindow.raise(); callWindow.requestActivate() }
                 console.warn("JOIN keys", step, JSON.stringify({ muted: backend.callMuted, hand: callWindow.handRaised, camera: backend.callCameraOn, state: backend.callState, talk: callWindow.talkHeld }))
+            } else if (step >= 8 && step <= 24 && Qt.application.arguments.indexOf("--join-video-flyout") >= 0) {
+                // --join-video-flyout: Camera ▾ with the preview (captured),
+                // then the camera on and switched to the second camera and
+                // back (captured), then off.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-video-" + n + ".png")))
+                if (step === 8) callWindow.videoOptionsForTest()
+                else if (step === 10) { shot("flyout"); console.warn("JOIN video devices", backend.videoDevices()) }
+                else if (step === 11) callWindow.closeMenusForTest()
+                else if (step === 12) backend.toggleCamera()
+                else if (step === 15) { shot("on-a"); console.warn("JOIN video camera on", backend.callCameraOn) }
+                else if (step === 16) backend.setCameraDevice("/dev/video21")
+                else if (step === 19) shot("on-b")
+                else if (step === 20) backend.setCameraDevice("/dev/video20")
+                else if (step === 22) { shot("on-a2"); backend.toggleCamera() }
+                else if (step === 23) callWindow.audioOptionsForTest()
+                else if (step === 24) shot("audio-flyout")
             } else if (step === 9 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
                 // --join-compact: minimise the meeting window, capture the
                 // compact view (step 12), then restore (step 14).

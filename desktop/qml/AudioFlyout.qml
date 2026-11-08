@@ -1,15 +1,22 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 
 // Teams' in-call audio options (audio-button-configure-popover, measured on
 // winpc), opened from the Mic chevron: "Speaker" with the output devices as
 // radios and the volume slider, a divider, then "Microphone" with the input
 // devices and the level meter. 315.3 wide, padding 16, scrolling within the
-// window. Picking a device moves the call to it at once.
+// window. Picking a device moves the call to it at once. Then, as Teams
+// shows them with working audio devices (measured in Teams in a call,
+// 2026-11-08): a divider, "Noise suppression" with its switch (a 36 px row,
+// the 40 x 20 switch at the right edge), a divider and "More audio
+// settings". Teams' "Isolate your voice" needs Microsoft's voice profile,
+// which other clients can't use, so it isn't offered.
 Popup {
     id: root
     property bool muted: false
     signal toggleMute()
+    signal moreAudioSettings()
     width: 315.3
     height: Math.min(col.implicitHeight + 33.3, maxHeight)
     property real maxHeight: 576
@@ -21,7 +28,9 @@ Popup {
     property string speaker: ""
     property int volume: 100
     property int level: 0
+    property bool noiseSuppression: true
     onOpened: {
+        noiseSuppression = backend.setting("noiseSuppression") !== "off"
         devices = JSON.parse(backend.audioDevices())
         mic = backend.setting("micDevice") || ""
         speaker = backend.setting("speakerDevice") || ""
@@ -92,7 +101,7 @@ Popup {
                 }
             }
             Item { width: 268; height: 10 }
-            Rectangle { width: 268; height: 0.67; color: theme.divider }
+            Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
             Item { width: 268; height: 14.7 }
 
             Label12 { text: "Microphone" }
@@ -127,6 +136,59 @@ Popup {
                         color: (index + 1) / 17 <= root.level / 100 ? theme.brand : theme.stroke
                     }
                 }
+            }
+            Item { width: 268; height: 10.7 }
+            Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
+            Item { width: 268; height: 14.7 }
+            // Noise suppression (Fluent Switch with its label before it).
+            Item {
+                width: 268; height: 36
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Noise suppression"
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                }
+                Rectangle {
+                    id: nsSwitch
+                    x: 268 - 40.3; anchors.verticalCenter: parent.verticalCenter
+                    width: 40; height: 20; radius: 10
+                    color: root.noiseSuppression ? (nsHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+                    border.color: root.noiseSuppression ? "transparent" : theme.textStrong
+                    Rectangle {
+                        width: 14; height: 14; radius: 7
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: root.noiseSuppression ? parent.width - width - 3 : 3
+                        color: root.noiseSuppression ? "white" : theme.textStrong
+                    }
+                }
+                HoverHandler { id: nsHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: {
+                        root.noiseSuppression = !root.noiseSuppression
+                        backend.setNoiseSuppression(root.noiseSuppression)
+                    }
+                }
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: "Noise suppression"
+                Accessible.checked: root.noiseSuppression
+            }
+            Item { width: 268; height: 5.3 }
+            Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
+            Item { width: 268; height: 13.3 }
+            // More audio settings (a subtle button at the content's edge).
+            Item {
+                width: 268; height: 31
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "More audio settings"
+                    font.family: theme.font; font.pixelSize: 14
+                    color: masHover.hovered ? theme.text : theme.textStrong
+                }
+                HoverHandler { id: masHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { root.close(); root.moreAudioSettings() } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "More audio settings"
             }
         }
     }

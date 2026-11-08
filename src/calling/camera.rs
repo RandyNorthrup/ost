@@ -11,6 +11,37 @@ use v4l::io::traits::CaptureStream;
 use v4l::video::Capture;
 use v4l::{Device, FourCC};
 
+/// The cameras V4L2 offers (capture nodes only, as Teams lists cameras):
+/// `(path, name)`, e.g. `("/dev/video0", "Integrated Camera")`.
+pub fn list_devices() -> Vec<(String, String)> {
+    let mut nodes: Vec<(u32, String)> = std::fs::read_dir("/dev")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let n: u32 = name.strip_prefix("video")?.parse().ok()?;
+            Some((n, format!("/dev/{name}")))
+        })
+        .collect();
+    nodes.sort();
+    nodes
+        .into_iter()
+        .filter_map(|(_, path)| {
+            let caps = Device::with_path(&path).ok()?.query_caps().ok()?;
+            // Metadata and output nodes aren't cameras.
+            caps.capabilities
+                .contains(v4l::capability::Flags::VIDEO_CAPTURE)
+                .then(|| {
+                    let card = caps.card.trim().to_string();
+                    // UVC names repeat the model ("Integrated Camera: Integrated C").
+                    let name = card.split(':').next().unwrap_or(&card).trim().to_string();
+                    (path, if name.is_empty() { card } else { name })
+                })
+        })
+        .collect()
+}
+
 /// A captured YUV420 (I420) frame.
 pub struct YuvFrame {
     pub width: u32,

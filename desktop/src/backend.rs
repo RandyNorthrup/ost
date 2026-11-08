@@ -532,6 +532,13 @@ pub mod qobject {
         /// False when the camera can't be opened.
         #[qinvokable]
         fn set_camera_preview(self: Pin<&mut Backend>, on: bool) -> bool;
+        /// The cameras: JSON {devices: [{path, name}], current: path}.
+        #[qinvokable]
+        fn video_devices(self: Pin<&mut Backend>) -> QString;
+        /// Use this camera (a V4L2 path), switching a running call's camera
+        /// to it at once.
+        #[qinvokable]
+        fn set_camera_device(self: Pin<&mut Backend>, path: &QString);
 
         /// Put the call on hold, or resume it.
         #[qinvokable]
@@ -622,6 +629,9 @@ pub mod qobject {
         /// then; emoticonsVersion changes when it lands).
         #[qinvokable]
         fn card_image(self: Pin<&mut Backend>, url: &QString) -> QString;
+        /// Teams' Noise suppression switch (Mic ▾): on or off, kept.
+        #[qinvokable]
+        fn set_noise_suppression(self: Pin<&mut Backend>, on: bool);
         /// The call bar as Teams builds it from its layout config: `facts`
         /// (JSON, see teams_cli::calling::ubar::Facts), each control's
         /// width (JSON {name: px}), a divider's width and the middle slot's
@@ -2555,6 +2565,14 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
             .map(str::to_string)
     };
     teams_cli::calling::audio::set_preferred_devices(get("micDevice"), get("speakerDevice"));
+    // Teams' Noise suppression switch (on unless turned off).
+    teams_cli::calling::apm::set_noise_level(
+        if map.get("noiseSuppression").and_then(|v| v.as_str()) == Some("off") {
+            teams_cli::calling::apm::NoiseLevel::Off
+        } else {
+            teams_cli::calling::apm::NoiseLevel::High
+        },
+    );
 }
 
 /// Start OST when you sign in to the desktop (an XDG autostart entry).
@@ -3571,6 +3589,41 @@ impl qobject::Backend {
             drop(slot);
             if let Err(e) = call.end_for_everyone().await {
                 tracing::warn!("end meeting failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn video_devices(self: Pin<&mut Self>) -> QString {
+        let devices = teams_cli::calling::camera::list_devices();
+        let current = camera_device()
+            .filter(|c| devices.iter().any(|(p, _)| p == c))
+            .or_else(|| devices.first().map(|(p, _)| p.clone()))
+            .unwrap_or_default();
+        let list: Vec<serde_json::Value> = devices
+            .iter()
+            .map(|(path, name)| serde_json::json!({ "path": path, "name": name }))
+            .collect();
+        QString::from(serde_json::json!({ "devices": list, "current": current }).to_string().as_str())
+    }
+
+    pub fn set_camera_device(mut self: Pin<&mut Self>, path: &QString) {
+        let path = path.to_string();
+        self.as_mut().set_setting(&QString::from("cameraDevice"), &QString::from(path.as_str()));
+        if !self.rust().call_camera_on {
+            return;
+        }
+        // The camera is on: capture from the new one, the line unchanged.
+        runtime().spawn(async move {
+            let mut guard = call_slot().lock().await;
+            let Some(mut call) = MediaCall::of(&mut guard) else {
+                return;
+            };
+            let switched = either!(&mut call, c => c.set_camera(false, None))
+                .and_then(|()| either!(&mut call, c => c.set_camera(true, Some(path.clone()))));
+            if let Err(e) = switched {
+                tracing::info!("switching camera: {}", short_error(&e));
+            } else {
+                tracing::info!(path, "camera switched");
             }
         });
     }
@@ -6029,6 +6082,15 @@ impl qobject::Backend {
             }
         });
         QString::default()
+    }
+
+    pub fn set_noise_suppression(self: Pin<&mut Self>, on: bool) {
+        self.set_setting(&QString::from("noiseSuppression"), &QString::from(if on { "on" } else { "off" }));
+        teams_cli::calling::apm::set_noise_level(if on {
+            teams_cli::calling::apm::NoiseLevel::High
+        } else {
+            teams_cli::calling::apm::NoiseLevel::Off
+        });
     }
 
     pub fn ubar_arrange(
