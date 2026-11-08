@@ -77,6 +77,58 @@ Teams desktop (winpc, in the same meeting) makes no HTTP or WebSocket request wh
 
 Next: accept the `x-data` line and find the message format on it, or move meetings to the server-offer flow Teams web uses (join with no SDP, answer the media processor's offer, subscribe slots on `applyChannelParameters`).
 
+## The media control plane (MCP): how Teams actually subscribes video
+
+Captured from Teams web (a guest's page, its own data channel hooked) leaving and rejoining the test meeting, 2026-11-07. Teams desktop sends nothing over HTTP either, so it uses the same channel.
+
+**The offer.** Teams' client offer (`mediaContent.contentType: application/sdp-ngc-1.0`, RTP/SAVP dialect) has, bundled:
+
+- mid 0 audio;
+- mid 1 `main-video` sendrecv (its camera; `x-ssrc-range` of 100 for simulcast);
+- mids 2–6 `main-video` sendrecv and mids 7–10 `main-video` recvonly (receive slots; recvonly ones carry `a=x-ssrc-range:1-1`);
+- mid 11 `applicationsharing-video`;
+- mid 12 `m=x-data … RTP/SAVP 127 126` with `a=x-data-protocol:sctp`, `a=sctp-port:5000`, `a=max-message-size:262144`.
+
+Every video line carries `a=x-signaling-fb:* x-message app send:src recv:src,vc`, `goog-remb`, `transport-cc`, `nack`, `nack pli` and `ccm fir`. The join body also lists `mediaContent.mediaDescriptions` ({mid, direction, label} per line) and `applyChannelParameters.multiChannelParameter.mediaParameter` `{"sendSideBWSeed":{"seedValueBitsPerSec":1500000}}`.
+
+**The answer and slots.** Each answered video line has its own `a=x-source-streamid` (e.g. 7761) and SSRC range with an FID pair (e.g. `117238 117288`). The data line's `x-source-streamid` is the client's MCP id.
+
+**The channel.** After DTLS, the client opens an SCTP data channel labelled `main-channel` (default reliable, ordered). Each message is binary: a 16-byte header, then a JSON array of one message.
+
+| bytes | value |
+|---|---|
+| 0 | `0x10` (header length) |
+| 1–2 | `0x0f 0x92` |
+| 3–4 | sequence number, big-endian, per sender, from 0 |
+| 5 | `0x00` |
+| 6–9, 10 | sender id (i32), `0x01` |
+| 11–14, 15 | receiver id (i32), `0x01` |
+
+The MP's id is `0xfffffffc`. The client is `0xfffffffe` until the `ack`, then its data line's `x-source-streamid`.
+
+**Messages** (client → MP unless marked):
+
+```json
+{"type":"syn","client_capabilities":["dsh","bwe","sr","ssbwe","leave","vdclc","heartbeat"]}
+← {"type":"ack","receive_capabilities":["sr","ssbwe","leave","heartbeat"],"send_capabilities":["bwe","dsh","sr_res","heartbeat","vdclc"]}
+{"type":"heartbeat","state":0}                      (both ways, every second)
+← {"type":"bwe","bw":1500000,"video_bw":1271458}   (downlink estimate)
+{"type":"sr","controlVideoStreaming":{"sequenceNumber":43,"controlInfo":{"sourceId":2244,"streamMsid":7761,
+   "fmtParams":[{"max-fs":8160,"max-mbps":244800,"max-fps":3000,"profile-level-id":"64001f"}]}}}
+← {"type":"sr_res","result":"ok","sequenceNumber":43}
+← {"type":"vdclc","sourceId":7761,"fmtParamsList":["KeyFrame=1;max-br=586;max-fps=3000.000000;max-fs=920;max-mbps=27600;rid=1;sequence-number=0;ssrc=…", …]}
+   (what to send of our own camera, per simulcast layer)
+{"type":"ssbwe","BwMessage":[{"streamMsid":7761,"bw":750000}]}
+```
+
+- `sourceId` is the sender's roster `main-video` `sourceId`.
+- `streamMsid` is the receive slot's `x-source-streamid`.
+- `max-fps` is in hundredths.
+- `dsh` (dominant speaker history) is announced as an MP send capability.
+- The guest also posts `maxVideoSendCapabilities` per sending mid to `applyChannelParameters` (via the `cc/v1/mcProxy` link): `{"applyChannelParameters":{"multiChannelParameter":{"mids":["1"],"mediaParameter":"{\"maxVideoSendCapabilities\":{\"caps\":{\"max-width\":1280,\"max-height\":1280,\"max-fps\":30,\"max-streams\":3,\"max-layers\":3,\"sequence-number\":24}}}"}}}`.
+
+The MP re-offers after lobby admission (`call/mediaRenegotiation`); the client answers on the `negotiations` link, and a new MCP session (new `syn`) starts on the new data channel.
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.
