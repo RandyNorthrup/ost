@@ -1812,6 +1812,7 @@ impl WebRtcAudioSession {
                 tracing::info!(
                     stream_id,
                     slots = offer.slots.len(),
+                    share = ?offer.share_slot,
                     "Opening the media control plane"
                 );
                 let (tx, events) =
@@ -2062,8 +2063,9 @@ type KeyframeSlot = Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>;
 async fn recv_loop(ctx: RecvCtx) {
     let mut buf = vec![0u8; 2048];
     let mut announced = false;
-    // Streams nothing took, noted once each (diagnostics).
-    let mut unrouted = std::collections::HashSet::<(u32, u8)>::new();
+    // Video streams seen, and streams nothing took, noted once each
+    // (diagnostics).
+    let mut noted = std::collections::HashSet::<(u32, u8)>::new();
     loop {
         let Ok((len, from)) = ctx.socket.recv_from(&mut buf).await else {
             continue;
@@ -2166,6 +2168,9 @@ async fn recv_loop(ctx: RecvCtx) {
                     .find(|v| v.pt == pt && v.range.as_ref().is_some_and(|r| in_range(r, ssrc)))
                     .or_else(|| ctx.video.iter().find(|v| v.pt == pt && v.range.is_none()))
                 {
+                    if noted.insert((ssrc, pt)) {
+                        tracing::debug!(ssrc, pt, to = stream.rx.key(), "video stream routed");
+                    }
                     if let Ok(pkt) = rtp::decode(&plain) {
                         stream.ssrc.store(pkt.ssrc, Ordering::Relaxed);
                         stream.rx.push(super::webrtc_video::VideoPacket {
@@ -2179,7 +2184,7 @@ async fn recv_loop(ctx: RecvCtx) {
                 }
                 if pt != PT_PCMU
                     && let Ok(pkt) = rtp::decode(&plain)
-                    && unrouted.insert((pkt.ssrc, pt))
+                    && noted.insert((pkt.ssrc, pt))
                 {
                     tracing::debug!(ssrc = pkt.ssrc, pt, len, "RTP stream nothing receives");
                 }

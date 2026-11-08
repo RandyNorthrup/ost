@@ -168,6 +168,11 @@ impl VideoReceiver {
         }
     }
 
+    /// The frame key it publishes under.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
     /// Queue a packet (dropped if the decoder is behind).
     pub fn push(&self, p: VideoPacket) {
         if self.tx.try_send(p).is_err() {

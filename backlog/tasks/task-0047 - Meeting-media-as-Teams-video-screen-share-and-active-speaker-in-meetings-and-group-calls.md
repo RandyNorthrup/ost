@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-08T10:35:00Z'
+updated_date: '2026-11-08T11:29:00Z'
 labels:
   - calls
   - meetings
@@ -26,7 +26,7 @@ Calls/meetings P1 gaps (docs/parity/gaps-calls-meetings.md): meetings and group 
 <!-- AC:BEGIN -->
 - [x] #1 Video tiles in meetings/group calls (subscriptions via the media processor), self view, Teams' grid fitting
 - [x] #2 Active speaker from Teams' speaker updates drives Speaker view
-- [ ] #3 Share and receive screen share in meetings and group calls
+- [x] #3 Share and receive screen share in meetings and group calls
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -52,4 +52,7 @@ Calls/meetings P1 gaps (docs/parity/gaps-calls-meetings.md): meetings and group 
 
 - 2026-11-08: Sending in meetings as Teams does: camera and share lines sendrecv from the join, switched by UpdateMediaDescriptions only (both lines each time; share sendonly + negotiationTag "<callId>;ss_<n>"). Joins of an ongoing call use its id as chain id (thread liveness conversationId). controlVideoStreaming events (a viewer starts watching our screen) cap the encoder and force a keyframe. The processor answers H.264 as 42C01E; recognising it makes the share go out with the answer's PT 107 (was 102, dropped). Live from a Teams web guest: OST's shared window shown, then gallery on stop; camera on then off. Commit 446b44f.
 - Still open for #3: a live check in a group call (same code path as meetings). Also open: voice-level outline from audio levels, gallery pages beyond the gallery size.
+
+- 2026-11-08 (group call): Meet now in "OST group test" with Randy's Teams web (camera and mic off): OST's shared kitty window showed in Teams web (controlVideoStreaming capped the encoder as the bandwidth rose); Randy's shared example.com tab showed in OST's presenting layout, twice in a row. Logs once per video stream where it is routed.
+- Gallery pages (gallery size, ‹ n/m ›) and Teams' name tags (12 px, guest glyph, filled mic-off), measured on winpc: commit 58fb147. Voice-level outline from the mix's CSRCs: 7c6c7e0.
 <!-- SECTION:NOTES:END -->
