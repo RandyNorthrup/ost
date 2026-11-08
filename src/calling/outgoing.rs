@@ -54,6 +54,9 @@ pub struct OutgoingCall {
     /// The conversation controller (`conversationController`): deleting it
     /// ends the meeting for everyone.
     controller: Option<String>,
+    /// The meeting's join link as Teams shares it (`meetingDetails`
+    /// shortJoinUrl, else joinUrl): the People pane's Share invite.
+    invite_url: Option<String>,
 }
 
 /// Someone waiting in a meeting's lobby.
@@ -495,6 +498,11 @@ impl OutgoingCall {
         }
     }
 
+    /// The meeting's link to share (Teams' Share invite).
+    pub fn invite_url(&self) -> Option<&str> {
+        self.invite_url.as_deref()
+    }
+
     /// End the meeting for everyone (Teams' End meeting: a DELETE of the
     /// conversation controller saying ConversationEndForAllInitiated), then
     /// stop our media.
@@ -657,6 +665,24 @@ fn end_for_all_body(me: &serde_json::Value) -> serde_json::Value {
         "conversationTransactionEnd": { "reason": "noError", "code": 0, "phrase": "ConversationEndForAllInitiated" },
         "callTransactionEnd": reason,
     })
+}
+
+/// The meeting's link to share from the create response's meetingDetails:
+/// the short one (teams.microsoft.com/meet/…) when there is one, as Teams
+/// shares it, else the join URL.
+fn invite_url(create_response: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(create_response).ok()?;
+    let details = v
+        .pointer("/meetingDetails")
+        .or_else(|| v.pointer("/conversationResponse/meetingDetails"))?;
+    if let Some(o) = details.as_object() {
+        tracing::debug!(keys = ?o.keys().collect::<Vec<_>>(), "meetingDetails");
+    }
+    ["shortJoinUrl", "joinUrl"]
+        .iter()
+        .filter_map(|k| details.get(*k).and_then(|u| u.as_str()))
+        .find(|u| u.starts_with("https://teams.microsoft.com/"))
+        .map(str::to_string)
 }
 
 /// The conversation controller URL from the create response.
@@ -1025,6 +1051,8 @@ async fn start(
     );
     let remove_link = conversation_link(&created.response_body, "removeParticipant");
     let controller = controller_link(&created.response_body);
+    let invite_url = invite_url(&created.response_body);
+    tracing::info!(has_invite = invite_url.is_some(), "meeting link");
     tracing::info!(
         has_controller = controller.is_some(),
         "conversation controller"
@@ -1139,6 +1167,7 @@ async fn start(
         remove_link,
         properties_link,
         controller,
+        invite_url,
     })
 }
 

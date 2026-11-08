@@ -682,6 +682,7 @@ Window {
         onDenyLobby: (id, name) => backend.denyFromLobby(id, name)
         onAdmitAllLobby: backend.admitAllFromLobby()
         onEndMeeting: backend.endMeeting()
+        inviteUrl: backend.callInviteUrl
         selfId: backend.userMri
         // Chat: the 1:1 chat with the person in the call, or the meeting chat.
         onOpenChat: {
@@ -1122,8 +1123,14 @@ Window {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-people.png")))
                 // --join-end: open Leave's menu (captured next), then End meeting.
                 if (Qt.application.arguments.indexOf("--join-end") >= 0) callWindow.leaveMenuForTest()
+                // --join-invite: open Share invite (captured next).
+                if (Qt.application.arguments.indexOf("--join-invite") >= 0) callWindow.inviteForTest()
                 // --join-audio-options: open the Mic options (captured next).
                 if (Qt.application.arguments.indexOf("--join-audio-options") >= 0) callWindow.audioOptionsForTest()
+            } else if (step === 14 + window.joinStay && Qt.application.arguments.indexOf("--join-invite") >= 0) {
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-invite.png")))
+            } else if (step === 15 + window.joinStay && Qt.application.arguments.indexOf("--join-invite") >= 0) {
+                backend.hangUp()
             } else if (step === 14 + window.joinStay && Qt.application.arguments.indexOf("--join-audio-options") >= 0) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-audio.png")))
             } else if (step === 15 + window.joinStay && Qt.application.arguments.indexOf("--join-audio-options") >= 0) {

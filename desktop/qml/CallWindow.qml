@@ -29,6 +29,8 @@ Window {
     property bool meeting: false
     /// The meeting's participants (from the roster): [{id, name, role}].
     property var roster: []
+    /// The meeting's link to share (Share invite).
+    property string inviteUrl: ""
     /// Who waits in the meeting's lobby: [{id, name, suspected}].
     property var lobby: []
     signal admitLobby(string id, string name, bool notBot)
@@ -547,6 +549,8 @@ Window {
             onAdmitAll: win.admitAllLobby()
             onAdmitEach: list => list.forEach(p => win.admitLobby(p.id, p.name, false))
             onDenyEach: list => list.forEach(p => win.denyLobby(p.id, p.name))
+            inviteUrl: win.inviteUrl
+            onShareInvite: inviteDialog.open()
         }
     }
 
@@ -609,6 +613,7 @@ Window {
         }
     }
     EndMeetingDialog { id: endAsk; onConfirmed: win.endMeeting() }
+    InviteDialog { id: inviteDialog; link: win.inviteUrl }
 
     // Mic ▾: Teams' audio options, right-aligned to the chevron at the
     // bar's bottom edge, at most 5 px short of the window's bottom.
@@ -821,6 +826,7 @@ Window {
     function dialPadForTest() { dialPad.open() }
     function leaveMenuForTest() { leaveMenu.open() }
     function audioOptionsForTest() { openAudioOptions(micButtonM) }
+    function inviteForTest() { side = "people"; inviteDialog.open() }
     function closeDialPadForTest() { dialPad.close() }
     function pressForTest(keys) { for (const k of keys) dialPad.press(k) }
 

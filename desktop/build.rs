@@ -66,6 +66,7 @@ fn main() {
         "qml/PeoplePane.qml",
         "qml/EndMeetingDialog.qml",
         "qml/AudioFlyout.qml",
+        "qml/InviteDialog.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

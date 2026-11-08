@@ -13,6 +13,9 @@ Rectangle {
     /// In the lobby: [{id, name, suspected}].
     property var lobby: []
     property bool meeting: true
+    /// The meeting's link to share; Teams' Share invite shows with it.
+    property string inviteUrl: ""
+    signal shareInvite()
     signal closed()
     signal admit(string id, string name)
     /// A suspected guest: Teams asks first.
@@ -115,9 +118,30 @@ Rectangle {
         Rectangle { visible: field.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
     }
 
+    // "Share invite" (openSharePanelButton): 319.3 x 31.3 at 20.7, 119;
+    // 14 semibold #242424 on white, a 0.67 NeutralStroke1 edge, the share
+    // glyph before the label, both centred.
+    Rectangle {
+        id: shareInvite
+        visible: root.meeting && root.inviteUrl.length > 0
+        x: 20.7; y: 119; width: 319.3; height: 31.3; radius: 4
+        color: shareHover.hovered ? theme.menuHover : theme.surface
+        border.color: theme.stroke; border.width: 0.67
+        Row {
+            anchors.centerIn: parent; spacing: 6
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-invite-20"; size: 20; color: theme.text }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: "Share invite"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        }
+        HoverHandler { id: shareHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.shareInvite() }
+        Accessible.role: Accessible.Button
+        Accessible.name: "Share invite"
+    }
+
     Flickable {
         id: list
-        y: search.y + search.height + 10
+        // The roster starts 155.3 down below Share invite (measured).
+        y: shareInvite.visible ? 155.3 : search.y + search.height + 10
         width: parent.width; height: parent.height - y
         contentHeight: column.height
         clip: true

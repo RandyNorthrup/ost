@@ -125,6 +125,8 @@ pub mod qobject {
         #[qproperty(bool, call_hand_raised)]
         #[qproperty(QString, call_options_url)]
         #[qproperty(QString, call_chat_url)]
+        /// The meeting's link to share (Teams' Share invite), once joined.
+        #[qproperty(QString, call_invite_url)]
         #[qproperty(bool, call_has_audio)]
         /// "Randy Northrup is typing" for the open chat, or "".
         /// Bumped when emoticon images or the catalogue arrive.
@@ -937,6 +939,7 @@ pub struct BackendRust {
     call_hand_raised: bool,
     call_options_url: QString,
     call_chat_url: QString,
+    call_invite_url: QString,
     call_has_audio: bool,
     typing_text: QString,
     emoticons_version: i32,
@@ -2718,6 +2721,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().roster.clear();
         self.as_mut().set_call_roster_json(QString::from("[]"));
         self.as_mut().set_call_lobby_json(QString::from("[]"));
+        self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
             .set_call_thread_id(QString::from(chat_id.as_str()));
         self.as_mut().set_call_meeting(true);
@@ -2781,6 +2785,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().roster.clear();
         self.as_mut().set_call_roster_json(QString::from("[]"));
         self.as_mut().set_call_lobby_json(QString::from("[]"));
+        self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
             .set_call_thread_id(QString::from(link.thread_id.as_str()));
         self.as_mut().set_call_options_url(QString::from(
@@ -2804,12 +2809,15 @@ impl qobject::Backend {
                 Ok(call) => {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
+                    let invite = call.invite_url().unwrap_or_default().to_string();
                     tracing::info!(has_audio, can_dtmf, "meeting joined");
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger();
                     let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_call_invite_url(QString::from(invite.as_str()));
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_state(QString::from("connected"));
