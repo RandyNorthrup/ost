@@ -40,6 +40,37 @@ Window {
     signal endMeeting()
     /// Teams' Mute all (after its confirmation).
     signal muteAll()
+    /// Meeting reactions (Teams: like, heart, applause, laugh, surprised).
+    signal sendReaction(string name)
+    /// Reactions showing now: {mri: {name, until}} (Teams keeps one on the
+    /// sender's tile for 4.25 s).
+    property var reactions: ({})
+    function showReaction(mri, name) {
+        const r = Object.assign({}, reactions)
+        r[(mri || "").toLowerCase()] = { name: name, until: Date.now() + 4250 }
+        reactions = r
+    }
+    function reactionOf(mri) {
+        const r = reactions[(mri || "").toLowerCase()]
+        return r && r.until > Date.now() ? r.name : ""
+    }
+    Timer {
+        running: Object.keys(win.reactions).length > 0
+        interval: 250; repeat: true
+        onTriggered: {
+            const now = Date.now(), r = {}
+            for (const k in win.reactions) if (win.reactions[k].until > now) r[k] = win.reactions[k]
+            win.reactions = r
+        }
+    }
+    // Teams' reaction pictures: the menu's 64 px V2 and the tile's 168 px V4.
+    readonly property var reactionAssets: ({ like: "yes", heart: "heart", applause: "clap", laugh: "laugh", surprised: "surprised" })
+    function reactionUrl(name, big) {
+        const a = reactionAssets[name]
+        if (!a) return ""
+        backend.emoticonsVersion
+        return backend.cardImage("https://statics.teams.cdn.office.net/evergreen-assets/skype/v2/" + a + (big ? "V4-3D/168.png" : "V2-3D/64.png"))
+    }
     // Teams offers Mute all in meetings to organizers and presenters
     // while someone else is connected and not muted by the meeting.
     readonly property bool canMuteAll: meeting && ["organizer", "presenter"].indexOf(((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase()) >= 0
@@ -169,7 +200,13 @@ Window {
                 checked: win.handRaised
                 onClicked: win.toggleHand()
             }
-            BarButton { icon: "call-react"; label: "React"; enabled: false }
+            BarButton {
+                id: reactButton
+                icon: "call-react"; label: "React"
+                enabled: win.live
+                checked: reactMenu.visible
+                onClicked: reactMenu.open()
+            }
             BarButton { id: viewBtnM; icon: "call-view"; label: "View"; checked: viewMenu.visible && viewMenu.parent === viewBtnM; onClicked: { viewMenu.parent = viewBtnM; viewMenu.open() } }
             // Controls: the meeting options (organizers), as Teams opens them.
             BarButton { visible: win.organizer; icon: "call-controls"; label: "Controls"; enabled: win.optionsUrl.length > 0; onClicked: Qt.openUrlExternally(win.optionsUrl) }
@@ -368,6 +405,7 @@ Window {
                         Accessible.role: Accessible.StaticText
                         Accessible.name: "Hand raised"
                     }
+                    ReactionShown { mri: parent.modelData.id }
                     Rectangle {
                         anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
                         width: tileName.implicitWidth + 12; height: 24; radius: 4
@@ -502,6 +540,7 @@ Window {
             }
             border.color: theme.dividerSoft
             Avatar { visible: !selfVideo.visible; anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
+            ReactionShown { z: 3; mri: win.selfId }
             // Your camera, mirrored as Teams shows your own video.
             VideoFrame {
                 id: selfVideo
@@ -642,6 +681,49 @@ Window {
         maxHeight: win.height - 60 - 5
     }
     function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
+
+    // React (reaction-menu-button-toolbox, measured on winpc): a 249.3 x
+    // 73.3 surface under the React button, padding 16, five 32 px buttons
+    // 12 apart holding Teams' 24 px reaction pictures.
+    Popup {
+        id: reactMenu
+        parent: reactButton
+        x: 4; y: 59.3
+        width: 249.3; height: 73.3
+        padding: 0
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        Row {
+            x: 20.7; y: 20.7; spacing: 12
+            Repeater {
+                model: [{ n: "like", t: "Like" }, { n: "heart", t: "Love" }, { n: "applause", t: "Applause" }, { n: "laugh", t: "Laugh" }, { n: "surprised", t: "Surprised" }]
+                Rectangle {
+                    required property var modelData
+                    width: 32; height: 32; radius: 4
+                    color: rmHover.hovered ? theme.menuHover : "transparent"
+                    Image { x: 4; y: 4; width: 24; height: 24; smooth: true; source: win.reactionUrl(parent.modelData.n, false) }
+                    HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { reactMenu.close(); win.sendReaction(parent.modelData.n) } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.t
+                }
+            }
+        }
+    }
+    function reactForTest(name) { sendReaction(name) }
+
+    // A reaction on someone's tile: Teams' 84 px picture, centred, its top
+    // at the tile's middle, while it lasts.
+    component ReactionShown: Image {
+        property string mri
+        readonly property string reaction: { win.reactions; return win.reactionOf(mri) }
+        visible: reaction.length > 0
+        width: 84; height: 84
+        x: (parent.width - width) / 2; y: parent.height / 2
+        smooth: true
+        source: reaction ? win.reactionUrl(reaction, true) : ""
+        Accessible.role: Accessible.Graphic
+        Accessible.name: reaction
+    }
 
     component Divider: Item {
         width: 17; height: 60

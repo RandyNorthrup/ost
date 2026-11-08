@@ -379,6 +379,9 @@ pub mod qobject {
         /// Mute everyone else in the meeting (Teams' Mute all).
         #[qinvokable]
         fn mute_all(self: Pin<&mut Backend>);
+        /// Send a meeting reaction: like, heart, applause, laugh, surprised.
+        #[qinvokable]
+        fn send_reaction(self: Pin<&mut Backend>, name: &QString);
 
         /// Load calendar events between two UTC instants (ISO 8601).
         #[qinvokable]
@@ -497,6 +500,11 @@ pub mod qobject {
         /// A profile or team picture asked for with photo_for is ready.
         #[qsignal]
         fn photo_ready(self: Pin<&mut Backend>, id: QString);
+
+        /// Someone in the meeting reacted (Teams' meeting reactions):
+        /// their MRI and the reaction's name.
+        #[qsignal]
+        fn meeting_reaction(self: Pin<&mut Backend>, mri: QString, name: QString);
 
         /// The picture for "me", a user ("8:orgid:<oid>" or "<oid>") or a
         /// team ("team:<group id>"): a file URL, or "" for initials. Starts
@@ -1706,6 +1714,15 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let _ = qt.queue(move |mut this| this.as_mut().notify_meeting_start(start, qt2));
         return;
     }
+    // Meeting reactions: show them on the sender's tile.
+    if let Some(reactions) = teams_cli::calling::roster::meeting_reactions(json) {
+        for (mri, name) in reactions {
+            let _ = qt.queue(move |this| {
+                this.meeting_reaction(QString::from(mri.as_str()), QString::from(name.as_str()))
+            });
+        }
+        return;
+    }
     // The lobby count changed: ask who waits there (Teams does the same).
     if teams_cli::calling::roster::lobby_count(json).is_some() {
         let qt2 = qt.clone();
@@ -2864,6 +2881,19 @@ impl qobject::Backend {
             let result = async { CallAuth::load().await?.hang_up(call).await }.await;
             if let Err(e) = result {
                 tracing::warn!("hang up failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn send_reaction(self: Pin<&mut Self>, name: &QString) {
+        let name = name.to_string();
+        runtime().spawn(async move {
+            let result = match call_slot().lock().await.outgoing.as_ref() {
+                Some(call) => call.send_reaction(&name).await,
+                None => return,
+            };
+            if let Err(e) = result {
+                tracing::warn!("reaction failed: {}", short_error(&e));
             }
         });
     }

@@ -637,6 +637,16 @@ Window {
             }
         }
     }
+    Connections {
+        target: backend
+        function onMeetingReaction(mri, name) {
+            callWindow.showReaction(mri, name)
+            // --join-watch-reaction: capture the first reaction from someone else.
+            if (Qt.application.arguments.indexOf("--join-watch-reaction") >= 0 && mri.toLowerCase() !== backend.userMri.toLowerCase())
+                reactionShot.restart()
+        }
+    }
+    Timer { id: reactionShot; interval: 400; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-their-reaction.png"))) }
     CallWindow {
         id: callWindow
         visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0
@@ -683,6 +693,7 @@ Window {
         onAdmitAllLobby: backend.admitAllFromLobby()
         onEndMeeting: backend.endMeeting()
         onMuteAll: backend.muteAll()
+        onSendReaction: name => backend.sendReaction(name)
         inviteUrl: backend.callInviteUrl
         selfId: backend.userMri
         // Chat: the 1:1 chat with the person in the call, or the meeting chat.
@@ -1101,6 +1112,12 @@ Window {
                 console.warn("JOIN admitting", JSON.stringify(lobby))
                 // --join-admit-notbot: as if "This isn't a bot" was ticked.
                 if (lobby.length) backend.admitFromLobby(lobby[0].id, lobby[0].name, Qt.application.arguments.indexOf("--join-admit-notbot") >= 0)
+            } else if (step === 10 && Qt.application.arguments.indexOf("--join-react") >= 0) {
+                // --join-react: send a Like, capture once it's back (step 12).
+                backend.sendReaction("like")
+            } else if (step === 12 && Qt.application.arguments.indexOf("--join-react") >= 0) {
+                console.warn("JOIN reactions", JSON.stringify(callWindow.reactions))
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-react.png")))
             } else if (step === 7 && Qt.application.arguments.indexOf("--join-mute-all") >= 0) {
                 // --join-mute-all: admit each guest waiting (Admit all leaves
                 // suspected ones), then (step 10) Mute all.

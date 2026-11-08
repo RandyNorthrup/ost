@@ -59,6 +59,8 @@ pub struct OutgoingCall {
     invite_url: Option<String>,
     /// The conversation's mute link (Mute all).
     mute_link: Option<String>,
+    /// The conversation's sendMessage link (meeting reactions).
+    message_link: Option<String>,
 }
 
 /// Someone waiting in a meeting's lobby.
@@ -500,6 +502,23 @@ impl OutgoingCall {
         }
     }
 
+    /// Send a meeting reaction ("like", "heart", "applause", "laugh",
+    /// "surprised"): Teams' proxied Reaction message to everyone.
+    pub async fn send_reaction(&self, name: &str) -> Result<()> {
+        let link = self
+            .message_link
+            .clone()
+            .context("This meeting doesn't take reactions")?;
+        let body = reaction_body(
+            &self.me.0,
+            name,
+            &uuid::Uuid::new_v4().to_string(),
+            &uuid::Uuid::new_v4().to_string(),
+        );
+        cc_post(&self.http, &self.skype_token, &link, &body, "Reaction").await?;
+        Ok(())
+    }
+
     /// Mute everyone else (Teams' Mute all: the conversation's mute link
     /// with scope "all" and no one named).
     pub async fn mute_all(&self) -> Result<()> {
@@ -664,6 +683,31 @@ fn lobby_people(reply: &serde_json::Value) -> Vec<LobbyPerson> {
         serde_json::Value::Object(m) => m.iter().map(|(id, p)| person(id, p)).collect(),
         _ => Vec::new(),
     }
+}
+
+/// Teams' SendProxiedMessage body for a reaction (scope "all").
+fn reaction_body(
+    me: &serde_json::Value,
+    name: &str,
+    operation: &str,
+    id: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "from": {
+            "displayName": me["displayName"],
+            "endpointId": me["endpointId"],
+            "id": me["id"],
+            "languageId": me.get("languageId").cloned().unwrap_or(serde_json::json!("")),
+            "participantId": me["participantId"],
+        },
+        "messageContent": [{
+            "operationId": operation,
+            "payload": { "values": [{ "id": id, "name": name, "count": 1, "attributes": {} }] },
+            "scope": "all",
+            "to": [],
+            "type": "Reaction",
+        }],
+    })
 }
 
 /// Teams' MuteAllSync body: scope "all" (everyone but you) with an empty
@@ -1078,6 +1122,7 @@ async fn start(
     let controller = controller_link(&created.response_body);
     let invite_url = invite_url(&created.response_body);
     let mute_link = conversation_link(&created.response_body, "mute");
+    let message_link = conversation_link(&created.response_body, "sendMessage");
     tracing::info!(has_invite = invite_url.is_some(), "meeting link");
     tracing::info!(
         has_controller = controller.is_some(),
@@ -1195,6 +1240,7 @@ async fn start(
         controller,
         invite_url,
         mute_link,
+        message_link,
     })
 }
 
@@ -1218,6 +1264,17 @@ mod tests {
         assert!(!people[1].suspected);
         // Only anonymous guests are screened.
         assert!(!people[2].suspected);
+    }
+
+    #[test]
+    fn reactions_go_to_everyone() {
+        let me = serde_json::json!({ "id": "8:orgid:me", "displayName": "Me", "endpointId": "e", "participantId": "p" });
+        let body = reaction_body(&me, "heart", "op", "r");
+        let m = &body["messageContent"][0];
+        assert_eq!(m["type"], "Reaction");
+        assert_eq!(m["scope"], "all");
+        assert_eq!(m["payload"]["values"][0]["name"], "heart");
+        assert_eq!(body["from"]["id"], "8:orgid:me");
     }
 
     #[test]

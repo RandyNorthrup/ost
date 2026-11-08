@@ -101,6 +101,45 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
     )
 }
 
+/// Meeting reactions in a call event (Teams' proxied "Reaction" messages on
+/// `conversation/receiveMessage/`): (sender MRI, reaction name such as
+/// "like", "heart", "applause", "laugh", "surprised").
+pub fn meeting_reactions(json: &str) -> Option<Vec<(String, String)>> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    if !v
+        .get("callAgentPath")?
+        .as_str()?
+        .starts_with("conversation/receiveMessage")
+    {
+        return None;
+    }
+    let body = v.get("body")?;
+    let messages: Vec<&serde_json::Value> =
+        match body.get("messageContent").and_then(|m| m.as_array()) {
+            Some(list) => list.iter().collect(),
+            None => vec![body],
+        };
+    let out: Vec<(String, String)> = messages
+        .into_iter()
+        .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("Reaction"))
+        .flat_map(|m| {
+            let from = m
+                .pointer("/from/id")
+                .and_then(|i| i.as_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            m.pointer("/payload/values")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|r| r.get("name")?.as_str().map(str::to_string))
+                .map(move |name| (from.clone(), name))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    Some(out)
+}
+
 /// How many wait in the lobby, when a roster update says
 /// (`body.participantCounts.lobbyParticipants`).
 pub fn lobby_count(json: &str) -> Option<u64> {
@@ -160,6 +199,22 @@ mod tests {
         assert!(by("8:teamsvisitor:311b").guest && by("8:teamsvisitor:311b").suspected);
         assert!(by("8:teamsvisitor:43cf").guest && !by("8:teamsvisitor:43cf").suspected);
         assert!(!by("8:orgid:4287").guest);
+    }
+
+    #[test]
+    fn reactions_come_from_proxied_messages() {
+        let json = r#"{"callAgentPath":"conversation/receiveMessage/","body":{"messageContent":[
+            {"operationId":"o1","type":"Reaction","payload":{"values":[{"id":"r1","name":"like","count":1,"attributes":{}}]},
+             "from":{"id":"8:orgid:ABC","participantId":"p","endpointId":"e"}},
+            {"operationId":"o2","type":"LiveInking","payload":{}}]}}"#;
+        assert_eq!(
+            meeting_reactions(json).unwrap(),
+            vec![("8:orgid:abc".to_string(), "like".to_string())]
+        );
+        assert!(
+            meeting_reactions(r#"{"callAgentPath":"conversation/rosterUpdate/","body":{}}"#)
+                .is_none()
+        );
     }
 
     #[test]
