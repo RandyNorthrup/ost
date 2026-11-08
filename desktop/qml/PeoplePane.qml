@@ -10,6 +10,12 @@ Rectangle {
     id: root
     /// In the call: [{name, id, you, mutedNow, role, hand}].
     property var people: []
+    /// The call's chat members ([{mri, name, me, presence}]): those not in
+    /// the call show under "People added to the chat (n)", as Teams lists them.
+    property var chatMembers: []
+    /// Teams' shared display (Optimize for room) pane: the list only, no
+    /// close, search, Share invite, lobby or section actions.
+    property bool display: false
     /// In the lobby: [{id, name, suspected}].
     property var lobby: []
     property bool meeting: true
@@ -45,7 +51,7 @@ Rectangle {
         const waiting = lobby.filter(p => !p.suspected && matches(p.name))
         const threats = lobby.filter(p => p.suspected && matches(p.name))
         const lobbyShown = waiting.length + threats.length
-        if (lobbyShown > 0) {
+        if (lobbyShown > 0 && !display) {
             const split = threats.length > 0
             out.push({ kind: "section", key: "lobby", title: "Waiting in lobby (" + lobbyShown + ")",
                        action: !split && lobbyShown > 1 ? "Admit all" : "", level: 0 })
@@ -65,8 +71,14 @@ Rectangle {
             }
         }
         const here = people.filter(p => matches(p.name))
-        out.push({ kind: "section", key: "here", title: (meeting ? "In this meeting (" : "In this call (") + here.length + ")", action: canMuteAll ? "Mute all" : "", level: 0 })
+        out.push({ kind: "section", key: "here", title: (meeting ? "In this meeting (" : "In this call (") + here.length + ")", action: canMuteAll && !display ? "Mute all" : "", level: 0 })
         if (!collapsed.here) here.forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+        const inCall = people.map(p => (p.id || "").toLowerCase())
+        const away = chatMembers.filter(m => !m.me && inCall.indexOf((m.mri || "").toLowerCase()) < 0 && matches(m.name))
+        if (meeting && away.length > 0) {
+            out.push({ kind: "section", key: "chat", title: "People added to the chat (" + away.length + ")", action: "", level: 0 })
+            if (!collapsed.chat) away.forEach(m => out.push({ kind: "person", p: { id: m.mri, name: m.name, presence: m.presence || "", chatOnly: true }, level: 1 }))
+        }
         return out
     }
 
@@ -82,6 +94,7 @@ Rectangle {
             color: theme.text
         }
         Rectangle {
+            visible: !root.display
             x: parent.width - 52; y: 13.7; width: 32; height: 30; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
@@ -96,6 +109,7 @@ Rectangle {
     // "Type a name"
     Rectangle {
         id: search
+        visible: !root.display
         x: 20.7; y: 77; width: 319.3; height: 32; radius: 4
         color: theme.surface
         TextInput {
@@ -126,7 +140,7 @@ Rectangle {
     // glyph before the label, both centred.
     Rectangle {
         id: shareInvite
-        visible: root.meeting && root.inviteUrl.length > 0
+        visible: root.meeting && root.inviteUrl.length > 0 && !root.display
         x: 20.7; y: 119; width: 319.3; height: 31.3; radius: 4
         color: shareHover.hovered ? theme.menuHover : theme.surface
         border.color: theme.stroke; border.width: 0.67
@@ -144,7 +158,7 @@ Rectangle {
     Flickable {
         id: list
         // The roster starts 155.3 down below Share invite (measured).
-        y: shareInvite.visible ? 155.3 : search.y + search.height + 10
+        y: root.display ? 77 : shareInvite.visible ? 155.3 : search.y + search.height + 10
         width: parent.width; height: parent.height - y
         contentHeight: column.height
         clip: true
@@ -261,7 +275,7 @@ Rectangle {
             property var entry: ({ p: {} })
             readonly property var p: entry.p || ({})
             height: 48
-            Avatar { visible: !p.suspected; x: 21.7; y: 8; size: 32; name: p.name || ""; photoId: p.guest ? "" : (p.id || "") }
+            Avatar { visible: !p.suspected; x: 21.7; y: 8; size: 32; name: p.name || ""; photoId: p.guest ? "" : (p.id || ""); presence: p.presence || "" }
             GuestAvatar { visible: !!p.suspected; x: 21.7; y: 8; personId: p.id || "" }
             Column {
                 x: 65.7; anchors.verticalCenter: parent.verticalCenter
@@ -296,6 +310,7 @@ Rectangle {
                 text: "\u270B"; font.pixelSize: 16
             }
             FluentIcon {
+                visible: !p.chatOnly
                 x: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
                 name: p.mutedNow ? "mic-off-20" : "roster-mic-20"; size: 20
                 color: theme.text

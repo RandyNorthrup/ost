@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Window
 import QtWebEngine
 import com.ost.desktop
-import Qt.labs.platform as Platform
 
 Window {
     id: window
@@ -151,37 +150,22 @@ Window {
         const s = titleBar.statuses.find(x => x.key.toLowerCase() === (p || "").toLowerCase())
         return s ? (s.key === "Away" ? "Away" : s.key === "Offline" ? "Offline" : s.label) : (p || "Available")
     }
-    Platform.SystemTrayIcon {
-        id: tray
-        visible: backend.signedIn && Qt.application.arguments.length <= 1
-        icon.source: "../assets/tray/ost-" + window.trayKind + ".png"
-        tooltip: "OST"
-        onActivated: reason => { if (reason === Platform.SystemTrayIcon.Trigger) window.showRaised() }
-        menu: Platform.Menu {
-            Platform.MenuItem {
-                text: backend.userName + (backend.orgName ? " | " + backend.orgName : "")
-                icon.source: "../assets/tray/ost-" + window.trayKind + ".png"
-                onTriggered: window.showRaised()
-            }
-            Platform.Menu {
-                title: window.trayStatusLabel(window.myPresence)
-                icon.source: "../assets/tray/presence-" + window.trayKind + "-16.svg"
-                Platform.MenuItem { text: "Available"; icon.source: "../assets/tray/presence-available-16.svg"; onTriggered: backend.setMyStatus("Available") }
-                Platform.MenuItem { text: "Busy"; icon.source: "../assets/tray/presence-busy-16.svg"; onTriggered: backend.setMyStatus("Busy") }
-                Platform.MenuItem { text: "Do not disturb"; icon.source: "../assets/tray/presence-dnd-16.svg"; onTriggered: backend.setMyStatus("DoNotDisturb") }
-                Platform.MenuItem { text: "Be right back"; icon.source: "../assets/tray/presence-away-16.svg"; onTriggered: backend.setMyStatus("BeRightBack") }
-                Platform.MenuItem { text: "Appear away"; icon.source: "../assets/tray/presence-away-16.svg"; onTriggered: backend.setMyStatus("Away") }
-                Platform.MenuItem { text: "Appear offline"; icon.source: "../assets/tray/presence-offline-16.svg"; onTriggered: backend.setMyStatus("Offline") }
-                Platform.MenuSeparator {}
-                Platform.MenuItem { text: "Reset Status"; icon.source: "../assets/tray/reset-16.svg"; onTriggered: backend.setMyStatus("Reset") }
-            }
-            Platform.MenuSeparator {}
-            Platform.Menu {
-                title: "Help"
-                Platform.MenuItem { text: "Collect Support Files"; onTriggered: backend.collectSupportFiles() }
-            }
-            Platform.MenuItem { text: "Quit OST"; onTriggered: { window.reallyQuit = true; Qt.quit() } }
-        }
+    // The tray (desktop/src/tray.rs): kept current from here; it calls
+    // back for Show and Quit.
+    readonly property bool trayShown: backend.signedIn && (Qt.application.arguments.length <= 1 || Qt.application.arguments.indexOf("--tray") >= 0)
+    function refreshTray() {
+        if (trayShown)
+            backend.updateTray(trayKind, trayStatusLabel(myPresence), backend.userName + (backend.orgName ? " | " + backend.orgName : ""))
+    }
+    onTrayShownChanged: refreshTray()
+    onTrayKindChanged: refreshTray()
+    onMyPresenceChanged: refreshTray()
+    Connections {
+        target: backend
+        function onUserNameChanged() { window.refreshTray() }
+        function onOrgNameChanged() { window.refreshTray() }
+        function onTrayShow() { window.showRaised() }
+        function onTrayQuit() { window.reallyQuit = true; Qt.quit() }
     }
 
     // Back/forward through the apps and chats you visited, as Teams does.
@@ -697,6 +681,8 @@ Window {
         meeting: backend.callMeeting
         roster: backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []
         videoKeys: backend.callVideoJson ? JSON.parse(backend.callVideoJson) : ({})
+        onIncomingVideoOffChanged: backend.setIncomingVideo(!incomingVideoOff)
+        chatMembers: backend.callChatMembersJson ? JSON.parse(backend.callChatMembersJson) : []
         speakerId: backend.callSpeakerMri
         lobby: backend.callLobbyJson ? JSON.parse(backend.callLobbyJson) : []
         onAdmitLobby: (id, name, notBot) => backend.admitFromLobby(id, name, notBot)
@@ -1094,6 +1080,44 @@ Window {
 
     // --join-test: join the "OST calendar test" meeting from the calendar,
     // stay 20 s (--join-stay=<s> more), capture the call window, leave.
+    // --join-view: walk Teams' View menu options in a joined meeting,
+    // capturing the stage after each (with --join-test --join-stay=…).
+    Timer {
+        running: Qt.application.arguments.indexOf("--join-view") >= 0 && backend.callState === "connected" && backend.callRosterJson.length > 4
+        interval: 3000; repeat: true
+        property int step: 0
+        readonly property var plan: [
+            ["gallery", () => {}],
+            ["menu", () => callWindow.viewMenuForTest(-1)],
+            ["menu-size", () => callWindow.viewMenuForTest(4)],
+            ["menu-more", () => callWindow.viewMenuForTest(6)],
+            ["speaker-side", () => { callWindow.closeMenusForTest(); callWindow.layout = "speaker" }],
+            ["speaker-top", () => { callWindow.galleryAtTop = true }],
+            ["speaker-menu", () => callWindow.viewMenuForTest(4)],
+            ["gallery-me-out", () => { callWindow.closeMenusForTest(); callWindow.galleryAtTop = false; callWindow.layout = "gallery"; callWindow.meInGallery = false }],
+            ["gallery-hide-me", () => { callWindow.meInGallery = true; callWindow.hideMe = true }],
+            ["videos-off", () => { callWindow.hideMe = false; callWindow.incomingVideoOff = true }],
+            ["videos-on", () => { callWindow.incomingVideoOff = false }],
+            ["room", () => { callWindow.roomMode = true }],
+            ["room-off", () => { callWindow.roomMode = false }]
+        ]
+        // Even ticks act, odd ticks capture what that action left.
+        onTriggered: {
+            const i = Math.floor(step / 2)
+            if (i >= plan.length) { stop(); backend.hangUp(); quitLater.start(); return }
+            if (step % 2 === 0) {
+                plan[i][1]()
+            } else {
+                const name = plan[i][0]
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-view-" + name + ".png")))
+                if (name === "room" && callWindow.roomWindow)
+                    callWindow.roomWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-view-room-window.png")))
+                console.warn("VIEW", name, "layout", callWindow.layout, "videos", backend.callVideoJson)
+            }
+            step++
+        }
+    }
+    Timer { id: quitLater; interval: 2000; onTriggered: Qt.quit() }
     readonly property bool joinRaise: Qt.application.arguments.indexOf("--join-raise") >= 0
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     Timer {

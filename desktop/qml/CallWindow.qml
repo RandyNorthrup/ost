@@ -29,6 +29,31 @@ Window {
     property bool meeting: false
     /// The meeting's participants (from the roster): [{id, name, role}].
     property var roster: []
+    /// The call's chat members (People added to the chat).
+    property var chatMembers: []
+    // Teams' camera-off tile backgrounds: four soft radial gradients,
+    // random per tile but kept for the call (its gradientKey).
+    property var tileBackgrounds: ({})
+    function tileBackground(id) {
+        if (!tileBackgrounds[id]) {
+            const light = ["hsla(24, 100%, 89%, .08)","hsla(43, 100%, 66%, .08)","hsla(330, 100%, 69%, .08)","hsla(291, 100%, 50%, .08)","hsla(43, 100%, 66%, .08)","hsla(291, 100%, 84%, .08)","hsla(330, 100%, 69%, .08)","hsla(156, 85%, 54%, .08)","hsla(191, 91%, 45%, .08)","hsla(98, 74%, 80%, .08)","hsla(291, 100%, 78%, .08)","hsla(0, 0%, 96%, .08)","hsla(281, 100%, 100%, .08)","hsla(281, 100%, 90%, .08)","hsla(258, 67%, 65%, .08)","hsla(324, 85%, 70%, .08)","hsla(54, 73%, 65%, .08)","hsla(7, 100%, 50%, .08)","hsla(258, 67%, 65%, .08)","hsla(48, 100%, 49%, .08)","hsla(190, 97%, 51%, .08)","hsla(234, 82%, 58%, .08)","hsla(166, 97%, 56%, .08)","hsla(48, 100%, 49%, .08)","hsla(72, 100%, 71%, .08)","hsla(158, 100%, 50%, .08)","hsla(175, 62%, 64%, .08)","hsla(0, 0%, 96%, .08)","hsla(207, 100%, 77%, .08)","hsla(32, 100%, 59%, .08)","hsla(182, 81%, 54%, .08)","hsla(234, 82%, 58%, .08)"]
+            const dark = ["hsla(207, 100%, 77%, .1)","hsla(32, 100%, 59%, .1)","hsla(182, 81%, 54%, .1)","hsla(239, 68%, 27%, .1)","hsla(207, 100%, 77%, .1)","hsla(357, 64%, 42%, .1)","hsla(35, 62%, 58%, .1)","hsla(173, 39%, 62%, .1)","hsla(106, 39%, 58%, .1)","hsla(37, 65%, 63%, .1)","hsla(0, 0%, 0%, .1)","hsla(21, 81%, 63%, .1)","hsla(1, 80%, 73%, .1)","hsla(20, 93%, 88%, .1)","hsla(0, 0%, 0%, .1)","hsla(102, 5%, 58%, .1)","hsla(180, 19%, 48%, .1)","hsla(28, 1%, 83%, .1)","hsla(287, 22%, 64%, .1)","hsla(218, 36%, 40%, .1)","hsla(0, 0%, 0%, .1)","hsla(280, 38%, 34%, .1)","hsla(46, 72%, 67%, .1)","hsla(177, 13%, 67%, .1)","hsla(177, 13%, 67%, .1)","hsla(177, 13%, 67%, .1)","hsla(1, 59%, 56%, .1)","hsla(199, 35%, 30%, .1)","hsla(199, 35%, 30%, .1)","hsla(137, 26%, 84%, .1)","hsla(36, 77%, 71%, .1)","hsla(36, 77%, 71%, .1)","hsla(1, 59%, 56%, .1)","hsla(253, 46%, 29%, .1)","hsla(0, 0%, 0%, .1)"]
+            const rand = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a
+            const lo = () => rand(-15, 40), hi = () => rand(60, 115)
+            const at = [() => [lo(), lo()], () => [hi(), lo()], () => [lo(), hi()], () => [hi(), hi()]]
+            // Dark: one of the four may be left out, as Teams does.
+            const skip = theme.dark && rand(0, 1) ? rand(0, 5) : -1
+            const list = theme.dark ? dark : light
+            const out = []
+            for (let i = 0; i < 4; i++) {
+                if (i === skip) continue
+                const p = at[i]()
+                out.push({ x: p[0], y: p[1], color: list[rand(0, list.length - 1)], stop: theme.dark ? rand(60, 80) : rand(72, 98) })
+            }
+            tileBackgrounds[id] = out
+        }
+        return tileBackgrounds[id]
+    }
     /// In a meeting: whose camera shows where ({mri: frame key}).
     property var videoKeys: ({})
     /// The meeting's dominant speaker (Speaker view puts them on stage).
@@ -107,6 +132,24 @@ Window {
     /// View: "gallery" or "speaker"; incoming video can be turned off.
     property string layout: "gallery"
     property bool incomingVideoOff: false
+    // Teams' View menu settings for meetings.
+    property int gallerySize: 16
+    property bool videosFirst: false
+    property bool galleryAtTop: false
+    property bool hideMe: false
+    /// Gallery: you are one of its tiles (else you sit in the side gallery).
+    property bool meInGallery: true
+    /// Speaker: you are ordered with the others in the side gallery (else
+    /// docked at its end).
+    property bool speakerMeInGallery: false
+    /// Optimize for room: the gallery shows in a shared display window.
+    property bool roomMode: false
+    /// Your tile entry, as the layouts use it.
+    readonly property var selfEntry: ({ id: selfId, name: selfName || "You", self: true })
+    /// Someone has video on (or it's you with the camera on).
+    function hasVideo(p) { return p.self ? cameraOn : !!videoKeys[p.id] }
+    /// The others in gallery order (videos first, when asked).
+    readonly property var othersOrdered: videosFirst ? others.filter(p => hasVideo(p)).concat(others.filter(p => !hasVideo(p))) : others
     signal deviceSettings()
     /// Meetings: Teams' meeting options page (Controls) and the meeting
     /// chat on the web (Notes), and opening an app from Apps.
@@ -373,70 +416,98 @@ Window {
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             }
         }
-        // Speaker view: the dominant speaker on stage, the others in a strip.
+        // Teams' stage layouts. The side gallery (Speaker view's others, or
+        // you when you're out of the gallery) is a column of 16:9 slots on
+        // the right (160 px wide, up to all but 161) or, with "Show gallery
+        // at top", a row of them on top (90 px tall, up to 485); a 5 px
+        // divider with a 1 px #D1D1D1 line resizes it.
         Item {
             id: tiles
-            visible: win.meeting && win.others.length > 0 && win.layout === "speaker"
-            anchors { fill: parent; margins: 8; bottomMargin: strip.visible ? strip.height + 16 : 8 }
-            readonly property var speaker: win.others.find(p => p.id === win.speakerId) || win.others[0]
+            visible: win.meeting && win.others.length > 0 && win.layout !== "focus"
+            anchors { fill: parent; margins: 2.67 }
+            readonly property bool speakerView: win.layout === "speaker"
+            readonly property var speaker: {
+                const pool = win.speakerMeInGallery && !win.hideMe ? win.others.concat([win.selfEntry]) : win.others
+                return pool.find(p => p.id === win.speakerId) || win.othersOrdered[0]
+            }
+            readonly property var side: speakerView
+                ? win.othersOrdered.filter(p => p !== speaker).concat(win.hideMe || speaker.self ? [] : [win.selfEntry])
+                : (win.hideMe || win.meInGallery ? [] : [win.selfEntry])
+            readonly property var gallery: (win.hideMe || !win.meInGallery ? [] : [win.selfEntry]).concat(win.othersOrdered).slice(0, win.gallerySize)
+            readonly property bool atTop: win.galleryAtTop
+            property real sideWidth: 160
+            property real sideHeight: 90
+            readonly property real sideW: side.length ? Math.max(160, Math.min(sideWidth, width - 161)) : 0
+            readonly property real sideH: side.length ? Math.max(90, Math.min(sideHeight, 485, height - 91)) : 0
+            // What's left for the speaker or the gallery.
+            readonly property real mainX: 0
+            readonly property real mainY: atTop ? sideH : 0
+            readonly property real mainW: atTop ? width : width - sideW
+            readonly property real mainH: atTop ? height - sideH : height
+            // Speaker: one 16:9 tile, centred.
             MeetingTile {
-                anchors.fill: parent
+                visible: tiles.speakerView
                 call: win
                 person: tiles.speaker || ({})
+                width: Math.min(tiles.mainW, tiles.mainH * 16 / 9); height: width * 9 / 16
+                x: tiles.mainX + (tiles.mainW - width) / 2; y: tiles.mainY + (tiles.mainH - height) / 2
             }
-        }
-        // Gallery, as Teams lays it out: 16:9 tiles as large as the stage
-        // allows for the best column count, rows centred (the last one
-        // too), you first.
-        Item {
-            id: gallery
-            visible: win.meeting && win.others.length > 0 && win.layout !== "speaker"
-            anchors { fill: parent; margins: 2.67 }
-            readonly property var people: [{ id: win.selfId, name: win.selfName || "You", self: true }].concat(win.others)
-            readonly property int count: people.length
-            // The column count giving the largest 16:9 tiles.
-            readonly property int cols: {
-                let bestCols = 1, bestW = 0
-                for (let c = 1; c <= count; c++) {
-                    const w = Math.min(width / c, height / Math.ceil(count / c) * 16 / 9)
-                    if (w > bestW + 0.01) { bestW = w; bestCols = c }
-                }
-                return bestCols
+            // Gallery.
+            GalleryGrid {
+                visible: !tiles.speakerView
+                x: tiles.mainX; y: tiles.mainY; width: tiles.mainW; height: tiles.mainH
+                call: win
+                people: tiles.gallery
             }
-            readonly property int rows: Math.ceil(count / cols)
-            readonly property real tileW: Math.min(width / cols, height / rows * 16 / 9)
-            readonly property real tileH: tileW * 9 / 16
-            Repeater {
-                model: gallery.visible ? gallery.people : []
-                MeetingTile {
-                    required property var modelData
-                    required property int index
-                    readonly property int row: Math.floor(index / gallery.cols)
-                    readonly property int inRow: row === gallery.rows - 1 ? gallery.count - row * gallery.cols : gallery.cols
-                    call: win
-                    person: modelData
-                    x: (gallery.width - inRow * gallery.tileW) / 2 + (index % gallery.cols) * gallery.tileW
-                    y: (gallery.height - gallery.rows * gallery.tileH) / 2 + row * gallery.tileH
-                    width: gallery.tileW; height: gallery.tileH
+            // The side gallery.
+            Grid {
+                visible: tiles.side.length > 0
+                columns: tiles.atTop ? tiles.side.length : 1
+                x: tiles.atTop ? (tiles.width - tiles.side.length * slotW) / 2 : tiles.width - tiles.sideW
+                y: tiles.atTop ? 0 : (tiles.height - tiles.side.length * slotH) / 2
+                readonly property real slotW: tiles.atTop ? tiles.sideH * 16 / 9 : tiles.sideW
+                readonly property real slotH: slotW * 9 / 16
+                Repeater {
+                    model: tiles.visible ? tiles.side : []
+                    MeetingTile {
+                        required property var modelData
+                        call: win
+                        person: modelData
+                        width: parent.slotW; height: parent.slotH
+                    }
                 }
             }
-        }
-        Row {
-            id: strip
-            visible: win.meeting && win.layout === "speaker" && win.others.length > 1
-            anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 8 }
-            height: 96; spacing: 8
-            Repeater {
-                model: strip.visible ? win.others.filter(p => p !== tiles.speaker) : []
+            // Teams' "Resize side gallery" / "Resize top gallery" divider.
+            Item {
+                visible: tiles.side.length > 0
+                x: tiles.atTop ? 0 : tiles.width - tiles.sideW - 2
+                y: tiles.atTop ? tiles.sideH - 3 : 0
+                width: tiles.atTop ? tiles.width : 5
+                height: tiles.atTop ? 5 : tiles.height
                 Rectangle {
-                    required property var modelData
-                    width: 160; height: 96; radius: 6
-                    color: "#FFFFFF"; border.color: theme.dividerSoft
-                    Avatar { anchors.centerIn: parent; size: 48; name: parent.modelData.name; photoId: parent.modelData.id }
-                    Text { x: 6; anchors.bottom: parent.bottom; anchors.bottomMargin: 4; width: parent.width - 12; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
-                    Accessible.role: Accessible.Grouping
-                    Accessible.name: modelData.name
+                    x: tiles.atTop ? 0 : 2; y: tiles.atTop ? 2 : 0
+                    width: tiles.atTop ? parent.width : 1; height: tiles.atTop ? 1 : parent.height
+                    color: "#D1D1D1"
                 }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: tiles.atTop ? Qt.SizeVerCursor : Qt.SizeHorCursor
+                    property real start
+                    property real startSize
+                    onPressed: m => { const p = mapToItem(tiles, m.x, m.y); start = tiles.atTop ? p.y : p.x; startSize = tiles.atTop ? tiles.sideH : tiles.sideW }
+                    onPositionChanged: m => {
+                        const p = mapToItem(tiles, m.x, m.y)
+                        if (tiles.atTop) tiles.sideHeight = startSize + (p.y - start)
+                        else tiles.sideWidth = startSize - (p.x - start)
+                    }
+                }
+                Accessible.role: Accessible.Slider
+                Accessible.name: tiles.atTop ? "Resize top gallery" : "Resize side gallery"
+                activeFocusOnTab: true
+                Keys.onLeftPressed: tiles.sideWidth = tiles.sideW + 16
+                Keys.onRightPressed: tiles.sideWidth = tiles.sideW - 16
+                Keys.onUpPressed: tiles.sideHeight = tiles.sideH - 9
+                Keys.onDownPressed: tiles.sideHeight = tiles.sideH + 9
             }
         }
         // Their video, filling the stage, once frames arrive; while they
@@ -532,10 +603,10 @@ Window {
                 font.family: theme.font; font.pixelSize: theme.small
             }
         }
-        // Your own tile, bottom right (in a meeting's Speaker view; the
-        // gallery has you as a tile)
+        // Your own tile, bottom right, in a 1:1 call (meetings have you as
+        // a tile)
         Rectangle {
-            visible: !win.meeting || (win.others.length > 0 && win.layout === "speaker")
+            visible: !win.meeting
             z: 2
             anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
             width: 240; height: 134; radius: 6
@@ -590,6 +661,7 @@ Window {
             visible: win.side === "people"
             anchors.fill: parent
             people: win.people
+            chatMembers: win.chatMembers
             lobby: win.lobby
             meeting: win.meeting
             onClosed: win.side = ""
@@ -614,6 +686,35 @@ Window {
     }
 
     // The lobby notification, 8 px below the top of the stage, centred on it.
+    // Optimize for room: the shared display window, and the notice here.
+    property bool roomNoticeDismissed: false
+    onRoomModeChanged: roomNoticeDismissed = false
+    Loader {
+        id: roomLoader
+        active: win.roomMode
+        sourceComponent: Component { SharedDisplayWindow { call: win; visible: true } }
+    }
+    readonly property var roomWindow: roomLoader.item
+    function closeMenusForTest() { viewMenu.close() }
+    /// For the --join-view harness: open the View menu (and a submenu row).
+    function viewMenuForTest(sub) {
+        viewMenu.parent = meeting ? viewBtnM : viewBtn
+        viewMenu.open()
+        if (sub >= 0) viewMenuSubTimer.sub = sub, viewMenuSubTimer.start()
+    }
+    Timer {
+        id: viewMenuSubTimer
+        property int sub: -1
+        interval: 300
+        onTriggered: viewMenu.openSubmenuForTest(sub)
+    }
+    RoomNotice {
+        visible: win.roomMode && !win.roomNoticeDismissed
+        x: stage.x + (stage.width - width) / 2
+        y: bar.height + 10.7
+        z: 5
+        onDismissed: win.roomNoticeDismissed = true
+    }
     LobbyToast {
         id: lobbyToast
         x: stage.x + (stage.width - width) / 2
@@ -735,26 +836,60 @@ Window {
         Rectangle { x: 8; y: 13.5; width: 0.67; height: 33; color: theme.stroke }
     }
 
-    // View: Teams' layout menu.
+    // View: Teams' layout menu (measured on winpc): 230 px list in a
+    // 16 px padded surface at the button's left, 5.3 px under it; check
+    // marks at the end; submenus beside the list.
     MenuPopup {
         id: viewMenu
-        x: parent ? parent.width - width : 0; y: parent ? parent.height + 4 : 0
-        width: 240
-        items: (win.meeting ? [
-            { label: "Gallery", icon: "gallery-20", checked: win.layout === "gallery" },
-            { label: "Speaker", icon: "speaker-view-20", checked: win.layout === "speaker" },
-            { separator: true }] : [])
-            .concat([
-            { label: win.visibility === Window.FullScreen ? "Exit full screen" : "Full screen", icon: "full-screen-maximize-20" },
-            { label: win.incomingVideoOff ? "Turn on incoming video" : "Turn off incoming video", icon: "video-off-20" }])
+        viewStyle: win.meeting
+        x: win.meeting ? 4 : (parent ? parent.width - width : 0)
+        y: win.meeting ? 59.3 : (parent ? parent.height + 4 : 0)
+        width: win.meeting ? 263.3 : 240
+        readonly property var moreOptions: [
+            { label: win.galleryAtTop ? "Show gallery on right" : "Show gallery at top", checked: false },
+            { label: "Turn off other videos", checked: win.incomingVideoOff },
+            { label: "Hide me", checked: win.hideMe },
+            win.layout === "speaker"
+                ? { label: win.speakerMeInGallery ? "Remove me from gallery" : "Include me in gallery", checked: false }
+                : { label: win.meInGallery ? "Remove me from gallery" : "Include me in gallery", checked: false },
+            { label: "Optimize for room", checked: win.roomMode },
+            { label: "Full screen", keys: "F11", checked: win.visibility === Window.FullScreen }]
+        items: win.meeting
+            ? [{ label: "Gallery", icon: "view-gallery-20", checked: win.layout === "gallery" },
+               { label: "Speaker", icon: "view-speaker-20", checked: win.layout === "speaker" },
+               { label: "Focus on content", icon: "view-focus-20", checked: win.layout === "focus", enabled: win.shareShown || win.layout === "focus" },
+               { separator: true }]
+              .concat(win.layout === "gallery" ? [
+               { label: "Gallery size", icon: "view-gallery-size-20", submenu: [4, 9, 16, 49].map(n => ({ label: n + " people", checked: win.gallerySize === n })) },
+               { label: "Show videos first", icon: "view-videos-first-20", checked: win.videosFirst }] : [])
+              .concat([{ label: "More options", submenu: moreOptions }])
+            : [{ label: win.visibility === Window.FullScreen ? "Exit full screen" : "Full screen", icon: "full-screen-maximize-20" },
+               { label: win.incomingVideoOff ? "Turn on incoming video" : "Turn off incoming video", icon: "video-off-20" }]
         onPicked: i => {
             const l = items[i].label
             if (l === "Gallery") win.layout = "gallery"
             else if (l === "Speaker") win.layout = "speaker"
-            else if (l.indexOf("full screen") >= 0 || l === "Full screen") win.toggleFullScreen()
+            else if (l === "Focus on content") win.layout = win.layout === "focus" ? "gallery" : "focus"
+            else if (l === "Show videos first") win.videosFirst = !win.videosFirst
+            else if (l.indexOf("ull screen") >= 0) win.toggleFullScreen()
             else win.incomingVideoOff = !win.incomingVideoOff
         }
+        onSubPicked: (i, j) => {
+            const it = items[i]
+            if (it.label === "Gallery size") { win.gallerySize = [4, 9, 16, 49][j]; return }
+            const l = it.submenu[j].label
+            if (l.startsWith("Show gallery")) win.galleryAtTop = !win.galleryAtTop
+            else if (l === "Turn off other videos") win.incomingVideoOff = !win.incomingVideoOff
+            else if (l === "Hide me") win.hideMe = !win.hideMe
+            else if (l.endsWith("me from gallery") || l.endsWith("me in gallery")) {
+                if (win.layout === "speaker") win.speakerMeInGallery = !win.speakerMeInGallery
+                else win.meInGallery = !win.meInGallery
+            }
+            else if (l === "Optimize for room") win.roomMode = !win.roomMode
+            else if (l === "Full screen") win.toggleFullScreen()
+        }
     }
+    Shortcut { sequence: "F11"; enabled: win.meeting; onActivated: win.toggleFullScreen() }
     // Apps: what Teams offers in a call. Planner and OneNote open in the
     // main window; Whiteboard and Clipchamp are web apps.
     MenuPopup {

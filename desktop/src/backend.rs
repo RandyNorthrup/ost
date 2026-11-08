@@ -189,6 +189,9 @@ pub mod qobject {
         #[qproperty(QString, people_json)]
         /// The open chat's members (Teams' roster): [{mri, name, mail, me}].
         #[qproperty(QString, chat_members_json)]
+        /// The call's chat members, with presence (People pane: "People
+        /// added to the chat").
+        #[qproperty(QString, call_chat_members_json)]
         /// The open meeting chat's meeting: {subject, join_url, ical_uid,
         /// cancelled, start, end, organizer_id}, or "" for other chats.
         #[qproperty(QString, chat_meeting_json)]
@@ -383,6 +386,10 @@ pub mod qobject {
         /// Mute everyone else in the meeting (Teams' Mute all).
         #[qinvokable]
         fn mute_all(self: Pin<&mut Backend>);
+        /// Teams' "Turn off other videos": stop (or resume) asking for
+        /// others' cameras.
+        #[qinvokable]
+        fn set_incoming_video(self: Pin<&mut Backend>, on: bool);
         /// Send a meeting reaction: like, heart, applause, laugh, surprised.
         #[qinvokable]
         fn send_reaction(self: Pin<&mut Backend>, name: &QString);
@@ -509,6 +516,21 @@ pub mod qobject {
         /// their MRI and the reaction's name.
         #[qsignal]
         fn meeting_reaction(self: Pin<&mut Backend>, mri: QString, name: QString);
+        /// The tray asks for the window (its icon or the name row).
+        #[qsignal]
+        fn tray_show(self: Pin<&mut Backend>);
+        /// The tray's Quit OST.
+        #[qsignal]
+        fn tray_quit(self: Pin<&mut Backend>);
+        /// Show the tray icon (first call) and keep its badge and menu
+        /// current: presence kind, the status label, "Name | Organisation".
+        #[qinvokable]
+        fn update_tray(
+            self: Pin<&mut Backend>,
+            kind: &QString,
+            status_label: &QString,
+            name_line: &QString,
+        );
 
         /// The picture for "me", a user ("8:orgid:<oid>" or "<oid>") or a
         /// team ("team:<group id>"): a file URL, or "" for initials. Starts
@@ -947,6 +969,8 @@ pub struct BackendRust {
     call_thread_id: QString,
     user_mri: QString,
     roster: Vec<teams_cli::calling::roster::Participant>,
+    /// Others' videos are turned off (View › More options).
+    incoming_video_off: bool,
     call_muted: bool,
     call_held: bool,
     call_held_by_peer: bool,
@@ -982,6 +1006,7 @@ pub struct BackendRust {
     calendar_json: QString,
     people_json: QString,
     chat_members_json: QString,
+    call_chat_members_json: QString,
     chat_meeting_json: QString,
     fun_results_json: QString,
     custom_emoji_json: QString,
@@ -1961,6 +1986,28 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
 /// Who was in the call before us (roster updates only carry changes):
 /// add the people the updates haven't told us about. The list carries
 /// names, not hands or roles.
+/// A thread's members with their presence, as JSON for QML.
+async fn members_with_presence(thread: &str) -> anyhow::Result<String> {
+    let client = TeamsClient::new().await?;
+    let members = api::chat_members(&client, thread).await?;
+    // Everyone's presence, as Teams' people flyout shows it.
+    let mris: Vec<String> = members.iter().map(|m| m.mri.clone()).collect();
+    let presence = teams_cli::api::presence::get_presences(&reqwest::Client::new(), &mris)
+        .await
+        .unwrap_or_default();
+    let list: Vec<serde_json::Value> = members
+        .iter()
+        .map(|m| {
+            let mut v = json!(m);
+            if let Some(p) = presence.iter().find(|p| p.mri == m.mri) {
+                v["presence"] = json!(p.availability);
+            }
+            v
+        })
+        .collect();
+    Ok(serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()))
+}
+
 async fn seed_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoing::OutgoingCall) {
     // The join response's roster first: it has everyone's streams.
     let joined = call.joined_roster();
@@ -2785,6 +2832,7 @@ impl qobject::Backend {
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
             .set_call_thread_id(QString::from(chat_id.as_str()));
+        self.as_mut().load_call_chat_members();
         self.as_mut().set_call_meeting(true);
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
@@ -2851,6 +2899,7 @@ impl qobject::Backend {
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
             .set_call_thread_id(QString::from(link.thread_id.as_str()));
+        self.as_mut().load_call_chat_members();
         self.as_mut().set_call_options_url(QString::from(
             link.options_url().unwrap_or_default().as_str(),
         ));
@@ -2937,6 +2986,65 @@ impl qobject::Backend {
             };
             if let Err(e) = result {
                 tracing::warn!("reaction failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn set_incoming_video(mut self: Pin<&mut Self>, on: bool) {
+        if self.rust().incoming_video_off != on {
+            return;
+        }
+        self.as_mut().rust_mut().incoming_video_off = !on;
+        tracing::info!(on, "incoming video");
+        self.apply_roster(Vec::new());
+    }
+
+    pub fn update_tray(
+        self: Pin<&mut Self>,
+        kind: &QString,
+        status_label: &QString,
+        name_line: &QString,
+    ) {
+        let (kind, label, name) = (
+            kind.to_string(),
+            status_label.to_string(),
+            name_line.to_string(),
+        );
+        static TRAY: std::sync::OnceLock<
+            tokio::sync::OnceCell<Option<ksni::Handle<crate::tray::OstTray>>>,
+        > = std::sync::OnceLock::new();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let cell = TRAY.get_or_init(tokio::sync::OnceCell::new);
+            let handle = cell
+                .get_or_init(|| async {
+                    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                    let handle = crate::tray::spawn(crate::tray::OstTray::new(tx)).await;
+                    // The tray's requests, done on the Qt thread.
+                    tokio::spawn(async move {
+                        while let Some(action) = rx.recv().await {
+                            let _ = qt.queue(move |mut this| match action {
+                                crate::tray::Action::Show => this.as_mut().tray_show(),
+                                crate::tray::Action::Quit => this.as_mut().tray_quit(),
+                                crate::tray::Action::CollectSupportFiles => {
+                                    this.collect_support_files()
+                                }
+                                crate::tray::Action::Status(key) => {
+                                    this.as_mut().set_my_status(&QString::from(key))
+                                }
+                            });
+                        }
+                    });
+                    handle
+                })
+                .await;
+            if let Some(h) = handle {
+                h.update(|t| {
+                    t.kind = kind;
+                    t.status_label = label;
+                    t.name_line = name;
+                })
+                .await;
             }
         });
     }
@@ -3210,9 +3318,10 @@ impl qobject::Backend {
         teams_cli::calling::roster::apply(&mut roster, delta);
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
+        let off = self.rust().incoming_video_off;
         let cameras: Vec<(String, i64)> = roster
             .iter()
-            .filter(|p| p.id != me)
+            .filter(|p| p.id != me && !off)
             .filter_map(|p| p.video_source.map(|s| (p.id.clone(), s)))
             .collect();
         self.as_mut().rust_mut().roster = roster;
@@ -4153,39 +4262,41 @@ impl qobject::Backend {
         }
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async {
-                let client = TeamsClient::new().await?;
-                let members = api::chat_members(&client, &chat_id).await?;
-                // Everyone's presence, as Teams' people flyout shows it.
-                let mris: Vec<String> = members.iter().map(|m| m.mri.clone()).collect();
-                let presence =
-                    teams_cli::api::presence::get_presences(&reqwest::Client::new(), &mris)
-                        .await
-                        .unwrap_or_default();
-                anyhow::Ok((members, presence))
-            }
-            .await;
+            let result = members_with_presence(&chat_id).await;
             let _ = qt.queue(move |mut this| {
                 if this.rust().current_chat_id.to_string() != chat_id {
                     return;
                 }
                 match result {
-                    Ok((members, presence)) => {
-                        let list: Vec<serde_json::Value> = members
-                            .iter()
-                            .map(|m| {
-                                let mut v = json!(m);
-                                if let Some(p) = presence.iter().find(|p| p.mri == m.mri) {
-                                    v["presence"] = json!(p.availability);
-                                }
-                                v
-                            })
-                            .collect();
-                        let text = serde_json::to_string(&list).unwrap_or_else(|_| "[]".into());
-                        this.as_mut()
-                            .set_chat_members_json(QString::from(text.as_str()));
-                    }
+                    Ok(text) => this
+                        .as_mut()
+                        .set_chat_members_json(QString::from(text.as_str())),
                     Err(e) => tracing::warn!("chat members unavailable: {}", short_error(&e)),
+                }
+            });
+        });
+    }
+
+    /// The call's chat members (a meeting's or group's thread).
+    fn load_call_chat_members(mut self: Pin<&mut Self>) {
+        let thread = self.rust().call_thread_id.to_string();
+        self.as_mut()
+            .set_call_chat_members_json(QString::from("[]"));
+        if thread.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = members_with_presence(&thread).await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().call_thread_id.to_string() != thread {
+                    return;
+                }
+                match result {
+                    Ok(text) => this
+                        .as_mut()
+                        .set_call_chat_members_json(QString::from(text.as_str())),
+                    Err(e) => tracing::info!("call chat members unavailable: {}", short_error(&e)),
                 }
             });
         });

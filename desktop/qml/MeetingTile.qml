@@ -10,7 +10,12 @@ Item {
     property var call
     property var person: ({})
     readonly property bool self: !!person.self
-    readonly property string videoKey: !call ? "" : self ? (call.cameraOn ? "self" : "") : (call.videoKeys[person.id] || "")
+    /// Optimize for room shows the videos on the shared display only;
+    /// "Turn off other videos" stops theirs.
+    property bool forRoom: false
+    readonly property string videoKey: !call || (call.roomMode && !forRoom) ? ""
+        : self ? (call.cameraOn ? "self" : "")
+        : call.incomingVideoOff ? "" : (call.videoKeys[person.id] || "")
     readonly property int handAt: call ? call.hands.indexOf(person.id) : -1
     readonly property string reaction: { if (!call) return ""; call.reactions; return call.reactionOf(person.id || "") }
 
@@ -20,14 +25,37 @@ Item {
         radius: 6
         color: "#F5F5F5"
         border.width: 0.67; border.color: Qt.rgba(0, 0, 0, 0.1)
-        // Yours (camera off): the soft gradient Teams puts behind you.
-        Rectangle {
+        // Teams' camera-off background (#F5F5F5 under four radial
+        // gradients, each an ellipse to the farthest corner, CSS-style).
+        Canvas {
+            id: backdrop
             anchors.fill: parent
-            visible: mt.self
-            radius: 6
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#F6EEF2" }
-                GradientStop { position: 1.0; color: "#EEF0F8" }
+            visible: !video.visible
+            readonly property var spec: mt.call && mt.person.id !== undefined ? mt.call.tileBackground(mt.person.id || "me") : []
+            onSpecChanged: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.reset()
+                const w = width, h = height
+                // Round the corners as the surface does.
+                ctx.beginPath(); ctx.roundedRect(0, 0, w, h, 6, 6); ctx.clip()
+                for (const g of spec) {
+                    const cx = w * g.x / 100, cy = h * g.y / 100
+                    const rx = Math.max(Math.abs(cx), Math.abs(w - cx)) * Math.SQRT2
+                    const ry = Math.max(Math.abs(cy), Math.abs(h - cy)) * Math.SQRT2
+                    if (rx <= 0 || ry <= 0) continue
+                    ctx.save()
+                    ctx.translate(cx, cy)
+                    ctx.scale(1, ry / rx)
+                    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx)
+                    grad.addColorStop(0, g.color)
+                    grad.addColorStop(Math.min(1, g.stop / 100), "transparent")
+                    ctx.fillStyle = grad
+                    ctx.fillRect(-cx, -cy * rx / ry, w, h * rx / ry)
+                    ctx.restore()
+                }
             }
         }
         Avatar {

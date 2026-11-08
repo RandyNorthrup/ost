@@ -63,6 +63,9 @@ fn main() {
         "qml/GuestAvatar.qml",
         "qml/LobbyToast.qml",
         "qml/MeetingTile.qml",
+        "qml/GalleryGrid.qml",
+        "qml/SharedDisplayWindow.qml",
+        "qml/RoomNotice.qml",
         "qml/AdmitSuspectedDialog.qml",
         "qml/PeoplePane.qml",
         "qml/ConfirmDialog.qml",
@@ -99,7 +102,6 @@ fn main() {
         .file("src/rich_text.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
-        .qt_module("Widgets")
         .qt_module("WebEngineQuick")
         .qrc_resources(resources);
     // SAFETY: only adds a source file to the C++ build.

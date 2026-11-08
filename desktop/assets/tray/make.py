@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make the tray's images: the OST logo with Teams' presence badge (as
 Teams' tray icon carries it), and coloured presence icons for the tray
-menu (the native menu can't tint). Colours and glyphs as PresenceBadge.qml.
+menu (the native menu can't tint), as SVG and the PNGs its DBus menu takes. Colours and glyphs as PresenceBadge.qml.
 
 Run from the repo root: python3 -I desktop/assets/tray/make.py
 (needs resvg and the venv Pillow at ~/.local/share/ost-vnc-venv)."""
@@ -35,4 +35,7 @@ for kind in INK:
     os.unlink(f.name)
 svg = open(f"{ICONS}/arrow-clockwise-20.svg").read().replace("#212121", "#424242")
 open(f"{OUT}/reset-16.svg", "w").write(svg)
+# The DBus tray menu takes PNG icons: the menu's, at 32 px for HiDPI.
+for name in [f"presence-{k}-16" for k in INK] + ["reset-16"]:
+    subprocess.run(["resvg", "-w", "32", "-h", "32", f"{OUT}/{name}.svg", f"{OUT}/{name}.png"], check=True)
 print("ok")
