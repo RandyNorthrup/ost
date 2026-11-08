@@ -1233,6 +1233,14 @@ async fn reoffer_reply(
         (Ok((Reoffer::Camera(false), _)), _) => Ok((Some(false), None)),
         (Err(e), _) => Err(e),
     };
+    // A meeting is told what our camera and sharing lines now do, as Teams
+    // does, so its roster shows them and others can ask for them.
+    if result.is_ok()
+        && let Some(o) = slot.outgoing.as_ref()
+        && let Err(e) = o.describe_media(o.camera_on(), o.is_sharing()).await
+    {
+        tracing::warn!("media descriptions: {}", short_error(&e));
+    }
     drop(guard);
     match result {
         Ok((camera, sharing)) => {

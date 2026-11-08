@@ -193,6 +193,10 @@ impl Drop for MeetingVideo {
     }
 }
 
+/// What to do with the processor's layer requests for our camera (its
+/// `vdclc` strings).
+pub type LayerHandler = Box<dyn Fn(&[String]) + Send + Sync>;
+
 impl MeetingVideo {
     /// Run the media control plane on an open data channel.
     pub fn start(
@@ -200,6 +204,7 @@ impl MeetingVideo {
         share_slot: Option<Slot>,
         sender: DataSender,
         events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        on_layers: LayerHandler,
     ) -> Self {
         let state = Arc::new(Mutex::new(State {
             slots,
@@ -207,7 +212,7 @@ impl MeetingVideo {
             ..Default::default()
         }));
         let (commands, rx) = tokio::sync::mpsc::unbounded_channel();
-        let task = tokio::spawn(run(sender, events, rx, state.clone()));
+        let task = tokio::spawn(run(sender, events, rx, state.clone(), on_layers));
         Self {
             state,
             commands,
@@ -372,6 +377,7 @@ async fn run(
     mut events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     mut commands: tokio::sync::mpsc::UnboundedReceiver<Command>,
     state: Arc<Mutex<State>>,
+    on_layers: LayerHandler,
 ) {
     let mut session = Session::new();
     let mut tick = tokio::time::interval(HEARTBEAT);
@@ -422,6 +428,7 @@ async fn run(
                             }
                             Incoming::SendLayers { stream, layers } => {
                                 tracing::debug!(stream, ?layers, "MCP send layers");
+                                on_layers(&layers);
                             }
                             Incoming::Bandwidth { total, video } => {
                                 tracing::debug!(total, ?video, "MCP bandwidth");
@@ -527,6 +534,7 @@ m=x-data 3478 RTP/SAVP 127 126\r\na=x-source-streamid:639\r\na=mid:12\r\n";
             None,
             super::super::datachannel::DataSender::for_test(tx),
             erx,
+            Box::new(|_| {}),
         );
         let w = |ids: &[i64]| ids.iter().map(|i| (*i, 450)).collect::<Vec<_>>();
         let a = v.show(&w(&[2244, 2031]));

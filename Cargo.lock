@@ -4085,6 +4085,7 @@ dependencies = [
  "keyring",
  "md-5",
  "openh264",
+ "openh264-sys2",
  "openssl",
  "openssl-sys",
  "pipewire",

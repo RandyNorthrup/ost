@@ -1089,6 +1089,9 @@ pub struct WebRtcAudioSession {
     _video_rx: Vec<Arc<super::webrtc_video::VideoReceiver>>,
     /// In a meeting: others' video and the control plane asking for it.
     meeting_video: Option<super::meeting_media::MeetingVideo>,
+    /// What a meeting's processor asks our camera for.
+    #[cfg(feature = "video")]
+    send_control: Arc<super::webrtc_video::SendControl>,
     /// The receive slots' SSRC ranges by mid, which re-offers may move.
     #[cfg(feature = "video")]
     slot_ranges: Vec<(String, Arc<std::sync::atomic::AtomicU64>)>,
@@ -1257,7 +1260,13 @@ impl WebRtcAudioSession {
             }
             let v = self.video_out.as_ref().context("This call has no video")?;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-            let sender = super::webrtc_video::VideoSender::start(tx, v.pt, v.ssrc, device)?;
+            let sender = super::webrtc_video::VideoSender::start(
+                tx,
+                v.pt,
+                v.ssrc,
+                device,
+                Some(self.send_control.clone()),
+            )?;
             *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) =
                 Some(sender.keyframe.clone());
             let (socket, peer, srtp) = (v.socket.clone(), v.peer, v.srtp.clone());
@@ -1540,6 +1549,9 @@ impl WebRtcAudioSession {
 
         #[cfg(feature = "video")]
         let keyframe_req: KeyframeSlot = Default::default();
+        // What a meeting's processor asks our camera for.
+        #[cfg(feature = "video")]
+        let send_control: Arc<super::webrtc_video::SendControl> = Arc::default();
         #[cfg(feature = "video")]
         let share_keyframe_req: KeyframeSlot = Default::default();
         // The peer's video, when the answer accepted it.
@@ -1698,11 +1710,36 @@ impl WebRtcAudioSession {
                 );
                 let (tx, events) =
                     super::datachannel::open(dtls, super::meeting_media::DATA_LABEL, 0);
+                // The processor's layer requests for our camera: its size,
+                // bitrate and frame rate, and keyframes.
+                #[cfg(feature = "video")]
+                let on_layers: super::meeting_media::LayerHandler = {
+                    let (control, slot) = (send_control.clone(), keyframe_req.clone());
+                    Box::new(move |layers: &[String]| {
+                        let parsed: Vec<_> = layers
+                            .iter()
+                            .filter_map(|l| super::webrtc_video::parse_layer(l))
+                            .collect();
+                        // One stream: the largest layer asked for.
+                        if let Some((limits, _)) = parsed.iter().max_by_key(|(l, _)| l.max_fs) {
+                            control.set(*limits);
+                        }
+                        if parsed.iter().any(|(_, key)| *key)
+                            && let Some(flag) =
+                                slot.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+                        {
+                            flag.store(true, Ordering::Relaxed);
+                        }
+                    })
+                };
+                #[cfg(not(feature = "video"))]
+                let on_layers: super::meeting_media::LayerHandler = Box::new(|_| {});
                 Some(super::meeting_media::MeetingVideo::start(
                     offer.slots.clone(),
                     offer.share_slot.clone(),
                     tx,
                     events,
+                    on_layers,
                 ))
             }
             _ => None,
@@ -1849,6 +1886,8 @@ impl WebRtcAudioSession {
             #[cfg(feature = "video")]
             _video_rx: video_rx.into_iter().map(|v| v.rx).collect(),
             meeting_video,
+            #[cfg(feature = "video")]
+            send_control,
             #[cfg(feature = "video")]
             slot_ranges,
             muted,

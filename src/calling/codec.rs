@@ -97,6 +97,27 @@ impl H264Encoder {
         })
     }
 
+    /// Change the target bitrate without a new encoder (and so without a
+    /// keyframe), as a meeting's processor retunes it every second or so.
+    pub fn set_bitrate(&mut self, kbps: u32) {
+        let mut info = openh264_sys2::SBitrateInfo {
+            iLayer: openh264_sys2::SPATIAL_LAYER_ALL,
+            iBitrate: (kbps * 1000) as std::os::raw::c_int,
+        };
+        // SAFETY: the encoder is initialised (it was made by `new` or
+        // `new_realtime`), and SetOption(ENCODER_OPTION_BITRATE) takes a
+        // pointer to an SBitrateInfo that lives across the call.
+        let rc = unsafe {
+            self.encoder.raw_api().set_option(
+                openh264_sys2::ENCODER_OPTION_BITRATE,
+                (&raw mut info).cast(),
+            )
+        };
+        if rc != 0 {
+            tracing::debug!(rc, kbps, "encoder bitrate change refused");
+        }
+    }
+
     /// Make the next frame a keyframe (a receiver asked: RTCP PLI/FIR).
     pub fn force_keyframe(&mut self) {
         self.encoder.force_intra_frame();

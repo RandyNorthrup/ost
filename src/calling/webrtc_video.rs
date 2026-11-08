@@ -353,14 +353,127 @@ const SCREEN: SendConfig = SendConfig {
     repeat: Some(std::time::Duration::from_secs(1)),
 };
 
+/// What a meeting's media processor asks our camera for (Teams' `vdclc`):
+/// at most `max_fs` macroblocks a frame, `max_kbps`, `max_fps`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SendLimits {
+    pub max_fs: u32,
+    pub max_kbps: u32,
+    pub max_fps: u32,
+}
+
+/// The latest limits, shared between the media control plane and the
+/// sender.
+#[derive(Default)]
+pub struct SendControl {
+    limits: std::sync::Mutex<Option<SendLimits>>,
+}
+
+impl SendControl {
+    pub fn set(&self, l: SendLimits) {
+        *self.limits.lock().unwrap_or_else(|e| e.into_inner()) = Some(l);
+    }
+
+    fn get(&self) -> Option<SendLimits> {
+        *self.limits.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// One layer of a `vdclc` message ("KeyFrame=1;max-br=291;max-fps=1500.000000;
+/// max-fs=405;…"): the limits, and whether a keyframe is wanted. `max-fps`
+/// is in hundredths.
+pub fn parse_layer(layer: &str) -> Option<(SendLimits, bool)> {
+    let field = |k: &str| {
+        layer.split(';').find_map(|kv| {
+            let (key, v) = kv.split_once('=')?;
+            (key.trim() == k)
+                .then(|| v.trim().parse::<f64>().ok())
+                .flatten()
+        })
+    };
+    Some((
+        SendLimits {
+            max_fs: field("max-fs")? as u32,
+            max_kbps: field("max-br")? as u32,
+            max_fps: ((field("max-fps")? / 100.0).round() as u32).max(1),
+        },
+        field("KeyFrame").is_some_and(|k| k >= 1.0),
+    ))
+}
+
+/// The largest even size with the picture's shape that fits `max_fs`
+/// 16x16 macroblocks (never larger than it is).
+pub fn fit_to_fs(w: u32, h: u32, max_fs: u32) -> (u32, u32) {
+    let mbs = |w: u32, h: u32| w.div_ceil(16) * h.div_ceil(16);
+    if max_fs == 0 || mbs(w, h) <= max_fs {
+        return (w, h);
+    }
+    let scale = ((max_fs * 256) as f64 / (w * h) as f64).sqrt();
+    let mut nw = ((w as f64 * scale) as u32) & !1;
+    let mut nh = ((h as f64 * scale) as u32) & !1;
+    while nw > 2 && nh > 2 && mbs(nw, nh) > max_fs {
+        nw -= 2;
+        nh = ((nw as u64 * h as u64 / w as u64) as u32) & !1;
+    }
+    (nw.max(2), nh.max(2))
+}
+
+/// One plane resized (bilinear).
+fn scale_plane(src: &[u8], w: usize, h: usize, nw: usize, nh: usize, out: &mut Vec<u8>) {
+    let fx = w as f32 / nw as f32;
+    let fy = h as f32 / nh as f32;
+    for y in 0..nh {
+        let sy = ((y as f32 + 0.5) * fy - 0.5).clamp(0.0, (h - 1) as f32);
+        let (y0, wy) = (sy as usize, sy.fract());
+        let y1 = (y0 + 1).min(h - 1);
+        for x in 0..nw {
+            let sx = ((x as f32 + 0.5) * fx - 0.5).clamp(0.0, (w - 1) as f32);
+            let (x0, wx) = (sx as usize, sx.fract());
+            let x1 = (x0 + 1).min(w - 1);
+            let p = |yy: usize, xx: usize| src[yy * w + xx] as f32;
+            let top = p(y0, x0) * (1.0 - wx) + p(y0, x1) * wx;
+            let bottom = p(y1, x0) * (1.0 - wx) + p(y1, x1) * wx;
+            out.push((top * (1.0 - wy) + bottom * wy).round() as u8);
+        }
+    }
+}
+
+/// An I420 frame resized to `nw`x`nh` (even sizes).
+pub fn scale_i420(data: &[u8], w: u32, h: u32, nw: u32, nh: u32) -> Vec<u8> {
+    let (w, h, nw, nh) = (w as usize, h as usize, nw as usize, nh as usize);
+    let mut out = Vec::with_capacity(nw * nh * 3 / 2);
+    let y_len = w * h;
+    let c_len = (w / 2) * (h / 2);
+    scale_plane(&data[..y_len], w, h, nw, nh, &mut out);
+    scale_plane(
+        &data[y_len..y_len + c_len],
+        w / 2,
+        h / 2,
+        nw / 2,
+        nh / 2,
+        &mut out,
+    );
+    scale_plane(
+        &data[y_len + c_len..y_len + 2 * c_len],
+        w / 2,
+        h / 2,
+        nw / 2,
+        nh / 2,
+        &mut out,
+    );
+    out
+}
+
 impl VideoSender {
     /// Open the camera (`device`, else /dev/video0) and start sending RTP
-    /// packets (payload type `pt`, `ssrc`) to `out`.
+    /// packets (payload type `pt`, `ssrc`) to `out`; in a meeting,
+    /// `control` carries what the media processor asks for.
     pub fn start(
         out: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         pt: u8,
         ssrc: u32,
         device: Option<String>,
+        control: Option<Arc<SendControl>>,
     ) -> anyhow::Result<Self> {
         let (camera, frames) =
             super::camera::CameraCapture::start(device.as_deref(), SEND_W, SEND_H, SEND_FPS)?;
@@ -371,7 +484,7 @@ impl VideoSender {
             .name("ost-video-tx".into())
             .spawn(move || {
                 let _camera = camera;
-                send_loop(frames, out, pt, ssrc, &stop2, &key2, CAMERA);
+                send_loop(frames, out, pt, ssrc, &stop2, &key2, CAMERA, control);
                 super::frames::clear("self");
             })?;
         Ok(Self { stop, keyframe })
@@ -393,7 +506,7 @@ impl VideoSender {
             .name("ost-share-tx".into())
             .spawn(move || {
                 let _capture = capture;
-                send_loop(frames, out, pt, ssrc, &stop2, &key2, SCREEN);
+                send_loop(frames, out, pt, ssrc, &stop2, &key2, SCREEN, None);
                 // The capture ended (or we were stopped): say so.
                 stop2.store(true, Ordering::Relaxed);
             })?;
@@ -422,17 +535,23 @@ fn send_loop(
     stop: &AtomicBool,
     keyframe: &AtomicBool,
     cfg: SendConfig,
+    control: Option<Arc<SendControl>>,
 ) {
-    let mut encoder: Option<(u32, u32, super::codec::H264Encoder)> = None;
+    // The encoder and what it was made for: (width, height, kbps, fps).
+    let mut encoder: Option<((u32, u32, u32, u32), super::codec::H264Encoder)> = None;
     let mut last: Option<super::camera::YuvFrame> = None;
     let mut last_sent = std::time::Instant::now();
     let started = std::time::Instant::now();
     let mut seq: u16 = (ssrc >> 7) as u16;
     let mut sent = 0u64;
     let mut last_frame: Option<std::time::Instant> = None;
-    // A little under the frame interval, so 15 fps cameras aren't halved.
-    let min_gap = std::time::Duration::from_millis(1000 / cfg.fps as u64 * 8 / 10);
     while !stop.load(Ordering::Relaxed) {
+        // A meeting's processor may ask for less (Teams' vdclc).
+        let limits = control.as_ref().and_then(|c| c.get());
+        let fps = limits.map_or(cfg.fps, |l| l.max_fps.clamp(1, 30));
+        let kbps = limits.map_or(cfg.kbps, |l| l.max_kbps.clamp(50, 4000));
+        // A little under the frame interval, so 15 fps cameras aren't halved.
+        let min_gap = std::time::Duration::from_millis(1000 / fps as u64 * 8 / 10);
         let f = match frames.recv_timeout(std::time::Duration::from_millis(250)) {
             Ok(f) => f,
             // Nothing new: resend the last picture now and then, if asked.
@@ -464,25 +583,49 @@ fn send_loop(
                 preview_rgba(&f.data, f.width, f.height),
             );
         }
-        if encoder
-            .as_ref()
-            .is_none_or(|(w, h, _)| (*w, *h) != (f.width, f.height))
+        // The size the processor allows (16x16 macroblocks a frame).
+        let (tw, th) = limits.map_or((f.width, f.height), |l| {
+            fit_to_fs(f.width, f.height, l.max_fs)
+        });
+        let f = if (tw, th) != (f.width, f.height) {
+            super::camera::YuvFrame {
+                width: tw,
+                height: th,
+                data: scale_i420(&f.data, f.width, f.height, tw, th),
+            }
+        } else {
+            f
+        };
+        // A new encoder for a new size or frame rate; a new bitrate is set
+        // in place (no keyframe).
+        if let Some(((w, h, k, r), enc)) = encoder.as_mut()
+            && (*w, *h, *r) == (f.width, f.height, fps)
+            && *k != kbps
         {
+            enc.set_bitrate(kbps);
+            *k = kbps;
+        }
+        let made_for = (f.width, f.height, kbps, fps);
+        if encoder.as_ref().is_none_or(|(m, _)| *m != made_for) {
             match super::codec::H264Encoder::new_realtime(
                 f.width,
                 f.height,
-                cfg.fps as f32,
-                cfg.kbps,
-                cfg.fps * 2,
+                fps as f32,
+                kbps,
+                fps * 2,
             ) {
-                Ok(e) => encoder = Some((f.width, f.height, e)),
+                Ok(e) => {
+                    tracing::info!(w = f.width, h = f.height, kbps, fps, "video encoder");
+                    encoder = Some((made_for, e));
+                    // A new encoder starts with a keyframe anyway.
+                }
                 Err(e) => {
                     tracing::warn!("H.264 encoder unavailable: {e:#}");
                     return;
                 }
             }
         }
-        let Some((_, _, enc)) = encoder.as_mut() else {
+        let Some((_, enc)) = encoder.as_mut() else {
             continue;
         };
         if keyframe.swap(false, Ordering::Relaxed) {
@@ -561,6 +704,49 @@ mod tests {
             seq,
             timestamp: ts,
         }
+    }
+
+    #[test]
+    fn layer_requests_read_as_teams_writes_them() {
+        let (l, key) = parse_layer(
+            "KeyFrame=1;max-br=291;max-fps=1500.000000;max-fs=405;max-mbps=6075;sequence-number=0;ssrc=893793192",
+        )
+        .unwrap();
+        assert_eq!(
+            l,
+            SendLimits {
+                max_fs: 405,
+                max_kbps: 291,
+                max_fps: 15
+            }
+        );
+        assert!(key);
+        assert!(
+            !parse_layer("KeyFrame=0;max-br=646;max-fps=3000.0;max-fs=920")
+                .unwrap()
+                .1
+        );
+    }
+
+    #[test]
+    fn frames_fit_the_macroblock_budget() {
+        // 920 macroblocks: 640x360 (40x23 = 920) from 1280x720.
+        assert_eq!(fit_to_fs(1280, 720, 920), (640, 360));
+        let (w, h) = fit_to_fs(1280, 720, 405);
+        assert!(w.div_ceil(16) * h.div_ceil(16) <= 405 && w % 2 == 0 && h % 2 == 0);
+        assert!((w as f32 / h as f32 - 16.0 / 9.0).abs() < 0.05);
+        assert_eq!(fit_to_fs(640, 360, 3600), (640, 360), "never larger");
+    }
+
+    #[test]
+    fn i420_scales_to_the_new_size() {
+        let (w, h) = (8u32, 4u32);
+        let mut f = vec![200u8; (w * h) as usize];
+        f.extend(vec![100u8; (w * h / 2) as usize]);
+        let s = scale_i420(&f, w, h, 4, 2);
+        assert_eq!(s.len(), 4 * 2 * 3 / 2);
+        assert!(s[..8].iter().all(|&v| v == 200));
+        assert!(s[8..].iter().all(|&v| v == 100));
     }
 
     #[test]

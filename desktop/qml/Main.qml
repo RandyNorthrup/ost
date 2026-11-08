@@ -1148,6 +1148,9 @@ Window {
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
                 console.warn("JOIN lobby", backend.callLobbyJson)
+            } else if (step === 8 && Qt.application.arguments.indexOf("--join-camera") >= 0) {
+                // --join-camera: turn the camera on in the meeting.
+                backend.toggleCamera()
             } else if (step === 7 && Qt.application.arguments.indexOf("--join-admit") >= 0) {
                 // --join-admit: admit the first person waiting in the lobby.
                 const lobby = JSON.parse(backend.callLobbyJson || "[]")

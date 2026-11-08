@@ -23,6 +23,8 @@ const RING_TIMEOUT: Duration = Duration::from_secs(60);
 /// A placed call that the callee answered.
 pub struct OutgoingCall {
     http: reqwest::Client,
+    /// A meeting's updateMediaDescriptions link, and the last request id.
+    media_descriptions: Option<(String, std::sync::atomic::AtomicU64)>,
     /// The join response's roster (people and their streams).
     joined_roster: Vec<super::roster::Participant>,
     skype_token: String,
@@ -376,6 +378,26 @@ impl OutgoingCall {
         }
     }
 
+    /// In a meeting: tell the conversation what our camera and sharing
+    /// lines now do, as Teams posts UpdateMediaDescriptions when they
+    /// change (the roster then shows our camera, so others ask for it).
+    pub async fn describe_media(&self, camera: bool, sharing: bool) -> Result<()> {
+        let Some((link, seq)) = &self.media_descriptions else {
+            return Ok(());
+        };
+        let request_id = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let body = media_descriptions_body(camera, sharing, request_id);
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            link,
+            &body,
+            "Media descriptions",
+        )
+        .await?;
+        Ok(())
+    }
+
     pub fn can_send_video(&self) -> bool {
         self.media.as_ref().is_some_and(|m| m.can_send_video())
     }
@@ -478,6 +500,11 @@ impl OutgoingCall {
     }
 
     /// Whether we're sending our screen.
+    /// Our camera is sending.
+    pub fn camera_on(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.camera_on())
+    }
+
     pub fn is_sharing(&self) -> bool {
         self.media.as_ref().is_some_and(|m| m.is_sharing())
     }
@@ -665,7 +692,7 @@ async fn cc_post(
     if !status.is_success() {
         tracing::info!(
             "{what}: HTTP {status}: {}",
-            text.chars().take(300).collect::<String>()
+            text.chars().take(1500).collect::<String>()
         );
         bail!("{what} failed: HTTP {status}");
     }
@@ -737,6 +764,24 @@ fn reaction_body(
 
 /// Teams' MuteAllSync body: scope "all" (everyone but you) with an empty
 /// list, audio only (Teams' muteAllParticipants passes MuteScope.All, []).
+/// Teams' UpdateMediaDescriptions: the lines our SDP lets send (a line
+/// it has receive-only can't be described: 1047 "Invalid
+/// MediaDescriptions"), with what they do now.
+fn media_descriptions_body(camera: bool, sharing: bool, request_id: u64) -> serde_json::Value {
+    use super::meeting_media::{CAMERA_MID, SHARE_MID};
+    let mut d = vec![
+        serde_json::json!({"mid": CAMERA_MID, "direction": if camera { "sendrecv" } else { "recvonly" }, "label": "main-video"}),
+    ];
+    if sharing {
+        d.push(serde_json::json!({"mid": SHARE_MID, "direction": "sendrecv", "label": "applicationsharing-video"}));
+    }
+    serde_json::json!({
+        "UpdateMediaDescriptions": {
+            "mediaDescriptions": {"descriptions": d, "requestId": request_id}
+        }
+    })
+}
+
 fn mute_all_body(me: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "from": me,
@@ -843,6 +888,9 @@ struct Acceptance {
     /// Where our re-offers go (screen sharing).
     renegotiation: Option<String>,
     end: Option<String>,
+    /// Where a meeting is told what our lines do (Teams' camera and screen
+    /// changes go there).
+    media_descriptions: Option<String>,
 }
 
 /// Read a callee answer, a rejection, or a call end from a call event.
@@ -890,6 +938,7 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
         transfer: link("transfer"),
         renegotiation: link("mediaRenegotiation"),
         end: link("end"),
+        media_descriptions: link("updateMediaDescriptions"),
     }))
 }
 
@@ -1233,6 +1282,11 @@ async fn start(
     };
 
     Ok(OutgoingCall {
+        media_descriptions: acceptance
+            .media_descriptions
+            .clone()
+            .filter(|_| meeting_media)
+            .map(|l| (l, std::sync::atomic::AtomicU64::new(1))),
         joined_roster: super::roster::joined(&created.response_body),
         http,
         skype_token,
@@ -1308,6 +1362,25 @@ mod tests {
         assert_eq!(m["scope"], "all");
         assert_eq!(m["payload"]["values"][0]["name"], "heart");
         assert_eq!(body["from"]["id"], "8:orgid:me");
+    }
+
+    #[test]
+    fn media_descriptions_say_what_the_lines_do() {
+        let b = media_descriptions_body(true, false, 2);
+        let d = &b["UpdateMediaDescriptions"]["mediaDescriptions"];
+        assert_eq!(d["requestId"], 2);
+        assert_eq!(d["descriptions"][0]["direction"], "sendrecv");
+        assert_eq!(d["descriptions"][0]["label"], "main-video");
+        assert_eq!(
+            d["descriptions"].as_array().unwrap().len(),
+            1,
+            "a receive-only line isn't described"
+        );
+        let s = media_descriptions_body(false, true, 3);
+        assert_eq!(
+            s["UpdateMediaDescriptions"]["mediaDescriptions"]["descriptions"][1]["mid"],
+            "11"
+        );
     }
 
     #[test]

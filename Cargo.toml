@@ -75,6 +75,8 @@ cpal = { version = "0.18", optional = true }
 # Video capture/display (optional — requires V4L2, SDL2, nasm on Linux)
 v4l = { version = "0.14", optional = true }
 openh264 = { version = "0.9", optional = true }
+# Its C API types (live bitrate changes).
+openh264-sys2 = { version = "0.9", optional = true }
 sdl2 = { version = "0.38", optional = true }
 # Screen sharing: the xdg-desktop-portal ScreenCast portal and PipeWire.
 ashpd = { version = "0.14", optional = true, default-features = false, features = ["tokio", "screencast"] }
@@ -85,7 +87,7 @@ default = []
 # PipeWire: real sinks and sources by name (the ALSA host lists plugins).
 audio = ["cpal", "cpal/pipewire", "pipewire"]
 # Camera and H.264 (the desktop app); video-capture adds the SDL viewer.
-video = ["v4l", "openh264"]
+video = ["v4l", "openh264", "openh264-sys2"]
 video-capture = ["video", "sdl2"]
 # Sharing your screen in calls (Wayland/X11 through the desktop portal).
 screencast = ["video", "ashpd", "pipewire"]
