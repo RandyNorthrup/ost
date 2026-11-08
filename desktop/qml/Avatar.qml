@@ -14,6 +14,12 @@ Rectangle {
     property bool square: false
     /// A group chat without a picture: Teams' grey circle with people.
     property bool group: false
+    /// A meeting's chat: Teams' #C5CBFA circle with the 16 px calendar
+    /// glyph in brand (measured on winpc at 20 and 32 px).
+    property bool meeting: false
+    /// The glyph's size: 16 in lists and cards, 32 (filling it) in the
+    /// chat header.
+    property int meetingGlyph: 16
     /// Teams take initials from the first two words of a team's name.
     property string initialsText: ""
     // Ask only once the name is known: Teams draws the initials picture
@@ -41,7 +47,7 @@ Rectangle {
         for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997
         return h % swatches.length
     }
-    color: pic.visible ? "transparent" : group ? "#949494" : swatches[hue]
+    color: meeting ? "#C5CBFA" : pic.visible ? "transparent" : group ? "#949494" : swatches[hue]
 
     function initials(n) {
         const words = n.trim().split(/\s+/).filter(w => w.length > 0)
@@ -76,7 +82,7 @@ Rectangle {
         transformOrigin: Item.TopLeft
         smooth: true
         antialiasing: true
-        visible: root.photo.length > 0 && src.status === Image.Ready
+        visible: !root.meeting && root.photo.length > 0 && src.status === Image.Ready
         onVisibleChanged: requestPaint()
         onPaint: {
             const ctx = getContext("2d")
@@ -95,14 +101,20 @@ Rectangle {
     }
 
     FluentIcon {
-        visible: root.group && !pic.visible
+        visible: root.meeting
+        anchors.centerIn: parent
+        name: "meeting-chat-20"; size: root.meetingGlyph
+        color: "#5B5FC7"
+    }
+    FluentIcon {
+        visible: root.group && !root.meeting && !pic.visible
         anchors.centerIn: parent
         name: root.size > 24 ? "people-team-20" : "people-team-16"
         size: Math.round(root.size * 0.55)
         color: "white"
     }
     Text {
-        visible: !pic.visible && !root.group
+        visible: !pic.visible && !root.group && !root.meeting
         anchors.centerIn: parent
         text: root.initialsText || root.initials(root.name)
         color: root.inks[root.hue]

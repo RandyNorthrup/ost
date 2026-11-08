@@ -61,6 +61,28 @@ Rectangle {
         // Rooms, Q&A and Meeting Whiteboard after them, under "+4").
         : isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? ["Chat", "Shared", "Recap"] : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
+    // Teams' conversation margins by pane width (measured on winpc at
+    // 452-892 px): each row starts 14 in under 480 px, else 32; its icon
+    // or avatar sits at the row start (+6 for event icons), its content 40
+    // in; on the right, 28 under 480, 32 under 720, 72 from 720. The
+    // compose box keeps 14 / 32 / 72 on both sides.
+    readonly property real gutL: width < 480 ? 14 : 32
+    readonly property real gutContent: gutL + 40
+    readonly property real gutR: width < 480 ? 28 : width < 720 ? 32 : 72
+    readonly property real composeGut: width < 480 ? 14 : width < 720 ? 32 : 72
+    // While a meeting is live, Teams draws its chat's header in the dark
+    // palette (entity-header, measured on winpc): #2F2F4A, white title,
+    // icons and tab line, 75 % white for the other tabs, no hover fill.
+    readonly property bool liveBand: isMeetingChat && callGoing && !pane
+    readonly property color hdrText: liveBand ? "#FFFFFF" : theme.text
+    readonly property color hdrStrong: liveBand ? "#FFFFFF" : theme.textStrong
+    readonly property color hdrSoft: liveBand ? Qt.rgba(1, 1, 1, 0.75) : theme.textSecondary
+    /// When the live meeting started (its newest "started" call event).
+    readonly property var liveSince: {
+        if (!liveBand) return null
+        const s = messages.filter(m => m.kind === "call" && m.call_state === "started")
+        return s.length ? new Date(s[s.length - 1].time) : null
+    }
     // When this chat was opened (for GIF autoplay).
     property date openedAt: new Date()
     // The header's breakpoints (Teams 7.3: the header's own width). Below
@@ -327,11 +349,17 @@ Rectangle {
         id: header
         width: parent.width; height: theme.headerHeight
         visible: root.chatName.length > 0
+        Rectangle {
+            visible: root.liveBand
+            anchors.fill: parent
+            color: "#2F2F4A"
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+        }
         // Where the toolbar starts (its leftmost shown item, less Teams'
         // 4 px toolbar padding): the tabs fit before it.
         readonly property real toolbarLeft: {
             let x = root.actionRight
-            for (const it of [callPrimary, oneToOnePeople, joinButton, meetNow, meetingJoin, rosterCount])
+            for (const it of [liveDuration, callPrimary, oneToOnePeople, joinButton, meetNow, meetingJoin, rosterCount])
                 if (it && it.visible) x = Math.min(x, it.x)
             return x - 4
         }
@@ -356,6 +384,9 @@ Rectangle {
             name: root.chatName; presence: root.chatPresence
             photoId: root.chatPhotoId
             group: root.isGroup && !root.chatPhotoId
+            // Teams: the calendar glyph filling a 32 px #C5CBFA circle.
+            meeting: root.isMeetingChat
+            meetingGlyph: 32
         }
         Avatar {
             visible: root.isChannel
@@ -375,11 +406,13 @@ Rectangle {
             height: root.headerNarrow && !root.isChannel ? 20 : implicitHeight
             lineHeight: root.headerNarrow && !root.isChannel ? 20 : 1; lineHeightMode: root.headerNarrow && !root.isChannel ? Text.FixedHeight : Text.ProportionalHeight
             // Long names elide so the tabs and actions keep their place.
-            width: Math.min(implicitWidth, root.headerNarrow && !root.isChannel ? header.toolbarLeft - x - 16 : parent.width * 0.35)
+            // Narrow: Teams' title (and the tab dropdown under it) ends where
+            // the toolbar starts (measured: 220.2 px at a 452 px header).
+            width: Math.max(0, Math.min(implicitWidth, root.headerNarrow && !root.isChannel ? header.toolbarLeft - x : parent.width * 0.35))
             elide: Text.ElideRight
             text: root.chatName
             font.family: theme.font; font.pixelSize: root.headerNarrow && !root.isChannel ? 14 : theme.title; font.weight: Font.Bold
-            color: theme.text
+            color: root.hdrText
         }
         // Name group chat (chat-title-name-group-chat): group chats only,
         // 4 after the title.
@@ -506,19 +539,19 @@ Rectangle {
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.base
                         font.weight: tabItem.sel ? Font.DemiBold : Font.Normal
-                        color: tabItem.sel ? theme.text : theme.textStrong
+                        color: tabItem.sel ? root.hdrText : root.liveBand ? root.hdrSoft : theme.textStrong
                     }
                     FluentIcon {
                         visible: tabItem.menuable
                         x: tabText.x + tabText.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter
-                        name: "chevron-down-12"; size: 12; color: theme.text
+                        name: "chevron-down-12"; size: 12; color: root.hdrText
                     }
                     // Selected: a 3 px brand pill, inset 8 px, at the bottom.
                     Rectangle {
                         visible: tabItem.sel
                         x: 8; width: tabText.implicitWidth - 4 + (tabItem.menuable ? 20 : 0); height: 3; radius: 1.5
                         anchors.bottom: parent.bottom
-                        color: theme.brand
+                        color: root.liveBand ? "#FFFFFF" : theme.brand
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler {
@@ -560,7 +593,7 @@ Rectangle {
                 id: tabOverflow
                 visible: tabsFit.hidden.length > 0
                 y: -2; width: plusText.implicitWidth + 4; height: 60.3
-                Text { id: plusText; x: 2; anchors.verticalCenter: parent.verticalCenter; text: "+" + tabsFit.hidden.length; font.family: theme.font; font.pixelSize: theme.base; color: plusHover.hovered ? theme.text : theme.textSecondary }
+                Text { id: plusText; x: 2; anchors.verticalCenter: parent.verticalCenter; text: "+" + tabsFit.hidden.length; font.family: theme.font; font.pixelSize: theme.base; color: plusHover.hovered ? root.hdrText : root.hdrSoft }
                 HoverHandler { id: plusHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: tabOverflowMenu.open() }
                 Accessible.role: Accessible.Button
@@ -578,7 +611,7 @@ Rectangle {
         // 12 px chevron 4 after it; a menu of the tabs, the open one checked).
         Item {
             id: tabDropdown
-            visible: root.headerNarrow && !root.isChannel && !root.pane
+            visible: root.headerNarrow && !root.isChannel && !root.pane && header.toolbarLeft - title.x >= ddRow.implicitWidth
             x: title.x; y: 28; width: ddRow.implicitWidth; height: 17.3
             Row {
                 id: ddRow
@@ -604,10 +637,10 @@ Rectangle {
             signal clicked()
             width: 32; height: 32; radius: theme.radius
             anchors.verticalCenter: parent.verticalCenter
-            color: haHover.hovered ? theme.hover : "transparent"
+            color: haHover.hovered && !root.liveBand ? theme.hover : "transparent"
             HoverHandler { id: haHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: ha.clicked() }
-            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: theme.textStrong }
+            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: root.hdrStrong }
         }
         // 1:1: Teams' sticky call button (default-chat-call-audio-button /
         // -video-button, 24 x 31.3): the last choice placed from here, audio
@@ -788,6 +821,24 @@ Rectangle {
         // primary, 43.1 x 31.3, padding 5 8, 14 semibold white on brand,
         // 8 before the roster count; hidden when the meeting is cancelled,
         // disabled while you're in it.
+        Text {
+            id: liveDuration
+            visible: root.liveBand && !!root.liveSince
+            property int tick: 0
+            Timer { running: liveDuration.visible; interval: 1000; repeat: true; onTriggered: liveDuration.tick++ }
+            x: (meetingJoin.visible ? meetingJoin.x - 8 : rosterCount.leftEdge) - 7 - width
+            anchors.verticalCenter: parent.verticalCenter
+            text: {
+                tick
+                if (!root.liveSince) return ""
+                const t = Math.max(0, Math.floor((Date.now() - root.liveSince.getTime()) / 1000))
+                const two = n => (n < 10 ? "0" : "") + n
+                return two(Math.floor(t / 3600)) + ":" + two(Math.floor(t / 60) % 60) + ":" + two(t % 60)
+            }
+            font.family: theme.font; font.pixelSize: 12
+            color: "#FFFFFF"
+            Accessible.name: "Meeting duration " + text
+        }
         Rectangle {
             id: meetingJoin
             visible: root.isMeetingChat && !!root.meeting && !root.meeting.cancelled
@@ -812,11 +863,11 @@ Rectangle {
             readonly property real leftEdge: visible ? x : root.actionRight
             x: root.actionRight - width; anchors.verticalCenter: parent.verticalCenter
             width: Math.max(28, 4 + 20 + 2 + countLabel.implicitWidth + 4); height: 32; radius: 4
-            color: rosterHover.hovered ? theme.hover : "transparent"
+            color: rosterHover.hovered && !root.liveBand ? theme.hover : "transparent"
             Row {
                 anchors.centerIn: parent; spacing: 2
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "people-add-20"; size: 20; color: theme.textStrong }
-                Text { id: countLabel; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.count; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; color: theme.textStrong }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "people-add-20"; size: 20; color: root.hdrStrong }
+                Text { id: countLabel; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.count; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; color: root.hdrStrong }
             }
             HoverHandler { id: rosterHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: participants.visible = !participants.visible }
@@ -992,7 +1043,7 @@ Rectangle {
             Item {
                 visible: msg.modelData.lastRead === true
                 y: msg.modelData.dayDivider ? 30 : 0
-                x: 72; width: parent.width - 144; height: 36
+                x: root.gutContent; width: parent.width - root.gutContent - root.gutR; height: 36
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     x: 0; width: lastReadText.x - 24; height: 1; color: theme.brand
@@ -1020,7 +1071,7 @@ Rectangle {
             // ({h}h {m}m {s}s, zero parts left out); a missed call has none.
             FluentIcon {
                 visible: msg.isRow
-                x: 38; y: msg.topPad + 8
+                x: root.gutL + 6; y: msg.topPad + 8
                 size: 20
                 name: msg.isCall ? (msg.modelData.call_huddle ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
                     : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20",
@@ -1031,7 +1082,7 @@ Rectangle {
             Row {
                 id: callRow
                 visible: msg.isRow
-                x: 72; y: msg.topPad + 10
+                x: root.gutContent; y: msg.topPad + 10
                 spacing: 12
                 Text {
                     visible: msg.isCall
@@ -1040,7 +1091,7 @@ Rectangle {
                     color: theme.textSecondary
                 }
                 Text {
-                    width: Math.min(implicitWidth, msg.width - 72 - 32)
+                    width: Math.min(implicitWidth, msg.width - root.gutContent - root.gutR)
                     wrapMode: Text.Wrap
                     textFormat: msg.isCall ? Text.StyledText : Text.PlainText
                     text: {
@@ -1063,7 +1114,7 @@ Rectangle {
 
             Avatar {
                 visible: !msg.mine && !msg.grouped && !msg.isRow
-                x: 32; y: msg.bubbleY
+                x: root.gutL; y: msg.bubbleY
                 size: 32; name: msg.modelData.sender
                 photoId: msg.modelData.sender_mri || ""
                 // Teams shows the sender's presence on message avatars too.
@@ -1076,7 +1127,7 @@ Rectangle {
                 visible: msg.showMeta && !msg.editingThis
                 y: msg.topPad
                 spacing: 8
-                x: msg.mine ? msg.width - 72 - width : 72
+                x: msg.mine ? msg.width - root.gutR - width : root.gutContent
                 Text {
                     visible: msg.sendFailed
                     text: msg.modelData.send_note || ""
@@ -1145,7 +1196,7 @@ Rectangle {
                 id: editLoader
                 active: msg.editingThis
                 x: 172; y: msg.topPad
-                width: msg.width - 72 - 172
+                width: msg.width - root.gutR - 172
                 sourceComponent: ComposeBox {
                     id: editBox
                     width: editLoader.width
@@ -1241,7 +1292,7 @@ Rectangle {
                 bottomRightRadius: msg.mine && joinDown ? 0 : r
                 color: bare ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
                 border.color: msg.sendFailed ? theme.redBorder1 : root.isChannel ? theme.dividerSoft : "transparent"
-                x: msg.mine ? parent.width - 72 - width : 72
+                x: msg.mine ? parent.width - root.gutR - width : root.gutContent
                 Column {
                     id: cardCol
                     visible: bubble.cards.length > 0
@@ -2823,7 +2874,9 @@ Rectangle {
         id: compose
         visible: root.chatName.length > 0 && (!root.isChannel || root.posting)
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        anchors.leftMargin: root.pane ? 12 : 72; anchors.rightMargin: root.pane ? 12 : 72; anchors.bottomMargin: 6
+        anchors.leftMargin: root.pane ? 12 : root.composeGut; anchors.rightMargin: root.pane ? 12 : root.composeGut; anchors.bottomMargin: 6
+        // Under 480 px Teams' compose is compact: its tools on their own row.
+        compact: !root.pane && root.width < 480
         placeholder: root.isChannel ? "Start a post" : "Type a message"
         quote: root.quoting
         files: root.pendingFiles

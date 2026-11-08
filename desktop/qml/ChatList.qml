@@ -348,6 +348,7 @@ Rectangle {
             size: 20; name: row.chat.name
             photoId: row.chat.peerMri || ""
             group: row.chat.isGroup === true && !row.chat.peerMri
+            meeting: (row.chat.id || "").indexOf("19:meeting_") === 0
             presence: row.chat.presence || ""
         }
         // Muted: Teams swaps the picture for a 20 px #E6E6E6 circle with the
@@ -362,7 +363,7 @@ Rectangle {
             // Teams ends the name 14 px before a trailing indicator (its 12 px
             // padding plus 2), so the call icon or unread dot never covers it.
             x: 64; y: 6
-            width: (liveIcon.visible ? liveIcon.x - 14 : unreadDot.visible ? unreadDot.x - 14 : parent.width - 40) - x
+            width: (row.showMore ? moreButton.x - 10 : liveIcon.visible ? liveIcon.x - 14 : unreadDot.visible ? unreadDot.x - 14 : parent.width - 40) - x
             text: row.chat.name
             elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: theme.base
@@ -389,18 +390,20 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             color: theme.brand
         }
-        // On hover (or with its menu open), Teams' ··· "More options" at
-        // 258, 6 in the 288-wide row.
+        // On hover (or with its menu open), Teams' ··· "More chat options":
+        // 24 x 23.3 at 256, 4.3 in the 288-wide row, in an 8 px padded slot
+        // (the name stops 2 px before that slot).
         readonly property bool showMore: hover.hovered || rowMenu.opened
         Rectangle {
+            id: moreButton
             visible: row.showMore
-            x: parent.width - 46 - 4; y: 2; width: 28; height: 28; radius: 4
+            x: parent.width - 16 - 32; y: 4.3; width: 24; height: 23.3; radius: 4
             color: moreHover.hovered ? theme.hover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: moreHover.hovered ? "more-horizontal-20-filled" : "more-horizontal-20"; size: 20; color: theme.textStrong }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: row.openMenu(parent.x, parent.y + parent.height) }
             Accessible.role: Accessible.Button
-            Accessible.name: "More options"
+            Accessible.name: "More chat options"
         }
         HoverHandler { id: hover }
         TapHandler { onTapped: if (!moreHover.hovered) root.chatSelected(row.chat.id, row.chat.name) }

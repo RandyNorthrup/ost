@@ -60,7 +60,10 @@ Item {
     // (Teams 461103 / 458473).
     property bool grown: false
     // Editing always uses the multiline layout (Teams, measured).
-    readonly property bool multiline: editing || formatting || files.length > 0 || !!quote || grown
+    /// Teams' compact compose (pane under 480 px): the editor across the
+    /// box and the tools in the bottom row.
+    property bool compact: false
+    readonly property bool multiline: editing || compact || formatting || files.length > 0 || !!quote || grown
     // The delivery header ("IMPORTANT!") is 26 tall above the editor.
     readonly property real headerH: importance ? 26 : 0
     readonly property real boxHeight: headerH + (multiline
