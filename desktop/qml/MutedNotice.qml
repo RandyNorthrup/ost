@@ -12,7 +12,14 @@ Item {
     id: root
     signal dismissed()
     signal unmute()
-    width: 320; height: 117.3
+    /// The family's other alerts reuse this card: the icon, title and text,
+    /// with or without the action button (e.g. Teams' MeetingLocked:
+    /// "This meeting is locked." / "No one else can join.").
+    property string icon: "mic-off-20-filled"
+    property string title: "You've been muted"
+    property string text: "You have been muted."
+    property string action: "Unmute"
+    width: 320; height: action.length > 0 ? 117.3 : 69.33
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 0.6; blur: 1.8; color: Qt.rgba(0, 0, 0, 0.11) }
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 3.2; blur: 7.2; color: Qt.rgba(0, 0, 0, 0.13) }
     Rectangle {
@@ -22,10 +29,10 @@ Item {
         color: theme.quoteFill
         border.color: theme.quoteBorder; border.width: 0.67
     }
-    FluentIcon { x: 12.7; y: 12.7; name: "mic-off-20-filled"; size: 20; color: theme.text }
+    FluentIcon { x: 12.7; y: 12.7; name: root.icon; size: 20; color: theme.text }
     Text {
         x: 40.7; y: 12.7; height: 20; verticalAlignment: Text.AlignVCenter
-        text: "You've been muted"
+        text: root.title
         font.family: theme.font; font.pixelSize: 12
         color: theme.text
     }
@@ -39,25 +46,26 @@ Item {
     }
     Text {
         x: 12.7; y: 40.7; height: 20; verticalAlignment: Text.AlignVCenter
-        text: "You have been muted."
+        text: root.text
         font.family: theme.font; font.pixelSize: 14
         color: theme.textSecondary
     }
     Rectangle {
+        visible: root.action.length > 0
         x: 12.7; y: 72.7; width: parent.width - 25.3; height: 32
         radius: 4
         color: unmuteHover.hovered ? theme.brandHover : theme.brandFill
         Text {
             anchors.centerIn: parent
-            text: "Unmute"
+            text: root.action
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
             color: theme.textOnBrand
         }
         HoverHandler { id: unmuteHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.unmute() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Unmute"
+        Accessible.name: root.action
     }
     Accessible.role: Accessible.AlertMessage
-    Accessible.name: "You've been muted"
+    Accessible.name: root.title
 }

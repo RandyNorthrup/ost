@@ -640,6 +640,7 @@ Window {
     }
     Connections {
         target: backend
+        function onMeetingActionFailed(action) { callWindow.meetingActionFailed(action) }
         function onMeetingReaction(mri, name) {
             callWindow.showReaction(mri, name)
             // --join-watch-reaction: capture the first reaction from someone else.
@@ -703,6 +704,12 @@ Window {
         onEndMeeting: backend.endMeeting()
         onParticipantAction: (action, id, name, stateId) => backend.participantAction(action, id, name, stateId)
         onLeaveOnAllDevices: backend.leaveOnAllDevices()
+        locked: backend.callMeetingLocked
+        attendeeRestrictions: backend.callAttendeeRestrictions
+        lockNotices: backend.callLockNotices
+        onMeetingAction: action => backend.meetingAction(action)
+        onSetAttendeeRestrictions: bits => backend.setAttendeeRestrictions(bits)
+        onDownloadAttendance: backend.downloadAttendanceList()
         onMuteAll: backend.muteAll()
         onSendReaction: name => backend.sendReaction(name)
         inviteUrl: backend.callInviteUrl
@@ -1212,6 +1219,48 @@ Window {
                 else if (step === 19) { console.warn("JOIN people after unspotlight", callWindow.spotlighted.length); callWindow.participantAction("attendee", g.id, g.name, "") }
                 else if (step === 21) { console.warn("JOIN people role", (callWindow.roster.find(p => p.id === g.id) || {}).role); callWindow.participantAction("presenter", g.id, g.name, "") }
                 else if (step === 23) console.warn("JOIN people role back", (callWindow.roster.find(p => p.id === g.id) || {}).role)
+            } else if (step >= 8 && step <= 64 && Qt.application.arguments.indexOf("--join-more") >= 0) {
+                // --join-more: the People pane's More actions: capture the
+                // menu, disable then allow mic for attendees, lower all
+                // hands, save the attendance list, lock the meeting (held
+                // ~60 s so the other side can be checked), then unlock.
+                // (A capture lands a frame later: close nothing in the same
+                // step.)
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-more-" + n + ".png")))
+                const log = t => console.warn("JOIN more", t, JSON.stringify({ items: callWindow.moreItems.map(i => i.k), locked: backend.callMeetingLocked, restrictions: backend.callAttendeeRestrictions, hands: callWindow.hands }))
+                if (step === 8) { callWindow.side = "people"; log("start") }
+                else if (step === 9) callWindow.moreMenuForTest()
+                else if (step === 10) shot("menu")
+                else if (step === 11) { callWindow.closeMenusForTest(); console.warn("JOIN more rows", callWindow.peopleRowsForTest()) }
+                else if (step === 12) { shot("pane"); callWindow.runMoreAction("restrictMic") }
+                else if (step === 13) shot("micdlg")
+                else if (step === 14) callWindow.confirmOpenDialogForTest()
+                else if (step === 16) { log("mic restricted"); callWindow.moreMenuForTest() }
+                else if (step === 17) shot("menu-restricted")
+                else if (step === 18) { callWindow.closeMenusForTest(); callWindow.runMoreAction("allowMic") }
+                else if (step === 19) shot("allowdlg")
+                else if (step === 20) callWindow.confirmOpenDialogForTest()
+                else if (step === 22) { log("mic allowed"); callWindow.runMoreAction("lowerHands") }
+                else if (step === 23) shot("handsdlg")
+                else if (step === 24) callWindow.confirmOpenDialogForTest()
+                else if (step === 26) { log("hands lowered"); callWindow.runMoreAction("attendance") }
+                else if (step === 27) callWindow.runMoreAction("lock")
+                else if (step === 28) shot("lockdlg")
+                else if (step === 29) callWindow.confirmOpenDialogForTest()
+                else if (step === 31) { log("locked"); shot("locked") }
+                // While locked: Make an attendee / Make a presenter, each
+                // after Teams' "Change role?".
+                else if (step === 33 || step === 38) {
+                    const g = callWindow.others.find(p => p.name === "OST Guest 2")
+                    if (g) callWindow.askRoleForTest(step === 33 ? "attendee" : "presenter", g.id, g.name)
+                }
+                else if (step === 34 || step === 39) shot(step === 34 ? "demotedlg" : "promotedlg")
+                else if (step === 35 || step === 40) callWindow.confirmOpenDialogForTest()
+                else if (step === 37 || step === 42) console.warn("JOIN more role", JSON.stringify(callWindow.others.map(p => [p.name, p.role])))
+                else if (step === 60) callWindow.runMoreAction("unlock")
+                else if (step === 61) shot("unlockdlg")
+                else if (step === 62) callWindow.confirmOpenDialogForTest()
+                else if (step === 64) { log("unlocked"); shot("unlocked") }
             } else if (step === 9 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
                 // --join-compact: minimise the meeting window, capture the
                 // compact view (step 12), then restore (step 14).

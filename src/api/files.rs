@@ -393,7 +393,7 @@ pub async fn download(client: &TeamsClient, file: &FileAttachment, dir: &Path) -
 
 /// Save `bytes` as `name` in `dir`, never outside it, adding " (n)" when
 /// the name is taken.
-pub(crate) fn save_unique(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {
+pub fn save_unique(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     // Never let a remote name escape the folder.
     let safe = Path::new(name)

@@ -63,6 +63,12 @@ pub struct OutgoingCall {
     /// The conversation's updateParticipantRole link (Make an attendee /
     /// Make a presenter).
     role_link: Option<String>,
+    /// The conversation's updateMeetingSettings link (Lock the meeting,
+    /// attendee mic and camera).
+    settings_link: Option<String>,
+    /// What the meeting last said about itself (locked, attendee
+    /// restrictions).
+    capability: super::meeting_options::MeetingCapability,
     /// The conversation controller (`conversationController`): deleting it
     /// ends the meeting for everyone.
     controller: Option<String>,
@@ -454,6 +460,56 @@ impl OutgoingCall {
             "to": [{ "id": id }],
         });
         cc_post(&self.http, &self.skype_token, &link, &body, "Spotlight").await?;
+        Ok(())
+    }
+
+    /// The meeting's lock and attendee restrictions, as last reported.
+    pub fn capability(&self) -> super::meeting_options::MeetingCapability {
+        self.capability
+    }
+
+    /// Note a conversation update; true when the meeting's lock or
+    /// attendee restrictions changed.
+    pub fn apply_capability(&mut self, json: &serde_json::Value) -> bool {
+        match super::meeting_options::meeting_capability(json) {
+            Some(c) if c != self.capability => {
+                self.capability = c;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Change meeting settings (Teams' updateMeetingSettings): Lock the
+    /// meeting `{"lockMeeting": true}`, attendee restrictions
+    /// `{"attendeeRestrictions": bits}`.
+    pub async fn update_meeting_settings(&mut self, settings: serde_json::Value) -> Result<()> {
+        let link = self
+            .settings_link
+            .clone()
+            .context("This meeting can't change its settings")?;
+        self.state_seq += 1;
+        let body = super::meeting_options::settings_body(&self.me.0, settings, self.state_seq);
+        // Teams' calling stack PUTs this one.
+        cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Meeting settings").await?;
+        Ok(())
+    }
+
+    /// Clear a state for everyone (Teams' removeState, scope "all"): Lower
+    /// all hands ("raiseHands"), Stop all spotlights ("spotlight").
+    pub async fn remove_state_for_everyone(&mut self, state_type: &str) -> Result<()> {
+        let link = self
+            .state_links
+            .1
+            .clone()
+            .context("This meeting can't clear states")?;
+        self.state_seq += 1;
+        let body = super::meeting_options::remove_state_for_everyone_body(
+            &self.me.0,
+            state_type,
+            self.state_seq,
+        );
+        cc_post(&self.http, &self.skype_token, &link, &body, "Remove state for everyone").await?;
         Ok(())
     }
 
@@ -889,11 +945,24 @@ async fn cc_post(
     body: &serde_json::Value,
     what: &str,
 ) -> Result<serde_json::Value> {
+    cc_send(http, reqwest::Method::POST, skype_token, url, body, what).await
+}
+
+/// A conversation request with the given method (Teams PUTs some, such as
+/// updateMeetingSettings).
+async fn cc_send(
+    http: &reqwest::Client,
+    method: reqwest::Method,
+    skype_token: &str,
+    url: &str,
+    body: &serde_json::Value,
+    what: &str,
+) -> Result<serde_json::Value> {
     if !super::incoming::is_service_link(url) {
         bail!("{what}: not a Teams service link");
     }
     let resp = http
-        .post(url)
+        .request(method, url)
         .header("X-Skypetoken", skype_token)
         .json(body)
         .send()
@@ -1049,7 +1118,7 @@ fn invite_url(create_response: &str) -> Option<String> {
         .pointer("/meetingDetails")
         .or_else(|| v.pointer("/conversationResponse/meetingDetails"))?;
     if let Some(o) = details.as_object() {
-        tracing::debug!(keys = ?o.keys().collect::<Vec<_>>(), "meetingDetails");
+        tracing::debug!(keys = ?o.keys().collect::<Vec<_>>(), capability = %o.get("meetingCapability").map(|c| c.to_string()).unwrap_or_default(), "meetingDetails");
     }
     ["shortJoinUrl", "joinUrl"]
         .iter()
@@ -1488,6 +1557,11 @@ async fn start(
     );
     let properties_link = conversation_link(&created.response_body, "updateParticipantProperties");
     let role_link = conversation_link(&created.response_body, "updateParticipantRole");
+    let settings_link = conversation_link(&created.response_body, "updateMeetingSettings");
+    let capability = serde_json::from_str::<serde_json::Value>(&created.response_body)
+        .ok()
+        .and_then(|v| super::meeting_options::meeting_capability(&v));
+    tracing::info!(?capability, has_settings = settings_link.is_some(), "meeting capability");
     tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
 
@@ -1606,6 +1680,8 @@ async fn start(
         remove_link,
         properties_link,
         role_link,
+        settings_link,
+        capability: capability.unwrap_or_default(),
         controller,
         invite_url,
         mute_link,

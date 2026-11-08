@@ -33,6 +33,13 @@ Rectangle {
     /// "unspotlight", "attendee", "presenter" or "remove".
     signal participantAction(string action, string id, string name, string stateId)
     signal muteAll()
+    /// The header's More actions (roster-header-more-menu), in Teams'
+    /// order; each shows only when Teams would show it:
+    /// [{k, t, icon}] with k "muteAll", "restrictMic" / "allowMic",
+    /// "restrictCamera" / "allowCamera", "lowerHands", "attendance",
+    /// "stopSpotlights", "lock" / "unlock".
+    property var moreItems: []
+    signal moreAction(string action)
     signal closed()
     signal admit(string id, string name)
     /// A suspected guest: Teams asks first.
@@ -52,6 +59,25 @@ Rectangle {
     property var collapsed: ({})
     function toggle(key) { const c = Object.assign({}, collapsed); c[key] = !c[key]; collapsed = c }
     function matches(name) { return query.length === 0 || (name || "").toLowerCase().indexOf(query.toLowerCase()) >= 0 }
+
+    /// Raised hands in the order they went up (ids): the rank Teams shows.
+    property var handOrder: []
+    // Teams' sort (978369): raised hands by rank, then you, then by name.
+    function sorted(list) {
+        const rank = p => { const i = handOrder.indexOf(p.id === "me" ? root.selfKey : p.id); return p.hand ? (i < 0 ? 999 : i) : -1 }
+        return list.slice().sort((a, b) => {
+            const ra = rank(a), rb = rank(b)
+            if (ra >= 0 || rb >= 0) {
+                if (ra < 0) return 1
+                if (rb < 0) return -1
+                if (ra !== rb) return ra - rb
+            }
+            if (a.you !== b.you) return a.you ? -1 : 1
+            return (a.name || "").localeCompare(b.name || "")
+        })
+    }
+    /// Your id in handOrder.
+    property string selfKey: ""
 
     // The rows, flattened: sections, subsections and people.
     readonly property var rows: {
@@ -78,9 +104,28 @@ Rectangle {
                 }
             }
         }
+        // Teams' sections (320296): "Presenters (n)" and "Attendees (n)"
+        // when the meeting has attendees, else "In this meeting (n)"
+        // ("In this call" outside meetings); empty ones aren't drawn.
         const here = people.filter(p => matches(p.name))
-        out.push({ kind: "section", key: "here", title: (meeting ? "In this meeting (" : "In this call (") + here.length + ")", action: canMuteAll && !display ? "Mute all" : "", level: 0 })
-        if (!collapsed.here) here.forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+        const isAttendee = p => (p.role || "").toLowerCase() === "attendee"
+        const attendees = here.filter(isAttendee)
+        const presenters = here.filter(p => !isAttendee(p))
+        const anyAttendees = meeting && people.some(isAttendee)
+        const muteAll = canMuteAll && !display ? "Mute all" : ""
+        if (anyAttendees) {
+            if (presenters.length > 0) {
+                out.push({ kind: "section", key: "here", title: "Presenters (" + presenters.length + ")", action: muteAll, level: 0 })
+                if (!collapsed.here) sorted(presenters).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+            }
+            if (attendees.length > 0) {
+                out.push({ kind: "section", key: "attendees", title: "Attendees (" + attendees.length + ")", action: "", level: 0 })
+                if (!collapsed.attendees) sorted(attendees).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+            }
+        } else {
+            out.push({ kind: "section", key: "here", title: (meeting ? "In this meeting (" : "In this call (") + here.length + ")", action: muteAll, level: 0 })
+            if (!collapsed.here) sorted(here).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+        }
         const inCall = people.map(p => (p.id || "").toLowerCase())
         const away = chatMembers.filter(m => !m.me && inCall.indexOf((m.mri || "").toLowerCase()) < 0 && matches(m.name))
         if (meeting && away.length > 0) {
@@ -100,6 +145,24 @@ Rectangle {
             text: "Participants"
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
+        }
+        // More actions (more-menu-trigger): 32 x 31.33 left of close.
+        Rectangle {
+            id: headerMore
+            visible: !root.display && root.moreItems.length > 0
+            x: parent.width - 84; y: 13; width: 32; height: 31.33; radius: 4
+            // Fluent's transparent button: no fill; the glyph turns filled
+            // and brand-coloured on hover and while its menu is open.
+            color: "transparent"
+            FluentIcon {
+                anchors.centerIn: parent; size: 20
+                name: moreHover.hovered || moreMenu.opened ? "more-horizontal-20-filled" : "more-horizontal-20"
+                color: moreHover.hovered || moreMenu.opened ? theme.brand : theme.textStrong
+            }
+            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: moreMenu.opened ? moreMenu.close() : moreMenu.openUnder(headerMore) }
+            Accessible.role: Accessible.Button
+            Accessible.name: "More actions"
         }
         Rectangle {
             visible: !root.display
@@ -312,15 +375,31 @@ Rectangle {
                 }
                 id: personRowColumn
             }
+            // A raised hand: its place in the queue (14 px) and Teams'
+            // raised-hand emoji (32 px, raisehandV3-3D), 5 before the mic.
+            readonly property int handRank: p.hand ? root.handOrder.indexOf(p.you ? root.selfKey : p.id) + 1 : 0
             Text {
-                visible: !!p.hand
-                anchors.right: parent.right; anchors.rightMargin: 64; anchors.verticalCenter: parent.verticalCenter
-                text: "\u270B"; font.pixelSize: 16
+                id: handRankText
+                visible: !!p.hand && handRank > 0
+                x: parent.width - 75 - width; y: 13; height: 20
+                verticalAlignment: Text.AlignVCenter
+                text: handRank
+                font.family: theme.font; font.pixelSize: 14
+                color: theme.text
             }
-            // Pinned (Pin for me): Teams' 20 px pin, 8 before the mic.
+            Image {
+                visible: !!p.hand
+                x: parent.width - 77; y: 8; width: 32; height: 32
+                source: visible ? (backend.emoticonsVersion, backend.cardImage("https://statics.teams.cdn.office.net/evergreen-assets/skype/v2/raisehandV3-3D/64.png")) : ""
+                sourceSize: Qt.size(64, 64)
+                smooth: true
+            }
+            // Pinned (Pin for me): Teams' 20 px pin, 8 before the mic, or
+            // 12 before a raised hand's rank.
             FluentIcon {
                 visible: !p.chatOnly && !p.you && p.id === root.pinnedId
-                x: parent.width - 68; anchors.verticalCenter: parent.verticalCenter
+                x: p.hand ? (handRankText.visible ? handRankText.x : parent.width - 77) - 37 : parent.width - 68
+                anchors.verticalCenter: parent.verticalCenter
                 name: "pin-20"; size: 20; color: theme.textStrong
             }
             HoverHandler { id: rowHover }
@@ -388,32 +467,82 @@ Rectangle {
             Repeater {
                 model: participantMenu.items
                 Item {
+                    id: mi
                     required property var modelData
-                    width: 177.88; height: modelData.sep ? 8.67 : 32
-                    Rectangle { visible: !!parent.modelData.sep; y: 4; width: parent.width; height: 0.67; color: theme.divider }
+                    readonly property bool sep: !!modelData.sep
+                    readonly property bool off: !!modelData.off
+                    width: 177.88; height: sep ? 8.67 : 32
+                    Rectangle { visible: mi.sep; y: 4; width: parent.width; height: 0.67; color: theme.divider }
                     Rectangle {
-                        visible: !parent.modelData.sep
+                        visible: !mi.sep
                         anchors.fill: parent; radius: 4
-                        color: pmHover.hovered && !parent.modelData.off ? theme.menuHover : "transparent"
-                        FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: parent.parent.modelData.icon || ""; size: 20; color: parent.parent.modelData.off ? theme.disabled : theme.textStrong }
+                        color: pmHover.hovered && !mi.off ? theme.menuHover : "transparent"
+                        FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: mi.modelData.icon || ""; size: 20; color: mi.off ? theme.disabled : theme.textStrong }
                         Text {
                             x: 30; anchors.verticalCenter: parent.verticalCenter
-                            text: parent.parent.modelData.t || ""
+                            text: mi.modelData.t || ""
                             font.family: theme.font; font.pixelSize: 14
-                            color: parent.parent.modelData.off ? theme.disabled : pmHover.hovered ? theme.text : theme.textStrong
+                            color: mi.off ? theme.disabled : pmHover.hovered ? theme.text : theme.textStrong
                         }
-                        HoverHandler { id: pmHover; cursorShape: parent.parent.modelData.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                        HoverHandler { id: pmHover; cursorShape: mi.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
                         TapHandler {
-                            enabled: !parent.parent.modelData.sep && !parent.parent.modelData.off
+                            enabled: !mi.sep && !mi.off
                             onTapped: {
                                 const w = participantMenu.who
                                 participantMenu.close()
-                                root.participantAction(parent.parent.modelData.k, w.id || "", w.name || "", w.spotlight || "")
+                                root.participantAction(mi.modelData.k, w.id || "", w.name || "", w.spotlight || "")
                             }
                         }
                         Accessible.role: Accessible.MenuItem
-                        Accessible.name: parent.parent.modelData.t || ""
+                        Accessible.name: mi.modelData.t || ""
                     }
+                }
+            }
+        }
+    }
+
+    // The More actions popover (roster-header-more-menu-popover), below
+    // the button and flush with its right edge: padding 8 x 4 inside a
+    // 0.67 edge, radius 4; items 32 tall, 2 apart, as wide as the longest
+    // label + 40 (icon 20 at 6, label at 32, 6 after it).
+    Popup {
+        id: moreMenu
+        topPadding: 8.67; bottomPadding: 8.67; leftPadding: 4.67; rightPadding: 4.67
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        // The button's bottom-right corner; the menu's right edge follows
+        // it as the menu's width settles.
+        property point corner: Qt.point(0, 0)
+        x: corner.x - width; y: corner.y
+        function openUnder(button) {
+            corner = button.mapToItem(root, button.width, button.height)
+            open()
+        }
+        TextMetrics { id: moreMetrics; font.family: theme.font; font.pixelSize: 14 }
+        readonly property real itemWidth: {
+            let w = 0
+            for (const it of root.moreItems) { moreMetrics.text = it.t; w = Math.max(w, moreMetrics.advanceWidth) }
+            return Math.ceil(w * 100) / 100 + 40
+        }
+        contentItem: Column {
+            spacing: 2
+            Repeater {
+                model: root.moreItems
+                Rectangle {
+                    id: mm
+                    required property var modelData
+                    width: moreMenu.itemWidth; height: 32; radius: 4
+                    color: mmHover.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { x: 6; y: 6; size: 20; name: mm.modelData.icon; color: mmHover.hovered ? theme.text : theme.textStrong }
+                    Text {
+                        x: 32; anchors.verticalCenter: parent.verticalCenter
+                        text: mm.modelData.t
+                        font.family: theme.font; font.pixelSize: 14
+                        color: mmHover.hovered ? theme.text : theme.textStrong
+                    }
+                    HoverHandler { id: mmHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { moreMenu.close(); root.moreAction(mm.modelData.k) } }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: mm.modelData.t
                 }
             }
         }
@@ -437,7 +566,8 @@ Rectangle {
     }
 
     // Test hooks.
-    function closeMenusForTest() { participantMenu.close() }
+    function closeMenusForTest() { participantMenu.close(); moreMenu.close() }
+    function moreMenuForTest() { moreMenu.openUnder(headerMore) }
     function participantMenuForTest(person) { participantMenu.who = person; participantMenu.forId = person.id; participantMenu.x = root.width - 4 - participantMenu.width; participantMenu.y = 220; participantMenu.open() }
     function rowsForTest() { return JSON.stringify(rows) }
 }

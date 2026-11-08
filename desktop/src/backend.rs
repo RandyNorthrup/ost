@@ -122,6 +122,13 @@ pub mod qobject {
         /// Bumped when the meeting mutes us while we're talking (Teams'
         /// "You've been muted" alert).
         #[qproperty(i32, call_muted_remotely)]
+        /// The meeting is locked (Teams' Lock the meeting).
+        #[qproperty(bool, call_meeting_locked)]
+        /// What attendees may not do (bits: mic 1, camera 2, chat 4).
+        #[qproperty(i32, call_attendee_restrictions)]
+        /// Bumped when the meeting is locked or unlocked while we're in it
+        /// (Teams' "This meeting is locked." / "unlocked." notice).
+        #[qproperty(i32, call_lock_notices)]
         /// Who presents their screen in the meeting (empty: nobody).
         #[qproperty(QString, call_share_mri)]
         /// Who waits in the meeting's lobby: [{id, name}].
@@ -419,6 +426,18 @@ pub mod qobject {
         /// Mute everyone else in the meeting (Teams' Mute all).
         #[qinvokable]
         fn mute_all(self: Pin<&mut Backend>);
+        /// The People pane's More actions: "lock", "unlock", "lowerHands"
+        /// or "stopSpotlights".
+        #[qinvokable]
+        fn meeting_action(self: Pin<&mut Backend>, action: &QString);
+        /// Disable or allow mic and camera for attendees: the restriction
+        /// bits to set (mic 1, camera 2).
+        #[qinvokable]
+        fn set_attendee_restrictions(self: Pin<&mut Backend>, bits: i32);
+        /// Save the attendance list to Downloads (Teams' Download
+        /// attendance list).
+        #[qinvokable]
+        fn download_attendance_list(self: Pin<&mut Backend>);
         /// Teams' "Turn off other videos": stop (or resume) asking for
         /// others' cameras.
         #[qinvokable]
@@ -557,6 +576,10 @@ pub mod qobject {
         /// their MRI and the reaction's name.
         #[qsignal]
         fn meeting_reaction(self: Pin<&mut Backend>, mri: QString, name: QString);
+        /// A More actions request failed ("lock" or "unlock": Teams offers
+        /// Try again).
+        #[qsignal]
+        fn meeting_action_failed(self: Pin<&mut Backend>, action: QString);
         /// The tray asks for the window (its icon or the name row).
         #[qsignal]
         fn tray_show(self: Pin<&mut Backend>);
@@ -1010,6 +1033,11 @@ pub struct BackendRust {
     call_muted_by_meeting: bool,
     chat_live_roster_json: QString,
     call_muted_remotely: i32,
+    call_meeting_locked: bool,
+    call_attendee_restrictions: i32,
+    call_lock_notices: i32,
+    /// Who joined and left the meeting we're in (the attendance list).
+    attendance: teams_cli::calling::meeting_options::AttendanceLog,
     call_share_mri: QString,
     /// How wide each person's tile is drawn ({mri: px}), for the size of
     /// video to ask for.
@@ -1940,6 +1968,22 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     if teams_cli::calling::roster::lobby_count(json).is_some() {
         let qt2 = qt.clone();
         runtime().spawn(async move { refresh_lobby(qt2).await });
+    }
+    // The meeting locked or unlocked, or changed what attendees may do.
+    if json.contains("conversationUpdate") || json.contains("meetingCapability") {
+        tracing::debug!(event = %json.chars().take(3000).collect::<String>(), "conversation update");
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
+            let changed = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_mut()
+                .and_then(|call| call.apply_capability(&v).then(|| call.capability()));
+            if let Some(cap) = changed {
+                tracing::info!(?cap, "meeting capability changed");
+                let _ = qt.queue(move |mut this| this.as_mut().show_capability(cap, true));
+            }
+        }
     }
     // The meeting muting (or unmuting) us: Teams mutes you when the
     // meeting does, and opens the mic once a requested unmute goes through.
@@ -3158,6 +3202,9 @@ impl qobject::Backend {
         self.as_mut().set_call_meeting(true);
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
+        self.as_mut().rust_mut().attendance = Default::default();
+        self.as_mut().set_call_meeting_locked(false);
+        self.as_mut().set_call_attendee_restrictions(0);
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!("join meeting");
         let qt = self.qt_thread();
@@ -3172,6 +3219,7 @@ impl qobject::Backend {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
                     let invite = call.invite_url().unwrap_or_default().to_string();
+                    let capability = call.capability();
                     tracing::info!(has_audio, can_dtmf, "meeting joined");
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
@@ -3180,6 +3228,7 @@ impl qobject::Backend {
                     let _ = qt.queue(move |mut this| {
                         this.as_mut()
                             .set_call_invite_url(QString::from(invite.as_str()));
+                        this.as_mut().show_capability(capability, false);
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_state(QString::from("connected"));
@@ -3372,6 +3421,94 @@ impl qobject::Backend {
                 tracing::warn!("mute all failed: {}", short_error(&e));
             }
         });
+    }
+
+    /// Show the meeting's lock and attendee restrictions; `notify` for a
+    /// change while we're in it (Teams' locked / unlocked notice).
+    fn show_capability(
+        mut self: Pin<&mut Self>,
+        cap: teams_cli::calling::meeting_options::MeetingCapability,
+        notify: bool,
+    ) {
+        if self.rust().call_meeting_locked != cap.locked {
+            self.as_mut().set_call_meeting_locked(cap.locked);
+            if notify {
+                let n = self.rust().call_lock_notices + 1;
+                self.as_mut().set_call_lock_notices(n);
+            }
+        }
+        let bits = cap.attendee_restrictions as i32;
+        if self.rust().call_attendee_restrictions != bits {
+            self.as_mut().set_call_attendee_restrictions(bits);
+        }
+    }
+
+    pub fn meeting_action(self: Pin<&mut Self>, action: &QString) {
+        let action = action.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_mut() else {
+                return;
+            };
+            let result = match action.as_str() {
+                "lock" | "unlock" => {
+                    call.update_meeting_settings(serde_json::json!({ "lockMeeting": action == "lock" }))
+                        .await
+                }
+                "lowerHands" => call.remove_state_for_everyone("raiseHands").await,
+                "stopSpotlights" => call.remove_state_for_everyone("spotlight").await,
+                _ => Ok(()),
+            };
+            drop(slot);
+            if let Err(e) = result {
+                tracing::warn!(action, "meeting action: {}", short_error(&e));
+                // Teams: "Couldn't lock the meeting" with Try again.
+                let failed = action.clone();
+                let _ = qt.queue(move |this| {
+                    this.meeting_action_failed(QString::from(failed.as_str()))
+                });
+            }
+        });
+    }
+
+    pub fn set_attendee_restrictions(self: Pin<&mut Self>, bits: i32) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = match call_slot().lock().await.outgoing.as_mut() {
+                Some(call) => {
+                    call.update_meeting_settings(serde_json::json!({ "attendeeRestrictions": bits }))
+                        .await
+                }
+                None => return,
+            };
+            if let Err(e) = result {
+                tracing::warn!(bits, "attendee restrictions: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()))
+                });
+            }
+        });
+    }
+
+    pub fn download_attendance_list(mut self: Pin<&mut Self>) {
+        let Some(dir) = download_dir() else { return };
+        let bytes = teams_cli::calling::meeting_options::utf16le_with_bom(
+            &self.rust().attendance.tsv(),
+        );
+        let msg = match teams_cli::api::files::save_unique(&dir, "meetingAttendanceList.csv", &bytes) {
+            Ok(path) => {
+                tracing::info!(path = %path.display(), "attendance list saved");
+                format!(
+                    "Saved {} to {}",
+                    path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                    dir.display()
+                )
+            }
+            Err(e) => format!("Couldn't save the attendance list: {}", short_error(&e)),
+        };
+        self.as_mut().set_status_text(QString::from(msg.as_str()));
     }
 
     pub fn end_meeting(mut self: Pin<&mut Self>) {
@@ -3713,6 +3850,19 @@ impl qobject::Backend {
                 .set_call_share_mri(QString::from(share_mri.as_str()));
         }
         let share_source = presenter.and_then(|p| p.1);
+        // The attendance list: who else is here now.
+        if self.rust().call_meeting && !roster.is_empty() {
+            let here: Vec<(String, String)> = roster
+                .iter()
+                .filter(|p| p.id != me && p.active)
+                .map(|p| (p.id.clone(), p.name.clone()))
+                .collect();
+            let (mri, name) = (self.rust().user_mri.to_string(), self.rust().user_name.to_string());
+            self.as_mut()
+                .rust_mut()
+                .attendance
+                .update((&mri, &name), &here, chrono::Local::now());
+        }
         self.as_mut().rust_mut().roster = roster;
         self.as_mut()
             .set_call_roster_json(QString::from(json.as_str()));

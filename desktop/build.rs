@@ -73,6 +73,8 @@ fn main() {
         "qml/ConfirmDialog.qml",
         "qml/AudioFlyout.qml",
         "qml/InviteDialog.qml",
+        "qml/LockMeetingDialog.qml",
+        "qml/RoleChangeDialog.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [
@@ -81,6 +83,7 @@ fn main() {
         "assets/tray",
         "assets/funstuff",
         "assets/lobby",
+        "assets/dialogs",
     ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();

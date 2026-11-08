@@ -134,6 +134,54 @@ Window {
     readonly property var others: roster.filter(p => p.id !== selfId)
     // Teams shows Controls and Rooms to the meeting's organizer only.
     readonly property bool organizer: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase() === "organizer"
+    readonly property string myRole: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase()
+    /// The meeting is locked (Teams' Lock the meeting), and what attendees
+    /// may not do (bits: mic 1, camera 2).
+    property bool locked: false
+    property int attendeeRestrictions: 0
+    /// Bumped by the backend when the meeting locks or unlocks.
+    property int lockNotices: 0
+    /// The People pane's More actions, as Teams offers them
+    /// (roster-header-more-menu): Mute all; Disable / Allow mic and camera
+    /// for attendees when there are attendees; Lower all hands while hands
+    /// are up; Download attendance list (organizer); Stop all spotlights
+    /// with more than one; Lock / Unlock the meeting (organizer).
+    readonly property var moreItems: {
+        if (!meeting) return []
+        const out = []
+        const manager = myRole === "organizer" || myRole === "presenter" || myRole === "coorganizer"
+        if (canMuteAll) out.push({ k: "muteAll", t: "Mute all", icon: "mic-off-20" })
+        const attendees = others.some(p => p.active !== false && (p.role || "").toLowerCase() === "attendee")
+        if (manager && attendees) {
+            out.push(attendeeRestrictions & 1
+                ? { k: "allowMic", t: "Allow mic for attendees", icon: "mic-20" }
+                : { k: "restrictMic", t: "Disable mic for attendees", icon: "mic-prohibited-20" })
+            out.push(attendeeRestrictions & 2
+                ? { k: "allowCamera", t: "Allow camera for attendees", icon: "video-20" }
+                : { k: "restrictCamera", t: "Disable camera for attendees", icon: "video-prohibited-20" })
+        }
+        if (manager && hands.length > 0) out.push({ k: "lowerHands", t: "Lower all hands", icon: "hand-right-off-20" })
+        if (organizer) out.push({ k: "attendance", t: "Download attendance list", icon: "arrow-download-20" })
+        if (manager && spotlighted.length > 1) out.push({ k: "stopSpotlights", t: "Stop all spotlights", icon: "spotlight-20" })
+        if (organizer) out.push(locked ? { k: "unlock", t: "Unlock the meeting", icon: "lock-closed-20" }
+                                       : { k: "lock", t: "Lock the meeting", icon: "lock-closed-20" })
+        return out
+    }
+    /// A More actions request: "lock", "unlock", "lowerHands",
+    /// "stopSpotlights".
+    signal meetingAction(string action)
+    /// Set the attendee restriction bits (Disable / Allow mic or camera).
+    signal setAttendeeRestrictions(int bits)
+    signal downloadAttendance()
+    function runMoreAction(k) {
+        if (k === "muteAll") muteAllAsk.open()
+        else if (k === "restrictMic" || k === "allowMic") { restrictAsk.modality = 1; restrictAsk.open() }
+        else if (k === "restrictCamera" || k === "allowCamera") { restrictAsk.modality = 2; restrictAsk.open() }
+        else if (k === "lowerHands") { lowerHandsAsk.count = hands.length; lowerHandsAsk.open() }
+        else if (k === "attendance") downloadAttendance()
+        else if (k === "stopSpotlights") meetingAction("stopSpotlights")
+        else if (k === "lock" || k === "unlock") { lockAsk.locked = locked; lockAsk.open() }
+    }
     readonly property bool remoteVideoShown: remoteVideo.visible
     readonly property bool shareShown: shareVideo.visible
     // People pane rows: you first, then everyone else.
@@ -845,9 +893,15 @@ Window {
             onParticipantAction: (action, id, name, stateId) => {
                 if (action === "pin") win.pinnedId = id
                 else if (action === "unpin") win.pinnedId = ""
+                // Teams asks "Change role?" first.
+                else if (action === "attendee" || action === "presenter") roleAsk.ask(action, id, name)
                 else win.participantAction(action, id, name, stateId)
             }
             onShareInvite: inviteDialog.open()
+            moreItems: win.moreItems
+            onMoreAction: k => win.runMoreAction(k)
+            handOrder: win.hands
+            selfKey: win.selfId
         }
     }
 
@@ -925,6 +979,22 @@ Window {
         z: 5
         onDismissed: win.mutedNoticeShown = false
         onUnmute: { win.mutedNoticeShown = false; win.toggleMute() }
+    }
+    // Teams' MeetingLocked / MeetingUnlocked alerts (ufd_MeetingLocked):
+    // the notice card with the filled lock, for 10 s.
+    property bool lockNoticeShown: false
+    onLockNoticesChanged: if (lockNotices > 0) { lockNoticeShown = true; lockNoticeTimer.restart() }
+    Timer { id: lockNoticeTimer; interval: 10000; onTriggered: win.lockNoticeShown = false }
+    MutedNotice {
+        visible: win.lockNoticeShown
+        x: stage.x + (stage.width - width) / 2
+        y: bar.height + 10.7
+        z: 5
+        icon: "lock-closed-20-filled"
+        title: win.locked ? "This meeting is locked." : "This meeting is unlocked."
+        text: win.locked ? "No one else can join." : "People can join."
+        action: ""
+        onDismissed: win.lockNoticeShown = false
     }
     LobbyToast {
         id: lobbyToast
@@ -1009,6 +1079,74 @@ Window {
         onConfirmed: win.muteAll()
     }
     InviteDialog { id: inviteDialog; link: win.inviteUrl }
+    // Teams' attendee mic / camera confirmations (confirm-attendee-hard-
+    // mute-dialog, 410 wide, a warning before the title when disabling).
+    ConfirmDialog {
+        id: restrictAsk
+        property int modality: 1
+        readonly property bool disabling: !(win.attendeeRestrictions & modality)
+        width: 410
+        fixedButtons: true
+        titleIcon: disabling ? "alert-warning-16-filled" : ""
+        title: modality === 1 ? (disabling ? "Disable mic for attendees?" : "Allow mic for attendees?")
+                              : (disabling ? "Disable camera for attendees?" : "Allow camera for attendees?")
+        body: modality === 1
+            ? (disabling ? "Attendees won’t be able to unmute themselves. The organizer and presenters can let people unmute as needed."
+                         : "Everyone in the meeting will be able to unmute themselves.")
+            : (disabling ? "Attendees won’t be able to share video. The organizer and presenters can let people turn on their cameras as needed."
+                         : "Everyone in the meeting will be able to share video.")
+        confirmText: modality === 1 ? (disabling ? "Disable mics" : "Allow mics")
+                                    : (disabling ? "Disable cameras" : "Allow cameras")
+        onConfirmed: win.setAttendeeRestrictions((win.attendeeRestrictions & 3) ^ modality)
+    }
+    // Teams' "Lower all hands?" (confirm-attendee-lower-all-raised-hand).
+    ConfirmDialog {
+        id: lowerHandsAsk
+        property int count: 0
+        title: "Lower all hands?"
+        body: count === 1 ? "You'll lower 1 raised hand." : "You'll lower " + count + " raised hands."
+        confirmText: "Lower all hands"
+        onConfirmed: win.meetingAction("lowerHands")
+    }
+    RoleChangeDialog {
+        id: roleAsk
+        property string role: ""
+        property string who: ""
+        property string whoName: ""
+        function ask(newRole, personId, personName) {
+            roleAsk.role = newRole; roleAsk.who = personId; roleAsk.whoName = personName
+            roleAsk.presenting = newRole === "attendee" && personId !== "" && (win.shareId || "").toLowerCase() === personId.toLowerCase()
+            roleAsk.open()
+        }
+        onConfirmed: win.participantAction(roleAsk.role, roleAsk.who, roleAsk.whoName, "")
+    }
+    LockMeetingDialog {
+        id: lockAsk
+        onConfirmed: win.meetingAction(locked ? "unlock" : "lock")
+    }
+    // Teams' "Couldn't lock the meeting" (confirm-meeting-retry-lock-dialog)
+    // with Try again.
+    ConfirmDialog {
+        id: lockRetry
+        property bool unlocking: false
+        width: 430
+        titleIcon: "alert-warning-16-filled"
+        title: unlocking ? "Couldn't unlock the meeting" : "Couldn't lock the meeting"
+        body: unlocking ? "An error occurred. Try unlocking it again." : "An error occurred. Try locking it again."
+        confirmText: "Try again"
+        onConfirmed: win.meetingAction(unlocking ? "unlock" : "lock")
+    }
+    function meetingActionFailed(action) {
+        if (action === "lock" || action === "unlock") { lockRetry.unlocking = action === "unlock"; lockRetry.open() }
+    }
+    function moreMenuForTest() { side = "people"; peoplePane.moreMenuForTest() }
+    function peopleRowsForTest() { return peoplePane.rowsForTest() }
+    function askRoleForTest(action, id, name) { roleAsk.ask(action, id, name) }
+    // Confirm whichever More actions dialog is open.
+    function confirmOpenDialogForTest() {
+        for (const d of [restrictAsk, lowerHandsAsk, lockAsk, muteAllAsk, roleAsk])
+            if (d.opened) { d.close(); d.confirmed(); return }
+    }
 
     // Mic ▾: Teams' audio options, right-aligned to the chevron at the
     // bar's bottom edge, at most 5 px short of the window's bottom.

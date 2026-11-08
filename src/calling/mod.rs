@@ -20,6 +20,7 @@ pub mod live_roster;
 pub mod mcp;
 pub mod media;
 pub mod meeting_media;
+pub mod meeting_options;
 pub mod outgoing;
 #[cfg(all(feature = "audio", target_os = "linux"))]
 pub mod pw_defaults;
