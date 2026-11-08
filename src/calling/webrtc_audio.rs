@@ -889,6 +889,14 @@ impl LocalAudio {
             "a=fmtp:{pt} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id={profile}\r\n"
         ));
         s.push_str("a=x-signaling-fb:* x-message app send:src recv:src,vc\r\n");
+        if self.meeting {
+            s.push_str(&format!(
+                "a=extmap:{} {}\r\n",
+                super::twcc::EXTENSION_ID,
+                super::twcc::EXTENSION_URI
+            ));
+            s.push_str("a=rtcp-fb:* transport-cc\r\n");
+        }
         s.push_str("a=rtcp-rsize\r\n");
         s.push_str(&format!("a=rtcp-fb:{pt} nack pli\r\n"));
         s.push_str(&format!("a=rtcp-fb:{pt} ccm fir\r\n"));
@@ -932,6 +940,16 @@ impl LocalAudio {
         if let Some(d) = dtmf {
             s.push_str(&format!("a=rtpmap:{d} telephone-event/8000\r\n"));
             s.push_str(&format!("a=fmtp:{d} 0-15\r\n"));
+        }
+        // We take dominant speaker history (Teams' audio lines say so).
+        s.push_str("a=x-signaling-fb:* x-message app recv:dsh\r\n");
+        if self.meeting {
+            s.push_str(&format!(
+                "a=extmap:{} {}\r\n",
+                super::twcc::EXTENSION_ID,
+                super::twcc::EXTENSION_URI
+            ));
+            s.push_str("a=rtcp-fb:* transport-cc\r\n");
         }
         s.push_str(&format!("a=x-ssrc-range:{0}-{0}\r\n", self.ssrc));
         s.push_str(&format!("a=ssrc:{} cname:ost\r\n", self.ssrc));
@@ -1562,6 +1580,15 @@ impl WebRtcAudioSession {
             .map(|(slot, r)| (slot.mid.clone(), r))
             .collect();
 
+        // Meetings: transport-wide congestion control, as Teams does, so
+        // the processor knows our downlink and sends video layers to fit.
+        let twcc = local.meeting.then(|| {
+            (
+                Arc::new(std::sync::Mutex::new(super::twcc::Recorder::new())),
+                Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            )
+        });
+
         // Receive and demultiplex.
         tasks.push(tokio::spawn(recv_loop(RecvCtx {
             socket: socket.clone(),
@@ -1572,6 +1599,7 @@ impl WebRtcAudioSession {
             stats: stats.clone(),
             spk_tx,
             held: held.clone(),
+            twcc: twcc.clone(),
             #[cfg(feature = "video")]
             video: video_rx.clone(),
             #[cfg(feature = "video")]
@@ -1701,6 +1729,30 @@ impl WebRtcAudioSession {
             }));
         }
 
+        // Transport-wide feedback every 50 ms.
+        if let Some((rec, media)) = twcc.clone() {
+            let (socket, srtp, ours) = (socket.clone(), srtp_ctx.clone(), local.ssrc);
+            tasks.push(tokio::spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_millis(50));
+                loop {
+                    tick.tick().await;
+                    let fb = rec
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .feedback(ours, media.load(Ordering::Relaxed));
+                    let Some(fb) = fb else { continue };
+                    let sealed = srtp
+                        .lock()
+                        .await
+                        .as_mut()
+                        .and_then(|c| c.protect_rtcp(&fb).ok());
+                    if let Some(p) = sealed {
+                        let _ = socket.send_to(&p, peer).await;
+                    }
+                }
+            }));
+        }
+
         // Consent freshness: keep sending binding requests to the peer.
         {
             let (socket, pwd) = (socket.clone(), offer.ice_pwd.clone());
@@ -1825,6 +1877,12 @@ struct RecvCtx {
     spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
     /// On hold: the peer's audio isn't played.
     held: Arc<AtomicBool>,
+    /// In a meeting: arrival times for transport-wide congestion control,
+    /// and the last SSRC the processor sent (feedback names one).
+    twcc: Option<(
+        Arc<std::sync::Mutex<super::twcc::Recorder>>,
+        Arc<std::sync::atomic::AtomicU32>,
+    )>,
     /// The video payload type and its receiver.
     #[cfg(feature = "video")]
     video: Vec<VideoStream>,
@@ -1899,6 +1957,20 @@ async fn recv_loop(ctx: RecvCtx) {
                         }
                     }
                     continue;
+                }
+                // The header (and its extensions) is in the clear.
+                if let Some((rec, ssrc)) = &ctx.twcc
+                    && let Some(seq) = super::twcc::sequence_number(data)
+                {
+                    rec.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .record(seq, std::time::Instant::now());
+                    if let Some(b) = data.get(8..12) {
+                        ssrc.store(
+                            u32::from_be_bytes([b[0], b[1], b[2], b[3]]),
+                            Ordering::Relaxed,
+                        );
+                    }
                 }
                 let plain = {
                     let mut guard = ctx.srtp.lock().await;

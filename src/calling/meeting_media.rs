@@ -233,22 +233,18 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Source requests for what each slot shows; more slots in use ask for
-/// less (Teams sizes requests to its tiles).
+/// Source requests for what each slot shows, with the capabilities Teams
+/// asks with (up to 1080p at 30; the processor picks the layer our
+/// downlink allows).
 fn requests(slots: &[Slot], assigned: &HashMap<String, i64>) -> Vec<SourceRequest> {
-    let (max_fs, max_mbps) = if assigned.len() <= 4 {
-        (3600, 108_000) // 1280x720 at 30
-    } else {
-        (920, 27_600) // 640x360 at 30
-    };
     slots
         .iter()
         .filter_map(|s| {
             assigned.get(&s.mid).map(|src| SourceRequest {
                 source_id: *src,
                 stream_msid: s.stream_msid,
-                max_fs,
-                max_mbps,
+                max_fs: 8160,
+                max_mbps: 244_800,
                 max_fps: 3000,
                 profile_level_id: PROFILE_LEVEL_ID,
             })
@@ -316,7 +312,7 @@ async fn run(
                                 tracing::debug!(stream, ?layers, "MCP send layers");
                             }
                             Incoming::Bandwidth { total, video } => {
-                                tracing::trace!(total, ?video, "MCP bandwidth");
+                                tracing::debug!(total, ?video, "MCP bandwidth");
                             }
                             Incoming::Heartbeat => {}
                             Incoming::Other(v) => tracing::debug!("MCP message {v}"),
@@ -424,18 +420,24 @@ m=x-data 3478 RTP/SAVP 127 126\r\na=x-source-streamid:639\r\na=mid:12\r\n";
     }
 
     #[test]
-    fn requests_shrink_with_more_tiles() {
-        let slots: Vec<Slot> = (0..6)
-            .map(|i| Slot {
-                mid: (i + 2).to_string(),
-                stream_msid: 100 + i,
-                ssrcs: (0, 0),
-                pt: 107,
-            })
-            .collect();
-        let few: HashMap<String, i64> = [("2".to_string(), 7)].into();
-        assert_eq!(requests(&slots, &few)[0].max_fs, 3600);
-        let many: HashMap<String, i64> = (2..8).map(|m| (m.to_string(), m)).collect();
-        assert!(requests(&slots, &many).iter().all(|r| r.max_fs == 920));
+    fn requests_ask_as_teams_does() {
+        let slots = vec![Slot {
+            mid: "2".into(),
+            stream_msid: 7761,
+            ssrcs: (0, 0),
+            pt: 107,
+        }];
+        let a: HashMap<String, i64> = [("2".to_string(), 2244)].into();
+        let r = requests(&slots, &a);
+        assert_eq!(
+            (
+                r[0].source_id,
+                r[0].stream_msid,
+                r[0].max_fs,
+                r[0].max_mbps,
+                r[0].max_fps
+            ),
+            (2244, 7761, 8160, 244_800, 3000)
+        );
     }
 }

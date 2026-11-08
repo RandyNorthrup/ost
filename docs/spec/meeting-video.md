@@ -140,6 +140,19 @@ The MP re-offers after lobby admission (`call/mediaRenegotiation`); the client a
 
 Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framing and messages), `src/calling/meeting_media.rs` (slots, subscriptions), `webrtc_audio::offer_sdp_meeting`.
 
+## Quality and the gallery (2026-11-07, verified live)
+
+- **Bandwidth feedback.** Teams negotiates transport-wide congestion control on every line: `a=extmap:3 http:\\www.ietf.org\id\draft-holmer-rmcat-transport-wide-cc-extensions-01` (Teams' backslash URI) and `a=rtcp-fb:* transport-cc`. Without feedback, the processor sent OST only the lowest simulcast layer (284×160 or 320×180). OST now reports arrivals every 50 ms (`src/calling/twcc.rs`). The processor's `bwe` then rose to 1.75 Mbps, and the 960×540 layer arrived.
+- **Source requests.** These use Teams' capabilities: `max-fs` 8160, `max-mbps` 244800, `max-fps` 3000.
+- **Dominant speaker.** This needs `a=x-signaling-fb:* x-message app recv:dsh` on the audio line; MCP then sends `{"type":"dsh","history":[<audio sourceId>…]}`.
+- **Gallery** (measured on winpc, 3 people in a 900.7×576 stage):
+  - 16:9 tiles (450.3×253.3), using the column count that gives the largest tiles.
+  - Rows are centred, the last one too. You are the first tile ("myself-video").
+  - The stage is inset 2.67. The tile content is inset 2: radius 6, #F5F5F5, a 0.67 px rgba(0,0,0,.1) border.
+  - Name tag: 24 tall, rgba(0,0,0,.5), radius 4, 6 px padding, 14 px white, 8 px from the bottom-left.
+  - Speaking ("voice-level-stream-outline"): 4 px #5B5FC7, radius 6, with a 0.67 px #F5F5F5 line 4 px in (radius 3).
+  - Avatar: 124 px at a 249 px tile height.
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.

@@ -27,6 +27,8 @@ pub mod qobject {
         #[qproperty(i32, frame_width)]
         #[qproperty(i32, frame_height)]
         #[qproperty(bool, fit)]
+        /// Rounded corners (Teams' meeting tiles round theirs by 6).
+        #[qproperty(f64, radius)]
         type VideoFrame = super::VideoFrameRust;
     }
 
@@ -66,6 +68,8 @@ pub struct VideoFrameRust {
     frame_height: i32,
     /// Letterbox (show it all) instead of fill-and-crop: shared screens.
     fit: bool,
+    /// Corner radius to clip to (0: square).
+    radius: f64,
     /// The frame sequence last drawn.
     shown: u64,
 }
@@ -143,10 +147,27 @@ impl qobject::VideoFrame {
                 QImageFormat::Format_RGBA8888,
             )
         };
-        painter.as_mut().set_clip_rect(
-            &QRect::new(0, 0, w as i32, h as i32),
-            ClipOperation::ReplaceClip,
-        );
+        let radius = self.rust().radius;
+        if radius > 0.0 {
+            let mut path = cxx_qt_lib::QPainterPath::default();
+            path.add_rounded_rect(
+                &cxx_qt_lib::QRectF::new(0.0, 0.0, w, h),
+                radius,
+                radius,
+                cxx_qt_lib::SizeMode::AbsoluteSize,
+            );
+            painter
+                .as_mut()
+                .set_render_hint(QPainterRenderHint::Antialiasing, true);
+            painter
+                .as_mut()
+                .set_clip_path(&path, ClipOperation::ReplaceClip);
+        } else {
+            painter.as_mut().set_clip_rect(
+                &QRect::new(0, 0, w as i32, h as i32),
+                ClipOperation::ReplaceClip,
+            );
+        }
         // Letterbox bars are near-black, as Teams' presenting stage.
         if self.rust().fit {
             painter.as_mut().fill_rect(

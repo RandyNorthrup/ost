@@ -373,64 +373,51 @@ Window {
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             }
         }
-        Grid {
+        // Speaker view: the dominant speaker on stage, the others in a strip.
+        Item {
             id: tiles
-            visible: win.meeting && win.others.length > 0
+            visible: win.meeting && win.others.length > 0 && win.layout === "speaker"
             anchors { fill: parent; margins: 8; bottomMargin: strip.visible ? strip.height + 16 : 8 }
-            // Speaker: one large tile (the others in a strip below).
             readonly property var speaker: win.others.find(p => p.id === win.speakerId) || win.others[0]
-            readonly property var shown: win.layout === "speaker" ? [speaker] : win.others
-            columns: Math.max(1, Math.ceil(Math.sqrt(shown.length)))
-            readonly property int rowsN: Math.max(1, Math.ceil(shown.length / columns))
-            spacing: 8
+            MeetingTile {
+                anchors.fill: parent
+                call: win
+                person: tiles.speaker || ({})
+            }
+        }
+        // Gallery, as Teams lays it out: 16:9 tiles as large as the stage
+        // allows for the best column count, rows centred (the last one
+        // too), you first.
+        Item {
+            id: gallery
+            visible: win.meeting && win.others.length > 0 && win.layout !== "speaker"
+            anchors { fill: parent; margins: 2.67 }
+            readonly property var people: [{ id: win.selfId, name: win.selfName || "You", self: true }].concat(win.others)
+            readonly property int count: people.length
+            // The column count giving the largest 16:9 tiles.
+            readonly property int cols: {
+                let bestCols = 1, bestW = 0
+                for (let c = 1; c <= count; c++) {
+                    const w = Math.min(width / c, height / Math.ceil(count / c) * 16 / 9)
+                    if (w > bestW + 0.01) { bestW = w; bestCols = c }
+                }
+                return bestCols
+            }
+            readonly property int rows: Math.ceil(count / cols)
+            readonly property real tileW: Math.min(width / cols, height / rows * 16 / 9)
+            readonly property real tileH: tileW * 9 / 16
             Repeater {
-                model: win.meeting ? tiles.shown : []
-                Rectangle {
+                model: gallery.visible ? gallery.people : []
+                MeetingTile {
                     required property var modelData
-                    width: (tiles.width - (tiles.columns - 1) * tiles.spacing) / tiles.columns
-                    height: (tiles.height - (tiles.rowsN - 1) * tiles.spacing) / tiles.rowsN
-                    radius: 6
-                    color: "#FFFFFF"; opacity: 0.9
-                    // A raised hand: Teams' gold outline and "1 ✋" badge.
-                    readonly property int handAt: win.hands.indexOf(modelData.id)
-                    border.color: handAt >= 0 ? theme.handRaised : theme.dividerSoft
-                    border.width: handAt >= 0 ? 3 : 1
-                    Avatar { anchors.centerIn: parent; size: Math.min(144, parent.height * 0.45); name: parent.modelData.name; photoId: parent.modelData.id; visible: !tileVideo.visible }
-                    // Their camera, cropped to fill the tile as Teams' gallery does.
-                    VideoFrame {
-                        id: tileVideo
-                        source: win.videoKeys[parent.modelData.id] || ""
-                        anchors.fill: parent; anchors.margins: parent.border.width
-                        visible: source !== "" && hasFrame
-                        Timer {
-                            interval: 33; repeat: true
-                            running: win.visible && tileVideo.source !== ""
-                            onTriggered: tileVideo.refresh()
-                        }
-                    }
-                    Rectangle {
-                        visible: parent.handAt >= 0
-                        anchors { left: parent.left; top: parent.top; margins: 10 }
-                        width: handRow.implicitWidth + 12; height: 28; radius: 14
-                        color: "white"; border.color: theme.dividerSoft
-                        Row {
-                            id: handRow
-                            anchors.centerIn: parent; spacing: 4
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.parent.handAt + 1; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "\u270B"; font.pixelSize: 16 }
-                        }
-                        Accessible.role: Accessible.StaticText
-                        Accessible.name: "Hand raised"
-                    }
-                    ReactionShown { mri: parent.modelData.id }
-                    Rectangle {
-                        anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
-                        width: tileName.implicitWidth + 12; height: 24; radius: 4
-                        color: "#99000000"
-                        Text { id: tileName; anchors.centerIn: parent; text: parent.parent.modelData.name; color: "white"; font.family: theme.font; font.pixelSize: theme.small }
-                    }
-                    Accessible.role: Accessible.Grouping
-                    Accessible.name: modelData.name
+                    required property int index
+                    readonly property int row: Math.floor(index / gallery.cols)
+                    readonly property int inRow: row === gallery.rows - 1 ? gallery.count - row * gallery.cols : gallery.cols
+                    call: win
+                    person: modelData
+                    x: (gallery.width - inRow * gallery.tileW) / 2 + (index % gallery.cols) * gallery.tileW
+                    y: (gallery.height - gallery.rows * gallery.tileH) / 2 + row * gallery.tileH
+                    width: gallery.tileW; height: gallery.tileH
                 }
             }
         }
@@ -545,9 +532,10 @@ Window {
                 font.family: theme.font; font.pixelSize: theme.small
             }
         }
-        // Your own tile, bottom right (in a meeting, once others are there)
+        // Your own tile, bottom right (in a meeting's Speaker view; the
+        // gallery has you as a tile)
         Rectangle {
-            visible: !win.meeting || win.others.length > 0
+            visible: !win.meeting || (win.others.length > 0 && win.layout === "speaker")
             z: 2
             anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
             width: 240; height: 134; radius: 6

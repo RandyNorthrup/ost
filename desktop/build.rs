@@ -62,6 +62,7 @@ fn main() {
         "qml/UnverifiedBadge.qml",
         "qml/GuestAvatar.qml",
         "qml/LobbyToast.qml",
+        "qml/MeetingTile.qml",
         "qml/AdmitSuspectedDialog.qml",
         "qml/PeoplePane.qml",
         "qml/ConfirmDialog.qml",
