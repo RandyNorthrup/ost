@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-08T03:24:00Z'
+updated_date: '2026-11-08T17:19:00Z'
 labels:
   - calls
   - meetings
@@ -25,10 +25,10 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Toolbar built from Teams' layout config per call type with tooltips and width-driven overflow into More
-- [ ] #2 Leave ▾ (Leave / Leave on all my devices / End meeting with confirmation) per role
+- [x] #2 Leave ▾ (Leave / Leave on all my devices / End meeting with confirmation) per role
 - [ ] #3 People pane sections, sort, search and invite field as Teams
 - [ ] #4 Lobby on both sides (waiting screen; Admit/Deny/Admit all and the lobby toast)
-- [ ] #5 Send and receive meeting reactions
+- [x] #5 Send and receive meeting reactions
 - [ ] #6 Compact view window when minimised; pre-join live camera preview
 <!-- AC:END -->
 
@@ -55,4 +55,6 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
 - Leave ▾ menu (Leave; End meeting for the organizer) with the "End the meeting?" confirmation; End meeting verified live (DELETE conversationController, HTTP 204, everyone dropped).
 - "Leave on all my devices" not seen in Teams' menu with a single device; needs a two-device test.
 - Camera/Mic chevrons (device flyouts) still to do.
+
+- 2026-11-08: Leave on all my devices (removeParticipant scope "all" with our endpoint, then leave) shown with 2+ of your devices, measured and verified with winpc. Reactions done as TASK-0035.
 <!-- SECTION:NOTES:END -->

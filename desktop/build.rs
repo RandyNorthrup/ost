@@ -67,6 +67,7 @@ fn main() {
         "qml/SharedDisplayWindow.qml",
         "qml/RoomNotice.qml",
         "qml/MutedNotice.qml",
+        "qml/CompactCallWindow.qml",
         "qml/AdmitSuspectedDialog.qml",
         "qml/PeoplePane.qml",
         "qml/ConfirmDialog.qml",

@@ -1182,6 +1182,17 @@ Window {
             } else if (step === 8 && Qt.application.arguments.indexOf("--join-camera") >= 0) {
                 // --join-camera: turn the camera on in the meeting.
                 backend.toggleCamera()
+            } else if (step === 9 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
+                // --join-compact: minimise the meeting window, capture the
+                // compact view (step 12), then restore (step 14).
+                callWindow.minimizeForTest()
+            } else if (step === 12 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
+                console.warn("JOIN compact visibility", callWindow.visibility, "shown", callWindow.compactViewForTest().visible)
+                callWindow.compactViewForTest().contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-compact.png")))
+            } else if (step === 14 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
+                callWindow.compactViewForTest().restore()
+            } else if (step === 15 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
+                console.warn("JOIN restored visibility", callWindow.visibility, "compact", callWindow.compactViewForTest().visible)
             } else if (step === 10 && Qt.application.arguments.indexOf("--join-leave-all") >= 0) {
                 // --join-leave-all: open Leave's menu, capture it, then
                 // (step 12) Leave on all my devices.

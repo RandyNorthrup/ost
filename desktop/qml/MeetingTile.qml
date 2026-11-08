@@ -10,6 +10,8 @@ Item {
     property var call
     property var person: ({})
     readonly property bool self: !!person.self
+    /// The compact view's tiles: name tags without the name, 4 px in.
+    property bool compact: false
     /// Optimize for room shows the videos on the shared display only;
     /// "Turn off other videos" stops theirs.
     property bool forRoom: false
@@ -126,7 +128,7 @@ Item {
         // white; a guest's person-question glyph follows 4 px on; the
         // mic-off glyph (16 px, filled) 8 px on, after 6 more for you.
         Rectangle {
-            anchors { left: parent.left; bottom: parent.bottom; leftMargin: 8; bottomMargin: 8 }
+            anchors { left: parent.left; bottom: parent.bottom; leftMargin: mt.compact ? 4 : 8; bottomMargin: mt.compact ? 4 : 8 }
             height: 24; radius: 4
             width: tagRow.implicitWidth + 12
             color: Qt.rgba(0, 0, 0, 0.5)
@@ -135,6 +137,7 @@ Item {
                 anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
                 readonly property bool micOff: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.muted
                 Text {
+                    visible: !mt.compact
                     anchors.verticalCenter: parent.verticalCenter
                     height: 16; verticalAlignment: Text.AlignVCenter
                     text: mt.person.name || ""; color: "white"
@@ -148,7 +151,9 @@ Item {
                     Accessible.role: Accessible.Graphic
                     Accessible.name: "Unverified"
                 }
-                Item { visible: tagRow.micOff; width: mt.self ? 14 : 8; height: 1 }
+                // Compact (no name): Teams' measured gaps are 8 after a
+                // guest's glyph and 6 before your own mic.
+                Item { visible: tagRow.micOff && (!mt.compact || !!mt.person.guest || mt.self); width: mt.self ? (mt.compact ? 6 : 14) : 8; height: 1 }
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: tagRow.micOff

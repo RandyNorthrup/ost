@@ -964,6 +964,15 @@ Window {
         }
     }
     ConfirmDialog { id: endAsk; onConfirmed: win.endMeeting() }
+    // Teams' compact view while the meeting window is minimised.
+    CompactCallWindow {
+        id: compactView
+        call: win
+        visible: win.meeting && win.state === "connected" && win.visibility === Window.Minimized
+        onRestore: { win.showNormal(); win.raise(); win.requestActivate() }
+    }
+    function minimizeForTest() { win.showMinimized() }
+    function compactViewForTest() { return compactView }
     // Teams' Mute all confirmation ("All" scope).
     ConfirmDialog {
         id: muteAllAsk
