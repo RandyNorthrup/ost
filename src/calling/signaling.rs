@@ -1374,6 +1374,90 @@ pub async fn invite_user(
 /// Leave a conversation we created, as the Teams client does to cancel an
 /// outgoing call that is still ringing (`code` 487) or has gone
 /// unanswered (408). The callee's ringing stops at once.
+/// Watch a chat's ongoing call without joining it, as Teams does to show
+/// who is in it (calling-pluginless `subscribeToCall`): a conversation
+/// request with `subscribe` semantics (no call invitation) to the call's
+/// `conversationUrl`. The response lists the roster; updates come to our
+/// `subscription/…` callbacks. Returns the response body.
+pub async fn subscribe_conversation(
+    http: &reqwest::Client,
+    conversation_url: &str,
+    params: &ConversationCallParams<'_>,
+) -> Result<String> {
+    let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
+    let payload = serde_json::json!({
+        "conversationRequest": {
+            "roster": { "type": "Delta", "rosterUpdate": tc("subscription/rosterUpdate/") },
+            "properties": {
+                "allowConversationWithoutHost": true,
+                "enableGroupCallEventMessages": true,
+                "enableGroupCallUpgradeMessage": false,
+                "enableGroupCallMeetupGeneration": false
+            },
+            "links": {
+                "conversationEnd": tc("subscription/conversationEnd/"),
+                "conversationUpdate": tc("subscription/conversationUpdate/"),
+                "localParticipantUpdate": tc("subscription/localParticipantUpdate/"),
+                "addParticipantSuccess": tc("subscription/addParticipantSuccess/"),
+                "addParticipantFailure": tc("subscription/addParticipantFailure/"),
+                "receiveMessage": tc("subscription/receiveMessage/")
+            }
+        },
+        "groupContext": null,
+        "groupChat": { "threadId": params.thread_id, "messageId": null },
+        "participants": {
+            "from": {
+                "id": params.caller_mri,
+                "displayName": params.caller_display_name,
+                "endpointId": params.endpoint_id,
+                "participantId": params.participant_id,
+                "languageId": "en-US"
+            }
+        },
+        "capabilities": null,
+        "endpointCapabilities": 73463,
+        "clientEndpointCapabilities": 9336554,
+        "endpointMetadata": { "holographicCapabilities": 3 },
+        "meetingInfo": null,
+        "endpointState": {
+            "endpointStateSequenceNumber": 0,
+            "endpointProperties": {
+                "additionalEndpointProperties": { "infoShownInReportMode": "FullInformation" }
+            }
+        }
+    });
+    let resp = http
+        .post(conversation_url)
+        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .header("Content-Type", "application/json")
+        .header("x-microsoft-skype-chain-id", params.chain_id)
+        .header("x-microsoft-skype-message-id", params.message_id)
+        .header("x-microsoft-skype-client", SKYPE_CLIENT_HEADER)
+        .header("Referer", "https://teams.microsoft.com/")
+        .header("ms-teams-partition", TEAMS_PARTITION)
+        .header("ms-teams-region", TEAMS_REGION)
+        .header("ms-teams-ring", TEAMS_RING)
+        .header("x-ms-migration", "True")
+        .json(&payload)
+        .send()
+        .await
+        .context("Subscribing to the call failed")?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    tracing::info!(
+        "Call roster subscription: {} ({} bytes)",
+        status,
+        body.len()
+    );
+    if !status.is_success() {
+        anyhow::bail!(
+            "Subscribing to the call failed ({status}): {}",
+            &body[..body.len().min(300)]
+        );
+    }
+    Ok(body)
+}
+
 pub async fn leave_conversation(
     http: &reqwest::Client,
     leave_url: &str,

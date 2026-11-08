@@ -876,6 +876,19 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
   - Content: the chat topic (else "(No title)"), the subtitle "{{audioDropInCaller}} started a meeting" (name fallback "Someone"), and the buttons **Join** (`calling_nudge_button_join`) and **Message** (`calling_meeting_started_secondary_button`).
   - It is dropped when the type or call id is missing, for a duplicate call id, when the user setting is off, when the chat is muted, and when you're already in that call.
 
+### 7.9c Who is in a chat's call when you aren't in it (2026-11-08, verified live)
+- **Subscription.** Teams watches the open chat's call without joining (calling-pluginless `subscribeToCall`):
+  - It POSTs a conversation request to the liveness entry's `conversationUrl` (the flight-proxied conv service): `conversationRequest` with `roster: {type: "Delta", rosterUpdate}`, `properties` and `links` (conversationEnd, conversationUpdate, localParticipantUpdate, addParticipantSuccess/Failure, receiveMessage), plus `groupChat {threadId, messageId}`, `participants.from`, the capabilities, `endpointMetadata` and `endpointState`.
+  - There is no `callInvitation`. The answer is 200 `application/vnd.skype.gvc.v1.0+json` with the roster.
+  - Roster deltas then come to the `rosterUpdate` link; Teams web also opens a broker channel.
+- **OST:**
+  - `calling::live_roster` subscribes with callbacks under `subscription/…`, kept apart from the call you're in. It follows the deltas and leaves the conversation when the chat changes.
+  - The header shows everyone in the call besides you.
+- **Meeting band** (`chat-live-roster`, winpc):
+  - After the duration (12 px white) comes a 7 px gap, then 32 px avatars every 22 px (they overlap by 10; the row's 10 px right padding takes the last one's overhang), then 8 px to Join.
+  - At most 5, then +N. Shown from 834 px wide.
+- **Group call pill:** its 24 px avatars come from the same roster (before, it showed only who started the call).
+
 ### 7.10 Header TODOs
 - Live 1:1, group and meeting headers (code + live flags only so far).
 - Labels for header Mark as read/unread (708158) and Manage

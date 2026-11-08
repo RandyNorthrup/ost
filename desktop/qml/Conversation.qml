@@ -160,6 +160,19 @@ Rectangle {
     // when the call's start isn't among the loaded messages.
     readonly property var liveCall: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.liveCall ? c.liveCall : null }
     readonly property bool chatMuted: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return !!(c && c.muted) }
+    // Watching the chat's call while we aren't in it (Teams subscribes to
+    // its conversation without joining): who is in it, for the header.
+    readonly property var liveRosterPeople: JSON.parse(backend.chatLiveRosterJson || "[]")
+    readonly property string watchKey: root.liveCall && !root.inThisCall && !root.pane && root.liveCall.conversation_url
+        ? root.chatId + "|" + root.liveCall.conversation_url : ""
+    onWatchKeyChanged: watchTimer.restart()
+    Component.onCompleted: if (!root.pane) watchTimer.restart()
+    Timer {
+        id: watchTimer; interval: 300
+        onTriggered: if (!root.pane) root.watchKey
+            ? backend.watchChatCall(root.chatId, root.liveCall.conversation_url, root.liveCall.call_id || "")
+            : backend.watchChatCall("", "", "")
+    }
     readonly property bool callGoing: !!root.liveCall || root.messages.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
     readonly property bool inThisCall: backend.callState !== "" && backend.callThreadId === root.chatId
     readonly property bool callsDisabled: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) > 20
@@ -359,7 +372,7 @@ Rectangle {
         // 4 px toolbar padding): the tabs fit before it.
         readonly property real toolbarLeft: {
             let x = root.actionRight
-            for (const it of [liveDuration, callPrimary, oneToOnePeople, joinButton, meetNow, meetingJoin, rosterCount])
+            for (const it of [liveDuration, bandRoster, callPrimary, oneToOnePeople, joinButton, meetNow, meetingJoin, rosterCount])
                 if (it && it.visible) x = Math.min(x, it.x)
             return x - 4
         }
@@ -698,6 +711,9 @@ Rectangle {
                 if (root.inThisCall) {
                     for (const p of (backend.callRosterJson ? JSON.parse(backend.callRosterJson) : []))
                         if (p.active) out.push({ mri: p.id, name: p.name || root.memberName(p.id) })
+                } else if (root.liveRosterPeople.length > 0) {
+                    for (const p of root.liveRosterPeople)
+                        out.push({ mri: p.id, name: p.name || root.memberName(p.id) })
                 } else if (root.liveCall && root.liveCall.initiator) {
                     out.push({ mri: root.liveCall.initiator, name: root.liveCall.initiator_name || root.memberName(root.liveCall.initiator) })
                 } else {
@@ -826,7 +842,7 @@ Rectangle {
             visible: root.liveBand && !!root.liveSince
             property int tick: 0
             Timer { running: liveDuration.visible; interval: 1000; repeat: true; onTriggered: liveDuration.tick++ }
-            x: (meetingJoin.visible ? meetingJoin.x - 8 : rosterCount.leftEdge) - 7 - width
+            x: (bandRoster.visible ? bandRoster.x : meetingJoin.visible ? meetingJoin.x - 8 : rosterCount.leftEdge) - 7 - width
             anchors.verticalCenter: parent.verticalCenter
             text: {
                 tick
@@ -838,6 +854,32 @@ Rectangle {
             font.family: theme.font; font.pixelSize: 12
             color: "#FFFFFF"
             Accessible.name: "Meeting duration " + text
+        }
+        // The live roster in a meeting's band (chat-live-roster, measured on
+        // winpc): who is in the meeting besides you, 32 px avatars 22 apart
+        // (the last one's 10 px overhang is the row's right padding), 7
+        // after the duration and 8 before Join; at most 5, then +N. From
+        // 834 wide, while you aren't in the meeting.
+        Row {
+            id: bandRoster
+            readonly property var people: root.liveRosterPeople
+            readonly property int hidden: Math.max(0, people.length - 5)
+            visible: root.liveBand && root.width >= 834 && people.length > 0 && !root.inThisCall
+            x: (meetingJoin.visible ? meetingJoin.x - 8 : rosterCount.leftEdge) - width
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(people.length, 5) * 22 + (hidden > 0 ? 22 : 0) + 10
+            spacing: -10
+            Repeater {
+                model: bandRoster.people.slice(0, 5)
+                Avatar { required property var modelData; size: 32; name: modelData.name || "?"; photoId: modelData.id }
+            }
+            Rectangle {
+                visible: bandRoster.hidden > 0
+                width: 32; height: 32; radius: 16
+                // Fluent's neutral avatar (NeutralBackground6 / Foreground3).
+                color: theme.pick("#EBEBEB", "#333333")
+                Text { anchors.centerIn: parent; text: "+" + bandRoster.hidden; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.pick("#616161", "#ADADAD") }
+            }
         }
         Rectangle {
             id: meetingJoin

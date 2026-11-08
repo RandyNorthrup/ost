@@ -16,6 +16,7 @@ pub mod display;
 pub mod frames;
 pub mod ice;
 pub mod incoming;
+pub mod live_roster;
 pub mod mcp;
 pub mod media;
 pub mod meeting_media;

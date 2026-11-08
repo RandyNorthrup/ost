@@ -64,9 +64,19 @@ fn sending_source(streams: &[&serde_json::Value], label: &str) -> Option<i64> {
 /// `json` is a call event as published on the event hub
 /// (`{"callAgentPath": "conversation/rosterUpdate/", "body": {…}}`).
 pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
+    delta_on(json, "conversation/rosterUpdate")
+}
+
+/// The same, for a call we only watch (OST's `subscription/rosterUpdate/`
+/// callback, kept apart from the call we're in).
+pub fn subscription_roster_delta(json: &str) -> Option<Vec<Participant>> {
+    delta_on(json, "subscription/rosterUpdate")
+}
+
+fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let path = v.get("callAgentPath")?.as_str()?;
-    if !path.starts_with("conversation/rosterUpdate") {
+    if !path.starts_with(prefix) {
         return None;
     }
     let participants = v.pointer("/body/participants")?.as_object()?;
@@ -384,6 +394,19 @@ mod tests {
         assert!(muted("8:teamsvisitor:2"), "muted by the meeting");
         assert!(!muted("8:teamsvisitor:3"));
         assert!(!muted("8:orgid:4"), "one endpoint still talks");
+    }
+
+    #[test]
+    fn watched_calls_have_their_own_roster_updates() {
+        let body = r#"{"participants":{"8:orgid:a":{"state":"active","details":{"displayName":"OST Test 1"}}}}"#;
+        let watched = format!(r#"{{"callAgentPath":"subscription/rosterUpdate/","body":{body}}}"#);
+        let ours = format!(r#"{{"callAgentPath":"conversation/rosterUpdate/","body":{body}}}"#);
+        assert_eq!(
+            subscription_roster_delta(&watched).unwrap()[0].name,
+            "OST Test 1"
+        );
+        assert!(roster_delta(&watched).is_none(), "not the call we're in");
+        assert!(subscription_roster_delta(&ours).is_none());
     }
 
     #[test]

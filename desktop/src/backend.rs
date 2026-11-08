@@ -117,6 +117,8 @@ pub mod qobject {
         #[qproperty(QString, call_speaking_json)]
         /// The meeting has muted us.
         #[qproperty(bool, call_muted_by_meeting)]
+        /// Who is in the open chat's call while we aren't: [{id, name}].
+        #[qproperty(QString, chat_live_roster_json)]
         /// Bumped when the meeting mutes us while we're talking (Teams'
         /// "You've been muted" alert).
         #[qproperty(i32, call_muted_remotely)]
@@ -380,6 +382,15 @@ pub mod qobject {
         /// Group chats: join the chat's ongoing call (Teams' Join).
         #[qinvokable]
         fn join_group_call(self: Pin<&mut Backend>);
+        /// Watch the open chat's call without joining (its live roster), or
+        /// stop (empty thread).
+        #[qinvokable]
+        fn watch_chat_call(
+            self: Pin<&mut Backend>,
+            thread_id: &QString,
+            conversation_url: &QString,
+            call_id: &QString,
+        );
 
         /// Join the Teams meeting with this join link; `title` is shown in
         /// the call window.
@@ -980,6 +991,7 @@ pub struct BackendRust {
     call_speaker_mri: QString,
     call_speaking_json: QString,
     call_muted_by_meeting: bool,
+    chat_live_roster_json: QString,
     call_muted_remotely: i32,
     call_share_mri: QString,
     /// How wide each person's tile is drawn ({mri: px}), for the size of
@@ -1326,6 +1338,23 @@ fn spawn_share_watch(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
             }
         }
     });
+}
+
+/// The chat call we're watching without joining (its live roster).
+fn watched_call() -> &'static tokio::sync::Mutex<Option<teams_cli::calling::live_roster::LiveRoster>>
+{
+    static W: OnceLock<tokio::sync::Mutex<Option<teams_cli::calling::live_roster::LiveRoster>>> =
+        OnceLock::new();
+    W.get_or_init(Default::default)
+}
+
+/// The watched call's roster for the header: [{id, name}] of who's in it.
+fn live_roster_json(w: &teams_cli::calling::live_roster::LiveRoster) -> String {
+    let people: Vec<serde_json::Value> = w
+        .others()
+        .map(|p| serde_json::json!({"id": p.id, "name": p.name}))
+        .collect();
+    serde_json::to_string(&people).unwrap_or_else(|_| "[]".into())
 }
 
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
@@ -1803,6 +1832,27 @@ fn call_event_source_ids(json: &str, path: &str) -> Option<Vec<i64>> {
 }
 
 async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
+    // The chat call we watch: its roster changes, or it ends.
+    if json.contains("\"callAgentPath\":\"subscription/") {
+        tracing::debug!(event = %json.chars().take(1500).collect::<String>(), "watched call event");
+        let mut w = watched_call().lock().await;
+        let ended = json.contains("subscription/conversationEnd");
+        let roster = match w.as_mut() {
+            Some(sub) if ended => {
+                sub.roster.clear();
+                Some("[]".to_string())
+            }
+            Some(sub) => sub.apply(json).then(|| live_roster_json(sub)),
+            None => None,
+        };
+        if let Some(json) = roster {
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_chat_live_roster_json(QString::from(json.as_str()))
+            });
+        }
+        return;
+    }
     if let Some(start) = teams_cli::calling::incoming::meeting_start(json) {
         tracing::info!(thread = %start.thread_id, "meeting started in a chat");
         let qt2 = qt.clone();
@@ -2931,6 +2981,51 @@ impl qobject::Backend {
             title,
             teams_cli::calling::signaling::GroupCallKind::Huddle,
         );
+    }
+
+    pub fn watch_chat_call(
+        self: Pin<&mut Self>,
+        thread_id: &QString,
+        conversation_url: &QString,
+        call_id: &QString,
+    ) {
+        let (thread, url, id) = (
+            thread_id.to_string(),
+            conversation_url.to_string(),
+            call_id.to_string(),
+        );
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut w = watched_call().lock().await;
+            if w.as_ref().is_some_and(|x| x.thread_id == thread) {
+                return;
+            }
+            if let Some(old) = w.take() {
+                old.leave().await;
+            }
+            let json = if thread.is_empty() || url.is_empty() {
+                "[]".to_string()
+            } else {
+                match teams_cli::calling::live_roster::LiveRoster::subscribe(&thread, &url, &id)
+                    .await
+                {
+                    Ok(sub) => {
+                        let json = live_roster_json(&sub);
+                        tracing::info!(people = sub.roster.len(), "watching the chat's call");
+                        *w = Some(sub);
+                        json
+                    }
+                    Err(e) => {
+                        tracing::warn!("live roster: {}", short_error(&e));
+                        "[]".to_string()
+                    }
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_chat_live_roster_json(QString::from(json.as_str()))
+            });
+        });
     }
 
     pub fn join_group_call(self: Pin<&mut Self>) {
