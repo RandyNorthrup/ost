@@ -16,6 +16,8 @@ unsafe extern "C" {
     /// `phase(data, 0)` before it and `phase(data, 1)` after it
     /// (src/webengine.cpp).
     fn ost_application_run(
+        argc: *mut std::ffi::c_int,
+        argv: *mut *mut std::ffi::c_char,
         name: *const std::ffi::c_char,
         version: *const std::ffi::c_char,
         desktop_file: *const std::ffi::c_char,
@@ -133,10 +135,24 @@ fn main() {
     // which is how the window gets the OST cheese icon.
     let version = std::ffi::CString::new(env!("CARGO_PKG_VERSION")).unwrap_or_default();
     let mut engine: Option<cxx::UniquePtr<QQmlApplicationEngine>> = None;
-    // SAFETY: the strings are NUL-terminated and outlive the call; `engine`
-    // outlives it too, and the callbacks run on this thread inside it.
+    // The command line, as C strings Qt keeps pointers to (QML reads it
+    // through Qt.application.arguments).
+    let args: Vec<std::ffi::CString> = std::env::args_os()
+        .filter_map(|a| std::ffi::CString::new(a.into_encoded_bytes()).ok())
+        .collect();
+    let mut argv: Vec<*mut std::ffi::c_char> = args
+        .iter()
+        .map(|a| a.as_ptr().cast_mut())
+        .chain(std::iter::once(std::ptr::null_mut()))
+        .collect();
+    let mut argc = std::ffi::c_int::try_from(args.len()).unwrap_or(0);
+    // SAFETY: the strings are NUL-terminated and, like `argc`, `argv` and
+    // `engine`, outlive the call; the callbacks run on this thread inside
+    // it. Qt may reorder `argv` but doesn't free or write the strings.
     unsafe {
         ost_application_run(
+            &raw mut argc,
+            argv.as_mut_ptr(),
             c"OST".as_ptr(),
             version.as_ptr(),
             c"ost-desktop".as_ptr(),

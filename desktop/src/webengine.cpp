@@ -18,14 +18,12 @@ extern "C" void ost_webengine_initialize()
 // platform has no native one (Plasma), and that needs Qt Widgets.
 // `phase(data, 0)` runs once the application exists, `phase(data, 1)`
 // after its event loop, while it still exists. Returns exec()'s exit code.
-extern "C" int ost_application_run(const char *name, const char *version,
-                                   const char *desktop_file,
+// `argc` and `argv` (the command line) must outlive the call.
+extern "C" int ost_application_run(int *argc, char **argv, const char *name,
+                                   const char *version, const char *desktop_file,
                                    void (*phase)(void *, int), void *data)
 {
-    static int argc = 1;
-    static char arg0[] = "ost-desktop";
-    static char *argv[] = {arg0, nullptr};
-    QApplication app(argc, argv);
+    QApplication app(*argc, argv);
     QGuiApplication::setDesktopFileName(QString::fromUtf8(desktop_file));
     QCoreApplication::setApplicationName(QString::fromUtf8(name));
     QCoreApplication::setApplicationVersion(QString::fromUtf8(version));

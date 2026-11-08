@@ -19,7 +19,16 @@ Window {
     minimumWidth: Math.min(800, startSize[0])
     minimumHeight: Math.min(600, startSize[1])
     visible: true
-    title: backend.currentChatName ? backend.currentChatName + " | OST" : "OST"
+    // As Teams titles its window (and so its taskbar button): the app,
+    // what's open in it, then the product: "Chat | OST group test | OST",
+    // "Chat | OST Test Team | General | OST", "Calendar | OST".
+    title: {
+        const app = rail.apps.concat(rail.extraApps).find(a => a.key === rail.current)
+        const item = rail.current !== "chat" || !conversation.visible || !backend.currentChatName ? ""
+            : conversation.isChannel && conversation.teamName ? conversation.teamName + " | " + backend.currentChatName
+            : backend.currentChatName
+        return [app ? app.label : "", item, "OST"].filter(Boolean).join(" | ")
+    }
     color: theme.surface
     // Teams desktop draws its own title bar and window buttons.
     flags: (backend.systemFrame ? Qt.Window : (Qt.Window | Qt.FramelessWindowHint))
@@ -1683,6 +1692,27 @@ Window {
     }
 
     // --channel-test: open OST Test Team > General, post, capture when shown.
+    // --title-test: the window title for an app, a chat and a channel
+    // (Teams' taskbar label), logged as TITLE lines; reads only.
+    Timer {
+        running: Qt.application.arguments.indexOf("--title-test") >= 0 && backend.signedIn && chatList.chats.length > 1 && backend.teamsJson.length > 2
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const teams = JSON.parse(backend.teamsJson)
+            const team = teams.find(t => t.name === "OST Test Team")
+            const group = chatList.chats.find(c => c.name === "OST group test")
+            if (step === 0) console.warn("TITLE start", window.title)
+            else if (step === 1) backend.selectChat(group.id, group.name)
+            else if (step === 2) console.warn("TITLE chat", window.title)
+            else if (step === 3) { const ch = team.channels.find(c => c.name === "General"); backend.selectChat(ch.id, ch.name) }
+            else if (step === 4) console.warn("TITLE channel", window.title)
+            else if (step === 5) rail.current = "calendar"
+            else if (step === 6) console.warn("TITLE calendar", window.title)
+            else if (step === 7) { rail.current = "chat"; Qt.quit() }
+            step++
+        }
+    }
     Timer {
         running: Qt.application.arguments.indexOf("--channel-test") >= 0 && backend.signedIn
         interval: 3000; repeat: true
