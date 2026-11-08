@@ -68,8 +68,17 @@ pub struct OutgoingCall {
     invite_url: Option<String>,
     /// The conversation's mute link (Mute all).
     mute_link: Option<String>,
+    /// The conversation's unmute link: unmuting yourself after the meeting
+    /// muted you.
+    unmute_link: Option<String>,
+    /// The meeting has muted our endpoint (its audio stream is
+    /// serverMuted), as the roster last said.
+    server_muted: std::sync::atomic::AtomicBool,
     /// The conversation's sendMessage link (meeting reactions).
     message_link: Option<String>,
+    /// The conversation's updateEndpointState link (our mute, as others
+    /// see it), and the last sequence number posted.
+    endpoint_state: Option<(String, std::sync::atomic::AtomicU64)>,
 }
 
 /// Someone waiting in a meeting's lobby.
@@ -91,6 +100,49 @@ impl OutgoingCall {
         if let Some(m) = &self.media {
             m.set_muted(muted);
         }
+    }
+
+    /// Our endpoint id (the roster lists our endpoint under it).
+    pub fn endpoint_id(&self) -> Option<&str> {
+        self.me.0.get("endpointId").and_then(|e| e.as_str())
+    }
+
+    /// The roster says whether the meeting has muted our endpoint.
+    pub fn set_server_muted(&self, muted: bool) {
+        self.server_muted
+            .store(muted, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn is_server_muted(&self) -> bool {
+        self.server_muted.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Tell the conversation we muted or unmuted, as Teams does: muting,
+    /// and unmuting ourselves, go in our endpoint state
+    /// (updateEndpointState); unmuting after the meeting muted us asks the
+    /// meeting (its unmute link, `mediaTypes: ["audio"]`).
+    pub async fn publish_mute(&self, muted: bool) -> Result<()> {
+        if !muted
+            && self.is_server_muted()
+            && let Some(link) = &self.unmute_link
+        {
+            let body = serde_json::json!({ "from": self.me.0, "mediaTypes": ["audio"] });
+            cc_post(&self.http, &self.skype_token, link, &body, "Unmute").await?;
+            return Ok(());
+        }
+        let Some((link, seq)) = &self.endpoint_state else {
+            return Ok(());
+        };
+        let n = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            link,
+            &endpoint_state_body(&self.me.0, muted, n),
+            "Endpoint state",
+        )
+        .await?;
+        Ok(())
     }
 
     pub fn is_muted(&self) -> bool {
@@ -793,6 +845,17 @@ fn reaction_body(
     })
 }
 
+/// Teams' updateEndpointState body: who we are, and whether we're muted.
+fn endpoint_state_body(from: &serde_json::Value, muted: bool, seq: u64) -> serde_json::Value {
+    serde_json::json!({
+        "from": from,
+        "endpointState": {
+            "state": { "isMuted": muted },
+            "endpointStateSequenceNumber": seq,
+        },
+    })
+}
+
 /// Teams' UpdateMediaDescriptions: what our camera and sharing lines do
 /// (both are sendrecv in our offer; a line described sending must be, else
 /// 1047 "Invalid MediaDescriptions"). Off, a line is "recvonly"; a shared
@@ -1271,7 +1334,10 @@ async fn start(
     let controller = controller_link(&created.response_body);
     let invite_url = invite_url(&created.response_body);
     let mute_link = conversation_link(&created.response_body, "mute");
+    let unmute_link = conversation_link(&created.response_body, "unmute");
     let message_link = conversation_link(&created.response_body, "sendMessage");
+    let endpoint_state = conversation_link(&created.response_body, "updateEndpointState")
+        .map(|l| (l, std::sync::atomic::AtomicU64::new(0)));
     tracing::info!(has_invite = invite_url.is_some(), "meeting link");
     tracing::info!(
         has_controller = controller.is_some(),
@@ -1398,7 +1464,10 @@ async fn start(
         controller,
         invite_url,
         mute_link,
+        unmute_link,
+        server_muted: std::sync::atomic::AtomicBool::new(false),
         message_link,
+        endpoint_state,
     })
 }
 
@@ -1433,6 +1502,15 @@ mod tests {
         assert_eq!(m["scope"], "all");
         assert_eq!(m["payload"]["values"][0]["name"], "heart");
         assert_eq!(body["from"]["id"], "8:orgid:me");
+    }
+
+    #[test]
+    fn endpoint_state_says_whether_we_are_muted() {
+        let from = serde_json::json!({"id": "8:orgid:me", "displayName": "OST Test 1"});
+        let b = endpoint_state_body(&from, true, 3);
+        assert_eq!(b["from"]["id"], "8:orgid:me");
+        assert_eq!(b["endpointState"]["state"]["isMuted"], true);
+        assert_eq!(b["endpointState"]["endpointStateSequenceNumber"], 3);
     }
 
     #[test]

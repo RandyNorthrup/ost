@@ -180,6 +180,16 @@ Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framin
 - Measured on Teams web: the outline goes off about 60 ms after the speaker's CSRCs stop arriving (180–220 ms after they mute). Gaps of up to about 120 ms in the CSRCs don't turn it off.
 - OST: `src/calling/active_speakers.rs` keeps each CSRC for 150 ms after its last packet and reports the set as it changes (event `ost/activeSpeakers/`). The backend maps the sources to people through the roster (`callSpeakingJson`).
 
+## Mute state (2026-11-08, verified live)
+
+- **Others' mute** (calling-pluginless): someone is unmuted when one of their endpoints has a first audio stream that isn't `serverMuted` and an `endpointState.state.isMuted` that isn't true. Otherwise they're muted. Roster updates carry each endpoint's `endpointState` (`{"endpointStateSequenceNumber":n,"state":{"isMuted":b}}`).
+- **Our mute, as others see it:**
+  - Muting, or unmuting yourself, posts `{"from":{…},"endpointState":{"state":{"isMuted":b},"endpointStateSequenceNumber":n}}` to the conversation's `updateEndpointState` link (200).
+  - When the meeting has muted our endpoint (our audio stream `serverMuted`), Teams mutes locally. Unmuting first posts `{"from":{…},"mediaTypes":["audio"]}` to the conversation's `unmute` link (202). Once the roster shows the server mute lifted, the mic opens and the endpoint state says unmuted.
+- **Verified:**
+  - A Teams web guest saw OST's tag switch between mic-off and mic (with the speaking outline) as OST unmuted and muted, including lifting a server mute left from Mute all.
+  - OST's tiles showed Guest 1's own mute and unmute.
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.

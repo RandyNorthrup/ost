@@ -107,7 +107,7 @@ pub mod qobject {
         #[qproperty(bool, call_camera_on)]
         /// The call is a Teams meeting (joined from its link).
         #[qproperty(bool, call_meeting)]
-        /// The meeting's participants: [{id, name, role, active, server_muted}].
+        /// The meeting's participants: [{id, name, role, active, server_muted, muted, …}].
         #[qproperty(QString, call_roster_json)]
         /// Whose camera shows where in a meeting: {mri: frame key}.
         #[qproperty(QString, call_video_json)]
@@ -985,6 +985,9 @@ pub struct BackendRust {
     /// Others' videos are turned off (View › More options).
     incoming_video_off: bool,
     call_muted: bool,
+    /// We asked the meeting to lift its mute; the mic opens once the
+    /// roster says it did (as Teams does).
+    unmute_pending: bool,
     call_held: bool,
     call_held_by_peer: bool,
     call_can_dtmf: bool,
@@ -1863,6 +1866,44 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     if teams_cli::calling::roster::lobby_count(json).is_some() {
         let qt2 = qt.clone();
         runtime().spawn(async move { refresh_lobby(qt2).await });
+    }
+    // The meeting muting (or unmuting) us: Teams mutes you when the
+    // meeting does, and opens the mic once a requested unmute goes through.
+    {
+        let slot = call_slot().lock().await;
+        if let Some(call) = slot.outgoing.as_ref()
+            && let Some(id) = call.endpoint_id()
+            && let Some(server_muted) = teams_cli::calling::roster::own_server_muted(json, id)
+        {
+            let was = call.is_server_muted();
+            call.set_server_muted(server_muted);
+            if server_muted != was {
+                tracing::info!(server_muted, "the meeting changed our mute");
+            }
+            drop(slot);
+            let _ = qt.queue(move |mut this| {
+                if server_muted && !this.rust().call_muted {
+                    this.as_mut().set_call_muted(true);
+                    runtime().spawn(async {
+                        if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
+                            call.set_muted(true);
+                        }
+                    });
+                } else if !server_muted && this.rust().unmute_pending {
+                    this.as_mut().rust_mut().unmute_pending = false;
+                    this.as_mut().set_call_muted(false);
+                    // Then our own endpoint state says unmuted too.
+                    runtime().spawn(async {
+                        if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
+                            call.set_muted(false);
+                            if let Err(e) = call.publish_mute(false).await {
+                                tracing::warn!("mute state: {}", short_error(&e));
+                            }
+                        }
+                    });
+                }
+            });
+        }
     }
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
         tracing::info!(changes = delta.len(), "roster update");
@@ -3227,15 +3268,33 @@ impl qobject::Backend {
 
     pub fn toggle_mute(mut self: Pin<&mut Self>) {
         let muted = !self.rust().call_muted;
-        self.as_mut().set_call_muted(muted);
+        let qt = self.qt_thread();
+        self.as_mut().rust_mut().unmute_pending = false;
         runtime().spawn(async move {
             let slot = call_slot().lock().await;
             if let Some(call) = slot.active.as_ref() {
                 call.set_muted(muted);
             }
+            // The meeting muted us: unmuting asks it first; the mic opens
+            // when the roster says it let us (on_call_event).
+            let ask = !muted && slot.outgoing.as_ref().is_some_and(|c| c.is_server_muted());
             if let Some(call) = slot.outgoing.as_ref() {
-                call.set_muted(muted);
+                if !ask {
+                    call.set_muted(muted);
+                }
+                // Others see it, as in Teams.
+                if let Err(e) = call.publish_mute(muted).await {
+                    tracing::warn!("mute state: {}", short_error(&e));
+                }
             }
+            drop(slot);
+            let _ = qt.queue(move |mut this| {
+                if ask {
+                    this.as_mut().rust_mut().unmute_pending = true;
+                } else {
+                    this.as_mut().set_call_muted(muted);
+                }
+            });
         });
     }
 

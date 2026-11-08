@@ -1159,6 +1159,10 @@ Window {
             } else if (step === 8 && Qt.application.arguments.indexOf("--join-camera") >= 0) {
                 // --join-camera: turn the camera on in the meeting.
                 backend.toggleCamera()
+            } else if ((step === 10 || step === 16) && Qt.application.arguments.indexOf("--join-mute-cycle") >= 0) {
+                // --join-mute-cycle: unmute, then (step 16) mute again.
+                console.warn("JOIN toggle mute, muted", backend.callMuted)
+                backend.toggleMute()
             } else if (step === 16 && Qt.application.arguments.indexOf("--join-camera-off") >= 0) {
                 // --join-camera-off: and off again.
                 console.warn("JOIN camera off")

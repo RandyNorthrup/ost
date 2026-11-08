@@ -133,7 +133,7 @@ Item {
             Row {
                 id: tagRow
                 anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
-                readonly property bool micOff: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.server_muted
+                readonly property bool micOff: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.muted
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     height: 16; verticalAlignment: Text.AlignVCenter

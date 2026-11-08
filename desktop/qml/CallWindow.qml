@@ -112,7 +112,7 @@ Window {
     // Teams offers Mute all in meetings to organizers and presenters
     // while someone else is connected and not muted by the meeting.
     readonly property bool canMuteAll: meeting && ["organizer", "presenter"].indexOf(((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase()) >= 0
-        && others.some(p => p.active !== false && !p.server_muted)
+        && others.some(p => p.active !== false && !p.muted)
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
     readonly property var others: roster.filter(p => p.id !== selfId)
@@ -128,7 +128,7 @@ Window {
     readonly property var people: meeting
         ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
              role: (roster.find(p => p.id === selfId) || {}).role || "" }]
-          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.server_muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected })))
+          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected })))
         : [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
     /// Hold: you put the call on hold, or the other person did.

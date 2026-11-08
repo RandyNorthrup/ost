@@ -17,6 +17,10 @@ pub struct Participant {
     pub active: bool,
     /// Muted by the meeting (server mute) on every endpoint.
     pub server_muted: bool,
+    /// Muted, as Teams shows it: no endpoint has an audio stream that is
+    /// neither server-muted nor muted by its owner (`endpointState.state.
+    /// isMuted`).
+    pub muted: bool,
     /// Their audio is inactive: they put the call on hold (Teams' Hold
     /// moves the held side to a music bot and makes the holder inactive).
     pub on_hold: bool,
@@ -96,6 +100,32 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
                     .flatten()
                     .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("audio"))
                     .collect();
+                // Teams' rule (calling-pluginless): someone is unmuted when an
+                // endpoint's first audio stream isn't server-muted and the
+                // endpoint itself isn't muted.
+                let muted = !p
+                    .get("endpoints")
+                    .and_then(|e| e.as_object())
+                    .into_iter()
+                    .flat_map(|e| e.values())
+                    .filter(|ep| ep.get("call").is_some())
+                    .any(|ep| {
+                        let audio = ep
+                            .pointer("/call/mediaStreams")
+                            .and_then(|m| m.as_array())
+                            .into_iter()
+                            .flatten()
+                            .find(|m| m.get("type").and_then(|t| t.as_str()) == Some("audio"));
+                        let server = audio
+                            .and_then(|a| a.get("serverMuted"))
+                            .and_then(|b| b.as_bool())
+                            .unwrap_or(false);
+                        let own = ep
+                            .pointer("/endpointState/state/isMuted")
+                            .and_then(|b| b.as_bool())
+                            .unwrap_or(false);
+                        !server && !own
+                    });
                 Participant {
                     id: mri.to_ascii_lowercase(),
                     name: s("/details/displayName").to_string(),
@@ -109,6 +139,7 @@ pub fn roster_delta(json: &str) -> Option<Vec<Participant>> {
                         && streams
                             .iter()
                             .all(|m| m.get("serverMuted").and_then(|b| b.as_bool()) == Some(true)),
+                    muted,
                     hand: p
                         .get("publishedStates")
                         .and_then(|s| s.as_array())
@@ -199,6 +230,31 @@ pub fn lobby_count(json: &str) -> Option<u64> {
         .as_u64()
 }
 
+/// Whether a roster update says the meeting muted our endpoint (its audio
+/// stream is serverMuted): None when the update doesn't list it.
+pub fn own_server_muted(json: &str, endpoint_id: &str) -> Option<bool> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    if !v
+        .get("callAgentPath")?
+        .as_str()?
+        .starts_with("conversation/rosterUpdate")
+    {
+        return None;
+    }
+    v.pointer("/body/participants")?
+        .as_object()?
+        .values()
+        .filter_map(|p| p.pointer(&format!("/endpoints/{endpoint_id}/call/mediaStreams")))
+        .filter_map(|m| m.as_array())
+        .flatten()
+        .find(|m| m.get("type").and_then(|t| t.as_str()) == Some("audio"))
+        .map(|m| {
+            m.get("serverMuted")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(false)
+        })
+}
+
 /// Apply a delta to a roster kept in join order.
 pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
     for mut p in delta {
@@ -209,6 +265,7 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
                     p.share_source = x.share_source;
                     p.audio_source = x.audio_source;
                     p.server_muted = x.server_muted;
+                    p.muted = x.muted;
                     p.on_hold = x.on_hold;
                     p.streams_known = x.streams_known;
                 }
@@ -295,6 +352,52 @@ mod tests {
             "a camera that's off isn't a source"
         );
         assert_eq!(by("8:orgid:4287").audio_source, Some(201));
+    }
+
+    #[test]
+    fn muted_is_teams_rule_over_endpoints() {
+        // As Guest 1 muted itself (endpointState), Guest 2 was muted by the
+        // meeting (serverMuted), and Guest 3 was neither (trimmed).
+        let ep = |server: bool, own: Option<bool>| {
+            let state = own.map_or(String::new(), |m| {
+                format!(r#","endpointState":{{"endpointStateSequenceNumber":11,"state":{{"isMuted":{m}}}}}"#)
+            });
+            format!(
+                r#"{{"call":{{"mediaStreams":[{{"direction":"sendrecv","label":"main-audio","serverMuted":{server},"sourceId":1,"type":"audio"}}]}}{state}}}"#
+            )
+        };
+        let json = format!(
+            r#"{{"callAgentPath":"conversation/rosterUpdate/","body":{{"participants":{{
+                "8:teamsvisitor:1":{{"state":"active","details":{{"displayName":"OST Guest 1"}},"endpoints":{{"a":{}}}}},
+                "8:teamsvisitor:2":{{"state":"active","details":{{"displayName":"OST Guest 2"}},"endpoints":{{"b":{}}}}},
+                "8:teamsvisitor:3":{{"state":"active","details":{{"displayName":"OST Guest 3"}},"endpoints":{{"c":{}}}}},
+                "8:orgid:4":{{"state":"active","details":{{"displayName":"Two devices"}},"endpoints":{{"d":{},"e":{}}}}}}}}}}}"#,
+            ep(false, Some(true)),
+            ep(true, Some(false)),
+            ep(false, Some(false)),
+            ep(false, Some(true)),
+            ep(false, None),
+        );
+        let people = roster_delta(&json).unwrap();
+        let muted = |id: &str| people.iter().find(|p| p.id == id).unwrap().muted;
+        assert!(muted("8:teamsvisitor:1"), "muted themselves");
+        assert!(muted("8:teamsvisitor:2"), "muted by the meeting");
+        assert!(!muted("8:teamsvisitor:3"));
+        assert!(!muted("8:orgid:4"), "one endpoint still talks");
+    }
+
+    #[test]
+    fn our_own_server_mute_comes_from_our_endpoint() {
+        let json = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "8:orgid:4287":{"state":"active","endpoints":{
+                "ours":{"call":{"mediaStreams":[{"label":"main-audio","serverMuted":true,"sourceId":1,"type":"audio"}]}},
+                "other-device":{"call":{"mediaStreams":[]}}}}}}}"#;
+        assert_eq!(own_server_muted(json, "ours"), Some(true));
+        assert_eq!(
+            own_server_muted(&json.replace("true", "false"), "ours"),
+            Some(false)
+        );
+        assert_eq!(own_server_muted(json, "elsewhere"), None);
     }
 
     #[test]
