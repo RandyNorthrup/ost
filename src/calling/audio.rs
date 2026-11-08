@@ -25,24 +25,128 @@ fn device_name(d: &cpal::Device) -> Option<String> {
     d.description().ok().map(|x| x.name().to_string())
 }
 
+/// Bumped whenever the chosen devices change: running calls move their
+/// capture and playback to the new devices (Teams' in-call device picker).
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The call's speaker volume, 0-100 (Teams' in-call volume slider).
+static SPEAKER_VOLUME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
+/// The microphone's current level, 0-100 (peak of the last frame), for
+/// Teams' in-call mic meter.
+static MIC_LEVEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 /// Use these devices (by the names `list_devices` reports) for calls;
-/// `None` (or a name no longer present) means the system default.
+/// `None` (or a name no longer present) means the system default. Calls
+/// in progress switch to them.
 pub fn set_preferred_devices(input: Option<String>, output: Option<String>) {
-    *PREFERRED.write().unwrap() = (input, output);
+    let changed = {
+        let mut p = PREFERRED.write().unwrap();
+        let changed = p.0 != input || p.1 != output;
+        *p = (input, output);
+        changed
+    };
+    if changed {
+        GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// The devices chosen for calls: (microphone, speaker); `None` = default.
+pub fn preferred_devices() -> (Option<String>, Option<String>) {
+    PREFERRED.read().unwrap().clone()
+}
+
+/// Set the call's playback volume (0-100).
+pub fn set_speaker_volume(volume: u32) {
+    SPEAKER_VOLUME.store(volume.min(100), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn speaker_volume() -> u32 {
+    SPEAKER_VOLUME.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The microphone's level (0-100) while a call captures it.
+pub fn mic_level() -> u32 {
+    MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Wait while the stream should run: returns `true` to rebuild it on newly
+/// chosen devices, `false` when the owner dropped it.
+fn park_until_switch(keep_rx: &mpsc::Receiver<()>, generation: u64) -> bool {
+    loop {
+        match keep_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if GENERATION.load(std::sync::atomic::Ordering::SeqCst) != generation {
+                    return true;
+                }
+            }
+            _ => return false,
+        }
+    }
+}
+
+/// The audio endpoints a person picks from, as Teams lists them: real
+/// microphones (sources) or speakers (sinks), by name. With PipeWire, cpal
+/// also reports its "follow the default" placeholders, other applications'
+/// streams (factory `client-node`) and sinks again as inputs (their
+/// monitors); none of those are devices.
+fn endpoints(host: &cpal::Host, input: bool) -> Vec<Device> {
+    use cpal::DeviceDirection;
+    let devices: Vec<Device> = if input {
+        host.input_devices()
+            .map(|it| it.collect())
+            .unwrap_or_default()
+    } else {
+        host.output_devices()
+            .map(|it| it.collect())
+            .unwrap_or_default()
+    };
+    if host.id() != cpal::HostId::PipeWire {
+        return devices;
+    }
+    devices
+        .into_iter()
+        .filter(|d| {
+            let Ok(desc) = d.description() else {
+                return false;
+            };
+            let real = desc.driver().is_some_and(|f| f != "client-node");
+            let right_way = if input {
+                desc.direction() == DeviceDirection::Input
+            } else {
+                matches!(
+                    desc.direction(),
+                    DeviceDirection::Output | DeviceDirection::Duplex
+                )
+            };
+            real && right_way
+        })
+        .collect()
 }
 
 /// The names of the audio devices: (microphones, speakers).
 pub fn list_devices() -> (Vec<String>, Vec<String>) {
     let host = cpal::default_host();
-    let inputs = host
-        .input_devices()
-        .map(|it| it.filter_map(|d| device_name(&d)).collect())
-        .unwrap_or_default();
-    let outputs = host
-        .output_devices()
-        .map(|it| it.filter_map(|d| device_name(&d)).collect())
-        .unwrap_or_default();
-    (inputs, outputs)
+    let names = |input| {
+        endpoints(&host, input)
+            .iter()
+            .filter_map(device_name)
+            .collect::<Vec<_>>()
+    };
+    (names(true), names(false))
+}
+
+/// The system's default devices' names: (microphone, speaker).
+pub fn default_devices() -> (Option<String>, Option<String>) {
+    let host = cpal::default_host();
+    // PipeWire's defaults are placeholders in cpal; ask PipeWire which
+    // endpoints they are.
+    #[cfg(target_os = "linux")]
+    if host.id() == cpal::HostId::PipeWire {
+        return super::pw_defaults::default_endpoints();
+    }
+    (
+        host.default_input_device().and_then(|d| device_name(&d)),
+        host.default_output_device().and_then(|d| device_name(&d)),
+    )
 }
 
 /// The preferred device of a kind if it is present, else the default.
@@ -52,15 +156,9 @@ fn pick_device(host: &cpal::Host, input: bool) -> Option<Device> {
         if input { p.0.clone() } else { p.1.clone() }
     };
     if let Some(name) = wanted {
-        let found = if input {
-            host.input_devices()
-                .ok()
-                .and_then(|mut it| it.find(|d| device_name(d).as_deref() == Some(name.as_str())))
-        } else {
-            host.output_devices()
-                .ok()
-                .and_then(|mut it| it.find(|d| device_name(d).as_deref() == Some(name.as_str())))
-        };
+        let found = endpoints(host, input)
+            .into_iter()
+            .find(|d| device_name(d).as_deref() == Some(name.as_str()));
         if found.is_some() {
             return found;
         }
@@ -134,76 +232,23 @@ impl AudioCapture {
         let started2 = started.clone();
 
         thread::spawn(move || {
-            let host = cpal::default_host();
-            let device = match pick_device(&host, true) {
-                Some(d) => d,
-                None => {
-                    tracing::warn!("No audio input device found — mic capture disabled");
-                    return;
-                }
-            };
-
-            let dev_name = device_name(&device).unwrap_or_else(|| "unknown".into());
-            tracing::info!("Audio input device: {}", dev_name);
-
-            let (config, device_rate) = match pick_config(&device, true) {
-                Some(c) => c,
-                None => {
-                    tracing::warn!("Cannot find suitable input config for {}", dev_name);
-                    return;
-                }
-            };
-
-            let frame_device_samples = (device_rate as usize * 20) / 1000;
-            let need_resample = device_rate != TARGET_RATE;
-
-            let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<i16>::with_capacity(
-                frame_device_samples * 2,
-            )));
-            let buf2 = buf.clone();
-
-            let stream = match device.build_input_stream(
-                config,
-                move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                    let mut acc = buf2.lock().unwrap();
-                    acc.extend_from_slice(data);
-                    while acc.len() >= frame_device_samples {
-                        let chunk: Vec<i16> = acc.drain(..frame_device_samples).collect();
-                        let frame = if need_resample {
-                            resample(&chunk, device_rate, TARGET_RATE)
-                        } else {
-                            chunk
-                        };
-                        let _ = frame_tx.try_send(frame);
+            loop {
+                let generation = GENERATION.load(std::sync::atomic::Ordering::SeqCst);
+                let Some(stream) = open_capture(frame_tx.clone()) else {
+                    // Keep the call's channel; try again when devices change.
+                    if !park_until_switch(&keep_rx, generation) {
+                        return;
                     }
-                },
-                move |err| {
-                    tracing::warn!("Audio input stream error: {}", err);
-                },
-                None,
-            ) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("Failed to build audio input stream: {}", e);
+                    continue;
+                };
+                started2.store(true, std::sync::atomic::Ordering::SeqCst);
+                let again = park_until_switch(&keep_rx, generation);
+                drop(stream);
+                MIC_LEVEL.store(0, std::sync::atomic::Ordering::Relaxed);
+                if !again {
                     return;
                 }
-            };
-
-            if let Err(e) = stream.play() {
-                tracing::warn!("Failed to start audio input stream: {}", e);
-                return;
             }
-
-            tracing::info!(
-                "Audio capture started (device {}Hz, target {}Hz)",
-                device_rate,
-                TARGET_RATE
-            );
-            started2.store(true, std::sync::atomic::Ordering::SeqCst);
-
-            // Park this thread; the stream stays alive until keep_rx is dropped.
-            let _ = keep_rx.recv();
-            drop(stream);
         });
 
         // Give the thread a moment to initialize.
@@ -247,86 +292,50 @@ impl AudioPlayback {
         let started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let started2 = started.clone();
 
-        thread::spawn(move || {
-            let host = cpal::default_host();
-            let device = match pick_device(&host, false) {
-                Some(d) => d,
-                None => {
-                    tracing::warn!("No audio output device found — speaker playback disabled");
-                    return;
-                }
-            };
-
-            let dev_name = device_name(&device).unwrap_or_else(|| "unknown".into());
-            tracing::info!("Audio output device: {}", dev_name);
-
-            let (config, device_rate) = match pick_config(&device, false) {
-                Some(c) => c,
-                None => {
-                    tracing::warn!("Cannot find suitable output config for {}", dev_name);
-                    return;
-                }
-            };
-
-            let need_resample = device_rate != TARGET_RATE;
-
-            // Ring buffer fed by a feeder thread, drained by the output callback.
-            let ring = std::sync::Arc::new(std::sync::Mutex::new(
-                std::collections::VecDeque::<i16>::with_capacity(
-                    (device_rate as usize / 1000) * 200,
-                ),
-            ));
-            let ring2 = ring.clone();
-
-            // Feeder thread: reads frames from channel, resamples, pushes to ring.
+        // The call writes frames here; a feeder resamples them into the
+        // ring the current output stream drains (at that device's rate).
+        let ring = std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::VecDeque::<i16>::new(),
+        ));
+        let device_rate = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(TARGET_RATE));
+        {
+            let ring = ring.clone();
+            let device_rate = device_rate.clone();
             thread::spawn(move || {
                 while let Ok(frame) = frame_rx.recv() {
-                    let samples = if need_resample {
-                        resample(&frame, TARGET_RATE, device_rate)
+                    let rate = device_rate.load(std::sync::atomic::Ordering::Relaxed);
+                    let samples = if rate != TARGET_RATE {
+                        resample(&frame, TARGET_RATE, rate)
                     } else {
                         frame
                     };
-                    let mut r = ring2.lock().unwrap();
+                    let mut r = ring.lock().unwrap();
+                    // Keep at most 200 ms queued (a stalled device drops audio).
+                    let cap = (rate as usize / 1000) * 200;
                     r.extend(samples.iter());
+                    while r.len() > cap {
+                        r.pop_front();
+                    }
                 }
             });
+        }
 
-            let stream = match device.build_output_stream(
-                config,
-                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    let mut r = ring.lock().unwrap();
-                    for sample in data.iter_mut() {
-                        *sample = r.pop_front().unwrap_or(0);
+        thread::spawn(move || {
+            loop {
+                let generation = GENERATION.load(std::sync::atomic::Ordering::SeqCst);
+                let Some(stream) = open_playback(ring.clone(), device_rate.clone()) else {
+                    if !park_until_switch(&keep_rx, generation) {
+                        return;
                     }
-                },
-                move |err| {
-                    tracing::warn!("Audio output stream error: {}", err);
-                },
-                None,
-            ) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("Failed to build audio output stream: {}", e);
+                    continue;
+                };
+                started2.store(true, std::sync::atomic::Ordering::SeqCst);
+                let again = park_until_switch(&keep_rx, generation);
+                drop(stream);
+                if !again {
                     return;
                 }
-            };
-
-            if let Err(e) = stream.play() {
-                tracing::warn!("Failed to start audio output stream: {}", e);
-                return;
             }
-
-            tracing::info!(
-                "Audio playback started (device {}Hz {}ch, target {}Hz mono)",
-                device_rate,
-                config.channels,
-                TARGET_RATE
-            );
-            started2.store(true, std::sync::atomic::Ordering::SeqCst);
-
-            // Park thread; stream stays alive until keep_rx is dropped.
-            let _ = keep_rx.recv();
-            drop(stream);
         });
 
         thread::sleep(std::time::Duration::from_millis(100));
@@ -342,6 +351,120 @@ impl AudioPlayback {
             None
         }
     }
+}
+
+/// Open the chosen (else default) microphone, sending 20 ms frames at
+/// 8 kHz to `frame_tx` and keeping MIC_LEVEL current.
+fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>) -> Option<cpal::Stream> {
+    let host = cpal::default_host();
+    let Some(device) = pick_device(&host, true) else {
+        tracing::warn!("No audio input device found — mic capture disabled");
+        return None;
+    };
+    let dev_name = device_name(&device).unwrap_or_else(|| "unknown".into());
+    tracing::info!("Audio input device: {}", dev_name);
+    let Some((config, device_rate)) = pick_config(&device, true) else {
+        tracing::warn!("Cannot find suitable input config for {}", dev_name);
+        return None;
+    };
+    let frame_device_samples = (device_rate as usize * 20) / 1000;
+    let need_resample = device_rate != TARGET_RATE;
+    let mut acc = Vec::<i16>::with_capacity(frame_device_samples * 2);
+    let stream = match device.build_input_stream(
+        config,
+        move |data: &[i16], _: &cpal::InputCallbackInfo| {
+            acc.extend_from_slice(data);
+            while acc.len() >= frame_device_samples {
+                let chunk: Vec<i16> = acc.drain(..frame_device_samples).collect();
+                let peak = chunk
+                    .iter()
+                    .map(|s| s.unsigned_abs() as u32)
+                    .max()
+                    .unwrap_or(0);
+                MIC_LEVEL.store(peak * 100 / 32768, std::sync::atomic::Ordering::Relaxed);
+                let frame = if need_resample {
+                    resample(&chunk, device_rate, TARGET_RATE)
+                } else {
+                    chunk
+                };
+                let _ = frame_tx.try_send(frame);
+            }
+        },
+        move |err| {
+            tracing::warn!("Audio input stream error: {}", err);
+        },
+        None,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("Failed to build audio input stream: {}", e);
+            return None;
+        }
+    };
+    if let Err(e) = stream.play() {
+        tracing::warn!("Failed to start audio input stream: {}", e);
+        return None;
+    }
+    tracing::info!(
+        "Audio capture started (device {}Hz, target {}Hz)",
+        device_rate,
+        TARGET_RATE
+    );
+    Some(stream)
+}
+
+/// Open the chosen (else default) speaker, draining `ring` (filled at the
+/// rate stored in `device_rate`) with the call's volume applied.
+fn open_playback(
+    ring: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<i16>>>,
+    device_rate: std::sync::Arc<std::sync::atomic::AtomicU32>,
+) -> Option<cpal::Stream> {
+    let host = cpal::default_host();
+    let Some(device) = pick_device(&host, false) else {
+        tracing::warn!("No audio output device found — speaker playback disabled");
+        return None;
+    };
+    let dev_name = device_name(&device).unwrap_or_else(|| "unknown".into());
+    tracing::info!("Audio output device: {}", dev_name);
+    let Some((config, rate)) = pick_config(&device, false) else {
+        tracing::warn!("Cannot find suitable output config for {}", dev_name);
+        return None;
+    };
+    device_rate.store(rate, std::sync::atomic::Ordering::Relaxed);
+    ring.lock().unwrap().clear();
+    let channels = config.channels;
+    let stream = match device.build_output_stream(
+        config,
+        move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+            let volume = SPEAKER_VOLUME.load(std::sync::atomic::Ordering::Relaxed) as i32;
+            let mut r = ring.lock().unwrap();
+            for sample in data.iter_mut() {
+                let s = r.pop_front().unwrap_or(0) as i32;
+                *sample = (s * volume / 100) as i16;
+            }
+        },
+        move |err| {
+            tracing::warn!("Audio output stream error: {}", err);
+        },
+        None,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("Failed to build audio output stream: {}", e);
+            return None;
+        }
+    };
+    if let Err(e) = stream.play() {
+        tracing::warn!("Failed to start audio output stream: {}", e);
+        return None;
+    }
+    tracing::info!(
+        "Audio playback started (device {}Hz {}ch, target {}Hz mono)",
+        rate,
+        channels,
+        TARGET_RATE
+    );
+    Some(stream)
 }
 
 // ---------------------------------------------------------------------------

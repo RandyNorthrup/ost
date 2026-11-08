@@ -79,7 +79,8 @@ pipewire = { version = "0.10", optional = true }
 
 [features]
 default = []
-audio = ["cpal"]
+# PipeWire: real sinks and sources by name (the ALSA host lists plugins).
+audio = ["cpal", "cpal/pipewire", "pipewire"]
 # Camera and H.264 (the desktop app); video-capture adds the SDL viewer.
 video = ["v4l", "openh264"]
 video-capture = ["video", "sdl2"]

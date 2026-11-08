@@ -177,9 +177,13 @@ Window {
                 onClicked: win.toggleCamera()
             }
             BarButton {
+                id: micButtonM
                 icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
                 enabled: win.hasAudio
+                split: true; chevronLabel: "Open audio options"
+                chevronChecked: audioFlyout.visible && audioFlyout.parent === micButtonM
                 onClicked: win.toggleMute()
+                onChevronClicked: win.openAudioOptions(micButtonM)
             }
             BarButton {
                 icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
@@ -273,9 +277,13 @@ Window {
                 onClicked: win.toggleCamera()
             }
             BarButton {
+                id: micButton1
                 icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
                 enabled: win.hasAudio && !win.held
+                split: true; chevronLabel: "Open audio options"
+                chevronChecked: audioFlyout.visible && audioFlyout.parent === micButton1
                 onClicked: win.toggleMute()
+                onChevronClicked: win.openAudioOptions(micButton1)
             }
             BarButton {
                 icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
@@ -602,6 +610,18 @@ Window {
     }
     EndMeetingDialog { id: endAsk; onConfirmed: win.endMeeting() }
 
+    // Mic ▾: Teams' audio options, right-aligned to the chevron at the
+    // bar's bottom edge, at most 5 px short of the window's bottom.
+    AudioFlyout {
+        id: audioFlyout
+        muted: win.muted || !win.hasAudio
+        onToggleMute: win.toggleMute()
+        x: parent ? parent.width - width : 0
+        y: 60
+        maxHeight: win.height - 60 - 5
+    }
+    function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
+
     component Divider: Item {
         width: 17; height: 60
         Rectangle { x: 8; y: 13.5; width: 0.67; height: 33; color: theme.stroke }
@@ -800,6 +820,7 @@ Window {
     function transferFromConsultForTest() { const c = consulting; consulting = null; transfer(c.id, c.name) }
     function dialPadForTest() { dialPad.open() }
     function leaveMenuForTest() { leaveMenu.open() }
+    function audioOptionsForTest() { openAudioOptions(micButtonM) }
     function closeDialPadForTest() { dialPad.close() }
     function pressForTest(keys) { for (const k of keys) dialPad.press(k) }
 

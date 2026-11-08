@@ -65,6 +65,7 @@ fn main() {
         "qml/AdmitSuspectedDialog.qml",
         "qml/PeoplePane.qml",
         "qml/EndMeetingDialog.qml",
+        "qml/AudioFlyout.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

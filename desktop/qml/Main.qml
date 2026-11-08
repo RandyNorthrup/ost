@@ -1122,6 +1122,12 @@ Window {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-people.png")))
                 // --join-end: open Leave's menu (captured next), then End meeting.
                 if (Qt.application.arguments.indexOf("--join-end") >= 0) callWindow.leaveMenuForTest()
+                // --join-audio-options: open the Mic options (captured next).
+                if (Qt.application.arguments.indexOf("--join-audio-options") >= 0) callWindow.audioOptionsForTest()
+            } else if (step === 14 + window.joinStay && Qt.application.arguments.indexOf("--join-audio-options") >= 0) {
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-audio.png")))
+            } else if (step === 15 + window.joinStay && Qt.application.arguments.indexOf("--join-audio-options") >= 0) {
+                backend.hangUp()
             } else if (step === 14 + window.joinStay) {
                 if (Qt.application.arguments.indexOf("--join-end") >= 0) {
                     callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-leavemenu.png")))

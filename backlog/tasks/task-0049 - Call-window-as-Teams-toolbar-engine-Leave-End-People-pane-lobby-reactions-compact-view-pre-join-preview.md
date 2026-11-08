@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-08T02:16:00Z'
+updated_date: '2026-11-08T03:24:00Z'
 labels:
   - calls
   - meetings
@@ -50,4 +50,9 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
   - Single-person toast "More info" link offsets.
   - Dark-mode values for the lobby UI (only light measured).
   - The waiting-in-lobby screen when OST itself is held in a lobby.
+
+- 2026-11-07: Call toolbar rebuilt to measurements (slots, glyphs, hover, checked line, Leave group).
+- Leave ▾ menu (Leave; End meeting for the organizer) with the "End the meeting?" confirmation; End meeting verified live (DELETE conversationController, HTTP 204, everyone dropped).
+- "Leave on all my devices" not seen in Teams' menu with a single device; needs a two-device test.
+- Camera/Mic chevrons (device flyouts) still to do.
 <!-- SECTION:NOTES:END -->

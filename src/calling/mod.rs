@@ -4,6 +4,8 @@
 
 #[cfg(feature = "audio")]
 pub mod audio;
+#[cfg(all(feature = "audio", target_os = "linux"))]
+pub mod pw_defaults;
 pub mod call_test;
 #[cfg(feature = "video")]
 pub mod camera;

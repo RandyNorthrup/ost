@@ -837,6 +837,14 @@ pub mod qobject {
         /// Microphones and speakers: {"inputs": [...], "outputs": [...]}.
         #[qinvokable]
         fn audio_devices(self: Pin<&mut Backend>) -> QString;
+        /// The call's speaker volume, 0-100 (Teams' in-call slider).
+        #[qinvokable]
+        fn speaker_volume(self: Pin<&mut Backend>) -> i32;
+        #[qinvokable]
+        fn set_speaker_volume(self: Pin<&mut Backend>, volume: i32);
+        /// The microphone's current level, 0-100 (Teams' in-call meter).
+        #[qinvokable]
+        fn mic_level(self: Pin<&mut Backend>) -> i32;
 
         /// Load the read receipts setting from Teams (into read_receipts).
         #[qinvokable]
@@ -6778,11 +6786,24 @@ impl qobject::Backend {
 
     pub fn audio_devices(self: Pin<&mut Self>) -> QString {
         let (inputs, outputs) = teams_cli::calling::audio::list_devices();
+        let (default_input, default_output) = teams_cli::calling::audio::default_devices();
         QString::from(
-            json!({ "inputs": inputs, "outputs": outputs })
+            json!({ "inputs": inputs, "outputs": outputs, "defaultInput": default_input, "defaultOutput": default_output })
                 .to_string()
                 .as_str(),
         )
+    }
+
+    pub fn speaker_volume(self: Pin<&mut Self>) -> i32 {
+        teams_cli::calling::audio::speaker_volume() as i32
+    }
+
+    pub fn set_speaker_volume(self: Pin<&mut Self>, volume: i32) {
+        teams_cli::calling::audio::set_speaker_volume(volume.clamp(0, 100) as u32);
+    }
+
+    pub fn mic_level(self: Pin<&mut Self>) -> i32 {
+        teams_cli::calling::audio::mic_level() as i32
     }
 
     pub fn load_read_receipts(self: Pin<&mut Self>) {
