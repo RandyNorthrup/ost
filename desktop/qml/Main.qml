@@ -1251,8 +1251,12 @@ Window {
     readonly property bool joinRaise: Qt.application.arguments.indexOf("--join-raise") >= 0
     property bool speechShot: false
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
+    // --join-url=<link>: the test meeting's link when it isn't in the
+    // calendar's loaded week.
+    readonly property string joinUrl: (Qt.application.arguments.find(a => a.startsWith("--join-url=")) || "").slice(11)
     Timer {
-        running: Qt.application.arguments.indexOf("--join-test") >= 0 && backend.signedIn && backend.calendarJson.indexOf("OST calendar test") >= 0
+        running: Qt.application.arguments.indexOf("--join-test") >= 0 && backend.signedIn
+                 && (window.joinUrl.length > 0 || backend.calendarJson.indexOf("OST calendar test") >= 0)
         interval: 2000; repeat: true
         property int step: 0
         onTriggered: {
@@ -1266,7 +1270,9 @@ Window {
                 else if (step === 4) grab("lobby-nostart")
                 else Qt.quit()
             } else if (step === 0) {
-                const ev = JSON.parse(backend.calendarJson).find(e => e.subject.indexOf("OST calendar test") === 0 && e.join_url)
+                const ev = window.joinUrl.length > 0
+                    ? { join_url: window.joinUrl, subject: "OST calendar test: created from OST" }
+                    : JSON.parse(backend.calendarJson).find(e => e.subject.indexOf("OST calendar test") === 0 && e.join_url)
                 console.warn("JOIN event found", !!ev)
                 calendarView.joinMeeting(ev.join_url, ev.subject)
                 // --join-prejoin-camera: turn the camera on in pre-join.
@@ -1546,6 +1552,21 @@ Window {
                     12: () => d.openListForTest(), 13: () => grab("list"),
                     14: () => d.chooseFirstForTest(), 15: () => grab("chosen"),
                     16: () => { console.warn("JOIN report people", JSON.stringify(d.people), "meeting", JSON.stringify(d.meeting)); d.close() }
+                }
+                if (plan[step]) plan[step]()
+            } else if (step >= 9 && step <= Math.min(22, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-help") >= 0) {
+                // --join-help: More ▸ Help: the window, its app header and
+                // menu, Settings and more, pinned on top and back.
+                const hw = callWindow.helpWindowForTest()
+                const grab = n => hw.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-help-" + n + ".png")))
+                const plan = {
+                    9: () => callWindow.runControl("MeetingHelpButton"),
+                    14: () => grab("window"),
+                    15: () => hw.appForTest.moreMenuForTest(), 16: () => grab("appmenu"),
+                    17: () => { hw.appForTest.moreMenuForTest(); hw.titleBarForTest.settingsMenuForTest() }, 18: () => grab("settings"),
+                    19: () => { hw.titleBarForTest.togglePin(); console.warn("JOIN help pinned", hw.pinned, (hw.flags & Qt.WindowStaysOnTopHint) !== 0) },
+                    20: () => { hw.titleBarForTest.togglePin(); console.warn("JOIN help pinned", hw.pinned, hw.appForTest.tileUrl.slice(0, 80)) },
+                    22: () => hw.close()
                 }
                 if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= Math.min(27, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-accessibility") >= 0) {

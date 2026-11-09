@@ -5,8 +5,8 @@ import QtWebEngine
 import com.ost.desktop
 
 // A web app Teams embeds (Whiteboard, Clipchamp, Help), shown in place as
-// Teams shows it: the app's header (icon and name, Open in browser), then
-// the page. Pages keep their sign-in in OST's own web profile (one for the
+// Teams shows it: the app's header (Teams' entity header when the app's id
+// is known; else icon and name, Reload, Open in browser), then the page. Pages keep their sign-in in OST's own web profile (one for the
 // whole app, in Main.qml; stored on disk, like Teams'), only https pages load, and pop-ups (sign-in)
 // open in a window of their own.
 Item {
@@ -25,22 +25,111 @@ Item {
 
     Rectangle { anchors.fill: parent; color: theme.surface }
 
+    /// The app's Teams id: Teams' own app header (entity-header) then,
+    /// with the app's tile from its definition and its "…" menu.
+    property string appId: ""
+    // The tile and name from the app's definition (kept once read: other
+    // About dialogs share the backend's slot).
+    property string tileUrl: ""
+    Connections {
+        target: backend
+        enabled: root.appId.length > 0 && root.tileUrl.length === 0
+        function onAppAboutJsonChanged() {
+            const r = backend.appAboutJson ? JSON.parse(backend.appAboutJson) : null
+            if (r && r.app === root.appId && r.about && r.about.icon) root.tileUrl = r.about.icon
+        }
+    }
+    onAppIdChanged: if (appId.length > 0) backend.appAboutLoad(appId)
+    function moreMenuForTest() { teamsMore.openMenu() }
+
     Rectangle {
         id: header
         visible: root.showHeader
-        width: parent.width; height: root.showHeader ? 52 : 0; color: theme.surface
+        width: parent.width
+        height: !root.showHeader ? 0 : root.appId.length > 0 ? 61 : 52
+        color: theme.surface
+        // OST's header for apps it hosts without a Teams id.
         Row {
+            visible: root.appId.length === 0
             x: 20; anchors.verticalCenter: parent.verticalCenter; spacing: 10
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: root.appIcon || "apps"; size: 22; color: root.appColor }
             Text { anchors.verticalCenter: parent.verticalCenter; text: root.appName; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         }
         Row {
+            visible: root.appId.length === 0
             anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
             spacing: 4
             HeaderButton { icon: "arrow-clockwise-20"; label: "Reload"; onClicked: web.reload() }
             HeaderButton { icon: "open-20"; label: "Open in browser"; onClicked: Qt.openUrlExternally(web.url) }
         }
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
+        // Teams' app header (entity-header, measured on winpc for Help,
+        // 2026-11-09): 61 tall with a 0.67 #E0E0E0 line; the app's tile
+        // (32, round, on #FAFAFA) 20 in and 14.17 down; its name (18/25.71
+        // bold) at 72; "More <app> actions" (32 x 31.33, 7 from the right,
+        // 14.5 down): Reload app (About and Share app: TASK-0072).
+        Item {
+            visible: root.appId.length > 0
+            anchors.fill: parent
+            Rectangle {
+                x: 20; y: 14.17; width: 32; height: 32; radius: 16
+                color: theme.pick("#FAFAFA", "#1F1F1F")
+                // The tile, clipped round as Teams' image is; painted at twice
+                // the size so it stays sharp on scaled screens.
+                Canvas {
+                    id: tile
+                    width: 64; height: 64; scale: 0.5
+                    anchors.centerIn: parent
+                    readonly property string src: root.tileUrl
+                    onSrcChanged: if (src) loadImage(src)
+                    onImageLoaded: requestPaint()
+                    onPaint: {
+                        const c = getContext("2d")
+                        c.reset()
+                        if (!src || !isImageLoaded(src)) return
+                        c.beginPath(); c.arc(32, 32, 32, 0, 2 * Math.PI); c.clip()
+                        c.drawImage(src, 0, 0, 64, 64)
+                    }
+                }
+                Accessible.role: Accessible.Graphic
+                Accessible.name: root.appName
+            }
+            Text {
+                x: 72; y: 17.31; height: 25.71
+                verticalAlignment: Text.AlignVCenter
+                text: root.appName
+                font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            Rectangle {
+                id: teamsMore
+                anchors.right: parent.right; anchors.rightMargin: 7; y: 14.5
+                width: 32; height: 31.33; radius: 4
+                color: tmHover.hovered || appMenu.opened ? theme.menuHover : "transparent"
+                function openMenu() {
+                    appMenu.x = teamsMore.width - appMenu.implicitWidth
+                    appMenu.y = teamsMore.height + 0.17
+                    appMenu.open()
+                }
+                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20
+                             color: appMenu.opened ? theme.brand : theme.textStrong }
+                HoverHandler { id: tmHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: teamsMore.openMenu() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "More " + root.appName + " actions"
+                MenuPopup {
+                    id: appMenu
+                    items: [{ label: "Reload app", icon: "arrow-clockwise-20" }]
+                    onPicked: web.reload()
+                }
+            }
+        }
+        Rectangle {
+            anchors.bottom: parent.bottom; width: parent.width
+            height: root.appId.length > 0 ? 0.67 : 1
+            color: root.appId.length > 0 ? theme.pick("#E0E0E0", "#3D3D3D") : theme.dividerSoft
+        }
     }
 
     property bool ready: false

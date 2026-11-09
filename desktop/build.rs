@@ -92,6 +92,7 @@ fn main() {
         "qml/MeetingReportDialog.qml",
         "qml/CaptionsPopout.qml",
         "qml/RttBox.qml",
+        "qml/ChildWindowTitleBar.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

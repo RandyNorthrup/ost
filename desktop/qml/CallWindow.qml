@@ -927,15 +927,29 @@ Window {
         return "https://help.svc.cloud.microsoft/f1/home/?shownav=True&NS=MSFTTEAMS&version=16&omkt="
             + Qt.locale().name.toLowerCase().replace("_", "-") + "&RingId=general&context=" + encodeURIComponent(JSON.stringify(ctx))
     }
+    // Teams' Help window (measured on winpc): its title row (Help,
+    // Settings and more), the Help app's header, then the page.
     Window {
         id: helpWindow
         title: "Help"
         width: 946; height: 593
         color: theme.surface
+        property bool pinned: false
+        flags: Qt.Window | (pinned ? Qt.WindowStaysOnTopHint : 0)
+        readonly property Item titleBarForTest: helpTitle
+        readonly property Item appForTest: helpApp.item
+        ChildWindowTitleBar {
+            id: helpTitle
+            title: "Help"
+            pinned: helpWindow.pinned
+            onTogglePin: helpWindow.pinned = !helpWindow.pinned
+        }
         Loader {
-            anchors.fill: parent
+            id: helpApp
+            anchors { top: helpTitle.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
             active: helpWindow.visible
-            sourceComponent: WebApp { appName: "Help"; appIcon: "question-circle-20"; appColor: theme.brand; home: win.helpUrl("helpappmeetings") }
+            // Teams' Help app (its id names the app's tile and name).
+            sourceComponent: WebApp { appId: "5a0e35f9-d3c8-45b6-9dd9-983ab47f1b83"; appName: "Help"; home: win.helpUrl("helpappmeetings") }
         }
     }
 

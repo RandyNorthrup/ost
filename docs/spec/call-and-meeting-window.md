@@ -521,9 +521,11 @@ only holds what is left (Merge, Park, Lock).
   - URL: `https://help.svc.cloud.microsoft/f1/home/?shownav=True&NS=MSFTTEAMS&version=16&omkt=<locale>&RingId=general&context=<JSON>`.
   - The context has `SubEntityId: "helpappmeetings"`, plus the theme, session, app version, `HostClientType: "desktop"` and `TeamsHostName: "TeamsModern"`. Teams also sends the tenant SKU and licence type, which OST doesn't know for every tenant.
   - The page opens on "Get help with Microsoft Teams meetings".
+  - The window (measured on winpc, 2026-11-09): Teams' child-window title row (32 tall on the #EBEBEB chrome, "Help" 12/16 8 in, and "Settings and more": Pin window on top / Unpin window, Ctrl+Shift+T; Teams also lists Zoom, tracked with the main window's in docs/parity, and Report a problem, feedback to Microsoft, which OST doesn't send).
+  - Then the Help app's header (entity-header, 61 tall, a 0.67 #E0E0E0 line): the app's tile (32, round, from its app definition, id 5a0e35f9-d3c8-45b6-9dd9-983ab47f1b83) 20 in, "Help" (18/25.71 bold) at 72, and "More Help actions" (32 × 31.33, 7 from the right): Reload app, then (TASK-0072) About and Share app.
 - **Captions in a window of their own** (Open captions in new window; flyout-closed-captions).
   - 606 × 353, kept on top until unpinned. Once unpinned, Teams no longer shows the pin.
-  - Title row, 32 tall: Pop in (32 × 31.33), the meeting title (12/16), and the pin (24 × 23.33, "Unpin window").
+  - Title row, the same child-window title row: Pop in (32 × 31.33), the meeting title (12/16, 8 after it), then the pin (24 × 23.33, "Unpin window") and Settings and more.
   - "Live Captions" (20/28.57 bold) sits 20 in, with caption settings 18 from the right. Then the captions, 15 in.
   - The strip under the stage goes away while it's out. Pop in, or closing the window, brings it back.
   - In the strip, the pop-out button sits between settings and close; when the strip is narrow it moves under "…".
