@@ -42,6 +42,9 @@ pub struct MeetingCapability {
     pub copilot: bool,
     /// Its Facilitator is enabled (`groupCopilotDetails.enabled`).
     pub facilitator: bool,
+    /// Everyone can present (`presenterOption` "Everyone" or
+    /// "EveryoneInCompany"): Teams shows the meeting timer then.
+    pub everyone_presents: bool,
 }
 
 /// The meeting capability in a conversation response or update, if it
@@ -77,6 +80,10 @@ pub fn meeting_capability(json: &Value) -> Option<MeetingCapability> {
             .and_then(|g| g.get("enabled"))
             .and_then(Value::as_bool)
             .unwrap_or(false),
+        everyone_presents: matches!(
+            cap.get("presenterOption").and_then(Value::as_str),
+            Some("Everyone" | "EveryoneInCompany")
+        ),
     })
 }
 

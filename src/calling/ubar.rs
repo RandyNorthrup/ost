@@ -471,6 +471,9 @@ impl Facts {
             "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" | "TranscriptPanelButton" => {
                 self.scheduled
             }
+            // More ▸ Timer (the meeting's shared timer; the call window
+            // hides it where Teams' timer can't be seen).
+            "MeetingFacilitatorTimerButton" => self.scheduled,
             // Language and speech ▸ Show live captions (the meeting's
             // recorder provides them).
             "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.scheduled,

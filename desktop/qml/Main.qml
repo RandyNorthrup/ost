@@ -767,6 +767,10 @@ Window {
         captionStyles: { const s = backend.setting("captionStyles"); try { return s ? JSON.parse(s) : {} } catch (e) { return {} } }
         onSetCaptions: on => backend.setCaptions(on)
         onSetCaptionsLanguage: code => backend.setCaptionsLanguage(code)
+        timerData: backend.callTimerJson ? JSON.parse(backend.callTimerJson) : null
+        everyonePresents: backend.callEveryonePresents
+        onTimerAction: (name, arg) => backend.meetingTimer(name, arg)
+        onTimerChime: backend.timerChime()
         rttOn: backend.callRttOn
         rttInitiator: backend.callRttInitiator
         privacyUrl: backend.callPrivacyUrl
@@ -1542,6 +1546,42 @@ Window {
                     rows(); grab("live-" + step)
                     console.warn("JOIN rtt box", JSON.stringify(box().textForTest()), "bar", box().barForTest())
                 }
+            } else if (step >= 9 && step <= Math.min(52, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-timer-remote") >= 0) {
+                // --join-timer-remote: watch while Teams (winpc) resumes and
+                // pauses it, then a 10 s timer runs out here: "Time's up!",
+                // the red count, Cancel timer for everyone.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-timer-" + n + ".png")))
+                const ts = callWindow.timerStripForTest()
+                console.warn("JOIN timerr", step, "visible", ts.visible, "state", ts.timerState, "display", ts.display, "over", ts.overTime)
+                const plan = {
+                    9: () => { if (!callWindow.timerVisible) callWindow.toggleTimer() },
+                    14: () => grab("remote-a"), 20: () => grab("remote-b"),
+                    24: () => ts.action("startWith", 10000),
+                    32: () => grab("overtime"),
+                    34: () => ts.action("cancelOverTime", 0), 37: () => grab("after"),
+                    38: () => ts.action("startWith", 90000), 41: () => ts.action("pause", 0)
+                }
+                if (plan[step]) plan[step]()
+            } else if (step >= 9 && step <= Math.min(52, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-timer") >= 0) {
+                // --join-timer: the meeting timer as received, its popover,
+                // then resume, pause, +1 min, cancel, a new 1:30 timer and
+                // pause, each sent to Teams (winpc shows the same).
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-timer-" + n + ".png")))
+                const ts = callWindow.timerStripForTest()
+                const log = n => console.warn("JOIN timer", step, n, "visible", ts.visible, "state", ts.timerState, "display", ts.display, "seq", callWindow.timerData ? callWindow.timerData.sequence : -1)
+                const act = (n, a) => { log("act " + n); ts.action(n, a || 0) }
+                const plan = {
+                    9: () => { if (!callWindow.timerVisible) callWindow.toggleTimer(); log("start") }, 10: () => grab("strip"),
+                    11: () => ts.openControls(), 12: () => grab("popover"), 13: () => ts.popupForTest.close(),
+                    14: () => act("resume"), 17: () => { log("resumed"); grab("running") },
+                    19: () => act("pause"), 22: () => { log("paused"); grab("paused") },
+                    24: () => act("add", 1), 27: () => { log("added"); grab("added") },
+                    29: () => act("cancel"), 32: () => { log("cancelled"); grab("cancelled") },
+                    33: () => ts.openControls(), 34: () => grab("setup"), 35: () => ts.popupForTest.close(),
+                    36: () => act("startWith", 90000), 39: () => { log("new"); grab("new") },
+                    42: () => act("pause"), 45: () => log("end")
+                }
+                if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= Math.min(18, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-report-person") >= 0) {
                 // --join-report-person: a guest's ··· menu, Report, Teams'
                 // "Report this person" dialog, then Cancel. Never sends.

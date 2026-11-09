@@ -51,10 +51,36 @@ impl Drop for Ringtone {
     }
 }
 
+/// One notification chime (the meeting timer running out; Teams plays its
+/// own "summon" sound there): the ring's chord once, then the device is
+/// let go. Nothing happens without an output device.
+pub fn chime() {
+    let Some((playback, tx)) = AudioPlayback::start() else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let _playback = playback;
+        for frame in pattern_frames(&CHIME_MS) {
+            if tx.send(frame).is_err() {
+                return;
+            }
+        }
+        // Let the last frames play out before the device closes.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    });
+}
+
+/// The chime: one tone, then a short tail of silence.
+const CHIME_MS: [(bool, u32); 2] = [(true, 400), (false, 200)];
+
 /// One full ring pattern as 20 ms frames.
 fn ring_cycle() -> Vec<Vec<i16>> {
+    pattern_frames(&PATTERN_MS)
+}
+
+fn pattern_frames(pattern: &[(bool, u32)]) -> Vec<Vec<i16>> {
     let mut samples = Vec::new();
-    for (on, ms) in PATTERN_MS {
+    for &(on, ms) in pattern {
         let n = (RATE * ms as f32 / 1000.0) as usize;
         let fade = (RATE * FADE_MS / 1000.0) as usize;
         for i in 0..n {
@@ -100,6 +126,7 @@ mod tests {
         );
         // Faded edges: the first sample of the tone is silent.
         assert_eq!(frames[0][0], 0);
+        assert_eq!(pattern_frames(&CHIME_MS).len(), 30);
     }
 
     /// Plays on the real output device; run by hand with --ignored.

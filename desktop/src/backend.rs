@@ -146,6 +146,9 @@ pub mod qobject {
         #[qproperty(bool, call_ai_available)]
         /// The meeting's Facilitator is enabled.
         #[qproperty(bool, call_ai_facilitator)]
+        /// Everyone can present in the meeting (Teams then shows the
+        /// meeting timer).
+        #[qproperty(bool, call_everyone_presents)]
         /// The meeting's transcript (or Copilot's) runs: AI is on.
         #[qproperty(bool, call_ai_on)]
         /// Teams' recording indicator: "Transcribing", "Recording",
@@ -164,6 +167,10 @@ pub mod qobject {
         #[qproperty(QString, call_captions_json)]
         /// You turned live captions on (the caption window shows).
         #[qproperty(bool, call_captions_on)]
+        /// The meeting timer (More ▸ Timer): {adhoc: Teams' timer object
+        /// (remainingDuration as of lastEditMs), lastEditMs, totalMs,
+        /// skewMs, sequence, live (it came in a live update), facilitator}.
+        #[qproperty(QString, call_timer_json)]
         /// Real-time text is on in this call (Language and speech ▸ Turn
         /// on RTT for this call, or someone's words arrived): the captions
         /// window shows with its typing box.
@@ -516,6 +523,15 @@ pub mod qobject {
         /// Set the meeting's spoken language ("de-de") for its captions.
         #[qinvokable]
         fn set_captions_language(self: Pin<&mut Backend>, language: &QString);
+        /// Change the meeting's ad-hoc timer for everyone: "start",
+        /// "pause", "resume", "reset", "cancel" (the popover's),
+        /// "cancelOverTime", "startWith" (`arg` ms) or "add" (`arg`
+        /// minutes). It changes when the meeting's update comes back.
+        #[qinvokable]
+        fn meeting_timer(self: Pin<&mut Backend>, action: &QString, arg: i32);
+        /// The timer ran out: Teams' chime.
+        #[qinvokable]
+        fn timer_chime(self: &Backend);
         /// Turn real-time text on for this call (after Teams' "RTT
         /// (real-time text) will be turned on for everyone in the call.").
         #[qinvokable]
@@ -1193,6 +1209,7 @@ pub struct BackendRust {
     call_ai_indicator: bool,
     call_ai_available: bool,
     call_ai_facilitator: bool,
+    call_everyone_presents: bool,
     call_ai_on: bool,
     call_recording_state: QString,
     call_recording_tip: QString,
@@ -1200,6 +1217,10 @@ pub struct BackendRust {
     call_transcript_json: QString,
     call_captions_json: QString,
     call_captions_on: bool,
+    call_timer_json: QString,
+    /// The meeting timer's clock skew (now − the service's stamp, from
+    /// live updates only), ms.
+    timer_skew_ms: i64,
     call_rtt_on: bool,
     call_rtt_initiator: bool,
     call_privacy_url: QString,
@@ -2337,6 +2358,23 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             if let Some(cap) = changed {
                 tracing::info!(?cap, "meeting capability changed");
                 let _ = qt.queue(move |mut this| this.as_mut().show_capability(cap, true));
+            }
+            // The meeting timer changed (someone's start, pause, …).
+            let timers = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_mut()
+                .and_then(|call| call.apply_timer(&v).then(|| call.timers().clone()));
+            if let Some(t) = timers {
+                tracing::info!(state = t.adhoc.state(), sequence = t.sequence, "meeting timer changed");
+                let _ = qt.queue(move |mut this| {
+                    // Teams' clock skew: measured from live updates.
+                    if let Some(stamp) = t.stamp_ms {
+                        this.as_mut().rust_mut().timer_skew_ms = chrono::Utc::now().timestamp_millis() - stamp;
+                    }
+                    this.as_mut().show_timers(t, true);
+                });
             }
         }
     }
@@ -3593,6 +3631,7 @@ impl qobject::Backend {
         self.as_mut().set_call_meeting_locked(false);
         self.as_mut().set_call_attendee_restrictions(0);
         self.as_mut().set_call_speaking_while_muted(false);
+        self.as_mut().set_call_timer_json(QString::default());
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().set_call_ai_available(false);
         self.as_mut().set_call_ai_facilitator(false);
@@ -3620,6 +3659,7 @@ impl qobject::Backend {
                     let ai_indicator = call.shows_ai_indicator();
                     let in_lobby = call.in_lobby();
                     let started = call.meeting_started();
+                    let timers = call.timers().clone();
                     tracing::info!(has_audio, can_dtmf, in_lobby, "meeting joined");
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
@@ -3629,6 +3669,8 @@ impl qobject::Backend {
                         this.as_mut()
                             .set_call_invite_url(QString::from(invite.as_str()));
                         this.as_mut().show_capability(capability, false);
+                        this.as_mut().rust_mut().timer_skew_ms = 0;
+                        this.as_mut().show_timers(timers, false);
                         this.as_mut().show_processing(processing);
                         this.as_mut().load_call_accessibility(true);
                         this.as_mut().set_call_ai_indicator(ai_indicator);
@@ -3850,6 +3892,9 @@ impl qobject::Backend {
         if self.rust().call_ai_available != cap.copilot {
             self.as_mut().set_call_ai_available(cap.copilot);
         }
+        if self.rust().call_everyone_presents != cap.everyone_presents {
+            self.as_mut().set_call_everyone_presents(cap.everyone_presents);
+        }
         if self.rust().call_ai_facilitator != cap.facilitator {
             self.as_mut().set_call_ai_facilitator(cap.facilitator);
         }
@@ -4035,6 +4080,51 @@ impl qobject::Backend {
         self.as_mut().set_call_rtt_initiator(false);
         self.as_mut().set_call_captions_json(QString::from("[]"));
         self.as_mut().set_call_captions_on(false);
+    }
+
+    fn show_timers(mut self: Pin<&mut Self>, t: teams_cli::calling::meeting_timer::Timers, live: bool) {
+        let json = serde_json::json!({
+            "adhoc": t.adhoc.0,
+            "lastEditMs": t.adhoc.last_edit_ms(),
+            "totalMs": t.adhoc.total_ms(),
+            "skewMs": self.rust().timer_skew_ms,
+            "sequence": t.sequence,
+            "live": live,
+            "facilitator": self.rust().call_ai_facilitator,
+        });
+        self.as_mut().set_call_timer_json(QString::from(json.to_string().as_str()));
+    }
+
+    pub fn meeting_timer(self: Pin<&mut Self>, action: &QString, arg: i32) {
+        let action = action.to_string();
+        let skew = self.rust().timer_skew_ms;
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_ref() else { return };
+            let now = chrono::Utc::now().timestamp_millis();
+            let t = &call.timers().adhoc;
+            let next = match action.as_str() {
+                "start" => t.start(),
+                "pause" => t.pause(),
+                "resume" => t.resume(),
+                "reset" => t.reset(),
+                "cancel" => t.cancel(),
+                "cancelOverTime" => t.cancel_over_time(),
+                "startWith" => t.start_with(i64::from(arg).clamp(0, teams_cli::calling::meeting_timer::MAX_MS)),
+                "add" => t.add_minutes(i64::from(arg), now, skew),
+                other => {
+                    tracing::warn!(other, "meeting timer: unknown action");
+                    return;
+                }
+            };
+            if let Err(e) = call.publish_timer(&next).await {
+                tracing::warn!("meeting timer: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn timer_chime(&self) {
+        teams_cli::calling::ringtone::chime();
     }
 
     /// RTT turns on for this call: by you, or with someone's first words.

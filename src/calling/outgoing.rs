@@ -98,6 +98,10 @@ pub struct OutgoingCall {
     /// The conversation's addParticipant link (inviting the meeting's
     /// recorder when it isn't in the call).
     add_participant_link: Option<String>,
+    /// The conversation's updateMeetingStates link (the meeting timer).
+    meeting_states_link: Option<String>,
+    /// The meeting timer as last received.
+    timers: super::meeting_timer::Timers,
     /// The thread the call belongs to.
     thread_id: String,
     /// A meeting's lobby chat (`activeModalities.groupChat.lobbyThreadId`):
@@ -516,6 +520,7 @@ impl OutgoingCall {
         self.mute_link = link("mute");
         self.metadata_link = link("updateEndpointMetadata").or(self.metadata_link.take());
         self.add_participant_link = link("addParticipant").or(self.add_participant_link.take());
+        self.meeting_states_link = link("updateMeetingStates").or(self.meeting_states_link.take());
         self.unmute_link = link("unmute");
         self.message_link = link("sendMessage");
         if let Some(l) = link("updateEndpointState") {
@@ -690,6 +695,49 @@ impl OutgoingCall {
 
     /// Note a conversation update; true when the meeting's lock or
     /// attendee restrictions changed.
+    /// The meeting timer as last received.
+    pub fn timers(&self) -> &super::meeting_timer::Timers {
+        &self.timers
+    }
+
+    /// Take a conversation update's meeting timer; true when it's new.
+    pub fn apply_timer(&mut self, json: &serde_json::Value) -> bool {
+        let Some(state) = super::meeting_timer::Timers::find(json) else {
+            return false;
+        };
+        match super::meeting_timer::Timers::from_state(state, &self.timers) {
+            Some(t) if t.sequence != self.timers.sequence || t != self.timers => {
+                self.timers = t;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Change the meeting's ad-hoc timer for everyone (Teams'
+    /// updateMeetingStates with the three timers' JSON); the change shows
+    /// when the update comes back.
+    pub async fn publish_timer(&self, adhoc: &super::meeting_timer::Timer) -> Result<()> {
+        let link = self.meeting_states_link.clone().context("This meeting has no timer")?;
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-us".into());
+        }
+        let body = serde_json::json!({
+            "from": from,
+            "meetingStates": self.timers.publish(adhoc),
+            "updateMeetingStatesStatus": signaling::trouter_callback(
+                &self.callbacks.0,
+                &self.callbacks.1,
+                "conversation/updateMeetingStatesStatus/",
+            ),
+            "operationId": uuid::Uuid::new_v4().to_string(),
+        });
+        tracing::info!(state = adhoc.state(), sequence = self.timers.sequence, "meeting timer: publishing");
+        cc_post(&self.http, &self.skype_token, &link, &body, "Meeting timer").await?;
+        Ok(())
+    }
+
     pub fn apply_capability(&mut self, json: &serde_json::Value) -> bool {
         match super::meeting_options::meeting_capability(json) {
             Some(c) if c != self.capability => {
@@ -1829,6 +1877,14 @@ async fn start(
     let unmute_link = conversation_link(&created.response_body, "unmute");
     let metadata_link = conversation_link(&created.response_body, "updateEndpointMetadata");
     let add_participant_link = conversation_link(&created.response_body, "addParticipant");
+    let meeting_states_link = conversation_link(&created.response_body, "updateMeetingStates");
+    let timers = serde_json::from_str::<serde_json::Value>(&created.response_body)
+        .ok()
+        .and_then(|v| {
+            let t = super::meeting_timer::Timers::find(&v)?.clone();
+            super::meeting_timer::Timers::from_state(&t, &Default::default())
+        })
+        .unwrap_or_default();
     let lobby_thread = group_chat_field(&created.response_body, "lobbyThreadId");
     tracing::debug!(?lobby_thread, "meeting lobby chat");
     let message_link = conversation_link(&created.response_body, "sendMessage");
@@ -2001,6 +2057,8 @@ async fn start(
         mute_link,
         metadata_link,
         add_participant_link,
+        meeting_states_link,
+        timers,
         thread_id: thread_id.to_string(),
         unmute_link,
         lobby_thread,

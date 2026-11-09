@@ -93,6 +93,8 @@ fn main() {
         "qml/CaptionsPopout.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
+        "qml/MeetingTimerStrip.qml",
+        "qml/TimerSpin.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

@@ -420,6 +420,7 @@ Window {
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
         else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
         else if (name === "ReportMeetingButton") openMeetingReport()
+        else if (name === "MeetingFacilitatorTimerButton") toggleTimer()
     }
     function controlEnabled(name) {
         if (!holdOk(name)) return false
@@ -482,6 +483,8 @@ Window {
             : { label: "Don't show chat bubbles", icon: "chat-bubbles-off-20" }
         if (n === "MeetingHelpButton") return { label: "Help", icon: "question-circle-20" }
         if (n === "ReportMeetingButton") return { label: "Report a concern", icon: "shield-error-20" }
+        if (n === "MeetingFacilitatorTimerButton") return timerCanView
+            ? { label: "Timer", icon: "timer-20", endCheck: timerVisible } : null
         if (n === "MuteNotificationsButton") return notificationsMuted
             ? { label: "Allow notifications", icon: "alert-20" }
             : { label: "Mute notifications", icon: "alert-off-20" }
@@ -812,6 +815,66 @@ Window {
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
 
+    // Where the stage's notices start: under the bar, or the meeting
+    // timer when it shows.
+    readonly property real belowBar: bar.y + bar.height + (timerStrip.visible ? timerStrip.height : 0)
+
+    // More ▸ Timer: Teams' meeting timer strip under the bar (its
+    // visibility rules: timer/spec.md §5). Teams shows it where everyone
+    // can present; attendees get it view-only.
+    property var timerData: null
+    property bool everyonePresents: false
+    readonly property bool timerCanView: meeting && everyonePresents
+    readonly property bool timerViewOnly: !timerCanView || myRole === "attendee"
+    property bool timerVisible: false
+    // You cancelled it: Teams keeps your strip; everyone else's closes.
+    property bool timerCancelledByMe: false
+    property string timerPrevState: ""
+    signal timerAction(string name, int arg)
+    signal timerChime()
+    function toggleTimer() {
+        timerVisible = !timerVisible
+        // Nothing running: Teams opens the setup at once.
+        if (timerVisible && timerStrip.cancelled && !timerViewOnly) Qt.callLater(timerStrip.openControls)
+    }
+    onTimerDataChanged: {
+        const st = timerData && timerData.adhoc ? timerData.adhoc.state : "Cancelled"
+        const before = timerPrevState
+        timerPrevState = st
+        if (!timerData) { timerVisible = false; return }
+        if (before === "") {
+            // Joined with a timer running: it shows.
+            if (st !== "Cancelled") timerVisible = true
+            return
+        }
+        if (before === "Cancelled" && st === "InProgress") { timerVisible = true; timerCancelledByMe = false }
+        else if (before !== "Cancelled" && st === "Cancelled") {
+            if (!timerCancelledByMe) timerVisible = false
+            timerCancelledByMe = false
+        }
+        // What changed, as Teams announces it to everyone.
+        const left = timerStrip.spoken(timerData.adhoc.remainingDuration || 0)
+        if (before === "Paused" && st === "InProgress") contentItem.Accessible.announce("Timer resumed with " + left + " remaining.")
+        else if (before === "InProgress" && st === "Paused") contentItem.Accessible.announce("Timer paused at " + left + ".")
+        else if (before === "Cancelled" && st === "InProgress") contentItem.Accessible.announce("Timer started with " + left + ".")
+        else if (before === "InProgress" && st === "Cancelled") contentItem.Accessible.announce("Timer stopped.")
+    }
+    function timerStripForTest() { return timerStrip }
+    MeetingTimerStrip {
+        id: timerStrip
+        visible: win.timerVisible && win.timerCanView && win.state === "connected"
+        y: bar.y + bar.height
+        width: sidePane.visible ? sidePane.x : win.contentItem.width
+        info: win.timerData
+        viewOnly: win.timerViewOnly
+        onAction: (name, arg) => {
+            if (name === "cancel" || name === "cancelOverTime") win.timerCancelledByMe = true
+            win.timerAction(name, arg)
+        }
+        onAnnounce: text => win.contentItem.Accessible.announce(text)
+        onTimeUp: win.timerChime()
+    }
+
     // Live captions: a strip 4 in from the sides and bottom (or under the
     // bar, "At top"), the stage above (or below) it.
     CaptionsWindow {
@@ -819,7 +882,7 @@ Window {
         visible: (win.captionsOn || win.rttOn) && win.state === "connected" && !win.captionsPoppedOut
         x: 4; width: (sidePane.visible ? sidePane.x : win.contentItem.width) - 8
         height: implicitHeight
-        y: win.captionsAtTop ? bar.y + bar.height + 4 : win.contentItem.height - 4 - height
+        y: win.captionsAtTop ? win.belowBar + 4 : win.contentItem.height - 4 - height
         captions: win.captions
         roster: win.people
         meId: backend.userMri
@@ -966,7 +1029,7 @@ Window {
         id: chatBubble
         z: 50
         x: stage.x + (stage.width - width) / 2
-        y: (captionsWindow.visible && win.captionsAtTop ? captionsWindow.y + captionsWindow.height : bar.y + bar.height) + 10.67
+        y: (captionsWindow.visible && win.captionsAtTop ? captionsWindow.y + captionsWindow.height : win.belowBar) + 10.67
         onOpenChat: win.side = "chat"
         onMuteBubbles: win.setChatBubblesSuppressed(true)
     }
@@ -975,7 +1038,7 @@ Window {
     Rectangle {
         id: stage
         anchors {
-            top: captionsWindow.visible && win.captionsAtTop ? captionsWindow.bottom : bar.bottom
+            top: captionsWindow.visible && win.captionsAtTop ? captionsWindow.bottom : timerStrip.visible ? timerStrip.bottom : bar.bottom
             left: parent.left; right: sidePane.visible ? sidePane.left : parent.right
             bottom: captionsWindow.visible && !win.captionsAtTop ? captionsWindow.top : parent.bottom
             margins: 6
@@ -1511,14 +1574,14 @@ Window {
     RoomNotice {
         visible: win.roomMode && !win.roomNoticeDismissed
         x: stage.x + (stage.width - width) / 2
-        y: bar.height + 10.7
+        y: win.belowBar + 10.7
         z: 5
         onDismissed: win.roomNoticeDismissed = true
     }
     MutedNotice {
         visible: win.mutedNoticeShown
         x: stage.x + (stage.width - width) / 2
-        y: bar.height + 10.7
+        y: win.belowBar + 10.7
         z: 5
         onDismissed: win.mutedNoticeShown = false
         onUnmute: { win.mutedNoticeShown = false; win.toggleMute() }
@@ -1526,7 +1589,7 @@ Window {
     MutedNotice {
         visible: win.speakingNoticeShown && !win.mutedNoticeShown
         x: stage.x + (stage.width - width) / 2
-        y: bar.height + 10.7
+        y: win.belowBar + 10.7
         z: 5
         title: "Your microphone is muted"
         text: "Press Ctrl+Shift+M to unmute your mic, or press and hold down Ctrl+Space."
@@ -1539,7 +1602,7 @@ Window {
     MutedNotice {
         visible: win.reportSent
         x: stage.x + (stage.width - width) / 2
-        y: bar.height + 10.7
+        y: win.belowBar + 10.7
         z: 5
         icon: "checkmark-circle-20-filled"
         title: "Your report was sent"
@@ -1555,7 +1618,7 @@ Window {
     MutedNotice {
         visible: win.lockNoticeShown
         x: stage.x + (stage.width - width) / 2
-        y: bar.height + 10.7
+        y: win.belowBar + 10.7
         z: 5
         icon: "lock-closed-20-filled"
         title: win.locked ? "This meeting is locked." : "This meeting is unlocked."
@@ -1566,7 +1629,7 @@ Window {
     MutedNotice {
         visible: win.recorderFailure.length > 0
         x: stage.x + (stage.width - width) / 2
-        y: bar.height + 10.7
+        y: win.belowBar + 10.7
         z: 5
         icon: "alert-warning-16-filled"
         title: win.recorderFailure
@@ -1577,7 +1640,7 @@ Window {
     LobbyToast {
         id: lobbyToast
         x: stage.x + (stage.width - width) / 2
-        y: bar.height + 10.7
+        y: win.belowBar + 10.7
         z: 5
         lobby: win.lobby
         rosterOpen: win.side === "people"
