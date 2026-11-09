@@ -106,8 +106,40 @@ pub fn set_noise_level(level: NoiseLevel) {
         },
         std::sync::atomic::Ordering::Relaxed,
     );
+    reconfigure();
+}
+
+/// Teams' High fidelity music mode: gain control off, echo cancellation
+/// only if chosen ("Enable echo cancellation"), and the encoder at music
+/// quality (see `audio_codec`).
+static MUSIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static MUSIC_ECHO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn music_mode() -> bool {
+    MUSIC.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_music_mode(on: bool, echo_cancellation: bool) {
+    MUSIC.store(on, std::sync::atomic::Ordering::Relaxed);
+    MUSIC_ECHO.store(echo_cancellation, std::sync::atomic::Ordering::Relaxed);
+    reconfigure();
+}
+
+/// The processing the settings call for: (echo, noise, gain).
+fn wanted() -> (bool, NoiseLevel, bool) {
+    if music_mode() {
+        // Noise suppression stays the user's switch (Teams turns it off
+        // when music mode starts, and lets you turn it back on).
+        (MUSIC_ECHO.load(std::sync::atomic::Ordering::Relaxed), noise_level(), false)
+    } else {
+        (true, noise_level(), true)
+    }
+}
+
+fn reconfigure() {
     if let Some(p) = current() {
-        p.lock().unwrap_or_else(|e| e.into_inner()).configure(true, level, true);
+        let (echo, noise, gain) = wanted();
+        p.lock().unwrap_or_else(|e| e.into_inner()).configure(echo, noise, gain);
     }
 }
 
@@ -129,7 +161,8 @@ pub fn start() -> Option<Shared> {
         return None;
     }
     let mut p = Processor::new()?;
-    p.configure(true, noise_level(), true);
+    let (echo, noise, gain) = wanted();
+    p.configure(echo, noise, gain);
     let shared = Arc::new(Mutex::new(p));
     *slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(shared.clone());
     Some(shared)

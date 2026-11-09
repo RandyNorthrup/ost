@@ -657,6 +657,11 @@ pub mod qobject {
         /// Teams' Noise suppression switch (Mic ▾): on or off, kept.
         #[qinvokable]
         fn set_noise_suppression(self: Pin<&mut Backend>, on: bool);
+        /// Teams' High fidelity music mode ("musicMode") and its "Enable
+        /// echo cancellation" ("musicModeEcho"): saved and applied to the
+        /// call's audio at once.
+        #[qinvokable]
+        fn set_music_mode(self: Pin<&mut Backend>, on: bool, echo_cancellation: bool);
         /// The call bar as Teams builds it from its layout config: `facts`
         /// (JSON, see teams_cli::calling::ubar::Facts), each control's
         /// width (JSON {name: px}), a divider's width and the middle slot's
@@ -2648,6 +2653,13 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
             teams_cli::calling::apm::NoiseLevel::High
         },
     );
+    // Teams' High fidelity music mode and its echo cancellation choice.
+    let flag = |k: &str, default: bool| match map.get(k).and_then(|v| v.as_str()) {
+        Some("on") => true,
+        Some("off") => false,
+        _ => default,
+    };
+    teams_cli::calling::apm::set_music_mode(flag("musicMode", false), flag("musicModeEcho", true));
 }
 
 /// Start OST when you sign in to the desktop (an XDG autostart entry).
@@ -6293,6 +6305,14 @@ impl qobject::Backend {
         } else {
             teams_cli::calling::apm::NoiseLevel::Off
         });
+    }
+
+    pub fn set_music_mode(mut self: Pin<&mut Self>, on: bool, echo_cancellation: bool) {
+        let v = |b: bool| QString::from(if b { "on" } else { "off" });
+        self.as_mut().set_setting(&QString::from("musicMode"), &v(on));
+        self.as_mut().set_setting(&QString::from("musicModeEcho"), &v(echo_cancellation));
+        tracing::info!(on, echo_cancellation, "music mode");
+        teams_cli::calling::apm::set_music_mode(on, echo_cancellation);
     }
 
     pub fn ubar_arrange(

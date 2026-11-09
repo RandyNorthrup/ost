@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T00:51:00Z'
+updated_date: '2026-11-09T01:14:00Z'
 labels:
   - calls
   - meetings
@@ -21,9 +21,9 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Meeting info opens Teams' meeting info pane (title, time, join link, dial-in, copy)
-- [ ] #2 Video effects and settings and Audio settings open Teams' side panes, as measured on winpc
-- [ ] #3 Language and speech ▸ with Captions, Settings ▸ (Call health, Accessibility, Chat bubbles, Mute notifications), Timer and Help as Teams
-- [ ] #4 Record and transcribe ▸ and Report a concern as Teams (no real reports filed while testing)
+- [ ] #2 Language and speech ▸ with Captions, Settings ▸ (Call health, Accessibility, Chat bubbles, Mute notifications), Timer and Help as Teams
+- [ ] #3 Record and transcribe ▸ and Report a concern as Teams (no real reports filed while testing)
+- [x] #4 Audio settings opens Teams' Audio settings side pane (Speaker, Microphone, Advanced settings with noise suppression and High fidelity music mode), as measured on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -34,4 +34,10 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - Copy join info verified byte-identical to Teams' clipboard (fallback "Join Teams meeting" with the short /meet/ link, as this meeting's body has no me-email-text block).
 - Dial-in: the test tenant has no audio conferencing (pstnDetails null), so Teams shows no dial-in block either; not verifiable here.
 - Qt rich text needs: <font size> dropped (Qt applies it on top of the span size), pt->px, word joiners in link text so URLs wrap as Chrome does.
+
+- AC#4 Audio settings pane: read audio-settings-panel + spatial audio (196818), noise suppression (327752), music mode (697455); measured on winpc incl. music mode on/off (then reverted).
+- Spatial audio row hidden: Teams hides it when the media stack can't render spatial audio (isSpatialAudioAvailable false); OST plays the server mix.
+- Background noise only / Voice isolation radios hidden: Teams hides them when voice isolation is not supported (needs Microsoft's voice profile); NS row then shows its info button.
+- Music mode (Microsoft: 32 kHz sampling, up to 128 kbps, mono): Opus retuned live to Audio/Music at 128 kbit/s full band, AGC off, AEC per checkbox; turning it on turns NS off and off restores NS (as Teams). "Display in the microphone dropdown menu" adds the row to Mic ▾.
+- Video effects pane moved to TASK-0064 (its content is the background effects).
 <!-- SECTION:NOTES:END -->

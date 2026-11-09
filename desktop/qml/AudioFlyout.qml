@@ -29,7 +29,11 @@ Popup {
     property int volume: 100
     property int level: 0
     property bool noiseSuppression: true
+    property bool musicMode: false
+    property bool musicInFlyout: false
     onOpened: {
+        musicMode = backend.setting("musicMode") === "on"
+        musicInFlyout = backend.setting("musicModeInFlyout") === "on"
         noiseSuppression = backend.setting("noiseSuppression") !== "off"
         devices = JSON.parse(backend.audioDevices())
         mic = backend.setting("micDevice") || ""
@@ -173,7 +177,54 @@ Popup {
                 Accessible.name: "Noise suppression"
                 Accessible.checked: root.noiseSuppression
             }
-            Item { width: 268; height: 5.3 }
+            // High fidelity music mode, when "Display in the microphone
+            // dropdown menu" is on (Teams: right after noise suppression,
+            // its switch row, "Recommended for studio environment." 30
+            // down, then 10 before the divider).
+            Item {
+                visible: root.musicInFlyout
+                width: 268; height: 46
+                Text {
+                    y: 8.67; height: 18.67
+                    verticalAlignment: Text.AlignVCenter
+                    text: "High fidelity music mode"
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                }
+                Rectangle {
+                    x: 268 - 40.3; y: 8; width: 40; height: 20; radius: 10
+                    color: root.musicMode ? (mmHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+                    border.color: root.musicMode ? "transparent" : theme.textStrong
+                    Rectangle {
+                        width: 14; height: 14; radius: 7
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: root.musicMode ? parent.width - width - 3 : 3
+                        color: root.musicMode ? "white" : theme.textStrong
+                    }
+                    HoverHandler { id: mmHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            // As the pane: music mode on turns noise
+                            // suppression off; off brings it back.
+                            const on = !root.musicMode
+                            if (on) { backend.setSetting("noiseSuppressionBeforeMusic", root.noiseSuppression ? "on" : "off"); root.noiseSuppression = false; backend.setNoiseSuppression(false) }
+                            root.musicMode = on
+                            backend.setMusicMode(on, backend.setting("musicModeEcho") !== "off")
+                            if (!on) { root.noiseSuppression = backend.setting("noiseSuppressionBeforeMusic") !== "off"; backend.setNoiseSuppression(root.noiseSuppression) }
+                        }
+                    }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: "High fidelity music mode"
+                    Accessible.checked: root.musicMode
+                }
+                Text {
+                    y: 30; width: 268; height: 16
+                    text: "Recommended for studio environment."
+                    font.family: theme.font; font.pixelSize: 12
+                    color: theme.textStrong
+                }
+            }
+            Item { width: 268; height: root.musicInFlyout ? 10 : 5.3 }
             Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
             Item { width: 268; height: 13.3 }
             // More audio settings (a subtle button at the content's edge).

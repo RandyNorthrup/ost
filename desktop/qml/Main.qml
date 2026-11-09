@@ -1344,6 +1344,20 @@ Window {
                 else if (step === 22) { shot("on-a2"); backend.toggleCamera() }
                 else if (step === 23) callWindow.audioOptionsForTest()
                 else if (step === 24) shot("audio-flyout")
+            } else if (step >= 9 && step <= 16 && Qt.application.arguments.indexOf("--join-audio-pane") >= 0) {
+                // --join-audio-pane: More > Audio settings, captured at the
+                // top and the end; then music mode on (captured, and the
+                // encoder retunes), then off again.
+                const pane = callWindow.audioPaneForTest()
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-audio-" + n + ".png")))
+                if (step === 9) callWindow.runControl("AudioSettingsButton")
+                else if (step === 10) grab("top")
+                else if (step === 11) pane.scrollToEndForTest()
+                else if (step === 12) grab("end")
+                else if (step === 13) { pane.setMusic(true); console.warn("JOIN audio music on, ns", pane.noiseSuppression) }
+                else if (step === 14) { pane.scrollToEndForTest(); grab("music") }
+                else if (step === 15) { pane.setMusic(false); console.warn("JOIN audio music off, ns", pane.noiseSuppression) }
+                else grab("after")
             } else if (step === 9 && Qt.application.arguments.indexOf("--join-info") >= 0) {
                 // --join-info: open More > Meeting info, capture it (step
                 // 11), press Copy join info and capture again (step 12).

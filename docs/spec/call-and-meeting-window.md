@@ -388,6 +388,20 @@ only holds what is left (Merge, Park, Lock).
 - **Body** (`meeting-body`, 30 below). The calendar event's body, found by iCalUid, with newlines as spaces and only AMS images kept. Outlook's 11pt text renders at 14.67 px on 20.95 px lines; links are brand #4F52B2 and not underlined. URLs wrap only after "-", "?" and spaces, else at the line's edge.
 - **Data.** Title, start, end and location come from the join response's `meetingDetails` (`meetingChatProperties`). Recurrence comes from `eventRecurrencePattern` / `eventRecurrenceRange`; OST uses the event's Graph `recurrence`.
 
+### 1.8c Audio settings pane (More ▸ Audio settings / Mic ▾ "More audio settings"; `audio-settings-panel`; measured on winpc, 2026-11-08)
+- **Layout.** A side pane with rail header "Audio settings" ("Close audio pane"). Below it, Fluent accordion sections 10 under the header: 32 px headers, Northstar caret 16 px 4.67 in, 12 px titles 20.67 in. Content sits 20.67 in, 305.33 wide.
+- **Speaker.** Device radios: rows are the text + 10, the radio 20 px at −2, names 26 in. Then the speaker button (−6) and the volume slider.
+- **Microphone.** Device radios, then the mic button and the 17-bar meter across the column. Sections are 16 apart.
+- **Advanced settings.**
+  - Spatial audio shows only when the media stack can render it (`isSpatialAudioAvailable`).
+  - Noise suppression is a 36 px row with a switch 40 × 20 ending at the column edge; the switch is outlined in #616161 when off. The Background noise only / Voice isolation radios show only when voice isolation is supported; otherwise the row has the info button (tooltip "Enable this to enhance your microphone audio quality by removing background noise. Learn more" → aka.ms/noisesuppression).
+  - High fidelity music mode (info → fwlink 2168036), then "Recommended for studio environment." (12/16 #424242) 30 down. Then checkboxes, 32 tall with a 16 px box: "Display in the microphone dropdown menu" and "Enable echo cancellation" (on by default), disabled while music mode is off.
+- **Behaviour.**
+  - Turning music mode on turns noise suppression off; turning it off restores it. Noise suppression can be turned back on during music mode.
+  - With "Display in…", Mic ▾ shows the music mode row after noise suppression, with the description 30 down and 10 before the divider.
+  - Music mode per Microsoft: 32 kHz sampling at up to 128 kbps, mono, no gain control, echo cancellation optional.
+- **InfoButton.** 24 px with the 16 px Info (regular at rest, filled and brand on hover). Its popover is 264 wide, padding 12, 12/16 text, 6 above the button. When it would leave the pane it sits at the pane's left edge.
+
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
 - Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.

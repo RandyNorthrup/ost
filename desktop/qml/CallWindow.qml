@@ -192,6 +192,7 @@ Window {
     property string recordingTip: ""
     function aiPopoverForTest() { aiPopover.open() }
     function aiPopoverCloseForTest() { aiPopover.close() }
+    function audioPaneForTest() { return audioSettingsPane }
     /// You're an attendee and the meeting has disabled attendees' mic or
     /// camera (Teams then disables the button with its reason).
     readonly property bool micRestricted: meeting && myRole === "attendee" && (attendeeRestrictions & 1) !== 0 && muted
@@ -404,7 +405,8 @@ Window {
         }
         else if (name === "DialpadButton") { if (dialPad.visible) dialPad.close(); else { dialPad.parent = barItem(name); dialPad.open() } }
         else if (name === "HoldButton" || name === "ResumeButton") toggleHold()
-        else if (name === "CameraEffectsButton" || name === "AudioSettingsButton") deviceSettings()
+        else if (name === "CameraEffectsButton") deviceSettings()
+        else if (name === "AudioSettingsButton") side = side === "audio" ? "" : "audio"
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
     }
     function controlEnabled(name) {
@@ -961,7 +963,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" || win.side === "info" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -969,6 +971,14 @@ Window {
             anchors.fill: parent; anchors.margins: 1
             pane: true
             onClosePane: win.side = ""
+        }
+        AudioSettingsPane {
+            id: audioSettingsPane
+            visible: win.side === "audio"
+            anchors.fill: parent
+            muted: win.muted || !win.hasAudio
+            onToggleMute: win.toggleMute()
+            onClosed: win.side = ""
         }
         MeetingInfoPane {
             id: meetingInfoPane
@@ -1264,7 +1274,7 @@ Window {
         muted: win.muted || !win.hasAudio
         onToggleMute: win.toggleMute()
         // Teams opens its Audio settings pane (TASK-0062); OST's device settings for now.
-        onMoreAudioSettings: win.deviceSettings()
+        onMoreAudioSettings: win.side = "audio"
         x: parent ? parent.width - width : 0
         y: 60
         maxHeight: win.height - 60 - 5

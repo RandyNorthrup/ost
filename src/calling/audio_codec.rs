@@ -152,6 +152,35 @@ pub struct Encoder {
     down: Down6,
     #[cfg(feature = "audio")]
     opus: Option<opus::Encoder>,
+    /// The Opus encoder is set for music (High fidelity music mode).
+    #[cfg(feature = "audio")]
+    music: bool,
+}
+
+/// Opus for speech: Teams' own call audio, about 36 kbit/s with in-band
+/// FEC.
+pub const SPEECH_BITRATE: i32 = 36_000;
+/// Opus for High fidelity music mode: Teams sends music at up to
+/// 128 kbit/s, mono, wider than speech (Microsoft: 32 kHz sampling at
+/// 128 kbps); Opus's nearest band to that is full band.
+pub const MUSIC_BITRATE: i32 = 128_000;
+
+#[cfg(feature = "audio")]
+fn tune(e: &mut opus::Encoder, music: bool) {
+    let r = if music {
+        e.set_application(opus::Application::Audio)
+            .and_then(|_| e.set_signal(opus::Signal::Music))
+            .and_then(|_| e.set_max_bandwidth(opus::Bandwidth::Fullband))
+            .and_then(|_| e.set_bitrate(opus::Bitrate::Bits(MUSIC_BITRATE)))
+    } else {
+        e.set_application(opus::Application::Voip)
+            .and_then(|_| e.set_signal(opus::Signal::Auto))
+            .and_then(|_| e.set_max_bandwidth(opus::Bandwidth::Fullband))
+            .and_then(|_| e.set_bitrate(opus::Bitrate::Bits(SPEECH_BITRATE)))
+    };
+    if let Err(err) = r {
+        tracing::warn!(music, "Opus tuning: {err}");
+    }
 }
 
 impl Encoder {
@@ -160,9 +189,7 @@ impl Encoder {
         let opus = match codec {
             Codec::Opus(_) => match opus::Encoder::new(CALL_RATE, opus::Channels::Mono, opus::Application::Voip) {
                 Ok(mut e) => {
-                    // Teams' own Opus for calls: about 36 kbit/s with
-                    // in-band FEC.
-                    let _ = e.set_bitrate(opus::Bitrate::Bits(36_000));
+                    tune(&mut e, super::apm::music_mode());
                     let _ = e.set_inband_fec(true);
                     let _ = e.set_packet_loss_perc(5);
                     Some(e)
@@ -179,6 +206,8 @@ impl Encoder {
             down: Down6::default(),
             #[cfg(feature = "audio")]
             opus,
+            #[cfg(feature = "audio")]
+            music: super::apm::music_mode(),
         }
     }
 
@@ -194,6 +223,15 @@ impl Encoder {
         match self.codec {
             #[cfg(feature = "audio")]
             Codec::Opus(_) => {
+                // Music mode switched mid-call: retune.
+                let music = super::apm::music_mode();
+                if music != self.music
+                    && let Some(e) = self.opus.as_mut()
+                {
+                    tune(e, music);
+                    self.music = music;
+                    tracing::info!(music, "Opus retuned");
+                }
                 if let Some(e) = self.opus.as_mut() {
                     let mut out = vec![0u8; 400];
                     if let Ok(n) = e.encode(pcm, &mut out) {
@@ -318,5 +356,29 @@ mod tests {
         let rms = (tail.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt();
         assert!(rms > 3000.0, "rms {rms}");
         assert!(dec.handles(111) && dec.handles(0) && !dec.handles(9));
+    }
+
+    #[cfg(feature = "audio")]
+    #[test]
+    fn music_mode_sends_at_music_quality() {
+        // A rich signal: music mode spends far more bits on it.
+        let sig: Vec<i16> = (0..FRAME * 50)
+            .map(|i| {
+                let t = i as f32 / 48000.0;
+                ((t * 2.0 * std::f32::consts::PI * 440.0).sin() * 4000.0
+                    + (t * 2.0 * std::f32::consts::PI * 9300.0).sin() * 3000.0
+                    + (t * 2.0 * std::f32::consts::PI * 15100.0).sin() * 2000.0) as i16
+            })
+            .collect();
+        let bytes = |enc: &mut Encoder| sig.chunks(FRAME).map(|f| enc.encode(Some(f)).len()).sum::<usize>();
+        let mut speech = Encoder::new(Codec::Opus(111));
+        let speech_bytes = bytes(&mut speech);
+        super::super::apm::set_music_mode(true, true);
+        let mut music = Encoder::new(Codec::Opus(111));
+        let music_bytes = bytes(&mut music);
+        super::super::apm::set_music_mode(false, true);
+        // 1 s of audio: ~36 kbit vs up to 128 kbit.
+        assert!(speech_bytes < 6_000, "speech {speech_bytes}");
+        assert!(music_bytes > 10_000, "music {music_bytes}");
     }
 }

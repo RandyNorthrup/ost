@@ -4,6 +4,7 @@ title: Video background effects as Teams (blur, background images, adjust bright
 status: To Do
 assignee: []
 created_date: '2026-11-08T22:33:00Z'
+updated_date: '2026-11-09T01:14:00Z'
 labels:
   - calls
 dependencies: []
@@ -19,4 +20,5 @@ Teams' Camera ▾ flyout shows a Backgrounds quick picker (None, Standard blur, 
 <!-- AC:BEGIN -->
 - [ ] #1 Backgrounds picker in Camera ▾ and the effects pane as Teams, with blur and background images applied to what OST sends
 - [ ] #2 Adjust brightness as Teams, applied to OST's video
+- [ ] #3 More > Video effects and settings opens Teams' side pane (Video effects tab with Backgrounds, Settings tab) as measured on winpc
 <!-- AC:END -->

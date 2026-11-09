@@ -79,6 +79,7 @@ fn main() {
         "qml/NetworkPopover.qml",
         "qml/AiPopover.qml",
         "qml/MeetingInfoPane.qml",
+        "qml/AudioSettingsPane.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [
