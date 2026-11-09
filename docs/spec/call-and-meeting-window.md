@@ -497,6 +497,10 @@ only holds what is left (Merge, Park, Lock).
 
 ### 1.8g Settings ▸ and the in-meeting Accessibility pane (measured on winpc, 2026-11-09)
 - **Settings ▸ items.** Call health, Accessibility settings, a divider, "Don't show chat bubbles" / "Show chat bubbles", and "Mute notifications" / "Allow notifications".
+- **More ▸ Help.** Opens Teams' Help app in a window of its own (946 × 593 content).
+  - URL: `https://help.svc.cloud.microsoft/f1/home/?shownav=True&NS=MSFTTEAMS&version=16&omkt=<locale>&RingId=general&context=<JSON>`.
+  - The context has `SubEntityId: "helpappmeetings"`, plus the theme, session, app version, `HostClientType: "desktop"` and `TeamsHostName: "TeamsModern"`. Teams also sends the tenant SKU and licence type, which OST doesn't know for every tenant.
+  - The page opens on "Get help with Microsoft Teams meetings".
 - **Chat bubbles** (ufd_chatBubble). Someone else's message in the call's chat shows while the chat pane is closed.
   - One bubble at a time; a newer message replaces it. It lasts about 4 s (measured) and fades over 300 ms.
   - Placement: 320 wide, centred over the stage, 10.67 under the bar.

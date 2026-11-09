@@ -409,6 +409,7 @@ Window {
         else if (name === "CameraEffectsButton") deviceSettings()
         else if (name === "AudioSettingsButton") side = side === "audio" ? "" : "audio"
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
+        else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
     }
     function controlEnabled(name) {
         if (!holdOk(name)) return false
@@ -469,6 +470,7 @@ Window {
         if (n === "ChatBubblesButton") return chatBubblesSuppressed
             ? { label: "Show chat bubbles", icon: "chat-bubbles-20" }
             : { label: "Don't show chat bubbles", icon: "chat-bubbles-off-20" }
+        if (n === "MeetingHelpButton") return { label: "Help", icon: "question-circle-20" }
         if (n === "MuteNotificationsButton") return notificationsMuted
             ? { label: "Allow notifications", icon: "alert-20" }
             : { label: "Mute notifications", icon: "alert-off-20" }
@@ -616,6 +618,7 @@ Window {
         if (i >= 0) moreMenu.openSubmenuForTest(i)
     }
     function closeMoreForTest() { moreMenu.close() }
+    function helpWindowForTest() { return helpWindow }
     function moreSubmenuForTest(name) {
         moreMenu.parent = barItem("MoreButton") || moreMenu.parent
         moreMenu.open()
@@ -814,6 +817,28 @@ Window {
         id: captionsOverflow
         items: [{ label: "Open caption settings", icon: "settings-20", chevron: true }]
         onPicked: i => win.showCaptionSettings(captionsOverflow.parent)
+    }
+
+    // More ▸ Help: Teams' Help app in a window of its own, opened on its
+    // meetings page (help.svc's "helpappmeetings").
+    readonly property string helpSession: Qt.md5(String(Date.now()) + Math.random()).replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*/, "$1-$2-$3-$4-$5")
+    function helpUrl(subEntity) {
+        const ctx = { TeamsTheme: theme.pick("default", "dark"), SessionId: helpSession,
+                      AppVersionMajor: "16", AppVersionMinor: "0", AppVersionBuild: "0", AppVersionUpdate: "0",
+                      HostClientType: "desktop", TeamsHostName: "TeamsModern", SubEntityId: subEntity }
+        return "https://help.svc.cloud.microsoft/f1/home/?shownav=True&NS=MSFTTEAMS&version=16&omkt="
+            + Qt.locale().name.toLowerCase().replace("_", "-") + "&RingId=general&context=" + encodeURIComponent(JSON.stringify(ctx))
+    }
+    Window {
+        id: helpWindow
+        title: "Help"
+        width: 946; height: 593
+        color: theme.surface
+        Loader {
+            anchors.fill: parent
+            active: helpWindow.visible
+            sourceComponent: WebApp { appName: "Help"; appIcon: "question-circle-20"; appColor: theme.brand; home: win.helpUrl("helpappmeetings") }
+        }
     }
 
     // Chat bubbles: centred over the stage, 10.67 under the bar (or the

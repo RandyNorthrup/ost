@@ -1461,7 +1461,7 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 3 === 0) rows()
-            } else if (step >= 9 && step <= Math.min(19, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-accessibility") >= 0) {
+            } else if (step >= 9 && step <= Math.min(27, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-accessibility") >= 0) {
                 // --join-accessibility: More ▸ Settings ▸, then the
                 // Accessibility pane.
                 const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-acc-" + n + ".png")))
@@ -1470,7 +1470,11 @@ Window {
                     12: () => callWindow.recordControl("AccessibilitySettingsButton"), 14: () => grab("pane"),
                     15: () => { callWindow.recordControl("MuteNotificationsButton"); console.warn("JOIN notifications muted", backend.callNotificationsMuted) },
                     16: () => callWindow.moreSubmenuForTest("SettingsMenuControl"), 17: () => grab("menu-muted"), 18: () => callWindow.closeMoreForTest(),
-                    19: () => { callWindow.recordControl("MuteNotificationsButton"); console.warn("JOIN notifications muted", backend.callNotificationsMuted) }
+                    19: () => { callWindow.recordControl("MuteNotificationsButton"); console.warn("JOIN notifications muted", backend.callNotificationsMuted) },
+                    20: () => callWindow.runControl("MeetingHelpButton"),
+                    21: () => console.warn("JOIN help", callWindow.helpWindowForTest().visible, callWindow.helpWindowForTest().width, callWindow.helpUrl("helpappmeetings").slice(0, 120)),
+                    26: () => console.warn("JOIN help grab", callWindow.helpWindowForTest().contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-acc-help.png"))), callWindow.helpWindowForTest().visible),
+                    27: () => callWindow.helpWindowForTest().close()
                 }
                 if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= 16 && Qt.application.arguments.indexOf("--join-audio-pane") >= 0) {

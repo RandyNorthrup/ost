@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T05:55:00Z'
+updated_date: '2026-11-09T06:06:00Z'
 labels:
   - calls
   - meetings
@@ -26,7 +26,7 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - [x] #4 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
 - [x] #5 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
 - [ ] #6 Report a concern as Teams (no real reports filed while testing)
-- [ ] #7 Language and speech ▸ (live captions with their settings, pop-out window and RTT), Settings ▸ (Call health, Accessibility, Chat bubbles, Mute notifications) and Help as Teams
+- [ ] #7 Language and speech ▸ (live captions with their settings, pop-out window and RTT), Settings ▸ (Accessibility, Chat bubbles, Mute notifications) and Help as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -68,4 +68,8 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - Settings ▸ Mute notifications / Allow notifications: per-call, suppresses message notifications while in the call (verified toggle live; message suppression by code path).
 
 - Chat bubbles: Teams' bubble for others' messages in the call's chat (one at a time, ~4 s, 2-line clamp, presence, Mute these notifications / Close, click opens chat) and Settings ▸ Don't show / Show chat bubbles. Verified live with Guest 1 posting in the test meeting chat.
+
+- Call health moved to its own task (metrics pipeline + pane).
+
+- More ▸ Help: Teams' Help app window on its meetings page (help.svc helpappmeetings), verified the same page loads. Follow-up: the Help window's header is OST's web-app header (Reload/Open in browser); Teams shows the app tile and a … menu.
 <!-- SECTION:NOTES:END -->
