@@ -23,6 +23,18 @@ import com.ost.desktop
 // - Enter: Ctrl+Enter sends; Enter sends only with the Enter setting at its
 //   default and the bar closed; Shift+Enter is a new line.
 // - Cancelling an edit (or Discard) asks first: Teams' "Discard draft".
+// - `post`: Teams' channel post composer (Post in channel, measured on
+//   winpc 2026-11-09). A card (shadow 0 0 2 / 0 4 8) with the author row
+//   (56.7, 16.7 in, a #E0E0E0 line: avatar 32, name 14/20 semibold at 58.7,
+//   Close or Discard 48.7 from the right), "Add a subject" (18 px, padding
+//   15 0 16, 10.7 in, a #616161 underline, brand when focused; 250
+//   characters), the formatting bar always open with Announcement, the
+//   editor (at least 104), then 16 under it the tools from 8.7 and Post (96
+//   x 31.3) 16.7 from the right, 17.4 above the bottom. Announcement adds
+//   the banner (12.7 in, 69.3 down, 244 tall, radius 4, its colour scheme):
+//   "Type a headline" (40/52 semibold, centred, 44 characters) and, 12.8
+//   from its bottom right, Color scheme and Upload an image; the subject
+//   becomes "Add a subheading" 12 under it.
 Item {
     id: root
     property bool editing: false
@@ -70,10 +82,22 @@ Item {
     /// Teams' compact compose (pane under 480 px): the editor across the
     /// box and the tools in the bottom row.
     property bool compact: false
-    readonly property bool multiline: editing || compact || formatting || files.length > 0 || !!quote || grown
-    // The delivery header ("IMPORTANT!") is 26 tall above the editor.
-    readonly property real headerH: importance ? 26 : 0
-    readonly property real boxHeight: headerH + (multiline
+    readonly property bool multiline: post || editing || compact || formatting || files.length > 0 || !!quote || grown
+    // Teams' channel post composer.
+    property bool post: false
+    property bool announcement: false
+    property string subject: ""
+    property string headline: ""
+    property string bannerTheme: "0"
+    readonly property bool postEmpty: empty && !subject.trim() && !headline.trim()
+    signal closeRequested()
+    // The formatting bar shows (always in the post composer).
+    readonly property bool fmtOn: formatting || post
+    // The delivery header ("IMPORTANT!") is 26 tall above the editor; the
+    // post composer's author row and subject (and banner) are above it.
+    readonly property real headerH: post ? 57.3 + (announcement ? 268 : 0) + 55.7 : importance ? 26 : 0
+    readonly property real boxHeight: post ? headerH + 43 + editorArea.height + 16 + 31.3 + 17.4
+        : headerH + (multiline
         ? (formatting ? 43 : 0) + editorArea.height + 44.7
         : Math.max(45.3, input.contentHeight + 18 + 7.3))
     signal submit()
@@ -85,7 +109,7 @@ Item {
     signal typed()
     signal settingsRequested()
     width: 748
-    height: boxHeight + 2 + 16
+    height: boxHeight + 2 + (post ? 0 : 16)
 
     function plainText() { return input.getText(0, input.length) }
     // The text as clean HTML (RichText), for Teams' message HTML.
@@ -160,11 +184,15 @@ Item {
         return media.filter(m => html.indexOf(m.src) >= 0)
     }
     function focusEditor() { input.forceActiveFocus() }
+    // Teams opens the post composer in its subject.
+    function focusSubject() { if (post) subjectField.forceActiveFocus(); else input.forceActiveFocus() }
     function wrapSelection(tag) {
         format({ b: "bold", i: "italic", u: "underline", s: "strike", ul: "ul", ol: "ol" }[tag] || tag, "")
     }
     function requestCancel() { discardDialog.open() }
 
+    // The post composer's elevation (Fluent shadow 8).
+    FluentSurface { visible: root.post; width: box.width; height: box.height; depth: 8; radius: 6; color: theme.surface }
     Rectangle {
         id: box
         width: parent.width; height: root.boxHeight
@@ -173,6 +201,151 @@ Item {
         border.color: theme.divider
         border.width: 0.67
         clip: true
+
+        // The post composer's author row, subject or banner and subheading.
+        Item {
+            id: postHead
+            visible: root.post
+            width: parent.width; height: root.post ? root.headerH : 0
+            Item {
+                x: 16.7; y: 0.7; width: parent.width - 33.3; height: 56.7
+                Avatar { x: 0; y: 12; size: 32; name: backend.userName; photoId: backend.userMri || "" }
+                Text {
+                    x: 42; y: 18; text: backend.userName
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                    lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                }
+                Rectangle {
+                    x: parent.width - 32; y: 12.3; width: 32; height: 31.3; radius: 4
+                    color: postCloseHover.hovered ? theme.hover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: root.postEmpty ? "dismiss-20" : "delete-20"; color: postCloseHover.hovered ? theme.brand : theme.textStrong }
+                    HoverHandler { id: postCloseHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.postEmpty ? root.closeRequested() : root.requestCancel() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: root.postEmpty ? "Close" : "Discard"
+                }
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+            }
+            // Announcement: the banner.
+            Rectangle {
+                id: bannerEdit
+                visible: root.announcement
+                x: 12.7; y: 69.3; width: parent.width - 25.3; height: 244; radius: 4
+                readonly property var colors: theme.banner(root.bannerTheme)
+                color: colors[0]
+                border.width: 0.67
+                border.color: parseInt(root.bannerTheme, 10) >= 6 ? Qt.rgba(1, 1, 1, theme.dark ? 0.1 : 0.2) : Qt.rgba(0, 0, 0, theme.dark ? 0.1 : 0.05)
+                TextEdit {
+                    id: headlineEdit
+                    x: 1.3 + 12; width: parent.width - 2.7 - 24
+                    anchors.verticalCenter: parent.verticalCenter
+                    horizontalAlignment: TextEdit.AlignHCenter
+                    wrapMode: TextEdit.Wrap
+                    text: root.headline
+                    onTextChanged: {
+                        if (text.length > 44) { const c = cursorPosition; text = text.slice(0, 44); cursorPosition = Math.min(c, 44) }
+                        if (text !== root.headline) root.headline = text
+                    }
+                    font.family: theme.font; font.pixelSize: 40; font.weight: Font.DemiBold
+                    color: bannerEdit.colors[1]
+                    selectionColor: theme.selectionFill
+                    Keys.onReturnPressed: event => { if (event.modifiers & Qt.ControlModifier) root.trySubmit(); else subjectField.forceActiveFocus() }
+                    Text {
+                        visible: !headlineEdit.text && !headlineEdit.preeditText
+                        width: parent.width; horizontalAlignment: Text.AlignHCenter
+                        text: "Type a headline"; font: headlineEdit.font; color: bannerEdit.colors[1]
+                    }
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: "Type a headline"
+                }
+                Rectangle {
+                    x: parent.width - 12.8 - width; y: 198.7
+                    width: 65.3; height: 32.7; radius: 4
+                    color: theme.surface
+                    Rectangle {
+                        id: schemeButton
+                        x: 0.7; y: 0.7; width: 32; height: 31.3; radius: 4
+                        color: schemeHover.hovered ? theme.hover : "transparent"
+                        Rectangle {
+                            anchors.centerIn: parent; width: 16; height: 16; radius: 4
+                            color: bannerEdit.colors[0]
+                            border.width: 0.67; border.color: Qt.rgba(37 / 255, 36 / 255, 36 / 255, 0.2)
+                        }
+                        HoverHandler { id: schemeHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: schemes.opened ? schemes.close() : schemes.open() }
+                        ToolTip.visible: schemeHover.hovered && !schemes.opened; ToolTip.delay: 500; ToolTip.text: "Color scheme"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Color scheme, " + theme.bannerNames[parseInt(root.bannerTheme, 10) || 0]
+                        // Teams' scheme picker: 12 swatches (16, radius 4) in
+                        // two rows of six, 28 apart, above the button with its
+                        // right edge on the button's.
+                        Popup {
+                            id: schemes
+                            x: parent.width - width; y: -height - 0.7
+                            width: 181.3; height: 69.3; padding: 0
+                            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                            Repeater {
+                                model: 12
+                                Rectangle {
+                                    required property int index
+                                    x: 12.6 + 28 * (index % 6); y: 12.7 + 28 * Math.floor(index / 6)
+                                    width: 16; height: 16; radius: 4
+                                    color: theme.banner(String(index))[0]
+                                    border.width: 0.67; border.color: Qt.rgba(37 / 255, 36 / 255, 36 / 255, 0.2)
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: { root.bannerTheme = String(parent.index); schemes.close() } }
+                                    Accessible.role: Accessible.CheckBox
+                                    Accessible.checked: root.bannerTheme === String(index)
+                                    Accessible.name: theme.bannerNames[index]
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        x: 32.7; y: 0.7; width: 32; height: 31.3; radius: 4
+                        color: uploadHover.hovered ? theme.hover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; size: 20; name: "image-add-20"; color: uploadHover.hovered ? theme.brand : theme.textStrong }
+                        HoverHandler { id: uploadHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.bannerImageRequested() }
+                        ToolTip.visible: uploadHover.hovered; ToolTip.delay: 500; ToolTip.text: "Upload an image"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Upload an image"
+                    }
+                }
+            }
+            // Add a subject / Add a subheading.
+            Item {
+                x: 10.7; y: 57.3 + (root.announcement ? 268 : 0)
+                width: parent.width - 21.3; height: 55.7
+                TextInput {
+                    id: subjectField
+                    x: 12; y: 15; width: parent.width - 24; height: 24
+                    verticalAlignment: TextInput.AlignVCenter
+                    maximumLength: 250
+                    text: root.subject
+                    onTextEdited: root.subject = text
+                    font.family: theme.font; font.pixelSize: 18
+                    color: theme.text
+                    selectionColor: theme.selectionFill
+                    selectByMouse: true
+                    clip: true
+                    Keys.onReturnPressed: event => { if (event.modifiers & Qt.ControlModifier) root.trySubmit(); else input.forceActiveFocus() }
+                    Keys.onTabPressed: input.forceActiveFocus()
+                    Text {
+                        visible: !subjectField.text && !subjectField.preeditText
+                        text: root.announcement ? "Add a subheading" : "Add a subject"
+                        font: subjectField.font; color: theme.pick("#707070", "#ADADAD")
+                    }
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: root.announcement ? "Add a subheading" : "Add a subject"
+                }
+                Rectangle {
+                    anchors.bottom: parent.bottom; width: parent.width
+                    height: subjectField.activeFocus ? 2 : 0.67
+                    color: subjectField.activeFocus ? theme.brand : theme.textSecondary
+                }
+            }
+        }
 
         // The delivery option header (measured): 14/20 bold uppercase,
         // DarkOrange foreground for Important, 16 in, 26 tall.
@@ -186,8 +359,10 @@ Item {
         // The formatting bar (Teams' simplified-formatting-toolbar).
         FormatBar {
             id: formatBar
-            visible: root.formatting
-            x: 0; y: root.headerH; width: parent.width
+            visible: root.fmtOn
+            post: root.post
+            onAnnouncementToggled: { root.announcement = !root.announcement; if (root.announcement) headlineEdit.forceActiveFocus() }
+            x: root.post ? 0.7 : 0; y: root.headerH; width: parent.width
             editing: root.editing
             st: root.richState
             selectedText: input.selectedText
@@ -200,10 +375,10 @@ Item {
         // The editor: across the box (multiline) or left of the side toolbar.
         Item {
             id: editorArea
-            x: 0.67
-            y: root.headerH + (root.formatting ? 43 : 0.67)
-            width: root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
-            height: Math.max(root.formatting ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
+            x: root.post ? 11.3 : 0.67
+            y: root.headerH + (root.fmtOn ? 43 : 0.67)
+            width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
+            height: Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
             // Teams' quote box and code card behind the text's quote and
             // code runs (RichText marks them; their margins make room).
             Repeater {
@@ -367,9 +542,28 @@ Item {
             }
             Repeater { model: root.endModel; delegate: toolDelegate }
         }
+        // The post composer's tools (from 8.7) and Post.
+        Item {
+            visible: root.post
+            x: 0; y: parent.height - 17.4 - 31.3 - 0.35; width: parent.width; height: 32
+            Row {
+                x: 8.7
+                Repeater { model: root.postTools; delegate: toolDelegate }
+            }
+            Rectangle {
+                x: parent.width - 16.7 - width; y: 0
+                width: 96; height: 31.3; radius: 4
+                color: postHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: "Post"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                HoverHandler { id: postHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.trySubmit() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Post"
+            }
+        }
         Item {
             id: bottomBar
-            visible: root.multiline
+            visible: root.multiline && !root.post
             x: 0; y: parent.height - 44.7; width: parent.width; height: 44.7
             Row {
                 x: parent.width - width - 6.7; y: 6
@@ -384,7 +578,7 @@ Item {
 
         // Focused: Fluent's 2 px brand line along the bottom.
         Rectangle {
-            visible: input.activeFocus
+            visible: input.activeFocus && !root.post
             x: 0; y: parent.height - 2; width: parent.width; height: 2
             color: theme.brand
         }
@@ -392,7 +586,7 @@ Item {
 
     // The hint under the box.
     Row {
-        visible: !root.empty
+        visible: !root.empty && !root.post
         anchors.right: parent.right; anchors.rightMargin: 17
         y: root.boxHeight + 2
         spacing: 4
@@ -445,11 +639,21 @@ Item {
         else if (id === "send") root.trySubmit()
     }
     function trySubmit() { if (!root.empty) root.submit() }
+    // The post composer's tools under the editor (Teams: Emoji, GIFs and
+    // Stickers, Attach files, Actions and apps).
+    readonly property var postTools: [
+        { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers" },
+        { id: "FilePicker", icon: "attach-20", label: "Attach files" },
+        { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps" }
+    ]
+    signal bannerImageRequested()
+    /// Back to an empty post composer.
+    function resetPost() { subject = ""; headline = ""; bannerTheme = "0"; announcement = false }
     function enterPressed(event) {
         const ctrl = event.modifiers & Qt.ControlModifier
         const shift = event.modifiers & Qt.ShiftModifier
         if (ctrl) { root.trySubmit(); return }
-        if (shift || root.enterKey === "newline" || root.formatting) { event.accepted = false; return }
+        if (shift || root.enterKey === "newline" || root.fmtOn) { event.accepted = false; return }
         root.trySubmit()
     }
 
@@ -836,7 +1040,7 @@ Item {
                 color: discardHover.hovered ? theme.brandHover : theme.brandFill
                 Text { anchors.centerIn: parent; text: "Discard"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
                 HoverHandler { id: discardHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: { discardDialog.close(); root.formatting = false; input.clear(); root.cancelled() } }
+                TapHandler { onTapped: { discardDialog.close(); root.formatting = false; input.clear(); if (root.post) root.resetPost(); root.cancelled() } }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Discard"
             }
@@ -844,5 +1048,7 @@ Item {
     }
     // Test hooks.
     function discardForTest() { discardDialog.open() }
-    function confirmDiscardForTest() { discardDialog.close(); root.formatting = false; input.clear(); root.cancelled() }
+    function openSchemesForTest() { schemes.open() }
+    function closeSchemesForTest() { schemes.close() }
+    function confirmDiscardForTest() { discardDialog.close(); root.formatting = false; input.clear(); if (root.post) root.resetPost(); root.cancelled() }
 }

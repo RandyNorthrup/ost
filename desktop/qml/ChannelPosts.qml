@@ -17,6 +17,8 @@ Item {
     property var host: null
     signal reply(string rootId, string text)
     signal startPost()
+    /// The post composer is open (Teams then hides Post in channel).
+    property bool posting: false
     signal react(string messageId, string key, bool on)
     /// The post whose reply box is open.
     property string replying: ""
@@ -142,10 +144,59 @@ Item {
                             }
                         }
                     }
+                    // Teams' post header: an announcement's banner (680 wide at
+                    // a 716 card, 244 tall, radius 4, its headline 32/40
+                    // semibold centred, 12 under it) and the subject line
+                    // (18/25.7 semibold, 16 under it).
+                    Column {
+                        id: postHead
+                        visible: !!card.post && !postEdit.active
+                        x: 18; y: 64; width: card.width - 36
+                        readonly property var ann: card.post ? card.post.announcement || null : null
+                        Item {
+                            visible: !!postHead.ann
+                            width: parent.width; height: visible ? 244 + 12 : 0
+                            Rectangle {
+                                id: bannerBox
+                                width: parent.width; height: 244; radius: 4
+                                readonly property var colors: theme.banner(postHead.ann ? postHead.ann.color_theme : "0")
+                                color: colors[0]
+                                clip: true
+                                Image {
+                                    visible: !!postHead.ann && !!postHead.ann.image_local
+                                    anchors.fill: parent
+                                    source: postHead.ann ? postHead.ann.image_local || "" : ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                }
+                                Text {
+                                    anchors.centerIn: parent
+                                    width: parent.width - 36 - 20
+                                    horizontalAlignment: Text.AlignHCenter
+                                    wrapMode: Text.Wrap
+                                    text: postHead.ann ? postHead.ann.title : ""
+                                    font.family: theme.font; font.pixelSize: 32; font.weight: Font.DemiBold
+                                    lineHeight: 40; lineHeightMode: Text.FixedHeight
+                                    color: bannerBox.colors[1]
+                                    Accessible.role: Accessible.Heading
+                                }
+                            }
+                        }
+                        Text {
+                            visible: !!card.post && !!card.post.subject
+                            width: parent.width; wrapMode: Text.Wrap
+                            bottomPadding: 16
+                            text: card.post ? card.post.subject || "" : ""
+                            font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
+                            lineHeight: 25.7; lineHeightMode: Text.FixedHeight
+                            color: theme.text
+                            Accessible.role: Accessible.Heading
+                        }
+                    }
                     MessageText {
                         id: postBody
                         visible: !!card.post && !postEdit.active
-                        x: 18; y: 64; width: card.width - 36
+                        x: 18; y: 64 + postHead.height; width: card.width - 36
                         message: card.post
                     }
                     // Teams' reaction summary, 17 under the body; posts show the
@@ -393,6 +444,7 @@ Item {
     // Post in channel
     Rectangle {
         id: postButton
+        visible: !root.posting
         x: root.compact ? 30 : (root.width - list.cardW) / 2
         anchors.bottom: parent.bottom; anchors.bottomMargin: 25
         width: pbRow.implicitWidth + 32; height: 32; radius: theme.radius

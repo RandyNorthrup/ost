@@ -3113,6 +3113,43 @@ Window {
         }
     }
 
+    // --post-composer-test=<channel id> --shots=<dir> [--post-send]: Post in
+    // channel (pc-open.png), a subject and body (pc-subject.png), sent with
+    // --post-send; then Announcement with Navy blue, a headline,
+    // subheading and body (pc-announce.png, pc-schemes.png), sent with
+    // --post-send (pc-sent.png after); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--post-composer-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--post-composer-test=")) || "").slice(21)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const send = Qt.application.arguments.indexOf("--post-send") >= 0
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            const c = conversation.composeForTest()
+            if (step === 1) { conversation.posting = true; c.focusSubject() }
+            else if (step === 2) shot("pc-open")
+            else if (step === 3) { c.subject = "OST TEST 76 subject"; c.insertText("OST TEST 76 body from OST's post composer") }
+            else if (step === 4) shot("pc-subject")
+            else if (step === 5) { if (send) c.submit(); else { c.clear(); c.resetPost() } }
+            else if (step === 8) { conversation.posting = true; c.focusSubject() }
+            else if (step === 9) { c.announcement = true; c.bannerTheme = "6"; c.headline = "OST TEST 77 announcement"; c.subject = "OST subheading"; c.insertText("OST TEST 77 body") }
+            else if (step === 10) shot("pc-announce")
+            else if (step === 11) c.openSchemesForTest()
+            else if (step === 12) shot("pc-schemes")
+            else if (step === 13) { c.closeSchemesForTest(); if (send) c.submit(); else { c.clear(); c.resetPost(); conversation.posting = false } }
+            else if (step === 18) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => /OST TEST 7[67]/.test(m.text || "")); console.warn("POSTS", JSON.stringify(m.map(m => ({ id: m.id, subject: m.subject, announcement: m.announcement, state: m.send_state })))); shot("pc-sent") }
+            else if (step === 19) Qt.quit()
+            step++
+        }
+    }
+
     // --row-menu-test=<channel id> --shots=<dir>: with
     // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
     Timer {

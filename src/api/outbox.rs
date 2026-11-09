@@ -55,6 +55,36 @@ pub struct Outgoing {
     /// none).
     #[serde(default)]
     pub mentions: String,
+    /// A channel post's subject (an announcement's subheading).
+    #[serde(default)]
+    pub subject: String,
+    /// An announcement's headline.
+    #[serde(default)]
+    pub title: String,
+    /// An announcement's colour scheme ("0".."11"); none for other posts.
+    #[serde(default)]
+    pub banner_theme: Option<String>,
+}
+
+/// A new post in a channel (not a reply): Teams sends its post fields.
+fn is_channel_post(conversation: &str) -> bool {
+    conversation.ends_with("@thread.tacv2") && !conversation.contains(";messageid=")
+}
+
+/// Teams' announcement banner card (`announcement-card-` and 32 hex).
+fn banner_card(theme: &str) -> String {
+    let mut b = [0u8; 16];
+    if getrandom::fill(&mut b).is_err() {
+        b = (chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u128).to_le_bytes();
+    }
+    let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    serde_json::json!([{
+        "appId": "announcement-card",
+        "cardClientId": format!("announcement-card-{hex}"),
+        "contentType": super::messages::ANNOUNCEMENT_BANNER,
+        "content": { "colorTheme": theme },
+    }])
+    .to_string()
 }
 
 /// offlineActionsManagerDefaultCrossSessionRetries.
@@ -325,6 +355,19 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
     if let Some(q) = &o.quote {
         body["properties"]["qtdMsgs"] = super::messages::quoted_messages_property(q).into();
     }
+    // A channel post (Teams' post composer): subject, title, the banner
+    // card for an announcement, policyViolation, and the post's type.
+    if is_channel_post(&o.conversation_id) {
+        let p = &mut body["properties"];
+        p["subject"] = o.subject.clone().into();
+        p["title"] = if o.banner_theme.is_some() { o.title.clone() } else { String::new() }.into();
+        p["policyViolation"] = serde_json::Value::Null;
+        if let Some(theme) = &o.banner_theme {
+            p["cards"] = banner_card(theme).into();
+        }
+        body["postType"] = if o.banner_theme.is_some() { "Announcement" } else { "Standard" }.into();
+        body["crossPostChannels"] = serde_json::json!([]);
+    }
     body
 }
 
@@ -480,6 +523,12 @@ pub fn lie_view(o: &Outgoing) -> MessageView {
         send_state: send_state.into(),
         send_note: send_note.into(),
         can_retry: o.state == SendState::Error && can_retry(o.pipeline_status.as_deref()),
+        subject: o.subject.clone(),
+        announcement: o.banner_theme.as_ref().map(|t| super::messages::Announcement {
+            title: o.title.clone(),
+            color_theme: t.clone(),
+            ..Default::default()
+        }),
         // A channel reply goes under its post.
         root_id: o
             .conversation_id
@@ -874,8 +923,12 @@ mod tests {
             quote: None,
             importance: "high".into(),
             mentions: String::new(),
+            subject: String::new(),
+            title: String::new(),
+            banner_theme: None,
         };
         let b = post_body(&o);
+        assert!(b.get("postType").is_none(), "chats have no post type");
         assert_eq!(b["properties"]["importance"], "high");
         assert_eq!(b["id"], "-1");
         assert_eq!(b["state"], 0);
@@ -905,5 +958,61 @@ mod tests {
         }];
         assert_eq!(merge_lies(&mut with_copy, &[o]), vec!["123".to_string()]);
         assert_eq!(with_copy.len(), 1);
+    }
+
+    #[test]
+    fn channel_posts_carry_teams_post_fields() {
+        // Teams' captured posts (OST TEST 74 / 75 on winpc, 2026-11-09).
+        let mut o = Outgoing {
+            conversation_id: "19:x@thread.tacv2".into(),
+            client_message_id: "1".into(),
+            content: "<p>OST TEST 75 body</p>".into(),
+            display_name: "Me".into(),
+            sender_mri: "8:orgid:x".into(),
+            compose_time: "2026-01-01T00:00:00.000Z".into(),
+            arrival_ms: 0,
+            created_ms: 0,
+            state: SendState::Sending,
+            pipeline_status: None,
+            failures: 0,
+            queued: true,
+            server_id: None,
+            quote: None,
+            importance: String::new(),
+            mentions: String::new(),
+            subject: "OST TEST 75 subject".into(),
+            title: String::new(),
+            banner_theme: None,
+        };
+        let b = post_body(&o);
+        assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");
+        assert_eq!(b["properties"]["title"], "");
+        assert_eq!(b["properties"]["cards"], "[]");
+        assert!(b["properties"]["policyViolation"].is_null());
+        assert_eq!(b["postType"], "Standard");
+        assert_eq!(b["crossPostChannels"], serde_json::json!([]));
+
+        o.subject = "OST test subheading".into();
+        o.title = "OST TEST 74 announcement".into();
+        o.banner_theme = Some("0".into());
+        let b = post_body(&o);
+        assert_eq!(b["postType"], "Announcement");
+        assert_eq!(b["properties"]["title"], "OST TEST 74 announcement");
+        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        assert_eq!(cards[0]["appId"], "announcement-card");
+        assert_eq!(cards[0]["contentType"], "application/vnd.microsoft.teams.messaging-announcementBanner");
+        assert_eq!(cards[0]["content"], serde_json::json!({ "colorTheme": "0" }));
+        let id = cards[0]["cardClientId"].as_str().unwrap();
+        assert!(id.starts_with("announcement-card-") && id.len() == 18 + 32);
+        // The lie shows the banner and the subheading.
+        let v = lie_view(&o);
+        assert_eq!(v.subject, "OST test subheading");
+        assert_eq!(v.announcement.unwrap().title, "OST TEST 74 announcement");
+        // What the server sends back reads the same.
+        let props = serde_json::json!({ "subject": "OST test subheading", "title": "OST TEST 74 announcement",
+            "cards": "[{\"appId\":\"announcement-card\",\"cardClientId\":\"announcement-card-4562c853dc2742fbb3759fa5ad7186d5\",\"contentType\":\"application/vnd.microsoft.teams.messaging-announcementBanner\",\"content\":{\"colorTheme\":\"0\"}}]" });
+        let a = super::super::messages::announcement_from(Some(&props)).unwrap();
+        assert_eq!((a.title.as_str(), a.color_theme.as_str()), ("OST TEST 74 announcement", "0"));
+        assert!(super::super::messages::property_cards(Some(&props)).is_empty());
     }
 }

@@ -381,6 +381,11 @@ pub mod qobject {
         /// The next message's delivery option: "", "high" or "urgent".
         #[qinvokable]
         fn set_next_importance(self: Pin<&mut Backend>, importance: &QString);
+        /// The next channel post's fields from Teams' post composer:
+        /// {"subject", "title", "theme"} (theme "0".."11" for an
+        /// announcement, "" otherwise); "" clears them.
+        #[qinvokable]
+        fn set_next_post(self: Pin<&mut Backend>, post_json: &QString);
         /// Copy a message's link as Teams does (text: the URL; HTML: Teams'
         /// copy-link anchor). `message_json`: {id, sender, text, root_id};
         /// `place_json`: {team_id, team_name, channel_name} for a channel.
@@ -1546,6 +1551,8 @@ pub struct BackendRust {
     /// The message the next send quotes.
     reply_quote: Option<api::messages::Quote>,
     next_importance: String,
+    /// The next channel post's subject, headline and banner colour.
+    next_post: Option<NextPost>,
     last_typing_sent: Option<std::time::Instant>,
     /// Chats with messages pushed since the user last opened them.
     unread: HashSet<String>,
@@ -2328,6 +2335,23 @@ fn window_conversation(key: &str) -> &str {
     key.strip_prefix("win:").unwrap_or(key)
 }
 
+
+/// The post composer's fields for the next channel post.
+#[derive(Debug, Clone, Default)]
+struct NextPost {
+    subject: String,
+    title: String,
+    theme: String,
+}
+
+impl NextPost {
+    fn from_json(s: &str) -> Option<NextPost> {
+        let v: serde_json::Value = serde_json::from_str(s).ok()?;
+        let f = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        Some(NextPost { subject: f("subject"), title: f("title"), theme: f("theme") })
+    }
+}
+
 /// The channel a window's key belongs to.
 fn window_channel(key: &str) -> &str {
     window_conversation(key).split(';').next().unwrap_or_default()
@@ -2376,6 +2400,7 @@ async fn load_thread(thread: &str) -> anyhow::Result<()> {
         }
     }
     for m in timeline.iter_mut() {
+        localize_banner(&client, m).await;
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
@@ -2477,6 +2502,7 @@ async fn load_messages(
         }
     }
     for m in timeline.iter_mut() {
+        localize_banner(&client, m).await;
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
@@ -3129,6 +3155,38 @@ fn swap_src(m: &mut api::messages::MessageView, from: &str, to: &str) {
     }
     for e in m.edit_media.iter_mut().filter(|e| e.src == from) {
         e.src = to.to_string();
+    }
+}
+
+/// An announcement's banner picture, cached like the message's pictures.
+async fn localize_banner(client: &TeamsClient, m: &mut api::messages::MessageView) {
+    let Some(a) = m.announcement.as_mut() else { return };
+    if a.image_url.is_empty() {
+        return;
+    }
+    // The AMS object id from …/objects/{id}/views/….
+    let id: String = a
+        .image_url
+        .split("/objects/")
+        .nth(1)
+        .and_then(|r| r.split('/').next())
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if id.is_empty() {
+        return;
+    }
+    let img = api::messages::InlineImage {
+        id,
+        url: a.image_url.clone(),
+        width: a.image_width,
+        height: a.image_height,
+        local_path: String::new(),
+    };
+    match cached_image(client, &img).await {
+        Ok(path) => a.image_local = format!("file://{}", path.display()),
+        Err(e) => tracing::warn!("banner picture download failed: {}", short_error(&e)),
     }
 }
 
@@ -6287,6 +6345,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().typers.clear();
         self.as_mut().rust_mut().reply_quote = None;
         self.as_mut().rust_mut().next_importance.clear();
+        self.as_mut().rust_mut().next_post = None;
         self.as_mut().rust_mut().typing_generation += 1;
         self.as_mut().set_typing_text(QString::default());
         self.as_mut().set_typing_avatar(QString::default());
@@ -6519,7 +6578,8 @@ impl qobject::Backend {
         };
         let quote: Option<api::messages::Quote> =
             serde_json::from_str(&quote_json.to_string()).ok();
-        let o = self.outgoing(&format!("win:{channel}"), channel.clone(), html, mentions, quote, String::new());
+        let mut o = self.outgoing(&format!("win:{channel}"), channel.clone(), html, mentions, quote, String::new());
+        self.as_mut().apply_next_post(&mut o);
         let _rt = runtime().enter();
         outbox().submit(o);
     }
@@ -6631,7 +6691,8 @@ impl qobject::Backend {
         let chat_id = self.rust().current_chat_id.to_string();
         let quote = self.as_mut().rust_mut().reply_quote.take();
         let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
-        let o = self.outgoing(&chat_id, conversation, content, mentions, quote, importance);
+        let mut o = self.outgoing(&chat_id, conversation, content, mentions, quote, importance);
+        self.as_mut().apply_next_post(&mut o);
         // Sent: the draft for this chat is done.
         self.as_mut()
             .set_draft(&QString::from(chat_id.as_str()), &QString::default());
@@ -6685,6 +6746,9 @@ impl qobject::Backend {
             quote,
             importance,
             mentions,
+            subject: String::new(),
+            title: String::new(),
+            banner_theme: None,
         }
     }
 
@@ -7396,6 +7460,23 @@ impl qobject::Backend {
         } else {
             String::new()
         };
+    }
+
+    pub fn set_next_post(mut self: Pin<&mut Self>, post_json: &QString) {
+        self.as_mut().rust_mut().next_post = NextPost::from_json(&post_json.to_string());
+    }
+
+    /// Put the post composer's fields on a new channel post.
+    fn apply_next_post(mut self: Pin<&mut Self>, o: &mut api::outbox::Outgoing) {
+        let Some(p) = self.as_mut().rust_mut().next_post.take() else { return };
+        if !o.conversation_id.ends_with("@thread.tacv2") || o.conversation_id.contains(";messageid=") {
+            return;
+        }
+        o.subject = p.subject.trim().chars().take(250).collect();
+        if !p.theme.is_empty() && p.theme.parse::<u8>().is_ok_and(|t| t < 12) {
+            o.title = p.title.trim().chars().take(44).collect();
+            o.banner_theme = Some(p.theme);
+        }
     }
 
     pub fn set_reply_quote(mut self: Pin<&mut Self>, quote_json: &QString) {

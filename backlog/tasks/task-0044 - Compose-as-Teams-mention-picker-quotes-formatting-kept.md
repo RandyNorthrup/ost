@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-09T19:19:00Z'
+updated_date: '2026-11-09T21:34:00Z'
 labels:
   - desktop
   - messages
@@ -81,4 +81,10 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 
 - Add agent (AC1): the picker row opens Teams' in-context agent Store (TASK-0076).
 - Left in AC1: the Everyone limits banner (more than 50 people: "# people will be notified"; over 1,000: not available). This can't be tested live with the test chats.
+
+- AC4 (part): Teams' post composer (Post in channel) in the main window and channel windows. It has the author row, Add a subject, the always-open bar with Announcement, the tools and Post. Announcements have the colour banner, headline, 12 colour schemes and subheading.
+  - Posts carry subject, title, the announcementBanner card and postType, as Teams sends them (captured: OST TEST 74/75).
+  - Posts render subject lines and banners as Teams measures them. Banner pictures are cached and shown.
+  - Verified: OST's OST TEST 76 (subject) and 77 (Navy blue announcement) render in Teams exactly like Teams' own. OST reads back Teams' 74/75.
+- Left in AC4: Upload an image (the picture banner's upload and crop) and the composer's Loop components and ··· tools.
 <!-- SECTION:NOTES:END -->

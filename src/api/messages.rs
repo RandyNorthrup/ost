@@ -183,8 +183,70 @@ pub fn swift_cards(swift: &serde_json::Value) -> (Vec<Card>, String, bool) {
     (cards, text, carousel)
 }
 
+/// The announcement banner card's content type.
+pub const ANNOUNCEMENT_BANNER: &str = "application/vnd.microsoft.teams.messaging-announcementBanner";
+
+/// A channel announcement's banner (Teams' announcementBanner card with the
+/// post's `title`): the headline over a colour scheme ("0".."11") or a
+/// picture.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Announcement {
+    pub title: String,
+    pub color_theme: String,
+    /// The cropped picture (AMS) and its size, when it has one.
+    pub image_url: String,
+    pub image_width: u32,
+    pub image_height: u32,
+    pub image_alt: String,
+    /// The picture's cached file (file://), filled in by the client.
+    #[serde(default)]
+    pub image_local: String,
+}
+
+/// The announcement of a post, as Teams reads it (async-entry `Jt`/`fn`):
+/// the banner card's `content.imageData.colorTheme` or `content.colorTheme`,
+/// `content.imageData.croppedImage` for a picture, and `properties.title`.
+pub fn announcement_from(props: Option<&serde_json::Value>) -> Option<Announcement> {
+    let props = props?;
+    let raw = props.get("cards")?;
+    let list: serde_json::Value = match raw {
+        serde_json::Value::String(s) => serde_json::from_str(s).ok()?,
+        other => other.clone(),
+    };
+    let card = list
+        .as_array()?
+        .iter()
+        .find(|c| c.get("contentType").and_then(|t| t.as_str()) == Some(ANNOUNCEMENT_BANNER))?;
+    let content = match card.get("content") {
+        Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+        Some(v) => v.clone(),
+        None => serde_json::Value::Null,
+    };
+    let str_at = |p: &str| content.pointer(p).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let num_at = |p: &str| {
+        content
+            .pointer(p)
+            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(0) as u32
+    };
+    let theme = {
+        let t = str_at("/imageData/colorTheme");
+        if t.is_empty() { str_at("/colorTheme") } else { t }
+    };
+    Some(Announcement {
+        title: props.get("title").and_then(|t| t.as_str()).unwrap_or_default().to_string(),
+        color_theme: if theme.is_empty() { "0".into() } else { theme },
+        image_url: str_at("/imageData/croppedImage/src"),
+        image_width: num_at("/imageData/croppedImage/imageWidth"),
+        image_height: num_at("/imageData/croppedImage/imageHeight"),
+        image_alt: str_at("/imageData/croppedImage/imageAltText"),
+        image_local: String::new(),
+    })
+}
+
 /// Cards inside a `RichText/Html` message (`properties.cards`, a JSON string
-/// of `[{cardClientId, contentType, content, appId?}]`).
+/// of `[{cardClientId, contentType, content, appId?}]`). The announcement
+/// banner isn't one: it is the post's header (`announcement_from`).
 pub fn property_cards(props: Option<&serde_json::Value>) -> Vec<Card> {
     let Some(raw) = props.and_then(|p| p.get("cards")) else {
         return Vec::new();
@@ -200,6 +262,7 @@ pub fn property_cards(props: Option<&serde_json::Value>) -> Vec<Card> {
     list.as_array()
         .into_iter()
         .flatten()
+        .filter(|c| c.get("contentType").and_then(|t| t.as_str()) != Some(ANNOUNCEMENT_BANNER))
         .filter_map(|c| {
             Some(Card {
                 content_type: c.get("contentType")?.as_str()?.to_string(),
@@ -650,6 +713,13 @@ pub struct MessageView {
     /// Translation was asked for and failed (Teams: "Failed to translate").
     #[serde(default)]
     pub translation_failed: bool,
+    /// A channel post's subject (Teams' subject line; an announcement's
+    /// subheading).
+    #[serde(default)]
+    pub subject: String,
+    /// A channel announcement's banner.
+    #[serde(default)]
+    pub announcement: Option<Announcement>,
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module
@@ -1150,6 +1220,8 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     };
     let base = MessageView {
         importance: s("/properties/importance"),
+        subject: s("/properties/subject"),
+        announcement: announcement_from(m.pointer("/properties")),
         id: s("/id"),
         client_message_id: s("/clientmessageid"),
         kind: "message".into(),

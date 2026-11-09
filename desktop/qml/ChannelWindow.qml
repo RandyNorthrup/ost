@@ -208,7 +208,8 @@ Window {
         host: host
         onReply: (rootId, text) => backend.sendThreadReply(win.channelId, rootId, text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>"), "[]", "")
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
-        onStartPost: { win.posting = true; compose.focusEditor() }
+        posting: win.posting
+        onStartPost: { win.posting = true; compose.focusSubject() }
     }
 
     // A new post.
@@ -217,7 +218,8 @@ Window {
         visible: win.posting
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: 28; anchors.rightMargin: 30; anchors.bottomMargin: 8.7
-        placeholder: "Start a post"
+        placeholder: "Type a message"
+        post: true
         deliveryOptions: false
         mentionDirectory: false
         channelMention: ({ id: win.channelId, name: win.channelName })
@@ -234,10 +236,12 @@ Window {
         onQuoteDismissed: quote = null
         onEmojiRequested: a => host.openEmojiFor(compose)
         onSubmit: {
+            backend.setNextPost(JSON.stringify({ subject: compose.subject, title: compose.headline, theme: compose.announcement ? compose.bannerTheme : "" }))
             backend.sendChannelPost(win.channelId, compose.formattedText(), JSON.stringify(compose.mediaInUse()), compose.quote ? JSON.stringify(compose.quote) : "")
-            compose.quote = null; compose.clear(); win.posting = false
+            compose.quote = null; compose.clear(); compose.resetPost(); win.posting = false
         }
-        onCancelled: { quote = null; win.posting = false }
+        onCloseRequested: { compose.resetPost(); compose.clear(); win.posting = false }
+        onCancelled: { quote = null; compose.resetPost(); win.posting = false }
     }
 
     // Test hooks.

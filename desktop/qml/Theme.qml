@@ -28,6 +28,21 @@ QtObject {
     readonly property color mentionMe: pick("#DA3B01", "#F48E64")      // your name where you're @mentioned
     readonly property color channelPage: pick("#FAFAFA", "#141414")    // behind channel post cards
     readonly property color cardEdge: pick("#E3E3E3", "#383838")       // channel post card outline
+    // Teams' announcement colour schemes "0".."11" (443282 module 8196):
+    // the palette's Background2 / Foreground2 (light: tint, shade; dark the
+    // other way round), the first six light on dark text, the rest dark.
+    readonly property var bannerPalette: [["#A9D3F2", "#004377"], ["#D2CCF8", "#3F3682"], ["#F7C0E3", "#80215D"],
+                                          ["#F4BFAB", "#7A2101"], ["#ECDFA5", "#6C5700"], ["#BDD99B", "#294903"]]
+    readonly property var bannerNames: dark
+        ? ["Aegean blue", "Midnight purple", "Sangria", "Espresso", "Gothic gold", "Space green", "Cornflower blue", "Thistle purple", "Pink", "Coral", "Mellow yellow", "Jade"]
+        : ["Periwinkle Blue", "Lavender", "Rose", "Orange sherbet", "Flax yellow", "Teal", "Navy blue", "Indigo", "Mulberry red", "Fire orange", "Raw umber", "Ocean green"]
+    // [background, text] of scheme `t`.
+    function banner(t) {
+        let i = parseInt(t, 10); if (isNaN(i) || i < 0 || i > 11) i = 0
+        const pair = bannerPalette[i % 6]
+        const bg2 = dark ? pair[1] : pair[0], fg2 = dark ? pair[0] : pair[1]
+        return i < 6 ? [bg2, fg2] : [fg2, bg2]
+    }
     readonly property color bubble: pick("#F5F5F5", "#292929")         // others' bubbles
     readonly property color input: pick("#FFFFFF", "#292929")          // compose box
     readonly property color selected: pick("#FFFFFF", "#242424")       // the open row in a pane

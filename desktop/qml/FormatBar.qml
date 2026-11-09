@@ -14,15 +14,24 @@ Item {
     /// What applies at the cursor (RichText.state).
     property var st: ({})
     property bool editing: false
+    /// The channel post composer's bar (measured): Announcement after Code
+    /// block, no Discard, the whole 490 for the buttons.
+    property bool post: false
     /// The selected text (Insert link's Text to display).
     property string selectedText: ""
     signal command(string op, string arg)
+    signal announcementToggled()
     signal discardRequested()
     signal undoRequested()
     signal redoRequested()
 
     readonly property string styleName: st.heading === 1 ? "Heading 1" : st.heading === 2 ? "Heading 2" : st.heading === 3 ? "Heading 3" : "Paragraph"
-    readonly property var groups: [
+    readonly property var groups: {
+        const g = baseGroups.slice()
+        if (post) g.splice(4, 0, [{ k: "announcement", icon: "fmt-announcement", label: "Announcement" }])
+        return g
+    }
+    readonly property var baseGroups: [
         [{ k: "bold", icon: "fmt-bold", label: "Bold", on: !!st.bold }, { k: "italic", icon: "fmt-italic", label: "Italic", on: !!st.italic },
          { k: "underline", icon: "fmt-underline", label: "Underline", on: !!st.underline }, { k: "strike", icon: "fmt-strike", label: "Strikethrough", on: !!st.strike }],
         [{ k: "ul", icon: "fmt-bullets", label: "Bulleted list", on: st.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: "Numbered list", on: st.list === "ol" }],
@@ -41,7 +50,7 @@ Item {
     // calc(100% − 49rem) from 640 wide (38.5rem from 480, 28rem from 240;
     // rem = 10 px), so the buttons get 490 − 32 (Discard) = 458 at 640 and
     // up (measured on winpc: 458 at 746.7).
-    readonly property real slot: Math.min(width >= 640 ? 490 : width >= 480 ? 385 : 280, width) - 32
+    readonly property real slot: Math.min(width >= 640 ? 490 : width >= 480 ? 385 : 280, width) - (post ? 0 : 32)
     // [{item, group, x}] shown, and the groups (lists of items) that go to
     // More options.
     readonly property var layout: {
@@ -76,7 +85,8 @@ Item {
             else if (it.k === "rich") styles.show(button, false)
             return
         }
-        if (it.k === "undo") root.undoRequested()
+        if (it.k === "announcement") root.announcementToggled()
+        else if (it.k === "undo") root.undoRequested()
         else if (it.k === "redo") root.redoRequested()
         else root.command(it.k === "quote" ? "quote" : it.k, "")
     }
@@ -134,6 +144,7 @@ Item {
     }
     // Discard draft (Cancel when editing).
     Rectangle {
+        visible: !root.post
         x: root.width - 6 - 32; y: 9; width: 32; height: 32; radius: 4
         color: "transparent"
         FluentIcon { anchors.centerIn: parent; size: 20; name: root.editing ? "dismiss-20" : "fmt-discard"; color: discardHover.hovered ? theme.brand : theme.textStrong }

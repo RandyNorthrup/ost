@@ -335,6 +335,54 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
   announcement" for guardians). See §16 for the post compose.
 - **Announcements** are rendered only in threaded channels
   (`enableConvUXAnnouncementsAndTitle`, title or `croppedImageUrl`, component 598599).
+  Measured 2026-11-09 in a Posts channel, Teams desktop draws them anyway. The
+  `announcement-header-box` is the card's width less 36 (680 at a 716 card),
+  64 down, 244 tall, radius 4, in its colour scheme. The headline is 32/40
+  semibold, centred, in the scheme's text colour. The subject `h2` follows
+  12 under it, then the body.
+- **Wire** (captured from Teams, OST TEST 74/75): a new post carries
+  `properties.subject`, `properties.title` ("" unless it's an announcement),
+  `properties.policyViolation: null`, and top-level `postType` ("Standard" or
+  "Announcement") and `crossPostChannels: []`.
+  - An announcement's `properties.cards` is
+    `[{appId:"announcement-card", cardClientId:"announcement-card-<32 hex>",
+    contentType:"application/vnd.microsoft.teams.messaging-announcementBanner",
+    content:{colorTheme:"0".."11"}}]`.
+  - A picture banner adds `content.imageData {origImage{src},
+    croppedImage{src, imageWidth, imageHeight, imageAltText},
+    isTeamsIllustration, colorTheme}`.
+- **Colour schemes** (module 8196): "0".."5" use the Blue, Lavender, Pink,
+  DarkOrange, Gold and Forest palettes' Background2 with Foreground2 text;
+  "6".."11" use the same palettes the other way round. Light theme:
+  #A9D3F2/#004377, #D2CCF8/#3F3682, #F7C0E3/#80215D, #F4BFAB/#7A2101,
+  #ECDFA5/#6C5700, #BDD99B/#294903; the dark theme swaps the two tokens.
+  Names (light / dark): Periwinkle Blue / Aegean blue, Lavender / Midnight
+  purple, Rose / Sangria, Orange sherbet / Espresso, Flax yellow / Gothic
+  gold, Teal / Space green, Navy blue / Cornflower blue, Indigo / Thistle
+  purple, Mulberry red / Pink, Fire orange / Coral, Raw umber / Mellow
+  yellow, Ocean green / Jade.
+- **Post composer** (Post in channel; measured 2026-11-09). It is a card
+  like the post cards: radius 6, a #E0E0E0 line, shadow 0 0 2 / 0 4 8, and
+  27.7 above the bottom. Post in channel hides while it is open.
+  - **Author row** (56.7 tall, 16.7 in): avatar 32, name 14/20 semibold,
+    and **Close** (empty) or **Discard** (the delete icon; asks "Discard
+    draft" when there's text).
+  - **Add a subject**: 18 px with a #707070 placeholder, padding 15 0 16,
+    10.7 in. Its underline is 0.67 #616161, or 2 px brand when focused. It
+    takes 250 characters and has the focus when the composer opens.
+  - **Formatting bar**, always open. Announcement (megaphone) comes after
+    Code block, and there's no Discard.
+  - **Editor**: at least 104 tall.
+  - **Tools**, 16 under the editor from 8.7: Emoji, GIFs and Stickers;
+    Attach files; Loop components; Actions and apps; ···.
+  - **Post**: brand, 96 × 31.3, 16.7 from the right.
+  - **Announcement** inserts a banner 12.7 in and 69.3 down (244 tall,
+    radius 4) in Periwinkle Blue. Its headline is "Type a headline" (40/52
+    semibold, centred, 44 characters). Color scheme (a 16 px swatch) and
+    Upload an image sit in a white group 12.8 from the banner's bottom
+    right. The scheme picker shows 12 swatches (16, radius 4, 28 apart, two
+    rows) above the button. The subject becomes "Add a subheading", 12
+    under the banner.
 
 ---
 

@@ -1099,7 +1099,14 @@ Rectangle {
         onReply: (id, text) => root.sendReply(id, text)
         onReact: (id, key, on) => root.react(id, key, on)
         host: msgHost
-        onStartPost: { root.posting = true; input.forceActiveFocus() }
+        posting: root.posting
+        onStartPost: { root.posting = true; compose.focusSubject() }
+    }
+    // Behind the post composer: the channel's page colour.
+    Rectangle {
+        visible: channelPosts.visible && root.posting
+        anchors { top: channelPosts.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        color: theme.channelPage
     }
 
     ListView {
@@ -2758,6 +2765,9 @@ Rectangle {
         }
         backend.setReplyQuote(root.quoting ? JSON.stringify(root.quoting) : "")
         backend.setNextImportance(compose.importance)
+        // A new channel post: Teams' subject, headline and banner colour.
+        backend.setNextPost(compose.post && root.pendingFiles.length === 0
+            ? JSON.stringify({ subject: compose.subject, title: compose.headline, theme: compose.announcement ? compose.bannerTheme : "" }) : "")
         if (root.pendingFiles.length > 0) {
             backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []
@@ -2775,6 +2785,7 @@ Rectangle {
         root.quoting = null
         compose.formatting = false
         compose.importance = ""
+        compose.resetPost()
         root.posting = false
     }
     // Teams' pinned-message banner (pinned-message-banner, measured): over
@@ -2855,10 +2866,17 @@ Rectangle {
         id: compose
         visible: root.chatName.length > 0 && (!root.isChannel || root.posting)
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        anchors.leftMargin: root.pane ? 12 : root.composeGut; anchors.rightMargin: root.pane ? 12 : root.composeGut; anchors.bottomMargin: 6
+        // Teams' post composer (a new channel post) lines up with the post
+        // cards, 27.7 above the bottom.
+        post: root.isChannel && !root.threadRoot && !root.pane
+        readonly property real postGut: (root.width - Math.min(1100, root.width - 2 * (root.width > 480 ? 88 : 16))) / 2
+        anchors.leftMargin: post ? postGut : root.pane ? 12 : root.composeGut
+        anchors.rightMargin: post ? postGut : root.pane ? 12 : root.composeGut
+        anchors.bottomMargin: post ? 27.7 : 6
+        onCloseRequested: { compose.resetPost(); compose.clear(); root.posting = false }
         // Under 480 px Teams' compose is compact: its tools on their own row.
         compact: !root.pane && root.width < 480
-        placeholder: root.threadRoot ? "Reply in thread" : root.isChannel ? "Start a post" : "Type a message"
+        placeholder: root.threadRoot ? "Reply in thread" : "Type a message"
         quote: root.quoting
         files: root.pendingFiles
         onQuoteDismissed: root.quoting = null
@@ -2894,7 +2912,7 @@ Rectangle {
         mentionables: roster.filter(m => !m.me).map(m => ({ mri: m.mri, name: m.name, mail: m.mail }))
         urgentAllowed: !root.isGroup || (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) <= 20
         onScheduleMeetingRequested: root.scheduleMeeting()
-        onCancelled: { root.quoting = null; root.pendingFiles = []; root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
+        onCancelled: { root.quoting = null; root.pendingFiles = []; compose.resetPost(); root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
         Connections {
             target: compose.editor
             function onTextChanged() { draftSave.restart() }
