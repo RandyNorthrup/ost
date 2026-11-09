@@ -204,6 +204,12 @@ Code: `src/calling/datachannel.rs` (SCTP and DCEP), `src/calling/mcp.rs` (framin
     - "You have been muted." in 14/20 NeutralForeground3.
     - A full-width primary "Unmute" button (32 tall, radius 4, 14/600).
 
+- **"Your microphone is muted"** (alert DeviceSpeakWhileMuted; calling-pluginless speechDetectionDiagnostics and the quality alert definitions, 2026-11-09):
+  - Every second (`webrtcStatPollInterval` 1000) the mic's level is noted as speaking when above 0.1 (`isSpeakingInputLevel`, of WebRTC's 0–1 `audioLevel`). While muted (by you or the meeting) Teams keeps the last 3 notes (`speakingWhileMutedDetectionWindow`); more than 1 speaking (`speakingWhileMutedSpeechThreshold`) raises the alert, fewer clears it, and unmuting forgets the notes. OST samples its processed mic's peak over the last 100 ms (`audio::mic_recent_level`, `calling::muted_speech`).
+  - Not shown when the meeting disabled attendees' mics (hard mute), your speakers are muted, the call isn't connected, or the Accessibility pane's Muted notification is off.
+  - Look: the same alert card with the filled mic-off glyph, "Your microphone is muted", then "Press Ctrl+Shift+M to unmute your mic, or press and hold down Ctrl+Space." (two lines), no button. It stays while you speak and goes when you stop; Close hides it until the next time. Teams desktop draws these "calling footer" alerts at the top of the stage too (its raise-hand alert measured on winpc: 8 px below the stage).
+  - Verified live: OST joined muted with speech played into its microphone; the notice followed the speech and its pauses.
+
 ## Still to establish
 
 - Whether the media processor takes a client offer (as OST sends for audio) with video receive slots, or needs Teams' server-offer flow.

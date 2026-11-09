@@ -20,8 +20,6 @@ Rectangle {
     /// hideCallMonitorOnMinimize, …}
     property var accessibility: ({})
     property bool showMutedNotice: true
-    /// OST shows Teams' 'You're muted' notice (the card that controls it).
-    property bool mutedNoticeAvailable: false
     signal closed()
     signal updateAccessibility(string patch)
     signal mutedNoticeToggled(bool on)
@@ -138,10 +136,8 @@ Rectangle {
                     onToggled: on => root.updateAccessibility(JSON.stringify({ profanityFilterEnabled: on }))
                 }
             }
-            // Muted notification: shown once OST has Teams' 'You're muted'
-            // notice to turn on and off.
+            // Muted notification: Teams' 'You're muted' notice on or off.
             Card {
-                visible: root.mutedNoticeAvailable
                 FluentIcon { x: 6; y: 6; size: 20; name: "mic-off-card-20"; color: theme.text }
                 Setting { id: mutedTitle; x: 44; y: 0; text: "Muted notification" }
                 Description { x: 44; y: 20; text: "Show the 'You're muted' notification when audio is detected while your microphone is off." }

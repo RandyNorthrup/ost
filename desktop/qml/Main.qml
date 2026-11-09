@@ -774,6 +774,7 @@ Window {
         onUpdateAccessibility: patch => backend.updateCallAccessibility(patch)
         onSaveCaptionStyles: styles => { backend.setSetting("captionStyles", JSON.stringify(styles)); captionStyles = styles }
         showMutedNotice: backend.setting("showMutedNotice") !== "false"
+        speakingWhileMuted: backend.callSpeakingWhileMuted
         notificationsMuted: backend.callNotificationsMuted
         chatBubblesSuppressed: backend.callChatBubblesSuppressed
         onSetChatBubblesSuppressed: on => backend.callChatBubblesSuppressed = on
@@ -1248,6 +1249,7 @@ Window {
         }
     }
     readonly property bool joinRaise: Qt.application.arguments.indexOf("--join-raise") >= 0
+    property bool speechShot: false
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     Timer {
         running: Qt.application.arguments.indexOf("--join-test") >= 0 && backend.signedIn && backend.calendarJson.indexOf("OST calendar test") >= 0
@@ -1479,6 +1481,21 @@ Window {
                     24: () => callWindow.recordControl("ClosedCaptionsButton")
                 }
                 if (plan[step]) plan[step]()
+            } else if (step >= 9 && step <= Math.min(40, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-muted-speech") >= 0) {
+                // --join-muted-speech: joined muted while speech plays into
+                // the mic: Teams' "Your microphone is muted" shows; Close
+                // hides it until the next time.
+                console.warn("JOIN speech", step, "muted", callWindow.muted, "speaking", backend.callSpeakingWhileMuted,
+                             "shown", callWindow.speakingNoticeShown)
+                if (callWindow.speakingNoticeShown && !window.speechShot) {
+                    window.speechShot = true
+                    callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-speech.png")))
+                }
+                if (step === 24 && callWindow.speakingNoticeShown) callWindow.speakingNoticeClosed = true
+                // Accessibility ▸ Muted notification off, then on again.
+                if (step === 28) callWindow.accessibilityPaneForTest().mutedNoticeToggled(false)
+                if (step === 29 || step === 33) console.warn("JOIN speech setting", backend.setting("showMutedNotice"), callWindow.showMutedNotice)
+                if (step === 32) callWindow.accessibilityPaneForTest().mutedNoticeToggled(true)
             } else if (step >= 9 && step <= Math.min(60, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-rtt") >= 0) {
                 // --join-rtt: Language and speech ▸ Turn on RTT for this
                 // call, its dialog, the card, typing (a line ended by Enter,

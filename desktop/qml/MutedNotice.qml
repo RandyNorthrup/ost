@@ -7,7 +7,7 @@ import QtQuick.Effects
 // The filled mic-off glyph (20) and a 12 px title at 12/12, dismiss (16,
 // NeutralForeground3) at the right; "You have been muted." 14/20
 // NeutralForeground3 at 12, 41; a full-width primary Unmute button (32
-// tall, radius 4, 14/600) at 12, 73.
+// tall, radius 4, 14/600) at 12, 73. Text that wraps makes it taller.
 Item {
     id: root
     signal dismissed()
@@ -19,7 +19,10 @@ Item {
     property string title: "You've been muted"
     property string text: "You have been muted."
     property string action: "Unmute"
-    width: 320; height: action.length > 0 ? 117.3 : 69.33
+    // A second line of text (Teams' "Your microphone is muted" hint)
+    // makes the card 20 taller.
+    readonly property real extra: Math.max(0, body.height - 20)
+    width: 320; height: (action.length > 0 ? 117.3 : 69.33) + extra
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 0.6; blur: 1.8; color: Qt.rgba(0, 0, 0, 0.11) }
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 3.2; blur: 7.2; color: Qt.rgba(0, 0, 0, 0.13) }
     Rectangle {
@@ -45,14 +48,17 @@ Item {
         Accessible.name: "Dismiss"
     }
     Text {
-        x: 12.7; y: 40.7; height: 20; verticalAlignment: Text.AlignVCenter
+        id: body
+        x: 12.7; y: 40.7; width: root.width - 25.3
+        wrapMode: Text.Wrap
+        lineHeight: 20; lineHeightMode: Text.FixedHeight
         text: root.text
         font.family: theme.font; font.pixelSize: 14
         color: theme.textSecondary
     }
     Rectangle {
         visible: root.action.length > 0
-        x: 12.7; y: 72.7; width: parent.width - 25.3; height: 32
+        x: 12.7; y: 72.7 + root.extra; width: parent.width - 25.3; height: 32
         radius: 4
         color: unmuteHover.hovered ? theme.brandHover : theme.brandFill
         Text {

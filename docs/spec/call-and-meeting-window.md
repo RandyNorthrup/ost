@@ -551,7 +551,7 @@ only holds what is left (Merge, Park, Lock).
     - Captions: "Always show captions in my calls and meetings" and "Filter out profane words in live captions", both in `callAccessibilitySettings`.
     - Muted notification: the 'You're muted' notice, stored on the device.
     - Monitoring participants: "Hide Call Monitor when minimizing meeting window" (`hideCallMonitorOnMinimize`). It keeps the compact call window away, except while you share.
-  - OST shows the Sign language and Muted notification cards once those features exist.
+  - OST shows the Muted notification card (it turns "Your microphone is muted" on and off; meeting-video.md). The Sign language card waits for sign language mode.
 
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.

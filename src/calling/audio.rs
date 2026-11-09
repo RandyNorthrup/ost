@@ -85,6 +85,28 @@ pub fn mic_level() -> u32 {
     MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The processed microphone's peaks over its last five frames (100 ms),
+/// each 0..=32768, and where the next one goes.
+static MIC_RECENT: [std::sync::atomic::AtomicU32; 5] = [const { std::sync::atomic::AtomicU32::new(0) }; 5];
+static MIC_RECENT_AT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The microphone's level now, 0.0–1.0: the processed signal's peak over
+/// the last 100 ms, as WebRTC reports a local source's `audioLevel`
+/// (Teams samples it each second to tell you're speaking while muted).
+pub fn mic_recent_level() -> f32 {
+    let peak = MIC_RECENT
+        .iter()
+        .map(|p| p.load(std::sync::atomic::Ordering::Relaxed))
+        .max()
+        .unwrap_or(0);
+    peak as f32 / 32768.0
+}
+
+fn note_mic_frame(peak: u32) {
+    let at = MIC_RECENT_AT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % MIC_RECENT.len();
+    MIC_RECENT[at].store(peak, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Wait while the stream should run: returns `true` to rebuild it on newly
 /// chosen devices, `false` when the owner dropped it.
 fn park_until_switch(keep_rx: &mpsc::Receiver<()>, generation: u64) -> bool {
@@ -271,6 +293,9 @@ impl AudioCapture {
                 let again = park_until_switch(&keep_rx, generation);
                 drop(stream);
                 MIC_LEVEL.store(0, std::sync::atomic::Ordering::Relaxed);
+                for p in &MIC_RECENT {
+                    p.store(0, std::sync::atomic::Ordering::Relaxed);
+                }
                 if !again {
                     return;
                 }
@@ -455,8 +480,9 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                 {
                     p.lock().unwrap_or_else(|e| e.into_inner()).capture(&mut frame, APM_DELAY_MS);
                 }
-                let out = frame.iter().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0) * 100 / 32768;
-                MIC_OUT_PEAK.fetch_max(out, std::sync::atomic::Ordering::Relaxed);
+                let out_peak = frame.iter().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0);
+                note_mic_frame(out_peak);
+                MIC_OUT_PEAK.fetch_max(out_peak * 100 / 32768, std::sync::atomic::Ordering::Relaxed);
                 let _ = frame_tx.try_send(frame);
             }
         },

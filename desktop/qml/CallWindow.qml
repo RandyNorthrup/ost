@@ -67,6 +67,15 @@ Window {
     onMutedRemotelyChanged: if (mutedRemotely > 0) { mutedNoticeShown = true; mutedNoticeTimer.restart() }
     onMutedChanged: if (!muted) mutedNoticeShown = false
     Timer { id: mutedNoticeTimer; interval: 30000; onTriggered: win.mutedNoticeShown = false }
+    // Teams' DeviceSpeakWhileMuted alert: you're talking with the mic off.
+    // It shows while that lasts (unless the meeting disabled attendees'
+    // mics, or you turned the notice off in Accessibility settings); Close
+    // hides it until the next time.
+    property bool speakingWhileMuted: false
+    property bool speakingNoticeClosed: false
+    onSpeakingWhileMutedChanged: if (!speakingWhileMuted) speakingNoticeClosed = false
+    readonly property bool speakingNoticeShown: speakingWhileMuted && showMutedNotice && !speakingNoticeClosed
+                                                && !micRestricted && state === "connected"
     /// Who presents their screen in the meeting (empty: nobody).
     property string shareId: ""
     readonly property bool presenting: meeting && shareId !== ""
@@ -640,6 +649,7 @@ Window {
     function closeMoreForTest() { moreMenu.close() }
     function captionsPopoutForTest() { return captionsPopout }
     function captionsWindowForTest() { return captionsWindow }
+    function accessibilityPaneForTest() { return accessibilityPane }
     function meetingReportForTest() { return meetingReport }
     function helpWindowForTest() { return helpWindow }
     function moreSubmenuForTest(name) {
@@ -1488,6 +1498,16 @@ Window {
         z: 5
         onDismissed: win.mutedNoticeShown = false
         onUnmute: { win.mutedNoticeShown = false; win.toggleMute() }
+    }
+    MutedNotice {
+        visible: win.speakingNoticeShown && !win.mutedNoticeShown
+        x: stage.x + (stage.width - width) / 2
+        y: bar.height + 10.7
+        z: 5
+        title: "Your microphone is muted"
+        text: "Press Ctrl+Shift+M to unmute your mic, or press and hold down Ctrl+Space."
+        action: ""
+        onDismissed: win.speakingNoticeClosed = true
     }
     // Report a concern sent: Teams says "Your report was sent" (its shell
     // toast; shown here as the meeting's notice card, its layout not yet

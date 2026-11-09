@@ -120,6 +120,9 @@ pub mod qobject {
         #[qproperty(QString, call_speaking_json)]
         /// The meeting has muted us.
         #[qproperty(bool, call_muted_by_meeting)]
+        /// You're talking with the mic off (Teams' DeviceSpeakWhileMuted:
+        /// two of the last three seconds loud while muted).
+        #[qproperty(bool, call_speaking_while_muted)]
         /// Who is in the open chat's call while we aren't: [{id, name}].
         #[qproperty(QString, chat_live_roster_json)]
         /// Bumped when the meeting mutes us while we're talking (Teams'
@@ -1186,6 +1189,7 @@ pub struct BackendRust {
     call_scheduled: bool,
     call_lobby_presenter: bool,
     call_attendee_restrictions: i32,
+    call_speaking_while_muted: bool,
     call_ai_indicator: bool,
     call_ai_available: bool,
     call_ai_facilitator: bool,
@@ -1623,9 +1627,28 @@ fn rtt_outbox() -> &'static tokio::sync::mpsc::UnboundedSender<String> {
 fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
     runtime().spawn(async move {
         let mut tick = 0u64;
+        let mut muted_speech = teams_cli::calling::muted_speech::Detector::new();
+        let mut speaking_muted = false;
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             tick += 1;
+            // Talking with the mic off (Teams checks with each stats poll).
+            let muted = {
+                let slot = call_slot().lock().await;
+                match (slot.active.as_ref(), slot.outgoing.as_ref()) {
+                    (Some(call), _) => Some(call.is_muted()),
+                    (None, Some(call)) => Some(call.is_muted() || call.is_server_muted()),
+                    (None, None) => None,
+                }
+            };
+            if let Some(muted) = muted {
+                let now = muted_speech.report(muted, teams_cli::calling::audio::mic_recent_level());
+                if now != speaking_muted {
+                    speaking_muted = now;
+                    tracing::info!(speaking_muted = now, "speaking while muted");
+                    let _ = qt.queue(move |mut this| this.as_mut().set_call_speaking_while_muted(now));
+                }
+            }
             // Teams' network strength (your name tag's bars), each second.
             let strength = {
                 let slot = call_slot().lock().await;
@@ -1635,7 +1658,12 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
                     slot.outgoing.as_ref().map(|c| c.network_strength())
                 }
             };
-            let Some(strength) = strength else { return };
+            let Some(strength) = strength else {
+                if speaking_muted {
+                    let _ = qt.queue(|mut this| this.as_mut().set_call_speaking_while_muted(false));
+                }
+                return;
+            };
             let name = strength.name();
             let _ = qt.queue(move |mut this| {
                 if this.rust().call_network_strength.to_string() != name {
@@ -3564,6 +3592,7 @@ impl qobject::Backend {
         self.as_mut().set_call_scheduled(true);
         self.as_mut().set_call_meeting_locked(false);
         self.as_mut().set_call_attendee_restrictions(0);
+        self.as_mut().set_call_speaking_while_muted(false);
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().set_call_ai_available(false);
         self.as_mut().set_call_ai_facilitator(false);
