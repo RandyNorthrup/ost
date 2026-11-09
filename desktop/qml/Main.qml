@@ -2953,6 +2953,29 @@ Window {
         }
     }
 
+    // --tab-shot=<tab name> with --open-chat=<channel id> --shots=<dir>:
+    // open that channel tab, capture it after 12 s (tab.png) and quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tab-shot=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--tab-shot=")) || "").slice(11)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            if (step === 0 && conversation.tabNames.indexOf(name) < 0) return
+            if (step === 0) conversation.tab = name
+            else if (step === 4) window.contentItem.grabToImage(r => r.saveToFile(dir + "tab.png"))
+            else if (step === 5) Qt.quit()
+            step++
+        }
+    }
+
     // --chat-shot with --open-chat=<id> --shots=<dir>: open the chat,
     // capture it once it has loaded (chat.png) and quit.
     Timer {

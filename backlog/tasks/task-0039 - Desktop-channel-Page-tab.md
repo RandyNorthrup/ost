@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-06T04:53:00Z'
-updated_date: '2026-11-09T12:50:00Z'
+updated_date: '2026-11-09T15:28:00Z'
 labels:
   - desktop
 dependencies: []
@@ -32,6 +32,9 @@ Teams channels have a Page tab (after Shared) that OST doesn't show yet.
 - 1:1 pass: Teams renders the Page with Loop component code inside its own window (no URL), which OST can't host. OST shows Loop's real page with Loop's app frame hidden (top bar, side panel, tour, template gallery), edge to edge, and draws Teams' parts natively: the header row (page icon from its favicon, name, Shared locations, Copy component, See who has access) and the insert row (Table, Bulleted list, Checklist, Task list, Voting table, ...).
 - The insert row types Loop's "/" commands as real key presses through a native KeyTyper item (Qt key events to OST's own window); synthetic page events don't open Loop's menu. Tested on scratch copies in the test account's OneDrive (since recycled): each button inserts its block.
 - See who has access opens Loop's sharing menu; Loop's own toolbar stays laid out (invisible) so its menus anchor.
+
+- 2026-11-09: the Page tab was blank. Its embedded view was switched off on 11-06 (commit 7b048c6, before the 11-07 decision to embed what Teams embeds) and never restored. It is now restored: Page shows the channel's Loop page in place from the tab's content URL.
+- On a machine where OST's web profile isn't signed in yet (linuxlt), the tab shows Microsoft's sign-in in place. Teams has SSO for this; OST needs that profile signed in once.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

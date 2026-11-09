@@ -125,9 +125,12 @@ Rectangle {
     // Load a channel's tabs once it's known which team it's in.
     readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
     onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
-    // The channel tab showing a web page in place (Page: the channel's
-    // Loop page), when one is selected.
-    readonly property var webTab: null
+    // The channel tab showing its page in place, as Teams embeds it: the
+    // Page (the channel's Loop page), signed in with OST's web profile
+    // (scope decision 2026-11-07: what Teams embeds may be embedded).
+    // Notes (OneNote's officeunihost page) needs a TeamsJS host first
+    // (TASK-0053).
+    readonly property var webTab: channelTabs.find(t => t.name === tab && t.content_url && t.kind === "ChannelPage") || null
     function openTab(i) { if (i < tabNames.length) tab = i === 0 ? "" : tabNames[i] }
     readonly property bool composeFocused: input.activeFocus
     readonly property bool detailsOpen: participants.visible
@@ -2102,7 +2105,7 @@ Rectangle {
         active: !!root.webTab
         visible: active
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
-        sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; appId: root.webTab ? (root.webTab.app_id || "") : ""; home: root.webTab ? root.webTab.url : "" }
+        sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; appId: root.webTab ? (root.webTab.app_id || "") : ""; home: root.webTab ? root.webTab.content_url : "" }
     }
     // Tabs OST can't offer say so.
     Column {
