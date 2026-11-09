@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T05:30:00Z'
+updated_date: '2026-11-09T05:40:00Z'
 labels:
   - calls
   - meetings
@@ -64,4 +64,6 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - Timer moved to its own task (meeting timer app: ad-hoc, agenda, Run of Show).
 
 - Settings ▸ Accessibility settings: Teams' in-meeting Accessibility pane (captions settings, Monitoring participants: hide the compact window when minimized except while sharing). Sign language mode and Muted notification cards stay hidden until those features exist (TASK-0068 for the notice). Left in Settings ▸: Call health, chat bubbles, Mute notifications.
+
+- Settings ▸ Mute notifications / Allow notifications: per-call, suppresses message notifications while in the call (verified toggle live; message suppression by code path).
 <!-- SECTION:NOTES:END -->

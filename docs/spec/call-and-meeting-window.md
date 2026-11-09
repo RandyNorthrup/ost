@@ -497,6 +497,9 @@ only holds what is left (Merge, Park, Lock).
 
 ### 1.8g Settings ▸ and the in-meeting Accessibility pane (measured on winpc, 2026-11-09)
 - **Settings ▸ items.** Call health, Accessibility settings, a divider, "Don't show chat bubbles" / "Show chat bubbles", and "Mute notifications" / "Allow notifications".
+- **Mute notifications.** Per call (`muteNotificationsDuringMeetings` for the teamsCallId).
+  - While muted, message notifications don't show; calls and meetings still ring.
+  - The row reads "Allow notifications" with the bell glyph. Screen readers hear "Notifications muted" / "Notifications allowed".
   - Teams' layout config also lists Device settings, Privacy mode, Meeting options and Hide controls where they apply.
 - **Accessibility pane.**
   - Background #F5F5F5 under the rail header "Accessibility".

@@ -167,6 +167,9 @@ pub mod qobject {
         /// user property): {startCaptionsAutomatically,
         /// profanityFilterEnabled, …}.
         #[qproperty(QString, call_accessibility_json)]
+        /// More ▸ Settings ▸ Mute notifications: no message notifications
+        /// for the rest of this call (calls and meetings still ring).
+        #[qproperty(bool, call_notifications_muted)]
         /// Bumped when the meeting is locked or unlocked while we're in it
         /// (Teams' "This meeting is locked." / "unlocked." notice).
         #[qproperty(i32, call_lock_notices)]
@@ -1152,6 +1155,7 @@ pub struct BackendRust {
     call_captions_on: bool,
     call_captions_language: QString,
     call_accessibility_json: QString,
+    call_notifications_muted: bool,
     /// Live captions' recent results.
     captions: Vec<teams_cli::calling::transcript::Entry>,
     /// Captions started for us and our endpoint says we want them.
@@ -3881,6 +3885,8 @@ impl qobject::Backend {
 
     /// Forget the last call's captions (a new call starts without them).
     fn reset_captions(mut self: Pin<&mut Self>) {
+        // A new call starts with notifications allowed.
+        self.as_mut().set_call_notifications_muted(false);
         self.as_mut().rust_mut().captions.clear();
         self.as_mut().rust_mut().captions_published = false;
         self.as_mut().set_call_captions_json(QString::from("[]"));
@@ -4634,7 +4640,10 @@ impl qobject::Backend {
         // keep only mentions.
         let settings = load_settings();
         let setting = |k: &str| settings.get(k).and_then(|v| v.as_str()).map(str::to_string);
-        let banners_on = setting("notifications").as_deref() != Some("off");
+        // Muted for this call (More ▸ Settings ▸ Mute notifications).
+        let in_call = ["connected", "connecting", "calling"].contains(&self.rust().call_state.to_string().as_str());
+        let banners_on = setting("notifications").as_deref() != Some("off")
+            && !(in_call && self.rust().call_notifications_muted);
         let mentions_only = setting("notify_mentions_only").as_deref() == Some("on");
         let mentioned = self
             .rust()

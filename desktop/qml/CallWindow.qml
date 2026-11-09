@@ -466,6 +466,9 @@ Window {
         if (n === "LanguageSpeechMenuControl") return { label: "Language and speech", icon: "local-language-20" }
         if (n === "SettingsMenuControl") return { label: "Settings", icon: "settings-20" }
         if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "accessibility-20" }
+        if (n === "MuteNotificationsButton") return notificationsMuted
+            ? { label: "Allow notifications", icon: "alert-20" }
+            : { label: "Mute notifications", icon: "alert-off-20" }
         if (n === "ClosedCaptionsButton") return {
             label: captionsOn ? "Hide live captions" : "Show live captions",
             icon: "closed-caption-20", keys: "Alt+Shift+C", endCheck: captionsOn }
@@ -536,6 +539,9 @@ Window {
     /// The 'You're muted' notice while you speak muted (Accessibility ▸
     /// Muted notification; kept on this device).
     property bool showMutedNotice: true
+    /// More ▸ Settings ▸ Mute notifications (for this call).
+    property bool notificationsMuted: false
+    signal setNotificationsMuted(bool on)
     signal setShowMutedNotice(bool on)
     readonly property bool captionsAtTop: captionStyles.captionsPosition === "Top"
     readonly property var spokenLanguages: recordStart.languages.map(l => ({ code: l[0], name: l[1] }))
@@ -613,6 +619,11 @@ Window {
     function recordControl(name) {
         if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
         else if (name === "AccessibilitySettingsButton") side = side === "accessibility" ? "" : "accessibility"
+        else if (name === "MuteNotificationsButton") {
+            setNotificationsMuted(!notificationsMuted)
+            // Teams announces it to screen readers.
+            contentItem.Accessible.announce(notificationsMuted ? "Notifications allowed" : "Notifications muted")
+        }
         else if (name === "TranscriptPanelButton") toggleTranscript()
         else if (name === "RecordingButton") {
             if (recording) stopRecordingAsk.open()

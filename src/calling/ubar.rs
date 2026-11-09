@@ -475,7 +475,7 @@ impl Facts {
             // recorder provides them).
             "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.scheduled,
             // Settings ▸ Accessibility settings (the in-meeting pane).
-            "SettingsMenuControl" | "AccessibilitySettingsButton" => self.scheduled,
+            "SettingsMenuControl" | "AccessibilitySettingsButton" | "MuteNotificationsButton" => self.scheduled,
             _ => false,
         }
     }
