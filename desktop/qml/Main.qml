@@ -657,6 +657,13 @@ Window {
     Connections {
         target: backend
         function onMeetingActionFailed(action) { callWindow.meetingActionFailed(action) }
+        function onChatBubble(mri, name, text) {
+            callWindow.showChatBubble(mri, name, text)
+            if (Qt.application.arguments.indexOf("--join-chat-bubble") >= 0) {
+                console.warn("JOIN chat bubble", name, text)
+                bubbleShot.restart()
+            }
+        }
         function onMeetingReaction(mri, name) {
             callWindow.showReaction(mri, name)
             // --join-watch-reaction: capture the first reaction from someone else.
@@ -682,6 +689,7 @@ Window {
         }
     }
     Timer { id: nsiPopShot; interval: 600; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nsi-popover.png"))) }
+    Timer { id: bubbleShot; interval: 600; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-bubble.png"))) }
     Timer { id: reactionShot; interval: 400; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-their-reaction.png"))) }
     CallWindow {
         id: callWindow
@@ -763,6 +771,8 @@ Window {
         onSaveCaptionStyles: styles => { backend.setSetting("captionStyles", JSON.stringify(styles)); captionStyles = styles }
         showMutedNotice: backend.setting("showMutedNotice") !== "false"
         notificationsMuted: backend.callNotificationsMuted
+        chatBubblesSuppressed: backend.callChatBubblesSuppressed
+        onSetChatBubblesSuppressed: on => backend.callChatBubblesSuppressed = on
         onSetNotificationsMuted: on => backend.callNotificationsMuted = on
         onSetShowMutedNotice: on => { backend.setSetting("showMutedNotice", on ? "true" : "false"); showMutedNotice = on }
         onCopyMeetingJoinInfo: backend.copyMeetingJoinInfo()

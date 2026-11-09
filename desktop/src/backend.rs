@@ -170,6 +170,8 @@ pub mod qobject {
         /// More ▸ Settings ▸ Mute notifications: no message notifications
         /// for the rest of this call (calls and meetings still ring).
         #[qproperty(bool, call_notifications_muted)]
+        /// More ▸ Settings ▸ Don't show chat bubbles (for this call).
+        #[qproperty(bool, call_chat_bubbles_suppressed)]
         /// Bumped when the meeting is locked or unlocked while we're in it
         /// (Teams' "This meeting is locked." / "unlocked." notice).
         #[qproperty(i32, call_lock_notices)]
@@ -657,6 +659,10 @@ pub mod qobject {
         /// their MRI and the reaction's name.
         #[qsignal]
         fn meeting_reaction(self: Pin<&mut Backend>, mri: QString, name: QString);
+        /// A chat message in the call's chat from someone else (Teams'
+        /// chat bubble): their MRI, name and the message's text.
+        #[qsignal]
+        fn chat_bubble(self: Pin<&mut Backend>, mri: QString, name: QString, text: QString);
         /// A More actions request failed ("lock" or "unlock": Teams offers
         /// Try again).
         #[qsignal]
@@ -1156,6 +1162,7 @@ pub struct BackendRust {
     call_captions_language: QString,
     call_accessibility_json: QString,
     call_notifications_muted: bool,
+    call_chat_bubbles_suppressed: bool,
     /// Live captions' recent results.
     captions: Vec<teams_cli::calling::transcript::Entry>,
     /// Captions started for us and our endpoint says we want them.
@@ -3076,6 +3083,7 @@ impl qobject::Backend {
                     let qt2 = qt.clone();
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().typer_posted(&m);
+                        this.as_mut().maybe_chat_bubble(&m);
                         this.as_mut().maybe_notify(m, qt2)
                     });
                 }
@@ -3887,6 +3895,7 @@ impl qobject::Backend {
     fn reset_captions(mut self: Pin<&mut Self>) {
         // A new call starts with notifications allowed.
         self.as_mut().set_call_notifications_muted(false);
+        self.as_mut().set_call_chat_bubbles_suppressed(false);
         self.as_mut().rust_mut().captions.clear();
         self.as_mut().rust_mut().captions_published = false;
         self.as_mut().set_call_captions_json(QString::from("[]"));
@@ -4618,6 +4627,28 @@ impl qobject::Backend {
                 tokio::time::sleep(std::time::Duration::from_secs(60)).await;
             }
         });
+    }
+
+    /// Teams' chat bubble: someone else's message in the chat of the call
+    /// we're in, unless bubbles are off for this call.
+    fn maybe_chat_bubble(self: Pin<&mut Self>, m: &teams_cli::event_hub::PushedMessage) {
+        let in_call = self.rust().call_state.to_string() == "connected";
+        let thread = self.rust().call_thread_id.to_string();
+        if !in_call || thread.is_empty() || m.conversation_id != thread || self.rust().call_chat_bubbles_suppressed {
+            return;
+        }
+        let mine = self.rust().my_mri.as_deref().is_some_and(|me| me.eq_ignore_ascii_case(&m.sender_mri))
+            || (!m.sender_name.is_empty() && m.sender_name == self.rust().user_name.to_string());
+        if mine || m.text.trim().is_empty() {
+            return;
+        }
+        // Teams previews the first 200 characters.
+        let text: String = m.text.chars().take(200).collect();
+        self.chat_bubble(
+            QString::from(m.sender_mri.as_str()),
+            QString::from(m.sender_name.as_str()),
+            QString::from(text.as_str()),
+        );
     }
 
     /// Show a desktop notification for someone else's message, unless its

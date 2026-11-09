@@ -466,6 +466,9 @@ Window {
         if (n === "LanguageSpeechMenuControl") return { label: "Language and speech", icon: "local-language-20" }
         if (n === "SettingsMenuControl") return { label: "Settings", icon: "settings-20" }
         if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "accessibility-20" }
+        if (n === "ChatBubblesButton") return chatBubblesSuppressed
+            ? { label: "Show chat bubbles", icon: "chat-bubbles-20" }
+            : { label: "Don't show chat bubbles", icon: "chat-bubbles-off-20" }
         if (n === "MuteNotificationsButton") return notificationsMuted
             ? { label: "Allow notifications", icon: "alert-20" }
             : { label: "Mute notifications", icon: "alert-off-20" }
@@ -539,6 +542,19 @@ Window {
     /// The 'You're muted' notice while you speak muted (Accessibility ▸
     /// Muted notification; kept on this device).
     property bool showMutedNotice: true
+    /// More ▸ Settings ▸ Don't show chat bubbles (for this call).
+    property bool chatBubblesSuppressed: false
+    signal setChatBubblesSuppressed(bool on)
+    // Someone else's message in the call's chat: Teams' bubble, unless the
+    // chat is open or bubbles are off.
+    function showChatBubble(mri, name, text) {
+        if (chatBubblesSuppressed || side === "chat") return
+        const p = people.find(x => (x.id || "").toLowerCase() === (mri || "").toLowerCase())
+        chatBubble.show({ mri: mri, name: p && p.name ? p.name : name, text: text,
+                          guest: p ? !!p.guest : (mri || "").startsWith("8:teamsvisitor:"),
+                          // Teams badges the avatar; a guest's presence is unknown.
+                          presence: p && p.presence ? p.presence : "Unknown" })
+    }
     /// More ▸ Settings ▸ Mute notifications (for this call).
     property bool notificationsMuted: false
     signal setNotificationsMuted(bool on)
@@ -619,6 +635,7 @@ Window {
     function recordControl(name) {
         if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
         else if (name === "AccessibilitySettingsButton") side = side === "accessibility" ? "" : "accessibility"
+        else if (name === "ChatBubblesButton") setChatBubblesSuppressed(!chatBubblesSuppressed)
         else if (name === "MuteNotificationsButton") {
             setNotificationsMuted(!notificationsMuted)
             // Teams announces it to screen readers.
@@ -797,6 +814,17 @@ Window {
         id: captionsOverflow
         items: [{ label: "Open caption settings", icon: "settings-20", chevron: true }]
         onPicked: i => win.showCaptionSettings(captionsOverflow.parent)
+    }
+
+    // Chat bubbles: centred over the stage, 10.67 under the bar (or the
+    // captions at the top).
+    ChatBubble {
+        id: chatBubble
+        z: 50
+        x: stage.x + (stage.width - width) / 2
+        y: (captionsWindow.visible && win.captionsAtTop ? captionsWindow.y + captionsWindow.height : bar.y + bar.height) + 10.67
+        onOpenChat: win.side = "chat"
+        onMuteBubbles: win.setChatBubblesSuppressed(true)
     }
 
     // Stage

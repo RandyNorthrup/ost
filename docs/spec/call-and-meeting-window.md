@@ -497,6 +497,15 @@ only holds what is left (Merge, Park, Lock).
 
 ### 1.8g Settings ▸ and the in-meeting Accessibility pane (measured on winpc, 2026-11-09)
 - **Settings ▸ items.** Call health, Accessibility settings, a divider, "Don't show chat bubbles" / "Show chat bubbles", and "Mute notifications" / "Allow notifications".
+- **Chat bubbles** (ufd_chatBubble). Someone else's message in the call's chat shows while the chat pane is closed.
+  - One bubble at a time; a newer message replaces it. It lasts about 4 s (measured) and fades over 300 ms.
+  - Placement: 320 wide, centred over the stage, 10.67 under the bar.
+  - Card: #FAFAFA, radius 8, 0.67 #F0F0F0 border, 68 tall for one line and 88 for two.
+    - The sender's 32 px avatar with presence ("Unknown" for a guest) sits at x 12.67.
+    - Name: 12/20 #242424, then a guest's unverified glyph.
+    - "Mute these notifications" (the bell-snooze glyph) and Close, both 20 px.
+    - Message: 14/20 #616161, at most two lines, at x 56.67 and 40.67 down. Teams previews 200 characters.
+  - Clicking the bubble opens the chat. "Mute these notifications" turns bubbles off for the call, the same as Settings ▸ "Don't show chat bubbles", which then reads "Show chat bubbles".
 - **Mute notifications.** Per call (`muteNotificationsDuringMeetings` for the teamsCallId).
   - While muted, message notifications don't show; calls and meetings still ring.
   - The row reads "Allow notifications" with the bell glyph. Screen readers hear "Notifications muted" / "Notifications allowed".

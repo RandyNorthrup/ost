@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T05:40:00Z'
+updated_date: '2026-11-09T05:55:00Z'
 labels:
   - calls
   - meetings
@@ -66,4 +66,6 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - Settings ▸ Accessibility settings: Teams' in-meeting Accessibility pane (captions settings, Monitoring participants: hide the compact window when minimized except while sharing). Sign language mode and Muted notification cards stay hidden until those features exist (TASK-0068 for the notice). Left in Settings ▸: Call health, chat bubbles, Mute notifications.
 
 - Settings ▸ Mute notifications / Allow notifications: per-call, suppresses message notifications while in the call (verified toggle live; message suppression by code path).
+
+- Chat bubbles: Teams' bubble for others' messages in the call's chat (one at a time, ~4 s, 2-line clamp, presence, Mute these notifications / Close, click opens chat) and Settings ▸ Don't show / Show chat bubbles. Verified live with Guest 1 posting in the test meeting chat.
 <!-- SECTION:NOTES:END -->
