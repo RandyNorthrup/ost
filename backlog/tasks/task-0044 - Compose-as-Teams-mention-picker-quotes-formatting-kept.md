@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-09T14:36:00Z'
+updated_date: '2026-11-09T19:19:00Z'
 labels:
   - desktop
   - messages
@@ -25,6 +25,7 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - [ ] #1 @ opens Teams' mention picker (people, tags, everyone/channel/team per rules) and sends real mentions
 - [x] #2 Quoted replies compose and send as Teams' quote
 - [x] #3 Enter / Ctrl+Enter / Shift+Enter behave as Teams' setting rules
+- [ ] #4 Channel posts get Teams' post composer: Add a subject, and Announcement (the headline banner with its colour or picture, Add a subheading), sent and shown as Teams does
 <!-- AC:END -->
 
 ## Implementation Notes

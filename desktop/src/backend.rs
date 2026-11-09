@@ -917,6 +917,23 @@ pub mod qobject {
         fn open_thread_window(self: Pin<&mut Backend>, channel_id: &QString, root_id: &QString);
         #[qinvokable]
         fn close_thread_window(self: Pin<&mut Backend>, channel_id: &QString, root_id: &QString);
+        /// A whole channel in a window of its own (Teams' channel Open in
+        /// new window): its posts load into thread_windows_json under the
+        /// channel's id and stay live until it closes.
+        #[qinvokable]
+        fn open_channel_window(self: Pin<&mut Backend>, channel_id: &QString);
+        #[qinvokable]
+        fn close_channel_window(self: Pin<&mut Backend>, channel_id: &QString);
+        /// A new post from a channel window (its compose's rich text,
+        /// media and quote).
+        #[qinvokable]
+        fn send_channel_post(
+            self: Pin<&mut Backend>,
+            channel_id: &QString,
+            editor_html: &QString,
+            media_json: &QString,
+            quote_json: &QString,
+        );
         /// Files sent as a reply in a thread window.
         #[qinvokable]
         fn send_thread_files(
@@ -2302,14 +2319,25 @@ fn with_lies(
     timeline
 }
 
+/// A window's conversation: "win:<channel>" is a whole channel's window (its
+/// timeline kept apart from the open chat's), else "<channel>;messageid=…".
+fn window_conversation(key: &str) -> &str {
+    key.strip_prefix("win:").unwrap_or(key)
+}
+
+/// The channel a window's key belongs to.
+fn window_channel(key: &str) -> &str {
+    window_conversation(key).split(';').next().unwrap_or_default()
+}
+
 /// A thread window's messages with what is being sent to it; translations
 /// are kept per channel (Teams translates the channel's messages).
 fn with_thread_lies(
     thread: &str,
     mut timeline: Vec<api::messages::MessageView>,
 ) -> Vec<api::messages::MessageView> {
-    apply_translations(thread.split(';').next().unwrap_or_default(), &mut timeline);
-    let lies = outbox().for_conversation(thread);
+    apply_translations(window_channel(thread), &mut timeline);
+    let lies = outbox().for_conversation(window_conversation(thread));
     let arrived = api::outbox::merge_lies(&mut timeline, &lies);
     outbox().arrived(&arrived);
     timeline
@@ -2320,8 +2348,8 @@ fn with_thread_lies(
 /// into server_timelines.
 async fn load_thread(thread: &str) -> anyhow::Result<()> {
     let client = TeamsClient::new().await?;
-    let channel = thread.split(';').next().unwrap_or_default().to_string();
-    let page = api::messages::read_timeline_page(&client, thread, 200, None).await?;
+    let channel = window_channel(thread).to_string();
+    let page = api::messages::read_timeline_page(&client, window_conversation(thread), 200, None).await?;
     let mut timeline = page.messages;
     {
         let here = deleted_here().lock().unwrap();
@@ -6142,7 +6170,7 @@ impl qobject::Backend {
                 .rust()
                 .thread_windows
                 .iter()
-                .filter(|t| t.split(';').next() == Some(channel.as_str()))
+                .filter(|t| window_channel(t) == channel.as_str())
                 .cloned()
                 .collect();
             for t in open {
@@ -6376,7 +6404,7 @@ impl qobject::Backend {
             .thread_windows
             .iter()
             .find(|t| has(t))
-            .map(|t| t.split(';').next().unwrap_or_default().to_string())
+            .map(|t| window_channel(t).to_string())
             .unwrap_or(current)
     }
 
@@ -6393,7 +6421,7 @@ impl qobject::Backend {
             .as_object()
             .into_iter()
             .flatten()
-            .filter(|(k, _)| k.split(';').next() == Some(channel))
+            .filter(|(k, _)| window_channel(k) == channel)
             .flat_map(|(_, v)| v.as_array().cloned().unwrap_or_default())
             .collect();
         serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())
@@ -6410,7 +6438,7 @@ impl qobject::Backend {
             .rust()
             .thread_windows
             .iter()
-            .filter(|t| t.split(';').next() == Some(channel.as_str()))
+            .filter(|t| window_channel(t) == channel.as_str())
             .cloned()
             .collect();
         for t in open {
@@ -6436,6 +6464,61 @@ impl qobject::Backend {
         self.as_mut().rust_mut().thread_windows.retain(|t| *t != thread);
         server_timelines().lock().unwrap().remove(&thread);
         self.as_mut().refresh_thread_windows();
+    }
+
+    pub fn open_channel_window(mut self: Pin<&mut Self>, channel_id: &QString) {
+        let channel = channel_id.to_string();
+        if !channel.ends_with("@thread.tacv2") {
+            return;
+        }
+        let key = format!("win:{channel}");
+        if !self.rust().thread_windows.contains(&key) {
+            self.as_mut().rust_mut().thread_windows.push(key.clone());
+        }
+        self.as_mut().refresh_thread_windows();
+        self.as_mut().reload_thread_window(key);
+    }
+
+    pub fn close_channel_window(mut self: Pin<&mut Self>, channel_id: &QString) {
+        let key = format!("win:{}", channel_id);
+        self.as_mut().rust_mut().thread_windows.retain(|t| *t != key);
+        server_timelines().lock().unwrap().remove(&key);
+        self.as_mut().refresh_thread_windows();
+    }
+
+    pub fn send_channel_post(
+        mut self: Pin<&mut Self>,
+        channel_id: &QString,
+        editor_html: &QString,
+        media_json: &QString,
+        quote_json: &QString,
+    ) {
+        let channel = channel_id.to_string();
+        if !channel.ends_with("@thread.tacv2") {
+            return;
+        }
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (html, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        if html.trim().is_empty() {
+            return;
+        }
+        if html.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
+            self.as_mut()
+                .set_status_text(QString::from(api::outbox::TOO_LARGE_TO_SEND));
+            return;
+        }
+        let mentions = if mentions.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&mentions).unwrap_or_default()
+        };
+        let quote: Option<api::messages::Quote> =
+            serde_json::from_str(&quote_json.to_string()).ok();
+        let o = self.outgoing(&format!("win:{channel}"), channel.clone(), html, mentions, quote, String::new());
+        let _rt = runtime().enter();
+        outbox().submit(o);
     }
 
     /// Load a thread window's post and replies again.
@@ -7012,7 +7095,7 @@ impl qobject::Backend {
         let chat_id = self.chat_of(message_id);
         let channel = chat_id.split(';').next().unwrap_or_default().to_string();
         for (key, t) in server_timelines().lock().unwrap().iter_mut() {
-            if *key == chat_id || key.split(';').next() == Some(channel.as_str()) {
+            if *key == chat_id || window_channel(key) == channel.as_str() {
                 for m in t.iter_mut().filter(|m| m.id == message_id) {
                     f(m);
                 }

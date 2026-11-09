@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T17:38:00Z'
-updated_date: '2026-11-09T19:17:00Z'
+updated_date: '2026-11-09T19:34:00Z'
 labels:
   - desktop
 dependencies: []
@@ -49,4 +49,10 @@ Teams' channel header has a Meet now split button and More channel options, and 
   - the email dialog shows the channel's address.
 - Fixed: a hidden General is the team's isGeneralChannelFavorite (captured), not the channel's isFavorite.
 - Left: See new posts at top (layout), Open in new window, Manage channel (Settings / Analytics), Workflows, and a hidden channel's italic row and "See all channels".
+
+- Open in new window (ChannelWindow.qml): Teams' 588 x 493 channel window. Its header has Meet now (icon and chevron), Find and ···; the compact channel posts (cards 30 in, names over times, ChannelPosts.compact); Post in channel. The backend keeps the channel live under its own "win:" key. Verified: a post sent from the window while the main window showed another chat appears in Teams.
+- Research for the rest:
+  - Workflows embeds automations.teams.cloud.microsoft/webapps/workflows/prod/home (renderMode=modal, subContext=channelworkflows, channel and team params) under a native header.
+  - Manage channel Settings: Channel details, plus Moderation (General: spaceAdminSettings.userSettings.generalChannelSetting 0/1/2, written back whole).
+  - Analytics: {mt}/beta/analytics/teams/{team}/channels/{channel}/summary-timeseries.
 <!-- SECTION:NOTES:END -->

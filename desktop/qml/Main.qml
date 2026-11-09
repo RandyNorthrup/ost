@@ -3086,6 +3086,30 @@ Window {
         }
     }
 
+    // --channel-window-test with --open-chat=<channel id> --shots=<dir>:
+    // open the channel in a new window (cwin.png), move the main window to
+    // another chat, post from the window (cwin-posted.png, logged), quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-window-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var w: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => { if (w) w.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png")) }
+            if (step === 0) { w = window.openChannelWindow(id); if (!w) return }
+            else if (step === 3) { console.warn("CWIN", w.title, w.messages.length); shot("cwin") }
+            else if (step === 4) backend.selectChat("19:ef213c7c46cf4036b11608300e96fee4@thread.v2", "OST group test")
+            else if (step === 5) { w.postsForTest().startPost(); w.composeForTest().insertText("OST TEST 73 post from OST's channel window") }
+            else if (step === 6) w.composeForTest().submit()
+            else if (step === 11) { const p = w.messages.filter(m => (m.text || "").indexOf("OST TEST 73") >= 0); console.warn("CWIN posted", p.length, p.length ? p[0].id + " " + (p[0].send_state || "") : "", "main", backend.currentChatId); shot("cwin-posted") }
+            else if (step === 12) w.close()
+            else if (step === 13) Qt.quit()
+            step++
+        }
+    }
+
     // --channel-visibility-test=hide|show with --open-chat=<channel id>:
     // hide or show the channel, log the list after 15 s and quit.
     Timer {
@@ -3966,8 +3990,28 @@ Window {
         onRestore: ids => backend.driveRestore(ids)
         onPurge: ids => backend.drivePurge(ids)
     }
+    // A channel in a window of its own (its menu's Open in new window), one
+    // per channel: opening it again brings it forward.
+    Component { id: channelWindowComponent; ChannelWindow {} }
+    property var channelWindows: ({})
+    function openChannelWindow(channelId) {
+        const open = window.channelWindows[channelId]
+        if (open) { open.raise(); open.requestActivate(); return open }
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const team = teams.find(t => (t.channels || []).some(c => c.id === channelId))
+        if (!team) return null
+        const ch = team.channels.find(c => c.id === channelId)
+        const w = channelWindowComponent.createObject(null, { channelId: channelId, teamId: team.id, teamName: team.name, channelName: ch.name })
+        const all = Object.assign({}, window.channelWindows); all[channelId] = w; window.channelWindows = all
+        w.meetNow.connect((id, name) => preJoin.openMeetNow(id, "Meeting in \"" + name + "\""))
+        w.scheduleMeeting.connect(() => { rail.current = "calendar"; calendarView.newMeeting() })
+        w.closing.connect(() => { const rest = Object.assign({}, window.channelWindows); delete rest[channelId]; window.channelWindows = rest; w.destroy() })
+        w.show()
+        return w
+    }
     ChatList {
         id: chatList
+        onOpenChannelWindow: id => window.openChannelWindow(id)
         // An expanded tab takes the list's place (Teams' Expand tab).
         visible: rail.current === "chat" && !conversation.tabExpanded
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
@@ -4106,6 +4150,7 @@ Window {
         onOpenAgentStore: (id, isChannel) => agentStore.show(id, isChannel)
         // A channel's Meet now: Teams' pre-join, titled for the channel.
         onChannelMeetNow: preJoin.openMeetNow(conversation.chatId, "Meeting in \"" + conversation.chatName + "\"")
+        onOpenChannelWindow: id => window.openChannelWindow(id)
         myName: backend.userName
         visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0))
             || (rail.current === "activity" && activityView.selectedId.length > 0)

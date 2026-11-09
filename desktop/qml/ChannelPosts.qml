@@ -29,6 +29,10 @@ Item {
     }
     /// Posts whose earlier replies are shown.
     property var expanded: ({})
+    /// A narrow window (Teams' channel and thread windows, measured on
+    /// winpc 2026-11-09): cards 30 in from each side, names over times
+    /// (the post's time 20 under its name, a reply's 17.1 under).
+    property bool compact: false
 
     readonly property var posts: {
         const byRoot = {}, order = []
@@ -60,7 +64,7 @@ Item {
         onCountChanged: Qt.callLater(positionViewAtEnd)
         topMargin: 8; bottomMargin: 8
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        readonly property real cardW: Math.min(1100, width - 2 * (width > 480 ? 88 : 16))
+        readonly property real cardW: root.compact ? width - 62 : Math.min(1100, width - 2 * (width > 480 ? 88 : 16))
         delegate: Item {
             id: slot
             required property var modelData
@@ -73,7 +77,7 @@ Item {
             readonly property bool open: root.replying === modelData.id
             readonly property bool showAll: root.expanded[modelData.id] === true
             readonly property var shown: showAll || replies.length <= 3 ? replies : replies.slice(replies.length - 3)
-            x: (list.width - width) / 2
+            x: root.compact ? 30 : (list.width - width) / 2
             width: list.cardW
             height: col.height
             radius: 4
@@ -113,28 +117,29 @@ Item {
                         name: card.post ? card.post.sender : ""
                         photoId: card.post ? card.post.sender_mri : ""
                     }
-                    Row {
+                    Text {
                         visible: !postEdit.active
-                        x: card.post ? 60 : 18; y: card.post ? 22 : 14
-                        spacing: 10
-                        Text {
-                            text: card.post ? card.post.sender : "Earlier post"
-                            font.family: theme.font; font.pixelSize: theme.base
-                            color: card.post ? theme.text : theme.textSecondary
-                        }
-                        Text {
+                        x: card.post ? 60 : 18; y: !card.post ? 14 : root.compact ? 13.4 : 22
+                        text: card.post ? card.post.sender : "Earlier post"
+                        font.family: theme.font; font.pixelSize: theme.base
+                        lineHeight: root.compact ? 20 : 1; lineHeightMode: root.compact ? Text.FixedHeight : Text.ProportionalHeight
+                        color: card.post ? theme.text : theme.textSecondary
+                        Row {
                             visible: !!card.post
-                            y: 2
-                            text: card.post ? root.conversationStamp(card.post.time) : ""
-                            font.family: theme.font; font.pixelSize: theme.small
-                            color: theme.textSecondary
-                        }
-                        Text {
-                            visible: !!card.post && card.post.edited === true
-                            y: 2
-                            text: "Edited"
-                            font.family: theme.font; font.pixelSize: theme.small
-                            color: theme.textSecondary
+                            x: root.compact ? 0 : parent.implicitWidth + 10
+                            y: root.compact ? 20 : 2
+                            spacing: root.compact ? 8 : 10
+                            Text {
+                                text: card.post ? root.conversationStamp(card.post.time) : ""
+                                font.family: theme.font; font.pixelSize: theme.small
+                                color: theme.textSecondary
+                            }
+                            Text {
+                                visible: !!card.post && card.post.edited === true
+                                text: "Edited"
+                                font.family: theme.font; font.pixelSize: theme.small
+                                color: theme.textSecondary
+                            }
                         }
                     }
                     MessageText {
@@ -228,7 +233,7 @@ Item {
                                 // Editing, Teams' compose spans the card in the reply's
                                 // place, from the line above it.
                                 height: editing ? (repEdit.item ? repEdit.item.height : 0) - 7.4 + 11.4
-                                    : 20 + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 16
+                                    : (root.compact ? 34.2 : 20) + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 16
                                 z: repHover.hovered || repBar.hovered ? 2 : 1
                                 // A reply's indicator bar: 4 x 20 beside its avatar.
                                 Rectangle {
@@ -242,18 +247,21 @@ Item {
                                     x: 18; y: 0; size: 20
                                     name: rep.modelData.sender; photoId: rep.modelData.sender_mri
                                 }
-                                Row {
+                                Text {
                                     visible: !rep.editing
-                                    x: 50; y: 1.4
-                                    spacing: 8
-                                    Text { text: rep.modelData.sender; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
-                                    Text { text: root.conversationStamp(rep.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
-                                    Text { visible: rep.modelData.edited === true; text: "Edited"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                    x: 50; y: root.compact ? 0 : 1.4
+                                    text: rep.modelData.sender; font.family: theme.font; font.pixelSize: theme.small; color: theme.text
+                                    Row {
+                                        x: root.compact ? 0 : parent.implicitWidth + 8; y: root.compact ? 17.1 : 0
+                                        spacing: 8
+                                        Text { text: root.conversationStamp(rep.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                        Text { visible: rep.modelData.edited === true; text: "Edited"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                    }
                                 }
                                 MessageText {
                                     id: repBody
                                     visible: !rep.editing
-                                    x: 50; y: 20; width: card.width - 70
+                                    x: 50; y: root.compact ? 34.2 : 20; width: card.width - 70
                                     message: rep.modelData
                                 }
                                 Loader {
@@ -385,7 +393,7 @@ Item {
     // Post in channel
     Rectangle {
         id: postButton
-        x: (root.width - list.cardW) / 2
+        x: root.compact ? 30 : (root.width - list.cardW) / 2
         anchors.bottom: parent.bottom; anchors.bottomMargin: 25
         width: pbRow.implicitWidth + 32; height: 32; radius: theme.radius
         color: pbh.hovered ? theme.brandHover : theme.brandFill

@@ -109,6 +109,7 @@ fn main() {
         "qml/ChannelNotifyDialog.qml",
         "qml/ChannelEditDialog.qml",
         "qml/ChannelEmailDialog.qml",
+        "qml/ChannelWindow.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
         "qml/MeetingTimerStrip.qml",
