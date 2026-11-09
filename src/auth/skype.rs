@@ -13,6 +13,17 @@ pub struct AuthzResponse {
     pub tokens: Option<AuthzTokens>,
     #[serde(rename = "regionGtms")]
     pub region_gtms: Option<serde_json::Value>,
+    /// The user's licences (Teams' ECS filters and feature gates read it).
+    #[serde(rename = "licenseDetails")]
+    pub license_details: Option<serde_json::Value>,
+}
+
+/// What a token exchange gives back.
+pub struct Exchanged {
+    pub skype_token: String,
+    pub expires_in: Option<u64>,
+    pub region_gtms: Option<serde_json::Value>,
+    pub license_details: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,11 +38,7 @@ const AUTHZ_URL_WORK: &str = "https://teams.microsoft.com/api/authsvc/v1.0/authz
 const AUTHZ_URL_PERSONAL: &str = "https://teams.live.com/api/auth/v1.0/authz/consumer";
 
 /// Exchange an AAD access token for a Skype token.
-/// Returns (skype_token, expires_in_secs, region_gtms).
-pub async fn exchange_skype_token(
-    aad_token: &str,
-    personal: bool,
-) -> Result<(String, Option<u64>, Option<serde_json::Value>)> {
+pub async fn exchange_skype_token(aad_token: &str, personal: bool) -> Result<Exchanged> {
     let url = if personal {
         AUTHZ_URL_PERSONAL
     } else {
@@ -71,5 +78,10 @@ pub async fn exchange_skype_token(
         .skype_token
         .context("authsvc response missing 'skypeToken'")?;
 
-    Ok((skype_token, tokens.expires_in, authz.region_gtms))
+    Ok(Exchanged {
+        skype_token,
+        expires_in: tokens.expires_in,
+        region_gtms: authz.region_gtms,
+        license_details: authz.license_details,
+    })
 }

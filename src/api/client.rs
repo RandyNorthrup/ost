@@ -28,6 +28,11 @@ impl TeamsClient {
         self.config.tenant_id()
     }
 
+    /// Teams' authz `licenseDetails` for the signed-in user.
+    pub fn license_details(&self) -> Option<serde_json::Value> {
+        self.config.get_license_details()
+    }
+
     /// The signed-in user's sign-in name (user@domain).
     pub fn user_principal_name(&self) -> Option<String> {
         self.config.user_principal_name()

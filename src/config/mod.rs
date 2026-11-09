@@ -27,6 +27,9 @@ pub struct Config {
     pub recorder_token: Option<StoredToken>,
     /// Regional endpoint URLs from authsvc response (JSON stored as string for TOML compat)
     pub region_gtms: Option<String>,
+    /// Teams' authz `licenseDetails` (JSON as a string, like region_gtms).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license_details: Option<String>,
     /// True when the tokens above live in the desktop keyring instead of
     /// this file; the file then holds no secrets.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -178,6 +181,7 @@ impl Config {
         Self {
             tenant_id: self.tenant_id.clone(),
             region_gtms: self.region_gtms.clone(),
+            license_details: self.license_details.clone(),
             ..Self::default()
         }
     }
@@ -196,6 +200,16 @@ impl Config {
 
     pub fn get_region_gtms(&self) -> Option<serde_json::Value> {
         self.region_gtms
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+    }
+
+    pub fn set_license_details(&mut self, l: serde_json::Value) {
+        self.license_details = Some(l.to_string());
+    }
+
+    pub fn get_license_details(&self) -> Option<serde_json::Value> {
+        self.license_details
             .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
     }
@@ -263,6 +277,7 @@ impl TokenStore for Config {
         self.ic3_token = None;
         self.recorder_token = None;
         self.region_gtms = None;
+        self.license_details = None;
     }
 }
 

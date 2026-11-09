@@ -93,10 +93,13 @@ pub async fn refresh() -> Result<bool> {
 
     // Exchange for Skype token
     match exchange_skype_token(&tokens.access_token, false).await {
-        Ok((skype_tok, expires_in, region_gtms)) => {
-            config.set_skype_token(skype_tok, expires_in);
-            if let Some(gtms) = region_gtms {
+        Ok(x) => {
+            config.set_skype_token(x.skype_token, x.expires_in);
+            if let Some(gtms) = x.region_gtms {
                 config.set_region_gtms(gtms);
+            }
+            if let Some(l) = x.license_details {
+                config.set_license_details(l);
             }
             tracing::info!("Skype token refreshed");
         }
@@ -261,10 +264,13 @@ pub async fn finish_sign_in(pending: PendingSignIn) -> Result<Vec<&'static str>>
     let mut missing = Vec::new();
 
     match exchange_skype_token(&tokens.access_token, false).await {
-        Ok((skype_tok, expires_in, region_gtms)) => {
-            config.set_skype_token(skype_tok, expires_in);
-            if let Some(gtms) = region_gtms {
+        Ok(x) => {
+            config.set_skype_token(x.skype_token, x.expires_in);
+            if let Some(gtms) = x.region_gtms {
                 config.set_region_gtms(gtms);
+            }
+            if let Some(l) = x.license_details {
+                config.set_license_details(l);
             }
         }
         Err(e) => {

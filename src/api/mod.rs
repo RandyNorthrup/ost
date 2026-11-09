@@ -9,6 +9,7 @@ pub mod contacts;
 pub mod custom_emoji;
 pub mod directory;
 pub mod drive;
+pub mod ecs;
 pub mod emoticons;
 pub mod files;
 pub mod folders;

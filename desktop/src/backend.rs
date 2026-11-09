@@ -5993,6 +5993,22 @@ impl qobject::Backend {
                         this.as_mut().load_teams();
                         this.as_mut().folders_load();
                         this.as_mut().load_activity();
+                        // Teams' live settings (ECS), as Teams loads them
+                        // at start.
+                        runtime().spawn(async {
+                            let r = async {
+                                let client = TeamsClient::new().await?;
+                                api::ecs::load(&client, &cache_base()).await
+                            }
+                            .await;
+                            match r {
+                                Ok(()) => tracing::info!(
+                                    "ECS settings loaded (ring {})",
+                                    api::ecs::segment("TeamsRing").unwrap_or_default()
+                                ),
+                                Err(e) => tracing::warn!("ECS settings: {}", short_error(&e)),
+                            }
+                        });
                     }
                     Err(e) => {
                         this.as_mut().set_signed_in(false);
