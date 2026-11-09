@@ -27,6 +27,10 @@ pub struct FileAttachment {
     pub object_url: String,
     /// A sharing link, when the sender made one.
     pub share_url: String,
+    /// A deeplink's target: the channel tab it links ("tab::…"; Teams'
+    /// tab conversation post links its tab this way).
+    #[serde(default)]
+    pub item_id: String,
 }
 
 /// The attachments in a message's `properties.files` (JSON text or array).
@@ -69,11 +73,13 @@ pub fn parse_files(files: &serde_json::Value) -> Vec<FileAttachment> {
             let file_type = Some(s("fileType"))
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| ext_of(&name));
+            let item_id = if file_type == "deeplink" { s("itemid") } else { String::new() };
             Some(FileAttachment {
                 name,
                 file_type,
                 object_url,
                 share_url,
+                item_id,
             })
         })
         .collect()
@@ -439,6 +445,9 @@ mod tests {
         assert_eq!(got[0].file_type, "txt");
         assert!(got[0].share_url.ends_with("/abc"));
         assert!(parse_files(&serde_json::json!("not json")).is_empty());
+        // A tab conversation's post links its tab (captured from Teams).
+        let tab = parse_files(&serde_json::json!(r#"[{"itemid":"tab::de38","fileName":"Notes","fileType":"deeplink","fileInfo":{"serverRelativeUrl":""},"type":"deeplink","title":"Notes"}]"#));
+        assert_eq!((tab[0].name.as_str(), tab[0].file_type.as_str(), tab[0].item_id.as_str()), ("Notes", "deeplink", "tab::de38"));
         assert!(parse_files(&serde_json::json!([{ "fileType": "txt" }])).is_empty());
     }
 

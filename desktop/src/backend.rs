@@ -1053,8 +1053,9 @@ pub mod qobject {
             tab_json: &QString,
         );
         /// A channel tab's menu: "rename" (to `arg`), "left", "right" or
-        /// "remove" tab `tab_id`; the outcome goes to channelTabResult and
-        /// the tabs reload.
+        /// "remove" tab `tab_id`, or "converse" (Start conversation in its
+        /// Conversation pane; the outcome carries the new root post); the
+        /// outcome goes to channelTabResult and the tabs reload.
         #[qinvokable]
         fn channel_tab_change(
             self: Pin<&mut Backend>,
@@ -8925,6 +8926,9 @@ impl qobject::Backend {
             opens_in_browser: false,
             menu: Vec::new(),
             context_menu: Vec::new(),
+            can_converse: false,
+            conversation: String::new(),
+            icon: String::new(),
         };
         let tenant = teams_cli::config::Config::load()
             .ok()
@@ -8956,14 +8960,20 @@ impl qobject::Backend {
             arg.to_string(),
         );
         let qt = self.qt_thread();
+        let tabs_name = self.rust().channel_tabs_name.clone();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
                 match op.as_str() {
-                    "rename" => api::tabs::rename(&client, &channel, &tab, &arg).await,
-                    "remove" => api::tabs::remove(&client, &channel, &tab).await,
+                    "rename" => api::tabs::rename(&client, &channel, &tab, &arg).await.map(|_| String::new()),
+                    "remove" => api::tabs::remove(&client, &channel, &tab).await.map(|_| String::new()),
                     "left" | "right" => {
-                        api::tabs::move_tab(&client, &channel, &tab, op == "right").await
+                        api::tabs::move_tab(&client, &channel, &tab, op == "right").await.map(|_| String::new())
+                    }
+                    "converse" => {
+                        let tabs = api::tabs::channel_tabs(&client, &team, &channel, &tabs_name).await?;
+                        let t = tabs.iter().find(|t| t.id == tab).context("The tab is gone")?;
+                        api::tabs::start_conversation(&client, &channel, t).await
                     }
                     _ => Err(anyhow::anyhow!("Unknown tab change")),
                 }
@@ -8973,7 +8983,8 @@ impl qobject::Backend {
                 if let Err(e) = &result {
                     tracing::warn!("tab {op} failed: {e:#}");
                 }
-                let outcome = json!({ "op": op, "tab": tab, "ok": result.is_ok() }).to_string();
+                let root = result.as_ref().map(|r| r.clone()).unwrap_or_default();
+                let outcome = json!({ "op": op, "tab": tab, "ok": result.is_ok(), "root": root }).to_string();
                 this.as_mut()
                     .set_channel_tab_result(QString::from(outcome.as_str()));
                 let name = QString::from(this.rust().channel_tabs_name.as_str());

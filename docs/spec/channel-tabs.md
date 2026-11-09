@@ -269,7 +269,7 @@ Shared header (`dn`):
   - 61 tall, white, with a 0.67 px #E0E0E0 line under it, padding 0 7 0 20;
   - the app's icon, 32 px at 20, 14.2 down: the app's `largeImageUrl` on #FAFAFA, border-radius 50% with `corner-shape: superellipse(2)` (the squircle |x|^4 + |y|^4 = 1);
   - the **tab's** name (h2, 18/25.7 bold, #242424) 20 after the icon;
-  - the actions at the right: "Show tab conversation" when the tab can have one (TASK-0079), then **Collapse tab** (30 x 44, radius 4, the filled 20 px arrow-minimize in #242424, title "Collapse tab").
+  - the actions at the right: "Show tab conversation" when the tab can have one, then **Collapse tab** (30 x 44, radius 4, the filled 20 px arrow-minimize in #242424, title "Collapse tab").
 - Pixel check (1280 css wide in both): icon 88,62 to 120,94; "Shared" glyphs 141.3,72 to 197.3,85.3; the collapse glyph 1250,70 to 1266,86. OST matches within a pixel.
 
 ## Open tab in new window (popOut; measured on winpc, 2026-11-09)
@@ -286,6 +286,29 @@ Shared header (`dn`):
   - The tab's content under the header.
 - A channel Page (`popOutChannelPage`) opens in a 946-wide window titled with the product's name ("Microsoft Teams"; "OST" in OST). It has no tab header: the Loop page's own row (the page's icon and title, then Shared locations, Copy component, See who has access) and the page fill it.
 
+## Tab conversation (measured and captured on winpc, 2026-11-09)
+- **Which tabs:**
+  - app and website tabs (`canHaveTabConversation`) have one;
+  - a channel Page, Posts and Shared don't;
+  - the middle tier lists the root post as the tab's `messageId` ("0" while there is none).
+  - Its source is the channel thread's `tab::{id}` property, `replyChainId`.
+- **Button:** `btn-tab-conversation`, 32 x 31.3, just before Meet now in the channel header.
+  - "Show tab conversation" / "Hide tab conversation"; the Chat icon, filled and brand while the pane is open.
+  - In the tab's own window it is the first header action (32 x 20).
+  - The expanded tab header showed none for Notes.
+- **Pane:** `end-slot-conversation-pane`, 360 wide, a 0.67 px #E0E0E0 line on its left.
+  - Header: 61, padding 0 20, "Conversation" 16/22 semibold, Close 32 x 21.3.
+  - **No conversation yet:** centred, the 40 px chat glyph; 30 below "Go ahead and start talking!" (16/22 semibold); 15 below "Whatever you post here will also show up in the main channel." (14/20, 340 wide); 15 below "Start conversation" (brand, 31.3, padding 5 12).
+  - **Then:** the thread as a chat (bubbles, yours on the right) with "Reply in thread".
+- **Start conversation** (captured), in order:
+  1. `POST {chatsvc}/v1/users/ME/conversations/{channel}/messages`: Text "Added a new tab at the top of this channel. Here's a link.", with `properties.files` holding the tab as a `deeplink` file (itemid / id = the tab id, fileName / title = its name).
+  2. `PUT {chatsvc}/v1/threads/{channel}/properties?name=tab::{id}` with `{"tab::{id}": "<the property's JSON with replyChainId = the new post>"}`.
+  3. `PUT …/conversations/{channel}/rcmetadata/{root}` with `{"ch": root}`.
+- **The tab card** (`deep-link-chiclet-{name}`):
+  - white, radius 4, a 0.67 px #F0F0F0 border, shadow 0 2 4 -0.75 rgba(0,0,0,.12), padding 7 3 7 11;
+  - the app's icon (38, radius 4) and the tab's name (14/20 semibold) at 60.7;
+  - the bubble's width; clicking it opens the tab.
+
 ## Reload tab
 - Teams renders the tab again (`reloadTabTrigger`), so its own state goes.
 - In OST:
@@ -299,7 +322,7 @@ Shared header (`dn`):
 - [x] Rename and Remove dialogs matching platform-modal (the empty, 128-character and duplicate name errors).
 - [x] Copy link byte-identical to Teams' clipboard; Open in browser opens the tab's website.
 - [x] Reload, Expand and Open tab in new window (the header, the window and its actions, as measured); About and App permissions.
-- [ ] Show tab conversation (TASK-0079).
+- [x] Show tab conversation: the header button, the pane, Start conversation, the tab card, and replies (TASK-0079).
 - [x] Overflow ("+N" and the open tab's name).
 - [ ] Drag to reorder, not on predefined tabs (TASK-0080).
 - [ ] Settings (`updateTab`) for configurable app tabs.

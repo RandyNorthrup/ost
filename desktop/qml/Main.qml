@@ -2988,8 +2988,71 @@ Window {
             else if (step === 6) { console.warn("TABWIN collapsed", conversation.tabExpanded, chatList.visible, conversation.x); window.contentItem.grabToImage(r => r.saveToFile(dir + "collapsed.png")); if (t.menu.some(e => e.key === "reloadTab")) conversation.tabActionForTest(name, "reloadTab") }
             else if (step === 8 && t.menu.some(e => e.key === "popOut")) { popout = conversation.popOutTab(t) }
             else if (step === 11 && popout) { console.warn("TABWIN window", popout.title, popout.width, popout.height, JSON.stringify(popout.actionsForTest())); popout.contentItem.grabToImage(r => r.saveToFile(dir + "window.png")) }
-            else if (step === 12 && popout) popout.close()
-            else if (step === 13) Qt.quit()
+            else if (step === 12 && popout && popout.tab.can_converse) popout.act("conversation")
+            else if (step === 16 && popout) popout.contentItem.grabToImage(r => r.saveToFile(dir + "window-conversation.png"))
+            else if (step === 17 && popout) popout.close()
+            else if (step === 18) Qt.quit()
+            step++
+        }
+    }
+
+    // --tab-conversation-test=<tab name> with --open-chat=<channel id>
+    // --shots=<dir>: open the tab, Show tab conversation (tabconv.png),
+    // reply in it (tabconv-sent.png, logged) and quit; with
+    // --tab-conversation-start, press Start conversation first if the tab
+    // has none.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tab-conversation-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--tab-conversation-test=")) || "").slice(24)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            if (step === 0 && conversation.tabNames.indexOf(name) < 0) return
+            const conv = tabConversation.conversationForTest()
+            if (step === 0) conversation.tab = name
+            else if (step === 1) { console.warn("TABCONV tab", JSON.stringify(conversation.currentTab ? { id: conversation.currentTab.id, can: conversation.currentTab.can_converse, root: conversation.currentTab.conversation, icon: !!conversation.currentTab.icon } : null)); conversation.tabConversationTab = conversation.currentTab }
+            else if (step === 2 && Qt.application.arguments.indexOf("--tab-conversation-start") >= 0 && !tabConversation.rootId) tabConversation.startForTest()
+            else if (step === 5) { console.warn("TABCONV shown", tabConversation.visible, tabConversation.rootId, JSON.stringify(conv.messages.map(m => m.text + (m.files && m.files.length ? " [" + m.files.map(f => f.file_type + ":" + f.item_id).join(",") + "]" : "")))); window.contentItem.grabToImage(r => r.saveToFile(dir + "tabconv.png")) }
+            else if (step === 6 && tabConversation.rootId) { conv.insertTextForTest("OST TEST 72 reply in the Notes tab's conversation"); conv.sendForTest() }
+            else if (step === 10) { console.warn("TABCONV after", JSON.stringify(conv.messages.map(m => m.text + " " + (m.send_state || "")))); window.contentItem.grabToImage(r => r.saveToFile(dir + "tabconv-sent.png")) }
+            else if (step === 11) Qt.quit()
+            step++
+        }
+    }
+
+    // --tab-conversation-start-test=<tab name> with --open-chat=<channel>
+    // --shots=<dir>: open the tab in a window as if it had no conversation
+    // yet, Show tab conversation (start-empty.png), Start conversation, and
+    // log and capture the conversation that follows (start-done.png).
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tab-conversation-start-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var w: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--tab-conversation-start-test=")) || "").slice(30)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            const t = conversation.channelTabs.find(x => x.name === name)
+            if (step === 0) { if (!t || !conversation.teamName) return; console.warn("TABSTART before", t.conversation); w = conversation.popOutTab(Object.assign({}, t, { conversation: "" })) }
+            else if (step === 2) w.act("conversation")
+            else if (step === 4) w.contentItem.grabToImage(r => r.saveToFile(dir + "start-empty.png"))
+            else if (step === 5) w.startConversationForTest()
+            else if (step === 12) { console.warn("TABSTART after", t ? t.conversation : "", backend.channelTabResult); w.contentItem.grabToImage(r => r.saveToFile(dir + "start-done.png")) }
+            else if (step === 13) w.close()
+            else if (step === 14) Qt.quit()
             step++
         }
     }
@@ -3936,7 +3999,7 @@ Window {
         visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0))
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
-        anchors { top: titleBar.bottom; bottom: statusBar.top; right: parent.right
+        anchors { top: titleBar.bottom; bottom: statusBar.top; right: tabConversation.left
             left: conversation.tabExpanded ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
             leftMargin: rail.current === "chat" && chatList.mentionsOpen ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
@@ -3977,6 +4040,23 @@ Window {
         typingText: backend.typingText
         typingAvatar: backend.typingAvatar
         typingAvatarId: backend.typingAvatarId
+    }
+
+    // A channel tab's conversation, beside the channel (Teams' end slot).
+    TabConversationPane {
+        id: tabConversation
+        readonly property bool shown: conversation.visible && !!conversation.tabConversationTab
+        visible: shown
+        anchors { top: titleBar.bottom; bottom: statusBar.top; right: parent.right }
+        width: shown ? 360 : 0
+        // The tab as now listed (its conversation appears once started).
+        tab: conversation.tabConversationTab ? (conversation.channelTabs.find(t => t.id === conversation.tabConversationTab.id) || conversation.tabConversationTab) : null
+        teamId: conversation.teamId; teamName: conversation.teamName
+        channelId: conversation.chatId
+        myName: backend.userName
+        channelTabs: conversation.channelTabs
+        onClosed: conversation.tabConversationTab = null
+        onOpenTab: id => { const t = conversation.channelTabs.find(x => x.id === id); if (t) conversation.tab = t.name }
     }
 
     Rectangle {

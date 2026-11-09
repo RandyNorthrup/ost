@@ -35,6 +35,23 @@ Rectangle {
     /// Shown as a side pane (in the call window): a plain "Chat" header
     /// with a close button instead of the title, tabs and actions.
     property bool pane: false
+    /// The side pane's title ("Chat"; a tab's conversation says
+    /// "Conversation").
+    property string paneTitle: "Chat"
+    /// The pane header's measures: the call window's chat (title 16 bold at
+    /// 16, close 44 from the end) or a tab's conversation (16/22 semibold
+    /// at 20, close 32 x 21.3 at 20 from the end).
+    property bool paneTitleSemibold: false
+    property real paneTitleX: 16
+    property real paneCloseRight: 44
+    /// A channel post's thread shown as a chat (a tab's conversation): its
+    /// root post. Sends reply in that thread; no draft or typing is kept.
+    property string threadRoot: ""
+    property string threadChannel: ""
+    /// Channel tabs a message may link (a tab conversation's first post
+    /// links its tab): [{id, name, icon}].
+    property var linkedTabs: []
+    signal openLinkedTab(string tabId)
     signal closePane()
     /// In a channel: reply to a post, and whether a new post is being written.
     signal sendReply(string rootId, string text)
@@ -238,10 +255,13 @@ Rectangle {
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
         tabExpanded = false
+        tabConversationTab = null
         openedAt = new Date()
         tab = ""; finding = false; findField.text = ""; participants.visible = false; posting = false
-        if (draftChat) backend.setDraft(draftChat, root.plainText())
         editingId = ""
+        // A thread pane keeps no draft (its channel's draft is the channel's).
+        if (root.threadRoot) { draftChat = ""; root.setPlain(""); return }
+        if (draftChat) backend.setDraft(draftChat, root.plainText())
         root.setPlain(chatId ? backend.draftFor(chatId) : "")
         draftChat = chatId
     }
@@ -375,14 +395,14 @@ Rectangle {
         }
         Text {
             visible: root.pane
-            x: 16; anchors.verticalCenter: parent.verticalCenter
-            text: "Chat"
-            font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+            x: root.paneTitleX; anchors.verticalCenter: parent.verticalCenter
+            text: root.paneTitle
+            font.family: theme.font; font.pixelSize: 16; font.weight: root.paneTitleSemibold ? Font.DemiBold : Font.Bold
             color: theme.text
         }
         HeaderAction {
             visible: root.pane
-            x: parent.width - 44; icon: "dismiss-20"; Accessible.name: "Close chat"
+            x: parent.width - root.paneCloseRight; icon: "dismiss-20"; Accessible.name: "Close " + root.paneTitle.toLowerCase()
             onClicked: root.closePane()
         }
         Item {
@@ -650,7 +670,8 @@ Rectangle {
             color: haHover.hovered && !root.liveBand ? theme.hover : "transparent"
             HoverHandler { id: haHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: ha.clicked() }
-            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: root.hdrStrong }
+            property color iconColor: root.hdrStrong
+            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: ha.iconColor }
         }
         // 1:1: Teams' sticky call button (default-chat-call-audio-button /
         // -video-button, 24 x 31.3): the last choice placed from here, audio
@@ -680,7 +701,8 @@ Rectangle {
         }
         HeaderAction {
             id: oneToOnePeople
-            visible: !root.isSelf && !root.isGroup
+            // Teams' channel header has no people button.
+            visible: !root.isSelf && !root.isGroup && !root.isChannel
             x: root.isChannel ? parent.width - 151 : root.actionRight - 28; width: 28
             icon: "people-add-20"
             Accessible.name: root.isChannel ? "View participants" : "Start a group chat"
@@ -919,6 +941,19 @@ Rectangle {
             Accessible.role: Accessible.Button
             Accessible.name: "View and add participants, " + count + " participants"
         }
+        HeaderAction {
+            id: tabConvButton
+            visible: !root.pane && !!root.currentTab && root.currentTab.can_converse === true
+            readonly property bool open: !!root.tabConversationTab && root.tabConversationTab.id === (root.currentTab ? root.currentTab.id : "")
+            x: root.channelMeetLeft - 32; height: 31.3
+            icon: open ? "chat-20-filled" : "chat-20"
+            iconColor: open ? theme.brand : root.hdrStrong
+            onClicked: root.tabConversationTab = open ? null : root.currentTab
+            ToolTip.visible: tabConvHover.hovered; ToolTip.delay: 500
+            ToolTip.text: open ? "Hide tab conversation" : "Show tab conversation"
+            HoverHandler { id: tabConvHover }
+            Accessible.name: open ? "Hide tab conversation" : "Show tab conversation"
+        }
         // Meeting details (chat-meeting-details): 32 x 31.3, TextBulletList,
         // after the roster count (measured on winpc).
         HeaderAction {
@@ -928,17 +963,20 @@ Rectangle {
         }
         Rectangle {
             visible: !root.isSelf
-            x: root.contextLeft - 8; width: 1; height: 20
+            // (On a channel's other tabs the context buttons go, and it sits
+            // just before ···.)
+            x: root.isChannel && root.tab !== "" ? root.width - 43 - 8 : root.contextLeft - 8; width: 1; height: 20
             anchors.verticalCenter: parent.verticalCenter
             color: theme.divider
         }
+        // In a channel, Find and Channel details show only on Posts (Teams).
         HeaderAction {
-            visible: root.contextInline >= 1
+            visible: root.contextInline >= 1 && !(root.isChannel && root.tab !== "")
             x: root.contextLeft; icon: "search-20"; Accessible.name: "Find in chat"
             onClicked: root.toggleFind()
         }
         HeaderAction {
-            visible: root.contextInline >= 2
+            visible: root.contextInline >= 2 && !(root.isChannel && root.tab !== "")
             x: root.contextLeft + 32; icon: "panel-left-20"; Accessible.name: "Open chat details"
             onClicked: participants.visible = !participants.visible
         }
@@ -1680,11 +1718,44 @@ Rectangle {
                             id: fc
                             required property var modelData
                             readonly property string t: (modelData.file_type || "").toLowerCase()
-                            width: Math.min(318, msg.maxBubble - 2 * bubble.pad); height: 48
-                            radius: 8
-                            color: theme.searchFill
-                            border.color: theme.divider
+                            // A channel tab's link (Teams' deep-link-chiclet, measured
+                            // in a tab's conversation): white, radius 4, a #F0F0F0
+                            // line and a soft shadow, padding 7 3 7 11; the app's
+                            // icon (38, radius 4) and the tab's name (14 semibold)
+                            // 11.5 after it. Clicking opens the tab.
+                            readonly property bool tabLink: t === "deeplink"
+                            readonly property var linked: tabLink ? root.linkedTabs.find(x => x.id === modelData.item_id) || null : null
+                            width: Math.min(318, msg.maxBubble - 2 * bubble.pad)
+                            height: tabLink ? 52.3 : 48
+                            radius: tabLink ? 4 : 8
+                            color: tabLink ? theme.surface : theme.searchFill
+                            border.color: tabLink ? theme.pick("#F0F0F0", "#3D3D3D") : theme.divider
+                            border.width: tabLink ? 0.67 : 1
+                            FluentSurface { visible: fc.tabLink; z: -1; anchors.fill: parent; depth: 2; radius: 4 }
+                            Image {
+                                visible: fc.tabLink
+                                x: 11.2; y: 7.1; width: 38; height: 38
+                                source: fc.linked ? fc.linked.icon : ""
+                                sourceSize: Qt.size(76, 76)
+                                RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
+                            }
+                            Text {
+                                visible: fc.tabLink
+                                x: 60.7; anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 60.7 - 8
+                                elide: Text.ElideRight
+                                text: fc.modelData.name
+                                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                color: theme.text
+                            }
+                            HoverHandler { id: tabLinkHover; enabled: fc.tabLink; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { enabled: fc.tabLink; onTapped: root.openLinkedTab(fc.modelData.item_id) }
+                            ToolTip.visible: fc.tabLink && tabLinkHover.hovered
+                            ToolTip.delay: 500
+                            ToolTip.text: fc.modelData.name
                             FluentIcon {
+                                visible: !fc.tabLink
                                 x: 13; anchors.verticalCenter: parent.verticalCenter; size: 32
                                 name: ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(fc.t) >= 0 ? "file-image-32"
                                     : ["mp4", "mov", "avi", "mkv", "webm"].indexOf(fc.t) >= 0 ? "file-video-32"
@@ -1693,6 +1764,7 @@ Rectangle {
                                 color: theme.textSecondary
                             }
                             Text {
+                                visible: !fc.tabLink
                                 x: 52; anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 52 - 80
                                 text: fc.modelData.name
@@ -1703,6 +1775,7 @@ Rectangle {
                                 TapHandler { onTapped: Qt.openUrlExternally(fc.modelData.share_url || fc.modelData.object_url) }
                             }
                             Row {
+                                visible: !fc.tabLink
                                 anchors.right: parent.right; anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
                                 Repeater {
@@ -1724,7 +1797,7 @@ Rectangle {
                                 }
                             }
                             Accessible.role: Accessible.Link
-                            Accessible.name: "File " + modelData.name
+                            Accessible.name: (tabLink ? "Tab " : "File ") + modelData.name
                         }
                     }
                 }
@@ -1976,7 +2049,16 @@ Rectangle {
     property bool tabExpanded: false
     property var expandedTab: null
     property var expandedAbout: null
-    onTabChanged: tabExpanded = false
+    onTabChanged: { tabExpanded = false; tabConversationTab = null }
+    // A channel tab's conversation (Teams' btn-tab-conversation, measured
+    // on winpc 2026-11-09): for app and website tabs, a 32 x 31.3 button
+    // just before Meet now, "Show tab conversation" / "Hide tab
+    // conversation" (the filled icon in brand while open); the pane opens
+    // beside the channel (Main hosts it).
+    readonly property var currentTab: isChannel && tab ? (channelTabs.find(t => t.name === tab) || null) : null
+    property var tabConversationTab: null
+    // Where Teams' channel Meet now starts (its chevron 36 before ···).
+    readonly property real channelMeetLeft: width - 79 - (width >= 834 ? 97.17 : 32)
     function expandTab(t) {
         expandedTab = t
         expandedAbout = null
@@ -2001,7 +2083,7 @@ Rectangle {
         AppIcon {
             x: 20; anchors.verticalCenter: parent.verticalCenter
             width: 32; height: 32
-            source: root.expandedAbout ? root.expandedAbout.icon : ""
+            source: (root.expandedTab && root.expandedTab.icon) || (root.expandedAbout ? root.expandedAbout.icon : "")
         }
         Text {
             x: 72; anchors.verticalCenter: parent.verticalCenter
@@ -2585,6 +2667,19 @@ Rectangle {
     }
     // Send what's in the compose box: text, files, or both.
     function sendCompose() {
+        if (root.threadRoot) {
+            // A thread pane replies in its thread.
+            if (root.pendingFiles.length > 0) {
+                backend.sendThreadFiles(root.threadChannel, root.threadRoot, root.pendingFiles.join("\n"), root.plainText())
+                root.pendingFiles = []
+            } else if (root.plainText().trim().length > 0 || compose.mediaInUse().length > 0) {
+                backend.sendThreadReply(root.threadChannel, root.threadRoot, compose.formattedText(), JSON.stringify(compose.mediaInUse()), root.quoting ? JSON.stringify(root.quoting) : "")
+            }
+            compose.clear()
+            root.quoting = null
+            compose.formatting = false
+            return
+        }
         backend.setReplyQuote(root.quoting ? JSON.stringify(root.quoting) : "")
         backend.setNextImportance(compose.importance)
         if (root.pendingFiles.length > 0) {
@@ -2687,7 +2782,7 @@ Rectangle {
         anchors.leftMargin: root.pane ? 12 : root.composeGut; anchors.rightMargin: root.pane ? 12 : root.composeGut; anchors.bottomMargin: 6
         // Under 480 px Teams' compose is compact: its tools on their own row.
         compact: !root.pane && root.width < 480
-        placeholder: root.isChannel ? "Start a post" : "Type a message"
+        placeholder: root.threadRoot ? "Reply in thread" : root.isChannel ? "Start a post" : "Type a message"
         quote: root.quoting
         files: root.pendingFiles
         onQuoteDismissed: root.quoting = null

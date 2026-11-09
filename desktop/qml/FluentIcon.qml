@@ -26,6 +26,8 @@ Image {
         const xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function() {
             if (xhr.readyState !== XMLHttpRequest.DONE) return
+            // The icon may be gone by the time its file arrives.
+            if (!root) return
             if (xhr.responseText) {
                 IconCache.put(url, xhr.responseText)
                 // A reply for a name we've since changed from (the mic

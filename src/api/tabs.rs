@@ -68,6 +68,14 @@ pub struct Tab {
     pub menu: Vec<MenuItem>,
     /// The right-click menu.
     pub context_menu: Vec<MenuItem>,
+    /// Teams gives app and website tabs a conversation of their own
+    /// (canHaveTabConversation): Show / Hide tab conversation.
+    pub can_converse: bool,
+    /// That conversation's root post (the tab's replyChainId, the middle
+    /// tier's messageId); empty until someone starts it.
+    pub conversation: String,
+    /// The app's icon (its definition's largeImageUrl).
+    pub icon: String,
 }
 
 /// What a tab's URLs may be told about where they are, as Teams fills
@@ -366,19 +374,19 @@ fn str_at(t: &serde_json::Value, p: &str) -> String {
         .to_string()
 }
 
-/// Whether an app declares device permissions (middle tier app
-/// definitions, cached for the session).
-async fn declares_device_permissions(client: &TeamsClient, app_id: &str) -> bool {
-    static CACHE: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+/// What a tab needs from its app's definition: whether it declares device
+/// permissions, and its icon (largeImageUrl, https only). Cached.
+async fn app_facts(client: &TeamsClient, app_id: &str) -> (bool, String) {
+    static CACHE: Mutex<Option<HashMap<String, (bool, String)>>> = Mutex::new(None);
     if let Some(v) = CACHE
         .lock()
         .ok()
-        .and_then(|c| c.as_ref()?.get(app_id).copied())
+        .and_then(|c| c.as_ref()?.get(app_id).cloned())
     {
         return v;
     }
     let Ok((base, token)) = middle_tier(client).await else {
-        return false;
+        return (false, String::new());
     };
     let enc: String = url::form_urlencoded::byte_serialize(app_id.as_bytes()).collect();
     let v = async {
@@ -394,17 +402,21 @@ async fn declares_device_permissions(client: &TeamsClient, app_id: &str) -> bool
             .json()
             .await
             .ok()?;
-        Some(
+        Some((
             d.get("devicePermissions")
                 .and_then(|p| p.as_array())
                 .is_some_and(|p| !p.is_empty()),
-        )
+            https_only(d.get("largeImageUrl").and_then(|v| v.as_str()).unwrap_or_default()),
+        ))
     }
-    .await
-    .unwrap_or(false);
+    .await;
+    // Failures aren't cached (the next load asks again).
+    let Some(v) = v else {
+        return (false, String::new());
+    };
     if let Ok(mut c) = CACHE.lock() {
         c.get_or_insert_with(HashMap::new)
-            .insert(app_id.to_string(), v);
+            .insert(app_id.to_string(), v.clone());
     }
     v
 }
@@ -626,14 +638,20 @@ pub async fn channel_tabs(
         channel_name: channel_name.to_string(),
     };
     let mut perms = HashMap::new();
+    let mut icons = HashMap::new();
     for t in &pinned {
         let app = str_at(t, "/appId");
-        if let std::collections::hash_map::Entry::Vacant(e) = perms.entry(app) {
-            let p = declares_device_permissions(client, e.key()).await;
+        if let std::collections::hash_map::Entry::Vacant(e) = perms.entry(app.clone()) {
+            let (p, icon) = app_facts(client, e.key()).await;
             e.insert(p);
+            icons.insert(app, icon);
         }
     }
-    Ok(tabs_from(&pinned, &ctx, can_update, &perms))
+    let mut tabs = tabs_from(&pinned, &ctx, can_update, &perms);
+    for t in tabs.iter_mut() {
+        t.icon = icons.get(&t.app_id).cloned().unwrap_or_default();
+    }
+    Ok(tabs)
 }
 
 fn tabs_from(
@@ -655,6 +673,9 @@ fn tabs_from(
         opens_in_browser: false,
         menu: Vec::new(),
         context_menu: Vec::new(),
+        can_converse: false,
+        conversation: String::new(),
+        icon: String::new(),
     }];
     for t in pinned {
         let id = str_at(t, "/id");
@@ -679,6 +700,11 @@ fn tabs_from(
             opens_in_browser: kind == Kind::Website,
             menu: Vec::new(),
             context_menu: Vec::new(),
+            can_converse: matches!(kind, Kind::Extension | Kind::Website | Kind::OneNote) && id.starts_with("tab:"),
+            conversation: Some(str_at(t, "/messageId"))
+                .filter(|m| !m.is_empty() && m != "0" && m.bytes().all(|b| b.is_ascii_digit()))
+                .unwrap_or_default(),
+            icon: String::new(),
             id,
             app_id,
             kind,
@@ -801,6 +827,126 @@ pub async fn remove(client: &TeamsClient, channel_id: &str, tab: &str) -> Result
         .await?
         .error_for_status()?;
     Ok(())
+}
+
+/// The post that starts a tab's conversation, as Teams sends it ("Start
+/// conversation" in the tab's Conversation pane, captured 2026-11-09): the
+/// text "Added a new tab at the top of this channel. Here's a link." with
+/// the tab as a deeplink file.
+pub fn conversation_post(
+    channel_id: &str,
+    tab: &Tab,
+    me: &str,
+    display_name: &str,
+    client_message_id: &str,
+    now: &str,
+) -> serde_json::Value {
+    // In Teams' key order (the property is a string, compared as sent).
+    let q = |v: &str| serde_json::Value::String(v.to_string()).to_string();
+    let files = format!(
+        r#"[{{"itemid":{id},"fileName":{name},"fileType":"deeplink","fileInfo":{{"serverRelativeUrl":""}},"fileChicletState":{{}},"@type":"http://schema.skype.com/File","version":2,"id":{id},"type":"deeplink","title":{name},"botFileProperties":{{}},"filePreview":{{}}}}]"#,
+        id = q(&tab.id),
+        name = q(&tab.name)
+    );
+    serde_json::json!({
+        "id": "-1",
+        "type": "Message",
+        "conversationid": channel_id,
+        "conversationLink": format!("blah/{channel_id}"),
+        "from": me,
+        "fromUserId": me,
+        "composetime": now,
+        "originalarrivaltime": now,
+        "content": "Added a new tab at the top of this channel. Here's a link.",
+        "messagetype": "Text",
+        "contenttype": "Text",
+        "imdisplayname": display_name,
+        "clientmessageid": client_message_id,
+        "callId": "",
+        "state": 0,
+        "version": "0",
+        "amsreferences": [],
+        "properties": {
+            "importance": "",
+            "title": "",
+            "links": "[]",
+            "mentions": "[]",
+            "onbehalfof": null,
+            "files": files,
+            "formatVariant": "TEAMS",
+        },
+    })
+}
+
+/// The channel thread's `tab::…` property with the conversation's root set
+/// (Teams keeps every other field as it was).
+pub fn with_reply_chain(property: &str, root: &str) -> Result<String> {
+    let mut v: serde_json::Value = serde_json::from_str(property).context("Tab property")?;
+    v.as_object_mut()
+        .context("Tab property")?
+        .insert("replyChainId".into(), serde_json::Value::String(root.into()));
+    Ok(v.to_string())
+}
+
+/// Start a tab's conversation as Teams does: post the tab's link in the
+/// channel, make that post the tab's reply chain (its thread property) and
+/// mark the chain read. Returns the root post's id.
+pub async fn start_conversation(client: &TeamsClient, channel_id: &str, tab: &Tab) -> Result<String> {
+    if !tab.can_converse {
+        bail!("This tab has no conversation");
+    }
+    let base = client.chat_service_url();
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .context("Not signed in")?;
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let cmid = super::outbox::new_client_message_id();
+    let body = conversation_post(
+        channel_id,
+        tab,
+        &me,
+        &client.display_name().unwrap_or_default(),
+        &cmid,
+        &now,
+    );
+    let url = format!(
+        "{base}/v1/users/ME/conversations/{}/messages",
+        encode_uri_component(channel_id)
+    );
+    let reply: serde_json::Value = client.chat_post(&url, &body).await?.json().await.context("Post reply")?;
+    let root = reply
+        .get("OriginalArrivalTime")
+        .and_then(|v| v.as_i64())
+        .context("The post has no id")?
+        .to_string();
+    // The tab's thread property, with the root.
+    let thread_url = format!("{base}/v1/threads/{}?view=msnp24Equivalent", encode_uri_component(channel_id));
+    let thread: serde_json::Value = client.chat_get(&thread_url).await?.json().await.context("Channel thread")?;
+    let name = &tab.id;
+    let property = thread
+        .pointer("/properties")
+        .and_then(|p| p.get(name))
+        .and_then(|v| v.as_str())
+        .context("The tab isn't in the channel's properties")?;
+    let updated = with_reply_chain(property, &root)?;
+    let prop_url = format!(
+        "{base}/v1/threads/{}/properties?name={}",
+        encode_uri_component(channel_id),
+        encode_uri_component(name)
+    );
+    client
+        .chat_request(reqwest::Method::PUT, &prop_url, &serde_json::json!({ name: updated }))
+        .await?;
+    let rc_url = format!(
+        "{base}/v1/users/ME/conversations/{}/rcmetadata/{root}",
+        encode_uri_component(channel_id)
+    );
+    let ch: i64 = root.parse().context("Post id")?;
+    client
+        .chat_request(reqwest::Method::PUT, &rc_url, &serde_json::json!({ "ch": ch }))
+        .await?;
+    Ok(root)
 }
 
 #[cfg(test)]
@@ -933,6 +1079,55 @@ mod tests {
     }
 
     #[test]
+    fn tab_conversation_post_is_teams() {
+        let tab = Tab {
+            id: "tab::de385e42-cca1-4ce5-9d50-68995918f19b".into(),
+            name: "Notes".into(),
+            app_id: "0d820ecd-def2-4297-adad-78056cde7c78".into(),
+            kind: Kind::Extension,
+            entity_id: String::new(),
+            content_url: String::new(),
+            website_url: String::new(),
+            order: 10000.0,
+            draggable: true,
+            opens_in_browser: false,
+            menu: Vec::new(),
+            context_menu: Vec::new(),
+            can_converse: true,
+            conversation: String::new(),
+            icon: String::new(),
+        };
+        let v = conversation_post("19:a@thread.tacv2", &tab, "8:orgid:me", "OST Test 1", "123", "2026-11-09T17:31:58.118Z");
+        assert_eq!(v["content"], "Added a new tab at the top of this channel. Here's a link.");
+        assert_eq!(v["messagetype"], "Text");
+        assert_eq!(v["conversationLink"], "blah/19:a@thread.tacv2");
+        // Teams' captured files property, byte for byte.
+        assert_eq!(
+            v["properties"]["files"],
+            r#"[{"itemid":"tab::de385e42-cca1-4ce5-9d50-68995918f19b","fileName":"Notes","fileType":"deeplink","fileInfo":{"serverRelativeUrl":""},"fileChicletState":{},"@type":"http://schema.skype.com/File","version":2,"id":"tab::de385e42-cca1-4ce5-9d50-68995918f19b","type":"deeplink","title":"Notes","botFileProperties":{},"filePreview":{}}]"#
+        );
+        let prop = r#"{"id":"tab::x","name":"Notes","order":10000,"settings":{"websiteUrl":"https://onenote.com/"}}"#;
+        let out: serde_json::Value = serde_json::from_str(&with_reply_chain(prop, "1794245518435").unwrap()).unwrap();
+        assert_eq!(out["replyChainId"], "1794245518435");
+        assert_eq!(out["settings"]["websiteUrl"], "https://onenote.com/");
+    }
+
+    #[test]
+    fn tabs_know_their_conversation() {
+        let pinned = vec![
+            serde_json::json!({"appId": "0d820ecd-def2-4297-adad-78056cde7c78", "id": "tab::n", "name": "Notes", "order": 10000.0, "messageId": "1794245518435", "configuration": {"entityId": "NOTES"}}),
+            serde_json::json!({"appId": "0d820ecd-def2-4297-adad-78056cde7c78", "id": "tab::m", "name": "More", "order": 10001.0, "messageId": "0", "configuration": {"entityId": "X"}}),
+            serde_json::json!({"appId": PAGES_APP, "id": "tab::p", "name": "Page", "order": 10.0, "directive": "channel-page-tab", "configuration": {}}),
+        ];
+        let ctx = TabContext::default();
+        let tabs = tabs_from(&pinned, &ctx, true, &HashMap::new());
+        let by = |n: &str| tabs.iter().find(|t| t.name == n).unwrap().clone();
+        assert!(by("Notes").can_converse && by("Notes").conversation == "1794245518435");
+        assert!(by("More").can_converse && by("More").conversation.is_empty());
+        assert!(!by("Page").can_converse && !by("Posts").can_converse);
+    }
+
+    #[test]
     fn copy_link_is_teams_deep_link() {
         // djb2 as JS computes it (int32 shift, uint32 result).
         assert_eq!(djb2(""), 5381);
@@ -950,6 +1145,9 @@ mod tests {
             opens_in_browser: false,
             menu: Vec::new(),
             context_menu: Vec::new(),
+            can_converse: false,
+            conversation: String::new(),
+            icon: String::new(),
         };
         let (link, html) = copy_link(&tab, "19:ab@thread.tacv2", "g-1", "t-1");
         assert_eq!(

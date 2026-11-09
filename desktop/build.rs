@@ -104,6 +104,7 @@ fn main() {
         "qml/MessageHost.qml",
         "qml/MessageText.qml",
         "qml/ThreadWindow.qml",
+        "qml/TabConversationPane.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
         "qml/MeetingTimerStrip.qml",
