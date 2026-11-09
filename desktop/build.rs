@@ -81,6 +81,7 @@ fn main() {
         "qml/MeetingInfoPane.qml",
         "qml/AudioSettingsPane.qml",
         "qml/RecordStartDialog.qml",
+        "qml/TranscriptPane.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

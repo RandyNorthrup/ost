@@ -81,6 +81,9 @@ pub struct OutgoingCall {
     /// The meeting's call recorder's command URL, once the roster names it
     /// (Record and transcribe).
     recorder_url: Option<String>,
+    /// The meeting's real-time activity feed `getArtifacts` link (the
+    /// stored transcript).
+    artifacts_link: Option<String>,
     /// The conversation controller (`conversationController`): deleting it
     /// ends the meeting for everyone.
     controller: Option<String>,
@@ -592,6 +595,13 @@ impl OutgoingCall {
         );
         tracing::info!(?command, "recorder command");
         super::recorder::send(&self.http, &url, &token, &self.call_id, &body).await
+    }
+
+    /// The meeting's stored transcript and transcript starts and stops
+    /// (Teams' Transcript pane, on opening).
+    pub async fn transcript_history(&self) -> Result<Vec<super::transcript::Entry>> {
+        let link = self.artifacts_link.clone().context("The meeting has no transcript store")?;
+        super::transcript::history(&self.http, &link, &self.call_id).await
     }
 
     /// The meeting's title, times, location and calendar link (Meeting info).
@@ -1891,6 +1901,9 @@ async fn start(
         recorder_url: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
             .and_then(|v| super::recorder::command_url(&v)),
+        artifacts_link: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| super::transcript::artifacts_link(&v)),
         controller,
         invite_url,
         mute_link,

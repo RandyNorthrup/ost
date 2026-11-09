@@ -153,6 +153,9 @@ pub mod qobject {
         /// Teams' Meeting info pane: {title, hours, schedule, location,
         /// body (HTML), canCopy}, or "" before it's loaded.
         #[qproperty(QString, call_meeting_info_json)]
+        /// Teams' Transcript pane: [{id, kind (speech, started,
+        /// stopped), userId, name, text, atMs}], oldest first.
+        #[qproperty(QString, call_transcript_json)]
         /// Bumped when the meeting is locked or unlocked while we're in it
         /// (Teams' "This meeting is locked." / "unlocked." notice).
         #[qproperty(i32, call_lock_notices)]
@@ -472,6 +475,10 @@ pub mod qobject {
         /// meeting_action_failed(command).
         #[qinvokable]
         fn recorder_command(self: Pin<&mut Backend>, command: &QString, language: &QString, audio_only: bool);
+        /// Read the meeting's stored transcript into call_transcript_json
+        /// (Teams does on opening the Transcript pane).
+        #[qinvokable]
+        fn load_transcript(self: Pin<&mut Backend>);
         /// Fill call_meeting_info_json for Teams' Meeting info pane.
         #[qinvokable]
         fn load_meeting_info(self: Pin<&mut Backend>);
@@ -1117,6 +1124,9 @@ pub struct BackendRust {
     call_recording_state: QString,
     call_recording_tip: QString,
     call_meeting_info_json: QString,
+    call_transcript_json: QString,
+    /// The Transcript pane's rows.
+    transcript: Vec<teams_cli::calling::transcript::Entry>,
     /// What Copy join info copies (HTML, text).
     meeting_join_info: (String, String),
     /// What the meeting's call recorder does (for the recording
@@ -2022,6 +2032,17 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |this| {
                 this.meeting_reaction(QString::from(mri.as_str()), QString::from(name.as_str()))
             });
+        }
+        return;
+    }
+    // The meeting's speech recognition (the Transcript pane).
+    if json.contains("\"callAgentPath\":\"ost/transcript/\"") {
+        let rows = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v.get("body").map(teams_cli::calling::transcript::from_live))
+            .unwrap_or_default();
+        if !rows.is_empty() {
+            let _ = qt.queue(move |this| this.show_transcript(rows, false));
         }
         return;
     }
@@ -3137,6 +3158,7 @@ impl qobject::Backend {
         self.as_mut().set_call_scheduled(false);
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
+        self.as_mut().show_transcript(Vec::new(), true);
         self.as_mut().set_call_muted(false);
         self.as_mut().set_call_state(QString::from("calling"));
         let qt = self.qt_thread();
@@ -3291,6 +3313,7 @@ impl qobject::Backend {
         self.as_mut().set_call_scheduled(false);
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
+        self.as_mut().show_transcript(Vec::new(), true);
         self.as_mut().set_call_meeting(true);
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
@@ -3379,6 +3402,7 @@ impl qobject::Backend {
         self.as_mut().set_call_ai_on(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_meeting_info_json(QString::default());
+        self.as_mut().show_transcript(Vec::new(), true);
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!("join meeting");
         let qt = self.qt_thread();
@@ -3757,6 +3781,35 @@ impl qobject::Backend {
             if let Err(e) = result {
                 tracing::warn!(command = %name, "recorder: {}", short_error(&e));
                 let _ = qt.queue(move |this| this.meeting_action_failed(QString::from(name.as_str())));
+            }
+        });
+    }
+
+    /// Add rows to the Transcript pane (`reset`: start over).
+    fn show_transcript(mut self: Pin<&mut Self>, rows: Vec<teams_cli::calling::transcript::Entry>, reset: bool) {
+        if reset {
+            self.as_mut().rust_mut().transcript.clear();
+        }
+        teams_cli::calling::transcript::merge(&mut self.as_mut().rust_mut().transcript, rows);
+        let json = serde_json::to_string(&self.rust().transcript).unwrap_or_else(|_| "[]".into());
+        if self.rust().call_transcript_json.to_string() != json {
+            self.as_mut().set_call_transcript_json(QString::from(json.as_str()));
+        }
+    }
+
+    pub fn load_transcript(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = match call_slot().lock().await.outgoing.as_ref() {
+                Some(call) => call.transcript_history().await,
+                None => return,
+            };
+            match result {
+                Ok(rows) => {
+                    tracing::info!(rows = rows.len(), "transcript history");
+                    let _ = qt.queue(move |this| this.show_transcript(rows, false));
+                }
+                Err(e) => tracing::warn!("transcript history: {}", short_error(&e)),
             }
         });
     }

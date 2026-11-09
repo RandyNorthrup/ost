@@ -422,6 +422,33 @@ only holds what is left (Merge, Park, Lock).
   - The reply is `{CorrelationId}`; the roster's processingModes then change.
 - **Roster.** The recorder is hidden: its endpoint has `__platform.ui.hidden`, though not every update repeats it. Its updates can arrive out of order, so a participant's `version` decides.
 
+### 1.8e Transcript pane (`call-transcript-panel`; measured on winpc, 2026-11-09)
+- **Opening it.** More ▸ Record and transcribe ▸ Show transcript / Hide transcript ✓ (TranscriptPanelButton, `transcript-panel-button`).
+  - The row appears once a transcript has run in the meeting (Teams' `hasBeenStarted`).
+  - Its check is 16 px, 6 px from the row's end.
+  - Teams opens the pane for whoever starts the transcript.
+- **Header.** Like the other side panes: "Transcript" (16/22 bold, at 20.67, 19.67), then Language settings (32 × 31.33 at x 276) and Close (at x 308).
+- **Captions message bar.** 84 tall, #F5F5F5, shown while live captions are available.
+  - The info glyph (20, #616161) and "Follow the conversation better in real time by using live captions." (14/20, at 40.67, 283.33 wide).
+  - Dismiss (24 × 23.33 at x 324).
+  - "Switch to live captions" (23.33 tall, 14/16 semibold, #D1D1D1 hairline, radius 4, 12 from the right).
+- **List.** From y 145 under the bar, else under the header; the runway is 10 px in.
+  - Above the first row: the info glyph (16, at 21.67) and "AI-generated content may be incorrect" (14/20, at 47.67), 12 down.
+  - Transcript start or stop: the record glyph (16, #424242, at 21.67, 11 down) and "<name> started transcription" / "stopped transcription" (14/20 at 47.67, 9 down); 31 tall.
+  - Speech: a 32 px avatar (x 10.67, 13.19 down); the name (12/20 semibold, x 52.67, 12.53 down); a guest's unverified glyph 4 px after; the time ("6:22 PM", 12/16 #616161) 8 px after; the text (14/20, x 52.67, 30.53 down, 259.33 wide).
+  - The same speaker's next rows drop the header: text 9.2 down.
+  - A new header starts when the speaker id changes or an event comes between. Every row has 2 px below.
+- **Follow.** The list stays on the newest row unless you scroll up. Then "Go to current" appears: primary, 125.16 × 28, 20 px from the right and bottom, padding 0 8 1 5, a 20 px arrow-down glyph and 14/28 semibold text.
+- **Data.**
+  - Live: the media processor's speech recognition on the MCP data channel ("main-channel"), in frames headed `10 0b 83`. The JSON is `{recognitionResults:[{id, userId, displayName, text, isFinal, timestampAudioSent (100 ns since 1900), …}]}`. The pane lists the finals.
+  - Stored, read on opening: POST `{"artifactTypes":["Transcript","CallEvents"],"maxResults":-1}` to the join response's `meetingDetails.realTimeActivityFeedDetails.links.getArtifacts`. It uses the IC3 token, `x-ms-session-id`, `x-ms-correlation-id` and `x-microsoft-skype-chain-id`.
+  - Transcript entries: `jsonContent {entryId, text, speakerId "<oid>@<tenant>", displayName, startTime, …}`.
+  - CallEvents: `{eventType TranscriptStarted|TranscriptStopped|…, userId, displayName}`.
+  - Teams merges the two by time.
+- **Speaker ids.** Teams resolves "<oid>@<tenant>" to "8:orgid:<oid>", leaves "<n>@local" as is (its name "@n" reads "Speaker n"), and adds "8:" to bare ids.
+  - So a guest's stored rows (8:orgid:<guid>) and live rows (8:teamsvisitor:<guid>) group separately.
+  - A stored event without a name takes the person's name from the meeting.
+
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
 - Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.

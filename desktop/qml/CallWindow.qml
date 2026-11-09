@@ -341,6 +341,7 @@ Window {
         else consulting = null
         // A new call: lobby notifications are on again.
         if (state === "calling") lobbyToast.resetForCall()
+        if (state === "calling" || state === "connecting") { transcriptRan = false; openTranscriptWhenStarted = false }
     }
 
     function clock(s) {
@@ -462,6 +463,11 @@ Window {
         if (n === "TranscriptButton") return transcribing
             ? { label: "Stop transcription", icon: "call-transcript-stop-20" }
             : { label: "Start transcription", icon: "call-transcript-20" }
+        // Once a transcript has run in the meeting: show or hide its pane.
+        if (n === "TranscriptPanelButton") return transcriptStarted
+            ? { label: side === "transcript" ? "Hide transcript" : "Show transcript",
+                icon: "transcript-panel-20", endCheck: side === "transcript" }
+            : null
         return null
     }
     // A menu control's sections as one list (a divider after a section of
@@ -499,8 +505,31 @@ Window {
     signal recorderCommand(string command, string language, bool audioOnly)
     RecordStartDialog {
         id: recordStart
-        onConfirmed: (language, audioOnly) => win.recorderCommand(
-            mode === "transcription" ? "startTranscription" : "startRecording", language, audioOnly)
+        onConfirmed: (language, audioOnly) => {
+            // Teams opens the Transcript pane for whoever starts it.
+            if (mode !== "recording") win.openTranscriptWhenStarted = true
+            win.recorderCommand(mode === "transcription" ? "startTranscription" : "startRecording", language, audioOnly)
+        }
+    }
+    // The Transcript pane: its rows, and asking for the stored ones.
+    property var transcript: []
+    signal loadTranscript()
+    property bool openTranscriptWhenStarted: false
+    // A transcript has run in this meeting (Teams' hasBeenStarted: More
+    // then offers Show transcript).
+    property bool transcriptRan: false
+    readonly property bool transcriptStarted: transcriptRan || transcribing || transcript.length > 0
+    onTranscribingChanged: {
+        if (!transcribing) return
+        transcriptRan = true
+        if (openTranscriptWhenStarted) {
+            openTranscriptWhenStarted = false
+            if (side !== "transcript") toggleTranscript()
+        }
+    }
+    function toggleTranscript() {
+        side = side === "transcript" ? "" : "transcript"
+        if (side === "transcript") loadTranscript()
     }
     ConfirmDialog {
         id: stopTranscriptAsk
@@ -519,6 +548,7 @@ Window {
         if (i >= 0) moreMenu.openSubmenuForTest(i)
     }
     function closeMoreForTest() { moreMenu.close() }
+    function transcriptScrollTopForTest() { transcriptPane.scrollToTopForTest() }
     function cancelRecordDialogForTest() { recordStart.close() }
     function confirmRecordDialogForTest() {
         if (recordStart.opened) { recordStart.close(); recordStart.confirmed(recordStart.language, recordStart.audioOnly); return true }
@@ -527,7 +557,8 @@ Window {
         return false
     }
     function recordControl(name) {
-        if (name === "RecordingButton") {
+        if (name === "TranscriptPanelButton") toggleTranscript()
+        else if (name === "RecordingButton") {
             if (recording) stopRecordingAsk.open()
             else recordStart.ask(transcribing ? "recording" : "recordingAndTranscription")
         } else if (name === "TranscriptButton") {
@@ -1035,7 +1066,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" || win.side === "info" || win.side === "audio" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -1050,6 +1081,16 @@ Window {
             anchors.fill: parent
             muted: win.muted || !win.hasAudio
             onToggleMute: win.toggleMute()
+            onClosed: win.side = ""
+        }
+        TranscriptPane {
+            id: transcriptPane
+            visible: win.side === "transcript"
+            anchors.fill: parent
+            entries: win.transcript
+            roster: win.people
+            meId: backend.userMri
+            meName: backend.userName
             onClosed: win.side = ""
         }
         MeetingInfoPane {
@@ -1339,7 +1380,8 @@ Window {
     }
     function meetingActionFailed(action) {
         if (action === "lock" || action === "unlock") { lockRetry.unlocking = action === "unlock"; lockRetry.open() }
-        else if (action === "startRecording") { recorderFailure = "Couldn't start recording"; recorderFailureTimer.restart() }
+        if (action === "startTranscription" || action === "startRecording") openTranscriptWhenStarted = false
+        if (action === "startRecording") { recorderFailure = "Couldn't start recording"; recorderFailureTimer.restart() }
         else if (action.indexOf("Transcription") >= 0 || action === "stopRecording") {
             recorderFailure = "Something went wrong with transcription. Please try again later."; recorderFailureTimer.restart()
         }

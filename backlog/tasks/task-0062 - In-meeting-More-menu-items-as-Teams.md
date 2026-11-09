@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T02:21:00Z'
+updated_date: '2026-11-09T03:38:00Z'
 labels:
   - calls
   - meetings
@@ -24,7 +24,7 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - [ ] #2 Language and speech ▸ with Captions, Settings ▸ (Call health, Accessibility, Chat bubbles, Mute notifications), Timer and Help as Teams
 - [x] #3 Audio settings opens Teams' Audio settings side pane (Speaker, Microphone, Advanced settings with noise suppression and High fidelity music mode), as measured on winpc
 - [x] #4 Record and transcribe ▸ starts and stops transcription and recording as Teams (menu, language and record-mode dialogs, stop confirmations), verified live
-- [ ] #5 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
+- [x] #5 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
 - [ ] #6 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
 - [ ] #7 Report a concern as Teams (no real reports filed while testing)
 <!-- AC:END -->
@@ -50,4 +50,8 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - AC#4 done: src/calling/recorder.rs builds Teams' recorder commands (start/stop transcription, start recording [+transcript], recording only when the transcript runs, stop) and POSTs them to the recorder's commandUrl from the roster with a recorder-audience token (auth::oauth::access_token_for). Desktop: More > Record and transcribe ▸ (submenu opens left, Teams' glyphs and tooltips), RecordStartDialog (Teams' 57 spoken languages, verified against its loc keys; More options > Choose what to record), stop confirmations; failures show Teams' "Couldn't start recording" / transcription error notice.
 - Verified live (--join-record): OST started and stopped transcription and recording in the test meeting; 200 from the recorder; roster states followed; Teams on winpc showed the same.
 - Fixed on the way: roster updates are applied by participant version (an older update arrived after the stop and showed recording again); the call recorder (CallRecorder Bot) is hidden from the stage and count like Teams.
+
+- AC#5 Transcript pane: live finals from the MCP data channel (0b83 frames), stored history via the rtaf getArtifacts link (speaker ids resolved as Teams' nt), measured layout, Go to current, Show/Hide transcript row with end check, auto-open when you start transcription. Verified live against winpc: same rows and grouping, OST-started transcript opens the pane, live stop event arrives.
+- Fixed FluentIcon: a late icon reply could overwrite a newer glyph (the Mic showed on while muted at join).
+- Follow-up TASK-0066: initials avatar colours differ from Teams.
 <!-- SECTION:NOTES:END -->

@@ -60,6 +60,22 @@ pub fn decode(frame: &[u8]) -> Option<(Header, Vec<Value>)> {
     Some((header, messages))
 }
 
+/// Bytes 1–2 of the frames that carry the meeting's speech recognition
+/// (the transcript and live captions).
+const TRANSCRIPT_MAGIC: [u8; 2] = [0x0b, 0x83];
+
+/// A speech recognition frame's JSON (`{"version": "1.1",
+/// "recognitionResults": […]}` or `{"events": […]}`): the media processor
+/// sends them on the same channel with their own header, the JSON from its
+/// first `{`.
+pub fn transcript_payload(frame: &[u8]) -> Option<Value> {
+    if frame.len() < 4 || frame[1..3] != TRANSCRIPT_MAGIC {
+        return None;
+    }
+    let start = frame.iter().skip(3).position(|&b| b == b'{')? + 3;
+    serde_json::from_slice(&frame[start..]).ok()
+}
+
 /// What the media processor told us.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Incoming {
@@ -85,6 +101,8 @@ pub enum Incoming {
         stream: i64,
         layers: Vec<String>,
     },
+    /// Speech recognition (transcript or captions) results and events.
+    Transcript(Value),
     Other(Value),
 }
 
@@ -187,7 +205,12 @@ impl Session {
 
     /// Read a frame from the processor.
     pub fn receive(&mut self, frame: &[u8]) -> Vec<Incoming> {
+        if let Some(t) = transcript_payload(frame) {
+            return vec![Incoming::Transcript(t)];
+        }
         let Some((header, messages)) = decode(frame) else {
+            let hex: String = frame.iter().take(32).map(|b| format!("{b:02x}")).collect();
+            tracing::debug!(len = frame.len(), %hex, "MCP frame not decoded");
             return Vec::new();
         };
         messages
@@ -259,6 +282,18 @@ fn dominant_speakers(m: &Value) -> Vec<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_speech_recognition_frames() {
+        // Captured: 10 0b 83, the sequence, then the JSON.
+        let mut f = vec![0x10, 0x0b, 0x83, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x9e, 0x7a, 0x00];
+        f.extend_from_slice(br#"{"version":"1.1","recognitionResults":[{"text":"Front.","isFinal":false}]}"#);
+        let v = transcript_payload(&f).unwrap();
+        assert_eq!(v["recognitionResults"][0]["text"], "Front.");
+        let mut s = Session::new();
+        assert!(matches!(s.receive(&f).as_slice(), [Incoming::Transcript(_)]));
+        assert!(transcript_payload(&encode(Header { seq: 1, from: -4, to: 1 }, &json!({"type": "heartbeat"}))).is_none());
+    }
 
     fn hex(s: &str) -> Vec<u8> {
         s.split_whitespace()

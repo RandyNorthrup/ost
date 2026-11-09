@@ -7,8 +7,9 @@ import QtQuick.Controls.Basic
 //   then a 4 px gap, then the label (14/20, NeutralForeground2);
 //   hover NeutralBackground1Hover; disabled items #BDBDBD and inert;
 // - dividers: 1 px, 4 above and below.
-// items: [{ label, icon?, iconColor?, chevron?, keys?, checked?, separator?, enabled?,
-// submenu? }]; picking an enabled row emits picked(index) and closes. A row
+// items: [{ label, icon?, iconColor?, chevron?, keys?, checked?, endCheck?, separator?,
+// enabled?, submenu? }] (endCheck: Teams' 16 px check at the row's end, 6 in,
+// as on More ▸ Record and transcribe ▸ Hide transcript); picking an enabled row emits picked(index) and closes. A row
 // with a submenu (a list of items) opens it beside the list on hover;
 // picking there emits subPicked(index, subIndex).
 Popup {
@@ -47,6 +48,7 @@ Popup {
                 let row = root.labelX + metrics.advanceWidth(i.label || "") + 6
                 if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
                 if (i.chevron || i.submenu) row += root.chevronSize + root.chevronMargin
+                if (i.endCheck !== undefined) row += 16 + 6
                 w = Math.max(w, row)
             }
             return Math.ceil(w)
@@ -134,6 +136,11 @@ Popup {
                         visible: !root.viewStyle && !row.modelData.icon && row.modelData.checked === true
                         x: 8; anchors.verticalCenter: parent.verticalCenter; size: 16
                         name: "checkmark-12"; color: row.ink
+                    }
+                    FluentIcon {
+                        visible: row.modelData.endCheck === true
+                        anchors.right: parent.right; anchors.rightMargin: 6; y: 8.67; size: 16
+                        name: "view-check-16"; color: row.ink
                     }
                     FluentIcon {
                         visible: root.viewStyle && row.modelData.checked === true

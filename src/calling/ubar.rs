@@ -466,7 +466,11 @@ impl Facts {
             // Meetings (Teams' isMeeting), not a chat's group call.
             "MeetingInfoButton" => self.scheduled,
             // Record and transcribe ▸ (the meeting's call recorder).
-            "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" => self.scheduled,
+            // Show or hide the Transcript pane (the call window adds it
+            // once a transcript has run, as Teams' hasBeenStarted).
+            "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" | "TranscriptPanelButton" => {
+                self.scheduled
+            }
             _ => false,
         }
     }

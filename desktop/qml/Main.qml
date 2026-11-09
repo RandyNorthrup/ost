@@ -750,6 +750,8 @@ Window {
         recordingTip: backend.callRecordingTip
         meetingInfo: backend.callMeetingInfoJson ? JSON.parse(backend.callMeetingInfoJson) : null
         onLoadMeetingInfo: backend.loadMeetingInfo()
+        transcript: backend.callTranscriptJson ? JSON.parse(backend.callTranscriptJson) : []
+        onLoadTranscript: backend.loadTranscript()
         onCopyMeetingJoinInfo: backend.copyMeetingJoinInfo()
         onRecorderCommand: (command, language, audioOnly) => backend.recorderCommand(command, language, audioOnly)
         lockNotices: backend.callLockNotices
@@ -1376,6 +1378,42 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 4 === 0) st()
+            } else if (step >= 9 && step <= 50 && Qt.application.arguments.indexOf("--join-transcript-start") >= 0) {
+                // --join-transcript-start: stop a running transcript, start
+                // one (Teams then opens the Transcript pane for you), then
+                // stop it again; the pane captured once it opened.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-ts-" + n + ".png")))
+                const st = () => console.warn("JOIN tstart", step, "state", backend.callRecordingState, "side", JSON.stringify(callWindow.side))
+                const plan = {
+                    9: () => { st(); if (callWindow.transcribing) { callWindow.recordControl("TranscriptButton"); callWindow.confirmRecordDialogForTest() } },
+                    18: () => { st(); callWindow.side = ""; callWindow.recordControl("TranscriptButton") },
+                    19: () => console.warn("JOIN tstart confirm", callWindow.confirmRecordDialogForTest()),
+                    30: () => { st(); grab("opened") },
+                    34: () => { callWindow.recordControl("TranscriptButton"); console.warn("JOIN tstart stop", callWindow.confirmRecordDialogForTest()) },
+                    44: () => { st(); grab("stopped") }
+                }
+                if (plan[step]) plan[step]()
+                else if (step % 3 === 0) st()
+            } else if (step >= 9 && step <= 40 && Qt.application.arguments.indexOf("--join-transcript") >= 0) {
+                // --join-transcript: More ▸ Record and transcribe ▸ Show
+                // transcript, the pane captured with the stored history,
+                // then again after live speech, scrolled up (Go to current),
+                // and the menu with Hide transcript checked.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-tr-" + n + ".png")))
+                const rows = () => { const t = backend.callTranscriptJson ? JSON.parse(backend.callTranscriptJson) : []
+                    console.warn("JOIN transcript", step, "rows", t.length, "speech", t.filter(e => e.kind === "speech").length,
+                                 "last", JSON.stringify(t.slice(-2))) }
+                const plan = {
+                    9: () => callWindow.recordMenuForTest(), 10: () => grab("menu-closed"), 11: () => callWindow.closeMoreForTest(),
+                    12: () => callWindow.recordControl("TranscriptPanelButton"),
+                    16: () => { rows(); grab("history") },
+                    30: () => { rows(); grab("live") },
+                    32: () => callWindow.transcriptScrollTopForTest(), 33: () => grab("scrolled"),
+                    35: () => callWindow.recordMenuForTest(), 36: () => grab("menu-open"), 37: () => callWindow.closeMoreForTest(),
+                    40: () => rows()
+                }
+                if (plan[step]) plan[step]()
+                else if (step % 3 === 0) rows()
             } else if (step >= 9 && step <= 16 && Qt.application.arguments.indexOf("--join-audio-pane") >= 0) {
                 // --join-audio-pane: More > Audio settings, captured at the
                 // top and the end; then music mode on (captured, and the
@@ -1486,7 +1524,7 @@ Window {
             } else if (window.joinRaise && step === 19) {
                 console.warn("JOIN hand lowered", !backend.callHandRaised, "hands", callWindow.hands.length, "status", backend.statusText)
             } else if (step === 12 + window.joinStay) {
-                console.warn("JOIN state", backend.callState, "audio", backend.callHasAudio, "muted", backend.callMuted, "roster", backend.callRosterJson.length, "status", backend.statusText)
+                console.warn("JOIN state", backend.callState, "audio", backend.callHasAudio, "muted", backend.callMuted, "window muted", callWindow.muted, "hasAudio", callWindow.hasAudio, "roster", backend.callRosterJson.length, "status", backend.statusText)
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-meeting.png")))
                 callWindow.side = "people"
             } else if (step === 13 + window.joinStay) {

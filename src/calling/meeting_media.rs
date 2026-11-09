@@ -469,6 +469,16 @@ async fn run(
                                 tracing::debug!(total, ?video, "MCP bandwidth");
                             }
                             Incoming::Heartbeat => {}
+                            Incoming::Transcript(v) => {
+                                crate::event_hub::publish(
+                                    crate::event_hub::EventKind::Call,
+                                    serde_json::json!({
+                                        "callAgentPath": "ost/transcript/",
+                                        "body": v,
+                                    })
+                                    .to_string(),
+                                );
+                            }
                             Incoming::Other(v) => tracing::debug!("MCP message {v}"),
                         }
                     }

@@ -44,6 +44,7 @@ pub mod signaling;
 pub mod srtp;
 pub mod test_tone;
 pub mod turn;
+pub mod transcript;
 pub mod twcc;
 pub mod ubar;
 pub mod video;

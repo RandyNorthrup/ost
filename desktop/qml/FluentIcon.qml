@@ -28,7 +28,11 @@ Image {
             if (xhr.readyState !== XMLHttpRequest.DONE) return
             if (xhr.responseText) {
                 IconCache.put(url, xhr.responseText)
-                root.svgText = xhr.responseText
+                // A reply for a name we've since changed from (the mic
+                // turning off while its "on" glyph still loads) mustn't
+                // replace the newer glyph.
+                if (Qt.resolvedUrl("../assets/icons/" + root.name + ".svg") === url)
+                    root.svgText = xhr.responseText
             } else {
                 console.warn("icon failed:", url)
             }
