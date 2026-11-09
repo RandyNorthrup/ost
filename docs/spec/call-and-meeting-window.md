@@ -515,7 +515,9 @@ only holds what is left (Merge, Park, Lock).
   - "Report participants (optional)" picker: the chat's members, then the meeting's other participants, never you. Chosen people show as pills.
   - Disclaimer, then Cancel and Report.
   - Report sends the unified report API (`POST {mt}/beta/reports`) with `{reportTimestamp, reportType: "Meeting", reportedUsers: [MRIs], actions: [], category: "Security", comment, callId, iCalUId, threadId}`.
-  - Success shows "Your report was sent". Failure shows "Failed to submit report. Please try again.".
+  - Success shows "Your report was sent". Failure shows "Failed to submit report. Please try again." (14/20 PaletteRedForeground1, 12 below it) right under the card, moving the rest down.
+  - Both cards carry Fluent's shadow2.
+- **Participant ··· ▸ Report** (last, after Remove from meeting; a divider before them). Opens the same dialog in its "person" mode: "Report this person", 600 × 359.33, a 48 px card (#F5F5F5, radius 4, padding 8 × 12, shadow2: the 32 px avatar and the name 14/20 semibold) in place of the meeting card, and no participant picker. It sends the same unified report (`reportType: "Meeting"`, `category: "Security"`) naming that one person in `reportedUsers` (meet-app-modal and the meet-for-work resolver). Not filed while testing.
   - No live report was filed to check the success toast's layout.
 - **More ▸ Help.** Opens Teams' Help app in a window of its own (946 × 593 content).
   - URL: `https://help.svc.cloud.microsoft/f1/home/?shownav=True&NS=MSFTTEAMS&version=16&omkt=<locale>&RingId=general&context=<JSON>`.

@@ -1542,6 +1542,21 @@ Window {
                     rows(); grab("live-" + step)
                     console.warn("JOIN rtt box", JSON.stringify(box().textForTest()), "bar", box().barForTest())
                 }
+            } else if (step >= 9 && step <= Math.min(18, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-report-person") >= 0) {
+                // --join-report-person: a guest's ··· menu, Report, Teams'
+                // "Report this person" dialog, then Cancel. Never sends.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-reportp-" + n + ".png")))
+                const g = callWindow.others.find(p => p.guest)
+                const d = callWindow.meetingReportForTest()
+                const plan = {
+                    9: () => { callWindow.side = "people" },
+                    10: () => { if (g) callWindow.participantMenuForTest(g.id); else console.warn("JOIN reportp: no guest") },
+                    11: () => grab("menu"),
+                    12: () => { callWindow.closeMenusForTest(); if (g) callWindow.openPersonReport(g.id, g.name) },
+                    13: () => grab("dialog"),
+                    14: () => { console.warn("JOIN reportp", d.personMode, JSON.stringify(d.person), d.width, d.height, JSON.stringify(d.chosen)); d.close() }
+                }
+                if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= Math.min(18, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-report") >= 0) {
                 // --join-report: More ▸ Report a concern, its picker, a
                 // participant chosen, then Cancel. Never sends a report.

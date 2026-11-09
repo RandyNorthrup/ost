@@ -32,6 +32,9 @@ Rectangle {
     /// A participant ··· menu choice: "mute", "pin", "unpin", "spotlight",
     /// "unspotlight", "attendee", "presenter" or "remove".
     signal participantAction(string action, string id, string name, string stateId)
+    /// Participants can be reported (a scheduled meeting, as Report a
+    /// concern).
+    property bool canReport: false
     signal muteAll()
     /// The header's More actions (roster-header-more-menu), in Teams'
     /// order; each shows only when Teams would show it:
@@ -431,8 +434,8 @@ Rectangle {
     // A participant's ··· menu (measured on winpc): 187.21 wide, padding
     // 4 inside a 0.67 edge, radius 4, flush under the ··· and right-aligned
     // to it; 177.88 x 32 items 2 apart, the 20 px glyph at 6 and the label
-    // (14 px #424242) at 30; a separator before Remove; Mute is disabled
-    // (#BDBDBD) for someone already muted.
+    // (14 px #424242) at 30; a separator before Remove; Report last (Report
+    // this person); Mute is disabled (#BDBDBD) for someone already muted.
     Popup {
         id: participantMenu
         property var who: ({})
@@ -459,7 +462,9 @@ Rectangle {
                         : { k: "attendee", t: "Make an attendee", icon: "presenter-off-20" })
                 out.push({ sep: true })
                 out.push({ k: "remove", t: "Remove from meeting", icon: "person-remove-20" })
-            }
+            } else if (root.canReport) out.push({ sep: true })
+            // Report this person (a security report, as Teams files it).
+            if (root.canReport) out.push({ k: "report", t: "Report", icon: "shield-error-20" })
             return out
         }
         contentItem: Column {

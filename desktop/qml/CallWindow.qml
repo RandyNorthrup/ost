@@ -905,7 +905,14 @@ Window {
         }
         const org = win.people.find(p => (p.role || "").toLowerCase() === "organizer")
         meetingReport.people = people
+        meetingReport.person = null
         meetingReport.organizer = org ? org.name : ""
+        meetingReport.open()
+    }
+    function openPersonReport(id, name) {
+        if (!meetingInfo) loadMeetingInfo()
+        meetingReport.people = []
+        meetingReport.person = { id: id, name: name }
         meetingReport.open()
     }
     MeetingReportDialog {
@@ -1422,12 +1429,15 @@ Window {
             canMuteAll: win.canMuteAll
             onMuteAll: muteAllAsk.open()
             canManage: win.organizer
+            canReport: win.scheduled
             pinnedId: win.pinnedId
             onParticipantAction: (action, id, name, stateId) => {
                 if (action === "pin") win.pinnedId = id
                 else if (action === "unpin") win.pinnedId = ""
                 // Teams asks "Change role?" first.
                 else if (action === "attendee" || action === "presenter") roleAsk.ask(action, id, name)
+                // Report this person: Teams' report dialog for them.
+                else if (action === "report") win.openPersonReport(id, name)
                 else win.participantAction(action, id, name, stateId)
             }
             onShareInvite: inviteDialog.open()

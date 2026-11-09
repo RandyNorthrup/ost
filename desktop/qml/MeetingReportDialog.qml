@@ -16,16 +16,31 @@ import QtQuick.Controls.Basic
 // - "This message will be shared for review. The review process is fully
 //   determined by your organization." (12/16 #616161);
 // - Cancel and Report (96 x 31.33). Sent: "Your report was sent"; failed:
-//   "Failed to submit report. Please try again.".
+//   "Failed to submit report. Please try again." (14/20 PaletteRedForeground1,
+//   12 below it) right under the card, moving the rest 48 down.
+// Report this person (the participant menu's Report; the same dialog in
+// its "person" mode, 600 x 359.33): "Report this person", a 48 px card
+// (#F5F5F5, radius 4, padding 8 x 12: their 32 px avatar and their name
+// 14/20 semibold) instead of the meeting card, and no picker; the report
+// names that one person.
 Popup {
     id: root
     /// {title, start, organizer}
     property var meeting: ({})
     /// [{id, name}] who can be reported.
     property var people: []
+    /// {id, name}: Report this person (the participant menu) instead.
+    property var person: null
+    readonly property bool personMode: !!person
+    // Where the explanation starts, and what's below it (Teams' layout).
+    readonly property real errorShift: failed ? 48 : 0
+    readonly property real textTop: (personMode ? 128.67 : 156.67) + errorShift
+    readonly property real counterTop: textTop + 102.67
+    readonly property real disclaimerTop: personMode ? counterTop + 48 : counterTop + 121.33
+    readonly property real buttonsTop: disclaimerTop + 24
     signal reported()
     modal: true; focus: true
-    width: 600; height: 460.67 + (failed ? 28 : 0)
+    width: 600; height: buttonsTop + 56
     padding: 0
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
@@ -36,7 +51,7 @@ Popup {
     property var chosen: []
     function openListForTest() { search.forceActiveFocus(); list.open() }
     function chooseFirstForTest() { if (list.matches.length) { chosen = chosen.concat([list.matches[0]]); list.close() } }
-    onOpened: { why.text = ""; chosen = []; search.text = ""; why.forceActiveFocus() }
+    onOpened: { why.text = ""; chosen = personMode ? [person] : []; search.text = ""; why.forceActiveFocus() }
     Connections {
         target: backend
         function onReportResultChanged() {
@@ -44,7 +59,7 @@ Popup {
         }
     }
 
-    Text { x: 24.67; y: 24.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: "Report a security concern"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 24.67; y: 24.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: root.personMode ? "Report this person" : "Report a security concern"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
     Rectangle {
         x: 543.33; y: 24.67; width: 32; height: 31.33; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
@@ -54,8 +69,33 @@ Popup {
         Accessible.role: Accessible.Button
         Accessible.name: "Close"
     }
+    // The cards carry Fluent's shadow2 (measured from Teams' styles).
+    FluentSurface {
+        x: 24.67; y: 64; width: 550.67; height: root.personMode ? 48 : 76
+        depth: 2; radius: 4
+        color: root.personMode ? theme.pick("#F5F5F5", "#1F1F1F") : theme.pick("#E8EBFA", "#2B2B40")
+    }
+    // The person reported.
+    Rectangle {
+        visible: root.personMode
+        x: 24.67; y: 64; width: 550.67; height: 48; radius: 4
+        color: "transparent"
+        Avatar {
+            x: 12; y: 8; size: 32
+            name: root.person ? root.person.name || "" : ""
+            photoId: root.person ? root.person.id || "" : ""
+        }
+        Text {
+            x: 52; y: 14; height: 20; width: parent.width - 64
+            verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+            text: root.person ? root.person.name || "" : ""
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+            color: theme.text
+        }
+    }
     // The meeting.
     Rectangle {
+        visible: !root.personMode
         x: 24.67; y: 64; width: 550.67; height: 76; radius: 4
         color: theme.pick("#E8EBFA", "#2B2B40")
         clip: true
@@ -67,9 +107,18 @@ Popup {
             Text { height: 20; verticalAlignment: Text.AlignVCenter; text: root.meeting.organizer || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
         }
     }
+    // Sending failed: Teams says so under the card.
+    Text {
+        visible: root.failed
+        x: 24.67; y: (root.personMode ? 112 : 140) + 16; height: 20; width: 550.67
+        verticalAlignment: Text.AlignVCenter
+        text: "Failed to submit report. Please try again."
+        font.family: theme.font; font.pixelSize: 14
+        color: theme.redForeground1
+    }
     // The explanation.
     Rectangle {
-        x: 25.33; y: 156.67; width: 549.33; height: 92; radius: 4
+        x: 25.33; y: root.textTop; width: 549.33; height: 92; radius: 4
         color: theme.inputFilled
         clip: true
         TextEdit {
@@ -85,12 +134,13 @@ Popup {
         }
         Rectangle { visible: why.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand }
     }
-    Text { x: 24.67; y: 259.33; height: 20; verticalAlignment: Text.AlignVCenter; text: why.length + "/250 maximum characters"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
-    Text { x: 24.67; y: 295.33; height: 20; verticalAlignment: Text.AlignVCenter; text: "Report participants (optional)"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 24.67; y: root.counterTop; height: 20; verticalAlignment: Text.AlignVCenter; text: why.length + "/250 maximum characters"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+    Text { visible: !root.personMode; x: 24.67; y: root.counterTop + 36; height: 20; verticalAlignment: Text.AlignVCenter; text: "Report participants (optional)"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
     // The participant picker.
     Rectangle {
         id: picker
-        x: 24.67; y: 320; width: 550.67; height: 32; radius: 4
+        visible: !root.personMode
+        x: 24.67; y: root.counterTop + 60.67; width: 550.67; height: 32; radius: 4
         color: theme.surface
         border.color: theme.stroke; border.width: 0.67
         Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 0.67; color: theme.textSecondary }
@@ -166,20 +216,14 @@ Popup {
         }
     }
     Text {
-        x: 24.67; y: 380.67; width: 550.67
+        x: 24.67; y: root.disclaimerTop; width: 550.67
         wrapMode: Text.Wrap
         lineHeight: 16; lineHeightMode: Text.FixedHeight
         text: "This message will be shared for review. The review process is fully determined by your organization."
         font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
     }
     Row {
-        visible: root.failed
-        x: 24.67; y: 404.67; spacing: 6
-        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "warning-12-filled"; size: 16; color: theme.redForeground1 }
-        Text { anchors.verticalCenter: parent.verticalCenter; text: "Failed to submit report. Please try again."; font.family: theme.font; font.pixelSize: 14; color: theme.redForeground1 }
-    }
-    Row {
-        x: 375.33; y: 404.67 + (root.failed ? 28 : 0); spacing: 8
+        x: 375.33; y: root.buttonsTop; spacing: 8
         Rectangle {
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered && !root.sending ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
