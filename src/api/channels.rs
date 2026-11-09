@@ -369,6 +369,171 @@ pub async fn set_new_posts_at_bottom(client: &TeamsClient, bottom: bool) -> Resu
     Ok(())
 }
 
+/// The team's admin settings (its `spaceAdminSettings` thread property, a
+/// JSON string Teams writes back whole).
+pub async fn space_admin_settings(client: &TeamsClient, team_thread: &str) -> Result<String> {
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        enc(team_thread)
+    );
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Team")?;
+    Ok(v["properties"]["spaceAdminSettings"].as_str().unwrap_or_default().to_string())
+}
+
+/// Who may post in General (Manage channel ▸ Settings ▸ Moderation):
+/// `userSettings.generalChannelSetting`, 0 anyone, 1 anyone with the
+/// notify-everyone alert, 2 owners only. Teams' default is anyone.
+pub fn general_channel_setting(settings: &str) -> u8 {
+    serde_json::from_str::<serde_json::Value>(settings)
+        .ok()
+        .and_then(|v| v["userSettings"]["generalChannelSetting"].as_u64())
+        .map(|n| n.min(2) as u8)
+        .unwrap_or(0)
+}
+
+/// The settings with General's posting choice changed and everything else
+/// (order included) as it was, as Teams writes them.
+pub fn with_general_channel_setting(settings: &str, value: u8) -> Result<String> {
+    const KEY: &str = "\"generalChannelSetting\":";
+    if let Some(at) = settings.find(KEY) {
+        let start = at + KEY.len();
+        let end = start
+            + settings[start..]
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(settings.len() - start);
+        if end > start {
+            return Ok(format!("{}{}{}", &settings[..start], value, &settings[end..]));
+        }
+    }
+    let mut v: serde_json::Value = if settings.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(settings).context("spaceAdminSettings")?
+    };
+    let obj = v.as_object_mut().context("spaceAdminSettings")?;
+    let user = obj
+        .entry("userSettings")
+        .or_insert_with(|| serde_json::json!({}));
+    user.as_object_mut()
+        .context("userSettings")?
+        .insert("generalChannelSetting".into(), serde_json::json!(value));
+    Ok(v.to_string())
+}
+
+/// Set who may post in General: the team thread's spaceAdminSettings,
+/// read fresh and written back whole (PUT …/threads/{team}/properties).
+pub async fn set_general_channel_setting(client: &TeamsClient, team_thread: &str, value: u8) -> Result<()> {
+    let current = space_admin_settings(client, team_thread).await?;
+    let updated = with_general_channel_setting(&current, value.min(2))?;
+    let url = format!(
+        "{}/v1/threads/{}/properties?name=spaceAdminSettings",
+        client.chat_service_url(),
+        enc(team_thread)
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "spaceAdminSettings": updated }),
+        )
+        .await?;
+    Ok(())
+}
+
+/// One analytics metric: its total and its days.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct Metric {
+    pub value: Option<f64>,
+    pub series: Vec<(String, f64)>,
+}
+
+/// A channel's (or team's) analytics for a period, as Teams' dashboard
+/// reads them: totals and per-day series of active users, posts, replies,
+/// reactions, mentions, meetings organized (and guests for a team).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct Analytics {
+    pub start: String,
+    pub end: String,
+    pub metrics: std::collections::BTreeMap<String, Metric>,
+}
+
+/// Teams' summary-timeseries answer ({channels|teams: {metrics: {name:
+/// {value, timeSeries: [{value, date}]}}}, startDate, endDate, errorCode}).
+/// Like Teams, any errorCode but 2 (nothing to report) is a failure.
+pub fn analytics_from(v: &serde_json::Value) -> Result<Analytics> {
+    if let Some(code) = v.get("errorCode").filter(|c| !c.is_null())
+        && code.as_str() != Some("")
+        && !matches!(code.as_i64(), Some(0) | Some(2))
+    {
+        bail!("Analytics error {code}");
+    }
+    let holder = v.get("channels").or_else(|| v.get("teams")).cloned().unwrap_or_default();
+    let holder = holder.as_array().and_then(|a| a.first().cloned()).unwrap_or(holder);
+    let mut metrics = std::collections::BTreeMap::new();
+    if let Some(m) = holder["metrics"].as_object() {
+        for (name, metric) in m {
+            let series = metric["timeSeries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|p| {
+                    (
+                        p["date"].as_str().unwrap_or_default().to_string(),
+                        p["value"].as_f64().unwrap_or(0.0),
+                    )
+                })
+                .collect();
+            metrics.insert(name.clone(), Metric { value: metric["value"].as_f64(), series });
+        }
+    }
+    Ok(Analytics {
+        start: v["startDate"].as_str().unwrap_or_default().to_string(),
+        end: v["endDate"].as_str().unwrap_or_default().to_string(),
+        metrics,
+    })
+}
+
+/// Teams' periods: "last-seven-days", "last-thirty-days", "last-ninety-days".
+pub fn analytics_period(p: &str) -> &'static str {
+    match p {
+        "last-thirty-days" | "LAST_THIRTY_DAYS" => "last-thirty-days",
+        "last-ninety-days" | "LAST_NINETY_DAYS" => "last-ninety-days",
+        _ => "last-seven-days",
+    }
+}
+
+/// Analytics for a channel (`channel` set) or the whole team, from the
+/// middle tier's summary-timeseries, with the series Teams asks for.
+pub async fn analytics(client: &TeamsClient, team_id: &str, channel: Option<&str>, period: &str) -> Result<Analytics> {
+    let (base, token) = middle_tier(client).await?;
+    let url = match channel {
+        Some(c) => format!(
+            "{base}/beta/analytics/teams/{team_id}/channels/{c}/summary-timeseries?metric=all&timeperiod={}&includeTimeseries={}",
+            analytics_period(period),
+            enc("activeUsers,postMessages,replyMessages,reactions,mentions,meetingsOrganized")
+        ),
+        None => format!(
+            "{base}/beta/analytics/teams/{team_id}/summary-timeseries?metric=all&timeperiod={}&includeTimeseries={}",
+            analytics_period(period),
+            enc("activeUsers,postMessages,replyMessages,reactions,mentions,meetingsOrganized,guests")
+        ),
+    };
+    let v: serde_json::Value = client
+        .http()
+        .get(url)
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", if channel.is_some() { "tca-pc" } else { "tca-pt" })
+        .send()
+        .await?
+        .error_for_status()
+        .context("Analytics")?
+        .json()
+        .await
+        .context("Analytics")?;
+    analytics_from(&v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +591,40 @@ mod tests {
         let v = serde_json::json!({"emailAddressDetails":{"emailId":"8156404b.scnetsolutions.com@amer.teams.ms"},"allowedSenders":{"allowedSenderType":"members"}});
         assert_eq!(email_from(&v).unwrap().allowed, "members");
         assert_eq!(senders_body("domains", &["a.com".into()]), serde_json::json!({"allowedSenders":{"allowedSenderType":"domains","allowedDomains":["a.com"]}}));
+    }
+
+    #[test]
+    fn general_setting_is_changed_in_place() {
+        // Teams' captured property (abridged): only the number changes.
+        let teams = r#"{"userSettings":{"generalChannelSetting":0,"teamMention":true,"channelMention":true},"memberSettings":{}}"#;
+        assert_eq!(general_channel_setting(teams), 0);
+        let one = with_general_channel_setting(teams, 1).unwrap();
+        assert_eq!(one, teams.replace("\"generalChannelSetting\":0", "\"generalChannelSetting\":1"));
+        assert_eq!(general_channel_setting(&one), 1);
+        assert_eq!(general_channel_setting(""), 0);
+        let fresh = with_general_channel_setting("", 2).unwrap();
+        assert_eq!(general_channel_setting(&fresh), 2);
+    }
+
+    #[test]
+    fn analytics_are_read_as_teams() {
+        let v = serde_json::json!({
+            "channels": { "metrics": {
+                "activeUsers": { "value": 1, "timeSeries": [{ "value": 0, "date": "2026-10-30T00:00:00" }, { "value": 1, "date": "2026-10-31T00:00:00" }] },
+                "postMessages": { "value": 0, "timeSeries": [] }
+            }},
+            "startDate": "2026-10-30T00:00:00", "endDate": "2026-11-05T00:00:00", "errorCode": null
+        });
+        let a = analytics_from(&v).unwrap();
+        assert_eq!(a.start, "2026-10-30T00:00:00");
+        assert_eq!(a.metrics["activeUsers"].value, Some(1.0));
+        assert_eq!(a.metrics["activeUsers"].series.len(), 2);
+        assert_eq!(a.metrics["postMessages"].series.len(), 0);
+        assert!(analytics_from(&serde_json::json!({ "errorCode": "NotFound" })).is_err());
+        assert!(analytics_from(&serde_json::json!({ "errorCode": 5 })).is_err());
+        // Teams' "no data" (the test channel's answer): an empty dashboard.
+        let none = analytics_from(&serde_json::json!({ "errorCode": 2, "startDate": "2026-10-30T00:00:00" })).unwrap();
+        assert!(none.metrics.is_empty());
+        assert_eq!(analytics_from(&serde_json::json!({})).unwrap().metrics.len(), 0);
     }
 }

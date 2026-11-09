@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T17:38:00Z'
-updated_date: '2026-11-09T19:34:00Z'
+updated_date: '2026-11-09T20:42:00Z'
 labels:
   - desktop
 dependencies: []
@@ -55,4 +55,11 @@ Teams' channel header has a Meet now split button and More channel options, and 
   - Workflows embeds automations.teams.cloud.microsoft/webapps/workflows/prod/home (renderMode=modal, subContext=channelworkflows, channel and team params) under a native header.
   - Manage channel Settings: Channel details, plus Moderation (General: spaceAdminSettings.userSettings.generalChannelSetting 0/1/2, written back whole).
   - Analytics: {mt}/beta/analytics/teams/{team}/channels/{channel}/summary-timeseries.
+
+- Manage channel (ManageChannel.qml): Teams' page in the conversation's place. Header with Settings / Analytics and More options (Go to channel, Open in new window, … no Workflows).
+  - Settings: Channel details (name, layout pill, Edit) and General's Moderation (spaceAdminSettings.generalChannelSetting, written back whole on the team thread). Verified: OST set 1, Teams showed the second choice; OST set 0 back (fresh read 0).
+  - Analytics (AnalyticsView.qml + AnalyticsChart.qml): the channel dashboard from summary-timeseries; errorCode 2 = no data as Teams; Highcharts-equivalent spline / column / stacked charts with Teams' palette, ticks and legend. Layout matches Teams' measurements (No Data Available state, as the test channel has).
+  - Fixed on the way: `property var data` in AnalyticsView shadowed Item.data (children never attached).
+- Workflows (WorkflowsDialog.qml): Teams' 900 x 634.4 dialog over the Workflows web app; it loads signed in on linuxlt. Fixed: it used the Page tab's pageOnly mode (Loop header and insert row).
+- All Channels / Analytics across channels go to Manage team: TASK-0083 (with non-General channel settings).
 <!-- SECTION:NOTES:END -->

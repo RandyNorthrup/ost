@@ -5,7 +5,9 @@ import QtQuick.Controls.Basic
 // options) and on its row in the chat list (measured on winpc, 2026-11-09):
 // See new posts at top | Open in new window | Manage notifications ▸,
 // Move to section ▸, Hide | Edit channel, Manage channel, Copy link, Get
-// email address, Workflows. (Hide reads Show for a hidden channel.)
+// email address, Workflows. (Hide reads Show for a hidden channel.) On the
+// Manage channel page it starts Go to channel, Open in new window and has no
+// Workflows.
 // Manage notifications opens Teams' flyout beside the row: "Select what
 // content notifies you" (12/20 semibold #616161, padding 0 8), then All new
 // messages, @mentions and replies and Mute (64 tall: the check (16) at 4,
@@ -22,9 +24,12 @@ Item {
     property string newestPost: ""
     /// New posts show at the bottom (Teams' enableChannelsV2).
     property bool postsAtBottom: true
+    /// The Manage channel page's More options.
+    property bool manageMode: false
     /// The section it's in, for Move to section.
     readonly property var folderList: backend.foldersJson ? (JSON.parse(backend.foldersJson).folders || []) : []
     readonly property string holder: { const f = folderList.find(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.items.indexOf(root.channel.id) >= 0); return f ? f.id : "" }
+    signal goToChannel()
     signal openInNewWindow()
     signal manageChannel()
     signal workflows()
@@ -47,13 +52,16 @@ Item {
     MenuPopup {
         id: menu
         margins: 8
-        items: [
-            root.postsAtBottom
+        items: (root.manageMode
+            ? [{ key: "go", label: "Go to channel", icon: "channel-20" },
+               { key: "window", label: "Open in new window", icon: "open-window-20" },
+               { separator: true }]
+            : [root.postsAtBottom
                 ? { key: "top", label: "See new posts at top", icon: "channel-posts-top-20" }
                 : { key: "bottom", label: "See new posts at bottom", icon: "channel-posts-top-20" },
-            { separator: true },
-            { key: "window", label: "Open in new window", icon: "open-window-20" },
-            { separator: true },
+               { separator: true },
+               { key: "window", label: "Open in new window", icon: "open-window-20" },
+               { separator: true }]).concat([
             { key: "notify", label: "Manage notifications", icon: "alert-20", flyout: true },
             { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
             root.channel.shown === false
@@ -63,9 +71,8 @@ Item {
             { key: "edit", label: "Edit channel", icon: "edit-20" },
             { key: "manage", label: "Manage channel", icon: "settings-20" },
             { key: "link", label: "Copy link", icon: "link-20" },
-            { key: "email", label: "Get email address", icon: "mail-20" },
-            { key: "workflows", label: "Workflows", icon: "workflows-20" }
-        ]
+            { key: "email", label: "Get email address", icon: "mail-20" }
+        ], root.manageMode ? [] : [{ key: "workflows", label: "Workflows", icon: "workflows-20" }])
         onFlyoutRequested: (i, row) => {
             if (i < 0 || !row) { notifyFlyout.close(); return }
             const p = row.mapToItem(menu.contentItem, 0, 0)
@@ -78,6 +85,7 @@ Item {
         onPicked: i => {
             const k = items[i].key
             if (k === "top" || k === "bottom") root.act(k === "top" ? "posts-at-top" : "posts-at-bottom")
+            else if (k === "go") root.goToChannel()
             else if (k === "window") root.openInNewWindow()
             else if (k === "hide" || k === "show") root.act(k)
             else if (k === "edit") editDialog.start(root.channel)

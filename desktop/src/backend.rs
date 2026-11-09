@@ -901,6 +901,9 @@ pub mod qobject {
         /// A saved app setting ("" when unset).
         #[qinvokable]
         fn setting(self: Pin<&mut Backend>, name: &QString) -> QString;
+        /// Your tenant's id (web apps Teams embeds are told it).
+        #[qinvokable]
+        fn tenant_id(self: &Backend) -> QString;
 
         /// Save an app setting.
         #[qinvokable]
@@ -8211,6 +8214,16 @@ impl qobject::Backend {
         });
     }
 
+    pub fn tenant_id(&self) -> QString {
+        QString::from(
+            teams_cli::config::Config::load()
+                .ok()
+                .and_then(|c| c.tenant_id())
+                .unwrap_or_default()
+                .as_str(),
+        )
+    }
+
     pub fn setting(self: Pin<&mut Self>, name: &QString) -> QString {
         let value = load_settings()
             .get(&name.to_string())
@@ -9187,6 +9200,24 @@ impl qobject::Backend {
                         api::channels::set_new_posts_at_bottom(&client, op == "posts-at-bottom").await?;
                         Ok(serde_json::Value::Null)
                     }
+                    // Manage channel ▸ Settings ▸ Moderation (General).
+                    "moderation-load" => {
+                        let s = api::channels::space_admin_settings(&client, &team_thread).await?;
+                        Ok(json!({ "general": api::channels::general_channel_setting(&s) }))
+                    }
+                    "moderation" => {
+                        let value: u8 = arg.parse().context("Moderation")?;
+                        api::channels::set_general_channel_setting(&client, &team_thread, value).await?;
+                        Ok(json!({ "general": value }))
+                    }
+                    // Manage channel ▸ Analytics: arg {"period", "team": bool}.
+                    "analytics" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let period = a["period"].as_str().unwrap_or("last-seven-days");
+                        let scope = if a["team"].as_bool() == Some(true) { None } else { Some(channel.as_str()) };
+                        let r = api::channels::analytics(&client, &team, scope, period).await?;
+                        Ok(json!({ "period": api::channels::analytics_period(period), "team": scope.is_none(), "analytics": r }))
+                    }
                     _ => anyhow::bail!("Unknown channel action"),
                 }
             }
@@ -9204,7 +9235,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });

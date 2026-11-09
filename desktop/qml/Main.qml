@@ -3086,6 +3086,49 @@ Window {
         }
     }
 
+    // --manage-channel-test with --open-chat=<channel id> --shots=<dir>
+    // [--manage-moderation=0|1|2]: open Manage channel (mc-settings.png, the
+    // General setting logged), optionally pick a moderation choice and log
+    // what it reads back, then Analytics (mc-analytics.png, the data
+    // logged), the More options menu (mc-menu.png) and quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--manage-channel-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const pick = (Qt.application.arguments.find(a => a.startsWith("--manage-moderation=")) || "").slice(20)
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) { window.openManageChannel(id); if (!window.manage) return }
+            else if (step === 2) { console.warn("MANAGE general", manageChannel.generalSetting); shot("mc-settings") }
+            else if (step === 3 && pick !== "") backend.channelAction("moderation", window.manage.teamId, id, pick)
+            else if (step === 6 && pick !== "") { manageChannel.loadModeration() }
+            else if (step === 8) { console.warn("MANAGE general now", manageChannel.generalSetting); manageChannel.tab = "analytics" }
+            else if (step === 11) { const a = manageChannel.analyticsForTest(); console.warn("MANAGE analytics", a.failed, JSON.stringify(a.result)); shot("mc-analytics") }
+            else if (step === 12) { const m = manageChannel.menuForTest(); m.show(manageChannel, manageChannel.width - 7 - m.menu.implicitWidth, 42.2) }
+            else if (step === 13) shot("mc-menu")
+            else if (step === 14) Qt.quit()
+            step++
+        }
+    }
+
+    // --workflows-test with --open-chat=<channel id> --shots=<dir>: open
+    // the channel's Workflows (wf.png after 15 s) and quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--workflows-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (step === 0) { window.openWorkflows(id); if (!workflowsDialog.opened) return }
+            else if (step === 5) { console.warn("WORKFLOWS", workflowsDialog.url, !!workflowsDialog.about); window.contentItem.grabToImage(r => r.saveToFile(dir + "wf.png")) }
+            else if (step === 6) { workflowsDialog.close(); Qt.quit() }
+            step++
+        }
+    }
+
     // --channel-window-test with --open-chat=<channel id> --shots=<dir>:
     // open the channel in a new window (cwin.png), move the main window to
     // another chat, post from the window (cwin-posted.png, logged), quit.
@@ -4005,20 +4048,61 @@ Window {
         const all = Object.assign({}, window.channelWindows); all[channelId] = w; window.channelWindows = all
         w.meetNow.connect((id, name) => preJoin.openMeetNow(id, "Meeting in \"" + name + "\""))
         w.scheduleMeeting.connect(() => { rail.current = "calendar"; calendarView.newMeeting() })
+        w.manageChannel.connect(id => window.openManageChannel(id))
         w.closing.connect(() => { const rest = Object.assign({}, window.channelWindows); delete rest[channelId]; window.channelWindows = rest; w.destroy() })
         w.show()
         return w
     }
+    // Manage channel: Teams' page in the conversation's place, for the
+    // channel (selected in the list) until another chat is picked.
+    property var manage: null
+    function openManageChannel(channelId) {
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const team = teams.find(t => (t.channels || []).some(c => c.id === channelId))
+        if (!team) return
+        const ch = team.channels.find(c => c.id === channelId)
+        rail.current = "chat"
+        window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
+        if (backend.currentChatId !== channelId) backend.selectChat(channelId, ch.name)
+        window.manage = { teamId: team.id, teamName: team.name, channelId: channelId }
+        window.raise(); window.requestActivate()
+    }
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() { if (window.manage && backend.currentChatId !== window.manage.channelId) window.manage = null }
+    }
+    ManageChannel {
+        id: manageChannel
+        visible: !!window.manage && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        teamId: window.manage ? window.manage.teamId : ""
+        teamName: window.manage ? window.manage.teamName : ""
+        channelId: window.manage ? window.manage.channelId : ""
+        onGoToChannel: window.manage = null
+        onOpenInNewWindow: id => window.openChannelWindow(id)
+        onManageChannel: id => window.openManageChannel(id)
+    }
+    // A channel's Workflows (Teams' dialog with the Workflows app).
+    WorkflowsDialog { id: workflowsDialog }
+    function openWorkflows(channelId) {
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const team = teams.find(t => (t.channels || []).some(c => c.id === channelId))
+        if (!team) return
+        const ch = team.channels.find(c => c.id === channelId)
+        workflowsDialog.start(channelId, ch.name, team.id, team.name)
+    }
     ChatList {
         id: chatList
         onOpenChannelWindow: id => window.openChannelWindow(id)
+        onChannelWorkflows: id => window.openWorkflows(id)
+        onManageChannel: (id, name) => window.openManageChannel(id)
         // An expanded tab takes the list's place (Teams' Expand tab).
         visible: rail.current === "chat" && !conversation.tabExpanded
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; backend.selectChat(id, name) }
+        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; backend.selectChat(id, name) }
         onNewChat: { draftsOpen = false; mentionsOpen = false; window.composing = true }
         onMarkAllRead: backend.markAllRead()
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
@@ -4151,8 +4235,10 @@ Window {
         // A channel's Meet now: Teams' pre-join, titled for the channel.
         onChannelMeetNow: preJoin.openMeetNow(conversation.chatId, "Meeting in \"" + conversation.chatName + "\"")
         onOpenChannelWindow: id => window.openChannelWindow(id)
+        onChannelWorkflows: id => window.openWorkflows(id)
+        onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0))
+        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: titleBar.bottom; bottom: statusBar.top; right: tabConversation.left

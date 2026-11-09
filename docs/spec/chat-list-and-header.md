@@ -827,6 +827,58 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
      team.
   → TODO: the live render (the menu could not be opened).
 
+### 7.7.1 Manage channel (measured 2026-11-09)
+
+Opened from either channel menu's **Manage channel**; it takes the
+conversation's place while the channel stays selected in the list (picking
+the channel again, or **Go to channel**, returns to its posts).
+
+- Header 61 (white, a #E0E0E0 0.67 line, padding 0 7 0 20): team picture
+  32 (radius 4) 14.2 down; channel 18/24 bold at 60; tabs **Settings** and
+  **Analytics** 2 after it (buttons 56.3 tall, 8 each side of the 14/20
+  name, #424242 / 600 #242424 with a 3 px brand pill under the name);
+  **More options** (32 × 24, 39 from the right, 18.2 down): Go to channel,
+  Open in new window | Manage notifications ▸, Move to section ▸, Hide |
+  Edit channel, Manage channel, Copy link, Get email address (no
+  Workflows), the menu's right edge on the button's, its top at its
+  bottom.
+- **Settings**: sections 48 from both sides, from 20 down. Each header row
+  is 44 tall (padding 0 12 0 10, a 20 px chevron, the name 14/20 semibold at
+  38, its hint 30 after in #616161), a #E0E0E0 line after the open body
+  (13 under it).
+  - **Channel details** — "Edit channel name, description, and layout": the
+    name 28/36 semibold, the layout pill (Posts / Threads; 14/20 #616161 on
+    #E6E6E6, a #D1D1D1 line, radius 4, padding 2 8) 66 down, **Edit** (brand
+    96 × 31.3) 106.3 down opening Edit channel.
+  - **Moderation** — "Set channel moderation preferences" (General):
+    "General Channel:" then **Anyone can post messages**, **Anyone can post;
+    show alert that posting will notify everyone (recommended for large
+    teams)**, **Only owners can post messages** (radios 16 in 32 boxes, names
+    14/20 at 36, max 496 wide, rows 32 apart plus wrapping). Picking one
+    writes the team thread's `spaceAdminSettings` back whole with
+    `userSettings.generalChannelSetting` 0 / 1 / 2:
+    `PUT {chatsvc}/v1/threads/{teamThread}/properties?name=spaceAdminSettings`
+    `{"spaceAdminSettings": "<json>"}`.
+- **Analytics** (channel-dashboard): "Select a channel" (All Channels +
+  the team's channels; All Channels opens the team's analytics) and "Time
+  period" (Last Seven / Thirty / Ninety Days), two 31.3 dropdowns 10 apart
+  at 30 in, 50 down; the period's dates ("10/30/2026 - 11/5/2026",
+  semibold, 35 tall); **Analytics across channels** (brand) under them at
+  the right. Cards (#FAFAFA, radius 4, padding 12, the title 14/20 bold
+  26 down) from 152.7 down, 20 in: Summary (Active users, Meetings) and
+  Engagement (Posts, Replies, Reactions, Mentions) side by side (28/36 over
+  14/20, spread), then Active users (spline), Meetings (columns) and
+  Engagement (stacked columns, legend) full width; "No Data Available"
+  centred 82 down when empty. Charts are min(40 % of the window, 300) tall
+  (Highcharts: plot 10 from the top/right, 37 under it for dates, 75 with
+  the legend; y 0 to ≥ 10 in whole ticks ~72 px apart; grid #E8EBFA; the
+  axis #CCD6EB; colours brand, lighter brand, #9092C1, #242424).
+  Data: `GET {mt}/beta/analytics/teams/{groupId}/channels/{channel}/summary-timeseries?metric=all&timeperiod=last-seven-days&includeTimeseries=activeUsers%2CpostMessages%2CreplyMessages%2Creactions%2Cmentions%2CmeetingsOrganized`
+  (`x-ms-client-caller: tca-pc`) → `{channels: {metrics: {name: {value,
+  timeSeries: [{value, date}]}}}, startDate, endDate, errorCode}`; errorCode
+  2 means no data, any other code shows "We are sorry - We've run into an
+  issue".
+
 ### 7.8 Non-default tab selected
 
 - Chat: Copilot, Find in chat, Chat details and notes disappear unless

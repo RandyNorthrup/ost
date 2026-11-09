@@ -34,6 +34,7 @@ Window {
     }
     signal meetNow(string channelId, string channelName)
     signal scheduleMeeting()
+    signal manageChannel(string channelId)
     title: teamName + " | " + channelName
     width: 588; height: 493
     color: theme.channelPage
@@ -156,7 +157,10 @@ Window {
         postsAtBottom: !backend.channelPostsAtTop
         // Already in a window of its own.
         onOpenInNewWindow: { win.raise(); win.requestActivate() }
+        onWorkflows: workflows.start(win.channelId, win.channelName, win.teamId, win.teamName)
+        onManageChannel: win.manageChannel(win.channelId)
     }
+    WorkflowsDialog { id: workflows }
 
     // Find in channel: OST's find bar, as in the main window.
     Rectangle {
