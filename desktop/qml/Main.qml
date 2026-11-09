@@ -123,7 +123,7 @@ Window {
         target: backend
         function onStatusNoteResultChanged() {
             const r = JSON.parse(backend.statusNoteResult || "{}")
-            titleBar.statusNoteSaved(!!r.ok, r.message || "", !!r.pinned)
+            titleBar.statusNoteSaved(!!r.ok, r.message || "", !!r.pinned, r.html || "")
         }
     }
     // Calls and sharing set presence, as Teams' calling client state does.
@@ -2976,6 +2976,31 @@ Window {
         }
     }
 
+    // --status-mention-test --shots=<dir>: type "OST status mention @OST"
+    // in Set status message, pick the suggestion, capture, save, log the
+    // result, then clear the note and quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--status-mention-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (step === 0) titleBar.profilePageForTest("note")
+            else if (step === 1) titleBar.noteTypeForTest("OST status mention @OST")
+            else if (step === 2) { console.warn("NOTEM people", backend.peopleJson, titleBar.noteHtmlForTest().length); window.contentItem.grabToImage(r => r.saveToFile(dir + "note-picker.png")) }
+            else if (step === 3) console.warn("NOTEM picked", titleBar.notePickForTest(), titleBar.noteHtmlForTest())
+            else if (step === 4) { window.contentItem.grabToImage(r => r.saveToFile(dir + "note-picked.png")); titleBar.noteSaveForTest() }
+            else if (step === 6) { console.warn("NOTEM saved", backend.statusNoteResult); titleBar.profilePageForTest("main") }
+            else if (step === 7) window.contentItem.grabToImage(r => r.saveToFile(dir + "note-flyout.png"))
+            else if (step === 30) { console.warn("NOTEM presence", backend.myNoteJson); titleBar.profilePageForTest("main") }
+            else if (step === 31) window.contentItem.grabToImage(r => r.saveToFile(dir + "note-flyout-polled.png"))
+            // (Teams on winpc can be checked meanwhile.)
+            else if (step === 34) backend.setStatusNote("", false, "Never", "")
+            else if (step === 36) { console.warn("NOTEM cleared", backend.statusNoteResult); Qt.quit() }
+            step++
+        }
+    }
+
     // --chat-shot with --open-chat=<id> --shots=<dir>: open the chat,
     // capture it once it has loaded (chat.png) and quit.
     Timer {
@@ -3422,6 +3447,14 @@ Window {
         }
     }
 
+    // Your status message as the presence service reports it.
+    Connections {
+        target: backend
+        function onMyNoteJsonChanged() {
+            const n = backend.myNoteJson ? JSON.parse(backend.myNoteJson) : {}
+            titleBar.statusNote = n.text || ""; titleBar.statusNoteHtml = n.html || ""; titleBar.statusNotePinned = !!n.pinned
+        }
+    }
     TitleBar {
         id: titleBar
         width: parent.width

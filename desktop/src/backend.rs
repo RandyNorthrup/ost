@@ -126,6 +126,9 @@ pub mod qobject {
         #[qproperty(QString, share_state)]
         /// The last status message save: {ok, message, pinned} or {ok, error}.
         #[qproperty(QString, status_note_result)]
+        /// Your status message as the presence service has it: {text,
+        /// html (mentions marked), pinned}.
+        #[qproperty(QString, my_note_json)]
         /// The open chat has older messages to load (scroll up).
         #[qproperty(bool, messages_has_older)]
         /// Older messages are being fetched.
@@ -639,6 +642,10 @@ pub mod qobject {
         /// Search the directory for the new-chat picker.
         #[qinvokable]
         fn search_people(self: Pin<&mut Backend>, query: &QString);
+        /// As search_people, with you among the results (the status
+        /// message picker).
+        #[qinvokable]
+        fn search_people_with_me(self: Pin<&mut Backend>, query: &QString);
 
         /// Open (or start) the 1:1 chat with a person by object id.
         #[qinvokable]
@@ -1314,6 +1321,7 @@ pub struct BackendRust {
     /// Where the last share went (the "View" button opens it).
     shared_to: String,
     status_note_result: QString,
+    my_note_json: QString,
     messages_has_older: bool,
     messages_loading_older: bool,
     /// The channel name channel_tabs_load was last given (reloads reuse it).
@@ -5208,19 +5216,32 @@ impl qobject::Backend {
             loop {
                 let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
                 let _ = qt.queue(move |this| {
-                    let mris: Vec<String> = this
+                    let mut mris: Vec<String> = this
                         .rust()
                         .chats
                         .iter()
                         .filter_map(|c| c["peerMri"].as_str().map(str::to_string))
                         .collect();
+                    // Yours too (your status message).
+                    if let Some(me) = this.rust().my_mri.clone()
+                        && !mris.iter().any(|m| m.eq_ignore_ascii_case(&me))
+                    {
+                        mris.push(me);
+                    }
                     let _ = tx.send(mris);
                 });
                 let mris = rx.await.unwrap_or_default();
                 match teams_cli::api::presence::get_presences(&http, &mris).await {
                     Ok(list) => {
                         let _ = qt.queue(move |mut this| {
+                            let me = this.rust().my_mri.clone().unwrap_or_default();
                             for p in list {
+                                if p.mri.eq_ignore_ascii_case(&me) {
+                                    let note = json!({ "text": p.note_text, "html": p.note_html, "pinned": p.note_pinned }).to_string();
+                                    if this.rust().my_note_json.to_string() != note {
+                                        this.as_mut().set_my_note_json(QString::from(note.as_str()));
+                                    }
+                                }
                                 this.as_mut()
                                     .rust_mut()
                                     .presence
@@ -5654,7 +5675,15 @@ impl qobject::Backend {
         });
     }
 
-    pub fn search_people(mut self: Pin<&mut Self>, query: &QString) {
+    pub fn search_people(self: Pin<&mut Self>, query: &QString) {
+        self.search_people_impl(query, false)
+    }
+
+    pub fn search_people_with_me(self: Pin<&mut Self>, query: &QString) {
+        self.search_people_impl(query, true)
+    }
+
+    fn search_people_impl(mut self: Pin<&mut Self>, query: &QString, include_me: bool) {
         let q = query.to_string();
         let generation = self.rust().people_query_generation + 1;
         self.as_mut().rust_mut().people_query_generation = generation;
@@ -5666,7 +5695,7 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::directory::search_people(&client, &q).await
+                api::directory::search_directory(&client, &q, include_me).await
             }
             .await;
             let _ = qt.queue(move |mut this| {
@@ -9505,7 +9534,12 @@ impl qobject::Backend {
                 teams_cli::api::presence::publish_note(&http, &message, pinned, until).await;
             let _ = qt.queue(move |mut this| {
                 let text = match &result {
-                    Ok(()) => json!({ "ok": true, "message": message, "pinned": pinned }),
+                    Ok(()) => json!({
+                        "ok": true,
+                        "message": teams_cli::api::presence::note_plain(&message),
+                        "html": if message.trim().is_empty() { String::new() } else { teams_cli::api::messages::sanitize_html_marking(&teams_cli::api::presence::note_html_any(&message), &[]) },
+                        "pinned": pinned,
+                    }),
                     Err(e) => json!({ "ok": false, "error": short_error(e) }),
                 };
                 this.as_mut()

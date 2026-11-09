@@ -35,6 +35,10 @@ Rectangle {
     function openProfileForTest() { menu.visible = true; statusMenu.open() }
     function profilePageForTest(page) { statusMenu.close(); if (page === "duration") durationPage.start(); if (page === "note") notePage.start(); menu.visible = true; menu.page = page }
     function closeProfileForTest() { menu.visible = false }
+    function noteTypeForTest(t) { noteText.insert(noteText.cursorPosition, t); noteText.cursorPosition = noteText.length }
+    function notePickForTest() { if (notePicker.people.length) notePage.pickMention(notePicker.people[0]); return notePicker.people.length }
+    function noteHtmlForTest() { return noteText.text }
+    function noteSaveForTest() { notePage.saving = true; root.setStatusNote(noteText.text, pinBox.checked, "Never") }
     // Test hook: type into search and keep the suggestions open offscreen,
     // where the window never has focus.
     property bool keepSuggestionsOpen: false
@@ -351,6 +355,8 @@ Rectangle {
     }
     // Your status message (Set status message), as last saved here.
     property string statusNote: ""
+    /// The same with mentions marked (from the presence service).
+    property string statusNoteHtml: ""
     property bool statusNotePinned: false
     Rectangle {
         id: menu
@@ -437,8 +443,54 @@ Rectangle {
                 onClicked: statusMenu.opened ? statusMenu.close() : statusMenu.open()
             }
             FlyoutRow {
+                visible: !root.statusNote
                 icon: "status-20"; label: "Set status message"
                 onClicked: { notePage.start(); menu.page = "note" }
+            }
+            // Your status message, as Teams shows it here (measured on
+            // winpc): a 233-wide #F5F5F5 box, 76 in, its text 14/20 with
+            // mentions in brand colour; on hover, edit and delete.
+            Item {
+                visible: !!root.statusNote
+                width: parent.width; height: noteBox.height + 8
+                Rectangle {
+                    id: noteBox
+                    x: 76; y: 4; width: 233; height: Math.max(62, noteShown.implicitHeight + 24); radius: 4
+                    color: theme.pick("#F5F5F5", "#2E2E2E")
+                    Text {
+                        id: noteShown
+                        x: 12; y: 12; width: parent.width - 24 - (noteHover.hovered ? 56 : 0)
+                        wrapMode: Text.Wrap
+                        textFormat: Text.RichText
+                        text: "<style>.mention, .mention-me { color: " + theme.brandForeground1 + "; }</style>" + (root.statusNoteHtml || root.statusNote.replace(/&/g, "&amp;").replace(/</g, "&lt;"))
+                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                    }
+                    HoverHandler { id: noteHover }
+                    TapHandler { onTapped: { notePage.start(); menu.page = "note" } }
+                    Row {
+                        visible: noteHover.hovered
+                        anchors.right: parent.right; anchors.rightMargin: 4; y: 4
+                        Rectangle {
+                            width: 24; height: 24; radius: 4
+                            color: editHover.hovered ? theme.menuHover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "edit-20"; size: 16; color: theme.textSecondary }
+                            HoverHandler { id: editHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { notePage.start(); menu.page = "note" } }
+                            Accessible.role: Accessible.Button; Accessible.name: "Set status message"
+                        }
+                        Rectangle {
+                            width: 24; height: 24; radius: 4
+                            color: delHover.hovered ? theme.menuHover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.textSecondary }
+                            HoverHandler { id: delHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.setStatusNote("", false, "Never") }
+                            Accessible.role: Accessible.Button; Accessible.name: "Delete status message"
+                        }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Your current status message: " + root.statusNote
+                }
             }
             Item { width: 1; height: 8 }
         }
@@ -624,7 +676,60 @@ Rectangle {
                 { key: "FourHours", label: "4 hours" }, { key: "ThisWeek", label: "This week" }
             ]
             // Teams focuses the editor when the page opens.
-            function start() { saving = false; noteText.text = root.statusNote; pinBox.checked = root.statusNotePinned; clearPick.current = 0; noteText.forceActiveFocus() }
+            function start() { saving = false; noteText.text = ""; noteText.insert(0, root.statusNote.replace(/&/g, "&amp;").replace(/</g, "&lt;")); pinBox.checked = root.statusNotePinned; clearPick.current = 0; noteText.forceActiveFocus() }
+            // A picked person goes in as Teams' editor puts them: one token
+            // per word of their name (sent as one mention).
+            function pickMention(p) {
+                const at = noteText.mentionAt, end = noteText.cursorPosition
+                if (at < 0) return
+                noteText.mentionAt = -1; notePicker.close()
+                const words = String(p.name || "").split(/\s+/).filter(w => w)
+                const style = 'style="color:' + theme.brandForeground1 + '; text-decoration:none"'
+                const html = words.map(w => '<a href="mention:' + p.mri + '" ' + style + '>' + w.replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</a>').join("&nbsp;") + "&nbsp;"
+                noteText.remove(at, end)
+                noteText.insert(at, html)
+                noteText.cursorPosition = at + words.join(" ").length + 1
+                noteText.forceActiveFocus()
+            }
+            // Teams' mention suggestions (as the compose picker: 300 wide,
+            // "Suggestions", 47.3 px person rows), left of the editor.
+            Popup {
+                id: notePicker
+                property int current: 0
+                readonly property var people: {
+                    const q = noteText.mentionQuery.trim().toLowerCase()
+                    if (q.length < 2) return []
+                    return (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).slice(0, 8).map(p => ({ mri: "8:orgid:" + p.id, name: p.name, mail: p.mail || p.email || "" }))
+                }
+                // Teams: 128 left of the editor, its bottom on the caret line.
+                x: 16 - 128; y: Math.max(-40, 71 + noteText.cursorRectangle.y + 8 - height + 6)
+                width: 300; padding: 0
+                height: 43.2 + Math.max(1, people.length) * 47.3 + 8
+                closePolicy: Popup.CloseOnPressOutside
+                focus: false
+                onPeopleChanged: current = 0
+                background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                Text { x: 20; y: 10.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "Suggestions"; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                Column {
+                    y: 43.2
+                    Repeater {
+                        model: notePicker.people
+                        Rectangle {
+                            id: np
+                            required property var modelData
+                            required property int index
+                            width: 298.7; height: 47.3; radius: 2.5
+                            color: index === notePicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : npHover.hovered ? theme.menuHover : "transparent"
+                            Avatar { x: 19.6; y: 7.6; size: 32; name: np.modelData.name; photoId: np.modelData.mri }
+                            Text { x: 59.7; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: np.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            Text { x: 59.7; y: 25.7; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: np.modelData.mail; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                            HoverHandler { id: npHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: notePage.pickMention(np.modelData) }
+                            Accessible.role: Accessible.ListItem; Accessible.name: np.modelData.name
+                        }
+                    }
+                }
+            }
             Rectangle {
                 x: 16; y: 16; width: 21; height: 21; radius: 4
                 color: backHover.hovered ? theme.menuHover : "transparent"
@@ -645,15 +750,37 @@ Rectangle {
                     id: noteText
                     x: 8; y: 8; width: parent.width - 16; height: parent.height - 16 - 20
                     wrapMode: TextEdit.Wrap
+                    // Rich text: @mentions are tokens, as in Teams' editor.
+                    textFormat: TextEdit.RichText
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-                    onTextChanged: if (text.length > 280) { const p = cursorPosition; text = text.slice(0, 280); cursorPosition = Math.min(p, 280) }
-                    Text { visible: !parent.text; text: "Type @ to mention someone in your status"; font: parent.font; color: theme.textSecondary }
+                    // "@" and what follows it, before the cursor.
+                    property int mentionAt: -1
+                    property string mentionQuery: ""
+                    onTextChanged: {
+                        if (length > 280) { const p = cursorPosition; remove(280, length); cursorPosition = Math.min(p, 280) }
+                        const before = getText(0, cursorPosition)
+                        const at = before.lastIndexOf("@")
+                        const q = at >= 0 ? before.slice(at + 1) : ""
+                        if (at >= 0 && (at === 0 || /\s/.test(before[at - 1])) && q.length <= 40 && !/\n/.test(q)) {
+                            mentionAt = at; mentionQuery = q
+                            if (q.trim().length >= 2) backend.searchPeopleWithMe(q.trim())
+                            if (!notePicker.opened) notePicker.open()
+                        } else if (notePicker.opened) { mentionAt = -1; notePicker.close() }
+                    }
+                    Keys.onPressed: e => {
+                        if (!notePicker.opened) return
+                        if (e.key === Qt.Key_Down) { notePicker.current = Math.min(notePicker.current + 1, notePicker.people.length - 1); e.accepted = true }
+                        else if (e.key === Qt.Key_Up) { notePicker.current = Math.max(notePicker.current - 1, 0); e.accepted = true }
+                        else if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter || e.key === Qt.Key_Tab) && notePicker.people.length) { notePage.pickMention(notePicker.people[notePicker.current]); e.accepted = true }
+                        else if (e.key === Qt.Key_Escape) { notePicker.close(); e.accepted = true }
+                    }
+                    Text { visible: noteText.length === 0; text: "Type @ to mention someone in your status"; font: parent.font; color: theme.textSecondary }
                     Accessible.name: "Type @ to mention someone in your status"
                 }
                 Text {
                     anchors.right: parent.right; anchors.rightMargin: 8; y: 211; height: 20
                     verticalAlignment: Text.AlignVCenter
-                    text: noteText.text.length + " / 280"
+                    text: noteText.length + " / 280"
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
                 }
             }
@@ -702,8 +829,8 @@ Rectangle {
             PrimaryButton {
                 x: 191; y: 474
                 label: notePage.saving ? "Saving..." : "Done"
-                enabled: !notePage.saving && (noteText.text.trim().length > 0 || root.statusNote.length > 0)
-                onClicked: { notePage.saving = true; root.setStatusNote(noteText.text.trim(), pinBox.checked, notePage.clearAfter[clearPick.current].key) }
+                enabled: !notePage.saving && (noteText.getText(0, noteText.length).trim().length > 0 || root.statusNote.length > 0)
+                onClicked: { notePage.saving = true; root.setStatusNote(noteText.getText(0, noteText.length).trim().length ? noteText.text : "", pinBox.checked, notePage.clearAfter[clearPick.current].key) }
             }
         }
     }
@@ -711,8 +838,8 @@ Rectangle {
     signal setStatusNote(string message, bool pinned, string clearAfter)
     signal openOutOfOffice()
     // A status message save finished: close on success, as Teams does.
-    function statusNoteSaved(ok, message, pinned) {
+    function statusNoteSaved(ok, message, pinned, html) {
         notePage.saving = false
-        if (ok) { root.statusNote = message; root.statusNotePinned = pinned; menu.visible = false }
+        if (ok) { root.statusNote = message; root.statusNoteHtml = html || ""; root.statusNotePinned = pinned; menu.visible = false }
     }
 }

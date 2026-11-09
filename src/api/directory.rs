@@ -14,8 +14,14 @@ pub struct Person {
     pub job_title: String,
 }
 
-/// Search the organisation's directory by name or e-mail.
+/// Search the organisation's directory by name or e-mail (you left out).
 pub async fn search_people(client: &TeamsClient, query: &str) -> Result<Vec<Person>> {
+    search_directory(client, query, false).await
+}
+
+/// Search the directory, with you among the results when `include_me`
+/// (Teams' status message picker suggests you too).
+pub async fn search_directory(client: &TeamsClient, query: &str, include_me: bool) -> Result<Vec<Person>> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -46,7 +52,7 @@ pub async fn search_people(client: &TeamsClient, query: &str) -> Result<Vec<Pers
                     .to_string()
             };
             let id = s("id");
-            (!id.is_empty() && !id.eq_ignore_ascii_case(&me)).then(|| Person {
+            (!id.is_empty() && (include_me || !id.eq_ignore_ascii_case(&me))).then(|| Person {
                 id,
                 name: s("displayName"),
                 mail: s("mail"),

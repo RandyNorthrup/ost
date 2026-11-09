@@ -454,6 +454,96 @@ pub async fn publish_note(
 /// The publishnote body: `{"message": ""}` to clear; else the text in a
 /// paragraph (escaped), the pinned marker, and the expiry (Never is
 /// 9999-12-31 local, which Teams sends for notes).
+/// The status editor's text as Teams' note HTML: one paragraph, each
+/// mention (picked as one token per word) a single span with the person's
+/// whole name and its `data-itemprops`, as Teams sends it (captured on
+/// winpc, 2026-11-09: `<span itemtype=".../Mention" itemscope itemid="0"
+/// data-itemprops="{&quot;mri&quot;:…,&quot;mentionType&quot;:&quot;person&quot;}">OST Test 1</span>`).
+pub fn note_html(editor_html: &str) -> String {
+    let (html, mentions) = super::messages::teams_html_and_mentions(editor_html);
+    // Spans of the same person next to each other (words joined by
+    // &nbsp; or a space) become one.
+    let open = |i: usize| format!("<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"{i}\">");
+    let mut out = String::new();
+    let mut rest = html.as_str();
+    let mut next = 0;
+    let mut i = 0;
+    while i < mentions.len() {
+        let tag = open(i);
+        let Some(at) = rest.find(&tag) else { break };
+        out.push_str(&rest[..at]);
+        let mut name = String::new();
+        let mut j = i;
+        let mut after = &rest[at..];
+        loop {
+            let t = open(j);
+            let body = &after[t.len()..];
+            // Its closing tag (Qt's editor nests a styled span inside).
+            let mut depth = 0;
+            let mut end = body.len();
+            let mut k = 0;
+            while let Some(lt) = body[k..].find('<') {
+                let at = k + lt;
+                if body[at..].starts_with("</span>") {
+                    if depth == 0 {
+                        end = at;
+                        break;
+                    }
+                    depth -= 1;
+                } else if body[at..].starts_with("<span") {
+                    depth += 1;
+                }
+                k = at + 1;
+            }
+            if !name.is_empty() {
+                name.push(' ');
+            }
+            name.push_str(super::strip_html(&body[..end]).trim());
+            after = &body[(end + "</span>".len()).min(body.len())..];
+            let sep = ["&nbsp;", "\u{a0}", " "].iter().find(|s| after.starts_with(*s));
+            match (sep, mentions.get(j + 1)) {
+                (Some(sep), Some(m)) if m.mri == mentions[i].mri && after[sep.len()..].starts_with(&open(j + 1)) => {
+                    after = &after[sep.len()..];
+                    j += 1;
+                }
+                _ => break,
+            }
+        }
+        let props = format!(
+            "{{&quot;mri&quot;:&quot;{}&quot;,&quot;mentionType&quot;:&quot;person&quot;}}",
+            mentions[i].mri
+        );
+        out.push_str(&format!(
+            "<span itemtype=\"http://schema.skype.com/Mention\" itemscope itemid=\"{next}\" data-itemprops=\"{props}\">{name}</span>"
+        ));
+        next += 1;
+        rest = after;
+        i = j + 1;
+    }
+    out.push_str(rest);
+    // One paragraph, as Teams' note editor keeps it.
+    let inner = out.replace("</p><p>", " ").replace("<p>", "").replace("</p>", "");
+    format!("<p>{}</p>", inner.trim())
+}
+
+/// The note HTML for editor HTML or plain text.
+pub fn note_html_any(message: &str) -> String {
+    if message.trim_start().starts_with('<') {
+        note_html(message)
+    } else {
+        format!("<p>{}</p>", message.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"))
+    }
+}
+
+/// The note's plain text (what the profile shows while editing).
+pub fn note_plain(editor_html: &str) -> String {
+    if editor_html.trim_start().starts_with('<') {
+        super::strip_html(&note_html(editor_html)).trim().to_string()
+    } else {
+        editor_html.to_string()
+    }
+}
+
 pub fn note_body(
     message: &str,
     pinned: bool,
@@ -463,12 +553,18 @@ pub fn note_body(
     if message.trim().is_empty() {
         return serde_json::json!({ "message": "" });
     }
-    let esc = message
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;");
+    // The status editor's rich text (with mention tokens), or plain text.
+    let para = if message.trim_start().starts_with('<') {
+        note_html(message)
+    } else {
+        let esc = message
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        format!("<p>{esc}</p>")
+    };
     let html = format!(
-        "<p>{esc}</p>{}",
+        "{para}{}",
         if pinned {
             "<pinnednote></pinnednote>"
         } else {
@@ -516,6 +612,32 @@ mod expiry_tests {
     }
 
     #[test]
+    fn notes_with_mentions_are_teams_bodies() {
+        // OST's editor: one token per word, as the compose box makes them.
+        let editor = r#"<p>OST status mention <a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683">OST</a>&nbsp;<a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683">Test</a>&nbsp;<a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683">1</a></p>"#;
+        // Teams' own request (winpc, 2026-11-09).
+        assert_eq!(
+            note_html(editor),
+            r#"<p>OST status mention <span itemtype="http://schema.skype.com/Mention" itemscope itemid="0" data-itemprops="{&quot;mri&quot;:&quot;8:orgid:4287e791-1b98-4963-8b94-281c50472683&quot;,&quot;mentionType&quot;:&quot;person&quot;}">OST Test 1</span></p>"#
+        );
+        assert_eq!(note_plain(editor), "OST status mention OST Test 1");
+        assert_eq!(note_html("<p>a &amp; b</p>"), "<p>a &amp; b</p>");
+        // Qt's TextEdit document (logged from the editor): each word's
+        // link wraps a styled span, words joined by a raw U+00A0.
+        let doc = r#"<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
+<html><head><meta name="qrichtext" content="1" /><meta charset="utf-8" /><style type="text/css">
+p, li { white-space: pre-wrap; }
+</style></head><body style=" font-family:'Selawik'; font-size:14px; font-weight:400; font-style:normal;">
+<p style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;">OST status mention <a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683"><span style=" color:#4f52b2;">OST</span></a> <a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683"><span style=" color:#4f52b2;">Test</span></a> <a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683"><span style=" color:#4f52b2;">1</span></a> </p></body></html>"#;
+        assert_eq!(note_html(doc), note_html(editor));
+        // What the profile flyout shows: one mention.
+        assert_eq!(
+            crate::api::messages::sanitize_html_marking(&note_html(editor), &[]),
+            r#"<p>OST status mention <span class="mention">OST Test 1</span></p>"#
+        );
+    }
+
+    #[test]
     fn notes_are_teams_bodies() {
         assert_eq!(
             note_body("  ", true, None),
@@ -537,6 +659,13 @@ pub struct UserPresence {
     /// Available, Busy, DoNotDisturb, BeRightBack, Away, Offline, …
     pub availability: String,
     pub activity: String,
+    /// The status message for display: Teams' note HTML made safe, its
+    /// mentions as `<span class="mention">` (empty when none).
+    pub note_html: String,
+    /// The same as plain text.
+    pub note_text: String,
+    /// "Show when people message me" (`<pinnednote>`).
+    pub note_pinned: bool,
 }
 
 /// Look up several users' presence by MRI (`8:orgid:<oid>`).
@@ -577,10 +706,16 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                     .unwrap_or_default()
                     .to_string()
             };
+            let message = p.pointer("/note/message").and_then(|m| m.as_str()).unwrap_or_default();
+            let pinned = message.contains("<pinnednote>");
+            let body = message.replace("<pinnednote></pinnednote>", "");
             Some(UserPresence {
                 mri,
                 availability: field("availability"),
                 activity: field("activity"),
+                note_html: if body.trim().is_empty() { String::new() } else { super::messages::sanitize_html_marking(&body, &[]) },
+                note_text: super::strip_html(&body).trim().to_string(),
+                note_pinned: pinned,
             })
         })
         .collect()
@@ -589,6 +724,17 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
 #[cfg(test)]
 mod presence_tests {
     use super::*;
+
+    #[test]
+    fn reads_status_notes_with_mentions() {
+        // The service's reply after OST set a note (2026-11-09).
+        let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"availability": "Available", "activity": "Available",
+            "note": {"expiry": "9999-12-31T08:00:00Z", "message": "<p>OST probe <span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\" data-itemprops=\"{&quot;mri&quot;:&quot;8:orgid:a&quot;,&quot;mentionType&quot;:&quot;person&quot;}\">OST Test 1</span></p><pinnednote></pinnednote>"}}}]);
+        let p = &parse_presences(&v)[0];
+        assert!(p.note_pinned);
+        assert_eq!(p.note_text, "OST probe OST Test 1");
+        assert!(p.note_html.contains("class=\"mention\"") && p.note_html.contains("OST Test 1"), "{}", p.note_html);
+    }
 
     #[test]
     fn parses_presence_service_reply() {

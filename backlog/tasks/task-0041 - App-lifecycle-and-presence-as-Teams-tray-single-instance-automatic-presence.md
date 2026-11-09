@@ -1,11 +1,11 @@
 ---
 id: TASK-0041
 title: 'App lifecycle and presence as Teams: tray, single instance, automatic presence'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T07:14:00Z'
+updated_date: '2026-11-09T16:14:00Z'
 labels:
   - desktop
   - shell
@@ -27,7 +27,7 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 - [x] #3 Presence goes Away when idle/locked/minimised and shows In a call / In a meeting / Presenting automatically, as Teams computes it
 - [x] #4 Do not disturb suppresses banners as Teams does (priority access aside)
 - [x] #5 Set status message dialog as Teams (expiry, show when people message me)
-- [ ] #6 Status message editor takes @mentions as Teams' (CKEditor) does, normalised to Teams' mention HTML
+- [x] #6 Status message editor takes @mentions as Teams' (CKEditor) does, normalised to Teams' mention HTML
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,4 +53,22 @@ Core shell gaps from docs/parity/gaps-shell-calendar-files.md (P1): OST can't be
 
 - AC3, as Teams computes it: lock or sleep gives inactive (verified earlier); a call publishes Busy/InACall and Available after it (verified live today, from the winpc client's own status).
 - Idle: 11+ minutes without input and not locked left ost-test1 Available on winpc, as Teams' code says. Desktop Teams never goes Away on idleness or when minimised, so OST doesn't either.
+
+- AC6: the status message editor takes @mentions (picker includes you, as Teams' does); notes are sent as Teams' mention HTML (one span per person with data-itemprops, merged from Qt's per-word tokens joined by U+00A0).
+- The profile flyout shows your note as Teams does (grey box, mention in brand colour, edit/delete on hover), from the presence service (`my_note_json`).
+- Verified live: Teams on winpc renders OST's note with the mention; OST reads it back from presence with one mention.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Presence and status parity with Teams desktop: tray icon and menu, single instance, automatic presence (Away, In a call/meeting, Presenting), DND banner suppression, the Set status message dialog, and @mentions in status messages.
+
+Status message mentions (AC6):
+- The editor has Teams' @mention picker (which suggests you too); the note goes out as Teams' mention HTML, one span per person with data-itemprops (`presence::note_html`).
+- The profile flyout shows your current note in Teams' grey box with the mention highlighted, plus edit and delete on hover. It is read back from the presence service.
+
+Tests:
+- presence unit tests (notes_with_mentions_are_teams_bodies, which includes Qt's real editor document; reads_status_notes_with_mentions)
+- `--status-mention-test` harness on linuxlt; Teams on winpc renders the note with the mention
+<!-- SECTION:FINAL_SUMMARY:END -->
