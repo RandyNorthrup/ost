@@ -1,11 +1,11 @@
 ---
 id: TASK-0036
 title: 'Desktop: video in meetings and in calls OST places'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-06T04:53:00Z'
-updated_date: '2026-11-08T17:05:00Z'
+updated_date: '2026-11-08T17:54:00Z'
 labels:
   - desktop
   - calling
@@ -22,7 +22,7 @@ Incoming 1:1 calls carry video both ways. Calls OST places offer video but Teams
 <!-- AC:BEGIN -->
 - [x] #1 In a call OST places, the callee's camera shows in OST and OST's camera in Teams
 - [x] #2 In a meeting, participants' video shows on their tiles and OST's camera reaches them
-- [ ] #3 Pre-join's camera switch works
+- [x] #3 Pre-join's camera switch works
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,3 +44,15 @@ Incoming 1:1 calls carry video both ways. Calls OST places offer video but Teams
 
 - 2026-11-08: meeting video verified both ways (guests' cameras on OST tiles; OST's loopback camera on a guest's tile, on and off). Pre-join camera switch still open.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Video in calls OST places and in meetings, both ways, plus pre-join's camera.
+
+- 1:1: callee's camera in OST, OST's camera in Teams.
+- Meetings (TASK-0047): participants' video on tiles via the media control plane; OST's camera reaches them (UpdateMediaDescriptions, vdclc layers).
+- Pre-join: the camera switch opens a live mirrored preview (CameraPreview) and joining with it on turns the camera on.
+
+Verified live with Teams web guests and the loopback camera.
+<!-- SECTION:FINAL_SUMMARY:END -->

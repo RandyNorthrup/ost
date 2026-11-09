@@ -134,6 +134,19 @@ pub mod qobject {
         #[qproperty(bool, call_lobby_presenter)]
         /// What attendees may not do (bits: mic 1, camera 2, chat 4).
         #[qproperty(i32, call_attendee_restrictions)]
+        /// Teams' bar shows its AI indicator in this meeting.
+        #[qproperty(bool, call_ai_indicator)]
+        /// AI is available in the meeting (copilotMode Enabled).
+        #[qproperty(bool, call_ai_available)]
+        /// The meeting's Facilitator is enabled.
+        #[qproperty(bool, call_ai_facilitator)]
+        /// The meeting's transcript (or Copilot's) runs: AI is on.
+        #[qproperty(bool, call_ai_on)]
+        /// Teams' recording indicator: "Transcribing", "Recording",
+        /// "RecordingAndTranscribing" or "" (nothing runs).
+        #[qproperty(QString, call_recording_state)]
+        /// Its tooltip ("Transcription started by …").
+        #[qproperty(QString, call_recording_tip)]
         /// Bumped when the meeting is locked or unlocked while we're in it
         /// (Teams' "This meeting is locked." / "unlocked." notice).
         #[qproperty(i32, call_lock_notices)]
@@ -1068,6 +1081,15 @@ pub struct BackendRust {
     call_scheduled: bool,
     call_lobby_presenter: bool,
     call_attendee_restrictions: i32,
+    call_ai_indicator: bool,
+    call_ai_available: bool,
+    call_ai_facilitator: bool,
+    call_ai_on: bool,
+    call_recording_state: QString,
+    call_recording_tip: QString,
+    /// What the meeting's call recorder does (for the recording
+    /// indicator's names as the roster changes).
+    processing: teams_cli::calling::roster::Processing,
     call_lock_notices: i32,
     /// Who joined and left the meeting we're in (the attendance list).
     attendance: teams_cli::calling::meeting_options::AttendanceLog,
@@ -2042,6 +2064,22 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 this.as_mut().show_capability(cap, false);
                 this.as_mut().set_call_state(QString::from("connected"));
             });
+        }
+    }
+    // The meeting's call recorder started or stopped its transcript
+    // (Teams' AI indicator turns on and off with it).
+    if json.contains("conversation/rosterUpdate")
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
+    {
+        let changed = call_slot()
+            .lock()
+            .await
+            .outgoing
+            .as_mut()
+            .and_then(|call| call.apply_processing(&v).then(|| call.processing()));
+        if let Some(p) = changed {
+            tracing::info!(?p, "call recorder processing changed");
+            let _ = qt.queue(move |mut this| this.as_mut().show_processing(p));
         }
     }
     // The meeting locked or unlocked, or changed what attendees may do.
@@ -3058,6 +3096,8 @@ impl qobject::Backend {
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_meeting(false);
         self.as_mut().set_call_scheduled(false);
+        self.as_mut().set_call_ai_indicator(false);
+        self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_muted(false);
         self.as_mut().set_call_state(QString::from("calling"));
         let qt = self.qt_thread();
@@ -3210,6 +3250,8 @@ impl qobject::Backend {
             .set_call_thread_id(QString::from(chat_id.as_str()));
         self.as_mut().load_call_chat_members();
         self.as_mut().set_call_scheduled(false);
+        self.as_mut().set_call_ai_indicator(false);
+        self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_meeting(true);
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
@@ -3292,6 +3334,11 @@ impl qobject::Backend {
         self.as_mut().set_call_scheduled(true);
         self.as_mut().set_call_meeting_locked(false);
         self.as_mut().set_call_attendee_restrictions(0);
+        self.as_mut().set_call_ai_indicator(false);
+        self.as_mut().set_call_ai_available(false);
+        self.as_mut().set_call_ai_facilitator(false);
+        self.as_mut().set_call_ai_on(false);
+        self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!("join meeting");
         let qt = self.qt_thread();
@@ -3307,6 +3354,8 @@ impl qobject::Backend {
                     let can_dtmf = call.can_dtmf();
                     let invite = call.invite_url().unwrap_or_default().to_string();
                     let capability = call.capability();
+                    let processing = call.processing();
+                    let ai_indicator = call.shows_ai_indicator();
                     let in_lobby = call.in_lobby();
                     let started = call.meeting_started();
                     tracing::info!(has_audio, can_dtmf, in_lobby, "meeting joined");
@@ -3318,6 +3367,8 @@ impl qobject::Backend {
                         this.as_mut()
                             .set_call_invite_url(QString::from(invite.as_str()));
                         this.as_mut().show_capability(capability, false);
+                        this.as_mut().show_processing(processing);
+                        this.as_mut().set_call_ai_indicator(ai_indicator);
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_lobby_presenter(started);
@@ -3532,6 +3583,50 @@ impl qobject::Backend {
         let bits = cap.attendee_restrictions as i32;
         if self.rust().call_attendee_restrictions != bits {
             self.as_mut().set_call_attendee_restrictions(bits);
+        }
+        if self.rust().call_ai_available != cap.copilot {
+            self.as_mut().set_call_ai_available(cap.copilot);
+        }
+        if self.rust().call_ai_facilitator != cap.facilitator {
+            self.as_mut().set_call_ai_facilitator(cap.facilitator);
+        }
+    }
+
+    /// Show what the meeting's call recorder does: AI is on while its
+    /// transcript (or Copilot's) runs; the recording indicator names who
+    /// started the recording and transcript.
+    fn show_processing(mut self: Pin<&mut Self>, p: teams_cli::calling::roster::Processing) {
+        let on = p.transcript.is_some() || p.copilot;
+        if self.rust().call_ai_on != on {
+            self.as_mut().set_call_ai_on(on);
+        }
+        self.as_mut().rust_mut().processing = p;
+        self.as_mut().show_recording_indicator();
+    }
+
+    /// The recording indicator's state and tooltip, with the starters'
+    /// names from the roster (or ours).
+    fn show_recording_indicator(mut self: Pin<&mut Self>) {
+        let me = self.rust().user_mri.to_string().to_ascii_lowercase();
+        let my_name = self.rust().user_name.to_string();
+        let roster = &self.rust().roster;
+        let p = &self.rust().processing;
+        let tip = p.indicator_tooltip(|id| {
+            let id = id.to_ascii_lowercase();
+            roster
+                .iter()
+                .find(|x| x.id == id)
+                .map(|x| x.name.clone())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| if id == me { my_name.clone() } else { String::new() })
+        });
+        let state = QString::from(p.indicator_state());
+        let tip = QString::from(tip.as_str());
+        if self.rust().call_recording_state != state {
+            self.as_mut().set_call_recording_state(state);
+        }
+        if self.rust().call_recording_tip != tip {
+            self.as_mut().set_call_recording_tip(tip);
         }
     }
 
@@ -3954,6 +4049,7 @@ impl qobject::Backend {
     fn apply_roster(mut self: Pin<&mut Self>, delta: Vec<teams_cli::calling::roster::Participant>) {
         let mut roster = std::mem::take(&mut self.as_mut().rust_mut().roster);
         teams_cli::calling::roster::apply(&mut roster, delta);
+
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
         let off = self.rust().incoming_video_off;
@@ -3993,6 +4089,10 @@ impl qobject::Backend {
         self.as_mut().rust_mut().roster = roster;
         self.as_mut()
             .set_call_roster_json(QString::from(json.as_str()));
+        // The recording indicator names its starters from the roster.
+        if !self.rust().processing.indicator_state().is_empty() {
+            self.as_mut().show_recording_indicator();
+        }
         if self.rust().call_meeting {
             let qt = self.qt_thread();
             runtime().spawn(async move {

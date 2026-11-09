@@ -289,6 +289,105 @@ pub fn own_server_muted(json: &str, endpoint_id: &str) -> Option<bool> {
         })
 }
 
+/// What the meeting's call recorder is doing, from its endpoint's
+/// `endpointMetadata.processingModes` (the hidden `28:` participant the
+/// recorder joins as): the transcript (`realTimeTranscript`), recording
+/// and Copilot's own transcript, each "Active" or "Inactive" with the
+/// `userId` of whoever started it. Teams' AI indicator is on while the
+/// transcript or Copilot runs; its recording indicator shows the
+/// recording and transcript with who started them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Processing {
+    /// Who started the running transcript (may be empty).
+    pub transcript: Option<String>,
+    /// Who started the running recording (may be empty).
+    pub recording: Option<String>,
+    pub copilot: bool,
+}
+
+impl Processing {
+    pub fn any(self, other: &Processing) -> Processing {
+        Processing {
+            transcript: self.transcript.or_else(|| other.transcript.clone()),
+            recording: self.recording.or_else(|| other.recording.clone()),
+            copilot: self.copilot || other.copilot,
+        }
+    }
+
+    /// Teams' recording indicator state: "Transcribing", "Recording",
+    /// "RecordingAndTranscribing", or "" when neither runs.
+    pub fn indicator_state(&self) -> &'static str {
+        match (self.recording.is_some(), self.transcript.is_some()) {
+            (true, true) => "RecordingAndTranscribing",
+            (true, false) => "Recording",
+            (false, true) => "Transcribing",
+            (false, false) => "",
+        }
+    }
+
+    /// The recording indicator's tooltip (Teams' strings), naming who
+    /// started each with `name` (an MRI to a display name, "" if unknown).
+    pub fn indicator_tooltip(&self, name: impl Fn(&str) -> String) -> String {
+        let who = |id: &Option<String>| id.as_deref().map(&name).unwrap_or_default();
+        let (rec, tr) = (who(&self.recording), who(&self.transcript));
+        let same = self.recording.as_deref().map(str::to_ascii_lowercase)
+            == self.transcript.as_deref().map(str::to_ascii_lowercase);
+        match (!rec.is_empty(), !tr.is_empty()) {
+            (true, true) if same => format!("Recording and transcription started by {tr}."),
+            (true, true) => format!("Recording started by {rec}. Transcription started by {tr}."),
+            (true, false) => format!("Recording started by {rec}."),
+            (false, true) => format!("Transcription started by {tr}."),
+            (false, false) => match self.indicator_state() {
+                "Transcribing" => "Transcription started".into(),
+                "" => String::new(),
+                _ => "Recording started".into(),
+            },
+        }
+    }
+}
+
+/// The processing a roster update (or a join response, `{"roster":
+/// {"participants": …}}`) reports, by participant: `Some` with the modes
+/// for one whose endpoint carries them, `None` for one that left.
+/// Participants the update names without endpoints are left out.
+pub fn processing_updates(json: &serde_json::Value) -> Vec<(String, Option<Processing>)> {
+    let participants = match json.get("callAgentPath").and_then(|p| p.as_str()) {
+        Some(path) if path.starts_with("conversation/rosterUpdate") => json.pointer("/body/participants"),
+        Some(_) => None,
+        None => json.pointer("/roster/participants"),
+    };
+    let Some(participants) = participants.and_then(|p| p.as_object()) else {
+        return Vec::new();
+    };
+    participants
+        .iter()
+        .filter_map(|(mri, p)| {
+            let id = mri.to_ascii_lowercase();
+            if p.get("state").and_then(|s| s.as_str()).is_some_and(|s| s != "active") {
+                return Some((id, None));
+            }
+            let modes = p
+                .get("endpoints")?
+                .as_object()?
+                .values()
+                .find_map(|ep| ep.pointer("/endpointMetadata/processingModes"))?;
+            let started_by = |k: &str| {
+                let m = modes.get(k)?;
+                (m.get("state").and_then(|s| s.as_str()) == Some("Active"))
+                    .then(|| m.get("userId").and_then(|u| u.as_str()).unwrap_or_default().to_string())
+            };
+            Some((
+                id,
+                Some(Processing {
+                    transcript: started_by("realTimeTranscript"),
+                    recording: started_by("recording"),
+                    copilot: started_by("copilot").is_some(),
+                }),
+            ))
+        })
+        .collect()
+}
+
 /// Apply a delta to a roster kept in join order.
 pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
     for mut p in delta {
@@ -331,6 +430,50 @@ pub fn joined(create_response: &str) -> Vec<Participant> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn call_recorder_processing() {
+        let bot = |state: &str, transcript: &str| serde_json::json!({
+            "callAgentPath": "conversation/rosterUpdate/",
+            "body": {"participants": {
+                "28:BDD75849-e0a6": {"state": state, "details": {"displayName": null},
+                    "endpoints": {"fca2": {"endpointMetadata": {"processingModes": {
+                        "copilot": {"state": "Inactive"},
+                        "realTimeTranscript": {"state": transcript, "userId": "8:orgid:a"},
+                        "recording": {"state": "Inactive", "userId": ""}}}}}},
+                "8:orgid:a": {"state": "active", "details": {"displayName": "A"}}
+            }}
+        });
+        let u = processing_updates(&bot("active", "Active"));
+        assert_eq!(u, vec![("28:bdd75849-e0a6".to_string(), Some(Processing { transcript: Some("8:orgid:a".into()), ..Default::default() }))]);
+        let u = processing_updates(&bot("active", "Inactive"));
+        assert_eq!(u[0].1, Some(Processing::default()));
+        let u = processing_updates(&bot("inactive", "Inactive"));
+        assert_eq!(u[0].1, None);
+        // A join response's roster.
+        let joined = serde_json::json!({"roster": {"participants": bot("active", "Active")["body"]["participants"].clone()}});
+        assert!(processing_updates(&joined)[0].1.clone().unwrap().transcript.is_some());
+        assert!(processing_updates(&serde_json::json!({"callAgentPath": "call/x"})).is_empty());
+    }
+
+    #[test]
+    fn recording_indicator_as_teams_words_it() {
+        let name = |id: &str| match id {
+            "8:orgid:a" => "OST Test 1".to_string(),
+            "8:orgid:b" => "Randy".to_string(),
+            _ => String::new(),
+        };
+        let p = |r: Option<&str>, t: Option<&str>| Processing { recording: r.map(Into::into), transcript: t.map(Into::into), copilot: false };
+        assert_eq!(p(None, Some("8:orgid:a")).indicator_state(), "Transcribing");
+        assert_eq!(p(None, Some("8:orgid:a")).indicator_tooltip(name), "Transcription started by OST Test 1.");
+        assert_eq!(p(Some("8:orgid:a"), Some("8:orgid:a")).indicator_tooltip(name), "Recording and transcription started by OST Test 1.");
+        assert_eq!(p(Some("8:orgid:b"), Some("8:orgid:a")).indicator_tooltip(name), "Recording started by Randy. Transcription started by OST Test 1.");
+        assert_eq!(p(Some("8:orgid:b"), None).indicator_tooltip(name), "Recording started by Randy.");
+        assert_eq!(p(Some("8:orgid:b"), None).indicator_state(), "Recording");
+        assert_eq!(p(None, Some("")).indicator_tooltip(name), "Transcription started");
+        assert_eq!(p(Some(""), Some("")).indicator_tooltip(name), "Recording started");
+        assert_eq!(p(None, None).indicator_state(), "");
+    }
 
     fn update(mri: &str, name: &str, state: &str, role: &str) -> String {
         serde_json::json!({

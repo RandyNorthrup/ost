@@ -657,6 +657,23 @@ Window {
                 reactionShot.restart()
         }
     }
+    // --join-ai: the bar with the AI indicator, then its menu, captured
+    // whenever the meeting's AI state changes (named by state).
+    property string aiLogged: ""
+    Timer {
+        id: aiShot
+        property string tag: ""
+        property int phase: 0
+        interval: 700; repeat: true
+        onTriggered: {
+            const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-ai-" + tag + "-" + n + ".png")))
+            if (phase === 0) grab("bar")
+            else if (phase === 1) callWindow.aiPopoverForTest()
+            else if (phase === 2) grab("menu")
+            else { callWindow.aiPopoverCloseForTest(); stop() }
+            phase++
+        }
+    }
     Timer { id: nsiPopShot; interval: 600; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nsi-popover.png"))) }
     Timer { id: reactionShot; interval: 400; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-their-reaction.png"))) }
     CallWindow {
@@ -718,6 +735,12 @@ Window {
         networkStrength: backend.callNetworkStrength || "Good"
         scheduled: backend.callScheduled
         attendeeRestrictions: backend.callAttendeeRestrictions
+        aiIndicator: backend.callAiIndicator
+        aiAvailable: backend.callAiAvailable
+        aiFacilitator: backend.callAiFacilitator
+        aiOn: backend.callAiOn
+        recordingState: backend.callRecordingState
+        recordingTip: backend.callRecordingTip
         lockNotices: backend.callLockNotices
         onMeetingAction: action => backend.meetingAction(action)
         onSetAttendeeRestrictions: bits => backend.setAttendeeRestrictions(bits)
@@ -1318,6 +1341,15 @@ Window {
                 else if (step === 22) { shot("on-a2"); backend.toggleCamera() }
                 else if (step === 23) callWindow.audioOptionsForTest()
                 else if (step === 24) shot("audio-flyout")
+            } else if (step >= 8 && step < 12 + window.joinStay && Qt.application.arguments.indexOf("--join-ai") >= 0) {
+                const st = [backend.callAiIndicator, backend.callAiAvailable, backend.callAiOn, backend.callAiFacilitator, backend.callRecordingState, backend.callRecordingTip].join(",")
+                if (st !== window.aiLogged) {
+                    console.warn("JOIN ai", step, "indicator,available,on,facilitator,recording,tip =", st)
+                    window.aiLogged = st
+                    aiShot.tag = (backend.callAiOn ? "on" : "off") + step
+                    aiShot.phase = 0
+                    aiShot.restart()
+                }
             } else if (step >= 8 && step <= 60 && Qt.application.arguments.indexOf("--join-nsi") >= 0) {
                 // --join-nsi: log the network strength each step while loss
                 // is applied from outside; capture the bars and popover once

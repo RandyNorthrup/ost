@@ -69,6 +69,11 @@ pub struct OutgoingCall {
     /// What the meeting last said about itself (locked, attendee
     /// restrictions).
     capability: super::meeting_options::MeetingCapability,
+    /// What the meeting's call recorder does (transcript, recording,
+    /// Copilot), by its participant id.
+    processing: std::collections::HashMap<String, super::roster::Processing>,
+    /// Teams' bar shows the AI indicator in this meeting.
+    ai_indicator: bool,
     /// The conversation controller (`conversationController`): deleting it
     /// ends the meeting for everyone.
     controller: Option<String>,
@@ -510,6 +515,35 @@ impl OutgoingCall {
     /// The meeting's lock and attendee restrictions, as last reported.
     pub fn capability(&self) -> super::meeting_options::MeetingCapability {
         self.capability
+    }
+
+    /// What the meeting's call recorder is doing now.
+    pub fn processing(&self) -> super::roster::Processing {
+        self.processing
+            .values()
+            .fold(super::roster::Processing::default(), |a, b| a.any(b))
+    }
+
+    /// Note a roster update's call recorder state; true when what it does
+    /// changed.
+    pub fn apply_processing(&mut self, json: &serde_json::Value) -> bool {
+        let before = self.processing();
+        for (id, modes) in super::roster::processing_updates(json) {
+            match modes {
+                Some(m) => {
+                    self.processing.insert(id, m);
+                }
+                None => {
+                    self.processing.remove(&id);
+                }
+            }
+        }
+        self.processing() != before
+    }
+
+    /// Teams' bar shows the AI indicator in this meeting.
+    pub fn shows_ai_indicator(&self) -> bool {
+        self.ai_indicator
     }
 
     /// Note a conversation update; true when the meeting's lock or
@@ -1777,6 +1811,26 @@ async fn start(
         role_link,
         settings_link,
         capability: capability.unwrap_or_default(),
+        processing: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .map(|v| {
+                super::roster::processing_updates(&v)
+                    .into_iter()
+                    .filter_map(|(id, m)| Some((id, m?)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        ai_indicator: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .is_ok_and(|v| {
+                let shown = super::meeting_options::shows_ai_indicator(&v);
+                tracing::info!(
+                    shown,
+                    kind = v.pointer("/meetingDetails/meetingType").and_then(|t| t.as_str()).unwrap_or(""),
+                    channel = v.pointer("/meetingDetails/isChannelMeeting").and_then(|t| t.as_bool()).unwrap_or(false),
+                    private = v.pointer("/meetingDetails/isPrivateMeeting").and_then(|t| t.as_bool()).unwrap_or(false),
+                    "AI indicator"
+                );
+                shown
+            }),
         controller,
         invite_url,
         mute_link,

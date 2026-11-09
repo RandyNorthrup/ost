@@ -341,6 +341,35 @@ drops `buttonLabel`); otherwise its label.
 In the 1:1 layout, Hold, Dial pad and Transfer are on the bar (§1.4). Call ▸ then
 only holds what is left (Merge, Park, Lock).
 
+### 1.8a Recording and AI indicators (RecordingIndicator `g3`, CopilotIndicator `J3`/`aR`; measured on winpc, 2026-11-08)
+- **Where the state comes from.** The call recorder joins the roster as a hidden `28:` participant (no display name). Its endpoint's `endpointMetadata.processingModes` has `realTimeTranscript`, `recording`, `copilot` (and `closedCaptions`, `ephemeralTranscript`, `faceStream`), each `{state: "Active" | "Inactive", userId, timestamp, properties}`. The join response's `roster` carries it, and `conversation/rosterUpdate` callbacks change it (Stop → "Inactive").
+- **Order in the indicators slot.** Shield (x 8, 30 × 32), then the recording indicator (30 × 32, glyph 5 in), then the AI indicator (37.33 × 32), then the duration (text 6.67 into its slot). Teams' layout config has no `LockMeetingIndicator`, so a locked meeting shows no lock here.
+- **Recording indicator.** State: "Transcribing" (transcript only: the transcript glyph), "Recording" or "RecordingAndTranscribing" (the ring `M16 8c-4.4…` in #424242 with a red #D13438 dot of r 4.6, viewBox 6 6 20 20). Tooltip from who started each, by name:
+  - "Transcription started by {name}."
+  - "Recording started by {names}."
+  - "Recording and transcription started by {name}." (same person)
+  - "Recording started by {names}. Transcription started by {name}."
+  - Without names: "Transcription started" / "Recording started".
+- **AI indicator** (`calling-agents-control-ubar-indicator`):
+  - **When it shows.** Only in meetings: Meet now, or a non-channel ("private") meeting with a calendar event (`iCalUid`). Not in ad hoc calls, channel meetings (`enableAiIndicatorControlForChannelMeeting` is unset) or end-to-end encrypted meetings. 1:1 and group calls fall back to the legacy Copilot indicator, which only shows while Copilot runs.
+  - **Disabled** unless `meetingCapability.copilotMode` is "Enabled" or "EnabledWithTranscript".
+  - **On** while the transcript (or Copilot's own) runs.
+  - **Looks.** A 28 × 20 pill (padding 0 4, fully rounded) holding a 20 px glyph.
+    - Off: Sparkle Off on NeutralBackground1, #242424, brand on hover.
+    - On: filled Sparkle in white on BrandBackground (BrandBackgroundHover on hover).
+  - **Tooltips.** "AI is on in the meeting" / "AI is turned off and doesn't have access to the meeting" / "AI isn't available in this meeting". Bar tooltips sit 4 under the bar, start-aligned, up to 240 wide.
+- **"Meeting AI" menu** (`calling-agents-control-ubar-indicator-popover`, `enableAiControlsMenuList`):
+  - **Popover.** 313.33 × 205.33, 13.33 under the indicator, its left edge on the indicator's. Padding 16.
+  - **Contents**, a 280-wide group:
+    - Header "Meeting AI": 32 tall, 12/20 600 #616161, padding 0 8.
+    - Read-only note (`read-only-ai-access-message`, people without a Copilot licence): "You don't have access to AI in this meeting.", 36 tall, #F5F5F5 with a #D1D1D1 hairline, 12/16 text 12 in.
+    - Switch rows (32 tall, padding 6, 20 px glyph, label at 32, 40 × 20 switch 4 from the end): Copilot, Facilitator, Intelligent recap.
+  - **Checked states.**
+    - Copilot: transcript running && AI enabled.
+    - Facilitator: transcript running && `groupCopilotDetails.enabled`.
+    - Intelligent recap: Copilot checked && recap enabled.
+  - **Unlicensed.** All rows are disabled: #BDBDBD text and glyph, and the track stays #F0F0F0 with a #E0E0E0 hairline when checked too. The 14.4 px thumb's 18 px box sits 0.67 in, or 20.67 when checked.
+
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
 - Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.

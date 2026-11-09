@@ -172,6 +172,21 @@ Window {
     /// may not do (bits: mic 1, camera 2).
     property bool locked: false
     property int attendeeRestrictions: 0
+    // Teams' AI indicator (calling-agents-control-ubar-indicator): shown in
+    // Meet now and private scheduled meetings; disabled when the meeting
+    // has no AI ("AI isn't available in this meeting"); lit while the
+    // meeting's transcript runs ("AI is on in the meeting").
+    property bool aiIndicator: false
+    property bool aiAvailable: false
+    property bool aiFacilitator: false
+    property bool aiOn: false
+    // Teams' recording indicator (recording-indicator-custom):
+    // "Transcribing", "Recording" or "RecordingAndTranscribing" ("" hides
+    // it), with who started them as its tooltip.
+    property string recordingState: ""
+    property string recordingTip: ""
+    function aiPopoverForTest() { aiPopover.open() }
+    function aiPopoverCloseForTest() { aiPopover.close() }
     /// You're an attendee and the meeting has disabled attendees' mic or
     /// camera (Teams then disables the button with its reason).
     readonly property bool micRestricted: meeting && myRole === "attendee" && (attendeeRestrictions & 1) !== 0 && muted
@@ -458,9 +473,69 @@ Window {
             x: 13; y: 20
             name: "call-shield"; size: 20; color: theme.textStrong
         }
+        // The AI indicator (measured in Teams, 2026-11-08): a 37.33 x 32
+        // button at x 38 with a 28 x 20 pill (padding 0 4) holding the
+        // 20 px sparkle — off: Sparkle Off on the surface in #242424 (brand
+        // on hover); on: the filled sparkle in white on the brand pill
+        // (BrandBackgroundHover on hover); disabled without AI. It opens
+        // the "Meeting AI" menu 13.33 below it.
+        // The recording indicator: a 30 x 32 slot after the shield with
+        // its 20 px glyph 5 in — the transcript glyph while only the
+        // transcript runs, else the recording ring (#424242) round a red
+        // (#D13438) dot of radius 4.6.
+        Item {
+            id: recordingIndicator
+            visible: win.meeting && win.recordingState !== ""
+            x: 38; y: 14; width: 30; height: 32
+            FluentIcon {
+                x: 5; y: 6
+                name: win.recordingState === "Transcribing" ? "call-transcript-20" : "call-recording-ring"; size: 20
+                color: theme.textStrong
+                Rectangle {
+                    visible: win.recordingState !== "Transcribing"
+                    x: 5.4; y: 5.4; width: 9.2; height: 9.2; radius: 4.6
+                    color: theme.redForeground3
+                }
+            }
+            HoverHandler { id: recHover }
+            IndicatorTip { target: recordingIndicator; text: win.recordingTip; shown: recHover.hovered }
+            Accessible.role: Accessible.Graphic
+            Accessible.name: win.recordingTip
+        }
+        Item {
+            id: aiIndicator
+            visible: win.meeting && win.aiIndicator
+            x: recordingIndicator.visible ? 68 : 38; y: 14; width: 37.33; height: 32
+            readonly property bool active: win.aiOn && win.aiAvailable
+            readonly property string tip: !win.aiAvailable ? "AI isn't available in this meeting"
+                : active ? "AI is on in the meeting" : "AI is turned off and doesn't have access to the meeting"
+            Rectangle {
+                x: 4.67; y: 6; width: 28; height: 20; radius: 10
+                color: aiIndicator.active ? (aiHover.hovered ? theme.brandHover : theme.brandFill) : theme.surface
+                FluentIcon {
+                    x: 4; y: 0
+                    name: aiIndicator.active ? "sparkle-20-filled" : "sparkle-off-20-regular"; size: 20
+                    color: aiIndicator.active ? theme.textOnBrand
+                        : !win.aiAvailable ? theme.disabled
+                        : aiHover.hovered || aiPopover.visible ? theme.brand : theme.text
+                }
+            }
+            HoverHandler { id: aiHover; cursorShape: win.aiAvailable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler {
+                enabled: win.aiAvailable
+                onTapped: aiPopover.visible ? aiPopover.close() : aiPopover.open()
+            }
+            IndicatorTip { target: aiIndicator; text: aiIndicator.tip; shown: aiHover.hovered && !aiPopover.visible }
+            Accessible.role: Accessible.Button
+            Accessible.name: aiIndicator.tip
+            Accessible.onPressAction: if (win.aiAvailable) aiPopover.open()
+        }
         Text {
             id: timerText
-            x: win.meeting ? 44.7 : 16; anchors.verticalCenter: parent.verticalCenter
+            // After the shield (and the AI indicator), 6.67 into the
+            // duration's slot.
+            x: !win.meeting ? 16 : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + 6.67
+            anchors.verticalCenter: parent.verticalCenter
             text: win.state === "connected" ? win.clock(win.seconds) : "--:--"
             color: theme.textStrong
             font.family: theme.font; font.pixelSize: 14
@@ -1180,6 +1255,16 @@ Window {
         maxHeight: win.height - 60 - 5
     }
     function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
+    AiPopover {
+        id: aiPopover
+        aiOn: win.aiOn && win.aiAvailable
+        facilitatorEnabled: win.aiFacilitator
+        onAboutToShow: {
+            const p = aiIndicator.mapToItem(Overlay.overlay, 0, 0)
+            x = p.x
+            y = p.y + aiIndicator.height + 13.33
+        }
+    }
     NetworkPopover {
         id: networkPopover
         call: win
@@ -1608,6 +1693,36 @@ Window {
         }
     }
 
+    // Teams' bar tooltip for the indicators: start-aligned 50 below the
+    // indicator (4 under the bar), 12/16 text, padding 4 / 11 / 6, up to
+    // 240 wide, its arrow at the indicator's centre.
+    component IndicatorTip: ToolTip {
+        id: it
+        property Item target
+        property bool shown: false
+        parent: target
+        visible: shown && text.length > 0
+        delay: 250
+        topPadding: 4; bottomPadding: 6; leftPadding: 11; rightPadding: 11
+        x: 0; y: 50
+        contentItem: Text {
+            text: it.text
+            font.family: theme.font; font.pixelSize: 12
+            lineHeight: 16; lineHeightMode: Text.FixedHeight
+            color: theme.text
+            wrapMode: Text.Wrap
+            width: Math.min(implicitWidth, 218)
+        }
+        background: Item {
+            FluentSurface { anchors.fill: parent; depth: 8; radius: 4; color: theme.surface }
+            Rectangle {
+                width: 8.48; height: 8.48; rotation: 45
+                color: theme.surface
+                x: it.target.width / 2 - width / 2 - 0.67
+                y: -width / 2
+            }
+        }
+    }
     component BarButton: Item {
         id: bb
         property string icon

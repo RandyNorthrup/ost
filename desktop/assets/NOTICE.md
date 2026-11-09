@@ -4,6 +4,7 @@
 |---|---|---|
 | `icons/*.svg` | [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) | MIT, see `icons/LICENSE` |
 | `icons/fmt-*.svg` | The formatting bar's icons as Teams draws them: [Fluent UI](https://github.com/microsoft/fluentui) Northstar and System icons | MIT |
+| `icons/ai-copilot.svg`, `icons/ai-facilitator.svg`, `icons/ai-recap.svg`, `icons/call-transcript-20.svg`, `icons/call-recording-ring.svg` | The Copilot, Facilitator and Intelligent recap glyphs of Teams' "Meeting AI" menu and its meeting bar's transcription and recording indicators, copied from the Teams client so the menu looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
 | `lobby/guest-*.svg` | The eight avatars Teams gives a guest its join shield flagged, copied from the Teams web client so the lobby looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
 | `dialogs/meeting-lock*.svg` | The illustration of Teams' "Lock the meeting?" / "Unlock the meeting" dialog, copied from the Teams client so the dialog looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
 | `fonts/selawk*.ttf` | [Selawik](https://github.com/microsoft/Selawik) 1.01 | SIL Open Font License 1.1, see `fonts/LICENSE.txt` |

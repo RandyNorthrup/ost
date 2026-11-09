@@ -15,6 +15,13 @@
 //! - Download attendance list writes the joins and leaves the client saw
 //!   (Teams' `participantActions`) as `meetingAttendanceList.csv`: tab
 //!   separated, UTF-16LE with a byte-order mark.
+//! - Meeting AI (the bar's AI indicator): `meetingCapability.copilotMode`
+//!   says whether AI is available in the meeting ("Enabled" or
+//!   "EnabledWithTranscript"), `groupCopilotDetails.enabled` whether its
+//!   Facilitator is; whether AI is on follows the meeting's transcript
+//!   (`roster::Processing`). Teams shows the indicator in Meet now and
+//!   private scheduled meetings, not in channel meetings, ad hoc or
+//!   end-to-end encrypted calls ([`shows_ai_indicator`]).
 
 use serde_json::Value;
 
@@ -30,6 +37,11 @@ pub struct MeetingCapability {
     pub locked: bool,
     /// The attendee restriction bitmap (audio 1, video 2, chat 4).
     pub attendee_restrictions: u32,
+    /// AI is available in the meeting (`copilotMode` "Enabled" or
+    /// "EnabledWithTranscript").
+    pub copilot: bool,
+    /// Its Facilitator is enabled (`groupCopilotDetails.enabled`).
+    pub facilitator: bool,
 }
 
 /// The meeting capability in a conversation response or update, if it
@@ -56,7 +68,57 @@ pub fn meeting_capability(json: &Value) -> Option<MeetingCapability> {
             .get("attendeeRestrictions")
             .map(restriction_bits)
             .unwrap_or(0),
+        copilot: matches!(
+            cap.get("copilotMode").and_then(Value::as_str),
+            Some("Enabled" | "EnabledWithTranscript")
+        ),
+        facilitator: cap
+            .get("groupCopilotDetails")
+            .and_then(|g| g.get("enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     })
+}
+
+/// Whether Teams' bar shows the AI indicator in this meeting, from the
+/// join response's `meetingDetails` (Teams' `CopilotIndicator` with its
+/// meeting checks): Meet now meetings, and private scheduled meetings
+/// with a calendar event; never channel meetings (not enabled for the
+/// AI control), ad hoc calls or end-to-end encrypted meetings.
+pub fn shows_ai_indicator(json: &Value) -> bool {
+    let Some(d) = [
+        "/meetingDetails",
+        "/conversationResponse/meetingDetails",
+        "/conversation/meetingDetails",
+    ]
+    .iter()
+    .find_map(|p| json.pointer(p))
+    else {
+        return false;
+    };
+    let flag = |k: &str| d.get(k).and_then(Value::as_bool).unwrap_or(false);
+    let kind = d.get("meetingType").and_then(Value::as_str).unwrap_or("");
+    if flag("isChannelMeeting") || kind.is_empty() || kind == "Adhoc" {
+        return false;
+    }
+    if kind == "MeetNow" {
+        return true;
+    }
+    let has_event = d
+        .get("iCalUid")
+        .and_then(Value::as_str)
+        .is_some_and(|u| !u.is_empty());
+    let e2ee = d
+        .pointer("/meetingCapability/meetingEndToEndEncryptionEnabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    // A "private" meeting is one not held in a channel; the conversation
+    // service doesn't send Teams' client-side isPrivateMeeting.
+    let private = d
+        .get("isPrivateMeeting")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    private && has_event && !e2ee
 }
 
 /// Teams' `normalizeAttendeeRestrictions`: the bitmap, or a name.
@@ -258,7 +320,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             meeting_capability(&v),
-            Some(MeetingCapability { locked: true, attendee_restrictions: 3 })
+            Some(MeetingCapability { locked: true, attendee_restrictions: 3, ..Default::default() })
         );
         let v: Value = serde_json::from_str(
             r#"{"meetingDetails":{"meetingCapability":{"attendeeRestrictions":"DisableVideo"}}}"#,
@@ -266,9 +328,30 @@ mod tests {
         .unwrap();
         assert_eq!(
             meeting_capability(&v),
-            Some(MeetingCapability { locked: false, attendee_restrictions: RESTRICT_VIDEO })
+            Some(MeetingCapability { locked: false, attendee_restrictions: RESTRICT_VIDEO, ..Default::default() })
         );
         assert_eq!(meeting_capability(&serde_json::json!({"meetingDetails":{}})), None);
+        let v = serde_json::json!({"meetingDetails":{"meetingCapability":{"copilotMode":"EnabledWithTranscript","groupCopilotDetails":{"enabled":true}}}});
+        let c = meeting_capability(&v).unwrap();
+        assert!(c.copilot && c.facilitator);
+        let v = serde_json::json!({"meetingDetails":{"meetingCapability":{"copilotMode":"Disabled"}}});
+        assert!(!meeting_capability(&v).unwrap().copilot);
+    }
+
+    #[test]
+    fn ai_indicator_meetings() {
+        let m = |d: Value| shows_ai_indicator(&serde_json::json!({ "meetingDetails": d }));
+        assert!(m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":"040000008200E0"})));
+        // As the conversation service sends it (no isPrivateMeeting).
+        assert!(m(serde_json::json!({"meetingType":"Scheduled","isChannelMeeting":false,"iCalUid":"040000008200E0"})));
+        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":false,"iCalUid":"x"})));
+        assert!(m(serde_json::json!({"meetingType":"MeetNow"})));
+        assert!(!m(serde_json::json!({"meetingType":"MeetNow","isChannelMeeting":true})));
+        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isChannelMeeting":true,"isPrivateMeeting":false,"iCalUid":"x"})));
+        assert!(!m(serde_json::json!({"meetingType":"Adhoc"})));
+        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":""})));
+        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":"x","meetingCapability":{"meetingEndToEndEncryptionEnabled":true}})));
+        assert!(!shows_ai_indicator(&serde_json::json!({})));
     }
 
     #[test]

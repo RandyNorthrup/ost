@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-08T17:42:00Z'
+updated_date: '2026-11-08T21:02:00Z'
 labels:
   - calls
   - meetings
@@ -24,12 +24,13 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Toolbar built from Teams' layout config per call type with tooltips and width-driven overflow into More
+- [x] #1 Toolbar built from Teams' layout config per call type with tooltips and width-driven overflow into More
 - [x] #2 Leave ▾ (Leave / Leave on all my devices / End meeting with confirmation) per role
-- [ ] #3 People pane sections, sort, search and invite field as Teams
+- [x] #3 People pane sections, sort, search and invite field as Teams
 - [ ] #4 Lobby on both sides (waiting screen; Admit/Deny/Admit all and the lobby toast)
 - [x] #5 Send and receive meeting reactions
-- [ ] #6 Compact view window when minimised; pre-join live camera preview
+- [x] #6 Compact view window when minimised; pre-join live camera preview
+- [x] #7 Teams' call keyboard shortcuts: Ctrl+Shift+M, Ctrl+Shift+O, Ctrl+Shift+K, Ctrl+Shift+E, Ctrl+Shift+H, Ctrl+Space and Ctrl+Shift+Y
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -59,4 +60,14 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
 - 2026-11-08: Leave on all my devices (removeParticipant scope "all" with our endpoint, then leave) shown with 2+ of your devices, measured and verified with winpc. Reactions done as TASK-0035.
 
 - 2026-11-08: compact view (call monitor) built to winpc measurements; verified through XWayland (Wayland doesn't report minimised windows). Pre-join live camera preview still open for #6.
+
+- 2026-11-08: pre-join live camera preview and joining with the camera on (11dceeb).
+- 2026-11-08: participant ··· menu (Mute participant, Pin for me, Spotlight for everyone/Stop spotlighting, Make an attendee/presenter, Remove from meeting) to winpc measurements; spotlight 200/stop 200 and role 202 verified live against the roster (c2b4b17). Report is left to its own task (no real reports may be filed while testing).
+
+- 2026-11-08: People pane completed (ab02ff6): More actions menu (Mute all, attendee mic/camera, Lower all hands, attendance list, Stop all spotlights, Lock/Unlock) with Teams' dialogs and notices; Presenters/Attendees sections; raised-hand sort, rank and emoji; "Change role?" confirmation. All requests verified live (202/200). Report on a participant is left to its own task.
+
+- 2026-11-08: bar from Teams' layout config (Rust engine over ubarLayoutPresets/Overrides): layout per call type, overrides, dividers, Fluent overflow with its 10 px padding (measured by resizing winpc's window), overflowed controls at the top of More with Teams' menu texts, Teams' tooltips. Shortcuts: Ctrl+Shift+M, K, H and Ctrl+Space verified live with a uinput keyboard; Ctrl+Shift+O and E bound the same way (no camera on linuxlt; E opens the share picker).
+- More's own items beyond Video effects and settings / Audio settings are TASK-0062.
+
+- 2026-11-08: OST held in a lobby: pre-join InLobby state and admission handling (protocol from a Teams web guest's capture, unit-tested). Not verified live: ost-test1 organizes the test meeting and organizers bypass the lobby, so AC #4 stays open until a second, non-organizer test account exists (the user creates/signs in test accounts).
 <!-- SECTION:NOTES:END -->
