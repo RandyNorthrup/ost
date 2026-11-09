@@ -1,11 +1,11 @@
 ---
 id: TASK-0044
 title: 'Compose as Teams: @mention picker, quotes, formatting kept'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-09T22:10:00Z'
+updated_date: '2026-11-09T23:01:00Z'
 labels:
   - desktop
   - messages
@@ -22,7 +22,7 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 @ opens Teams' mention picker (people, tags, everyone/channel/team per rules) and sends real mentions
+- [x] #1 @ opens Teams' mention picker (people, tags, everyone/channel/team per rules) and sends real mentions
 - [x] #2 Quoted replies compose and send as Teams' quote
 - [x] #3 Enter / Ctrl+Enter / Shift+Enter behave as Teams' setting rules
 - [x] #4 Channel posts get Teams' post composer: Add a subject, and Announcement (the headline banner with its colour or picture, Add a subheading), sent and shown as Teams does
@@ -91,4 +91,29 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - AC4 done: Upload an image. "Add a background image" has the drop area and the cropper (frame 848x244, zoom 1-4). The crop is uploaded to AMS and sent with Teams' imageData, appName and amsreferences (captured from Teams' OST TEST 78). Picture banners render at Teams' fixed ratio.
   - Verified: OST's OST TEST 79 renders in Teams like Teams' 78 (684 x 190.1, white headline). Teams on winpc needed a restart to sync it.
   - OST renders Teams' 78.
+
+- AC1 done: Teams' Everyone rules (messaging settings, live values). Everyone is offered while the others number at most 250 in group chats or 1,000 in meeting chats. Above that the row is disabled with "Not available for chats over 1,000 users.". Past 50 others, picking it shows Teams' danger banner "# people will be notified" for 3 s. A chat that big can't be tested live; the rules come from Teams' code and are checked by --compose-rules-test.
+- Compose banner (Teams' notificationBanner, measured): used for the announcement without a headline ("You'll need to add a headline to post your announcement.", measured live in Teams).
+- The post composer shows "Enter starts a new line." under it, as Teams does.
+- Fixed: the posts list went to negative height under a tall composer, so posts drew over the header.
+- The rest of compose moves to TASK-0085.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' compose in OST.
+
+What:
+- @ picker: people, tags, Everyone (Teams' limits and banner), channel and team mentions, Share contact, Add agent, Add someone.
+- Quoted replies.
+- Enter rules.
+- The formatting bar with Teams' popups.
+- The fun picker (emoji, GIFs, stickers, custom emoji).
+- Channel posts get Teams' post composer: subject; Announcement with Teams' 12 colour schemes or a cropped picture, and a subheading; the top layout. They are sent and shown as Teams does (captured wire, verified both ways on winpc with OST TEST 74-79).
+- Teams' compose banner (missing headline, Everyone threshold).
+
+Tests: lib tests (373 pass), including the post fields and banner card; harnesses --post-composer-test, --banner-test, --posts-top-test, --compose-rules-test.
+
+Follow-up: TASK-0085 (tables, code block card, Attach menu, Schedule message, video clip, Loop, apps, drafts sync).
+<!-- SECTION:FINAL_SUMMARY:END -->

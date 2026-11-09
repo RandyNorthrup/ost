@@ -1096,7 +1096,7 @@ Rectangle {
         anchors.bottomMargin: root.posting && !newestAtTop ? 12 : 0
         // See new posts at top: the composer opens in the list's top card.
         newestAtTop: backend.channelPostsAtTop
-        composerHeight: compose.boxHeight
+        composerHeight: compose.boxHeight + compose.bannerShownH
         myPresence: root.myPresence
         onStartAnnouncement: { root.posting = true; compose.announcement = true; compose.focusSubject() }
         messages: root.isChannel ? root.messages : []
@@ -2921,6 +2921,7 @@ Rectangle {
         }
         readonly property var roster: backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
         memberCount: roster.length
+        meetingChat: root.isMeetingChat
         mentionables: roster.filter(m => !m.me).map(m => ({ mri: m.mri, name: m.name, mail: m.mail }))
         urgentAllowed: !root.isGroup || (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) <= 20
         onScheduleMeetingRequested: root.scheduleMeeting()

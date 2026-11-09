@@ -211,7 +211,7 @@ Window {
         posting: win.posting
         onStartPost: { win.posting = true; compose.focusSubject() }
         newestAtTop: backend.channelPostsAtTop
-        composerHeight: compose.boxHeight
+        composerHeight: compose.boxHeight + compose.bannerShownH
         onStartAnnouncement: { win.posting = true; compose.announcement = true; compose.focusSubject() }
     }
 

@@ -71,6 +71,27 @@ Item {
     // channel as Teams' picker does.
     property var tagMentions: []
     property int memberCount: 0
+    /// A meeting's chat (Everyone allows up to 1,000 others there).
+    property bool meetingChat: false
+    // Teams' Everyone rules (messaging settings, live: group chats 250
+    // others, meeting chats 1,000; a banner past 50; module 168932).
+    readonly property int everyoneOthers: Math.max(0, memberCount - 1)
+    readonly property bool everyoneAllowed: everyoneOthers <= (meetingChat ? 1000 : 250)
+
+    // Teams' compose banner (notificationBanner, measured on winpc
+    // 2026-11-09): a 29.3 tall bar on top of the box, the box's width,
+    // radius 4 4 0 0, #E6E6E6 with a #E0E0E0 line, its text 14/20 #424242
+    // 16.7 in, Close notification (28, a 16 px dismiss) at the end. It goes
+    // after 3 s. Danger banners (Everyone past 50) use Teams' alert danger
+    // colours (red foreground, background1, border).
+    property string bannerText: ""
+    property bool bannerDanger: false
+    readonly property real bannerShownH: bannerText ? 29.3 : 0
+    function showBanner(text, danger, decayMs) {
+        bannerText = text; bannerDanger = !!danger
+        bannerDecay.interval = decayMs || 3000; bannerDecay.restart()
+    }
+    Timer { id: bannerDecay; onTriggered: root.bannerText = "" }
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
     readonly property alias editor: input
@@ -114,7 +135,7 @@ Item {
     signal typed()
     signal settingsRequested()
     width: 748
-    height: boxHeight + 2 + (post ? 0 : 16)
+    height: bannerShownH + boxHeight + 2 + (post ? 0 : 16)
 
     function plainText() { return input.getText(0, input.length) }
     // The text as clean HTML (RichText), for Teams' message HTML.
@@ -196,10 +217,36 @@ Item {
     }
     function requestCancel() { discardDialog.open() }
 
+    // The compose banner.
+    Rectangle {
+        visible: !!root.bannerText
+        width: parent.width; height: root.bannerShownH + 4; radius: 4
+        color: root.bannerDanger ? theme.pick("#FCF4F6", "#3E1F25") : theme.pick("#E6E6E6", "#3D3D3D")
+        border.color: root.bannerDanger ? theme.pick("#F3D6D8", "#4F222B") : theme.divider; border.width: 0.67
+        Text {
+            x: 16.7; y: 4.7; width: parent.width - 16.7 - 36
+            elide: Text.ElideRight
+            text: root.bannerText
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: root.bannerDanger ? theme.pick("#C4314B", "#E73550") : theme.textStrong
+        }
+        Item {
+            x: parent.width - 28.7; y: 0.7; width: 28; height: 28
+            FluentIcon { x: 3.5; y: 7.25; size: 16; name: "dismiss-16"; color: closeBannerHover.hovered ? theme.brand : (root.bannerDanger ? theme.pick("#C4314B", "#E73550") : theme.textStrong) }
+            HoverHandler { id: closeBannerHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.bannerText = "" }
+            ToolTip.visible: closeBannerHover.hovered; ToolTip.delay: 500; ToolTip.text: "Close this notification"
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close notification"
+        }
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: root.bannerText
+    }
     // The post composer's elevation (Fluent shadow 8).
-    FluentSurface { visible: root.post; width: box.width; height: box.height; depth: 8; radius: 6; color: theme.surface }
+    FluentSurface { visible: root.post; y: box.y; width: box.width; height: box.height; depth: 8; radius: 6; color: theme.surface }
     Rectangle {
         id: box
+        y: root.bannerShownH
         width: parent.width; height: root.boxHeight
         radius: 6
         color: theme.surface
@@ -611,14 +658,14 @@ Item {
         }
     }
 
-    // The hint under the box.
+    // The hint under the box (the post composer's too, measured).
     Row {
-        visible: !root.empty && !root.post
-        anchors.right: parent.right; anchors.rightMargin: 17
-        y: root.boxHeight + 2
+        visible: !root.empty
+        anchors.right: parent.right; anchors.rightMargin: root.post ? 0 : 17
+        y: root.bannerShownH + root.boxHeight + 2
         spacing: 4
         Text {
-            text: root.formatting || root.enterKey === "newline" ? "Enter" : "Shift+Enter"
+            text: root.fmtOn || root.enterKey === "newline" ? "Enter" : "Shift+Enter"
             font.family: theme.font; font.pixelSize: theme.small; color: theme.brandForeground1
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             HoverHandler { id: hintHover; cursorShape: Qt.PointingHandCursor }
@@ -665,7 +712,15 @@ Item {
         else if (id === "discard-draft") root.requestCancel()
         else if (id === "send") root.trySubmit()
     }
-    function trySubmit() { if (!root.empty) root.submit() }
+    function trySubmit() {
+        if (root.empty) return
+        // Teams: an announcement needs its headline (AnnouncementPostMissingTitle).
+        if (root.post && root.announcement && !root.headline.trim()) {
+            root.showBanner("You'll need to add a headline to post your announcement.", false, 3000)
+            return
+        }
+        root.submit()
+    }
     // The post composer's tools under the editor (Teams: Emoji, GIFs and
     // Stickers, Attach files, Actions and apps).
     readonly property var postTools: [
@@ -865,6 +920,10 @@ Item {
             return
         }
         if (person.everyone) {
+            if (!root.everyoneAllowed) return
+            // Teams: past 50 others, "# people will be notified".
+            if (root.everyoneOthers > 50)
+                root.showBanner(root.everyoneOthers === 1 ? "1 person will be notified" : root.everyoneOthers + " people will be notified", true, 3000)
             const at0 = mentionAt, end0 = input.cursorPosition
             mentionAt = -1; mentionPicker.close()
             input.remove(at0, end0)
@@ -912,9 +971,9 @@ Item {
                     out.push({ kind: "tag", mri: g.id, name: g.name, mail: g.count === 1 ? "1 person" : g.count + " people" })
             for (const p of fromRoster) out.push(p)
             for (const p of found) if (!out.some(o => o.mri === p.mri)) out.push(p)
-            // Everyone, in group chats up to 250 people.
-            if (root.everyoneId && root.memberCount <= 250 && (!q || "everyone".startsWith(q)))
-                out.push({ everyone: true, name: "Everyone", mail: "Notify everyone in the chat" })
+            // Everyone: offered up to Teams' limit, shown disabled past it.
+            if (root.everyoneId && (!q || "everyone".startsWith(q)))
+                out.push({ everyone: true, name: "Everyone", mail: "Notify everyone in the chat", disabled: !root.everyoneAllowed })
             const rows = out.slice(0, 20)
             if (root.canAddAgent) rows.push({ kind: "agent", name: root.channelMention ? "Add agent to the channel" : "Add agent to the chat", mail: "" })
             if (root.canAddPeople) rows.push({ kind: "add", name: "Add someone to the chat", mail: "" })
@@ -923,7 +982,7 @@ Item {
             return rows
         }
         function move(d) { if (people.length) current = (current + d + people.length) % people.length }
-        function pick() { if (people.length) root.insertMention(people[Math.max(0, Math.min(current, people.length - 1))]); else close() }
+        function pick() { if (people.length) { const p = people[Math.max(0, Math.min(current, people.length - 1))]; if (!p.disabled) root.insertMention(p) } else close() }
         readonly property rect caret: input.cursorRectangle
         x: { const p = input.mapToItem(Overlay.overlay, input.positionToRectangle(Math.max(0, root.mentionAt)).x, 0); return Math.min(Overlay.overlay.width - width - 8, Math.max(8, p.x)) }
         y: { const p = input.mapToItem(Overlay.overlay, 0, input.positionToRectangle(Math.max(0, root.mentionAt)).y); return Math.max(8, p.y - height - 1) }
@@ -963,7 +1022,10 @@ Item {
                         color: theme.pick("#C5CBFA", "#3D3E78")
                         FluentIcon { anchors.centerIn: parent; name: "tag-20"; size: 20; color: theme.pick("#444791", "#C5CBFA") }
                     }
-                    FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.textStrong }
+                    FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: prow.modelData.disabled ? theme.disabled : theme.textStrong }
+                    // Past the limit: Teams' tooltip.
+                    ToolTip.visible: !!prow.modelData.disabled && prowHover.hovered; ToolTip.delay: 300
+                    ToolTip.text: "Not available for chats over 1,000 users."
                     // Share someone's contact info: the contact card icon (20).
                     FluentIcon { visible: prow.modelData.kind === "share"; x: 19.6; y: 14.6; name: "contact-card-20"; size: 20; color: theme.textStrong }
                     // Add agent: bot-add (20).
@@ -971,10 +1033,10 @@ Item {
                     // Add someone to the chat: person-add (20).
                     FluentIcon { visible: prow.modelData.kind === "add"; x: 19.6; y: 14.3; name: "people-add-20"; size: 20; color: theme.textStrong }
                     // The typed part in bold (Teams).
-                    Text { x: prow.action ? 59 : 59.6; y: prow.action ? 14.5 : 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; textFormat: prow.action ? Text.PlainText : Text.StyledText; text: prow.action ? prow.modelData.name : root.boldMatch(prow.modelData.name, root.mentionQuery.trim()); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    Text { visible: !!prow.modelData.mail; x: 59.6; y: 25.6; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
-                    HoverHandler { id: prowHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.insertMention(prow.modelData) }
+                    Text { x: prow.action ? 59 : 59.6; y: prow.action ? 14.5 : 5.6; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; textFormat: prow.action ? Text.PlainText : Text.StyledText; text: prow.action ? prow.modelData.name : root.boldMatch(prow.modelData.name, root.mentionQuery.trim()); font.family: theme.font; font.pixelSize: 14; color: prow.modelData.disabled ? theme.disabled : theme.text }
+                    Text { visible: !!prow.modelData.mail; x: 59.6; y: 25.6; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: prow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: prow.modelData.disabled ? theme.disabled : theme.text }
+                    HoverHandler { id: prowHover; cursorShape: prow.modelData.disabled ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                    TapHandler { enabled: !prow.modelData.disabled; onTapped: root.insertMention(prow.modelData) }
                     Accessible.role: Accessible.ListItem
                     Accessible.name: modelData.name + (modelData.mail ? " " + modelData.mail : "")
                     Accessible.selected: index === mentionPicker.current
@@ -1086,5 +1148,6 @@ Item {
     function openSchemesForTest() { schemes.open() }
     function bannerDialogForTest() { return bannerImageDialog }
     function closeSchemesForTest() { schemes.close() }
+    function everyoneRowForTest(n, meeting) { memberCount = n; meetingChat = !!meeting; return { allowed: everyoneAllowed, others: everyoneOthers } }
     function confirmDiscardForTest() { discardDialog.close(); root.formatting = false; input.clear(); if (root.post) root.resetPost(); root.cancelled() }
 }

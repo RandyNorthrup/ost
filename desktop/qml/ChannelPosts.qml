@@ -73,7 +73,9 @@ Item {
 
     ListView {
         id: list
-        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: root.newestAtTop ? parent.bottom : postButton.top; bottomMargin: root.newestAtTop ? 0 : 16 }
+        // Post in channel is hidden at the top or while composing; then the
+        // list goes down to the bottom.
+        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: root.newestAtTop || root.posting ? parent.bottom : postButton.top; bottomMargin: root.newestAtTop || root.posting ? 0 : 16 }
         clip: true
         spacing: 12
         // Newest activity at the bottom: posts sit at the top while they

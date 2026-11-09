@@ -3215,6 +3215,30 @@ Window {
         }
     }
 
+    // --compose-rules-test=<channel id> --shots=<dir>: Teams' Everyone
+    // limits (logged for 3, 51, 251 and 1,001 people, group and meeting),
+    // and an announcement without a headline (cr-banner.png, not sent).
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--compose-rules-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--compose-rules-test=")) || "").slice(21)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "General"); return }
+            const c = conversation.composeForTest()
+            if (step === 0) {
+                const r = [[3, false], [51, false], [251, false], [251, true], [1001, true]].map(x => x[0] + (x[1] ? "m" : "g") + ":" + JSON.stringify(c.everyoneRowForTest(x[0], x[1])))
+                console.warn("EVERYONE", r.join(" "))
+                conversation.posting = true; c.announcement = true; c.insertText("body without a headline")
+            }
+            else if (step === 1) { c.trySubmit(); console.warn("BANNER", c.bannerText); Qt.callLater(() => window.contentItem.grabToImage(r => r.saveToFile(dir + "cr-banner.png"))) }
+            else if (step === 4) { console.warn("BANNER after", JSON.stringify(c.bannerText)); c.clear(); c.resetPost(); conversation.posting = false }
+            else if (step === 5) Qt.quit()
+            step++
+        }
+    }
+
     // --row-menu-test=<channel id> --shots=<dir>: with
     // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
     Timer {
