@@ -2102,7 +2102,7 @@ Rectangle {
         active: !!root.webTab
         visible: active
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
-        sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; home: root.webTab ? root.webTab.url : "" }
+        sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; appId: root.webTab ? (root.webTab.app_id || "") : ""; home: root.webTab ? root.webTab.url : "" }
     }
     // Tabs OST can't offer say so.
     Column {
@@ -2146,7 +2146,10 @@ Rectangle {
         else if (key === "moveRight") backend.channelTabChange("right", root.teamId, root.chatId, t.id, "")
         else if (key === "reloadTab") root.reloadTab(t)
         else if (key === "aboutTab") aboutDialog.start(t)
+        else if (key === "devicePermissions") appPermissions.show(t.app_id)
     }
+    // Teams' App permissions for a tab's app.
+    AppPermissionsDialog { id: appPermissions }
     signal reloadTab(var t)
     // Teams' platform dialog (Fluent Dialog, as measured): 600 wide,
     // padding 24, radius 8, shadow 64; a header row of the title, "About"

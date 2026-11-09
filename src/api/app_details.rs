@@ -1820,3 +1820,65 @@ mod tests {
         );
     }
 }
+
+/// One of an app's device permissions as Teams' App permissions dialog
+/// lists it (the manifest's devicePermissions, in its order).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DevicePermission {
+    /// Teams' key: "media", "geolocation", "notifications", "midi" or
+    /// "openExternal".
+    pub kind: String,
+    pub title: String,
+    /// "" for External links (Teams shows no subtitle).
+    pub subtitle: String,
+}
+
+/// The device permissions an app asks for, with Teams' strings
+/// (extensibility app_device_permission_*).
+pub fn device_permissions(def: &serde_json::Value) -> Vec<DevicePermission> {
+    let open = "Only when app is open and in view";
+    def.get("devicePermissions")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|d| {
+            let (kind, title, subtitle) = match d.as_str()?.to_lowercase().as_str() {
+                "media" => ("media", "Media (Camera, microphone, speakers)", open),
+                "geolocation" => ("geolocation", "Location", open),
+                "notifications" => ("notifications", "Notifications", "Always"),
+                "midi" => ("midi", "MIDI devices", open),
+                "openexternal" => ("openExternal", "External links", ""),
+                _ => return None,
+            };
+            Some(DevicePermission { kind: kind.into(), title: title.into(), subtitle: subtitle.into() })
+        })
+        .collect()
+}
+
+/// Whether Teams turns an app's device permissions on by default (ECS
+/// extensibility.autoApprovedDevicePermissionApps).
+pub fn device_permissions_preapproved(app_id: &str) -> bool {
+    super::ecs::setting("extensibility", "autoApprovedDevicePermissionApps")
+        .and_then(|l| l.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case(app_id)))
+}
+
+#[cfg(test)]
+mod device_permission_tests {
+    use super::*;
+
+    #[test]
+    fn listed_as_teams_lists_them() {
+        // OneNote's manifest asks for media only.
+        let def = serde_json::json!({"devicePermissions": ["media"]});
+        let p = device_permissions(&def);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].title, "Media (Camera, microphone, speakers)");
+        assert_eq!(p[0].subtitle, "Only when app is open and in view");
+        let all = device_permissions(&serde_json::json!({"devicePermissions": ["Geolocation", "Notifications", "OpenExternal"]}));
+        assert_eq!(all.iter().map(|d| d.kind.as_str()).collect::<Vec<_>>(), ["geolocation", "notifications", "openExternal"]);
+        assert_eq!(all[2].subtitle, "");
+    }
+}

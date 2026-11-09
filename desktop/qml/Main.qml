@@ -2923,6 +2923,36 @@ Window {
         }
     }
 
+    // --tab-perms-test=<tab name> with --open-chat=<channel id>
+    // --shots=<dir>: open the tab's App permissions, capture it, turn its
+    // first permission off and on again (logging what OST would allow),
+    // and quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tab-perms-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property string app: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--tab-perms-test=")) || "").slice(17)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            if (step === 0 && conversation.tabNames.indexOf(name) < 0) return
+            const p = backend.appPermissionsJson ? JSON.parse(backend.appPermissionsJson) : null
+            if (step === 0) conversation.tabActionForTest(name, "devicePermissions")
+            else if (step === 2) { console.warn("TABPERMS", JSON.stringify(p)); window.contentItem.grabToImage(r => r.saveToFile(dir + "tabperms.png")); app = p ? p.app : "" }
+            else if (step === 3 && p && p.items && p.items.length) { backend.setAppPermission(app, p.items[0].kind, false); console.warn("TABPERMS off ->", backend.appPermission(app, p.items[0].kind)) }
+            else if (step === 4) window.contentItem.grabToImage(r => r.saveToFile(dir + "tabperms-off.png"))
+            else if (step === 5 && p && p.items && p.items.length) { backend.setAppPermission(app, p.items[0].kind, true); console.warn("TABPERMS on ->", backend.appPermission(app, p.items[0].kind)) }
+            else if (step === 6) Qt.quit()
+            step++
+        }
+    }
+
     // --chat-shot with --open-chat=<id> --shots=<dir>: open the chat,
     // capture it once it has loaded (chat.png) and quit.
     Timer {

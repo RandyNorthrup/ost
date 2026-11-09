@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T02:35:00Z'
-updated_date: '2026-11-09T15:09:00Z'
+updated_date: '2026-11-09T15:19:00Z'
 labels:
   - desktop
   - tabs
@@ -57,4 +57,7 @@ OST's channel tab strip and tab menu were built from screenshots and differ from
 - AC6 verified at runtime: OST's Copy link to tab is byte-identical to Teams' clipboard (read on winpc) for the Notes (entity form) and Page (channel form) tabs. That meant dropping `groupId` from the link and adding `itemprop="teams-copy-link"` to the HTML.
 - AC7: Teams' Open in browser opens the tab's websiteUrl (Notes: https://onenote.com/, which redirects to onenote.cloud.microsoft). OST opens the same URL in the system browser.
 - Harness: --tab-link-test=<tab> --open-chat=<channel> copies the link and holds 20 s for wl-paste.
+
+- AC8 (part): App permissions is Teams' dialog (measured on winpc): the app's device permissions from its manifest, Teams' strings, switches defaulting on for ECS autoApprovedDevicePermissionApps, and "Learn more". Changes are kept per device in OST settings, and OST's web views grant camera, microphone, location and notifications only as the app's permissions allow (no other permission is ever granted). Verified with OneNote in OST Test Team: the dialog matches Teams, and turning the switch off and on is read back.
+- Still left in AC8: Expand tab and Open tab in new window. The Notes tab itself waits on TASK-0053.
 <!-- SECTION:NOTES:END -->

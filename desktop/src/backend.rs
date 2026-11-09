@@ -100,6 +100,10 @@ pub mod qobject {
         /// A Store page (See all, a menu entry): {id, loading | title,
         /// description, apps, sections | error}.
         #[qproperty(QString, store_page_json)]
+        /// An app's App permissions (Teams' device permissions dialog):
+        /// {app, name, icon, preapproved, items: [{kind, title, subtitle,
+        /// on}]}.
+        #[qproperty(QString, app_permissions_json)]
         /// The Store's search: {query, loading | results}.
         #[qproperty(QString, store_search_json)]
         /// The agent Store's search: {query, results: [app], loading}.
@@ -903,6 +907,17 @@ pub mod qobject {
         /// Load a Store page (a collection's See all, or a menu entry).
         #[qinvokable]
         fn store_page_load(self: Pin<&mut Backend>, id: &QString);
+        /// Load an app's App permissions into app_permissions_json.
+        #[qinvokable]
+        fn app_permissions_load(self: Pin<&mut Backend>, app_id: &QString);
+        /// Whether `kind` (media, geolocation, …) is allowed for an app,
+        /// as App permissions has it.
+        #[qinvokable]
+        fn app_permission(self: Pin<&mut Backend>, app_id: &QString, kind: &QString) -> bool;
+        /// Turn one of an app's device permissions on or off (kept on this
+        /// device, as Teams keeps it).
+        #[qinvokable]
+        fn set_app_permission(self: Pin<&mut Backend>, app_id: &QString, kind: &QString, on: bool);
         /// Search the Store.
         #[qinvokable]
         fn store_search(self: Pin<&mut Backend>, query: &QString);
@@ -1284,6 +1299,7 @@ pub struct BackendRust {
     app_similar_json: QString,
     agent_store_json: QString,
     store_page_json: QString,
+    app_permissions_json: QString,
     store_search_json: QString,
     agent_search_json: QString,
     app_added_json: QString,
@@ -7900,6 +7916,76 @@ impl qobject::Backend {
                 this.as_mut().set_store_json(QString::from(text.as_str()));
             });
         });
+    }
+
+    pub fn app_permissions_load(mut self: Pin<&mut Self>, app_id: &QString) {
+        let app = app_id.to_string();
+        self.as_mut().set_app_permissions_json(QString::from(json!({ "app": app, "loading": true }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::app_details::definition(&TeamsClient::new().await?, &app).await }.await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(def) => {
+                        let pre = api::app_details::device_permissions_preapproved(&app);
+                        let saved = this.as_mut().saved_app_permissions();
+                        let items: Vec<serde_json::Value> = api::app_details::device_permissions(&def)
+                            .into_iter()
+                            .map(|d| {
+                                let on = saved.pointer(&format!("/{}/{}", app.to_lowercase(), d.kind)).and_then(|b| b.as_bool()).unwrap_or(pre);
+                                json!({ "kind": d.kind, "title": d.title, "subtitle": d.subtitle, "on": on })
+                            })
+                            .collect();
+                        json!({
+                            "app": app,
+                            "name": def.get("name").and_then(|n| n.as_str()).unwrap_or_default(),
+                            "icon": def.get("largeImageUrl").and_then(|n| n.as_str()).unwrap_or_default(),
+                            "preapproved": pre,
+                            "items": items,
+                        })
+                    }
+                    Err(e) => json!({ "app": app, "error": short_error(&e) }),
+                };
+                this.as_mut().set_app_permissions_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    /// App permissions changed on this device: {appId: {kind: bool}}.
+    fn saved_app_permissions(self: Pin<&mut Self>) -> serde_json::Value {
+        let raw = self.setting(&QString::from("appDevicePermissions")).to_string();
+        serde_json::from_str(&raw).unwrap_or_else(|_| json!({}))
+    }
+
+    pub fn app_permission(mut self: Pin<&mut Self>, app_id: &QString, kind: &QString) -> bool {
+        let (app, kind) = (app_id.to_string().to_lowercase(), kind.to_string());
+        let saved = self.as_mut().saved_app_permissions();
+        saved
+            .pointer(&format!("/{app}/{kind}"))
+            .and_then(|b| b.as_bool())
+            .unwrap_or_else(|| api::app_details::device_permissions_preapproved(&app))
+    }
+
+    pub fn set_app_permission(mut self: Pin<&mut Self>, app_id: &QString, kind: &QString, on: bool) {
+        let (app, kind) = (app_id.to_string().to_lowercase(), kind.to_string());
+        let mut saved = self.as_mut().saved_app_permissions();
+        if !saved.get(&app).is_some_and(|v| v.is_object()) {
+            saved[&app] = json!({});
+        }
+        saved[&app][&kind] = json!(on);
+        let text = saved.to_string();
+        self.as_mut().set_setting(&QString::from("appDevicePermissions"), &QString::from(text.as_str()));
+        // Show the change.
+        let current: serde_json::Value = serde_json::from_str(&self.rust().app_permissions_json.to_string()).unwrap_or_default();
+        if current.get("app").and_then(|a| a.as_str()).is_some_and(|a| a.eq_ignore_ascii_case(&app)) {
+            let mut c = current;
+            if let Some(items) = c.get_mut("items").and_then(|i| i.as_array_mut()) {
+                for it in items.iter_mut().filter(|it| it.get("kind").and_then(|k| k.as_str()) == Some(kind.as_str())) {
+                    it["on"] = json!(on);
+                }
+            }
+            self.as_mut().set_app_permissions_json(QString::from(c.to_string().as_str()));
+        }
     }
 
     pub fn store_page_load(mut self: Pin<&mut Self>, id: &QString) {

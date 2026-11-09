@@ -31,6 +31,7 @@ fn main() {
         "qml/AppDetailsDialog.qml",
         "qml/AgentStore.qml",
         "qml/AboutBotDialog.qml",
+        "qml/AppPermissionsDialog.qml",
         "qml/ShareForm.qml",
         "qml/AppCardFooter.qml",
         "qml/SectionDialog.qml",

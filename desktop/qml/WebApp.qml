@@ -278,8 +278,18 @@ Item {
             const w = popup.createObject(null, {})
             req.openIn(w.view)
         }
-        // Camera, microphone, location and the like: refused.
-        onPermissionRequested: p => p.deny()
+        // Camera, microphone, location, notifications: as the app's App
+        // permissions allow (Teams' device permissions, kept on this
+        // device); anything else, or an app OST doesn't know, refused.
+        onPermissionRequested: p => {
+            const kind = ({ [WebEnginePermission.PermissionType.MediaAudioCapture]: "media",
+                            [WebEnginePermission.PermissionType.MediaVideoCapture]: "media",
+                            [WebEnginePermission.PermissionType.MediaAudioVideoCapture]: "media",
+                            [WebEnginePermission.PermissionType.Geolocation]: "geolocation",
+                            [WebEnginePermission.PermissionType.Notifications]: "notifications" })[p.permissionType] || ""
+            if (root.appId && kind && backend.appPermission(root.appId, kind)) p.grant()
+            else p.deny()
+        }
     }
 
     Component {
