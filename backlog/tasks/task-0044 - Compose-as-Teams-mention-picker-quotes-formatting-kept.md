@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-09T21:34:00Z'
+updated_date: '2026-11-09T22:10:00Z'
 labels:
   - desktop
   - messages
@@ -25,7 +25,7 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - [ ] #1 @ opens Teams' mention picker (people, tags, everyone/channel/team per rules) and sends real mentions
 - [x] #2 Quoted replies compose and send as Teams' quote
 - [x] #3 Enter / Ctrl+Enter / Shift+Enter behave as Teams' setting rules
-- [ ] #4 Channel posts get Teams' post composer: Add a subject, and Announcement (the headline banner with its colour or picture, Add a subheading), sent and shown as Teams does
+- [x] #4 Channel posts get Teams' post composer: Add a subject, and Announcement (the headline banner with its colour or picture, Add a subheading), sent and shown as Teams does
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -87,4 +87,8 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
   - Posts render subject lines and banners as Teams measures them. Banner pictures are cached and shown.
   - Verified: OST's OST TEST 76 (subject) and 77 (Navy blue announcement) render in Teams exactly like Teams' own. OST reads back Teams' 74/75.
 - Left in AC4: Upload an image (the picture banner's upload and crop) and the composer's Loop components and ··· tools.
+
+- AC4 done: Upload an image. "Add a background image" has the drop area and the cropper (frame 848x244, zoom 1-4). The crop is uploaded to AMS and sent with Teams' imageData, appName and amsreferences (captured from Teams' OST TEST 78). Picture banners render at Teams' fixed ratio.
+  - Verified: OST's OST TEST 79 renders in Teams like Teams' 78 (684 x 190.1, white headline). Teams on winpc needed a restart to sync it.
+  - OST renders Teams' 78.
 <!-- SECTION:NOTES:END -->

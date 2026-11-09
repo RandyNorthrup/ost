@@ -64,6 +64,22 @@ pub struct Outgoing {
     /// An announcement's colour scheme ("0".."11"); none for other posts.
     #[serde(default)]
     pub banner_theme: Option<String>,
+    /// An announcement's picture: the cropped PNG to upload, then its AMS
+    /// object.
+    #[serde(default)]
+    pub banner_image: Option<BannerImage>,
+}
+
+/// An announcement banner's picture.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BannerImage {
+    /// The local file (until it is uploaded).
+    pub path: String,
+    pub width: u32,
+    pub height: u32,
+    /// The AMS object and its view URL, once uploaded.
+    pub id: String,
+    pub src: String,
 }
 
 /// A new post in a channel (not a reply): Teams sends its post fields.
@@ -71,20 +87,34 @@ fn is_channel_post(conversation: &str) -> bool {
     conversation.ends_with("@thread.tacv2") && !conversation.contains(";messageid=")
 }
 
-/// Teams' announcement banner card (`announcement-card-` and 32 hex).
-fn banner_card(theme: &str) -> String {
+/// Teams' announcement banner card (`announcement-card-` and 32 hex): a
+/// colour scheme, or a picture (Teams sends the crop as both images, with
+/// appName "AnnouncementBanner").
+fn banner_card(theme: &str, image: Option<&BannerImage>) -> String {
     let mut b = [0u8; 16];
     if getrandom::fill(&mut b).is_err() {
         b = (chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u128).to_le_bytes();
     }
     let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
-    serde_json::json!([{
-        "appId": "announcement-card",
-        "cardClientId": format!("announcement-card-{hex}"),
-        "contentType": super::messages::ANNOUNCEMENT_BANNER,
-        "content": { "colorTheme": theme },
-    }])
-    .to_string()
+    let card = match image.filter(|i| !i.id.is_empty()) {
+        Some(i) => {
+            let img = serde_json::json!({ "src": i.src, "imageWidth": i.width, "imageHeight": i.height, "imageAltText": "", "id": i.id });
+            serde_json::json!({
+                "appId": "announcement-card",
+                "appName": "AnnouncementBanner",
+                "cardClientId": format!("announcement-card-{hex}"),
+                "contentType": super::messages::ANNOUNCEMENT_BANNER,
+                "content": { "imageData": { "origImage": img, "croppedImage": img } },
+            })
+        }
+        None => serde_json::json!({
+            "appId": "announcement-card",
+            "cardClientId": format!("announcement-card-{hex}"),
+            "contentType": super::messages::ANNOUNCEMENT_BANNER,
+            "content": { "colorTheme": theme },
+        }),
+    };
+    serde_json::json!([card]).to_string()
 }
 
 /// offlineActionsManagerDefaultCrossSessionRetries.
@@ -363,7 +393,10 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         p["title"] = if o.banner_theme.is_some() { o.title.clone() } else { String::new() }.into();
         p["policyViolation"] = serde_json::Value::Null;
         if let Some(theme) = &o.banner_theme {
-            p["cards"] = banner_card(theme).into();
+            p["cards"] = banner_card(theme, o.banner_image.as_ref()).into();
+        }
+        if let Some(i) = o.banner_image.as_ref().filter(|i| !i.id.is_empty()) {
+            body["amsreferences"] = serde_json::json!([i.id]);
         }
         body["postType"] = if o.banner_theme.is_some() { "Announcement" } else { "Standard" }.into();
         body["crossPostChannels"] = serde_json::json!([]);
@@ -527,6 +560,10 @@ pub fn lie_view(o: &Outgoing) -> MessageView {
         announcement: o.banner_theme.as_ref().map(|t| super::messages::Announcement {
             title: o.title.clone(),
             color_theme: t.clone(),
+            image_url: o.banner_image.as_ref().map(|i| i.src.clone()).unwrap_or_default(),
+            image_width: o.banner_image.as_ref().map_or(0, |i| i.width),
+            image_height: o.banner_image.as_ref().map_or(0, |i| i.height),
+            image_local: o.banner_image.as_ref().map(|i| format!("file://{}", i.path)).unwrap_or_default(),
             ..Default::default()
         }),
         // A channel reply goes under its post.
@@ -926,6 +963,7 @@ mod tests {
             subject: String::new(),
             title: String::new(),
             banner_theme: None,
+            banner_image: None,
         };
         let b = post_body(&o);
         assert!(b.get("postType").is_none(), "chats have no post type");
@@ -983,6 +1021,7 @@ mod tests {
             subject: "OST TEST 75 subject".into(),
             title: String::new(),
             banner_theme: None,
+            banner_image: None,
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");
@@ -1014,5 +1053,23 @@ mod tests {
         let a = super::super::messages::announcement_from(Some(&props)).unwrap();
         assert_eq!((a.title.as_str(), a.color_theme.as_str()), ("OST TEST 74 announcement", "0"));
         assert!(super::super::messages::property_cards(Some(&props)).is_empty());
+
+        // A picture banner (Teams' OST TEST 78): the crop as both images,
+        // appName, and the object in amsreferences.
+        o.banner_image = Some(BannerImage {
+            path: "/tmp/a.png".into(), width: 1317, height: 366,
+            id: "0-wus-d12-9b36".into(), src: "https://us-api.asm.skype.com/v1/objects/0-wus-d12-9b36/views/imgpsh_fullsize".into(),
+        });
+        let b = post_body(&o);
+        assert_eq!(b["amsreferences"], serde_json::json!(["0-wus-d12-9b36"]));
+        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        assert_eq!(cards[0]["appName"], "AnnouncementBanner");
+        let img = &cards[0]["content"]["imageData"]["croppedImage"];
+        assert_eq!(img["imageWidth"], 1317);
+        assert_eq!(img["id"], "0-wus-d12-9b36");
+        assert_eq!(cards[0]["content"]["imageData"]["origImage"], *img);
+        let a = super::super::messages::announcement_from(Some(&serde_json::json!({ "title": "t", "cards": b["properties"]["cards"] }))).unwrap();
+        assert_eq!((a.image_width, a.image_height), (1317, 366));
+        assert!(a.image_url.ends_with("/imgpsh_fullsize"));
     }
 }

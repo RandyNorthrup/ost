@@ -383,6 +383,26 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
     right. The scheme picker shows 12 swatches (16, radius 4, 28 apart, two
     rows) above the button. The subject becomes "Add a subheading", 12
     under the banner.
+  - **Upload an image** opens "Add a background image": 918 wide, padding
+    27 32 32, radius 8, a 18/25.7 bold title, and Close.
+    - Empty: a 854 × 360 dashed #D1D1D1 drop area with "To get the best
+      result, choose an image that's at least 848x244 px." and an outline
+      Upload an image button; the hint again (info 12) and Cancel.
+    - With a picture: react-easy-crop across the dialog (344.3 tall,
+      contained), a 848 × 244 frame (2 px white, 50 % white shade), drag
+      and wheel, a 320-wide zoom slider (1 to 4, step 0.05), Cancel and
+      Done.
+    - After Done the composer's banner is 200 tall with the crop, a white
+      headline, and **Delete background image** (32 × 33.3, 80 % white,
+      radius 6, 12.7 from the top right).
+    - Post uploads the crop to AMS (`pish/image`, view `imgpsh_fullsize`),
+      lists it in `amsreferences`, and sends `imageData` with the crop as
+      both `origImage` and `croppedImage` (`src`, `imageWidth`,
+      `imageHeight`, `imageAltText` "", `id`) and `appName:
+      "AnnouncementBanner"`.
+    - Teams draws a picture banner 16 in and 64 down, the card's width
+      less 32, at a fixed 684 × 190.08 ratio (cropped to fill), with a
+      white headline and the body 16 under it.
 
 ---
 

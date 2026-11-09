@@ -2767,7 +2767,7 @@ Rectangle {
         backend.setNextImportance(compose.importance)
         // A new channel post: Teams' subject, headline and banner colour.
         backend.setNextPost(compose.post && root.pendingFiles.length === 0
-            ? JSON.stringify({ subject: compose.subject, title: compose.headline, theme: compose.announcement ? compose.bannerTheme : "" }) : "")
+            ? compose.postFields() : "")
         if (root.pendingFiles.length > 0) {
             backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []

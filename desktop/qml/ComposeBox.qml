@@ -89,13 +89,18 @@ Item {
     property string subject: ""
     property string headline: ""
     property string bannerTheme: "0"
-    readonly property bool postEmpty: empty && !subject.trim() && !headline.trim()
+    // The banner's picture (the cropped PNG) and its size.
+    property string bannerImage: ""
+    property int bannerImageW: 0
+    property int bannerImageH: 0
+    readonly property real bannerH: bannerImage ? 200 : 244
+    readonly property bool postEmpty: empty && !subject.trim() && !headline.trim() && !bannerImage
     signal closeRequested()
     // The formatting bar shows (always in the post composer).
     readonly property bool fmtOn: formatting || post
     // The delivery header ("IMPORTANT!") is 26 tall above the editor; the
     // post composer's author row and subject (and banner) are above it.
-    readonly property real headerH: post ? 57.3 + (announcement ? 268 : 0) + 55.7 : importance ? 26 : 0
+    readonly property real headerH: post ? 57.3 + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : 0
     readonly property real boxHeight: post ? headerH + 43 + editorArea.height + 16 + 31.3 + 17.4
         : headerH + (multiline
         ? (formatting ? 43 : 0) + editorArea.height + 44.7
@@ -230,9 +235,31 @@ Item {
             Rectangle {
                 id: bannerEdit
                 visible: root.announcement
-                x: 12.7; y: 69.3; width: parent.width - 25.3; height: 244; radius: 4
-                readonly property var colors: theme.banner(root.bannerTheme)
+                x: 12.7; y: 69.3; width: parent.width - 25.3; height: root.bannerH; radius: 4
+                // With a picture the headline is white over it.
+                readonly property var colors: root.bannerImage ? [theme.banner(root.bannerTheme)[0], "#FFFFFF"] : theme.banner(root.bannerTheme)
                 color: colors[0]
+                clip: true
+                Image {
+                    visible: !!root.bannerImage
+                    anchors.fill: parent
+                    source: root.bannerImage
+                    fillMode: Image.PreserveAspectCrop
+                    smooth: true; mipmap: true
+                }
+                // Delete background image (32 x 33.3, 80% white, radius 6,
+                // 12.7 from the top right).
+                Rectangle {
+                    visible: !!root.bannerImage
+                    x: parent.width - 12.7 - width; y: 12.7; width: 32; height: 33.3; radius: 6
+                    color: delImgHover.hovered ? theme.surface : Qt.rgba(1, 1, 1, 0.8)
+                    border.color: theme.stroke; border.width: 0.67
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: "delete-20"; color: delImgHover.hovered ? theme.brand : theme.textStrong }
+                    HoverHandler { id: delImgHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { root.bannerImage = ""; root.bannerImageW = 0; root.bannerImageH = 0 } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Delete background image"
+                }
                 border.width: 0.67
                 border.color: parseInt(root.bannerTheme, 10) >= 6 ? Qt.rgba(1, 1, 1, theme.dark ? 0.1 : 0.2) : Qt.rgba(0, 0, 0, theme.dark ? 0.1 : 0.05)
                 TextEdit {
@@ -259,7 +286,7 @@ Item {
                     Accessible.name: "Type a headline"
                 }
                 Rectangle {
-                    x: parent.width - 12.8 - width; y: 198.7
+                    x: parent.width - 12.8 - width; y: parent.height - 12.6 - height
                     width: 65.3; height: 32.7; radius: 4
                     color: theme.surface
                     Rectangle {
@@ -306,7 +333,7 @@ Item {
                         color: uploadHover.hovered ? theme.hover : "transparent"
                         FluentIcon { anchors.centerIn: parent; size: 20; name: "image-add-20"; color: uploadHover.hovered ? theme.brand : theme.textStrong }
                         HoverHandler { id: uploadHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.bannerImageRequested() }
+                        TapHandler { onTapped: bannerImageDialog.start() }
                         ToolTip.visible: uploadHover.hovered; ToolTip.delay: 500; ToolTip.text: "Upload an image"
                         Accessible.role: Accessible.Button
                         Accessible.name: "Upload an image"
@@ -315,7 +342,7 @@ Item {
             }
             // Add a subject / Add a subheading.
             Item {
-                x: 10.7; y: 57.3 + (root.announcement ? 268 : 0)
+                x: 10.7; y: 57.3 + (root.announcement ? 12 + root.bannerH + 12 : 0)
                 width: parent.width - 21.3; height: 55.7
                 TextInput {
                     id: subjectField
@@ -646,9 +673,17 @@ Item {
         { id: "FilePicker", icon: "attach-20", label: "Attach files" },
         { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps" }
     ]
-    signal bannerImageRequested()
     /// Back to an empty post composer.
-    function resetPost() { subject = ""; headline = ""; bannerTheme = "0"; announcement = false }
+    function resetPost() { subject = ""; headline = ""; bannerTheme = "0"; announcement = false; bannerImage = ""; bannerImageW = 0; bannerImageH = 0 }
+    /// The next post's fields for backend.setNextPost.
+    function postFields() {
+        return JSON.stringify({ subject: subject, title: headline, theme: announcement ? bannerTheme : "",
+            image: announcement ? bannerImage.replace(/^file:\/\//, "") : "", imageWidth: bannerImageW, imageHeight: bannerImageH })
+    }
+    BannerImageDialog {
+        id: bannerImageDialog
+        onPicked: (path, w, h) => { root.bannerImage = path; root.bannerImageW = w; root.bannerImageH = h }
+    }
     function enterPressed(event) {
         const ctrl = event.modifiers & Qt.ControlModifier
         const shift = event.modifiers & Qt.ShiftModifier
@@ -1049,6 +1084,7 @@ Item {
     // Test hooks.
     function discardForTest() { discardDialog.open() }
     function openSchemesForTest() { schemes.open() }
+    function bannerDialogForTest() { return bannerImageDialog }
     function closeSchemesForTest() { schemes.close() }
     function confirmDiscardForTest() { discardDialog.close(); root.formatting = false; input.clear(); if (root.post) root.resetPost(); root.cancelled() }
 }

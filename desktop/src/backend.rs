@@ -2342,13 +2342,25 @@ struct NextPost {
     subject: String,
     title: String,
     theme: String,
+    /// The banner picture: the cropped PNG and its size.
+    image: String,
+    image_w: u32,
+    image_h: u32,
 }
 
 impl NextPost {
     fn from_json(s: &str) -> Option<NextPost> {
         let v: serde_json::Value = serde_json::from_str(s).ok()?;
         let f = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
-        Some(NextPost { subject: f("subject"), title: f("title"), theme: f("theme") })
+        let n = |k: &str| v.get(k).and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+        Some(NextPost {
+            subject: f("subject"),
+            title: f("title"),
+            theme: f("theme"),
+            image: f("image"),
+            image_w: n("imageWidth"),
+            image_h: n("imageHeight"),
+        })
     }
 }
 
@@ -6580,8 +6592,7 @@ impl qobject::Backend {
             serde_json::from_str(&quote_json.to_string()).ok();
         let mut o = self.outgoing(&format!("win:{channel}"), channel.clone(), html, mentions, quote, String::new());
         self.as_mut().apply_next_post(&mut o);
-        let _rt = runtime().enter();
-        outbox().submit(o);
+        self.submit_outgoing(o);
     }
 
     /// Load a thread window's post and replies again.
@@ -6696,8 +6707,7 @@ impl qobject::Backend {
         // Sent: the draft for this chat is done.
         self.as_mut()
             .set_draft(&QString::from(chat_id.as_str()), &QString::default());
-        let _rt = runtime().enter();
-        outbox().submit(o);
+        self.submit_outgoing(o);
     }
 
     /// A message to send: its arrival placed after the newest message of
@@ -6749,6 +6759,7 @@ impl qobject::Backend {
             subject: String::new(),
             title: String::new(),
             banner_theme: None,
+            banner_image: None,
         }
     }
 
@@ -7476,7 +7487,49 @@ impl qobject::Backend {
         if !p.theme.is_empty() && p.theme.parse::<u8>().is_ok_and(|t| t < 12) {
             o.title = p.title.trim().chars().take(44).collect();
             o.banner_theme = Some(p.theme);
+            if !p.image.is_empty() {
+                o.banner_image = Some(api::outbox::BannerImage {
+                    path: p.image,
+                    width: p.image_w,
+                    height: p.image_h,
+                    ..Default::default()
+                });
+            }
         }
+    }
+
+    /// Send `o`: an announcement's picture goes to AMS first (readable in
+    /// the channel), as Teams uploads it before posting.
+    fn submit_outgoing(self: Pin<&mut Self>, mut o: api::outbox::Outgoing) {
+        let Some(img) = o.banner_image.clone().filter(|i| i.id.is_empty()) else {
+            let _rt = runtime().enter();
+            outbox().submit(o);
+            return;
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let base = client.ams_url().context("No media store address")?;
+                let bytes = std::fs::read(&img.path).context("Reading the banner picture")?;
+                let id = client.ams_upload_image(&o.conversation_id, bytes, "image.png").await?;
+                anyhow::Ok((format!("{base}/v1/objects/{id}/views/imgpsh_fullsize"), id))
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok((src, id)) => {
+                    if let Some(i) = o.banner_image.as_mut() {
+                        i.src = src;
+                        i.id = id;
+                    }
+                    let _rt = runtime().enter();
+                    outbox().submit(o);
+                }
+                Err(e) => this.as_mut().set_status_text(QString::from(
+                    format!("Couldn't upload the picture: {}", short_error(&e)).as_str(),
+                )),
+            });
+        });
     }
 
     pub fn set_reply_quote(mut self: Pin<&mut Self>, quote_json: &QString) {

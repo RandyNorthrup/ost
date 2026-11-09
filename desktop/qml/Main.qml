@@ -3150,6 +3150,43 @@ Window {
         }
     }
 
+    // --banner-test=<channel id> --banner-file=<png> --shots=<dir>
+    // [--post-send]: Announcement, Upload an image with the file (bn-empty,
+    // bn-crop), zoomed 1.2 and Done (bn-composer), a headline and body,
+    // sent with --post-send (bn-sent; the post logged); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--banner-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--banner-test=")) || "").slice(14)
+            const file = (Qt.application.arguments.find(a => a.startsWith("--banner-file=")) || "").slice(14)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const send = Qt.application.arguments.indexOf("--post-send") >= 0
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            const c = conversation.composeForTest()
+            const d = c.bannerDialogForTest()
+            if (step === 1) { conversation.posting = true; c.focusSubject(); c.announcement = true }
+            else if (step === 2) d.start()
+            else if (step === 3) shot("bn-empty")
+            else if (step === 4) d.setSourceForTest("file://" + file)
+            else if (step === 5) { d.zoom = 1.2; d.panX = 40 }
+            else if (step === 6) shot("bn-crop")
+            else if (step === 7) d.finish()
+            else if (step === 8) { c.headline = "OST TEST 79 picture"; c.insertText("OST TEST 79 body from OST"); console.warn("BANNER", c.bannerImage, c.bannerImageW, c.bannerImageH) }
+            else if (step === 9) shot("bn-composer")
+            else if (step === 10) { if (send) c.submit(); else { c.clear(); c.resetPost(); conversation.posting = false } }
+            else if (step === 16) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => /OST TEST 7[89]/.test(m.text || "")); console.warn("BANNERPOST", JSON.stringify(m.map(m => ({ id: m.id, announcement: m.announcement, state: m.send_state })))); shot("bn-sent") }
+            else if (step === 17) Qt.quit()
+            step++
+        }
+    }
+
     // --row-menu-test=<channel id> --shots=<dir>: with
     // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
     Timer {

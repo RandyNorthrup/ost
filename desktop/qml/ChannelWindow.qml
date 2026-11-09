@@ -236,7 +236,7 @@ Window {
         onQuoteDismissed: quote = null
         onEmojiRequested: a => host.openEmojiFor(compose)
         onSubmit: {
-            backend.setNextPost(JSON.stringify({ subject: compose.subject, title: compose.headline, theme: compose.announcement ? compose.bannerTheme : "" }))
+            backend.setNextPost(compose.postFields())
             backend.sendChannelPost(win.channelId, compose.formattedText(), JSON.stringify(compose.mediaInUse()), compose.quote ? JSON.stringify(compose.quote) : "")
             compose.quote = null; compose.clear(); compose.resetPost(); win.posting = false
         }

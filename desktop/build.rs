@@ -114,6 +114,7 @@ fn main() {
         "qml/ManageChannel.qml",
         "qml/AnalyticsView.qml",
         "qml/AnalyticsChart.qml",
+        "qml/BannerImageDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
         "qml/MeetingTimerStrip.qml",

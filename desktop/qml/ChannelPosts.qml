@@ -153,13 +153,24 @@ Item {
                         visible: !!card.post && !postEdit.active
                         x: 18; y: 64; width: card.width - 36
                         readonly property var ann: card.post ? card.post.announcement || null : null
+                        // A picture banner: the card's width less 32, Teams'
+                        // fixed ratio (684 x 190.08 at a 716 card, whatever
+                        // the picture's size; it is cropped to fill), 16 above
+                        // the text.
                         Item {
+                            id: bannerSlot
                             visible: !!postHead.ann
-                            width: parent.width; height: visible ? 244 + 12 : 0
+                            readonly property bool pic: !!postHead.ann && !!postHead.ann.image_url
+                            readonly property real picW: parent.width + 4
+                            readonly property real picH: picW * 190.08 / 684
+                            width: parent.width; height: !visible ? 0 : pic ? picH + 16 : 244 + 12
                             Rectangle {
                                 id: bannerBox
-                                width: parent.width; height: 244; radius: 4
-                                readonly property var colors: theme.banner(postHead.ann ? postHead.ann.color_theme : "0")
+                                x: bannerSlot.pic ? -2 : 0
+                                width: bannerSlot.pic ? bannerSlot.picW : parent.width
+                                height: bannerSlot.pic ? bannerSlot.picH : 244
+                                radius: bannerSlot.pic ? 0 : 4
+                                readonly property var colors: bannerSlot.pic ? ["transparent", "#FFFFFF"] : theme.banner(postHead.ann ? postHead.ann.color_theme : "0")
                                 color: colors[0]
                                 clip: true
                                 Image {
