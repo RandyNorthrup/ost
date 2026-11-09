@@ -1017,6 +1017,18 @@ Rectangle {
             x: root.contextLeft + 32; icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? "Open channel details" : "Open chat details"
             onClicked: participants.visible = !participants.visible
         }
+        // More channel options (more-apps-button-tid, 32 x 31.3, ··· at the
+        // end): the channel's menu (ChannelMenu), its end 6.3 past the
+        // button's, 4.9 below it.
+        HeaderAction {
+            id: channelMore
+            visible: root.isChannel && !root.pane
+            x: parent.width - 43; height: 31.3
+            icon: "more-horizontal-20"
+            iconColor: channelMenu.menu.opened ? theme.brand : root.hdrStrong
+            Accessible.name: "More channel options"
+            onClicked: channelMenu.show(channelMore, channelMore.width + 6.3 - channelMenu.menu.implicitWidth, channelMore.height + 4.9)
+        }
         // More chat options (chat-header-more-menu-trigger). Items Teams has
         // that are not built yet: Open in new window, Share screen, Move to
         // section, Remove chat history.
@@ -2102,6 +2114,27 @@ Rectangle {
     readonly property real channelMeetRight: (isChannel && tab !== "" ? width - 43 : contextLeft) - 16
     readonly property real channelMeetLeft: channelMeetRight - 20 - (channelMeetWide ? 97.17 : 32)
     signal channelMeetNow()
+    // The open channel as the team list has it (its menu's state).
+    readonly property var channelInfo: {
+        if (!isChannel) return ({})
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        for (const t of teams) { const c = (t.channels || []).find(c => c.id === root.chatId); if (c) return c }
+        return ({ id: root.chatId, name: root.chatName })
+    }
+    signal openChannelWindow(string channelId)
+    signal manageChannel(string channelId)
+    signal channelWorkflows(string channelId)
+    ChannelMenu {
+        id: channelMenu
+        channel: root.channelInfo
+        teamId: root.teamId; teamName: root.teamName
+        newestPost: { const posts = root.messages.filter(m => m.kind === "message" && (!m.root_id || m.root_id === m.id)); return posts.length ? posts[posts.length - 1].id : "" }
+        postsAtBottom: !backend.channelPostsAtTop
+        onOpenInNewWindow: root.openChannelWindow(root.chatId)
+        onManageChannel: root.manageChannel(root.chatId)
+        onWorkflows: root.channelWorkflows(root.chatId)
+    }
+    function channelMenuForTest2() { return channelMenu }
     function expandTab(t) {
         expandedTab = t
         expandedAbout = null

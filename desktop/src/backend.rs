@@ -132,6 +132,11 @@ pub mod qobject {
         /// The channel threads open in windows of their own:
         /// {"<channel>;messageid=<post>": [messages, oldest first]}.
         #[qproperty(QString, thread_windows_json)]
+        /// A channel menu action's outcome: {op, channel, ok, error?, data?}.
+        #[qproperty(QString, channel_action_result)]
+        /// New channel posts show at the top (Teams' See new posts at top;
+        /// off by default).
+        #[qproperty(bool, channel_posts_at_top)]
         /// The open chat has older messages to load (scroll up).
         #[qproperty(bool, messages_has_older)]
         /// Older messages are being fetched.
@@ -1060,6 +1065,22 @@ pub mod qobject {
         /// "remove" tab `tab_id`, or "converse" (Start conversation in its
         /// Conversation pane; the outcome carries the new root post); the
         /// outcome goes to channelTabResult and the tabs reload.
+        /// A channel's menu (More channel options, or its row in the list):
+        /// "notify" (arg all|mentions|mute), "customize" (arg JSON {mode,
+        /// tag, channel_team, dsk, follow_all, newest}), "notify-load",
+        /// "hide", "show", "edit" (arg JSON {displayName?, description?,
+        /// chatModalityType?}), "email" (get or create), "email-senders"
+        /// (arg JSON {allowed, domains}), "email-remove", "copy-link" (arg
+        /// the channel's name), "posts-at-top" / "posts-at-bottom". The
+        /// outcome goes to channelActionResult; the team list reloads.
+        #[qinvokable]
+        fn channel_action(
+            self: Pin<&mut Backend>,
+            op: &QString,
+            team_id: &QString,
+            channel_id: &QString,
+            arg: &QString,
+        );
         #[qinvokable]
         fn channel_tab_change(
             self: Pin<&mut Backend>,
@@ -1359,6 +1380,8 @@ pub struct BackendRust {
     status_note_result: QString,
     my_note_json: QString,
     thread_windows_json: QString,
+    channel_action_result: QString,
+    channel_posts_at_top: bool,
     /// The threads open in windows ("<channel>;messageid=<post>").
     thread_windows: Vec<String>,
     messages_has_older: bool,
@@ -7794,6 +7817,11 @@ impl qobject::Backend {
                 let video = api::preferences::header_call_is_video(&settings);
                 let _ = qt.queue(move |mut this| this.as_mut().set_header_call_video(video));
             }
+            if let Ok(c) = TeamsClient::new().await
+                && let Ok(bottom) = api::channels::new_posts_at_bottom(&c).await
+            {
+                let _ = qt.queue(move |mut this| this.as_mut().set_channel_posts_at_top(!bottom));
+            }
         });
     }
 
@@ -8959,6 +8987,145 @@ impl qobject::Backend {
         };
         // SAFETY: two NUL-terminated strings, copied by Qt before returning.
         unsafe { ost_set_clipboard(link.as_ptr(), html.as_ptr()) };
+    }
+
+    pub fn channel_action(
+        self: Pin<&mut Self>,
+        op: &QString,
+        team_id: &QString,
+        channel_id: &QString,
+        arg: &QString,
+    ) {
+        let (op, team, channel, arg) = (
+            op.to_string(),
+            team_id.to_string(),
+            channel_id.to_string(),
+            arg.to_string(),
+        );
+        if !channel.ends_with("@thread.tacv2") {
+            return;
+        }
+        // The team's thread id and the channel's facts, from the list.
+        let teams: serde_json::Value =
+            serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        let team_entry = teams
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|t| t["id"].as_str() == Some(team.as_str()))
+            .cloned()
+            .unwrap_or_default();
+        let team_thread = team_entry["thread_id"].as_str().unwrap_or_default().to_string();
+        let general = team_entry["channels"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|c| c["id"].as_str() == Some(channel.as_str()) && c["general"].as_bool() == Some(true));
+        if op == "copy-link" {
+            let tenant = teams_cli::config::Config::load()
+                .ok()
+                .and_then(|c| c.tenant_id())
+                .unwrap_or_default();
+            let (url, html) = api::channels::channel_link(&channel, &arg, &team, &tenant);
+            if let (Ok(u), Ok(h)) = (std::ffi::CString::new(url), std::ffi::CString::new(html)) {
+                // SAFETY: two NUL-terminated strings, copied by Qt before returning.
+                unsafe { ost_set_clipboard(u.as_ptr(), h.as_ptr()) };
+                let mut this = self;
+                this.as_mut().toast("Copied to clipboard", "success");
+            }
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result: anyhow::Result<serde_json::Value> = async {
+                let client = TeamsClient::new().await?;
+                use api::channels::{Notify, NotifyMode};
+                let mode = |m: &str| match m {
+                    "all" => NotifyMode::All,
+                    "mute" => NotifyMode::Mute,
+                    _ => NotifyMode::Mentions,
+                };
+                match op.as_str() {
+                    "notify-load" => {
+                        let props = api::channels::properties(&client, &channel).await?;
+                        Ok(serde_json::to_value(api::channels::notify_state_from(&props))?)
+                    }
+                    "notify" => {
+                        let props = api::channels::properties(&client, &channel).await.unwrap_or_default();
+                        let dsk = api::channels::notify_state_from(&props).notify.dsk;
+                        api::channels::set_notify(&client, &channel, &Notify::for_mode(mode(&arg), dsk)).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "customize" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let m = mode(a["mode"].as_str().unwrap_or("mentions"));
+                        let n = Notify {
+                            mode: m,
+                            tag: a["tag"].as_bool().unwrap_or(true),
+                            channel_team: a["channel_team"].as_bool().unwrap_or(true),
+                            dsk: a["dsk"].as_str().map(str::to_string),
+                        };
+                        api::channels::set_notify(&client, &channel, &n).await?;
+                        if let Some(follow) = a["follow_all"].as_bool() {
+                            let props = api::channels::properties(&client, &channel).await.unwrap_or_default();
+                            if api::channels::notify_state_from(&props).follow_all != follow {
+                                let newest = a["newest"].as_str().filter(|s| !s.is_empty());
+                                api::channels::set_follow_all(&client, &channel, if follow { newest.or(Some("0")) } else { None }).await?;
+                            }
+                        }
+                        Ok(serde_json::Value::Null)
+                    }
+                    "hide" | "show" => {
+                        api::channels::set_hidden(&client, &channel, general, op == "hide").await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "edit" => {
+                        let change: api::channels::Edit = serde_json::from_str(&arg).context("Edit")?;
+                        api::channels::edit(&client, &team_thread, &channel, &change).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "email" => Ok(serde_json::to_value(api::channels::email(&client, &channel).await?)?),
+                    "email-senders" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let domains: Vec<String> = a["domains"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|d| d.as_str().map(str::to_string))
+                            .collect();
+                        let e = api::channels::set_email_senders(&client, &channel, a["allowed"].as_str().unwrap_or("members"), &domains).await?;
+                        Ok(serde_json::to_value(e)?)
+                    }
+                    "email-remove" => {
+                        api::channels::remove_email(&client, &channel).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "posts-at-top" | "posts-at-bottom" => {
+                        api::channels::set_new_posts_at_bottom(&client, op == "posts-at-bottom").await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    _ => anyhow::bail!("Unknown channel action"),
+                }
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if let Err(e) = &result {
+                    tracing::warn!("channel {op} failed: {e:#}");
+                }
+                let outcome = match &result {
+                    Ok(data) => json!({ "op": op, "channel": channel, "ok": true, "data": data }),
+                    Err(e) => json!({ "op": op, "channel": channel, "ok": false, "error": short_error(e) }),
+                };
+                this.as_mut()
+                    .set_channel_action_result(QString::from(outcome.to_string().as_str()));
+                if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
+                    this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
+                }
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom") {
+                    this.as_mut().load_teams();
+                }
+            });
+        });
     }
 
     pub fn channel_tab_change(

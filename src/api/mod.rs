@@ -24,6 +24,7 @@ pub mod preferences;
 pub mod presence;
 pub mod store;
 pub mod store_content;
+pub mod channels;
 pub mod tabs;
 pub mod teams;
 

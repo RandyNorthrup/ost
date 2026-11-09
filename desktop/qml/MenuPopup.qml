@@ -20,6 +20,10 @@ Popup {
     property var items: []
     signal picked(int index)
     signal subPicked(int index, int subIndex)
+    /// A row with `flyout: true` (a chevron) opens its owner's own popup
+    /// beside it on hover, as a submenu would (Teams' Manage notifications):
+    /// row is the row item, to place it by; -1 when another row is hovered.
+    signal flyoutRequested(int index, Item row)
     /// Teams' View menu style: padding 16, the check mark at the row's end
     /// (16 px, 6 from the right), labels of rows without an icon at 10, and
     /// dividers spanning the surface with 10 px either side.
@@ -52,7 +56,7 @@ Popup {
                 if (i.separator) continue
                 let row = (i.toggle ? 60 : root.labelX) + metrics.advanceWidth(i.label || "") + (i.toggle ? 8 : 6)
                 if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
-                if (i.chevron || i.submenu) row += root.chevronSize + root.chevronMargin
+                if (i.chevron || i.submenu || i.flyout) row += root.chevronSize + root.chevronMargin
                 if (i.endCheck !== undefined) row += 16 + 6
                 w = Math.max(w, row)
             }
@@ -80,8 +84,16 @@ Popup {
         }
         return subMenu
     }
+    readonly property bool hasFlyout: items.some(i => i && i.flyout === true)
     function hoverRow(i, rowItem) {
         const it0 = items[i]
+        if (it0 && it0.flyout === true && it0.enabled !== false) {
+            if (subMenu) subMenu.close()
+            subIndex = -1
+            root.flyoutRequested(i, rowItem)
+            return
+        }
+        if (hasFlyout) root.flyoutRequested(-1, null)
         if (!subMenu && !(it0 && it0.submenu)) return
         const sub = submenu()
         const it = items[i]
@@ -177,7 +189,7 @@ Popup {
                         color: row.modelData.toggle ? theme.text : row.ink
                     }
                     FluentIcon {
-                        visible: !!row.modelData.chevron || !!row.modelData.submenu
+                        visible: !!row.modelData.chevron || !!row.modelData.submenu || !!row.modelData.flyout
                         anchors.right: parent.right; anchors.rightMargin: root.chevronMargin; anchors.verticalCenter: parent.verticalCenter
                         name: root.viewStyle ? "view-chevron-16" : "chevron-right-" + root.chevronSize; size: root.chevronSize; color: row.ink
                     }
@@ -220,7 +232,7 @@ Popup {
                     TapHandler {
                         enabled: row.on
                         onTapped: {
-                            if (row.modelData.submenu) { root.hoverRow(row.index, row); return }
+                            if (row.modelData.submenu || row.modelData.flyout) { root.hoverRow(row.index, row); return }
                             if (row.modelData.toggle) { root.picked(row.index); return }
                             root.close(); root.picked(row.index)
                         }

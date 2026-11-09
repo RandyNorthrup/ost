@@ -129,6 +129,13 @@ pub struct ListChannel {
     pub general: bool,
     /// Never opened (Teams' "New" badge; never on General).
     pub new: bool,
+    pub description: String,
+    /// Manage notifications: "all", "mentions" or "mute".
+    pub notify: crate::api::channels::NotifyMode,
+    /// You own it (Edit channel, Manage channel, the email address).
+    pub owner: bool,
+    /// Its layout: "PostReply" (Posts) or "Conversational" (Threads).
+    pub layout: String,
 }
 
 /// A team as the chat list shows it.
@@ -175,11 +182,25 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 .map(|c| ListChannel {
                     id: s(c, "id"),
                     name: s(c, "displayName"),
-                    shown: b(c, "isFavorite"),
+                    // General's place in the list is the team's
+                    // isGeneralChannelFavorite (Hide / Show set it there).
+                    shown: if b(c, "isGeneral") {
+                        t.get("isGeneralChannelFavorite").and_then(|v| v.as_bool()).unwrap_or(true)
+                    } else {
+                        b(c, "isFavorite")
+                    },
                     unread: c.get("isMessageRead").and_then(|r| r.as_bool()) == Some(false),
                     muted: b(c, "isMuted"),
                     general: b(c, "isGeneral"),
                     new: !b(c, "isGeneral") && !read_horizon(c),
+                    description: s(c, "description"),
+                    notify: crate::api::channels::Notify::from_properties(
+                        &s(c, "channelNotificationSettings"),
+                        c.get("alerts").and_then(|a| a.as_bool()).unwrap_or(true),
+                    )
+                    .mode,
+                    owner: s(c, "memberRoleString") == "admin",
+                    layout: Some(s(c, "modality")).filter(|m| !m.is_empty()).unwrap_or_else(|| "PostReply".into()),
                 })
                 .collect();
             // General first, then by name (Teams' channel order).
@@ -360,5 +381,10 @@ mod list_tests {
         assert!(!t[0].channels[2].shown);
         assert!(t[0].channels[1].unread && t[0].channels[1].new);
         assert!(!t[1].channels[0].new);
+        // A hidden General: the team's isGeneralChannelFavorite (Teams
+        // keeps the channel's isFavorite), as captured after Hide.
+        let hidden = serde_json::json!([{"id": "t1", "displayName": "T", "isGeneralChannelFavorite": false, "channels": [
+            {"id": "c1", "displayName": "General", "isFavorite": true, "isGeneral": true}]}]);
+        assert!(!list_teams_from(&hidden)[0].channels[0].shown);
     }
 }

@@ -580,6 +580,25 @@ Rectangle {
         Accessible.name: (row.chat.name || "") + (row.unread ? ", unread" : "") + (row.chat.muted ? ", muted" : "") + (row.chat.liveCall ? ", call in progress" : "")
     }
 
+    // The channel menu, shared by every channel row.
+    signal openChannelWindow(string channelId)
+    signal manageChannel(string channelId, string channelName)
+    signal channelWorkflows(string channelId)
+    ChannelMenu {
+        id: channelMenu
+        onOpenInNewWindow: root.openChannelWindow(channel.id)
+        onManageChannel: root.manageChannel(channel.id, channel.name)
+        onWorkflows: root.channelWorkflows(channel.id)
+    }
+    function openChannelMenu(channel, team, anchor, px, py) {
+        channelMenu.channel = channel
+        channelMenu.teamId = team ? team.id : ""
+        channelMenu.teamName = team ? team.name : ""
+        channelMenu.postsAtBottom = !backend.channelPostsAtTop
+        channelMenu.show(anchor, px, py)
+    }
+    function channelMenuForTest() { return channelMenu }
+
     // A channel row: in a team (indented under it) or in a section.
     component ChannelRow: Item {
         id: chRow
@@ -607,6 +626,25 @@ Rectangle {
         NewBadge { id: newBadge; visible: !!chRow.channel.new; x: chName.x + chName.width + 8; anchors.verticalCenter: parent.verticalCenter }
         HoverHandler { id: chHover }
         TapHandler { onTapped: root.chatSelected(chRow.channel.id, chRow.channel.name) }
+        // Its menu: ··· on hover (and while open), or a right-click (Teams'
+        // channel row menu, as in the channel's header).
+        readonly property bool menuOpen: channelMenu.menu.opened && channelMenu.channel.id === chRow.channel.id
+        Rectangle {
+            id: chMore
+            visible: chHover.hovered || chRow.menuOpen
+            x: parent.width - 16 - 8 - 24; anchors.verticalCenter: parent.verticalCenter
+            width: 24; height: 24; radius: theme.radius
+            color: chMoreHover.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: chRow.menuOpen ? theme.brand : theme.textStrong }
+            HoverHandler { id: chMoreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.openChannelMenu(chRow.channel, chRow.team, chMore, 0, chMore.height + 4) }
+            Accessible.role: Accessible.Button
+            Accessible.name: "More options for " + chRow.channel.name
+        }
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            onTapped: point => root.openChannelMenu(chRow.channel, chRow.team, chRow, point.position.x, point.position.y)
+        }
         Accessible.role: Accessible.Button
         Accessible.name: "Channel " + chRow.channel.name + " in " + chRow.team.name + (chRow.unread ? ", unread" : "")
     }

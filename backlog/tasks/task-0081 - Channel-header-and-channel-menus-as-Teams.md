@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T17:38:00Z'
-updated_date: '2026-11-09T18:45:00Z'
+updated_date: '2026-11-09T19:17:00Z'
 labels:
   - desktop
 dependencies: []
@@ -39,4 +39,14 @@ Teams' channel header has a Meet now split button and More channel options, and 
     - Get email address: {mt}/beta/channels/{id}/email with GET/POST/PUT/DELETE and allowedSenders.
 - Done so far: Meet now split (Meet now / Schedule a meeting) and the meet-now pre-join. Verified live: OST's channel Meet now made the same "Meeting in \"General\" ended" post in Teams.
 - Channel header: Find and Channel details (PanelRightExpand) show only on Posts, with no people button.
+
+- More channel options and the channel row ··· (ChannelMenu.qml): Teams' items, order and icons, with the Manage notifications flyout. Customize, Edit channel and Get email address dialogs were built from measurements and Teams' own strings.
+- Backend: api::channels (notifications, follow all, Hide/Show, Edit, email, new posts at top/bottom, channel link) and the channel_action invokable. The team list now carries notify, owner, layout and description.
+- Verified live in OST Test Team:
+  - notifications All, then back to @mentions;
+  - Hide (Teams then lists General in italics) and Show (back to normal);
+  - Copy link is byte-identical to Teams' clipboard (text and HTML);
+  - the email dialog shows the channel's address.
+- Fixed: a hidden General is the team's isGeneralChannelFavorite (captured), not the channel's isFavorite.
+- Left: See new posts at top (layout), Open in new window, Manage channel (Settings / Analytics), Workflows, and a hidden channel's italic row and "See all channels".
 <!-- SECTION:NOTES:END -->

@@ -3086,6 +3086,86 @@ Window {
         }
     }
 
+    // --channel-visibility-test=hide|show with --open-chat=<channel id>:
+    // hide or show the channel, log the list after 15 s and quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--channel-visibility-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const op = (Qt.application.arguments.find(a => a.startsWith("--channel-visibility-test=")) || "").slice(26)
+            const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => (t.channels || []).some(c => c.id === id))
+            if (!team) return
+            const ch = team.channels.find(c => c.id === id)
+            if (step === 0) { console.warn("CVIS before", ch.shown); backend.channelAction(op, team.id, id, "") }
+            else if (step === 5) backend.channelAction("notify-load", team.id, id, "")
+            else if (step === 6) { console.warn("CVIS after", ch.shown, backend.channelActionResult); Qt.quit() }
+            step++
+        }
+    }
+
+    // --channel-actions-test with --open-chat=<channel id>: Manage
+    // notifications All, then back to @mentions and replies; Hide, then
+    // Show; Copy link (held 20 s for wl-paste). Each state is logged from
+    // the reloaded team list.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-actions-test") >= 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            if (!conversation.teamName) return
+            const c = () => JSON.stringify({ notify: conversation.channelInfo.notify, shown: conversation.channelInfo.shown })
+            const act = (op, arg) => backend.channelAction(op, conversation.teamId, id, arg || "")
+            if (step === 0) { console.warn("CACT start", c()); act("notify", "all") }
+            else if (step === 2) { console.warn("CACT after all", c(), backend.channelActionResult); act("notify", "mentions") }
+            else if (step === 4) { console.warn("CACT after mentions", c(), backend.channelActionResult); act("hide") }
+            else if (step === 6) { console.warn("CACT after hide", c(), backend.channelActionResult); act("show") }
+            else if (step === 8) { console.warn("CACT after show", c(), backend.channelActionResult); act("copy-link", conversation.chatName); console.warn("CACT copied") }
+            else if (step === 14) Qt.quit()
+            step++
+        }
+    }
+
+    // --channel-menu-test with --open-chat=<channel id> --shots=<dir>: the
+    // channel header's ··· (cmenu.png), Manage notifications (cnotify.png),
+    // Customize (ccustom.png), Edit channel (cedit.png) and Get email
+    // address (cemail.png); then quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-menu-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            const cm = conversation.channelMenuForTest2()
+            if (step === 0) { if (!conversation.teamName) return; console.warn("CMENU channel", JSON.stringify(conversation.channelInfo)); cm.show(conversation, conversation.width - 43 + 32 + 6.3 - cm.menu.implicitWidth, 61 + 4.9 - 14) }
+            else if (step === 1) shot("cmenu")
+            else if (step === 2) cm.openNotifyForTest()
+            else if (step === 3) shot("cnotify")
+            else if (step === 4) { cm.closeAllForTest(); cm.customizeForTest() }
+            else if (step === 6) shot("ccustom")
+            else if (step === 7) { cm.closeAllForTest(); cm.editForTest() }
+            else if (step === 8) shot("cedit")
+            else if (step === 9) { cm.closeAllForTest(); cm.emailForTest() }
+            else if (step === 11) { console.warn("CMENU email", backend.channelActionResult); shot("cemail") }
+            else if (step === 12) { cm.closeAllForTest(); Qt.quit() }
+            step++
+        }
+    }
+
     // --thread-window-view=<post id> with --open-chat=<channel id>
     // --shots=<dir>: open that post's window, capture it at the top
     // (view-top.png) and with the newest reply's hover bar up (view-bar.png).
