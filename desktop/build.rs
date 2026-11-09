@@ -31,6 +31,7 @@ fn main() {
         "qml/AppDetailsDialog.qml",
         "qml/ShareForm.qml",
         "qml/AppCardFooter.qml",
+        "qml/SectionDialog.qml",
         "qml/RoundedCorners.qml",
         "qml/DraftsView.qml",
         "qml/ActivityView.qml",
@@ -108,6 +109,7 @@ fn main() {
         "assets/funstuff",
         "assets/lobby",
         "assets/dialogs",
+        "assets/illustrations",
     ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();

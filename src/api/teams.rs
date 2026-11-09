@@ -116,3 +116,145 @@ pub async fn list_teams_data(client: &TeamsClient) -> Result<Vec<TeamInfo>> {
 
     Ok(result)
 }
+
+/// A channel as the chat list shows it (Teams' CSA team list).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct ListChannel {
+    pub id: String,
+    pub name: String,
+    /// Shown in the list (Teams' isFavorite); hidden channels aren't listed.
+    pub shown: bool,
+    pub unread: bool,
+    pub muted: bool,
+    pub general: bool,
+    /// Never opened (Teams' "New" badge; never on General).
+    pub new: bool,
+}
+
+/// A team as the chat list shows it.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct ListTeam {
+    /// The team's group id (as Graph names teams).
+    pub id: String,
+    /// The team's thread id (19:…@thread.tacv2).
+    pub thread_id: String,
+    pub name: String,
+    /// Expanded in the list (Teams keeps isCollapsed per team).
+    pub expanded: bool,
+    pub archived: bool,
+    /// Joined and never read in (Teams' isNewForUser: no channel has a
+    /// read horizon).
+    pub new: bool,
+    pub channels: Vec<ListChannel>,
+}
+
+fn read_horizon(c: &serde_json::Value) -> bool {
+    c.pointer("/consumptionHorizon/originalArrivalTime")
+        .and_then(|t| t.as_i64())
+        .is_some_and(|t| t > 0)
+}
+
+/// Read Teams' team list (`{csa}/api/v1/teams/users/me/teams`).
+pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
+    let b = |x: &serde_json::Value, k: &str| x.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+    let s = |x: &serde_json::Value, k: &str| x.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter(|t| !b(t, "isDeleted"))
+        .map(|t| {
+            let channels: Vec<&serde_json::Value> = t
+                .get("channels")
+                .and_then(|c| c.as_array())
+                .into_iter()
+                .flatten()
+                .filter(|c| !b(c, "isDeleted"))
+                .collect();
+            let mut list: Vec<ListChannel> = channels
+                .iter()
+                .map(|c| ListChannel {
+                    id: s(c, "id"),
+                    name: s(c, "displayName"),
+                    shown: b(c, "isFavorite"),
+                    unread: c.get("isMessageRead").and_then(|r| r.as_bool()) == Some(false),
+                    muted: b(c, "isMuted"),
+                    general: b(c, "isGeneral"),
+                    new: !b(c, "isGeneral") && !read_horizon(c),
+                })
+                .collect();
+            // General first, then by name (Teams' channel order).
+            list.sort_by(|a, b| b.general.cmp(&a.general).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+            let group = channels
+                .iter()
+                .map(|c| s(c, "groupId"))
+                .find(|g| !g.is_empty())
+                .or_else(|| t.pointer("/teamSiteInformation/groupId").and_then(|g| g.as_str()).map(str::to_string))
+                .unwrap_or_default();
+            ListTeam {
+                id: if group.is_empty() { s(t, "id") } else { group },
+                thread_id: s(t, "id"),
+                name: s(t, "displayName"),
+                expanded: !b(t, "isCollapsed"),
+                archived: b(t, "isArchived"),
+                new: !channels.iter().any(|c| read_horizon(c)),
+                channels: list,
+            }
+        })
+        .collect()
+}
+
+/// Your teams and their channels as Teams' chat list has them.
+pub async fn list_teams_csa(client: &TeamsClient) -> Result<Vec<ListTeam>> {
+    let token = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default").await?;
+    let region = client
+        .chat_service_url()
+        .split("//")
+        .nth(1)
+        .and_then(|h| h.split('.').next())
+        .unwrap_or("amer")
+        .to_string();
+    let v: serde_json::Value = client
+        .http()
+        .get(format!(
+            "https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/teams?enableMembershipSummary=true"
+        ))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Teams list")?
+        .json()
+        .await?;
+    let mut teams = list_teams_from(&v);
+    teams.sort_by_key(|t| t.name.to_lowercase());
+    Ok(teams)
+}
+
+#[cfg(test)]
+mod list_tests {
+    use super::*;
+
+    #[test]
+    fn teams_list_reads_shown_channels_unread_and_new() {
+        let v = serde_json::json!([
+            {"id": "t1", "displayName": "OST Test Team", "isCollapsed": false, "isArchived": false, "channels": [
+                {"id": "c1", "displayName": "General", "groupId": "g1", "isFavorite": true, "isGeneral": true, "isMessageRead": true,
+                 "consumptionHorizon": {"originalArrivalTime": 1794089841241i64}},
+                {"id": "c2", "displayName": "Hidden one", "isFavorite": false, "isMessageRead": false},
+                {"id": "c3", "displayName": "Alpha", "isFavorite": true, "isMessageRead": false}
+            ]},
+            {"id": "t2", "displayName": "Secure Coast", "isCollapsed": true, "channels": [
+                {"id": "c4", "displayName": "General", "isFavorite": true, "isGeneral": true, "isMessageRead": true}
+            ]}
+        ]);
+        let t = list_teams_from(&v);
+        assert!(!t[0].new && t[1].new);
+        assert_eq!((t[0].id.as_str(), t[0].thread_id.as_str()), ("g1", "t1"));
+        assert!(t[0].expanded && !t[1].expanded);
+        let names: Vec<&str> = t[0].channels.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["General", "Alpha", "Hidden one"]);
+        assert!(!t[0].channels[2].shown);
+        assert!(t[0].channels[1].unread && t[0].channels[1].new);
+        assert!(!t[1].channels[0].new);
+    }
+}

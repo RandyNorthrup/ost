@@ -1,9 +1,19 @@
 import QtQuick
 import QtQuick.Controls.Basic
 
-// The Chat pane, laid out as Teams desktop's (measured from its DOM at 1x):
-// header, filter chips, then Quick views, Favorites, Chats and Teams and
-// channels as collapsible groups of 32 px rows.
+// The Chat pane, laid out as Teams desktop's (measured from its DOM at 1x;
+// spec docs/spec/chat-list-and-header.md):
+// - the header, then the filter pills (Unread, Channels, Chats, Meeting
+//   chats, Communities, in Teams' order; Unread combines with one
+//   category; pills that don't fit go to a second row behind "More
+//   filters", the chosen ones stay in the first);
+// - the sections from the server (Teams' conversation folders), in its
+//   order with its expanded state: Quick views, Favorites, your own
+//   sections, Chats, Teams and channels, Communities;
+// - only the channels you show; unread names in bold (a team only while
+//   collapsed); "New" on teams and channels you haven't opened;
+// - a chat's ··· / right-click menu as Teams' (Mark as read/unread, Move
+//   to section ▸, Remove from section, Mute, Copy link, Leave, Hide).
 Rectangle {
     id: root
     property var chats: []
@@ -20,38 +30,122 @@ Rectangle {
     signal newChat()
     signal openDrafts()
     signal markAllRead()
+    /// Communities ▸ Join communities.
+    signal openCommunities()
     color: theme.pane
     width: theme.listWidth
 
-    // Filters: a chip ("unread", "channels", "chats") and/or a name filter.
-    property string chipFilter: ""
+    // ---- Filters ----
+    // Unread combines with one category: "channels", "chats", "meetings"
+    // or "communities" (Teams' single-select category pills).
+    property bool unreadOn: false
+    property string category: ""
     property string nameFilter: ""
     property bool filtering: false
-    readonly property bool filtered: chipFilter.length > 0 || nameFilter.length > 0
-    // Keyboard shortcuts (Ctrl+Shift+F, Ctrl+Alt+U/C/A/Z).
+    property bool moreFiltersOpen: false
+    /// Older callers set one chip ("unread", "channels", "chats", "").
+    property string chipFilter: ""
+    onChipFilterChanged: {
+        if (chipFilter === "unread") { unreadOn = true; category = "" }
+        else if (chipFilter === "") { unreadOn = false; category = "" }
+        else { unreadOn = false; category = chipFilter }
+    }
+    readonly property bool filtered: unreadOn || category.length > 0 || nameFilter.length > 0
     function openFilter() { filtering = true; filterField.forceActiveFocus() }
-    function setChip(c) { chipFilter = chipFilter === c ? "" : c }
-    function clearFilters() { chipFilter = ""; nameFilter = ""; filterField.text = ""; filtering = false }
+    /// Teams' pill toggle: Unread on its own, categories single-select.
+    function setChip(c) {
+        if (c === "unread") unreadOn = !unreadOn
+        else category = category === c ? "" : c
+    }
+    function clearFilters() { unreadOn = false; category = ""; nameFilter = ""; filterField.text = ""; filtering = false; chipFilter = "" }
     function nameMatches(n) { return !nameFilter || (n || "").toLowerCase().indexOf(nameFilter) >= 0 }
+
+    // ---- Server sections ----
+    readonly property var folderData: backend.foldersJson ? JSON.parse(backend.foldersJson) : null
+    readonly property var folders: folderData && folderData.folders && folderData.folders.length ? folderData.folders
+        : [{ id: "", kind: "QuickViews", title: "Quick views", expanded: true, items: [] },
+           { id: "", kind: "Favorites", title: "Favorites", expanded: true, items: [] },
+           { id: "", kind: "RecentChats", title: "Chats", expanded: true, items: [] },
+           { id: "", kind: "TeamsAndChannels", title: "Teams and channels", expanded: true, items: [] }]
+    readonly property bool hasCommunities: folders.some(f => f.kind === "EngageCommunities")
+    /// Conversations in Favorites or your own sections (not listed in Chats).
+    readonly property var sectioned: {
+        const m = {}
+        for (const f of folders) if (f.kind === "Favorites" || root.isUsers(f)) for (const i of f.items) m[i] = f.id || f.kind
+        return m
+    }
+    readonly property var userSections: folders.filter(f => root.isUsers(f))
+    function isUsers(f) { return f.kind === "UserCreated" || f.kind === "UserDefined" }
+    readonly property var favoritesFolder: folders.find(f => f.kind === "Favorites") || null
+    // Before the server answers, Favorites come from the chat list.
+    function inFavorites(c) { return favoritesFolder && favoritesFolder.id ? favoritesFolder.items.indexOf(c.id) >= 0 : !!c.favorite }
+
+    function isMeeting(c) { return !!c.meeting || (c.id || "").indexOf("19:meeting_") === 0 }
     function chatShown(c) {
-        // Teams doesn't list chats nothing has been said in, unless open.
-        if (c.empty && c.id !== root.currentId) return false
-        if (chipFilter === "channels") return false
-        if (chipFilter === "unread" && !c.unread) return false
+        // Teams doesn't list chats nothing has been said in, or ones you
+        // hid, unless open.
+        if ((c.empty || c.hidden) && c.id !== root.currentId) return false
+        if (category === "channels" || category === "communities") return false
+        if (category === "chats" && isMeeting(c)) return false
+        if (category === "meetings" && !isMeeting(c)) return false
+        if (unreadOn && !c.unread) return false
         return nameMatches(c.name)
     }
-    readonly property var favorites: chats.filter(c => c.favorite && chatShown(c))
-        .sort((a, b) => (a.favoriteRank ?? 1e9) - (b.favoriteRank ?? 1e9))
-    readonly property var others: chats.filter(c => !c.favorite && chatShown(c))
-    // Teams with the channels that pass the filters.
-    readonly property var shownTeams: (chipFilter === "chats" || chipFilter === "unread") ? []
-        : teams.map(t => ({ id: t.id, name: t.name,
-                            channels: nameMatches(t.name) ? t.channels : t.channels.filter(ch => nameMatches(ch.name)) }))
-               .filter(t => nameMatches(t.name) || t.channels.length > 0)
-    property bool quickOpen: true
-    property bool favOpen: true
-    property bool chatsOpen: true
-    property bool teamsOpen: true
+    function channelShown(t, ch) {
+        if (!ch.shown && ch.id !== root.currentId) return false
+        if (category && category !== "channels") return false
+        if (unreadOn && !ch.unread) return false
+        return nameMatches(t.name) || nameMatches(ch.name)
+    }
+    function chatById(id) { return chats.find(c => c.id === id) }
+    function channelById(id) {
+        for (const t of teams) { const ch = (t.channels || []).find(c => c.id === id); if (ch) return { team: t, channel: ch } }
+        return null
+    }
+    // The rows of a section that holds conversations (Favorites, yours).
+    function heldRows(f) {
+        const out = []
+        for (const id of f.items) {
+            const c = chatById(id)
+            if (c) { if (chatShown(c)) out.push({ type: "chat", chat: c }); continue }
+            const ch = channelById(id)
+            if (ch && channelShown(ch.team, ch.channel)) out.push({ type: "channel", channel: ch.channel, team: ch.team })
+        }
+        return out
+    }
+    readonly property var others: chats.filter(c => !(c.id in sectioned) && !(c.isSelf && inFavorites(c)) && !inFavorites(c) && chatShown(c))
+    readonly property var favorites: chats.filter(c => inFavorites(c) && chatShown(c))
+    // Teams with the channels that pass the filters (team rows stay while
+    // any channel does).
+    readonly property var shownTeams: (category && category !== "channels") ? []
+        : teams.map(t => ({ id: t.id, name: t.name, new: t.new, expanded: t.expanded !== false,
+                            channels: (t.channels || []).filter(ch => channelShown(t, ch)) }))
+               .filter(t => t.channels.length > 0 && (!unreadOn || t.channels.some(c => c.unread)))
+    readonly property var sections: folders.map(f => {
+        let rows = []
+        if (f.kind === "QuickViews") {
+            if (category || unreadOn || nameFilter) rows = []
+            else {
+                if (root.hasMentions) rows.push({ type: "slice", key: "mentions", label: "Mentions", icon: "mention-20" })
+                if (root.draftIds.length > 0) rows.push({ type: "slice", key: "drafts", label: "Drafts", icon: "drafts-20" })
+            }
+        } else if (f.kind === "Favorites") {
+            rows = f.id ? heldRows(f) : root.favorites.map(c => ({ type: "chat", chat: c }))
+        } else if (root.isUsers(f)) {
+            rows = heldRows(f)
+        } else if (f.kind === "RecentChats") {
+            rows = root.others.map(c => ({ type: "chat", chat: c }))
+        } else if (f.kind === "TeamsAndChannels") {
+            rows = root.shownTeams.map(t => ({ type: "team", team: t }))
+            if (rows.length && !filtered) rows.push({ type: "seeAllTeams" })
+        } else if (f.kind === "EngageCommunities") {
+            rows = (category && category !== "communities") || unreadOn || nameFilter ? [] : [{ type: "joinCommunities" }]
+        }
+        // Sections stay while unfiltered; filtered, only ones with items.
+        const keep = !filtered ? (f.kind !== "QuickViews" || rows.length > 0 || true) : rows.length > 0
+        return { folder: f, rows: rows, keep: keep }
+    }).filter(s => s.keep)
+    readonly property bool nothingShown: filtered && sections.every(s => s.rows.length === 0)
 
     Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: theme.edge }
 
@@ -59,12 +153,13 @@ Rectangle {
         id: hb
         property alias icon: hbIcon.name
         property int iconSize: 20
+        property color iconColor: theme.textStrong
         signal clicked()
         width: 32; height: 32; radius: theme.radius
         color: hbHover.hovered ? theme.hover : "transparent"
         HoverHandler { id: hbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }
-        FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: theme.textStrong }
+        FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: hb.iconColor }
     }
 
     // Header: "Chat", then more / filter / new message (with its menu).
@@ -85,11 +180,10 @@ Rectangle {
                 id: listMenu
                 y: parent.height + 4
                 items: [{ label: "Mark all as read", icon: "checkmark-12" }, { separator: true },
-                        { label: "Collapse all groups" }, { label: "Expand all groups" }]
+                        { label: "Collapse all sections" }]
                 onPicked: i => {
                     if (i === 0) root.markAllRead()
-                    else if (i === 2) { root.quickOpen = false; root.favOpen = false; root.chatsOpen = false; root.teamsOpen = false }
-                    else if (i === 3) { root.quickOpen = true; root.favOpen = true; root.chatsOpen = true; root.teamsOpen = true }
+                    else if (i === 2) backend.folderAction("collapseAll", "{}")
                 }
             }
         }
@@ -114,37 +208,75 @@ Rectangle {
         }
     }
 
-    // Filter chips: 24 px pills with a 1 px neutral border, 4 px apart.
+    // ---- Filter pills (Teams' sticky filter) ----
+    // 24 tall, 4 apart, border 0.67 NeutralStroke1, 12/16 NeutralForeground2,
+    // padding 8; chosen: BrandForeground2 (#444791) fill, white text.
+    readonly property var pillDefs: [
+        { key: "unread", label: "Unread", keys: "Ctrl+Alt+U" },
+        { key: "channels", label: "Channels", keys: "Ctrl+Alt+A" },
+        { key: "chats", label: "Chats", keys: "Ctrl+Alt+C" },
+        { key: "meetings", label: "Meeting chats", keys: "Ctrl+Alt+B" }
+    ].concat(hasCommunities ? [{ key: "communities", label: "Communities", keys: "" }] : [])
+    function pillOn(k) { return k === "unread" ? unreadOn : category === k }
+    FontMetrics { id: pillMetrics; font.family: theme.font; font.pixelSize: 12 }
+    function pillWidth(label) { return Math.ceil(pillMetrics.advanceWidth(label)) + 18 }
+    // Pills that fit in the first row (250 px); the chosen ones first in
+    // priority, the rest in order.
+    readonly property var pillRows: {
+        const room = 250
+        const w = pillDefs.map(p => pillWidth(p.label))
+        const keep = pillDefs.map(() => true)
+        const total = () => pillDefs.reduce((s, p, i) => s + (keep[i] ? w[i] + 4 : 0), -4)
+        for (let i = pillDefs.length - 1; i >= 0 && total() > room; i--) if (!pillOn(pillDefs[i].key)) keep[i] = false
+        return { first: pillDefs.filter((p, i) => keep[i]), second: pillDefs.filter((p, i) => !keep[i]) }
+    }
+    readonly property bool secondRow: moreFiltersOpen && pillRows.second.length > 0
+    component Pill: Rectangle {
+        id: pill
+        property var def
+        readonly property bool on: root.pillOn(def.key)
+        height: 24; radius: 12
+        width: root.pillWidth(def.label)
+        color: on ? theme.brandForeground2 : (pillHover.hovered ? theme.rowHover : "transparent")
+        border.width: 0.67
+        border.color: on ? theme.brandForeground2 : (pillHover.hovered ? theme.strokeHover : theme.stroke)
+        HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.setChip(pill.def.key) }
+        Text {
+            anchors.centerIn: parent
+            text: pill.def.label
+            font.family: theme.font; font.pixelSize: 12
+            color: pill.on ? "white" : theme.textStrong
+        }
+        ToolTip.visible: pillHover.hovered
+        ToolTip.delay: 600
+        ToolTip.text: pill.def.keys ? pill.def.label + " (" + pill.def.keys + ")" : pill.def.label
+        Accessible.role: Accessible.Button
+        Accessible.name: pill.def.label
+        Accessible.checkable: true
+        Accessible.checked: pill.on
+    }
     Row {
-        id: chips
         visible: !root.filtering
         x: 32; y: 69
         spacing: 4
-        Repeater {
-            model: ["Unread", "Channels", "Chats"]
-            delegate: Rectangle {
-                id: chip
-                required property string modelData
-                readonly property bool on: root.chipFilter === modelData.toLowerCase()
-                height: 24; radius: 12
-                width: chipText.implicitWidth + 16
-                // An active chip takes the brand tint, as Fluent's toggles do.
-                color: on ? theme.brandTint : (chipHover.hovered ? theme.rowHover : "transparent")
-                border.color: on ? theme.brand : (chipHover.hovered ? theme.strokeHover : theme.stroke)
-                HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.chipFilter = chip.on ? "" : chip.modelData.toLowerCase() }
-                Text {
-                    id: chipText
-                    anchors.centerIn: parent
-                    text: modelData
-                    font.family: theme.font; font.pixelSize: theme.small
-                    color: chip.on ? theme.brand : theme.textStrong
-                }
-                Accessible.role: Accessible.CheckBox
-                Accessible.name: modelData
-                Accessible.checked: on
-            }
-        }
+        Repeater { model: root.pillRows.first; Pill { required property var modelData; def: modelData } }
+    }
+    Row {
+        visible: !root.filtering && root.secondRow
+        x: 32; y: 101
+        spacing: 4
+        Repeater { model: root.secondRow ? root.pillRows.second : []; Pill { required property var modelData; def: modelData } }
+    }
+    // More filters / Fewer filters: only when pills overflow.
+    HeaderButton {
+        visible: !root.filtering && root.pillRows.second.length > 0
+        x: 282; y: 65; width: 24; height: 24; radius: 4
+        icon: root.moreFiltersOpen ? "chevron-up-16" : "chevron-down-16"; iconSize: 16
+        iconColor: root.moreFiltersOpen ? theme.brand : theme.textStrong
+        onClicked: root.moreFiltersOpen = !root.moreFiltersOpen
+        ToolTip.visible: false
+        Accessible.name: root.moreFiltersOpen ? "Fewer filters" : "More filters"
     }
     // "Show filter text box": filter the list by name.
     Rectangle {
@@ -177,164 +309,145 @@ Rectangle {
             Accessible.name: "Close filter"
         }
     }
-    HeaderButton {
-        x: 282; y: 65; width: 24; height: 24; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "More filters"
-        onClicked: filterMenu.open()
-        MenuPopup {
-            id: filterMenu
-            x: -220; y: parent.height + 4
-            items: [
-                { label: "Unread", checked: root.chipFilter === "unread" },
-                { label: "Channels", checked: root.chipFilter === "channels" },
-                { label: "Chats", checked: root.chipFilter === "chats" },
-                { separator: true },
-                { label: "Clear filters" },
-            ]
-            onPicked: i => {
-                const keys = ["unread", "channels", "chats"]
-                if (i < 3) root.chipFilter = root.chipFilter === keys[i] ? "" : keys[i]
-                else { root.chipFilter = ""; root.nameFilter = ""; root.filtering = false }
+
+    // ---- The list ----
+    Flickable {
+        id: list
+        y: root.secondRow && !root.filtering ? 138 : 106
+        width: parent.width - 1
+        height: parent.height - y
+        clip: true
+        contentHeight: listCol.height + 8
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        Column {
+            id: listCol
+            width: list.width
+            Repeater {
+                model: root.sections
+                Column {
+                    id: sec
+                    required property var modelData
+                    required property int index
+                    readonly property var folder: modelData.folder
+                    width: list.width
+                    // Quick views end with a hairline (12 below, the next
+                    // section 4 after it).
+                    SectionHeader {
+                        label: sec.folder.title
+                        open: sec.folder.expanded
+                        userSection: root.isUsers(sec.folder)
+                        onToggled: backend.folderAction(sec.folder.expanded ? "collapse" : "expand", JSON.stringify({ id: sec.folder.id }))
+                        onMenuRequested: (px, py) => root.openSectionMenu(sec.folder, this, px, py)
+                    }
+                    Item { width: 1; height: sec.folder.expanded && sec.modelData.rows.length > 0 ? 4 : 0 }
+                    Repeater {
+                        model: sec.folder.expanded ? sec.modelData.rows : []
+                        Loader {
+                            required property var modelData
+                            width: list.width
+                            sourceComponent: modelData.type === "chat" ? chatRowComp
+                                : modelData.type === "channel" ? channelRowComp
+                                : modelData.type === "team" ? teamComp
+                                : modelData.type === "slice" ? sliceComp
+                                : modelData.type === "seeAllTeams" ? seeAllComp
+                                : joinCommunitiesComp
+                            property var row: modelData
+                            property var section: sec.folder
+                        }
+                    }
+                    Item { width: 1; height: sec.folder.kind === "QuickViews" && !root.filtered ? 12 : 8 }
+                    Rectangle { visible: sec.folder.kind === "QuickViews" && !root.filtered; x: 16; width: list.width - 32; height: 1; color: theme.divider }
+                    Item { width: 1; height: sec.folder.kind === "QuickViews" && !root.filtered ? 4 : 0 }
+                }
+            }
+            // Teams' empty filter result.
+            Column {
+                visible: root.nothingShown
+                width: list.width
+                topPadding: 40
+                spacing: 0
+                Image {
+                    x: 60; width: 200; height: 204
+                    source: "../assets/illustrations/all-caught-up.svg"
+                    sourceSize: Qt.size(400, 408)
+                }
+                Item { width: 1; height: 19 }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "You're all caught up!"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Clear filters"; font.family: theme.font; font.pixelSize: 16; color: theme.brand
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.clearFilters() }
+                    Accessible.role: Accessible.Link; Accessible.name: "Clear filters"
+                }
             }
         }
     }
 
-    ListView {
-        id: list
-        y: 106
-        width: parent.width - 1
-        height: parent.height - y
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        header: Column {
-            width: list.width
-            // Quick views > Drafts
-            SectionHeader { visible: !root.filtered; label: "Quick views"; open: root.quickOpen; onToggled: root.quickOpen = !root.quickOpen }
-            Item { width: 1; height: root.quickOpen && !root.filtered ? 4 : 0 }
-            ListRow {
-                visible: root.quickOpen && !root.filtered && root.hasMentions
-                label: "Mentions"; icon: "mention-20"
-                selected: root.mentionsOpen
-                onClicked: root.openMentions()
-            }
-            ListRow {
-                visible: root.quickOpen && !root.filtered
-                label: "Drafts"; icon: "drafts-20"
-                selected: root.draftsOpen
-                onClicked: root.openDrafts()
-            }
-            // A hairline 12 px below, then the next group 4.6 px after it.
-            Item { width: 1; height: root.filtered ? 0 : 12 }
-            Rectangle { visible: !root.filtered; x: 16; width: list.width - 32; height: 1; color: theme.divider }
-            Item { width: 1; height: root.filtered ? 0 : 4 }
-            SectionHeader { visible: root.favorites.length > 0 || !root.filtered; label: "Favorites"; open: root.favOpen; onToggled: root.favOpen = !root.favOpen }
-            Item { width: 1; height: root.favOpen && root.favorites.length > 0 ? 4 : 0 }
-            Repeater {
-                model: root.favOpen ? root.favorites : []
-                ChatRow { required property var modelData; chat: modelData }
-            }
-            Item { width: 1; height: 8 }
-            SectionHeader { visible: root.others.length > 0 || !root.filtered; label: "Chats"; open: root.chatsOpen; onToggled: root.chatsOpen = !root.chatsOpen }
-            Item { width: 1; height: root.chatsOpen && root.others.length > 0 ? 4 : 0 }
-        }
-        model: root.chatsOpen ? root.others : []
-        delegate: ChatRow { required property var modelData; chat: modelData }
-        footer: Column {
-            width: list.width
-            visible: root.shownTeams.length > 0
-            Item { width: 1; height: 8 }
-            SectionHeader { label: "Teams and channels"; open: root.teamsOpen; onToggled: root.teamsOpen = !root.teamsOpen }
-            Item { width: 1; height: root.teamsOpen ? 4 : 0 }
-            Repeater {
-                model: root.teamsOpen ? root.shownTeams : []
-                Column {
-                    id: team
-                    required property var modelData
-                    property bool open: true
-                    width: list.width
-                    // Team row: chevron, team picture, name.
-                    Item {
-                        width: list.width; height: 32
-                        Rectangle {
-                            x: 16; width: parent.width - 32; height: 32; radius: theme.radius
-                            color: teamHover.hovered ? theme.rowHover : "transparent"
-                        }
-                        FluentIcon {
-                            x: 18; y: 10
-                            name: team.open ? "chevron-down-12" : "chevron-right-12"; size: 12
-                            color: theme.textSecondary
-                        }
-                        Avatar {
-                            x: 32; y: 6
-                            size: 20; square: true
-                            name: team.modelData.name
-                            initialsText: team.modelData.name.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
-                            photoId: "team:" + team.modelData.id
-                        }
-                        Text {
-                            x: 64; width: parent.width - 64 - 24; y: 6
-                            text: team.modelData.name
-                            elide: Text.ElideRight
-                            font.family: theme.font; font.pixelSize: theme.base
-                            color: theme.textSecondary
-                        }
-                        HoverHandler { id: teamHover }
-                        TapHandler { onTapped: team.open = !team.open }
-                        Accessible.role: Accessible.Button
-                        Accessible.name: "Team " + team.modelData.name + (team.open ? ", expanded" : ", collapsed")
-                    }
-                    Repeater {
-                        model: team.open ? team.modelData.channels : []
-                        Item {
-                            id: channel
-                            required property var modelData
-                            readonly property bool selected: modelData.id === root.currentId
-                            width: list.width; height: 28
-                            Rectangle {
-                                x: 16; width: parent.width - 32; height: 28; radius: theme.radius
-                                color: channel.selected ? theme.selected : (chHover.hovered ? theme.rowHover : "transparent")
-                            }
-                            Text {
-                                x: 64; width: parent.width - 64 - 24; y: 4
-                                text: channel.modelData.name
-                                elide: Text.ElideRight
-                                font.family: theme.font; font.pixelSize: theme.base
-                                color: channel.selected ? theme.text : theme.textSecondary
-                            }
-                            HoverHandler { id: chHover }
-                            TapHandler { onTapped: root.chatSelected(channel.modelData.id, channel.modelData.name) }
-                            Accessible.role: Accessible.Button
-                            Accessible.name: "Channel " + channel.modelData.name + " in " + team.modelData.name
-                        }
-                    }
-                }
-            }
-            Item {
-                visible: root.teamsOpen
-                width: list.width; height: 28
-                Text {
-                    x: 31; y: 4
-                    text: "See all your teams"
-                    font.family: theme.font; font.pixelSize: theme.base
-                    color: theme.brand
-                }
-            }
-            Item { width: 1; height: 8 }
+    Component { id: chatRowComp; ChatRow { chat: parent && parent.row ? parent.row.chat : ({}); section: parent ? parent.section : null } }
+    Component { id: channelRowComp; ChannelRow { channel: parent && parent.row ? parent.row.channel : ({}); team: parent && parent.row ? parent.row.team : ({}); section: parent ? parent.section : null; indent: 32 } }
+    Component { id: teamComp; TeamRows { team: parent && parent.row ? parent.row.team : ({ name: "", channels: [] }) } }
+    Component {
+        id: sliceComp
+        ListRow {
+            label: parent.row.label; icon: parent.row.icon
+            selected: parent.row.key === "mentions" ? root.mentionsOpen : root.draftsOpen
+            onClicked: parent.row.key === "mentions" ? root.openMentions() : root.openDrafts()
         }
     }
+    Component {
+        id: seeAllComp
+        Item {
+            width: list.width; height: 28
+            Text { x: 31; y: 4; text: "See all your teams"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand }
+        }
+    }
+    Component {
+        id: joinCommunitiesComp
+        Item {
+            width: list.width; height: 28
+            Text {
+                x: 31; y: 4; text: "Join communities"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.openCommunities() }
+                Accessible.role: Accessible.Link; Accessible.name: "Join communities"
+            }
+        }
+    }
+
+    // ---- Section menu and dialogs ----
+    property var menuSection: null
+    function openSectionMenu(f, item, px, py) {
+        if (!root.isUsers(f)) return
+        menuSection = f
+        const p = item.mapToItem(root, px, py)
+        sectionMenu.x = Math.min(p.x, root.width - sectionMenu.implicitWidth - 8)
+        sectionMenu.y = p.y
+        sectionMenu.open()
+    }
+    MenuPopup {
+        id: sectionMenu
+        items: [{ label: "Rename section", icon: "rename-20" }, { label: "Remove section", icon: "delete-20" }]
+        onPicked: i => { if (i === 0) sectionDialog.rename(root.menuSection); else sectionDialog.remove(root.menuSection) }
+    }
+    SectionDialog { id: sectionDialog; existing: root.folders.map(f => f.title) }
 
     // Test hooks: a chat row's menu, by chat id.
     property var rowsForTest: ({})
     function openRowMenuForTest(id) { const r = rowsForTest[id]; if (r) r.openMenu(r.width - 50, 30) }
-    function closeRowMenuForTest() { for (const k in rowsForTest) if (rowsForTest[k].menuOpen) rowsForTest[k].closeMenu() }
+    function closeRowMenuForTest() { for (const k in rowsForTest) if (rowsForTest[k] && rowsForTest[k].menuOpen) rowsForTest[k].closeMenu() }
+    function sectionDialogForTest() { return sectionDialog }
 
-    // One chat in a group: picture with presence, name, unread dot.
+    // One chat in a section: picture with presence, name, unread dot.
     component ChatRow: Item {
         id: row
         property var chat
+        property var section: null
         readonly property bool menuOpen: rowMenu.opened
         function closeMenu() { rowMenu.close() }
-        Component.onCompleted: root.rowsForTest[chat.id] = row
+        Component.onCompleted: if (chat && chat.id) root.rowsForTest[chat.id] = row
+        Component.onDestruction: if (chat && root.rowsForTest[chat.id] === row) delete root.rowsForTest[chat.id]
         readonly property bool selected: !root.draftsOpen && !root.mentionsOpen && chat.id === root.currentId
         readonly property bool unread: chat.unread === true && !selected
         width: list.width; height: 32
@@ -345,10 +458,10 @@ Rectangle {
         Avatar {
             visible: !row.chat.muted
             x: 32; y: 6
-            size: 20; name: row.chat.name
+            size: 20; name: row.chat.name || ""
             photoId: row.chat.peerMri || ""
             group: row.chat.isGroup === true && !row.chat.peerMri
-            meeting: (row.chat.id || "").indexOf("19:meeting_") === 0
+            meeting: root.isMeeting(row.chat)
             presence: row.chat.presence || ""
         }
         // Muted: Teams swaps the picture for a 20 px #E6E6E6 circle with the
@@ -360,11 +473,9 @@ Rectangle {
             FluentIcon { x: 2; y: 2; name: "alert-off-20"; size: 16; color: theme.textSecondary }
         }
         Text {
-            // Teams ends the name 14 px before a trailing indicator (its 12 px
-            // padding plus 2), so the call icon or unread dot never covers it.
             x: 64; y: 6
             width: (row.showMore ? moreButton.x - 10 : liveIcon.visible ? liveIcon.x - 14 : unreadDot.visible ? unreadDot.x - 14 : parent.width - 40) - x
-            text: row.chat.name
+            text: row.chat.name || ""
             elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: theme.base
             // Teams: bold only when unread; the open chat is just darker.
@@ -380,8 +491,8 @@ Rectangle {
             name: "live-roster-14"; size: 14
             color: theme.textSecondary
         }
-        // Unread: bold name plus a brand dot, as in Teams; muted chats keep
-        // the bold name but not the dot (they don't count toward badges).
+        // Unread: bold name plus a brand dot; muted chats keep the bold
+        // name but not the dot (they don't count toward badges).
         Rectangle {
             id: unreadDot
             visible: row.unread && !row.chat.muted && !row.showMore
@@ -390,9 +501,6 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             color: theme.brand
         }
-        // On hover (or with its menu open), Teams' ··· "More chat options":
-        // 24 x 23.3 at 256, 4.3 in the 288-wide row, in an 8 px padded slot
-        // (the name stops 2 px before that slot).
         readonly property bool showMore: hover.hovered || rowMenu.opened
         Rectangle {
             id: moreButton
@@ -408,16 +516,36 @@ Rectangle {
         HoverHandler { id: hover }
         TapHandler { onTapped: if (!moreHover.hovered) root.chatSelected(row.chat.id, row.chat.name) }
         TapHandler { acceptedButtons: Qt.RightButton; onTapped: ev => row.openMenu(ev.position.x, ev.position.y) }
-        // The chat's menu (Teams' chat list ···, measured on winpc): Mark as
-        // read / unread, Mute / Unmute, Copy link — the items OST has so far,
-        // in Teams' order (Open in new window, Move to section, Manage apps,
-        // Set workflows, Remove chat history and Hide are still to come).
+        // Teams' chat menu (measured on winpc 2026-11-09), the items OST
+        // has, in Teams' order: Mark as read/unread, Move to section ▸,
+        // Remove from section, Mute, Copy link | Leave, Hide.
+        readonly property string holder: row.chat.id in root.sectioned ? root.sectioned[row.chat.id] : (root.inFavorites(row.chat) && root.favoritesFolder ? (root.favoritesFolder.id || "Favorites") : "")
+        readonly property var members: { const m = backend.chatMemberCountsJson ? JSON.parse(backend.chatMemberCountsJson) : ({}); return m[row.chat.id] }
+        // Leave: a member of a group chat of at least 3 (not a meeting chat
+        // you created).
+        readonly property bool canLeave: !!row.chat.isGroup && !row.chat.peerMri && (row.members || 0) >= 3 && !(root.isMeeting(row.chat) && row.chat.isCreator)
+        function destinations() {
+            const out = []
+            const fav = root.favoritesFolder
+            if (fav && fav.id && fav.id !== row.holder) out.push({ id: fav.id, label: "Favorites" })
+            for (const s of root.userSections) if (s.id !== row.holder) out.push({ id: s.id, label: s.title })
+            return out
+        }
         function openMenu(px, py) {
+            if (row.chat.isGroup && !row.chat.peerMri && row.members === undefined) backend.chatMemberCountsLoad(row.chat.id)
+            const dest = destinations()
+            const sub = dest.map(d => ({ label: d.label, to: d.id }))
+            if (sub.length) sub.push({ separator: true })
+            sub.push({ label: "New section", icon: "folder-add-20", newSection: true })
             rowMenu.items = [
-                { key: row.unread ? "read" : "unread", label: row.unread ? "Mark as read" : "Mark as unread", icon: row.unread ? "glasses-20" : "mail-unread-20" },
-                // Not for your own chat.
+                { key: row.unread ? "read" : "unread", label: row.unread ? "Mark as read" : "Mark as unread", icon: row.unread ? "glasses-20" : "glasses-off-20" },
+                { key: "move", label: "Move to section", icon: "star-20", submenu: sub },
+                row.holder ? { key: "removeFrom", label: "Remove from section", icon: "star-off-20" } : null,
                 row.chat.isSelf ? null : { key: row.chat.muted ? "unmute" : "mute", label: row.chat.muted ? "Unmute" : "Mute", icon: row.chat.muted ? "alert-20" : "alert-off-20" },
-                { key: "link", label: "Copy link", icon: "link-20" }
+                { key: "link", label: "Copy link", icon: "link-20" },
+                { separator: true },
+                row.canLeave ? { key: "leave", label: "Leave", icon: "door-arrow-left-20" } : null,
+                { key: row.chat.hidden ? "unhide" : "hide", label: row.chat.hidden ? "Unhide" : "Hide", icon: row.chat.hidden ? "eye-20" : "eye-off-20" }
             ].filter(i => i !== null)
             rowMenu.x = Math.min(px, row.width - rowMenu.implicitWidth - 8)
             rowMenu.y = py
@@ -431,10 +559,111 @@ Rectangle {
                 if (k === "read" || k === "unread") backend.setChatUnread(row.chat.id, k === "unread")
                 else if (k === "mute" || k === "unmute") backend.setChatMuted(row.chat.id, k === "mute")
                 else if (k === "link") backend.copyLinkOfChat(row.chat.id, row.chat.name)
+                else if (k === "removeFrom") backend.folderAction("remove", JSON.stringify({ item: row.chat.id, from: row.holder }))
+                else if (k === "hide" || k === "unhide") backend.setChatHidden(row.chat.id, k === "hide")
+                else if (k === "leave") leaveAsk.open()
+            }
+            onSubPicked: (i, j) => {
+                const s = items[i].submenu[j]
+                if (s.newSection) sectionDialog.create(row.chat.id, row.holder)
+                else if (s.to) backend.folderAction("move", JSON.stringify({ item: row.chat.id, to: s.to, from: row.holder }))
             }
         }
+        ConfirmDialog {
+            id: leaveAsk
+            title: "Leave this chat?"
+            body: "Are you sure you want to leave " + (row.chat.name || "") + "?"
+            confirmText: "Leave"
+            onConfirmed: backend.leaveChat(row.chat.id)
+        }
         Accessible.role: Accessible.Button
-        Accessible.name: row.chat.name + (row.unread ? ", unread" : "") + (row.chat.muted ? ", muted" : "") + (row.chat.liveCall ? ", call in progress" : "")
+        Accessible.name: (row.chat.name || "") + (row.unread ? ", unread" : "") + (row.chat.muted ? ", muted" : "") + (row.chat.liveCall ? ", call in progress" : "")
+    }
+
+    // A channel row: in a team (indented under it) or in a section.
+    component ChannelRow: Item {
+        id: chRow
+        property var channel
+        property var team
+        property var section: null
+        property int indent: 64
+        readonly property bool selected: channel.id === root.currentId
+        readonly property bool unread: channel.unread === true && !selected
+        width: list.width; height: 28
+        Rectangle {
+            x: 16; width: parent.width - 32; height: 28; radius: theme.radius
+            color: chRow.selected ? theme.selected : (chHover.hovered ? theme.rowHover : "transparent")
+        }
+        Text {
+            id: chName
+            x: chRow.indent; y: 4
+            width: Math.min(implicitWidth, parent.width - x - 24 - (newBadge.visible ? newBadge.width + 8 : 0))
+            text: chRow.section ? chRow.channel.name + " (" + chRow.team.name + ")" : chRow.channel.name
+            elide: Text.ElideRight
+            font.family: theme.font; font.pixelSize: theme.base
+            font.weight: chRow.unread ? Font.DemiBold : Font.Normal
+            color: chRow.selected || chRow.unread ? theme.text : theme.textSecondary
+        }
+        NewBadge { id: newBadge; visible: !!chRow.channel.new; x: chName.x + chName.width + 8; anchors.verticalCenter: parent.verticalCenter }
+        HoverHandler { id: chHover }
+        TapHandler { onTapped: root.chatSelected(chRow.channel.id, chRow.channel.name) }
+        Accessible.role: Accessible.Button
+        Accessible.name: "Channel " + chRow.channel.name + " in " + chRow.team.name + (chRow.unread ? ", unread" : "")
+    }
+
+    // Teams' "New" badge: brand pill, 10/14 semibold.
+    component NewBadge: Rectangle {
+        width: newText.implicitWidth + 12; height: 18; radius: 9
+        color: theme.brandFill
+        Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: "white" }
+    }
+
+    // A team and its shown channels.
+    component TeamRows: Column {
+        id: teamRows
+        property var team
+        property bool open: teamRows.team.expanded !== false
+        // Bold only while collapsed (Teams: not an expanded branch).
+        readonly property bool unread: !open && teamRows.team.channels.some(c => c.unread)
+        width: list.width
+        Item {
+            width: list.width; height: 32
+            Rectangle {
+                x: 16; width: parent.width - 32; height: 32; radius: theme.radius
+                color: teamHover.hovered ? theme.rowHover : "transparent"
+            }
+            FluentIcon {
+                x: 18; y: 10
+                name: teamRows.open ? "chevron-down-12" : "chevron-right-12"; size: 12
+                color: theme.textSecondary
+            }
+            Avatar {
+                x: 32; y: 6
+                size: 20; square: true
+                name: teamRows.team.name
+                initialsText: teamRows.team.name.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+                photoId: "team:" + teamRows.team.id
+            }
+            Text {
+                id: teamName
+                x: 64; y: 6
+                width: Math.min(implicitWidth, parent.width - 64 - 24 - (teamNew.visible ? teamNew.width + 8 : 0))
+                text: teamRows.team.name
+                elide: Text.ElideRight
+                font.family: theme.font; font.pixelSize: theme.base
+                font.weight: teamRows.unread ? Font.DemiBold : Font.Normal
+                color: teamRows.unread ? theme.text : theme.textSecondary
+            }
+            NewBadge { id: teamNew; visible: !!teamRows.team.new; x: teamName.x + teamName.width + 8; anchors.verticalCenter: parent.verticalCenter }
+            HoverHandler { id: teamHover }
+            TapHandler { onTapped: teamRows.open = !teamRows.open }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Team " + teamRows.team.name + (teamRows.open ? ", expanded" : ", collapsed")
+        }
+        Repeater {
+            model: teamRows.open ? teamRows.team.channels : []
+            ChannelRow { required property var modelData; channel: modelData; team: teamRows.team }
+        }
     }
 
     // A row with an icon instead of a picture (Quick views).
@@ -462,12 +691,15 @@ Rectangle {
         Accessible.name: lr.label
     }
 
-    // Group header: 12 px chevron and label, 28 px tall.
+    // Section header: 12 px chevron and label, 28 px tall; your own
+    // sections have Teams' ··· "More section options" on hover.
     component SectionHeader: Item {
         id: sh
         property string label
         property bool open: true
+        property bool userSection: false
         signal toggled()
+        signal menuRequested(real px, real py)
         width: list.width; height: 28
         FluentIcon {
             x: 18; y: 8
@@ -480,8 +712,19 @@ Rectangle {
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.textSecondary
         }
-        TapHandler { onTapped: sh.toggled() }
-        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        Rectangle {
+            visible: sh.userSection && shHover.hovered
+            x: parent.width - 16 - 32; y: 2; width: 24; height: 23.3; radius: 4
+            color: smHover.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+            HoverHandler { id: smHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: sh.menuRequested(parent.x, parent.y + parent.height) }
+            Accessible.role: Accessible.Button
+            Accessible.name: "More section options"
+        }
+        HoverHandler { id: shHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: if (!smHover.hovered) sh.toggled() }
+        TapHandler { acceptedButtons: Qt.RightButton; enabled: sh.userSection; onTapped: ev => sh.menuRequested(ev.position.x, ev.position.y) }
         Accessible.role: Accessible.Button
         Accessible.name: sh.label + (sh.open ? ", expanded" : ", collapsed")
     }

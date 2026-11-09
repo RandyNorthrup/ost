@@ -78,6 +78,8 @@ Window {
     Shortcut { sequence: "Ctrl+Alt+C"; onActivated: { rail.current = "chat"; chatList.setChip("chats") } }
     Shortcut { sequence: "Ctrl+Alt+A"; onActivated: { rail.current = "chat"; chatList.setChip("channels") } }
     Shortcut { sequence: "Ctrl+Alt+U"; onActivated: { rail.current = "chat"; chatList.setChip("unread") } }
+    Shortcut { sequence: "Ctrl+Alt+B"; onActivated: { rail.current = "chat"; chatList.setChip("meetings") } }
+    Shortcut { sequence: "Ctrl+Alt+Z"; onActivated: { rail.current = "chat"; chatList.clearFilters() } }
     Repeater {
         model: 5
         Item {
@@ -268,6 +270,46 @@ Window {
                 27: () => { if (Qt.application.arguments.indexOf("--open-chat") >= 0) { rail.current = "chat"; backend.selectChat("19:ef213c7c46cf4036b11608300e96fee4@thread.v2", "OST group test") } },
                 31: () => grab("chat"),
                 32: () => Qt.quit()
+            }
+            if (plan[step]) plan[step]()
+            step++
+        }
+    }
+    // --chatlist-test: the list with the server's sections; each pill (and
+    // More filters); a chat's menu and Move to section ▸; then, on
+    // ost-test1's own sections only: OST group test into a new section
+    // "OST test section", rename it, remove it; Hide and Unhide OST group test.
+    Timer {
+        running: Qt.application.arguments.indexOf("--chatlist-test") >= 0 && backend.signedIn && chatList.chats.length > 1 && backend.foldersJson.length > 2
+        interval: 2500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const grab = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cl-" + n + ".png")))
+            const g = "19:ef213c7c46cf4036b11608300e96fee4@thread.v2"
+            const log = n => console.warn("CHATLIST", step, n, JSON.stringify(chatList.sections.map(s => s.folder.title + ":" + s.rows.length)), "pills", JSON.stringify(chatList.pillRows.first.map(p => p.key)), "/", JSON.stringify(chatList.pillRows.second.map(p => p.key)))
+            const folders = () => JSON.parse(backend.foldersJson).folders
+            const test = () => folders().find(f => (f.kind === "UserCreated" || f.kind === "UserDefined") && (f.title === "OST test section" || f.title === "OST renamed section"))
+            const plan = {
+                // Clean up test sections a failed run left (ost-test1's own).
+                0: () => { rail.current = "chat"; for (const f of folders()) if ((f.kind === "UserCreated" || f.kind === "UserDefined") && /^(OST (test|renamed) section|UserCreated)$/.test(f.title)) backend.folderAction("delete", JSON.stringify({ id: f.id })) },
+                1: () => { log("start"); grab("list") },
+                2: () => { chatList.setChip("unread"); log("unread") }, 3: () => grab("unread"),
+                4: () => { chatList.setChip("unread"); chatList.setChip("channels"); log("channels") }, 5: () => grab("channels"),
+                6: () => { chatList.setChip("chats"); log("chats") }, 7: () => { chatList.moreFiltersOpen = true; grab("chats-more") },
+                8: () => { chatList.setChip("meetings"); log("meetings") }, 9: () => grab("meetings"),
+                10: () => { chatList.clearFilters(); chatList.moreFiltersOpen = false },
+                11: () => chatList.openRowMenuForTest(g), 12: () => grab("menu"), 13: () => chatList.closeRowMenuForTest(),
+                14: () => { if (!test()) backend.folderAction("create", JSON.stringify({ name: "OST test section", item: g, from: "" })) },
+                18: () => { log("created"); console.warn("CHATLIST section", JSON.stringify(test())); grab("section") },
+                19: () => { const t = test(); if (t) backend.folderAction("rename", JSON.stringify({ id: t.id, name: "OST renamed section" })) },
+                22: () => { log("renamed"); console.warn("CHATLIST renamed", JSON.stringify(test())); grab("renamed") },
+                23: () => { const t = test(); if (t) backend.folderAction("collapse", JSON.stringify({ id: t.id })) },
+                25: () => { console.warn("CHATLIST collapsed", JSON.stringify(test())); const t = test(); if (t) backend.folderAction("delete", JSON.stringify({ id: t.id })) },
+                28: () => { log("removed"); console.warn("CHATLIST gone", !test()) },
+                29: () => backend.setChatHidden(g, true), 32: () => { log("hidden"); grab("hidden"); console.warn("CHATLIST hidden", JSON.stringify(chatList.chats.find(c => c.id === g))) },
+                33: () => backend.setChatHidden(g, false), 36: () => { log("unhidden"); console.warn("CHATLIST unhidden", JSON.stringify(chatList.chats.find(c => c.id === g))) },
+                37: () => Qt.quit()
             }
             if (plan[step]) plan[step]()
             step++
@@ -566,7 +608,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3310,7 +3352,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "help"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "help", "communities"].indexOf(rail.current) < 0
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -3326,7 +3368,9 @@ Window {
         model: [
             { key: "whiteboard", name: "Whiteboard", icon: "board-20", color: "#0F6CBD", url: "https://whiteboard.cloud.microsoft/" },
             { key: "clipchamp", name: "Clipchamp", icon: "video", color: "#8764B8", url: "https://app.clipchamp.com/" },
-            { key: "help", name: "Help", icon: "question-circle-20", color: theme.textStrong, url: "https://support.microsoft.com/teams" }
+            { key: "help", name: "Help", icon: "question-circle-20", color: theme.textStrong, url: "https://support.microsoft.com/teams" },
+            // Communities (Viva Engage), as Teams embeds it.
+            { key: "communities", name: "Communities", icon: "people-community-20", color: "#0F6CBD", url: "https://engage.cloud.microsoft/main/discover" }
         ]
         Loader {
             required property var modelData
@@ -3413,6 +3457,7 @@ Window {
         onOpenDrafts: { window.composing = false; mentionsOpen = false; draftsOpen = true }
         hasMentions: mentionsView.mentions.length > 0
         onOpenMentions: { window.composing = false; draftsOpen = false; mentionsOpen = true; mentionsView.selectedId = "" }
+        onOpenCommunities: rail.openApp("communities")
     }
     MentionsView {
         id: mentionsView

@@ -286,6 +286,17 @@ current sort/view.
 | 10 | Teams section: **Display ▸ Teams and channels / Channels only** (when `canShowRecentChannels`), [Sort ▸ when Channels only], divider, **Hide inactive channels** (disabled with tooltip **"You can only take this action once every 24 hours."**), **Your teams and channels** (not life) | Teams and channels section |
 | 11 | divider, **Copy Section ID** | developer mode |
 
+### 3.0a Folder writes (Teams' worker ConversationFolderManager)
+
+Every write carries the last `folderHierarchyVersion`.
+- Create: POST `{folderName, sortType, isExpanded, actions:[{action:"AddFolder", itemId?}]}`.
+- Items: POST `{actions:[{action:"AddItem", folderId, itemId, itemIndex} | {action:"RemoveItem", folderId, itemId}]}`.
+- Update one section (rename, expand, sort): PUT `/{id}` `{folderName, isExpanded, sortType}`. System sections keep their type as the name.
+- All sections: PATCH `/batchUpdateExpandedState` `{folderIds, isExpanded}`.
+- Delete: DELETE `/{id}`.
+- Your own sections come back with folderType `UserCreated`.
+- Meeting chats and Muted chats need enableMeetingChatsFolder and enableMutedChatsFolder (both false in production), so they aren't listed.
+
 ### 3.2 Section dialogs
 
 - Create: title **"Create a new section"**, placeholder **"Enter a
@@ -902,13 +913,13 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
 - [ ] Collapse all sections saves expanded state on the server.
 - [ ] Filter toggle labels, Ctrl+Shift+F, text box placeholder by mode, 100-char limit, 250 ms debounce, Esc closes, empty-result state.
 - [ ] New message button + New items ▾ split; menu items, order, dividers and their conditions.
-- [ ] Sections from `conversationFolders` in server order; Copilot row, Quick views, Favorites, Chats, Teams and channels, Communities; See more page sizes (25/5/10).
+- [x] Sections from `conversationFolders` in server order with their expanded state (Quick views, Favorites, your sections, Chats, Teams and channels, Communities). Still to come (TASK-0075): the Copilot row, See more paging, and the Followed threads / Saved quick views.
 - [ ] Section ··· menu per section type; create / rename / remove section dialogs; emoji icons.
-- [ ] Filter pills in config order (Unread, Channels, Chats, Meeting chats, Communities); single-select categories; Unread combinable; width-based overflow with More filters / Fewer filters second row; selected pills stay visible.
+- [x] Filter pills in config order (Unread, Channels, Chats, Meeting chats, Communities); single-select categories; Unread combinable; width-based overflow with More filters / Fewer filters second row; selected pills stay visible; "You're all caught up!" with Clear filters.
 - [ ] Bold only when unread and not an expanded branch; brand badge dot for unread unmuted chats; number badges on sections/teams; meeting/huddle and followed charms.
-- [ ] "New" badge on new teams and never-opened channels.
+- [x] "New" badge on new teams and never-opened channels (CSA team list: no read horizon).
 - [ ] Hidden chats rules (hide until a newer message; declined meeting chats); temp hoist of a selected hidden item.
-- [ ] Chat ··· menu order and per-type rules (Leave only with ≥ 3 members; Delete only when you can't leave; meeting creator can't leave; Block 1:1 only).
+- [ ] Chat ··· menu order and per-type rules. Done: Mark as read/unread, Move to section ▸, Remove from section, Mute, Copy link, Leave (≥ 3 members, not a meeting chat you created), Hide/Unhide (`unpinnedTime` + `historyHiddenTime`; null to unhide). TASK-0075: Open in new window, Notify when available, Manage apps, Set workflows, Remove chat history.
 - [ ] Channel ··· menu and team ··· menu order and rules.
 - [ ] Drag and drop of sections, items and teams; Start reordering.
 - [ ] Shortcuts in §6.

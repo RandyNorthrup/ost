@@ -93,6 +93,11 @@ pub mod qobject {
         #[qproperty(QString, app_reviews_json)]
         /// Its "More like this": {app, apps[]}.
         #[qproperty(QString, app_similar_json)]
+        /// The chat list's sections from the server (Teams' conversation
+        /// folders): {version, folders: [{id, kind, title, sort, expanded, items}]}.
+        #[qproperty(QString, folders_json)]
+        /// Group chats' member counts: {chatId: n}.
+        #[qproperty(QString, chat_member_counts_json)]
         /// Apps' privacy and terms links for shared app cards:
         /// {appId: {privacy, terms, name}}.
         #[qproperty(QString, app_links_json)]
@@ -910,6 +915,27 @@ pub mod qobject {
         /// `first` of them; `append` adds the next page to what's shown.
         #[qinvokable]
         fn app_reviews_load(self: Pin<&mut Backend>, app_id: &QString, sort: &QString, first: i32, append: bool);
+        /// Hide a chat from the list until something newer is said, or show
+        /// it again (Teams' Hide / Unhide).
+        #[qinvokable]
+        fn set_chat_hidden(self: Pin<&mut Backend>, chat_id: &QString, hidden: bool);
+        /// Leave a group chat (Teams' Leave).
+        #[qinvokable]
+        fn leave_chat(self: Pin<&mut Backend>, chat_id: &QString);
+        /// Count a group chat's members into chat_member_counts_json
+        /// (Teams' Leave needs at least 3).
+        #[qinvokable]
+        fn chat_member_counts_load(self: Pin<&mut Backend>, chat_id: &QString);
+        /// Load the chat list's sections.
+        #[qinvokable]
+        fn folders_load(self: Pin<&mut Backend>);
+        /// Change the chat list's sections as Teams does: `action` is
+        /// "expand"/"collapse" (folder id), "expandAll"/"collapseAll",
+        /// "create" (name, optional item and from), "rename" (folder id,
+        /// name), "delete" (folder id), "move" (item, to, optional from) or
+        /// "remove" (item, from). `args` is a JSON object.
+        #[qinvokable]
+        fn folder_action(self: Pin<&mut Backend>, action: &QString, args: &QString);
         /// Look up an app's privacy and terms links (shared app cards).
         #[qinvokable]
         fn app_links_load(self: Pin<&mut Backend>, app_id: &QString);
@@ -1223,6 +1249,9 @@ pub struct BackendRust {
     app_reviews_json: QString,
     app_similar_json: QString,
     app_links_json: QString,
+    folders_json: QString,
+    chat_member_counts_json: QString,
+    folders: teams_cli::api::folders::Folders,
     /// Apps whose links were asked for already.
     app_links_asked: std::collections::HashSet<String>,
     share_state: QString,
@@ -2021,6 +2050,9 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "liveCall": c.live_call,
                 "muted": c.muted,
                 "empty": c.empty,
+                "hidden": c.hidden,
+                "isCreator": c.is_creator,
+                "meeting": c.id.starts_with("19:meeting_"),
                 "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
@@ -5955,6 +5987,7 @@ impl qobject::Backend {
                         this.as_mut().start_presence();
                         this.as_mut().load_server_unread();
                         this.as_mut().load_teams();
+                        this.as_mut().folders_load();
                         this.as_mut().load_activity();
                     }
                     Err(e) => {
@@ -6998,22 +7031,13 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::list_teams_data(&client).await
+                // Teams' own list: which channels you show, unread, New.
+                api::teams::list_teams_csa(&client).await
             }
             .await;
             match result {
                 Ok(teams) => {
-                    let list: Vec<_> = teams
-                        .iter()
-                        .map(|t| {
-                            json!({
-                                "id": t.id,
-                                "name": t.name,
-                                "channels": t.channels.iter().map(|c| json!({"id": c.id, "name": c.name})).collect::<Vec<_>>(),
-                            })
-                        })
-                        .collect();
-                    let text = serde_json::to_string(&list).unwrap_or_else(|_| "[]".into());
+                    let text = serde_json::to_string(&teams).unwrap_or_else(|_| "[]".into());
                     let _ = qt.queue(move |mut this| this.as_mut().set_teams_json(QString::from(text.as_str())));
                 }
                 Err(e) => tracing::warn!("teams failed: {}", short_error(&e)),
@@ -7964,6 +7988,173 @@ impl qobject::Backend {
                     Err(e) => json!({ "app": app, "sort": sort, "error": short_error(&e) }).to_string(),
                 };
                 this.as_mut().set_app_reviews_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn set_chat_hidden(mut self: Pin<&mut Self>, chat_id: &QString, hidden: bool) {
+        let id = chat_id.to_string();
+        // Show it at once, as Teams does.
+        if let Some(c) = self
+            .as_mut()
+            .rust_mut()
+            .chats
+            .iter_mut()
+            .find(|c| c["id"].as_str() == Some(id.as_str()))
+        {
+            c["hidden"] = json!(hidden);
+        }
+        self.as_mut().publish_chats();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_chat_hidden(&client, &id, hidden).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if let Err(e) = &result {
+                    tracing::warn!("hide chat failed: {}", short_error(e));
+                }
+                this.as_mut().reload_chats();
+            });
+        });
+    }
+
+    pub fn leave_chat(self: Pin<&mut Self>, chat_id: &QString) {
+        let id = chat_id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let me = client.object_id().context("not signed in")?;
+                api::msgactions::leave_chat(&client, &id, &format!("8:orgid:{me}")).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().rust_mut().chats.retain(|c| c["id"].as_str() != Some(id.as_str()));
+                    this.as_mut().publish_chats();
+                }
+                Err(e) => {
+                    tracing::warn!("leave chat failed: {}", short_error(&e));
+                    this.as_mut().toast("Couldn't leave the chat", "error");
+                }
+            });
+        });
+    }
+
+    pub fn chat_member_counts_load(self: Pin<&mut Self>, chat_id: &QString) {
+        let id = chat_id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::thread_member_ids(&client, &id).await
+            }
+            .await;
+            if let Ok(members) = result {
+                let n = members.len();
+                let _ = qt.queue(move |mut this| {
+                    let mut map: serde_json::Map<String, serde_json::Value> =
+                        serde_json::from_str(&this.rust().chat_member_counts_json.to_string()).unwrap_or_default();
+                    map.insert(id, json!(n));
+                    this.as_mut().set_chat_member_counts_json(QString::from(
+                        serde_json::Value::Object(map).to_string().as_str(),
+                    ));
+                });
+            }
+        });
+    }
+
+    pub fn folders_load(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                api::folders::folders(&TeamsClient::new().await?).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(f) => {
+                    let text = serde_json::to_string(&f).unwrap_or_default();
+                    this.as_mut().rust_mut().folders = f;
+                    this.as_mut().set_folders_json(QString::from(text.as_str()));
+                }
+                Err(e) => tracing::warn!("folders: {}", short_error(&e)),
+            });
+        });
+    }
+
+    pub fn folder_action(mut self: Pin<&mut Self>, action: &QString, args: &QString) {
+        use api::folders;
+        let action = action.to_string();
+        let args: serde_json::Value = serde_json::from_str(&args.to_string()).unwrap_or_default();
+        let arg = |args: &serde_json::Value, k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let current = self.rust().folders.clone();
+        let version = current.version;
+        // Expanding and collapsing show at once (Teams' optimistic update).
+        if action == "expand" || action == "collapse" || action == "expandAll" || action == "collapseAll" {
+            let open = action.starts_with("expand");
+            let ids: Vec<String> = if action.ends_with("All") {
+                current.folders.iter().map(|f| f.id.clone()).collect()
+            } else {
+                vec![arg(&args, "id")]
+            };
+            let mut next = current.clone();
+            for f in next.folders.iter_mut().filter(|f| ids.contains(&f.id)) {
+                f.expanded = open;
+            }
+            let text = serde_json::to_string(&next).unwrap_or_default();
+            self.as_mut().rust_mut().folders = next;
+            self.as_mut().set_folders_json(QString::from(text.as_str()));
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let a = |k: &str| arg(&args, k);
+            let find = |id: &str| current.folders.iter().find(|f| f.id == id).cloned();
+            let result = async {
+                let client = TeamsClient::new().await?;
+                match action.as_str() {
+                    "expand" | "collapse" => {
+                        let f = find(&a("id")).context("No such section")?;
+                        folders::set_expanded(&client, version, &f, action == "expand").await
+                    }
+                    "expandAll" | "collapseAll" => {
+                        let ids: Vec<String> = current.folders.iter().map(|f| f.id.clone()).collect();
+                        folders::set_all_expanded(&client, version, &ids, action == "expandAll").await
+                    }
+                    "create" => {
+                        let item = a("item");
+                        let from = a("from");
+                        folders::create(
+                            &client,
+                            version,
+                            &a("name"),
+                            (!item.is_empty()).then_some(item.as_str()),
+                            (!from.is_empty()).then_some(from.as_str()),
+                        )
+                        .await
+                    }
+                    "rename" => {
+                        let f = find(&a("id")).context("No such section")?;
+                        folders::rename(&client, version, &f, &a("name")).await
+                    }
+                    "delete" => folders::delete(&client, version, &a("id")).await,
+                    "move" => {
+                        let from = a("from");
+                        folders::move_item(&client, version, &a("item"), &a("to"), (!from.is_empty()).then_some(from.as_str())).await
+                    }
+                    "remove" => folders::remove_item(&client, version, &a("item"), &a("from")).await,
+                    _ => anyhow::bail!("Unknown section action"),
+                }
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if let Err(e) = &result {
+                    tracing::warn!("section action failed: {}", short_error(e));
+                }
+                // The server's state wins (and the next change needs its version).
+                this.as_mut().folders_load();
             });
         });
     }

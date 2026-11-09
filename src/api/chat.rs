@@ -567,6 +567,15 @@ mod group_chat_tests {
     }
 
     #[test]
+    fn hidden_chats_stay_hidden_until_something_newer() {
+        assert!(hidden_until_newer(Some(1794226106734), Some(1794177028993)));
+        assert!(!hidden_until_newer(Some(1794226106734), Some(1794226200000)));
+        assert!(hidden_until_newer(Some(5), None));
+        assert!(!hidden_until_newer(None, Some(1)));
+        assert!(!hidden_until_newer(Some(0), Some(1)));
+    }
+
+    #[test]
     fn new_thread_ids_come_from_location_or_body() {
         assert_eq!(
             thread_id_from_reply(Some("https://x/v1/threads/19:abc@thread.v2"), "").as_deref(),
@@ -672,6 +681,20 @@ pub struct ChatInfo {
     /// Nothing has been said in it yet (`isemptyconversation`); Teams
     /// doesn't list such chats.
     pub empty: bool,
+    /// You hid it and nothing newer has been said (Teams' Hide sets
+    /// `historyHiddenTime`; a newer message shows the chat again).
+    pub hidden: bool,
+    /// You created it (meeting chats: the creator can't leave).
+    pub is_creator: bool,
+}
+
+/// Whether a chat you hid stays hidden: hidden at `hidden_ms` and its last
+/// message (`last_ms`) isn't newer.
+pub fn hidden_until_newer(hidden_ms: Option<i64>, last_ms: Option<i64>) -> bool {
+    match hidden_ms {
+        Some(h) if h > 0 => last_ms.is_none_or(|l| l <= h),
+        _ => false,
+    }
 }
 
 /// A single message for TUI display.
@@ -792,6 +815,23 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .and_then(|p| p.get("isemptyconversation"))
                 .and_then(|e| e.as_str())
                 .is_some_and(|e| e.eq_ignore_ascii_case("true")),
+            hidden: hidden_until_newer(
+                conv.properties
+                    .as_ref()
+                    .and_then(|p| p.get("historyHiddenTime"))
+                    .and_then(|h| h.as_str().and_then(|s| s.parse().ok()).or_else(|| h.as_i64())),
+                conv.last_message
+                    .as_ref()
+                    .and_then(|m| m.original_arrival_time.as_deref())
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(|t| t.timestamp_millis()),
+            ),
+            is_creator: conv
+                .thread_properties
+                .as_ref()
+                .and_then(|p| p.extra.get("isCreator"))
+                .and_then(|c| c.as_bool())
+                .unwrap_or(false),
         });
     }
 

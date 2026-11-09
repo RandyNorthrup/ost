@@ -11,6 +11,7 @@ pub mod directory;
 pub mod drive;
 pub mod emoticons;
 pub mod files;
+pub mod folders;
 pub mod funstuff;
 mod me;
 pub mod messages;
@@ -22,7 +23,7 @@ pub mod preferences;
 pub mod presence;
 pub mod store;
 pub mod tabs;
-mod teams;
+pub mod teams;
 
 use anyhow::Result;
 

@@ -810,6 +810,53 @@ pub async fn set_chat_muted(client: &TeamsClient, chat_id: &str, muted: bool) ->
     Ok(())
 }
 
+/// Hide a chat from the list until something newer is said, or show it
+/// again, as Teams does (measured on winpc): Hide writes the conversation
+/// properties `unpinnedTime` (ms) and `historyHiddenTime` (ms, as a
+/// string); Unhide writes both as null.
+pub async fn set_chat_hidden(client: &TeamsClient, chat_id: &str, hidden: bool) -> Result<()> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let base = format!(
+        "{}/v1/users/ME/conversations/{}/properties",
+        client.chat_service_url(),
+        chat_id
+    );
+    let (unpinned, history) = if hidden {
+        (serde_json::json!(now), serde_json::json!(now.to_string()))
+    } else {
+        (serde_json::Value::Null, serde_json::Value::Null)
+    };
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &format!("{base}?name=unpinnedTime"),
+            &serde_json::json!({ "unpinnedTime": unpinned }),
+        )
+        .await?;
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &format!("{base}?name=historyHiddenTime"),
+            &serde_json::json!({ "historyHiddenTime": history }),
+        )
+        .await?;
+    Ok(())
+}
+
+/// Leave a group chat (Teams' chat service `DELETE v1/threads/{id}/members/{mri}`).
+pub async fn leave_chat(client: &TeamsClient, chat_id: &str, my_mri: &str) -> Result<()> {
+    let url = format!(
+        "{}/v1/threads/{}/members/{}",
+        client.chat_service_url(),
+        chat_id,
+        my_mri
+    );
+    client
+        .chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null)
+        .await?;
+    Ok(())
+}
+
 /// How much of the chat's history people added to it see (Teams' Add
 /// dialog): none, the past `n` days, or all of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
