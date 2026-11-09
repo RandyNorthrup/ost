@@ -157,8 +157,15 @@ Window {
         if (trayShown)
             backend.updateTray(trayKind, trayStatusLabel(myPresence), backend.userName + (backend.orgName ? " | " + backend.orgName : ""))
     }
+    // Teams' taskbar badge (Windows' overlay on its taskbar button): the
+    // app bar's badges added up (Activity, Chat), else your presence.
+    readonly property int taskbarCount: !backend.signedIn ? 0
+        : chatList.chats.filter(c => c.unread && !c.muted).length + backend.activityUnread
+    function refreshTaskbarBadge() { backend.setTaskbarBadge(taskbarCount, backend.signedIn ? trayKind : "") }
+    onTaskbarCountChanged: refreshTaskbarBadge()
+    Component.onCompleted: refreshTaskbarBadge()
     onTrayShownChanged: refreshTray()
-    onTrayKindChanged: refreshTray()
+    onTrayKindChanged: { refreshTray(); refreshTaskbarBadge() }
     onMyPresenceChanged: refreshTray()
     Connections {
         target: backend

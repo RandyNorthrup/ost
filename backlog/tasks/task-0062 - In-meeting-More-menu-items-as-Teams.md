@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T01:14:00Z'
+updated_date: '2026-11-09T01:18:00Z'
 labels:
   - calls
   - meetings
@@ -40,4 +40,7 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - Background noise only / Voice isolation radios hidden: Teams hides them when voice isolation is not supported (needs Microsoft's voice profile); NS row then shows its info button.
 - Music mode (Microsoft: 32 kHz sampling, up to 128 kbps, mono): Opus retuned live to Audio/Music at 128 kbit/s full band, AGC off, AEC per checkbox; turning it on turns NS off and off restores NS (as Teams). "Display in the microphone dropdown menu" adds the row to Mic ▾.
 - Video effects pane moved to TASK-0064 (its content is the background effects).
+
+- Record and transcribe research (winpc capture 2026-11-09): Teams POSTs to the hidden recorder participant's endpointMetadata.commandUrl (from the roster; port changes) with Bearer token aud 4580fd1d-e5a3-4f56-9ad1-aab0e3bf8f76 scp access_recorder_service, header x-microsoft-skype-chain-id = call id. Body {timestamp, participantMri, participantLegId, action start|stop, mode "transcription" (transcript only), processingModes ["realTimeTranscript"] or ["recording","realTimeTranscript"], actionParameters {recordingFeatures{...}, recordingStorageSettings[{StorageType OnedriveForBusiness, StorageLocation Recordings, FileName "<title>-YYYYMMDD_HHMMSS-Meeting Transcript|Recording"}], iCalUid, correlationId, meetingTitle, exchangeId, meetingOrganizer, recordingMode "Normal" (recording), spokenLanguage, type start}, participantSkypeToken ""}; stop sends only the first fields. Response {CorrelationId}.
+- Dialogs: spoken-language-selection-dialog 480 wide ("What language is everyone speaking?" / "Start recording and transcription" 522 wide with More options > Choose what to record: Video and audio); stop confirmations 400 wide ("Stop transcription?", "Stop recording and transcription?"). Teams then opens the Transcript side pane (RTAF storage artifacts).
 <!-- SECTION:NOTES:END -->

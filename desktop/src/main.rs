@@ -2,6 +2,7 @@
 
 mod backend;
 mod key_typer;
+mod launcher_badge;
 mod lock_watch;
 mod rich_text;
 mod tray;

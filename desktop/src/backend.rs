@@ -41,6 +41,9 @@ pub fn request_activate() {
 unsafe extern "C" {
     /// Put text (and its HTML form) on the clipboard (src/native.cpp).
     fn ost_set_clipboard(text: *const core::ffi::c_char, html: *const core::ffi::c_char);
+    /// Teams' taskbar badge on the window icon (src/native.cpp): the
+    /// unread count, or with none, the presence glyph of `kind`.
+    fn ost_set_taskbar_badge(count: i32, kind: *const core::ffi::c_char);
 }
 use teams_cli::calling::incoming::{ActiveCall, CallAuth, IncomingCall};
 use teams_cli::calling::outgoing::{self, OutgoingCall};
@@ -662,6 +665,10 @@ pub mod qobject {
         /// call's audio at once.
         #[qinvokable]
         fn set_music_mode(self: Pin<&mut Backend>, on: bool, echo_cancellation: bool);
+        /// Teams' taskbar badge: the app bar's unread total on the window
+        /// icon, else your presence glyph (kind as the tray's).
+        #[qinvokable]
+        fn set_taskbar_badge(self: &Backend, count: i32, kind: &QString);
         /// The call bar as Teams builds it from its layout config: `facts`
         /// (JSON, see teams_cli::calling::ubar::Facts), each control's
         /// width (JSON {name: px}), a divider's width and the middle slot's
@@ -6305,6 +6312,15 @@ impl qobject::Backend {
         } else {
             teams_cli::calling::apm::NoiseLevel::Off
         });
+    }
+
+    pub fn set_taskbar_badge(&self, count: i32, kind: &QString) {
+        if let Ok(k) = std::ffi::CString::new(kind.to_string()) {
+            // SAFETY: a NUL-terminated string read during the call, on the
+            // GUI thread (QML calls this).
+            unsafe { ost_set_taskbar_badge(count, k.as_ptr()) };
+        }
+        runtime().spawn(crate::launcher_badge::update(i64::from(count)));
     }
 
     pub fn set_music_mode(mut self: Pin<&mut Self>, on: bool, echo_cancellation: bool) {
