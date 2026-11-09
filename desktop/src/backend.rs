@@ -147,6 +147,9 @@ pub mod qobject {
         #[qproperty(QString, call_recording_state)]
         /// Its tooltip ("Transcription started by …").
         #[qproperty(QString, call_recording_tip)]
+        /// Teams' Meeting info pane: {title, hours, schedule, location,
+        /// body (HTML), canCopy}, or "" before it's loaded.
+        #[qproperty(QString, call_meeting_info_json)]
         /// Bumped when the meeting is locked or unlocked while we're in it
         /// (Teams' "This meeting is locked." / "unlocked." notice).
         #[qproperty(i32, call_lock_notices)]
@@ -459,6 +462,13 @@ pub mod qobject {
         /// attendance list).
         #[qinvokable]
         fn download_attendance_list(self: Pin<&mut Backend>);
+        /// Fill call_meeting_info_json for Teams' Meeting info pane.
+        #[qinvokable]
+        fn load_meeting_info(self: Pin<&mut Backend>);
+        /// Teams' "Copy join info": the meeting's invitation, as HTML and
+        /// text.
+        #[qinvokable]
+        fn copy_meeting_join_info(self: Pin<&mut Backend>);
         /// Teams' "Turn off other videos": stop (or resume) asking for
         /// others' cameras.
         #[qinvokable]
@@ -1087,6 +1097,9 @@ pub struct BackendRust {
     call_ai_on: bool,
     call_recording_state: QString,
     call_recording_tip: QString,
+    call_meeting_info_json: QString,
+    /// What Copy join info copies (HTML, text).
+    meeting_join_info: (String, String),
     /// What the meeting's call recorder does (for the recording
     /// indicator's names as the roster changes).
     processing: teams_cli::calling::roster::Processing,
@@ -3339,6 +3352,7 @@ impl qobject::Backend {
         self.as_mut().set_call_ai_facilitator(false);
         self.as_mut().set_call_ai_on(false);
         self.as_mut().show_processing(Default::default());
+        self.as_mut().set_call_meeting_info_json(QString::default());
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!("join meeting");
         let qt = self.qt_thread();
@@ -3677,6 +3691,69 @@ impl qobject::Backend {
                 });
             }
         });
+    }
+
+    pub fn load_meeting_info(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            use teams_cli::calling::meeting_info as mi;
+            let Some(info) = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.meeting_info()) else {
+                return;
+            };
+            let event = if info.ical_uid.is_empty() {
+                None
+            } else {
+                match async {
+                    let client = TeamsClient::new().await?;
+                    api::calendar::event_by_ical_uid(&client, &info.ical_uid).await
+                }
+                .await
+                {
+                    Ok(e) => e,
+                    Err(e) => {
+                        tracing::warn!("meeting info: {}", short_error(&e));
+                        None
+                    }
+                }
+            };
+            let tz = chrono::Local;
+            let hours = match (info.start, info.end) {
+                (Some(s), Some(e)) => mi::hours_text(s, e, &tz),
+                _ => None,
+            };
+            let schedule = match (info.start, info.end) {
+                (Some(s), Some(e)) => event
+                    .as_ref()
+                    .and_then(|ev| ev.recurrence.as_ref())
+                    .and_then(|r| mi::recurrence_text(r, s, &tz))
+                    .or_else(|| Some(mi::single_schedule_text(s, e, &tz))),
+                _ => None,
+            };
+            let body = event.as_ref().map(|e| e.body_html.clone()).unwrap_or_default();
+            let copy = mi::copy_join_info(&body, &info.join_url);
+            let json = serde_json::json!({
+                "title": info.title,
+                "hours": hours.unwrap_or_default(),
+                "schedule": schedule.unwrap_or_default(),
+                "location": info.location,
+                "body": mi::body_for_display(&body),
+                "canCopy": !copy.0.is_empty(),
+            })
+            .to_string();
+            tracing::info!(has_event = event.is_some(), body = body.len(), "meeting info loaded");
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().rust_mut().meeting_join_info = copy;
+                this.as_mut().set_call_meeting_info_json(QString::from(json.as_str()));
+            });
+        });
+    }
+
+    pub fn copy_meeting_join_info(self: Pin<&mut Self>) {
+        let (html, text) = self.rust().meeting_join_info.clone();
+        if let (Ok(t), Ok(h)) = (std::ffi::CString::new(text), std::ffi::CString::new(html)) {
+            // SAFETY: two NUL-terminated strings, copied by Qt before returning.
+            unsafe { ost_set_clipboard(t.as_ptr(), h.as_ptr()) };
+        }
     }
 
     pub fn download_attendance_list(mut self: Pin<&mut Self>) {

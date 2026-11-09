@@ -180,6 +180,11 @@ Window {
     property bool aiAvailable: false
     property bool aiFacilitator: false
     property bool aiOn: false
+    /// Teams' Meeting info pane: {title, hours, schedule, location, body,
+    /// canCopy} once loaded.
+    property var meetingInfo: null
+    signal loadMeetingInfo()
+    signal copyMeetingJoinInfo()
     // Teams' recording indicator (recording-indicator-custom):
     // "Transcribing", "Recording" or "RecordingAndTranscribing" ("" hides
     // it), with who started them as its tooltip.
@@ -400,6 +405,7 @@ Window {
         else if (name === "DialpadButton") { if (dialPad.visible) dialPad.close(); else { dialPad.parent = barItem(name); dialPad.open() } }
         else if (name === "HoldButton" || name === "ResumeButton") toggleHold()
         else if (name === "CameraEffectsButton" || name === "AudioSettingsButton") deviceSettings()
+        else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
     }
     function controlEnabled(name) {
         if (!holdOk(name)) return false
@@ -440,6 +446,7 @@ Window {
         return m
     }
     readonly property var moreLabels: ({
+        MeetingInfoButton: { label: "Meeting info", icon: "info-20" },
         CameraEffectsButton: { label: "Video effects and settings", icon: "video-background-effect-20" },
         AudioSettingsButton: { label: "Audio settings", icon: "speaker-settings-20" }
     })
@@ -954,7 +961,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -962,6 +969,14 @@ Window {
             anchors.fill: parent; anchors.margins: 1
             pane: true
             onClosePane: win.side = ""
+        }
+        MeetingInfoPane {
+            id: meetingInfoPane
+            visible: win.side === "info"
+            anchors.fill: parent
+            info: win.meetingInfo
+            onClosed: win.side = ""
+            onCopyJoinInfo: win.copyMeetingJoinInfo()
         }
         PeoplePane {
             id: peoplePane

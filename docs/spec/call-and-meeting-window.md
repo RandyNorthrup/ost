@@ -370,6 +370,24 @@ only holds what is left (Merge, Park, Lock).
     - Intelligent recap: Copilot checked && recap enabled.
   - **Unlicensed.** All rows are disabled: #BDBDBD text and glyph, and the track stays #F0F0F0 with a #E0E0E0 hairline when checked too. The 14.4 px thumb's 18 px box sits 0.67 in, or 20.67 when checked.
 
+### 1.8b Meeting info pane (More ▸ Meeting info; `calling-meeting-info-panel`; measured on winpc, 2026-11-08)
+- **When it shows.** `MeetingInfoButton` is in meetings only (`isMeeting`), not in breakout rooms or screen-share-from-chat calls.
+- **Where it opens.** The 360-wide right side panel (#F5F5F5), with rail header "Meeting info" (16/22 bold) and close ("Hide meeting info pane").
+- **Content.** Column 20.67 in and 305.33 wide, 16 under the header:
+  - Title (`call-title`, 20/28, 10 below).
+  - `meeting-hours`: "3:00 PM - 3:30 PM (30 minutes)" (`duration_full_mf`; no line when there are no hours or minutes).
+  - `recurrence`:
+    - Single meeting: "November 6, 2026 at 3:00 PM - 3:30 PM".
+    - Series: "Occurs every … @ {time}[ until {Month D}]".
+  - `location`, all 14/20.
+  - The empty dial-in and support slots add 15 px gaps each, so the copy row sits 30 below.
+- **Copy row.** Link glyph, then "Copy join info" (240 × 31.33, padding 5 12, 14/20 600, #D1D1D1 hairline). It becomes "Copied to clipboard" for 2 s.
+  - It copies the event body's `div.me-email-text` (HTML + text).
+  - Else it copies the `WordSection1` child holding the join link.
+  - Else it copies `<div><a …>Join Teams meeting</a></div>` with the short `/meet/` link, plain text = the link. This was verified on winpc's clipboard.
+- **Body** (`meeting-body`, 30 below). The calendar event's body, found by iCalUid, with newlines as spaces and only AMS images kept. Outlook's 11pt text renders at 14.67 px on 20.95 px lines; links are brand #4F52B2 and not underlined. URLs wrap only after "-", "?" and spaces, else at the line's edge.
+- **Data.** Title, start, end and location come from the join response's `meetingDetails` (`meetingChatProperties`). Recurrence comes from `eventRecurrencePattern` / `eventRecurrenceRange`; OST uses the event's Graph `recurrence`.
+
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
 - Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.

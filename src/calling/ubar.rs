@@ -463,6 +463,8 @@ impl Facts {
             "MergeCallsButton" => self.consult,
             // In More (live: the AV framework replaces Devices with these).
             "AudioSettingsButton" | "CameraEffectsButton" => true,
+            // Meetings (Teams' isMeeting), not a chat's group call.
+            "MeetingInfoButton" => self.scheduled,
             _ => false,
         }
     }

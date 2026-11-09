@@ -97,6 +97,38 @@ pub async fn delete_event(client: &TeamsClient, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// A meeting's calendar event as its Meeting info pane needs it: the body
+/// (HTML) and, for a series, its recurrence (Graph's `pattern` and
+/// `range`).
+#[derive(Debug, Clone, Default)]
+pub struct MeetingEvent {
+    pub body_html: String,
+    pub recurrence: Option<serde_json::Value>,
+}
+
+/// Your calendar's event for a meeting, by its iCalUId (Teams' calendar
+/// service `userEventUsingICalUId`). For a series this is the series.
+pub async fn event_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<Option<MeetingEvent>> {
+    if ical_uid.is_empty() || !ical_uid.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        anyhow::bail!("Not an iCalUId");
+    }
+    let path = format!("/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=body,recurrence,type&$top=1");
+    let v: serde_json::Value = client
+        .graph_get(&path)
+        .await?
+        .json()
+        .await
+        .context("Failed to read the meeting's calendar event")?;
+    Ok(v.pointer("/value/0").map(|e| MeetingEvent {
+        body_html: e
+            .pointer("/body/content")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        recurrence: e.get("recurrence").filter(|r| !r.is_null()).cloned(),
+    }))
+}
+
 /// Graph event ids are base64url-ish; refuse anything else in a path.
 fn event_path_id(id: &str) -> Result<&str> {
     if id.is_empty()

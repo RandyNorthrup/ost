@@ -74,6 +74,8 @@ pub struct OutgoingCall {
     processing: std::collections::HashMap<String, super::roster::Processing>,
     /// Teams' bar shows the AI indicator in this meeting.
     ai_indicator: bool,
+    /// What the join response says about the meeting (Meeting info).
+    meeting_info: Option<super::meeting_info::MeetingInfo>,
     /// The conversation controller (`conversationController`): deleting it
     /// ends the meeting for everyone.
     controller: Option<String>,
@@ -544,6 +546,11 @@ impl OutgoingCall {
     /// Teams' bar shows the AI indicator in this meeting.
     pub fn shows_ai_indicator(&self) -> bool {
         self.ai_indicator
+    }
+
+    /// The meeting's title, times, location and calendar link (Meeting info).
+    pub fn meeting_info(&self) -> Option<super::meeting_info::MeetingInfo> {
+        self.meeting_info.clone()
     }
 
     /// Note a conversation update; true when the meeting's lock or
@@ -1831,6 +1838,9 @@ async fn start(
                 );
                 shown
             }),
+        meeting_info: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| super::meeting_info::from_join_response(&v)),
         controller,
         invite_url,
         mute_link,

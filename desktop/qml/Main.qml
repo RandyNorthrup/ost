@@ -741,6 +741,9 @@ Window {
         aiOn: backend.callAiOn
         recordingState: backend.callRecordingState
         recordingTip: backend.callRecordingTip
+        meetingInfo: backend.callMeetingInfoJson ? JSON.parse(backend.callMeetingInfoJson) : null
+        onLoadMeetingInfo: backend.loadMeetingInfo()
+        onCopyMeetingJoinInfo: backend.copyMeetingJoinInfo()
         lockNotices: backend.callLockNotices
         onMeetingAction: action => backend.meetingAction(action)
         onSetAttendeeRestrictions: bits => backend.setAttendeeRestrictions(bits)
@@ -1341,6 +1344,14 @@ Window {
                 else if (step === 22) { shot("on-a2"); backend.toggleCamera() }
                 else if (step === 23) callWindow.audioOptionsForTest()
                 else if (step === 24) shot("audio-flyout")
+            } else if (step === 9 && Qt.application.arguments.indexOf("--join-info") >= 0) {
+                // --join-info: open More > Meeting info, capture it (step
+                // 11), press Copy join info and capture again (step 12).
+                callWindow.runControl("MeetingInfoButton")
+            } else if (step === 11 && Qt.application.arguments.indexOf("--join-info") >= 0) {
+                console.warn("JOIN info", backend.callMeetingInfoJson.slice(0, 400))
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-info.png")))
+                backend.copyMeetingJoinInfo()
             } else if (step >= 8 && step < 12 + window.joinStay && Qt.application.arguments.indexOf("--join-ai") >= 0) {
                 const st = [backend.callAiIndicator, backend.callAiAvailable, backend.callAiOn, backend.callAiFacilitator, backend.callRecordingState, backend.callRecordingTip].join(",")
                 if (st !== window.aiLogged) {
