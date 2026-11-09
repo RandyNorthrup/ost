@@ -17,7 +17,9 @@ import QtQuick.Controls
 //   said (14/20, at 52.67, 30.53 down, 259.33 wide); what they say next
 //   follows without the header (9.2 down), until someone else speaks or
 //   an event comes between; 2 below each.
-// Teams lists the recognizer's final results, and stays at the newest row
+// Teams lists the recognizer's final results, then each speaker's result
+// still being recognized (replaced as it's refined, gone 5 s after it
+// stops changing), and stays at the newest row
 // unless you scroll up: then "Go to current" (primary, 125 x 28, 20 from
 // the right and bottom) brings you back.
 Rectangle {
@@ -32,6 +34,9 @@ Rectangle {
     property string meName: ""
     /// Live captions are available (the message bar offers them).
     property bool captionsAvailable: false
+    /// Show the service's filtered words (Filter profane words): its
+    /// `text`, else the unmasked `rawText` where the store has it.
+    property bool filterProfanity: false
     /// Language and speech settings are available (the header button).
     property bool languageSettingsAvailable: false
     signal closed()
@@ -195,7 +200,8 @@ Rectangle {
             required property int index
             readonly property var prev: index > 0 ? root.entries[index - 1] : null
             readonly property bool speech: modelData.kind === "speech"
-            readonly property bool first: speech && (!prev || prev.kind !== "speech" || prev.userId !== modelData.userId)
+            // A partial (still being recognized) always shows who's speaking.
+            readonly property bool first: speech && (!modelData.isFinal || !prev || prev.kind !== "speech" || prev.userId !== modelData.userId)
             readonly property real textTop: !speech ? 9 : first ? 30.53 : 9.2
             width: list.width
             height: textTop + (speech ? message.height : 20) + 2
@@ -266,7 +272,8 @@ Rectangle {
                 textFormat: TextEdit.RichText
                 text: row.speech
                     ? "<style>p { line-height: 20px; -qt-line-height-type: fixed; margin: 0; }</style><p>"
-                      + root.escaped(row.modelData.text) + "</p>"
+                      + root.escaped(root.filterProfanity ? (row.modelData.text || row.modelData.rawText || "")
+                                                          : (row.modelData.rawText || row.modelData.text || "")) + "</p>"
                     : ""
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text

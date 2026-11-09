@@ -752,6 +752,15 @@ Window {
         onLoadMeetingInfo: backend.loadMeetingInfo()
         transcript: backend.callTranscriptJson ? JSON.parse(backend.callTranscriptJson) : []
         onLoadTranscript: backend.loadTranscript()
+        captionsOn: backend.callCaptionsOn
+        captions: backend.callCaptionsJson ? JSON.parse(backend.callCaptionsJson) : []
+        captionsLanguage: backend.callCaptionsLanguage || backend.setting("spokenLanguage") || "en-us"
+        accessibility: backend.callAccessibilityJson ? JSON.parse(backend.callAccessibilityJson) : ({})
+        captionStyles: { const s = backend.setting("captionStyles"); try { return s ? JSON.parse(s) : {} } catch (e) { return {} } }
+        onSetCaptions: on => backend.setCaptions(on)
+        onSetCaptionsLanguage: code => backend.setCaptionsLanguage(code)
+        onUpdateAccessibility: patch => backend.updateCallAccessibility(patch)
+        onSaveCaptionStyles: styles => { backend.setSetting("captionStyles", JSON.stringify(styles)); captionStyles = styles }
         onCopyMeetingJoinInfo: backend.copyMeetingJoinInfo()
         onRecorderCommand: (command, language, audioOnly) => backend.recorderCommand(command, language, audioOnly)
         lockNotices: backend.callLockNotices
@@ -1378,6 +1387,30 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 4 === 0) st()
+            } else if (step >= 9 && step <= 46 && Qt.application.arguments.indexOf("--join-captions") >= 0) {
+                // --join-captions: Language and speech ▸ Show live captions,
+                // the empty window, live captions (a guest speaks from
+                // outside), the settings menu, Caption styles at Large,
+                // then captions off.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cc-" + n + ".png")))
+                const st = () => console.warn("JOIN captions", step, "on", backend.callCaptionsOn, "n", JSON.parse(backend.callCaptionsJson || "[]").length,
+                                               "acc", backend.callAccessibilityJson.slice(0, 120))
+                const plan = {
+                    9: () => callWindow.moreSubmenuForTest("LanguageSpeechMenuControl"), 10: () => grab("menu-off"), 11: () => callWindow.closeMoreForTest(),
+                    12: () => callWindow.recordControl("ClosedCaptionsButton"),
+                    14: () => { st(); grab("empty") },
+                    28: () => { st(); grab("live") },
+                    30: () => callWindow.captionSettingsForTest(), 31: () => grab("settings"), 32: () => callWindow.closeCaptionSettingsForTest(),
+                    33: () => callWindow.side = "captionStyles",
+                    34: () => callWindow.saveCaptionStyles(Object.assign({}, callWindow.captionStyles, { fontSize: "Large" })),
+                    35: () => grab("large"),
+                    36: () => callWindow.saveCaptionStyles(Object.assign({}, callWindow.captionStyles, { fontSize: "Medium" })),
+                    37: () => { callWindow.side = ""; callWindow.moreSubmenuForTest("LanguageSpeechMenuControl") }, 38: () => grab("menu-on"), 39: () => callWindow.closeMoreForTest(),
+                    40: () => callWindow.recordControl("ClosedCaptionsButton"),
+                    44: () => { st(); grab("off") }
+                }
+                if (plan[step]) plan[step]()
+                else if (step % 3 === 0) st()
             } else if (step >= 9 && step <= 50 && Qt.application.arguments.indexOf("--join-transcript-start") >= 0) {
                 // --join-transcript-start: stop a running transcript, start
                 // one (Teams then opens the Transcript pane for you), then

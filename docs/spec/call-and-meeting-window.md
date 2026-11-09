@@ -440,7 +440,7 @@ only holds what is left (Merge, Park, Lock).
   - A new header starts when the speaker id changes or an event comes between. Every row has 2 px below.
 - **Follow.** The list stays on the newest row unless you scroll up. Then "Go to current" appears: primary, 125.16 × 28, 20 px from the right and bottom, padding 0 8 1 5, a 20 px arrow-down glyph and 14/28 semibold text.
 - **Data.**
-  - Live: the media processor's speech recognition on the MCP data channel ("main-channel"), in frames headed `10 0b 83`. The JSON is `{recognitionResults:[{id, userId, displayName, text, isFinal, timestampAudioSent (100 ns since 1900), …}]}`. The pane lists the finals.
+  - Live: the media processor's speech recognition on the MCP data channel ("main-channel"), in frames headed `10 0b 83`. The JSON is `{recognitionResults:[{id, userId, displayName, text, isFinal, timestampAudioSent (100 ns since 1900), …}]}`. The pane lists the finals, then each speaker's current partial (see 1.8f).
   - Stored, read on opening: POST `{"artifactTypes":["Transcript","CallEvents"],"maxResults":-1}` to the join response's `meetingDetails.realTimeActivityFeedDetails.links.getArtifacts`. It uses the IC3 token, `x-ms-session-id`, `x-ms-correlation-id` and `x-microsoft-skype-chain-id`.
   - Transcript entries: `jsonContent {entryId, text, speakerId "<oid>@<tenant>", displayName, startTime, …}`.
   - CallEvents: `{eventType TranscriptStarted|TranscriptStopped|…, userId, displayName}`.
@@ -448,6 +448,48 @@ only holds what is left (Merge, Park, Lock).
 - **Speaker ids.** Teams resolves "<oid>@<tenant>" to "8:orgid:<oid>", leaves "<n>@local" as is (its name "@n" reads "Speaker n"), and adds "8:" to bare ids.
   - So a guest's stored rows (8:orgid:<guid>) and live rows (8:teamsvisitor:<guid>) group separately.
   - A stored event without a name takes the person's name from the meeting.
+
+### 1.8f Live captions (Language and speech ▸; captions v2; measured on winpc, 2026-11-09)
+- **Menu.** More ▸ Language and speech ▸ (LanguageSpeechMenuControl): "Show live captions" / "Hide live captions ✓" (Alt+Shift+C) and "Turn on RTT for this call".
+  - More and its submenus have 230 px rows inside 16.67 padding.
+  - The shortcut ends 6 px before the 16 px check.
+- **Window.** A strip under the stage (or under the bar, "At top"), 4 px in from the window's sides and bottom, in the background colour.
+  - Height by Panel height: 118 / 132 / 148 px in windows up to 682 px tall, else 22 / 43 / 72.5 % of the area under the bar.
+  - The stage ends 2.67 px from it.
+  - The list is centred, 550 / 620 / 870 / 1000 px wide by Font size, at most 75 px narrower than the strip (then flush left). It scrolls, with the newest at the bottom.
+- **Caption.** 2 px above.
+  - The speaker's 32 px avatar sits at x 8, 4 down.
+  - The name (10/14, 12/16, 14/20 or 16/22 semibold) is followed by a guest's unverified glyph.
+  - The words (12/16, 16/22, 24/32 or 28/36) start at x 52, 15 down, with 2 px below. Items are 39 / 61 / 83 px for 1 / 2 / 3 lines at Medium.
+  - Every caption shows its speaker. Teams has a path that drops the header for a final from the same speaker, but in 90 s of sampling it never fired.
+- **Before any caption.** "Captions will be shown in English (US)." (16/22.86, centred, in the font colour).
+- **Buttons.** 32 px, 6 down, 8 from the right.
+  - Teams shows Thumb up, Thumb down, caption settings, Open captions in new window and Hide live captions.
+  - When they don't fit beside the list, all but Hide fold into "…".
+  - OST leaves out the thumbs (they only send Microsoft telemetry, which OST never sends) and the pop-out window (not built yet).
+- **Caption settings menu.** It opens above the gear, right-aligned.
+  - "Meeting spoken language" with the language (12/20 #616161) and a chevron. The languages open to the left: the current one first with its check, a divider, then the 57 languages; the list scrolls past 270.
+  - A divider, then Caption styles.
+  - "Position" (At top / At bottom).
+  - A divider, then "Always turn on captions" and "Filter profane words", each with a 40 × 20 switch.
+- **Caption styles pane.**
+  - Font color: White, Black, Red #FE0000, Green #00FF00, Blue #0000FF, Yellow #FFFF00, Aqua #00FFFF. Background color: Black, White and the same colours.
+  - Swatches are 32 px with radius 4, a 0.67 #D1D1D1 border, and the chosen one 2 px #444791.
+  - Font size: Small, Medium, Large, Extra large. Panel height: Small, Medium, Large.
+  - Stored on the device ("closed-captions-settings"). Defaults follow the theme: black on white when light.
+- **Protocol.**
+  - On:
+    - If the recorder isn't running captions, POST its commandUrl with `{action:"start", mode:"transcription", processingModes:["closedCaptions"], participantSkypeToken:""}` (no actionParameters), using the recorder token and `X-Skypetoken`.
+    - Once the roster shows `closedCaptions` Active, PUT the conversation's `updateEndpointMetadata` with `{participants:{from:<us>}, endpointMetadata:{transcriptionPrefs:{closedCaptions:true}}}`.
+  - Off: only that PUT with `false`. The recorder stops once no endpoint wants captions.
+  - Spoken language: `action:"setLanguage"` with `actionParameters {spokenLanguage, type:"setLanguage"}`.
+  - "Always turn on captions" and "Filter profane words" are `startCaptionsAutomatically` and `profanityFilterEnabled` in the `callAccessibilitySettings` user property. Teams PUTs the whole JSON object to the chat service `/v1/users/ME/properties?name=callAccessibilitySettings`.
+  - The filter chooses the service's `text` (filtered) over `rawText`. It applies to the Transcript pane too.
+- **Data.** The same recognition results as the transcript.
+  - Each partial and each final has its own id.
+  - A speaker has one partial at a time: the next replaces it and the final removes it.
+  - A partial not refined for 5 s is dropped.
+  - The Transcript pane lists the finals, then the current partials.
 
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.

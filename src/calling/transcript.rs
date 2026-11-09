@@ -38,8 +38,91 @@ pub struct Entry {
     pub user_id: String,
     pub name: String,
     pub text: String,
+    /// The words before the service masked profanity, when it says
+    /// (`rawText`): shown unless "Filter profane words" is on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_text: Option<String>,
+    /// A final result (a caption still being recognized is not).
+    pub is_final: bool,
     /// Unix milliseconds.
     pub at_ms: i64,
+    /// When a partial result last changed (Unix ms, ours): one not
+    /// refined for 5 s is dropped.
+    #[serde(skip)]
+    pub updated_ms: i64,
+}
+
+/// Every recognition result in a live message, partials included: each
+/// partial (and the final after it) comes with a new id, so a speaker's
+/// partial is replaced by the next one from them ([`merge_live`]).
+pub fn results_from_live(payload: &Value) -> Vec<Entry> {
+    payload
+        .get("recognitionResults")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|r| Entry {
+            id: s(r, "id"),
+            kind: Kind::Speech,
+            user_id: s(r, "userId"),
+            name: s(r, "displayName"),
+            text: s(r, "text"),
+            raw_text: r.get("rawText").and_then(Value::as_str).map(str::to_string),
+            is_final: r.get("isFinal").and_then(Value::as_bool) == Some(true),
+            at_ms: r
+                .get("timestampAudioSent")
+                .and_then(Value::as_i64)
+                .map(ntp_ticks_to_ms)
+                .unwrap_or_default(),
+            updated_ms: 0,
+        })
+        .filter(|e| !e.text.is_empty())
+        .collect()
+}
+
+/// A partial not refined for this long is dropped (Teams' 5 s).
+pub const PARTIAL_TIMEOUT_MS: i64 = 5_000;
+
+/// Add live results as Teams' transcript store does: a speaker has at most
+/// one partial (a newer one replaces it, their final removes it); finals
+/// go in time order; the partials follow the finals. Partials not refined
+/// for [`PARTIAL_TIMEOUT_MS`] are dropped. `now_ms` is the time of arrival.
+pub fn merge_live(into: &mut Vec<Entry>, rows: Vec<Entry>, now_ms: i64) {
+    let partial = |e: &Entry| e.kind == Kind::Speech && !e.is_final;
+    for mut r in rows {
+        if r.kind == Kind::Speech {
+            if let Some(i) = into
+                .iter()
+                .position(|e| partial(e) && e.user_id == r.user_id)
+            {
+                into.remove(i);
+            }
+        }
+        if !r.id.is_empty() && into.iter().any(|e| e.id == r.id) {
+            continue;
+        }
+        if partial(&r) {
+            r.updated_ms = now_ms;
+            into.push(r);
+        } else {
+            let finals = into.iter().take_while(|e| !partial(e)).count();
+            let at = into[..finals].partition_point(|e| e.at_ms <= r.at_ms);
+            into.insert(at, r);
+        }
+    }
+    into.retain(|e| !partial(e) || now_ms - e.updated_ms <= PARTIAL_TIMEOUT_MS);
+}
+
+/// Keep at most this many captions (Teams' caption window scrolls back a
+/// little; older ones are gone).
+pub const MAX_CAPTIONS: usize = 100;
+
+/// Add caption results ([`merge_live`]), keeping the newest
+/// [`MAX_CAPTIONS`].
+pub fn merge_captions(into: &mut Vec<Entry>, rows: Vec<Entry>, now_ms: i64) {
+    merge_live(into, rows, now_ms);
+    let extra = into.len().saturating_sub(MAX_CAPTIONS);
+    into.drain(..extra);
 }
 
 /// Seconds from 1900 to 1970.
@@ -105,32 +188,10 @@ fn event_kind(t: &str) -> Option<Kind> {
     }
 }
 
-/// The rows a live speech recognition message adds: its finals and its
-/// transcript events.
+/// The rows a live speech recognition message adds: its results (partials
+/// too, see [`merge_live`]) and its transcript events.
 pub fn from_live(payload: &Value) -> Vec<Entry> {
-    let mut out = Vec::new();
-    for r in payload
-        .get("recognitionResults")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        if r.get("isFinal").and_then(Value::as_bool) != Some(true) {
-            continue;
-        }
-        out.push(Entry {
-            id: s(r, "id"),
-            kind: Kind::Speech,
-            user_id: s(r, "userId"),
-            name: s(r, "displayName"),
-            text: s(r, "text"),
-            at_ms: r
-                .get("timestampAudioSent")
-                .and_then(Value::as_i64)
-                .map(ntp_ticks_to_ms)
-                .unwrap_or_default(),
-        });
-    }
+    let mut out = results_from_live(payload);
     for e in payload
         .get("events")
         .and_then(Value::as_array)
@@ -144,7 +205,10 @@ pub fn from_live(payload: &Value) -> Vec<Entry> {
                 user_id: speaker_mri(&s(e, "userId"), false),
                 name: s(e, "displayName"),
                 text: String::new(),
+                raw_text: None,
+                is_final: true,
                 at_ms: stored_ms(e.get("timestamp")).unwrap_or_default(),
+                updated_ms: 0,
             });
         }
     }
@@ -197,7 +261,10 @@ pub fn from_artifacts(reply: &Value) -> Vec<Entry> {
                         user_id: speaker_mri(&s(&c, "userId"), old),
                         name: s(&c, "displayName"),
                         text: String::new(),
+                        raw_text: None,
+                        is_final: true,
                         at_ms: stored_ms(c.get("timestamp")).unwrap_or(created),
+                        updated_ms: 0,
                     });
                 }
                 "Transcript" => {
@@ -209,7 +276,10 @@ pub fn from_artifacts(reply: &Value) -> Vec<Entry> {
                         name: speaker_name(&speaker, &s(&c, "displayName")),
                         user_id: speaker,
                         text: s(&c, "text"),
+                        raw_text: c.get("rawText").and_then(Value::as_str).map(str::to_string),
+                        is_final: true,
                         at_ms: stored_ms(c.get("startTime")).unwrap_or(created),
+                        updated_ms: 0,
                     });
                 }
                 _ => {}
@@ -345,15 +415,32 @@ mod tests {
     }
 
     #[test]
-    fn keeps_finals_and_events() {
+    fn a_final_replaces_the_speakers_partial() {
         let live = serde_json::json!({"version": "1.1", "recognitionResults": [
             {"id": "a/52", "userId": "8:teamsvisitor:x", "displayName": "OST Guest 1", "text": "Front.", "isFinal": false, "timestampAudioSent": 40031800327868100i64},
-            {"id": "a/79", "userId": "8:teamsvisitor:x", "displayName": "OST Guest 1", "text": "Front, right.", "isFinal": true, "timestampAudioSent": 40031800316768100i64}
+            {"id": "a/53", "userId": "8:teamsvisitor:x", "displayName": "OST Guest 1", "text": "Front, right", "isFinal": false, "timestampAudioSent": 40031800327868100i64}
         ]});
-        let rows = from_live(&live);
+        let mut rows = Vec::new();
+        merge_live(&mut rows, from_live(&live), 1_000);
+        assert_eq!(rows.len(), 1, "one partial per speaker");
+        assert_eq!(rows[0].text, "Front, right");
+        let fin = serde_json::json!({"recognitionResults": [
+            {"id": "a/55", "userId": "8:teamsvisitor:x", "displayName": "OST Guest 1", "text": "Front, right.", "isFinal": true, "timestampAudioSent": 40031800316768100i64}
+        ]});
+        merge_live(&mut rows, from_live(&fin), 2_000);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].text, "Front, right.");
-        assert_eq!(rows[0].kind, Kind::Speech);
+        assert!(rows[0].is_final);
+        // Someone else's partial follows the finals and lapses after 5 s.
+        let other = serde_json::json!({"recognitionResults": [
+            {"id": "b/1", "userId": "8:orgid:y", "displayName": "Y", "text": "Hello", "isFinal": false, "timestampAudioSent": 40031800300000000i64}
+        ]});
+        merge_live(&mut rows, from_live(&other), 3_000);
+        assert_eq!(
+            rows.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["a/55", "b/1"]
+        );
+        merge_live(&mut rows, Vec::new(), 8_001);
+        assert_eq!(rows.len(), 1);
         let ev = serde_json::json!({"events": [{"type": "LanguageMismatch", "id": "a/59"}]});
         assert!(from_live(&ev).is_empty());
     }
@@ -381,6 +468,29 @@ mod tests {
         let mut all = rows.clone();
         merge(&mut all, rows);
         assert_eq!(all.len(), 3, "no repeats");
+    }
+
+    #[test]
+    fn captions_keep_the_newest() {
+        let a = serde_json::json!({"recognitionResults": [
+            {"id": "a/1", "userId": "8:x", "displayName": "G", "text": "Front", "isFinal": false},
+            {"id": "a/2", "userId": "8:x", "displayName": "G", "text": "Front left", "isFinal": false},
+            {"id": "a/3", "userId": "8:x", "displayName": "G", "text": "Front, left.", "isFinal": true, "rawText": "Front, left."}
+        ]});
+        let mut c = Vec::new();
+        merge_captions(&mut c, results_from_live(&a), 0);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].raw_text.as_deref(), Some("Front, left."));
+        for i in 0..150 {
+            let n = Entry {
+                id: format!("n/{i}"),
+                at_ms: i,
+                ..c[0].clone()
+            };
+            merge_captions(&mut c, vec![n], 0);
+        }
+        assert_eq!(c.len(), MAX_CAPTIONS);
+        assert_eq!(c.last().unwrap().id, "n/149");
     }
 
     #[test]

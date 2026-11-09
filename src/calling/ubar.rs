@@ -471,6 +471,9 @@ impl Facts {
             "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" | "TranscriptPanelButton" => {
                 self.scheduled
             }
+            // Language and speech ▸ Show live captions (the meeting's
+            // recorder provides them).
+            "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.scheduled,
             _ => false,
         }
     }

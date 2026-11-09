@@ -35,7 +35,9 @@ Popup {
     property Component header: null
     readonly property real labelX: labelInset >= 0 ? labelInset : hasIcons ? 30 : 6
     padding: viewStyle ? 16.67 : 4
-    implicitWidth: Math.min(290, Math.max(widest.value, 0)) + 2 * padding
+    /// Rows at least this wide (Teams' More menu and its submenus: 230).
+    property real minRowWidth: 0
+    implicitWidth: Math.min(290, Math.max(widest.value, minRowWidth)) + 2 * padding
     /// The pointer is over the menu (for menus that open on hover).
     readonly property bool hovered: surfaceHover.hovered
     background: FluentSurface { depth: 16; radius: 4; HoverHandler { id: surfaceHover } }
@@ -66,8 +68,11 @@ Popup {
     property var subMenu: null
     function submenu() {
         if (!subMenu) {
+            // At least as wide as this menu (Teams' submenus match More's
+            // 230), wider when a row needs it.
             subMenu = Qt.createComponent("MenuPopup.qml").createObject(root.contentItem, {
-                viewStyle: Qt.binding(() => root.viewStyle), width: Qt.binding(() => root.width) })
+                viewStyle: Qt.binding(() => root.viewStyle),
+                minRowWidth: Qt.binding(() => root.width - 2 * root.padding) })
             subMenu.picked.connect(i => { const s = root.subIndex; root.close(); root.subPicked(s, i) })
         }
         return subMenu
@@ -160,7 +165,9 @@ Popup {
                         name: root.viewStyle ? "view-chevron-16" : "chevron-right-" + root.chevronSize; size: root.chevronSize; color: row.ink
                     }
                     Text {
-                        anchors.right: parent.right; anchors.rightMargin: root.keysMargin; anchors.verticalCenter: parent.verticalCenter
+                        // Before a check row's 16 px check (6 either side).
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: root.keysMargin + (row.modelData.endCheck !== undefined ? 22 : 0)
                         text: row.modelData.keys || ""
                         font.family: theme.font; font.pixelSize: theme.small
                         color: row.on ? theme.textSecondary : theme.disabled

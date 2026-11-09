@@ -463,6 +463,10 @@ Window {
         if (n === "TranscriptButton") return transcribing
             ? { label: "Stop transcription", icon: "call-transcript-stop-20" }
             : { label: "Start transcription", icon: "call-transcript-20" }
+        if (n === "LanguageSpeechMenuControl") return { label: "Language and speech", icon: "local-language-20" }
+        if (n === "ClosedCaptionsButton") return {
+            label: captionsOn ? "Hide live captions" : "Show live captions",
+            icon: "closed-caption-20", keys: "Alt+Shift+C", endCheck: captionsOn }
         // Once a transcript has run in the meeting: show or hide its pane.
         if (n === "TranscriptPanelButton") return transcriptStarted
             ? { label: side === "transcript" ? "Hide transcript" : "Show transcript",
@@ -513,6 +517,42 @@ Window {
     }
     // The Transcript pane: its rows, and asking for the stored ones.
     property var transcript: []
+    // Live captions (Language and speech ▸ Show live captions).
+    property bool captionsOn: false
+    property var captions: []
+    property string captionsLanguage: "en-us"
+    /// Teams' calling accessibility settings ({startCaptionsAutomatically,
+    /// profanityFilterEnabled, …}).
+    property var accessibility: ({})
+    /// Caption styles ({fontColor, backgroundColor, fontSize,
+    /// captionHeight, captionsPosition}), kept on this device.
+    property var captionStyles: ({})
+    signal setCaptions(bool on)
+    signal setCaptionsLanguage(string code)
+    signal updateAccessibility(string patch)
+    signal saveCaptionStyles(var styles)
+    readonly property bool captionsAtTop: captionStyles.captionsPosition === "Top"
+    readonly property var spokenLanguages: recordStart.languages.map(l => ({ code: l[0], name: l[1] }))
+    function languageName(code) {
+        const l = recordStart.languages.find(x => x[0] === code)
+        return l ? l[1] : "English (US)"
+    }
+    function openCaptionSettings(anchor) {
+        if (captionsWindow.overflow) {
+            captionsOverflow.parent = anchor
+            captionsOverflow.x = anchor.width - captionsOverflow.implicitWidth
+            captionsOverflow.y = captionsAtTop ? anchor.height + 4 : -captionsOverflow.implicitHeight - 4
+            captionsOverflow.open()
+            return
+        }
+        showCaptionSettings(anchor)
+    }
+    function showCaptionSettings(anchor) {
+        captionSettings.parent = anchor
+        captionSettings.x = anchor.width - captionSettings.implicitWidth
+        captionSettings.y = captionsAtTop ? anchor.height + 4 : -captionSettings.implicitHeight - 4
+        captionSettings.open()
+    }
     signal loadTranscript()
     property bool openTranscriptWhenStarted: false
     // A transcript has run in this meeting (Teams' hasBeenStarted: More
@@ -548,6 +588,14 @@ Window {
         if (i >= 0) moreMenu.openSubmenuForTest(i)
     }
     function closeMoreForTest() { moreMenu.close() }
+    function moreSubmenuForTest(name) {
+        moreMenu.parent = barItem("MoreButton") || moreMenu.parent
+        moreMenu.open()
+        const i = barMoreItems.findIndex(it => it.name === name)
+        if (i >= 0) moreMenu.openSubmenuForTest(i)
+    }
+    function captionSettingsForTest() { openCaptionSettings(captionsWindow.settingsAnchorForTest) }
+    function closeCaptionSettingsForTest() { captionSettings.close(); captionsOverflow.close() }
     function transcriptScrollTopForTest() { transcriptPane.scrollToTopForTest() }
     function cancelRecordDialogForTest() { recordStart.close() }
     function confirmRecordDialogForTest() {
@@ -557,7 +605,8 @@ Window {
         return false
     }
     function recordControl(name) {
-        if (name === "TranscriptPanelButton") toggleTranscript()
+        if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
+        else if (name === "TranscriptPanelButton") toggleTranscript()
         else if (name === "RecordingButton") {
             if (recording) stopRecordingAsk.open()
             else recordStart.ask(transcribing ? "recording" : "recordingAndTranscription")
@@ -691,10 +740,58 @@ Window {
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
 
+    // Live captions: a strip 4 in from the sides and bottom (or under the
+    // bar, "At top"), the stage above (or below) it.
+    CaptionsWindow {
+        id: captionsWindow
+        visible: win.captionsOn && win.state === "connected"
+        x: 4; width: (sidePane.visible ? sidePane.x : win.contentItem.width) - 8
+        height: implicitHeight
+        y: win.captionsAtTop ? bar.y + bar.height + 4 : win.contentItem.height - 4 - height
+        captions: win.captions
+        roster: win.people
+        meId: backend.userMri
+        meName: backend.userName
+        filterProfanity: win.accessibility.profanityFilterEnabled === true
+        languageName: win.languageName(win.captionsLanguage)
+        styles: win.captionStyles
+        windowHeight: win.height
+        areaHeight: win.contentItem.height - bar.y - bar.height
+        onClosed: win.setCaptions(false)
+        onSettingsRequested: anchor => win.openCaptionSettings(anchor)
+    }
+    CaptionsSettingsMenu {
+        id: captionSettings
+        language: win.captionsLanguage
+        languageName: win.languageName(win.captionsLanguage)
+        languages: win.spokenLanguages
+        position: win.captionsAtTop ? "Top" : "Bottom"
+        alwaysOn: win.accessibility.startCaptionsAutomatically === true
+        filterProfanity: win.accessibility.profanityFilterEnabled === true
+        onLanguagePicked: code => win.setCaptionsLanguage(code)
+        onCaptionStyles: win.side = "captionStyles"
+        onPositionPicked: pos => win.saveCaptionStyles(Object.assign({}, win.captionStyles, { captionsPosition: pos }))
+        onAlwaysOnToggled: on => win.updateAccessibility(JSON.stringify({ startCaptionsAutomatically: on }))
+        onFilterProfanityToggled: on => win.updateAccessibility(JSON.stringify({ profanityFilterEnabled: on }))
+    }
+    // "…" when the buttons don't fit: Open caption settings ▸.
+    MenuPopup {
+        id: captionsOverflow
+        items: [{ label: "Open caption settings", icon: "settings-20", chevron: true }]
+        onPicked: i => win.showCaptionSettings(captionsOverflow.parent)
+    }
+
     // Stage
     Rectangle {
         id: stage
-        anchors { top: bar.bottom; left: parent.left; right: sidePane.visible ? sidePane.left : parent.right; bottom: parent.bottom; margins: 6 }
+        anchors {
+            top: captionsWindow.visible && win.captionsAtTop ? captionsWindow.bottom : bar.bottom
+            left: parent.left; right: sidePane.visible ? sidePane.left : parent.right
+            bottom: captionsWindow.visible && !win.captionsAtTop ? captionsWindow.top : parent.bottom
+            margins: 6
+            topMargin: captionsWindow.visible && win.captionsAtTop ? 2.67 : 6
+            bottomMargin: captionsWindow.visible && !win.captionsAtTop ? 2.67 : 6
+        }
         radius: 6
         // Teams: a flat stage in meetings, a soft gradient in 1:1 calls.
         color: theme.pane
@@ -1066,7 +1163,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -1091,7 +1188,19 @@ Window {
             roster: win.people
             meId: backend.userMri
             meName: backend.userName
+            filterProfanity: win.accessibility.profanityFilterEnabled === true
+            captionsAvailable: !win.captionsOn
             onClosed: win.side = ""
+            // Teams turns captions on and closes the pane.
+            onSwitchToCaptions: { win.setCaptions(true); win.side = "" }
+        }
+        CaptionStylesPane {
+            id: captionStylesPane
+            visible: win.side === "captionStyles"
+            anchors.fill: parent
+            styles: win.captionStyles
+            onClosed: win.side = ""
+            onChanged: s => win.saveCaptionStyles(s)
         }
         MeetingInfoPane {
             id: meetingInfoPane
@@ -1540,6 +1649,8 @@ Window {
     readonly property bool inCall: state === "connected" || state === "calling" || state === "connecting"
     Shortcut { sequence: "Ctrl+Shift+K"; enabled: win.live && win.ubar.bar.concat(win.ubar.overflowed).indexOf("RaiseHandsButton") >= 0; onActivated: win.toggleHand() }
     Shortcut { sequence: "Ctrl+Shift+E"; enabled: win.live && (win.canShare || win.sharing); onActivated: win.toggleShare() }
+    // Language and speech ▸ Show / Hide live captions.
+    Shortcut { sequence: "Alt+Shift+C"; enabled: win.live && win.ubar.more.some(sec => sec.items.some(i => i.name === "LanguageSpeechMenuControl")); onActivated: win.setCaptions(!win.captionsOn) }
     // Admit the person the lobby notification shows.
     Shortcut {
         sequence: "Ctrl+Shift+Y"
@@ -1587,6 +1698,8 @@ Window {
     MenuPopup {
         id: moreMenu
         viewStyle: true
+        // Teams' More list is 230 wide (its submenus too: they take its width).
+        minRowWidth: 230
         x: 4; y: 59.3
         items: win.barMoreItems
         submenuLeft: true

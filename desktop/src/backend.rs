@@ -156,6 +156,17 @@ pub mod qobject {
         /// Teams' Transcript pane: [{id, kind (speech, started,
         /// stopped), userId, name, text, atMs}], oldest first.
         #[qproperty(QString, call_transcript_json)]
+        /// Live captions: [{id, userId, name, text, rawText?, isFinal,
+        /// atMs}], newest last (partials replaced as they're refined).
+        #[qproperty(QString, call_captions_json)]
+        /// You turned live captions on (the caption window shows).
+        #[qproperty(bool, call_captions_on)]
+        /// The meeting's spoken language for its captions ("en-us").
+        #[qproperty(QString, call_captions_language)]
+        /// Teams' calling accessibility settings (the callAccessibility
+        /// user property): {startCaptionsAutomatically,
+        /// profanityFilterEnabled, …}.
+        #[qproperty(QString, call_accessibility_json)]
         /// Bumped when the meeting is locked or unlocked while we're in it
         /// (Teams' "This meeting is locked." / "unlocked." notice).
         #[qproperty(i32, call_lock_notices)]
@@ -475,6 +486,18 @@ pub mod qobject {
         /// meeting_action_failed(command).
         #[qinvokable]
         fn recorder_command(self: Pin<&mut Backend>, command: &QString, language: &QString, audio_only: bool);
+        /// Turn live captions on or off for you, as Teams does: on asks the
+        /// meeting's recorder for captions (unless they run already) and
+        /// then says so in our endpoint metadata; off only says so.
+        #[qinvokable]
+        fn set_captions(self: Pin<&mut Backend>, on: bool);
+        /// Set the meeting's spoken language ("de-de") for its captions.
+        #[qinvokable]
+        fn set_captions_language(self: Pin<&mut Backend>, language: &QString);
+        /// Change calling accessibility settings (a JSON patch such as
+        /// {"profanityFilterEnabled": true}), saved as Teams saves them.
+        #[qinvokable]
+        fn update_call_accessibility(self: Pin<&mut Backend>, patch: &QString);
         /// Read the meeting's stored transcript into call_transcript_json
         /// (Teams does on opening the Transcript pane).
         #[qinvokable]
@@ -1125,6 +1148,14 @@ pub struct BackendRust {
     call_recording_tip: QString,
     call_meeting_info_json: QString,
     call_transcript_json: QString,
+    call_captions_json: QString,
+    call_captions_on: bool,
+    call_captions_language: QString,
+    call_accessibility_json: QString,
+    /// Live captions' recent results.
+    captions: Vec<teams_cli::calling::transcript::Entry>,
+    /// Captions started for us and our endpoint says we want them.
+    captions_published: bool,
     /// The Transcript pane's rows.
     transcript: Vec<teams_cli::calling::transcript::Entry>,
     /// What Copy join info copies (HTML, text).
@@ -2041,8 +2072,19 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             .ok()
             .and_then(|v| v.get("body").map(teams_cli::calling::transcript::from_live))
             .unwrap_or_default();
-        if !rows.is_empty() {
-            let _ = qt.queue(move |this| this.show_transcript(rows, false));
+        let captions = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v.get("body").map(teams_cli::calling::transcript::results_from_live))
+            .unwrap_or_default();
+        if !rows.is_empty() || !captions.is_empty() {
+            let _ = qt.queue(move |mut this| {
+                if !captions.is_empty() && this.rust().call_captions_on {
+                    this.as_mut().show_captions(captions);
+                }
+                if !rows.is_empty() {
+                    this.show_transcript(rows, false);
+                }
+            });
         }
         return;
     }
@@ -3159,6 +3201,7 @@ impl qobject::Backend {
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().show_transcript(Vec::new(), true);
+        self.as_mut().reset_captions();
         self.as_mut().set_call_muted(false);
         self.as_mut().set_call_state(QString::from("calling"));
         let qt = self.qt_thread();
@@ -3314,6 +3357,7 @@ impl qobject::Backend {
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().show_transcript(Vec::new(), true);
+        self.as_mut().reset_captions();
         self.as_mut().set_call_meeting(true);
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_muted(false);
@@ -3403,6 +3447,7 @@ impl qobject::Backend {
         self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_meeting_info_json(QString::default());
         self.as_mut().show_transcript(Vec::new(), true);
+        self.as_mut().reset_captions();
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!("join meeting");
         let qt = self.qt_thread();
@@ -3432,6 +3477,7 @@ impl qobject::Backend {
                             .set_call_invite_url(QString::from(invite.as_str()));
                         this.as_mut().show_capability(capability, false);
                         this.as_mut().show_processing(processing);
+                        this.as_mut().load_call_accessibility(true);
                         this.as_mut().set_call_ai_indicator(ai_indicator);
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
@@ -3666,6 +3712,7 @@ impl qobject::Backend {
         }
         self.as_mut().rust_mut().processing = p;
         self.as_mut().show_recording_indicator();
+        self.as_mut().publish_captions_if_started();
     }
 
     /// The recording indicator's state and tooltip, with the starters'
@@ -3790,11 +3837,152 @@ impl qobject::Backend {
         if reset {
             self.as_mut().rust_mut().transcript.clear();
         }
-        teams_cli::calling::transcript::merge(&mut self.as_mut().rust_mut().transcript, rows);
+        let now = chrono::Utc::now().timestamp_millis();
+        teams_cli::calling::transcript::merge_live(&mut self.as_mut().rust_mut().transcript, rows, now);
         let json = serde_json::to_string(&self.rust().transcript).unwrap_or_else(|_| "[]".into());
         if self.rust().call_transcript_json.to_string() != json {
             self.as_mut().set_call_transcript_json(QString::from(json.as_str()));
         }
+    }
+
+    fn show_captions(mut self: Pin<&mut Self>, rows: Vec<teams_cli::calling::transcript::Entry>) {
+        let now = chrono::Utc::now().timestamp_millis();
+        teams_cli::calling::transcript::merge_captions(&mut self.as_mut().rust_mut().captions, rows, now);
+        let json = serde_json::to_string(&self.rust().captions).unwrap_or_else(|_| "[]".into());
+        self.as_mut().set_call_captions_json(QString::from(json.as_str()));
+    }
+
+    /// Forget the last call's captions (a new call starts without them).
+    fn reset_captions(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().captions.clear();
+        self.as_mut().rust_mut().captions_published = false;
+        self.as_mut().set_call_captions_json(QString::from("[]"));
+        self.as_mut().set_call_captions_on(false);
+    }
+
+    pub fn set_captions(mut self: Pin<&mut Self>, on: bool) {
+        if self.rust().call_captions_on == on {
+            return;
+        }
+        self.as_mut().set_call_captions_on(on);
+        let running = self.rust().processing.captions;
+        if !on {
+            self.as_mut().rust_mut().captions.clear();
+            self.as_mut().set_call_captions_json(QString::from("[]"));
+        }
+        let was_published = self.rust().captions_published;
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_ref() else { return };
+            let result = if !on {
+                // Teams sends no stop: the recorder stops captions once no
+                // endpoint wants them.
+                if was_published { call.publish_captions_pref(false).await } else { Ok(()) }
+            } else if running {
+                call.publish_captions_pref(true).await
+            } else {
+                let meeting = teams_cli::calling::recorder::Meeting::default();
+                call.recorder_command(teams_cli::calling::recorder::Command::StartCaptions, &meeting).await
+            };
+            drop(slot);
+            let published = on && running;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().rust_mut().captions_published = published,
+                Err(e) => {
+                    tracing::warn!(on, "captions: {}", short_error(&e));
+                    if on {
+                        this.as_mut().set_call_captions_on(false);
+                        this.meeting_action_failed(QString::from("startCaptions"));
+                    }
+                }
+            });
+        });
+    }
+
+    /// Once the recorder runs captions for a meeting where we turned them
+    /// on, say so in our endpoint metadata (Teams' setStatus(started)).
+    fn publish_captions_if_started(mut self: Pin<&mut Self>) {
+        if !(self.rust().call_captions_on && self.rust().processing.captions && !self.rust().captions_published) {
+            return;
+        }
+        self.as_mut().rust_mut().captions_published = true;
+        runtime().spawn(async move {
+            if let Some(call) = call_slot().lock().await.outgoing.as_ref()
+                && let Err(e) = call.publish_captions_pref(true).await
+            {
+                tracing::warn!("captions metadata: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn set_captions_language(mut self: Pin<&mut Self>, language: &QString) {
+        let language = language.to_string();
+        self.as_mut().set_call_captions_language(QString::from(language.as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_ref() else { return };
+            let meeting = teams_cli::calling::recorder::Meeting { spoken_language: language, ..Default::default() };
+            let result = call
+                .recorder_command(teams_cli::calling::recorder::Command::SetCaptionsLanguage, &meeting)
+                .await;
+            drop(slot);
+            if let Err(e) = result {
+                tracing::warn!("captions language: {}", short_error(&e));
+                let _ = qt.queue(|this| this.meeting_action_failed(QString::from("setCaptionsLanguage")));
+            }
+        });
+    }
+
+    pub fn update_call_accessibility(self: Pin<&mut Self>, patch: &QString) {
+        let Ok(patch) = serde_json::from_str::<serde_json::Value>(&patch.to_string()) else { return };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::preferences::update_call_accessibility_settings(&client, &patch).await
+            }
+            .await;
+            match result {
+                Ok(all) => {
+                    let json = all.to_string();
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_accessibility_json(QString::from(json.as_str()))
+                    });
+                }
+                Err(e) => tracing::warn!("accessibility settings: {}", short_error(&e)),
+            }
+        });
+    }
+
+    /// Read the calling accessibility settings; with "Always turn on
+    /// captions" set, turn captions on once the meeting is joined.
+    fn load_call_accessibility(self: Pin<&mut Self>, start_captions: bool) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::preferences::call_accessibility_settings(&client).await
+            }
+            .await;
+            let all = match result {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("accessibility settings: {}", short_error(&e));
+                    api::preferences::call_accessibility_defaults()
+                }
+            };
+            let auto = all.get("startCaptionsAutomatically").and_then(|v| v.as_bool()) == Some(true);
+            let json = all.to_string();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_accessibility_json(QString::from(json.as_str()));
+                if start_captions && auto {
+                    tracing::info!("captions: always on");
+                    this.set_captions(true);
+                }
+            });
+        });
     }
 
     pub fn load_transcript(self: Pin<&mut Self>) {

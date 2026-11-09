@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T03:38:00Z'
+updated_date: '2026-11-09T04:52:00Z'
 labels:
   - calls
   - meetings
@@ -54,4 +54,8 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - AC#5 Transcript pane: live finals from the MCP data channel (0b83 frames), stored history via the rtaf getArtifacts link (speaker ids resolved as Teams' nt), measured layout, Go to current, Show/Hide transcript row with end check, auto-open when you start transcription. Verified live against winpc: same rows and grouping, OST-started transcript opens the pane, live stop event arrives.
 - Fixed FluentIcon: a late icon reply could overwrite a newer glyph (the Mic showed on while muted at join).
 - Follow-up TASK-0066: initials avatar colours differ from Teams.
+
+- AC#2 progress: Language and speech ▸ Show/Hide live captions (Alt+Shift+C) with Teams' captions window, settings menu (spoken language, Caption styles pane, position, Always turn on captions, Filter profane words), recorder start command + endpoint metadata, accessibility user property. Verified live: captions render as Teams (one item per utterance, partials replaced), settings menu, styles at Large, metadata PUT 200.
+- Not yet: captions start command against a recorder that is not already running captions (it stayed Active from Teams' session); pop-out captions window; RTT; Timer; Settings ▸; Help; Language settings pane (Transcript header button).
+- Transcript pane now also shows each speaker's current partial (Teams' store logic).
 <!-- SECTION:NOTES:END -->

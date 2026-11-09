@@ -92,6 +92,9 @@ pub struct OutgoingCall {
     invite_url: Option<String>,
     /// The conversation's mute link (Mute all).
     mute_link: Option<String>,
+    /// The conversation's updateEndpointMetadata link (whether we want
+    /// live captions).
+    metadata_link: Option<String>,
     /// A meeting's lobby chat (`activeModalities.groupChat.lobbyThreadId`):
     /// where the organizer and people waiting in the lobby talk.
     lobby_thread: Option<String>,
@@ -506,6 +509,7 @@ impl OutgoingCall {
         self.role_link = link("updateParticipantRole");
         self.settings_link = link("updateMeetingSettings");
         self.mute_link = link("mute");
+        self.metadata_link = link("updateEndpointMetadata").or(self.metadata_link.take());
         self.unmute_link = link("unmute");
         self.message_link = link("sendMessage");
         if let Some(l) = link("updateEndpointState") {
@@ -594,7 +598,25 @@ impl OutgoingCall {
             &uuid::Uuid::new_v4().to_string(),
         );
         tracing::info!(?command, "recorder command");
-        super::recorder::send(&self.http, &url, &token, &self.call_id, &body).await
+        let skype = command.needs_skype_token().then_some(self.skype_token.as_str());
+        super::recorder::send(&self.http, &url, &token, skype, &self.call_id, &body).await
+    }
+
+    /// Tell the meeting whether we want live captions, as Teams does once
+    /// they start or stop: `PUT updateEndpointMetadata` with our
+    /// participant (and its language) and `transcriptionPrefs`.
+    pub async fn publish_captions_pref(&self, on: bool) -> Result<()> {
+        let link = self.metadata_link.clone().context("No endpoint metadata link")?;
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-us".into());
+        }
+        let body = serde_json::json!({
+            "participants": { "from": from },
+            "endpointMetadata": { "transcriptionPrefs": { "closedCaptions": on } },
+        });
+        cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Endpoint metadata").await?;
+        Ok(())
     }
 
     /// The meeting's stored transcript and transcript starts and stops
@@ -1737,6 +1759,7 @@ async fn start(
     let invite_url = invite_url(&created.response_body);
     let mute_link = conversation_link(&created.response_body, "mute");
     let unmute_link = conversation_link(&created.response_body, "unmute");
+    let metadata_link = conversation_link(&created.response_body, "updateEndpointMetadata");
     let lobby_thread = group_chat_field(&created.response_body, "lobbyThreadId");
     tracing::debug!(?lobby_thread, "meeting lobby chat");
     let message_link = conversation_link(&created.response_body, "sendMessage");
@@ -1907,6 +1930,7 @@ async fn start(
         controller,
         invite_url,
         mute_link,
+        metadata_link,
         unmute_link,
         lobby_thread,
         server_muted: std::sync::atomic::AtomicBool::new(false),

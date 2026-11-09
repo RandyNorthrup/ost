@@ -323,6 +323,9 @@ pub struct Processing {
     /// Who started the running recording (may be empty).
     pub recording: Option<String>,
     pub copilot: bool,
+    /// Live captions run (`closedCaptions`, started for anyone who turned
+    /// them on).
+    pub captions: bool,
 }
 
 impl Processing {
@@ -331,6 +334,7 @@ impl Processing {
             transcript: self.transcript.or_else(|| other.transcript.clone()),
             recording: self.recording.or_else(|| other.recording.clone()),
             copilot: self.copilot || other.copilot,
+            captions: self.captions || other.captions,
         }
     }
 
@@ -409,6 +413,7 @@ pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Op
                     transcript: started_by("realTimeTranscript"),
                     recording: started_by("recording"),
                     copilot: started_by("copilot").is_some(),
+                    captions: started_by("closedCaptions").is_some(),
                 }),
                 version,
             ))
@@ -508,7 +513,7 @@ mod tests {
             "8:orgid:b" => "Randy".to_string(),
             _ => String::new(),
         };
-        let p = |r: Option<&str>, t: Option<&str>| Processing { recording: r.map(Into::into), transcript: t.map(Into::into), copilot: false };
+        let p = |r: Option<&str>, t: Option<&str>| Processing { recording: r.map(Into::into), transcript: t.map(Into::into), copilot: false, captions: false };
         assert_eq!(p(None, Some("8:orgid:a")).indicator_state(), "Transcribing");
         assert_eq!(p(None, Some("8:orgid:a")).indicator_tooltip(name), "Transcription started by OST Test 1.");
         assert_eq!(p(Some("8:orgid:a"), Some("8:orgid:a")).indicator_tooltip(name), "Recording and transcription started by OST Test 1.");

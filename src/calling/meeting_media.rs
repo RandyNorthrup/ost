@@ -470,6 +470,7 @@ async fn run(
                             }
                             Incoming::Heartbeat => {}
                             Incoming::Transcript(v) => {
+                                tracing::debug!(payload = %v, "speech recognition");
                                 crate::event_hub::publish(
                                     crate::event_hub::EventKind::Call,
                                     serde_json::json!({

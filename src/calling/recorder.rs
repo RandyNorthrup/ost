@@ -39,6 +39,13 @@ pub enum Command {
     StartRecordingOnly { audio_only: bool },
     /// Recording and transcription.
     StopRecording,
+    /// Live captions (Teams' closed-captions service: processing mode
+    /// `closedCaptions`; turning them off only changes our endpoint's
+    /// `transcriptionPrefs`).
+    StartCaptions,
+    /// The meeting's spoken language, for its captions and transcript
+    /// (`meeting.spoken_language`).
+    SetCaptionsLanguage,
 }
 
 impl Command {
@@ -48,6 +55,8 @@ impl Command {
                 "start"
             }
             Command::StopTranscription | Command::StopRecording => "stop",
+            Command::StartCaptions => "start",
+            Command::SetCaptionsLanguage => "setLanguage",
         }
     }
 
@@ -56,11 +65,24 @@ impl Command {
             Command::StartTranscription | Command::StopTranscription => &["realTimeTranscript"],
             Command::StartRecording { .. } | Command::StopRecording => &["recording", "realTimeTranscript"],
             Command::StartRecordingOnly { .. } => &["recording"],
+            Command::StartCaptions | Command::SetCaptionsLanguage => &["closedCaptions"],
         }
     }
 
     fn transcription(self) -> bool {
-        matches!(self, Command::StartTranscription | Command::StopTranscription)
+        matches!(
+            self,
+            Command::StartTranscription
+                | Command::StopTranscription
+                | Command::StartCaptions
+                | Command::SetCaptionsLanguage
+        )
+    }
+
+    /// Teams asks for the recorder-service token alone for recording and
+    /// the transcript; other commands (captions) carry our Skype token too.
+    pub fn needs_skype_token(self) -> bool {
+        matches!(self, Command::StartCaptions | Command::SetCaptionsLanguage)
     }
 }
 
@@ -107,7 +129,12 @@ pub fn body(
         b["mode"] = json!("transcription");
     }
     b["processingModes"] = json!(command.modes());
-    if command.action() == "start" {
+    if command == Command::SetCaptionsLanguage {
+        b["actionParameters"] = json!({
+            "spokenLanguage": if meeting.spoken_language.is_empty() { "en-us" } else { meeting.spoken_language.as_str() },
+            "type": "setLanguage",
+        });
+    } else if command.action() == "start" && command != Command::StartCaptions {
         let kind = if command.transcription() { "Meeting Transcript" } else { "Meeting Recording" };
         let mut p = json!({
             "recordingFeatures": features(),
@@ -134,12 +161,22 @@ pub fn body(
 }
 
 /// Send a command to the recorder's command URL.
-pub async fn send(http: &reqwest::Client, command_url: &str, token: &str, chain_id: &str, body: &Value) -> Result<()> {
+pub async fn send(
+    http: &reqwest::Client,
+    command_url: &str,
+    token: &str,
+    skype_token: Option<&str>,
+    chain_id: &str,
+    body: &Value,
+) -> Result<()> {
     if !command_url.starts_with("https://") {
         bail!("No recorder command URL");
     }
-    let resp = http
-        .post(command_url)
+    let mut req = http.post(command_url);
+    if let Some(t) = skype_token {
+        req = req.header("X-Skypetoken", t);
+    }
+    let resp = req
         .bearer_auth(token)
         .header("x-microsoft-skype-chain-id", chain_id)
         .header("requestid", uuid::Uuid::new_v4().to_string())
@@ -219,6 +256,25 @@ mod tests {
         let mut keys: Vec<_> = t.as_object().unwrap().keys().cloned().collect();
         keys.sort();
         assert_eq!(keys, ["action", "mode", "participantLegId", "participantMri", "participantSkypeToken", "processingModes", "timestamp"]);
+    }
+
+    #[test]
+    fn captions_bodies_as_teams_sends_them() {
+        let now = chrono::Local.with_ymd_and_hms(2026, 11, 8, 17, 15, 15).unwrap();
+        let c = body(Command::StartCaptions, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let mut keys: Vec<_> = c.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["action", "mode", "participantLegId", "participantMri", "participantSkypeToken", "processingModes", "timestamp"]);
+        assert_eq!(c["action"], "start");
+        assert_eq!(c["mode"], "transcription");
+        assert_eq!(c["processingModes"], json!(["closedCaptions"]));
+        let mut m = meeting();
+        m.spoken_language = "de-de".into();
+        let l = body(Command::SetCaptionsLanguage, "8:orgid:a", "leg", &m, now, "cid");
+        assert_eq!(l["action"], "setLanguage");
+        assert_eq!(l["actionParameters"], json!({"spokenLanguage": "de-de", "type": "setLanguage"}));
+        assert!(Command::StartCaptions.needs_skype_token());
+        assert!(!Command::StartTranscription.needs_skype_token());
     }
 
     #[test]
