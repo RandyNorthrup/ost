@@ -6,6 +6,7 @@ import QtQuick.Controls.Basic
 // Hide all channels | Add member, Add channel, Manage team, Manage tags,
 // Copy link, Archive | Leave, Delete. It opens above the button, its left
 // edge on the button's.
+// - Add channel opens Create a channel.
 // - Hide all channels asks first ("Hide all channels in {team}?", 600 wide)
 //   and then hides them through Teams' provisioning service.
 // - Copy link copies Teams' team link.
@@ -15,6 +16,7 @@ Item {
     /// The team as the team list has it ({id, thread_id, name, channels, …}).
     property var team: ({})
     signal manageTeam(string teamId)
+    signal channelCreated(string channelId, string name)
     readonly property alias menu: menu
     readonly property var general: (team.channels || []).find(c => c.general) || ({ id: team.thread_id, name: "General" })
     readonly property bool anyShown: (team.channels || []).some(c => c.shown !== false)
@@ -30,12 +32,14 @@ Item {
         id: menu
         margins: 8
         items: (root.anyShown ? [{ key: "hide-all", label: "Hide all channels", icon: "eye-off-20" }, { separator: true }] : []).concat([
+            { key: "add-channel", label: "Add channel", icon: "channel-add-20" },
             { key: "manage", label: "Manage team", icon: "settings-20" },
             { key: "link", label: "Copy link", icon: "link-20" }
         ])
         onPicked: i => {
             const k = items[i].key
             if (k === "hide-all") hideAll.open()
+            else if (k === "add-channel") createChannel.start(root.team.id, root.team.name)
             else if (k === "manage") root.manageTeam(root.team.id)
             else if (k === "link") root.act("team-link")
         }
@@ -51,7 +55,10 @@ Item {
         onConfirmed: root.act("hide-all")
     }
 
+    CreateChannelDialog { id: createChannel; onCreated: (id, name) => root.channelCreated(id, name) }
+
     // Test hooks.
+    function createChannelForTest() { return createChannel }
     function hideAllForTest() { hideAll.open() }
     function closeAllForTest() { hideAll.close(); menu.close() }
 }

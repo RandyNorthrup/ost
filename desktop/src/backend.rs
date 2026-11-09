@@ -9347,6 +9347,23 @@ impl qobject::Backend {
                         api::channels::set_new_posts_at_bottom(&client, op == "posts-at-bottom").await?;
                         Ok(serde_json::Value::Null)
                     }
+                    // Create a channel: arg {name, description, type, layout, recommend}.
+                    "create-channel" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        let id = api::channels::create_channel(
+                            &client,
+                            &team_thread,
+                            &team,
+                            &f("name"),
+                            &f("description"),
+                            if f("type").is_empty() { "Standard" } else { a["type"].as_str().unwrap_or("Standard") },
+                            if f("layout") == "PostReply" { "PostReply" } else { "Conversational" },
+                            a["recommend"].as_bool().unwrap_or(false),
+                        )
+                        .await?;
+                        Ok(json!({ "id": id, "name": f("name").trim() }))
+                    }
                     // The team row's Hide all channels.
                     "hide-all" => {
                         api::channels::hide_all_channels(&client, &team_thread).await?;

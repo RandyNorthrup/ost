@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T20:42:00Z'
-updated_date: '2026-11-09T23:18:00Z'
+updated_date: '2026-11-09T23:34:00Z'
 labels:
   - desktop
 dependencies: []
@@ -47,4 +47,11 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
   - ManageTeam.qml: header with the seven tabs, the Channels tab (pills All / Shown for you / 4 more, Sort, Search channels, rows with Last active as date-fns formatDistance, Hide/Show, the row menu = channel menu without posts order and Hide) and Analytics (AnalyticsView team scope: All Channels, Active guests, Analytics across teams).
   - Manage channel's All Channels and Analytics across channels open it.
   - CSA fields added to the team list: last_active, channel_type, archived, shared_in, deleted_channels, team description.
+
+- Piece 2: Add channel. Teams' Create a channel (CreateChannelDialog.qml, measured): name rules with the check, description, the type dropdown (Standard / Shared / Private tiles), Recommend for Standard, the Layout cards (Threads first).
+  - Create posts as Teams does (captured twice): POST {mt}/beta/teams/{team}/channels, then favorite; with Recommend, setDefaultChannel and lastTimeFavorited.
+  - Opened from the team menu and Manage team ▸ Add channel; the new channel opens.
+  - Verified: OST created "OST test channel 3" and Teams lists it. Teams made "OST test channel" and "OST test channel 2" (recommended) for the non-General work.
+  - Manage team rows show Recommended, and Last active falls back to the creation time, as Teams does.
+  - Private and Shared creation still need Teams' member step: next piece.
 <!-- SECTION:NOTES:END -->

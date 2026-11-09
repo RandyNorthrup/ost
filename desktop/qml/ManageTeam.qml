@@ -103,7 +103,9 @@ Rectangle {
         id: teamMenu
         team: page.team
         onManageTeam: page.tab = "channels"
+        onChannelCreated: (id, name) => page.openChannel(id, name)
     }
+    CreateChannelDialog { id: createChannel; onCreated: (id, name) => page.openChannel(id, name) }
 
     // ---- Channels ----
     property string filter: "all"
@@ -226,6 +228,21 @@ Rectangle {
                 onPicked: i => page.sort = items[i].key
             }
         }
+        // Add channel (subtle, the add icon; 40 from the right).
+        Rectangle {
+            x: parent.width - 40 - width; y: 24; width: addRow.implicitWidth + 24; height: 31.3; radius: 4
+            color: addHover.hovered ? theme.rowHover : "transparent"
+            Row {
+                id: addRow
+                anchors.centerIn: parent; spacing: 6
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: addHover.hovered ? "add-20-filled" : "add-20"; size: 20; color: addHover.hovered ? theme.brand : theme.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Add channel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+            }
+            HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: createChannel.start(page.teamId, page.team.name || "") }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Add channel"
+        }
         // Search channels.
         Rectangle {
             x: 28; y: 55.3; width: 280; height: 32; radius: 4
@@ -257,7 +274,7 @@ Rectangle {
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#333333") }
                 HoverHandler { id: rowHover }
                 Row {
-                    x: 20; y: 12; spacing: 6
+                    x: 20; y: 12; spacing: 14
                     Text {
                         text: row.modelData.general ? "General" : row.modelData.name
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
@@ -269,6 +286,16 @@ Rectangle {
                         Accessible.name: "Go to channel"
                     }
                     FluentIcon { visible: !!row.modelData.general; anchors.verticalCenter: parent.verticalCenter; name: "home-20"; size: 16; color: theme.text }
+                    // Recommended (14 after the name): #F5F5F5, a #E0E0E0
+                    // line, radius 4, 10/16 semibold #616161.
+                    Rectangle {
+                        visible: !!row.modelData.recommended
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: recText.implicitWidth + 14; height: 20; radius: 4
+                        color: theme.pick("#F5F5F5", "#333333")
+                        border.color: theme.divider; border.width: 0.67
+                        Text { id: recText; x: 7; y: 1; text: "Recommended"; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                    }
                     FluentIcon { visible: row.modelData.channel_type === 1; anchors.verticalCenter: parent.verticalCenter; name: "lock-closed-20"; size: 16; color: theme.textSecondary }
                 }
                 Row {
@@ -296,6 +323,7 @@ Rectangle {
                     x: parent.width - 32 - 12 - width; y: 18
                     width: Math.max(64, hideText.implicitWidth + 16); height: 24; radius: 4
                     color: hideHover.hovered ? theme.rowHover : theme.surface
+                    border.color: theme.stroke; border.width: 0.67
                     Text { id: hideText; anchors.centerIn: parent; text: row.modelData.shown === false ? "Show" : "Hide"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     HoverHandler { id: hideHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.channelAction(row.modelData.shown === false ? "show" : "hide", page.teamId, row.modelData.id, "") }
@@ -357,4 +385,5 @@ Rectangle {
     // Test hooks.
     function analyticsForTest() { return analytics }
     function rowsForTest() { return page.rows }
+    function createChannelForTest() { return createChannel }
 }

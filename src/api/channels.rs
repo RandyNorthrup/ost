@@ -222,6 +222,69 @@ pub fn team_link(team_thread: &str, general_name: &str, team_name: &str, group_i
     (url, html)
 }
 
+/// Create a channel (Teams' Create a channel, captured 2026-11-09):
+/// `POST {mt}/beta/teams/{teamThread}/channels` with the name, description,
+/// group, type ("Standard", "Shared", "Private") and layout; then, as Teams
+/// does, show it for its creator (`favorite`), and with Recommend, show it
+/// for everyone (`PUT {mt}/beta/teams/{channel}/setDefaultChannel`, then
+/// `lastTimeFavorited`). Returns the new channel's id.
+pub async fn create_channel(
+    client: &TeamsClient,
+    team_thread: &str,
+    group_id: &str,
+    name: &str,
+    description: &str,
+    channel_type: &str,
+    layout: &str,
+    recommend: bool,
+) -> Result<String> {
+    if let Some(e) = name_error(name, false) {
+        bail!(e);
+    }
+    let (base, token) = middle_tier(client).await?;
+    let body = serde_json::json!({
+        "displayName": name.trim(),
+        "description": description,
+        "groupId": group_id,
+        "channelType": channel_type,
+        "chatModalityType": layout,
+    });
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/teams/{team_thread}/channels"))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Create channel")?
+        .json()
+        .await
+        .context("Create channel")?;
+    let id = v.pointer("/value/objectId").and_then(|i| i.as_str()).context("No channel id")?.to_string();
+    let favorite = format!(
+        "{}/properties?name=favorite&requirePermanentJoinedState=true",
+        conversation_url(client, &id)
+    );
+    client
+        .chat_request(reqwest::Method::PUT, &favorite, &serde_json::json!({ "favorite": "true" }))
+        .await?;
+    if recommend {
+        client
+            .http()
+            .put(format!("{base}/beta/teams/{id}/setDefaultChannel"))
+            .bearer_auth(&token)
+            .header(reqwest::header::CONTENT_LENGTH, "0")
+            .send()
+            .await?
+            .error_for_status()
+            .context("Recommend the channel")?;
+        let now = chrono::Utc::now().timestamp_millis().to_string();
+        set_property(client, &id, "lastTimeFavorited", &now).await?;
+    }
+    Ok(id)
+}
+
 /// Hide all channels (the team row's menu): Teams' provisioning service,
 /// `PUT {teamsAndChannelsProvisioningService}/team/{teamThread}/hide`.
 pub async fn hide_all_channels(client: &TeamsClient, team_thread: &str) -> Result<()> {

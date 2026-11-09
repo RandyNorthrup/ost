@@ -605,6 +605,8 @@ Rectangle {
     TeamMenu {
         id: teamMenu
         onManageTeam: id => root.manageTeam(id)
+        // Teams opens the new channel.
+        onChannelCreated: (id, name) => root.chatSelected(id, name)
     }
     function openTeamMenu(team, anchor, px, py) {
         // The full team (with its hidden and deleted channels).

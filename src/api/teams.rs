@@ -144,6 +144,9 @@ pub struct ListChannel {
     pub archived: bool,
     /// Shared into this team from another one.
     pub shared_in: bool,
+    /// Recommended for everyone's list (Teams' isFavoriteByDefault;
+    /// Manage team shows "Recommended").
+    pub recommended: bool,
 }
 
 /// A team as the chat list shows it.
@@ -212,10 +215,19 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                     .mode,
                     owner: s(c, "memberRoleString") == "admin",
                     layout: Some(s(c, "modality")).filter(|m| !m.is_empty()).unwrap_or_else(|| "PostReply".into()),
-                    last_active: c.pointer("/lastMessage/composeTime").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                    // Its last message, else when it was made (Teams shows a
+                    // new channel as active since then).
+                    last_active: c
+                        .pointer("/lastMessage/composeTime")
+                        .and_then(|v| v.as_str())
+                        .filter(|t| !t.is_empty())
+                        .or_else(|| c.get("creationTime").and_then(|v| v.as_str()))
+                        .unwrap_or_default()
+                        .to_string(),
                     channel_type: c.get("channelType").and_then(|v| v.as_u64()).unwrap_or(0).min(2) as u8,
                     archived: b(c, "isArchived"),
                     shared_in: b(c, "isShared") && !s(c, "parentTeamId").is_empty() && s(c, "parentTeamId") != thread,
+                    recommended: b(c, "isFavoriteByDefault") && !b(c, "isGeneral"),
                 };
             let mut list: Vec<ListChannel> = channels.iter().map(channel_of).collect();
             let deleted: Vec<ListChannel> = all.iter().filter(|c| b(c, "isDeleted")).map(channel_of).collect();

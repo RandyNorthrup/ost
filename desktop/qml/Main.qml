@@ -3263,6 +3263,34 @@ Window {
         }
     }
 
+    // --create-channel-test=<team group id> --shots=<dir> [--create-name=<name>]:
+    // Create a channel from the team menu (cc-empty.png, cc-types.png,
+    // cc-filled.png); with --create-name, creates it as Standard / Posts and
+    // logs the result; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--create-channel-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--create-channel-test=")) || "").slice(22)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--create-name=")) || "").slice(14)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => t.id === id)
+            if (!team) return
+            const d = chatList.teamMenuForTest().createChannelForTest()
+            if (step === 0) d.start(team.id, team.name)
+            else if (step === 1) shot("cc-empty")
+            else if (step === 2) d.fillForTest(name || "OST harness channel", "", "PostReply", false)
+            else if (step === 3) { d.contentItem.children[1].children[0]; shot("cc-filled-notype") }
+            else if (step === 4) d.fillForTest(name || "OST harness channel", "Standard", "PostReply", false)
+            else if (step === 5) shot("cc-filled")
+            else if (step === 6) { if (name) d.create(); else d.close() }
+            else if (step === 10) { console.warn("CREATE", backend.channelActionResult); Qt.quit() }
+            step++
+        }
+    }
+
     // --row-menu-test=<channel id> --shots=<dir>: with
     // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
     Timer {
