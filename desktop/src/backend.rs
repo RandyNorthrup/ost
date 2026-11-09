@@ -2029,6 +2029,28 @@ fn call_event_source_ids(json: &str, path: &str) -> Option<Vec<i64>> {
     })
 }
 
+/// Make sure the meeting's recorder is in the call, inviting it as Teams
+/// does when it isn't, and wait (up to 20 s) for the roster to list it with
+/// its command URL.
+async fn ensure_recorder(meeting: &teams_cli::calling::recorder::Meeting) -> anyhow::Result<()> {
+    {
+        let slot = call_slot().lock().await;
+        let call = slot.outgoing.as_ref().context("Not in a call")?;
+        if call.has_recorder() {
+            return Ok(());
+        }
+        call.add_recorder(meeting).await?;
+    }
+    for _ in 0..80 {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        if call_slot().lock().await.outgoing.as_ref().is_some_and(|c| c.has_recorder()) {
+            tracing::info!("the meeting's recorder joined");
+            return Ok(());
+        }
+    }
+    anyhow::bail!("The meeting's recorder didn't join")
+}
+
 async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     // The chat call we watch: its roster changes, or it ends.
     if json.contains("\"callAgentPath\":\"subscription/") {
@@ -3814,17 +3836,22 @@ impl qobject::Backend {
         let language = language.to_string();
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let slot = call_slot().lock().await;
-            let Some(call) = slot.outgoing.as_ref() else { return };
-            let info = call.meeting_info().unwrap_or_default();
+            let Some(info) = call_slot().lock().await.outgoing.as_ref().map(|c| c.meeting_info().unwrap_or_default()) else {
+                return;
+            };
             let meeting = Meeting {
                 title: info.title,
                 ical_uid: info.ical_uid,
                 organizer,
                 spoken_language: language,
             };
-            let result = call.recorder_command(cmd, &meeting).await;
-            drop(slot);
+            let result = match ensure_recorder(&meeting).await {
+                Ok(()) => match call_slot().lock().await.outgoing.as_ref() {
+                    Some(call) => call.recorder_command(cmd, &meeting).await,
+                    None => return,
+                },
+                Err(e) => Err(e),
+            };
             if let Err(e) = result {
                 tracing::warn!(command = %name, "recorder: {}", short_error(&e));
                 let _ = qt.queue(move |this| this.meeting_action_failed(QString::from(name.as_str())));
@@ -3871,21 +3898,45 @@ impl qobject::Backend {
             self.as_mut().set_call_captions_json(QString::from("[]"));
         }
         let was_published = self.rust().captions_published;
+        let language = self.rust().call_captions_language.to_string();
+        let organizer = self
+            .rust()
+            .roster
+            .iter()
+            .find(|p| p.role.eq_ignore_ascii_case("organizer"))
+            .map(|p| p.name.clone())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| self.rust().user_name.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let slot = call_slot().lock().await;
-            let Some(call) = slot.outgoing.as_ref() else { return };
             let result = if !on {
                 // Teams sends no stop: the recorder stops captions once no
                 // endpoint wants them.
-                if was_published { call.publish_captions_pref(false).await } else { Ok(()) }
+                match call_slot().lock().await.outgoing.as_ref() {
+                    Some(call) if was_published => call.publish_captions_pref(false).await,
+                    _ => Ok(()),
+                }
             } else if running {
-                call.publish_captions_pref(true).await
+                match call_slot().lock().await.outgoing.as_ref() {
+                    Some(call) => call.publish_captions_pref(true).await,
+                    None => return,
+                }
             } else {
-                let meeting = teams_cli::calling::recorder::Meeting::default();
-                call.recorder_command(teams_cli::calling::recorder::Command::StartCaptions, &meeting).await
+                let info = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.meeting_info()).unwrap_or_default();
+                let meeting = teams_cli::calling::recorder::Meeting {
+                    title: info.title,
+                    ical_uid: info.ical_uid,
+                    organizer,
+                    spoken_language: if language.is_empty() { "en-us".into() } else { language },
+                };
+                match ensure_recorder(&meeting).await {
+                    Ok(()) => match call_slot().lock().await.outgoing.as_ref() {
+                        Some(call) => call.recorder_command(teams_cli::calling::recorder::Command::StartCaptions, &meeting).await,
+                        None => return,
+                    },
+                    Err(e) => Err(e),
+                }
             };
-            drop(slot);
             let published = on && running;
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => this.as_mut().rust_mut().captions_published = published,

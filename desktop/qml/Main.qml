@@ -1387,7 +1387,7 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 4 === 0) st()
-            } else if (step >= 9 && step <= 46 && Qt.application.arguments.indexOf("--join-captions") >= 0) {
+            } else if (step >= 9 && step <= Math.min(46, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-captions") >= 0) {
                 // --join-captions: Language and speech ▸ Show live captions,
                 // the empty window, live captions (a guest speaks from
                 // outside), the settings menu, Caption styles at Large,
@@ -1411,7 +1411,7 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 3 === 0) st()
-            } else if (step >= 9 && step <= 50 && Qt.application.arguments.indexOf("--join-transcript-start") >= 0) {
+            } else if (step >= 9 && step <= Math.min(50, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-transcript-start") >= 0) {
                 // --join-transcript-start: stop a running transcript, start
                 // one (Teams then opens the Transcript pane for you), then
                 // stop it again; the pane captured once it opened.
@@ -1427,7 +1427,7 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 3 === 0) st()
-            } else if (step >= 9 && step <= 40 && Qt.application.arguments.indexOf("--join-transcript") >= 0) {
+            } else if (step >= 9 && step <= Math.min(40, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-transcript") >= 0) {
                 // --join-transcript: More ▸ Record and transcribe ▸ Show
                 // transcript, the pane captured with the stored history,
                 // then again after live speech, scrolled up (Go to current),

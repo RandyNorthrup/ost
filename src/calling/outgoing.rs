@@ -95,6 +95,11 @@ pub struct OutgoingCall {
     /// The conversation's updateEndpointMetadata link (whether we want
     /// live captions).
     metadata_link: Option<String>,
+    /// The conversation's addParticipant link (inviting the meeting's
+    /// recorder when it isn't in the call).
+    add_participant_link: Option<String>,
+    /// The thread the call belongs to.
+    thread_id: String,
     /// A meeting's lobby chat (`activeModalities.groupChat.lobbyThreadId`):
     /// where the organizer and people waiting in the lobby talk.
     lobby_thread: Option<String>,
@@ -510,6 +515,7 @@ impl OutgoingCall {
         self.settings_link = link("updateMeetingSettings");
         self.mute_link = link("mute");
         self.metadata_link = link("updateEndpointMetadata").or(self.metadata_link.take());
+        self.add_participant_link = link("addParticipant").or(self.add_participant_link.take());
         self.unmute_link = link("unmute");
         self.message_link = link("sendMessage");
         if let Some(l) = link("updateEndpointState") {
@@ -600,6 +606,52 @@ impl OutgoingCall {
         tracing::info!(?command, "recorder command");
         let skype = command.needs_skype_token().then_some(self.skype_token.as_str());
         super::recorder::send(&self.http, &url, &token, skype, &self.call_id, &body).await
+    }
+
+    /// Invite the meeting's recorder (Teams does when you start captions,
+    /// the transcript or a recording and it isn't in the call yet). The
+    /// roster then lists it with its command URL.
+    pub async fn add_recorder(&self, meeting: &super::recorder::Meeting) -> Result<()> {
+        let link = self.add_participant_link.clone().context("No addParticipant link")?;
+        if !super::incoming::is_service_link(&link) {
+            bail!("addParticipant: not a Teams service link");
+        }
+        let token = crate::auth::oauth::access_token_for(super::recorder::RECORDER_SCOPE).await?;
+        let config = Config::load()?;
+        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let (surl, epid) = &self.callbacks;
+        let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
+        let links = serde_json::json!({
+            "addParticipantSuccess": tc("conversation/addParticipantSuccess/"),
+            "addParticipantFailure": tc("conversation/addParticipantFailure/"),
+        });
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-US".into());
+        }
+        let body = super::recorder::invitation_body(&from, meeting, &self.call_id, &self.thread_id, &token, links);
+        tracing::info!("inviting the meeting's recorder");
+        let resp = self
+            .http
+            .post(&link)
+            .bearer_auth(ic3)
+            .header("x-microsoft-skype-chain-id", &self.call_id)
+            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+            .header("ms-teams-region", signaling::TEAMS_REGION)
+            .header("ms-teams-ring", signaling::TEAMS_RING)
+            .json(&body)
+            .send()
+            .await
+            .context("Inviting the recorder")?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            bail!("Inviting the recorder failed ({status}): {}", &text[..text.len().min(300)]);
+        }
+        tracing::info!(%status, "recorder invited");
+        Ok(())
     }
 
     /// Tell the meeting whether we want live captions, as Teams does once
@@ -1760,6 +1812,7 @@ async fn start(
     let mute_link = conversation_link(&created.response_body, "mute");
     let unmute_link = conversation_link(&created.response_body, "unmute");
     let metadata_link = conversation_link(&created.response_body, "updateEndpointMetadata");
+    let add_participant_link = conversation_link(&created.response_body, "addParticipant");
     let lobby_thread = group_chat_field(&created.response_body, "lobbyThreadId");
     tracing::debug!(?lobby_thread, "meeting lobby chat");
     let message_link = conversation_link(&created.response_body, "sendMessage");
@@ -1931,6 +1984,8 @@ async fn start(
         invite_url,
         mute_link,
         metadata_link,
+        add_participant_link,
+        thread_id: thread_id.to_string(),
         unmute_link,
         lobby_thread,
         server_muted: std::sync::atomic::AtomicBool::new(false),

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T04:52:00Z'
+updated_date: '2026-11-09T05:09:00Z'
 labels:
   - calls
   - meetings
@@ -25,7 +25,7 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - [x] #3 Audio settings opens Teams' Audio settings side pane (Speaker, Microphone, Advanced settings with noise suppression and High fidelity music mode), as measured on winpc
 - [x] #4 Record and transcribe ▸ starts and stops transcription and recording as Teams (menu, language and record-mode dialogs, stop confirmations), verified live
 - [x] #5 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
-- [ ] #6 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
+- [x] #6 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
 - [ ] #7 Report a concern as Teams (no real reports filed while testing)
 <!-- AC:END -->
 
@@ -58,4 +58,6 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - AC#2 progress: Language and speech ▸ Show/Hide live captions (Alt+Shift+C) with Teams' captions window, settings menu (spoken language, Caption styles pane, position, Always turn on captions, Filter profane words), recorder start command + endpoint metadata, accessibility user property. Verified live: captions render as Teams (one item per utterance, partials replaced), settings menu, styles at Large, metadata PUT 200.
 - Not yet: captions start command against a recorder that is not already running captions (it stayed Active from Teams' session); pop-out captions window; RTT; Timer; Settings ▸; Help; Language settings pane (Transcript header button).
 - Transcript pane now also shows each speaker's current partial (Teams' store logic).
+
+- AC#6: OST invites the meeting's recorder (addParticipant with Teams' combined-bot botData) when it is not in the call, waits for its command URL, then sends the command. Verified live in a fresh meeting conversation: invited 202, joined in 3.7 s, StartCaptions 200, closedCaptions Active, metadata 200. The captions start body matched Teams' capture byte for byte.
 <!-- SECTION:NOTES:END -->

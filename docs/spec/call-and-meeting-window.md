@@ -421,6 +421,10 @@ only holds what is left (Merge, Park, Lock).
   - A start's `actionParameters`: features, OneDrive storage "<title>-YYYYMMDD_HHMMSS-Meeting Transcript|Recording", iCalUid, correlationId, meetingTitle, meetingOrganizer, spokenLanguage, type "start".
   - The reply is `{CorrelationId}`; the roster's processingModes then change.
 - **Roster.** The recorder is hidden: its endpoint has `__platform.ui.hidden`, though not every update repeats it. Its updates can arrive out of order, so a participant's `version` decides.
+- **Recorder not in the call** (a fresh meeting conversation or a group call).
+  - Teams first invites it, the combined recording / transcript / captions bot `28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5`.
+  - It POSTs the conversation's `addParticipant` link (IC3 bearer) with `participants {from, to:[{id: <bot>, participantId}]}` and `participantInvitationData.botData {meetingTitle "", clientInfo, callId, threadId, recorderFeatures, mode "RecordingAndTranscription", iCalUid, consumerType "Teams", spokenLanguage, initiatorUserToken (the recorder-service token), exchangeId, meetingOrganizer}`, plus the success and failure callback links.
+  - The service answers 202. The bot joins the roster with its commandUrl within seconds (3.7 s measured), and then the command goes out.
 
 ### 1.8e Transcript pane (`call-transcript-panel`; measured on winpc, 2026-11-09)
 - **Opening it.** More ▸ Record and transcribe ▸ Show transcript / Hide transcript ✓ (TranscriptPanelButton, `transcript-panel-button`).

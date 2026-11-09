@@ -160,6 +160,50 @@ pub fn body(
     b
 }
 
+/// The meeting's call recorder (Teams' combined recording, transcript and
+/// captions bot), as Teams invites it when it isn't in the call yet.
+pub const RECORDER_BOT_MRI: &str = "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5";
+
+/// The `addParticipant` request that brings the recorder into the call
+/// (Teams' `addCombinedRecorderBot`: the bot's `createBotPayload`, mode
+/// "RecordingAndTranscription" for captions too). `from` is our
+/// participant; `links` the success and failure callbacks.
+pub fn invitation_body(
+    from: &Value,
+    meeting: &Meeting,
+    call_id: &str,
+    thread_id: &str,
+    initiator_token: &str,
+    links: Value,
+) -> Value {
+    json!({
+        "disableUnmute": false,
+        "participants": {
+            "from": from,
+            "to": [{ "id": RECORDER_BOT_MRI, "participantId": uuid::Uuid::new_v4().to_string() }],
+        },
+        "participantInvitationData": {
+            "botData": {
+                "meetingTitle": "",
+                "clientInfo": "Teams-R4",
+                "callId": call_id,
+                "threadId": thread_id,
+                "recorderFeatures": features(),
+                "mode": "RecordingAndTranscription",
+                "iCalUid": if meeting.ical_uid.is_empty() { Value::Null } else { json!(meeting.ical_uid) },
+                "consumerType": "Teams",
+                "spokenLanguage": if meeting.spoken_language.is_empty() { "en-us" } else { meeting.spoken_language.as_str() },
+                "initiatorUserToken": initiator_token,
+                "exchangeId": Value::Null,
+                "meetingOrganizer": meeting.organizer,
+            }
+        },
+        "replacementDetails": Value::Null,
+        "links": links,
+        "debugContent": {},
+    })
+}
+
 /// Send a command to the recorder's command URL.
 pub async fn send(
     http: &reqwest::Client,
@@ -275,6 +319,19 @@ mod tests {
         assert_eq!(l["actionParameters"], json!({"spokenLanguage": "de-de", "type": "setLanguage"}));
         assert!(Command::StartCaptions.needs_skype_token());
         assert!(!Command::StartTranscription.needs_skype_token());
+    }
+
+    #[test]
+    fn invites_the_recorder_as_teams_does() {
+        let from = json!({"id": "8:orgid:a", "displayName": "OST Test 1", "endpointId": "e", "participantId": "p"});
+        let b = invitation_body(&from, &meeting(), "call", "19:meeting_x@thread.v2", "tok", json!({"addParticipantSuccess": "s"}));
+        assert_eq!(b["participants"]["to"][0]["id"], RECORDER_BOT_MRI);
+        let bot = &b["participantInvitationData"]["botData"];
+        assert_eq!(bot["mode"], "RecordingAndTranscription");
+        assert_eq!(bot["iCalUid"], "040000008200E0");
+        assert_eq!(bot["threadId"], "19:meeting_x@thread.v2");
+        assert_eq!(bot["initiatorUserToken"], "tok");
+        assert_eq!(bot["recorderFeatures"]["useUnmixedAudio"], true);
     }
 
     #[test]
