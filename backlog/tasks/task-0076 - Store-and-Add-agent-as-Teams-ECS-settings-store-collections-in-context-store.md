@@ -3,7 +3,7 @@ id: TASK-0076
 title: >-
   Store and Add agent as Teams: ECS settings, store collections, in-context
   store
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T13:23:00Z'
@@ -57,3 +57,26 @@ Teams' @ picker 'Add agent to the chat/channel' opens its in-context Store (bots
 - Also found: the build script copied a stale binary after a failed build; it now fails.
 - Follow-up TASK-0077: the Devices tab, See all filter and Manage your apps.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST's Store and the @ picker's "Add agent" now work as Teams' do, built from Teams' own data.
+
+Changes:
+- `api::ecs`: Teams desktop's live settings request (captured at Teams start), with authz licence details (now kept in the config, fetched when missing), cached with its ETag. Settings are read as Teams reads them.
+- `api::store_content`:
+  - the store content doc (CDN), merged with Teams' burnt-in collections (`store_defaults.json`), the ranked catalog (`beta/users/apps/store`), the collection rank service, featured apps, chat and team apps, and server search;
+  - Add/remove via the entitlements endpoints Teams uses.
+- `AgentStore.qml`: Teams' in-context Store (installed bots, collections, See all, search). App details open from it with Back; Add installs into the conversation; "About this bot" for bots that only notify.
+- `StoreView.qml`: Teams' Store home (banner, feed, Featured/Categories menus, See all, category pages, search, installed checks).
+- Chat events: "added {app} here." and "removed {app} from the chat." as Teams words them; bots' member events hidden.
+
+Verified on winpc against Teams in OST group test and OST Test Team General: the same collections and menus. OST added Polls and Teams showed it.
+
+Tests: `cargo test --lib` (362 pass), including new ECS, store, event and menu tests.
+
+Follow-ups:
+- TASK-0077: the Devices tab, See all filter and Manage your apps.
+- Adding an agent in a channel is implemented from Teams' code but not checked live.
+<!-- SECTION:FINAL_SUMMARY:END -->
