@@ -595,6 +595,7 @@ Rectangle {
         channelMenu.teamId = team ? team.id : ""
         channelMenu.teamName = team ? team.name : ""
         channelMenu.postsAtBottom = !backend.channelPostsAtTop
+        channelMenu.postsOrder = channel.id === root.currentId
         channelMenu.show(anchor, px, py)
     }
     function channelMenuForTest() { return channelMenu }
@@ -621,6 +622,8 @@ Rectangle {
             elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: theme.base
             font.weight: chRow.unread ? Font.DemiBold : Font.Normal
+            // A hidden channel stays listed, in italics, while it's open.
+            font.italic: chRow.channel.shown === false
             color: chRow.selected || chRow.unread ? theme.text : theme.textSecondary
         }
         NewBadge { id: newBadge; visible: !!chRow.channel.new; x: chName.x + chName.width + 8; anchors.verticalCenter: parent.verticalCenter }

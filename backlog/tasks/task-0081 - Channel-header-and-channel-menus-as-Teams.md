@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T17:38:00Z'
-updated_date: '2026-11-09T20:42:00Z'
+updated_date: '2026-11-09T20:55:00Z'
 labels:
   - desktop
 dependencies: []
@@ -62,4 +62,9 @@ Teams' channel header has a Meet now split button and More channel options, and 
   - Fixed on the way: `property var data` in AnalyticsView shadowed Item.data (children never attached).
 - Workflows (WorkflowsDialog.qml): Teams' 900 x 634.4 dialog over the Workflows web app; it loads signed in on linuxlt. Fixed: it used the Page tab's pageOnly mode (Loop header and insert row).
 - All Channels / Analytics across channels go to Manage team: TASK-0083 (with non-General channel settings).
+
+- Researched hidden channels in Teams (hid General from Teams' own UI, restored from OST): a hidden channel that isn't open leaves the list, and so does a team with no shown channels. The open one stays, in italics. OST does the same now (italic row).
+- The row ··· for a channel that isn't open has no See new posts at top/bottom (Teams' dump, verified in OST: same 11 items).
+- "See all your teams" opens Teams' Your teams and channels page. That is TASK-0084 (also the way back for hidden teams).
+- Left: See new posts at top layout (needs TASK-0044's subject / Announcement composer).
 <!-- SECTION:NOTES:END -->

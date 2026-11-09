@@ -26,6 +26,9 @@ Item {
     property bool postsAtBottom: true
     /// The Manage channel page's More options.
     property bool manageMode: false
+    /// See new posts at top / bottom: only for the channel that's open
+    /// (Teams leaves it out on other channels' rows).
+    property bool postsOrder: true
     /// The section it's in, for Move to section.
     readonly property var folderList: backend.foldersJson ? (JSON.parse(backend.foldersJson).folders || []) : []
     readonly property string holder: { const f = folderList.find(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.items.indexOf(root.channel.id) >= 0); return f ? f.id : "" }
@@ -56,12 +59,12 @@ Item {
             ? [{ key: "go", label: "Go to channel", icon: "channel-20" },
                { key: "window", label: "Open in new window", icon: "open-window-20" },
                { separator: true }]
-            : [root.postsAtBottom
+            : (root.postsOrder ? [root.postsAtBottom
                 ? { key: "top", label: "See new posts at top", icon: "channel-posts-top-20" }
                 : { key: "bottom", label: "See new posts at bottom", icon: "channel-posts-top-20" },
-               { separator: true },
+               { separator: true }] : []).concat([
                { key: "window", label: "Open in new window", icon: "open-window-20" },
-               { separator: true }]).concat([
+               { separator: true }])).concat([
             { key: "notify", label: "Manage notifications", icon: "alert-20", flyout: true },
             { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
             root.channel.shown === false

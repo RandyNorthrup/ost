@@ -3113,6 +3113,25 @@ Window {
         }
     }
 
+    // --row-menu-test=<channel id> --shots=<dir>: with
+    // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--row-menu-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--row-menu-test=")) || "").slice(16)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => (t.channels || []).some(c => c.id === id))
+            if (!team) return
+            if (step === 0) backend.selectChat("19:ef213c7c46cf4036b11608300e96fee4@thread.v2", "OST group test")
+            else if (step === 2) { const m = chatList.channelMenuForTest(); chatList.openChannelMenu(team.channels.find(c => c.id === id), team, chatList, 200, 400); console.warn("ROWMENU", backend.currentChatId, chatList.currentId, JSON.stringify(m.menu.items.map(i => i.label || "-"))) }
+            else if (step === 3) window.contentItem.grabToImage(r => r.saveToFile(dir + "rowmenu.png"))
+            else if (step === 4) Qt.quit()
+            step++
+        }
+    }
+
     // --workflows-test with --open-chat=<channel id> --shots=<dir>: open
     // the channel's Workflows (wf.png after 15 s) and quit.
     Timer {
