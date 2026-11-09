@@ -474,6 +474,8 @@ impl Facts {
             // Language and speech ▸ Show live captions (the meeting's
             // recorder provides them).
             "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.scheduled,
+            // Settings ▸ Accessibility settings (the in-meeting pane).
+            "SettingsMenuControl" | "AccessibilitySettingsButton" => self.scheduled,
             _ => false,
         }
     }

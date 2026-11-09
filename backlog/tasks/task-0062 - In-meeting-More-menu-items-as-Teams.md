@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T05:09:00Z'
+updated_date: '2026-11-09T05:30:00Z'
 labels:
   - calls
   - meetings
@@ -21,12 +21,12 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Meeting info opens Teams' meeting info pane (title, time, join link, dial-in, copy)
-- [ ] #2 Language and speech ▸ with Captions, Settings ▸ (Call health, Accessibility, Chat bubbles, Mute notifications), Timer and Help as Teams
-- [x] #3 Audio settings opens Teams' Audio settings side pane (Speaker, Microphone, Advanced settings with noise suppression and High fidelity music mode), as measured on winpc
-- [x] #4 Record and transcribe ▸ starts and stops transcription and recording as Teams (menu, language and record-mode dialogs, stop confirmations), verified live
-- [x] #5 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
-- [x] #6 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
-- [ ] #7 Report a concern as Teams (no real reports filed while testing)
+- [x] #2 Audio settings opens Teams' Audio settings side pane (Speaker, Microphone, Advanced settings with noise suppression and High fidelity music mode), as measured on winpc
+- [x] #3 Record and transcribe ▸ starts and stops transcription and recording as Teams (menu, language and record-mode dialogs, stop confirmations), verified live
+- [x] #4 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
+- [x] #5 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
+- [ ] #6 Report a concern as Teams (no real reports filed while testing)
+- [ ] #7 Language and speech ▸ (live captions with their settings, pop-out window and RTT), Settings ▸ (Call health, Accessibility, Chat bubbles, Mute notifications) and Help as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -60,4 +60,8 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - Transcript pane now also shows each speaker's current partial (Teams' store logic).
 
 - AC#6: OST invites the meeting's recorder (addParticipant with Teams' combined-bot botData) when it is not in the call, waits for its command URL, then sends the command. Verified live in a fresh meeting conversation: invited 202, joined in 3.7 s, StartCaptions 200, closedCaptions Active, metadata 200. The captions start body matched Teams' capture byte for byte.
+
+- Timer moved to its own task (meeting timer app: ad-hoc, agenda, Run of Show).
+
+- Settings ▸ Accessibility settings: Teams' in-meeting Accessibility pane (captions settings, Monitoring participants: hide the compact window when minimized except while sharing). Sign language mode and Muted notification cards stay hidden until those features exist (TASK-0068 for the notice). Left in Settings ▸: Call health, chat bubbles, Mute notifications.
 <!-- SECTION:NOTES:END -->

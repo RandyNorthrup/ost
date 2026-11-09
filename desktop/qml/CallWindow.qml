@@ -464,6 +464,8 @@ Window {
             ? { label: "Stop transcription", icon: "call-transcript-stop-20" }
             : { label: "Start transcription", icon: "call-transcript-20" }
         if (n === "LanguageSpeechMenuControl") return { label: "Language and speech", icon: "local-language-20" }
+        if (n === "SettingsMenuControl") return { label: "Settings", icon: "settings-20" }
+        if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "accessibility-20" }
         if (n === "ClosedCaptionsButton") return {
             label: captionsOn ? "Hide live captions" : "Show live captions",
             icon: "closed-caption-20", keys: "Alt+Shift+C", endCheck: captionsOn }
@@ -531,6 +533,10 @@ Window {
     signal setCaptionsLanguage(string code)
     signal updateAccessibility(string patch)
     signal saveCaptionStyles(var styles)
+    /// The 'You're muted' notice while you speak muted (Accessibility ▸
+    /// Muted notification; kept on this device).
+    property bool showMutedNotice: true
+    signal setShowMutedNotice(bool on)
     readonly property bool captionsAtTop: captionStyles.captionsPosition === "Top"
     readonly property var spokenLanguages: recordStart.languages.map(l => ({ code: l[0], name: l[1] }))
     function languageName(code) {
@@ -606,6 +612,7 @@ Window {
     }
     function recordControl(name) {
         if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
+        else if (name === "AccessibilitySettingsButton") side = side === "accessibility" ? "" : "accessibility"
         else if (name === "TranscriptPanelButton") toggleTranscript()
         else if (name === "RecordingButton") {
             if (recording) stopRecordingAsk.open()
@@ -1163,7 +1170,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -1193,6 +1200,16 @@ Window {
             onClosed: win.side = ""
             // Teams turns captions on and closes the pane.
             onSwitchToCaptions: { win.setCaptions(true); win.side = "" }
+        }
+        AccessibilityPane {
+            id: accessibilityPane
+            visible: win.side === "accessibility"
+            anchors.fill: parent
+            accessibility: win.accessibility
+            showMutedNotice: win.showMutedNotice
+            onClosed: win.side = ""
+            onUpdateAccessibility: patch => win.updateAccessibility(patch)
+            onMutedNoticeToggled: on => win.setShowMutedNotice(on)
         }
         CaptionStylesPane {
             id: captionStylesPane
@@ -1415,7 +1432,10 @@ Window {
     CompactCallWindow {
         id: compactView
         call: win
+        // "Hide Call Monitor when minimizing" (Accessibility) keeps it
+        // away, except while you share (as Teams says).
         visible: win.meeting && win.state === "connected" && win.visibility === Window.Minimized
+                 && (win.accessibility.hideCallMonitorOnMinimize !== true || win.sharing)
         onRestore: { win.showNormal(); win.raise(); win.requestActivate() }
     }
     function minimizeForTest() { win.showMinimized() }

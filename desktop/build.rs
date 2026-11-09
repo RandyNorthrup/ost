@@ -87,6 +87,7 @@ fn main() {
         "qml/CaptionsSettingsMenu.qml",
         "qml/CaptionsWindow.qml",
         "qml/CaptionStylesPane.qml",
+        "qml/AccessibilityPane.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

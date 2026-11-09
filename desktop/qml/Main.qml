@@ -761,6 +761,8 @@ Window {
         onSetCaptionsLanguage: code => backend.setCaptionsLanguage(code)
         onUpdateAccessibility: patch => backend.updateCallAccessibility(patch)
         onSaveCaptionStyles: styles => { backend.setSetting("captionStyles", JSON.stringify(styles)); captionStyles = styles }
+        showMutedNotice: backend.setting("showMutedNotice") !== "false"
+        onSetShowMutedNotice: on => { backend.setSetting("showMutedNotice", on ? "true" : "false"); showMutedNotice = on }
         onCopyMeetingJoinInfo: backend.copyMeetingJoinInfo()
         onRecorderCommand: (command, language, audioOnly) => backend.recorderCommand(command, language, audioOnly)
         lockNotices: backend.callLockNotices
@@ -1447,6 +1449,15 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 3 === 0) rows()
+            } else if (step >= 9 && step <= Math.min(16, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-accessibility") >= 0) {
+                // --join-accessibility: More ▸ Settings ▸, then the
+                // Accessibility pane.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-acc-" + n + ".png")))
+                const plan = {
+                    9: () => callWindow.moreSubmenuForTest("SettingsMenuControl"), 10: () => grab("menu"), 11: () => callWindow.closeMoreForTest(),
+                    12: () => callWindow.recordControl("AccessibilitySettingsButton"), 14: () => grab("pane")
+                }
+                if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= 16 && Qt.application.arguments.indexOf("--join-audio-pane") >= 0) {
                 // --join-audio-pane: More > Audio settings, captured at the
                 // top and the end; then music mode on (captured, and the

@@ -495,6 +495,22 @@ only holds what is left (Merge, Park, Lock).
   - A partial not refined for 5 s is dropped.
   - The Transcript pane lists the finals, then the current partials.
 
+### 1.8g Settings ▸ and the in-meeting Accessibility pane (measured on winpc, 2026-11-09)
+- **Settings ▸ items.** Call health, Accessibility settings, a divider, "Don't show chat bubbles" / "Show chat bubbles", and "Mute notifications" / "Allow notifications".
+  - Teams' layout config also lists Device settings, Privacy mode, Meeting options and Hide controls where they apply.
+- **Accessibility pane.**
+  - Background #F5F5F5 under the rail header "Accessibility".
+  - Cards 305.33 wide at x 20.67, 12 apart from y 89. Each has a 0.67 #D1D1D1 border, radius 8 and padding 20 × 12.
+  - A 20 px glyph sits at 18.67. The title (14/20) is at 56.67, with a description below (12/16 #616161, 138.68 wide).
+  - The switch is 40 × 20, with "On" / "Off" (14/20) 10.67 before it.
+  - Group cards (Captions, Monitoring participants) put their title beside the glyph and their settings 68.67 down.
+  - Cards:
+    - Sign language mode.
+    - Captions: "Always show captions in my calls and meetings" and "Filter out profane words in live captions", both in `callAccessibilitySettings`.
+    - Muted notification: the 'You're muted' notice, stored on the device.
+    - Monitoring participants: "Hide Call Monitor when minimizing meeting window" (`hideCallMonitorOnMinimize`). It keeps the compact call window away, except while you share.
+  - OST shows the Sign language and Muted notification cards once those features exist.
+
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
 - Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.
