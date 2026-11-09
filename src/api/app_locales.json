@@ -1,0 +1,446 @@
+[
+[
+"sq-al",
+"Shqip (Shqipëri)"
+],
+[
+"af-za",
+"Afrikaans (Suid-Afrika)"
+],
+[
+"ar-sa",
+"العربية (المملكة العربية السعودية)"
+],
+[
+"az-latn-az",
+"Azərbaycan (Azərbaycan)"
+],
+[
+"eu-es",
+"Euskara (Euskara)"
+],
+[
+"bs-latn-ba",
+"Bosanski (Bosna i Hercegovina)"
+],
+[
+"bg-bg",
+"Български (България)"
+],
+[
+"ca-es",
+"Català (Català)"
+],
+[
+"zh-cn",
+"中文(中国)"
+],
+[
+"zh-sg",
+"中文(新加坡)"
+],
+[
+"zh-hk",
+"中文(香港特別行政區)"
+],
+[
+"zh-mo",
+"中文(澳門特別行政區)"
+],
+[
+"zh-tw",
+"中文(台灣)"
+],
+[
+"hr-hr",
+"Hrvatski (Hrvatska)"
+],
+[
+"cs-cz",
+"Čeština (Česká republika)"
+],
+[
+"da-dk",
+"Dansk (Danmark)"
+],
+[
+"nl-be",
+"Nederlands (België)"
+],
+[
+"nl-nl",
+"Nederlands (Nederland)"
+],
+[
+"en-au",
+"English (Australia)"
+],
+[
+"en-bz",
+"English (Belize)"
+],
+[
+"en-ca",
+"English (Canada)"
+],
+[
+"en-029",
+"English (Caribbean)"
+],
+[
+"en-in",
+"English (India)"
+],
+[
+"en-ie",
+"English (Ireland)"
+],
+[
+"en-jm",
+"English (Jamaica)"
+],
+[
+"en-my",
+"English (Malaysia)"
+],
+[
+"en-nz",
+"English (New Zealand)"
+],
+[
+"en-ph",
+"English (Philippines)"
+],
+[
+"en-sg",
+"English (Singapore)"
+],
+[
+"en-za",
+"English (South Africa)"
+],
+[
+"en-tt",
+"English (Trinidad y Tobago)"
+],
+[
+"en-gb",
+"English (United Kingdom)"
+],
+[
+"en-us",
+"English (United States)"
+],
+[
+"en-zw",
+"English (Zimbabwe)"
+],
+[
+"et-ee",
+"Eesti (Eesti)"
+],
+[
+"fil-ph",
+"Filipino (Pilipinas)"
+],
+[
+"fi-fi",
+"Suomi (Suomi)"
+],
+[
+"fr-be",
+"Français (Belgique)"
+],
+[
+"fr-ca",
+"Français (Canada)"
+],
+[
+"fr-fr",
+"Français (France)"
+],
+[
+"fr-lu",
+"Français (Luxembourg)"
+],
+[
+"fr-mc",
+"Français (Principauté de Monaco)"
+],
+[
+"fr-ch",
+"Français (Suisse)"
+],
+[
+"gl-es",
+"Galego (Galego)"
+],
+[
+"ka-ge",
+"ქართული (საქართველო)"
+],
+[
+"de-at",
+"Deutsch (Österreich)"
+],
+[
+"de-de",
+"Deutsch (Deutschland)"
+],
+[
+"de-li",
+"Deutsch (Liechtenstein)"
+],
+[
+"de-lu",
+"Deutsch (Luxemburg)"
+],
+[
+"de-ch",
+"Deutsch (Schweiz)"
+],
+[
+"el-gr",
+"Ελληνικά (Ελλάδας)"
+],
+[
+"he-il",
+"עברית (ישראל)"
+],
+[
+"hi-in",
+"हिन्दी (भारत)"
+],
+[
+"hu-hu",
+"Magyar (Magyarország)"
+],
+[
+"is-is",
+"Íslenska (Ísland)"
+],
+[
+"id-id",
+"Bahasa Indonesia (Indonesia)"
+],
+[
+"it-it",
+"Italiano (Italia)"
+],
+[
+"it-ch",
+"Italiano (Svizzera)"
+],
+[
+"ja-jp",
+"日本語 (日本)"
+],
+[
+"kk-kz",
+"Қазақ (Қазақстан)"
+],
+[
+"km-kh",
+"ខ្មែរ (កម្ពុជា)"
+],
+[
+"ko-kr",
+"한국어 (대한민국)"
+],
+[
+"lv-lv",
+"Latviešu (Latvija)"
+],
+[
+"lo-la",
+"ລາວ (ລາວ)"
+],
+[
+"lt-lt",
+"Lietuvių (Lietuva)"
+],
+[
+"mk-mk",
+"Mакедонски (Северна Македонија)"
+],
+[
+"ms-my",
+"Bahasa Melayu (Latin, Malaysia)"
+],
+[
+"mt-mt",
+"Malti (Malta)"
+],
+[
+"nb-no",
+"Norsk, Bokmål (Norge)"
+],
+[
+"nn-no",
+"Norsk, Nynorsk (Norge)"
+],
+[
+"fa-ir",
+"فارسی (ایران)"
+],
+[
+"pl-pl",
+"Polski (Polska)"
+],
+[
+"pseudo",
+"Pseudo"
+],
+[
+"pseudo_rtl",
+"PseudoRTL"
+],
+[
+"pt-br",
+"Português (Brasil)"
+],
+[
+"pt-pt",
+"Português (Portugal)"
+],
+[
+"ro-ro",
+"Română (România)"
+],
+[
+"ru-ru",
+"Русский (Россия)"
+],
+[
+"sr-latn-rs",
+"Srpski (Srbija)"
+],
+[
+"sr-cyrl-rs",
+"Српски (Србија)"
+],
+[
+"sk-sk",
+"Slovenčina (Slovenská republika)"
+],
+[
+"sl-si",
+"Slovenščina (Slovenija)"
+],
+[
+"es-ar",
+"Español (Argentina)"
+],
+[
+"es-ve",
+"Español (Republica Bolivariana de Venezuela)"
+],
+[
+"es-bo",
+"Español (Bolivia)"
+],
+[
+"es-cl",
+"Español (Chile)"
+],
+[
+"es-co",
+"Español (Colombia)"
+],
+[
+"es-cr",
+"Español (Costa Rica)"
+],
+[
+"es-do",
+"Español (República Dominicana)"
+],
+[
+"es-ec",
+"Español (Ecuador)"
+],
+[
+"es-sv",
+"Español (El Salvador)"
+],
+[
+"es-gt",
+"Español (Guatemala)"
+],
+[
+"es-hn",
+"Español (Honduras)"
+],
+[
+"es-mx",
+"Español (México)"
+],
+[
+"es-ni",
+"Español (Nicaragua)"
+],
+[
+"es-py",
+"Español (Paraguay)"
+],
+[
+"es-pa",
+"Español (Panamá)"
+],
+[
+"es-pe",
+"Español (Perú)"
+],
+[
+"es-pr",
+"Español (Puerto Rico)"
+],
+[
+"es-es",
+"Español (España, alfabetización internacional)"
+],
+[
+"es-us",
+"Español (Estados Unidos)"
+],
+[
+"es-uy",
+"Español (Uruguay)"
+],
+[
+"sv-fi",
+"Svenska (Finland)"
+],
+[
+"sv-se",
+"Svenska (Sverige)"
+],
+[
+"th-th",
+"ไทย (ไทย)"
+],
+[
+"tr-tr",
+"Türkçe (Türkiye)"
+],
+[
+"uk-ua",
+"Українська (Україна)"
+],
+[
+"uz-latn-uz",
+"O'zbek (O'zbekiston)"
+],
+[
+"ca-es-valencia",
+"Valencià (Espanya)"
+],
+[
+"vi-vn",
+"Tiếng Việt (Việt Nam)"
+],
+[
+"cy-gb",
+"Cymraeg (Y Deyrnas Unedig)"
+]
+]

@@ -4,9 +4,8 @@ import QtQuick.Controls.Basic
 // The Store, laid out as Teams': "Store" with Home, the "Do more in
 // Teams" banner with Search agents and apps, then "Added by your org",
 // apps from Microsoft and every app, as cards (icon, name, what it does).
-// An app's card opens its details; Add installs it in Teams on the web
-// (installing needs a permission OST's sign-in doesn't have), and apps
-// OST has natively open here.
+// An app's card opens Teams' app details dialog; Add installs it in Teams
+// on the web (installing needs a permission OST's sign-in doesn't have).
 Item {
     id: root
     property var reply: ({})
@@ -134,55 +133,19 @@ Item {
     }
     BusyIndicator { anchors.centerIn: parent; running: root.busy; visible: root.busy }
 
-    // An app's details
-    Popup {
+    // An app's details: Teams' app details dialog.
+    AppDetailsDialog {
         id: details
-        property var app: null
-        anchors.centerIn: parent
-        width: Math.min(640, root.width - 80); height: Math.min(520, root.height - 80); padding: 28; modal: true
-        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
-        contentItem: Item {
-            AppIcon { id: dIcon; size: 72; app: details.app }
-            Column {
-                x: 92; width: parent.width - 92; spacing: 6
-                Text { width: parent.width; wrapMode: Text.Wrap; text: details.app ? details.app.name : ""; font.family: theme.font; font.pixelSize: 22; font.weight: Font.Bold; color: theme.text }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: details.app ? details.app.short : ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary }
-            }
-            Rectangle {
-                y: 96; width: actRow.implicitWidth + 32; height: 32; radius: theme.radius
-                color: adh.hovered ? theme.brandHover : theme.brandFill
-                readonly property string key: details.app ? (root.native_[details.app.name] || "") : ""
-                Row { id: actRow; anchors.centerIn: parent; spacing: 6
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.key ? "Open" : "Add"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
-                }
-                HoverHandler { id: adh; cursorShape: Qt.PointingHandCursor }
-                TapHandler {
-                    onTapped: {
-                        const k = parent.key
-                        details.close()
-                        if (k) root.openApp(k)
-                        else Qt.openUrlExternally("https://teams.microsoft.com/l/app/" + encodeURIComponent(details.app.id))
-                    }
-                }
-                Accessible.role: Accessible.Button
-                Accessible.name: (key ? "Open " : "Add ") + (details.app ? details.app.name : "")
-            }
-            Flickable {
-                anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 148; bottom: parent.bottom }
-                contentHeight: desc.height; clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                Text {
-                    id: desc
-                    width: parent.width - 12; wrapMode: Text.Wrap
-                    textFormat: Text.MarkdownText
-                    text: details.app ? details.app.description : ""
-                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-                    onLinkActivated: l => { if (/^https:\/\//.test(l)) Qt.openUrlExternally(l) }
-                }
-            }
+        offerOpen: true
+        onShareApp: id => storeShare.start(id)
+        // Apps OST has natively open here; the rest in Teams on the web.
+        onOpenApp: (id, name) => {
+            const k = root.native_[name] || ""
+            if (k) root.openApp(k)
+            else Qt.openUrlExternally("https://teams.microsoft.com/l/app/" + encodeURIComponent(id))
         }
     }
+    ShareForm { id: storeShare }
 
     component Section: Column {
         id: sec
@@ -211,7 +174,7 @@ Item {
                         Text { width: parent.width; maximumLineCount: 2; wrapMode: Text.Wrap; elide: Text.ElideRight; text: modelData.short; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
                     }
                     HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { details.app = modelData; details.open() } }
+                    TapHandler { onTapped: details.show(modelData.teams_id) }
                     Accessible.role: Accessible.Button
                     Accessible.name: modelData.name + ". " + modelData.short
                 }
@@ -239,5 +202,5 @@ Item {
 
     // Test harness hooks
     function searchForTest(q) { search.text = q }
-    function detailsForTest(name) { const a = root.apps.find(x => x.name === name); if (a) { details.app = a; details.open() } return !!a }
+    function detailsForTest(name) { const a = root.apps.find(x => x.name === name); if (a) details.show(a.teams_id); return !!a }
 }

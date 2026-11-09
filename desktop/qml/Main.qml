@@ -228,6 +228,51 @@ Window {
         }
     }
 
+    // --app-details=<appId>: Teams' app details dialog for an app: the page,
+    // scrolled (sticky header), languages, All reviews (Sort), Permissions,
+    // Write a review and Report review (never submitted), then an app from
+    // More like this and Back. --share-app: the Share form for the app,
+    // "OST group test" picked; --share-app-send then shares it there.
+    // --open-chat: OST group test, where shared apps' cards are.
+    readonly property string appDetailsTest: (Qt.application.arguments.find(a => a.startsWith("--app-details=")) || "").slice(14)
+    Timer {
+        running: window.appDetailsTest.length > 0 && backend.signedIn && chatList.chats.length > 0
+        interval: 2500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const d = appDetails
+            const grab = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-app-" + n + ".png")))
+            const log = n => console.warn("APPDETAILS", step, n, d.view, d.d ? JSON.stringify({ name: d.d.name, rating: d.d.rating, installs: d.d.installs, reviews: d.d.reviews_count, langs: d.d.languages.length, caps: d.d.capabilities.length, perms: d.d.permissions.length }) : backend.appDetailsJson.slice(0, 200), "similar", d.similar.map(a => a.name).join("|"), "reviews", d.revs ? d.revs.reviews.length + "/" + d.revs.count : "-")
+            const share = Qt.application.arguments.indexOf("--share-app") >= 0
+            const plan = share ? {
+                0: () => { appShare.start(window.appDetailsTest) },
+                2: () => { grab("share"); appShare.typeForTest("OST group test") },
+                4: () => { grab("share-suggest"); console.warn("SHARE picked", appShare.pickFirstForTest(), JSON.stringify(appShare.picked)) },
+                5: () => grab("share-picked"),
+                6: () => { if (Qt.application.arguments.indexOf("--share-app-send") >= 0 && appShare.picked.length === 1 && appShare.picked[0].id === "19:ef213c7c46cf4036b11608300e96fee4@thread.v2") appShare.shareForTest(); else console.warn("SHARE not sent") },
+                9: () => { console.warn("SHARE state", backend.shareState, backend.sharedConversation()); grab("share-done") },
+                10: () => Qt.quit()
+            } : {
+                0: () => d.show(window.appDetailsTest),
+                3: () => { log("main"); grab("main") },
+                4: () => d.scrollForTest(560), 5: () => { log("scrolled"); grab("scrolled") },
+                6: () => d.scrollForTest(100000), 7: () => { d.languagesForTest(); grab("bottom") },
+                8: () => { d.languagesForTest(); d.viewForTest("reviews") }, 10: () => { log("reviews"); grab("reviews") },
+                11: () => d.sortMenuForTest(), 12: () => { grab("sort"); d.sortMenuForTest_.close() },
+                13: () => d.viewForTest("permissions"), 14: () => grab("permissions"),
+                15: () => d.viewForTest("write"), 16: () => grab("write"),
+                17: () => { d.view = "reviews" }, 18: () => { if (d.revs && d.revs.reviews.length) d.showReport(d.revs.reviews[0]) }, 19: () => grab("report"),
+                20: () => { d.view = "main" }, 21: () => { if (d.similar.length) d.openSimilar(d.similar[1] ? d.similar[1].id : d.similar[0].id) },
+                24: () => { log("similar"); grab("similar") }, 25: () => d.back(), 26: () => { log("back"); d.close() },
+                27: () => { if (Qt.application.arguments.indexOf("--open-chat") >= 0) { rail.current = "chat"; backend.selectChat("19:ef213c7c46cf4036b11608300e96fee4@thread.v2", "OST group test") } },
+                31: () => grab("chat"),
+                32: () => Qt.quit()
+            }
+            if (plan[step]) plan[step]()
+            step++
+        }
+    }
     // --draft-test: type into the first chat, switch to the second, check
     // the draft is listed, switch back and check the text came back; then
     // clear it again.
@@ -521,7 +566,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat="))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -1654,9 +1699,10 @@ Window {
                     16: () => { console.warn("JOIN report people", JSON.stringify(d.people), "meeting", JSON.stringify(d.meeting)); d.close() }
                 }
                 if (plan[step]) plan[step]()
-            } else if (step >= 9 && step <= Math.min(22, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-help") >= 0) {
+            } else if (step >= 9 && step <= Math.min(30, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-help") >= 0) {
                 // --join-help: More ▸ Help: the window, its app header and
-                // menu, Settings and more, pinned on top and back.
+                // menu, Settings and more, pinned on top and back; then the
+                // menu's About and Share app (in the Help window).
                 const hw = callWindow.helpWindowForTest()
                 const grab = n => hw.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-help-" + n + ".png")))
                 const plan = {
@@ -1666,7 +1712,9 @@ Window {
                     17: () => { hw.appForTest.moreMenuForTest(); hw.titleBarForTest.settingsMenuForTest() }, 18: () => grab("settings"),
                     19: () => { hw.titleBarForTest.togglePin(); console.warn("JOIN help pinned", hw.pinned, (hw.flags & Qt.WindowStaysOnTopHint) !== 0) },
                     20: () => { hw.titleBarForTest.togglePin(); console.warn("JOIN help pinned", hw.pinned, hw.appForTest.tileUrl.slice(0, 80)) },
-                    22: () => hw.close()
+                    21: () => hw.appForTest.aboutForTest().show(hw.appForTest.appId), 24: () => grab("about"),
+                    25: () => { hw.appForTest.aboutForTest().close(); hw.appForTest.shareFormForTest().start(hw.appForTest.appId) }, 27: () => grab("share"),
+                    28: () => { hw.appForTest.shareFormForTest().close(); hw.close() }
                 }
                 if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= Math.min(27, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-accessibility") >= 0) {
@@ -3445,8 +3493,29 @@ Window {
             if (window.callAfterOpen && backend.currentChatId) { window.callAfterOpen = false; backend.startCall() }
         }
     }
+    // Teams' app details and Share form for apps shared in chats.
+    AppDetailsDialog {
+        id: appDetails
+        offerOpen: true
+        onShareApp: id => appShare.start(id)
+        onOpenApp: (id, name) => window.openAppById(id, name)
+    }
+    ShareForm { id: appShare }
+    /// Open an app OST has (by Teams app id or name); the rest in Teams on
+    /// the web.
+    function openAppById(id, name) {
+        const byId = { "5a0e35f9-d3c8-45b6-9dd9-983ab47f1b83": "help" }
+        const byName = { "Planner": "planner", "OneNote": "onenote", "People": "people", "Whiteboard": "whiteboard", "Clipchamp": "clipchamp", "Help": "help" }
+        const links = backend.appLinksJson ? JSON.parse(backend.appLinksJson) : ({})
+        const key = byId[id] || byName[name || (links[id] ? links[id].name : "")] || ""
+        if (key) rail.openApp(key)
+        else Qt.openUrlExternally("https://teams.microsoft.com/l/app/" + encodeURIComponent(id))
+    }
     Conversation {
         id: conversation
+        onOpenAppDetails: id => appDetails.show(id)
+        onShareApp: id => appShare.start(id)
+        onOpenAppById: id => window.openAppById(id, "")
         myName: backend.userName
         visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0))
             || (rail.current === "activity" && activityView.selectedId.length > 0)

@@ -118,10 +118,16 @@ Item {
                 TapHandler { onTapped: teamsMore.openMenu() }
                 Accessible.role: Accessible.Button
                 Accessible.name: "More " + root.appName + " actions"
+                // Teams' order: Reload app, a divider, About, Share app.
                 MenuPopup {
                     id: appMenu
-                    items: [{ label: "Reload app", icon: "arrow-clockwise-20" }]
-                    onPicked: web.reload()
+                    items: [{ label: "Reload app", icon: "arrow-clockwise-20" }, { separator: true },
+                            { label: "About", icon: "info-20" }, { label: "Share app", icon: "share-20" }]
+                    onPicked: i => {
+                        if (i === 0) web.reload()
+                        else if (i === 2) aboutDialog.show(root.appId)
+                        else if (i === 3) shareForm.start(root.appId)
+                    }
                 }
             }
         }
@@ -345,4 +351,9 @@ Item {
         Accessible.role: Accessible.Button
         Accessible.name: label
     }
+    // The app header's About and Share app (in this app's window, as Teams).
+    AppDetailsDialog { id: aboutDialog; onShareApp: id => shareForm.start(id) }
+    ShareForm { id: shareForm }
+    function aboutForTest() { return aboutDialog }
+    function shareFormForTest() { return shareForm }
 }

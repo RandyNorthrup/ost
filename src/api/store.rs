@@ -9,6 +9,9 @@ use super::client::TeamsClient;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct App {
     pub id: String,
+    /// The app's Teams id (its manifest id: Graph's externalId for apps
+    /// your org uploaded, else the catalog id).
+    pub teams_id: String,
     pub name: String,
     pub short: String,
     pub description: String,
@@ -68,7 +71,9 @@ pub async fn apps(client: &TeamsClient) -> Result<Vec<App>> {
         .filter_map(|a| {
             let id = s(a, "/id");
             let name = s(a, "/displayName");
+            let external = s(a, "/externalId");
             (!id.is_empty() && !name.is_empty()).then(|| App {
+                teams_id: if external.is_empty() { id.clone() } else { external },
                 id,
                 name,
                 short: {

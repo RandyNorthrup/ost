@@ -87,6 +87,17 @@ pub mod qobject {
         #[qproperty(QString, channel_tab_result)]
         /// About this tab: {app, about} once loaded.
         #[qproperty(QString, app_about_json)]
+        /// Teams' About dialog for an app: {app, details} or {app, error}.
+        #[qproperty(QString, app_details_json)]
+        /// Its reviews: {app, sort, count, reviews[], next, more} or {app, error}.
+        #[qproperty(QString, app_reviews_json)]
+        /// Its "More like this": {app, apps[]}.
+        #[qproperty(QString, app_similar_json)]
+        /// Apps' privacy and terms links for shared app cards:
+        /// {appId: {privacy, terms, name}}.
+        #[qproperty(QString, app_links_json)]
+        /// Share form: "" (idle), "sharing", "shared", or "error".
+        #[qproperty(QString, share_state)]
         /// The last status message save: {ok, message, pinned} or {ok, error}.
         #[qproperty(QString, status_note_result)]
         /// The open chat has older messages to load (scroll up).
@@ -892,6 +903,33 @@ pub mod qobject {
         /// About this tab: load the app's About (Teams' app definition).
         #[qinvokable]
         fn app_about_load(self: Pin<&mut Backend>, app_id: &QString);
+        /// Load an app's details for Teams' About dialog.
+        #[qinvokable]
+        fn app_details_load(self: Pin<&mut Backend>, app_id: &QString);
+        /// Load an app's reviews: `sort` "recent", "highest" or "lowest",
+        /// `first` of them; `append` adds the next page to what's shown.
+        #[qinvokable]
+        fn app_reviews_load(self: Pin<&mut Backend>, app_id: &QString, sort: &QString, first: i32, append: bool);
+        /// Look up an app's privacy and terms links (shared app cards).
+        #[qinvokable]
+        fn app_links_load(self: Pin<&mut Backend>, app_id: &QString);
+        /// Load an app's "More like this".
+        #[qinvokable]
+        fn app_similar_load(self: Pin<&mut Backend>, app_id: &QString);
+        /// Share an app (Teams' Share form): `targets_json` as the Forward
+        /// dialog's picks.
+        #[qinvokable]
+        fn share_app(self: Pin<&mut Backend>, app_id: &QString, targets_json: &QString, note: &QString, card: bool);
+        /// The conversation the last share went to (the "shared" dialog's
+        /// View opens it).
+        #[qinvokable]
+        fn shared_conversation(self: &Backend) -> QString;
+        /// Report a review of an app (Teams' Report review).
+        #[qinvokable]
+        fn report_app_review(self: Pin<&mut Backend>, app_id: &QString, review_id: &QString, reason: &QString, comment: &QString);
+        /// Post a review of an app (Teams' Write a review).
+        #[qinvokable]
+        fn post_app_review(self: Pin<&mut Backend>, app_id: &QString, rating: i32, title: &QString, content: &QString, anonymous: bool);
         /// Copy link to tab: Teams' deep link, as rich text with the tab's
         /// name (`tab_json` is the tab as channelTabsJson gives it).
         #[qinvokable]
@@ -1181,6 +1219,15 @@ pub struct BackendRust {
     channel_tabs_json: QString,
     channel_tab_result: QString,
     app_about_json: QString,
+    app_details_json: QString,
+    app_reviews_json: QString,
+    app_similar_json: QString,
+    app_links_json: QString,
+    /// Apps whose links were asked for already.
+    app_links_asked: std::collections::HashSet<String>,
+    share_state: QString,
+    /// Where the last share went (the "View" button opens it).
+    shared_to: String,
     status_note_result: QString,
     messages_has_older: bool,
     messages_loading_older: bool,
@@ -1742,6 +1789,66 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
 }
 
 /// Call health's samples of the call in progress.
+/// The conversation the Forward and Share pickers' choices go to: a picked
+/// chat or channel; one person's 1:1; several people's group chat (an
+/// existing one with exactly those members, else a new one).
+async fn picked_conversation(
+    client: &TeamsClient,
+    targets: &[serde_json::Value],
+    group_chats: &[String],
+) -> anyhow::Result<String> {
+    let me = client
+        .object_id()
+        .ok_or_else(|| anyhow::anyhow!("not signed in"))?;
+    let chats: Vec<&serde_json::Value> = targets.iter().filter(|t| t["kind"] == "chat").collect();
+    let people: Vec<String> = targets
+        .iter()
+        .filter(|t| t["kind"] == "person")
+        .filter_map(|t| t["oid"].as_str().map(str::to_string))
+        .collect();
+    if let Some(c) = chats.first() {
+        return Ok(c["id"].as_str().unwrap_or_default().to_string());
+    }
+    if people.is_empty() {
+        anyhow::bail!("Nobody to send to");
+    }
+    if people.len() == 1 {
+        return api::ensure_one_on_one_chat(
+            client,
+            &format!("8:orgid:{me}"),
+            &format!("8:orgid:{}", people[0]),
+        )
+        .await;
+    }
+    let mut want: Vec<String> = people
+        .iter()
+        .chain(std::iter::once(&me))
+        .map(|o| format!("8:orgid:{}", o.to_ascii_lowercase()))
+        .collect();
+    want.sort();
+    want.dedup();
+    for chat in group_chats {
+        if let Ok(mut members) = api::thread_member_ids(client, chat).await {
+            members.sort();
+            if members == want {
+                return Ok(chat.clone());
+            }
+        }
+    }
+    api::create_group_chat(client, &want, "").await
+}
+
+/// Your group chats' ids (for finding an existing chat with exactly some
+/// people).
+fn group_chat_ids(chats_json: &str) -> Vec<String> {
+    serde_json::from_str::<Vec<serde_json::Value>>(chats_json)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|c| c.get("id").and_then(|i| i.as_str()).map(str::to_string))
+        .filter(|i| i.ends_with("@thread.v2"))
+        .collect()
+}
+
 fn health_sampler() -> &'static std::sync::Mutex<teams_cli::calling::call_health::Sampler> {
     static S: OnceLock<std::sync::Mutex<teams_cli::calling::call_health::Sampler>> = OnceLock::new();
     S.get_or_init(Default::default)
@@ -6610,62 +6717,12 @@ impl qobject::Backend {
         let note = note.to_string();
         let targets: Vec<serde_json::Value> =
             serde_json::from_str(&targets_json.to_string()).unwrap_or_default();
-        let group_chats: Vec<String> =
-            serde_json::from_str::<Vec<serde_json::Value>>(&self.rust().chats_json.to_string())
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|c| c.get("id").and_then(|i| i.as_str()).map(str::to_string))
-                .filter(|i| i.ends_with("@thread.v2"))
-                .collect();
+        let group_chats = group_chat_ids(&self.rust().chats_json.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                let me = client
-                    .object_id()
-                    .ok_or_else(|| anyhow::anyhow!("not signed in"))?;
-                let chats: Vec<&serde_json::Value> =
-                    targets.iter().filter(|t| t["kind"] == "chat").collect();
-                let people: Vec<String> = targets
-                    .iter()
-                    .filter(|t| t["kind"] == "person")
-                    .filter_map(|t| t["oid"].as_str().map(str::to_string))
-                    .collect();
-                // The target: a picked chat or channel; one person's 1:1;
-                // several people's group chat (an existing one with exactly
-                // those members, else a new one).
-                let target = if let Some(c) = chats.first() {
-                    c["id"].as_str().unwrap_or_default().to_string()
-                } else if people.len() == 1 {
-                    api::ensure_one_on_one_chat(
-                        &client,
-                        &format!("8:orgid:{me}"),
-                        &format!("8:orgid:{}", people[0]),
-                    )
-                    .await?
-                } else {
-                    let mut want: Vec<String> = people
-                        .iter()
-                        .chain(std::iter::once(&me))
-                        .map(|o| format!("8:orgid:{}", o.to_ascii_lowercase()))
-                        .collect();
-                    want.sort();
-                    want.dedup();
-                    let mut found = None;
-                    for chat in &group_chats {
-                        if let Ok(mut members) = api::thread_member_ids(&client, chat).await {
-                            members.sort();
-                            if members == want {
-                                found = Some(chat.clone());
-                                break;
-                            }
-                        }
-                    }
-                    match found {
-                        Some(c) => c,
-                        None => api::create_group_chat(&client, &want, "").await?,
-                    }
-                };
+                let target = picked_conversation(&client, &targets, &group_chats).await?;
                 let note_html = if note.trim().is_empty() {
                     String::new()
                 } else {
@@ -7829,6 +7886,232 @@ impl qobject::Backend {
                 };
                 this.as_mut()
                     .set_app_about_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn app_details_load(mut self: Pin<&mut Self>, app_id: &QString) {
+        let app = app_id.to_string();
+        self.as_mut()
+            .set_app_details_json(QString::from(json!({ "app": app, "loading": true }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                api::app_details::details(&TeamsClient::new().await?, &app).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let text = match result {
+                    Ok(d) => {
+                        let card = api::app_details::share_card(&d);
+                        json!({ "app": app, "details": d, "card": card }).to_string()
+                    }
+                    Err(e) => json!({ "app": app, "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_app_details_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn app_reviews_load(
+        self: Pin<&mut Self>,
+        app_id: &QString,
+        sort: &QString,
+        first: i32,
+        append: bool,
+    ) {
+        let app = app_id.to_string();
+        let sort = sort.to_string();
+        // The next page continues what's shown, for the same app and order.
+        let shown: serde_json::Value =
+            serde_json::from_str(&self.rust().app_reviews_json.to_string()).unwrap_or_default();
+        let next = (append && shown["app"] == app.as_str() && shown["sort"] == sort.as_str())
+            .then(|| shown["next"].as_str().unwrap_or_default().to_string())
+            .filter(|n| !n.is_empty());
+        if append && next.is_none() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::app_details::reviews(
+                    &client,
+                    &app,
+                    api::app_details::ReviewSort::parse(&sort),
+                    first.max(1) as usize,
+                    next.as_deref(),
+                )
+                .await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let text = match result {
+                    Ok(page) => {
+                        let mut reviews = Vec::new();
+                        if append {
+                            let shown: serde_json::Value =
+                                serde_json::from_str(&this.rust().app_reviews_json.to_string()).unwrap_or_default();
+                            if shown["app"] == app.as_str() && shown["sort"] == sort.as_str() {
+                                reviews = shown["reviews"].as_array().cloned().unwrap_or_default();
+                            }
+                        }
+                        reviews.extend(page.reviews.iter().map(|r| json!(r)));
+                        json!({ "app": app, "sort": sort, "count": page.count, "reviews": reviews,
+                                "next": page.next, "more": !page.next.is_empty() })
+                        .to_string()
+                    }
+                    Err(e) => json!({ "app": app, "sort": sort, "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_app_reviews_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn app_links_load(mut self: Pin<&mut Self>, app_id: &QString) {
+        let app = app_id.to_string();
+        if app.is_empty() || !self.as_mut().rust_mut().app_links_asked.insert(app.clone()) {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                api::app_details::definition(&TeamsClient::new().await?, &app).await
+            }
+            .await;
+            let Ok(def) = result else { return };
+            let s = |k: &str| def.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let entry = json!({
+                "privacy": api::tabs::https_url(&s("privacyUrl")),
+                "terms": api::tabs::https_url(&s("termsOfUseUrl")),
+                "name": s("name"),
+            });
+            let _ = qt.queue(move |mut this| {
+                let mut map: serde_json::Map<String, serde_json::Value> =
+                    serde_json::from_str(&this.rust().app_links_json.to_string()).unwrap_or_default();
+                map.insert(app, entry);
+                this.as_mut().set_app_links_json(QString::from(
+                    serde_json::Value::Object(map).to_string().as_str(),
+                ));
+            });
+        });
+    }
+
+    pub fn app_similar_load(mut self: Pin<&mut Self>, app_id: &QString) {
+        let app = app_id.to_string();
+        self.as_mut()
+            .set_app_similar_json(QString::from(json!({ "app": app, "apps": [] }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                api::app_details::similar(&TeamsClient::new().await?, &app).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let apps = result.unwrap_or_else(|e| {
+                    tracing::info!("more like this: {}", short_error(&e));
+                    Vec::new()
+                });
+                this.as_mut().set_app_similar_json(QString::from(
+                    json!({ "app": app, "apps": apps }).to_string().as_str(),
+                ));
+            });
+        });
+    }
+
+    pub fn share_app(
+        mut self: Pin<&mut Self>,
+        app_id: &QString,
+        targets_json: &QString,
+        note: &QString,
+        card: bool,
+    ) {
+        let app = app_id.to_string();
+        let note = note.to_string();
+        let targets: Vec<serde_json::Value> =
+            serde_json::from_str(&targets_json.to_string()).unwrap_or_default();
+        let group_chats = group_chat_ids(&self.rust().chats_json.to_string());
+        self.as_mut().set_share_state(QString::from("sharing"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let details = api::app_details::details(&client, &app).await?;
+                let target = picked_conversation(&client, &targets, &group_chats).await?;
+                api::app_details::share(&client, &target, &note, &details, card).await?;
+                anyhow::Ok(target)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(target) => {
+                    this.as_mut().rust_mut().shared_to = target;
+                    this.as_mut().set_share_state(QString::from("shared"));
+                }
+                Err(e) => {
+                    tracing::warn!("share app failed: {}", short_error(&e));
+                    this.as_mut().set_share_state(QString::from("error"));
+                }
+            });
+        });
+    }
+
+    pub fn report_app_review(
+        self: Pin<&mut Self>,
+        app_id: &QString,
+        review_id: &QString,
+        reason: &QString,
+        comment: &QString,
+    ) {
+        let (app, review, reason, comment) =
+            (app_id.to_string(), review_id.to_string(), reason.to_string(), comment.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::app_details::report_review(&client, &app, &review, &reason, &comment).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::warn!("report review failed: {}", short_error(&e));
+                    this.as_mut().toast("Couldn't report the review", "error");
+                }
+            });
+        });
+    }
+
+    pub fn shared_conversation(&self) -> QString {
+        QString::from(self.shared_to.as_str())
+    }
+
+    pub fn post_app_review(
+        self: Pin<&mut Self>,
+        app_id: &QString,
+        rating: i32,
+        title: &QString,
+        content: &QString,
+        anonymous: bool,
+    ) {
+        let (app, title, content) = (app_id.to_string(), title.to_string(), content.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::app_details::post_review(&client, &app, rating.clamp(1, 5) as u8, &title, &content, anonymous)
+                    .await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().toast("Review posted", "success");
+                    let id = QString::from(app.as_str());
+                    this.as_mut().app_details_load(&id);
+                }
+                Err(e) => {
+                    tracing::warn!("post review failed: {}", short_error(&e));
+                    this.as_mut().toast("Couldn't post your review", "error");
+                }
             });
         });
     }

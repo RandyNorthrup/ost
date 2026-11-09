@@ -152,6 +152,19 @@ Rectangle {
         else if (m.kind === "emoji") box.insertText(m.unicode)
     }
     signal openChatSettings()
+    /// Teams' app details for an app (a shared app's card, or a
+    /// teams.microsoft.com/l/app/ link).
+    signal openAppDetails(string appId)
+    /// Teams' Share form for an app (a shared app's card).
+    signal shareApp(string appId)
+    /// Open an app OST has (a shared app's card ▸ Open).
+    signal openAppById(string appId)
+    /// Links in messages: Teams opens its app links as the app's details.
+    function openLink(link) {
+        const m = /^https:\/\/teams\.microsoft\.com\/l\/app\/([0-9A-Za-z._-]+)/.exec(link)
+        if (m) root.openAppDetails(decodeURIComponent(m[1]))
+        else Qt.openUrlExternally(link)
+    }
     signal scheduleMeeting()
     // Go to a message (a quote card's target), if it is loaded.
     // The chat's call: one going on (a start with no end), whether we're in
@@ -1348,7 +1361,30 @@ Rectangle {
                             sourceComponent: modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp : heroComp
                             Component {
                                 id: adaptiveComp
-                                AdaptiveCard { content: modelData.content; cardWidth: list.width >= 720 ? 448 : 360 }
+                                AdaptiveCard {
+                                    id: ac
+                                    // A shared app's card (Teams' app-store link preview):
+                                    // 16 from the top and Teams' links and buttons under it.
+                                    readonly property string sharedApp: String(modelData.app_id).toUpperCase() === "08648EF4-F8B6-45DA-AB44-74F21AABD840"
+                                        && modelData.content && modelData.content.selectAction ? String(modelData.content.selectAction.id || "") : ""
+                                    content: modelData.content
+                                    cardWidth: sharedApp ? 356 : (list.width >= 720 ? 448 : 360)
+                                    topInset: sharedApp ? 16 : 26
+                                    hostsLinks: true
+                                    footer: sharedApp ? appCardFooter : null
+                                    Component {
+                                        id: appCardFooter
+                                        AppCardFooter {
+                                            appId: ac.sharedApp
+                                            onDetails: root.openAppDetails(ac.sharedApp)
+                                            onPermissions: root.openAppDetails(ac.sharedApp)
+                                            onShare: root.shareApp(ac.sharedApp)
+                                            onOpenApp: root.openAppById(ac.sharedApp)
+                                        }
+                                    }
+                                    // Tapping the card opens the app's details, as Teams.
+                                    onOpenLink: link => root.openLink(link)
+                                }
                             }
                             Component {
                                 id: heroComp
@@ -1407,7 +1443,7 @@ Rectangle {
                                     text: part.isQuote ? bubble.textStyle + theme.messageHtml(part.modelData.flowQuote) : ""
                                     textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap
                                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-                                    onLinkActivated: link => Qt.openUrlExternally(link)
+                                    onLinkActivated: link => root.openLink(link)
                                 }
                             }
                             // Teams' code block (code-block-editor-deserialized):
@@ -1494,7 +1530,7 @@ Rectangle {
                                 wrapMode: TextEdit.Wrap
                                 font.family: theme.font; font.pixelSize: theme.base
                                 color: theme.text
-                                onLinkActivated: link => Qt.openUrlExternally(link)
+                                onLinkActivated: link => root.openLink(link)
                                 HoverHandler { cursorShape: flowText.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
                             }
                         // Rounded 4 px with a hairline border, as Teams draws them.
@@ -1609,7 +1645,7 @@ Rectangle {
                     // Teams' tombstone: italic, in the normal text colour.
                     font.italic: msg.modelData.deleted === true
                     color: theme.text
-                    onLinkActivated: link => Qt.openUrlExternally(link)
+                    onLinkActivated: link => root.openLink(link)
                     HoverHandler { cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
                     Accessible.name: msg.modelData.text
                 }

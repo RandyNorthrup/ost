@@ -23,6 +23,18 @@ Item {
     id: card
     property var content: ({})
     property real cardWidth: 448
+    /// Body from the top (Teams: 26; a shared app's card: 16).
+    property real topInset: 26
+    /// Teams' card frame (background, radius, shadow); off where a host
+    /// draws the box itself (the Share form's preview).
+    property bool framed: true
+    /// What Teams adds under some cards inside the frame (a shared app's
+    /// links and buttons).
+    property Component footer: null
+    /// Links the host opens itself (openLink) instead of the browser
+    /// (Teams opens its own app links in place).
+    property bool hostsLinks: false
+    signal openLink(string url)
     // The card's ids: shown/hidden state (Action.ToggleVisibility) and the
     // inputs' values.
     property var hidden: ({})
@@ -32,7 +44,7 @@ Item {
     width: cardWidth
     height: frame.height
 
-    readonly property var spacingPx: ({ none: 0, small: 8, default: 12, medium: 16, large: 20, extralarge: 24, padding: 16 })
+    readonly property var spacingPx: ({ none: 0, extrasmall: 4, small: 8, default: 12, medium: 16, large: 20, extralarge: 24, padding: 16 })
     readonly property var sizePx: ({ small: 12, default: 14, medium: 14, large: 18, extralarge: 24 })
     readonly property var lineH: ({ small: 16, default: 20, medium: 20, large: 24, extralarge: 32 })
     readonly property var imagePx: ({ small: 36, medium: 54, large: 108 })
@@ -79,7 +91,7 @@ Item {
     function setValue(id, v) { if (!id) return; const o = Object.assign({}, values); o[id] = v; values = o }
     function run(a) {
         const t = lc(a.type, "")
-        if (t === "action.openurl") Qt.openUrlExternally(a.url)
+        if (t === "action.openurl") { if (card.hostsLinks) card.openLink(a.url); else Qt.openUrlExternally(a.url) }
         else if (t === "action.showcard") openShowCard = openShowCard === (a.id || a.title) ? "" : (a.id || a.title)
         else if (t === "action.togglevisibility") toggle(a.targetElements)
         else card.action(a, values)
@@ -115,19 +127,32 @@ Item {
         width: card.cardWidth
         height: body.y + body.height + (actions.visible ? 12 + actions.height : 0)
             + (showCardHost.visible ? 16 + showCardHost.height : 16)
-        depth: 2; radius: 6
-        color: card.styleBg("default")
+            + (footerSlot.item ? footerSlot.item.height : 0)
+        depth: card.framed ? 2 : 0; radius: 6
+        color: card.framed ? card.styleBg("default") : "transparent"
         ElementList {
             id: body
-            x: 16; y: 26; width: card.cardWidth - 32
+            x: 16; y: card.topInset; width: card.cardWidth - 32
             items: card.content && card.content.body ? card.content.body : []
             parentStyle: "default"
+            // The card's own selectAction: its body is the button.
+            TapHandler {
+                enabled: !!(card.content && card.content.selectAction)
+                onTapped: card.run(card.content.selectAction)
+            }
+            HoverHandler { enabled: !!(card.content && card.content.selectAction); cursorShape: Qt.PointingHandCursor }
         }
         ActionRow {
             id: actions
             visible: !!(card.content && card.content.actions && card.content.actions.length)
             x: 16; y: body.y + body.height + 12; width: card.cardWidth - 32
             actions: card.content && card.content.actions ? card.content.actions.slice(0, 6) : []
+        }
+        Loader {
+            id: footerSlot
+            x: 16; width: card.cardWidth - 32
+            y: body.y + body.height + (actions.visible ? 12 + actions.height : 0)
+            sourceComponent: card.footer
         }
         // The open ShowCard, edge to edge.
         Rectangle {
@@ -196,6 +221,8 @@ Item {
                 for (const line of String(i.text || "").replace(/\*\*|_|\[|\]\([^)]*\)/g, "").split("\n")) w = Math.max(w, fm.advanceWidth(line) * k)
             } else if (t === "image") {
                 w = Math.max(w, i.width && /px$/.test(String(i.width)) ? parseFloat(i.width) : (imagePx[lc(i.size, "")] || 54))
+            } else if (t === "icon") {
+                w = Math.max(w, ({ xxsmall: 16, xsmall: 20, small: 24, standard: 32, medium: 48, large: 56, xlarge: 72, xxlarge: 96 })[lc(i.size, "standard")] || 32)
             } else if (t === "container") {
                 w = Math.max(w, naturalWidth(i.items || []))
             } else if (t === "actionset") {
@@ -209,6 +236,7 @@ Item {
         case "textblock": return textBlock
         case "richtextblock": return richTextBlock
         case "image": return imageEl
+        case "icon": return iconEl
         case "imageset": return imageSet
         case "container": return container
         case "columnset": return columnSet
@@ -294,20 +322,22 @@ Item {
                 id: picBox
                 width: img.boxW; height: img.boxH
                 x: card.lc(img.e.horizontalAlignment, "left") === "center" ? (img.width - width) / 2 : card.lc(img.e.horizontalAlignment, "left") === "right" ? img.width - width : 0
-                Rectangle { anchors.fill: parent; visible: !!img.e.backgroundColor; color: img.e.backgroundColor || "transparent"; radius: card.lc(img.e.style, "") === "person" ? width / 2 : 0 }
+                readonly property real corner: card.lc(img.e.style, "") === "person" ? width / 2 : card.lc(img.e.style, "") === "roundedcorners" ? 6 : 0
+                Rectangle { anchors.fill: parent; visible: !!img.e.backgroundColor; color: img.e.backgroundColor || "transparent"; radius: picBox.corner }
                 Image {
                     id: pic
                     anchors.fill: parent
                     source: { backend.emoticonsVersion; return backend.cardImage(img.e.url || "") }
-                    fillMode: card.lc(img.e.style, "") === "person" ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+                    fillMode: picBox.corner > 0 ? Image.PreserveAspectCrop : Image.PreserveAspectFit
                     asynchronous: true
                     smooth: true
                 }
-                // Person images are round.
+                // Person images are round; "roundedCorners" ones have 6 px
+                // corners (Teams' renderer).
                 RoundedCorners {
-                    visible: card.lc(img.e.style, "") === "person"
+                    visible: picBox.corner > 0
                     anchors.fill: parent
-                    radius: width / 2
+                    radius: picBox.corner
                     background: card.styleBg(img.parentStyle)
                 }
                 TapHandler {
@@ -317,6 +347,62 @@ Item {
                 Accessible.role: Accessible.Graphic
                 Accessible.name: img.e.altText || ""
             }
+        }
+    }
+    // Teams' Icon element: a Fluent icon by name, fetched as Teams fetches
+    // it (its Fluent icon CDN, {Name}/{Name}.json: SVG paths per style and
+    // size). Sizes as Teams': xxSmall 16 … xxLarge 96; the nearest drawn
+    // size is scaled.
+    Component {
+        id: iconEl
+        Item {
+            id: ic
+            property var e: ({})
+            property string parentStyle
+            readonly property int px: ({ xxsmall: 16, xsmall: 20, small: 24, standard: 32, medium: 48, large: 56, xlarge: 72, xxlarge: 96 })[card.lc(e.size, "standard")] || 32
+            readonly property bool filled: card.lc(e.style, "regular") === "filled"
+            readonly property color tint: card.colorOf(e.color, false)
+            property string svg: ""
+            width: parent ? parent.width : 0
+            height: px
+            function load() {
+                const name = String(e.name || "").replace(/[^A-Za-z0-9_]/g, "")
+                if (!name) return
+                const url = "https://res-1.cdn.office.net/assets/fluentui-react-icons/2.0.226/" + name + "/" + name + ".json"
+                const draw = json => {
+                    const set = json[ic.filled ? "filled" : "regular"] || json.regular || json.filled
+                    if (!set) return
+                    // Teams' choice: the nearest size, the smaller on a tie.
+                    const sizes = Object.keys(set).map(Number).sort((a, b) => a - b)
+                    let pick = sizes[sizes.length - 1]
+                    for (let i = 0; i < sizes.length; i++) if (ic.px <= sizes[i]) {
+                        pick = i > 0 && ic.px - sizes[i - 1] < sizes[i] - ic.px ? sizes[i - 1] : sizes[i]
+                        break
+                    }
+                    const paths = set[String(pick)].map(d => '<path d="' + d + '" fill="' + ic.tint + '"/>').join("")
+                    ic.svg = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + pick + '" height="' + pick + '" viewBox="0 0 ' + pick + " " + pick + '">' + paths + "</svg>")
+                }
+                const cached = IconCache.get(url)
+                if (cached !== undefined) { draw(cached); return }
+                const xhr = new XMLHttpRequest()
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState !== XMLHttpRequest.DONE || xhr.status !== 200) return
+                    try { const j = JSON.parse(xhr.responseText); IconCache.put(url, j); draw(j) } catch (err) {}
+                }
+                xhr.open("GET", url)
+                xhr.send()
+            }
+            onEChanged: load()
+            onTintChanged: load()
+            Image {
+                width: ic.px; height: ic.px
+                x: card.lc(ic.e.horizontalAlignment, "left") === "center" ? (ic.width - width) / 2 : card.lc(ic.e.horizontalAlignment, "left") === "right" ? ic.width - width : 0
+                source: ic.svg
+                sourceSize: Qt.size(ic.px * 2, ic.px * 2)
+                TapHandler { enabled: !!ic.e.selectAction; onTapped: card.run(ic.e.selectAction) }
+            }
+            Accessible.role: Accessible.Graphic
+            Accessible.name: String(e.name || "")
         }
     }
     Component {

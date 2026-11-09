@@ -369,6 +369,17 @@ impl TeamsClient {
             .map(|u| u.trim_end_matches('/').to_string())
     }
 
+    /// Any https endpoint from region_gtms by its key (such as
+    /// "appsSuggestionService").
+    pub fn region_endpoint(&self, key: &str) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get(key)?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
     /// Teams' media store (AMS) base URL from region_gtms ("ams").
     pub fn ams_url(&self) -> Option<String> {
         self.config

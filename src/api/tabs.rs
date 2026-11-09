@@ -108,7 +108,12 @@ fn fill(url: &str, ctx: &TabContext, entity_id: &str) -> String {
     out
 }
 
-fn https_only(url: &str) -> String {
+/// A URL kept only if it's an https link (else empty).
+pub fn https_url(url: &str) -> String {
+    https_only(url)
+}
+
+pub(crate) fn https_only(url: &str) -> String {
     if !url.contains('{') && reqwest::Url::parse(url).is_ok_and(|u| u.scheme() == "https") {
         url.to_string()
     } else {

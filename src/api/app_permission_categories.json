@@ -1,0 +1,160 @@
+[
+ {
+  "categoryKey": "app_details_categories_readaccess",
+  "order": 1,
+  "properties": [
+   "read",
+   "readall",
+   "readbasic",
+   "stream",
+   "accesssharedfolders",
+   "accessmedia"
+  ],
+  "subcategories": [
+   {
+    "subcategoryKey": "app_details_subcategories_information_related_to_you",
+    "order": 1,
+    "properties": [],
+    "otherPermissions": [
+     "app_details_identity_permission",
+     "extensibility_projectAgentIdentityPermission1",
+     "extensibility_projectAgentIdentityPermission2"
+    ]
+   },
+   {
+    "subcategoryKey": "app_details_subcategories_information_chatschannelsmeetings",
+    "order": 2,
+    "properties": [
+     "teamsettings",
+     "channelsettings",
+     "channel",
+     "channelmessage",
+     "teamstab",
+     "member",
+     "owner",
+     "teammember",
+     "teamsappinstallation",
+     "file",
+     "chatmember",
+     "chatmessage",
+     "chatsettings",
+     "chat",
+     "onlinemeeting",
+     "camerastream",
+     "outgoingvideostream",
+     "onlinemeetingparticipant",
+     "channelmeetingparticipant",
+     "inapppurchase",
+     "onlinemeeting",
+     "channelmeeting",
+     "teamsactivity",
+     "calls",
+     "meetingstage",
+     "channelmeetingstage",
+     "microphonestream",
+     "onlinemeetingincomingaudio",
+     "channelmeetingincomingaudio",
+     "onlinemeetingactivespeaker",
+     "channelmeetingactivespeaker",
+     "channelmeetingaudiovideo",
+     "livesharesession",
+     "meetingparticipantreaction",
+     "onlinemeetingnotification",
+     "channelmeetingnotification",
+     "chatmessagereadreceipt"
+    ],
+    "otherPermissions": [
+     "app_details_identity_team_and_chat_permission",
+     "app_details_permission_teams_access",
+     "extension_addAppDialogIdentityTeamAndChatAndMeetingPermission",
+     "extensibility_projectAgentChatChannelsPermission1",
+     "extensibility_projectAgentChatChannelsPermission2"
+    ]
+   },
+   {
+    "subcategoryKey": "app_details_subcategories_other_readaccess",
+    "order": 3,
+    "properties": [],
+    "otherPermissions": [
+     "extensibility_projectAgentReadPermission1",
+     "extensibility_projectAgentReadPermission2",
+     "extensibility_projectAgentReadPermission3"
+    ]
+   }
+  ]
+ },
+ {
+  "categoryKey": "app_details_categories_perform_actions",
+  "order": 2,
+  "properties": [
+   "create",
+   "readwrite",
+   "write",
+   "delete",
+   "manage",
+   "managedeletion",
+   "toggleincomingaudio",
+   "joingroupcalls",
+   "appendonsend",
+   "allow",
+   "send",
+   "detect"
+  ],
+  "subcategories": [
+   {
+    "subcategoryKey": "app_details_subcategories_send_receive_messages_notifications",
+    "order": 1,
+    "properties": [
+     "send"
+    ],
+    "otherPermissions": [
+     "app_details_basic_bots_permission",
+     "app_details_team_and_chat_full_permission",
+     "app_details_team_and_chat_bots_connectors_permission",
+     "app_details_basic_full_permission",
+     "extension_addAppDialogNotificationsConsent",
+     "app_details_chat_galleryTabs_bots_permission",
+     "app_details_chat_bots_permission",
+     "extension_addAppDialogTeamAndChatAndMeetingPermission1",
+     "extension_addAppDialogTeamAndChatAndMeetingPermission2"
+    ]
+   },
+   {
+    "subcategoryKey": "app_details_subcategories_content_settings",
+    "order": 2,
+    "properties": [
+     "create",
+     "delete",
+     "write",
+     "readwrite",
+     "manage",
+     "managedeletion",
+     "appendonsend"
+    ],
+    "otherPermissions": []
+   },
+   {
+    "subcategoryKey": "app_details_subcategories_manage_media_devices",
+    "order": 3,
+    "properties": [
+     "toggleincomingaudio",
+     "detect",
+     "joingroupcalls"
+    ],
+    "otherPermissions": []
+   },
+   {
+    "subcategoryKey": "app_details_subcategories_other",
+    "order": 4,
+    "properties": [
+     "allow"
+    ],
+    "otherPermissions": [
+     "extensibility_projectAgentOtherPermission1",
+     "extensibility_projectAgentOtherPermission2",
+     "extensibility_projectAgentOtherPermission3"
+    ]
+   }
+  ]
+ }
+]
