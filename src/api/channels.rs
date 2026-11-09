@@ -202,6 +202,45 @@ async fn middle_tier(client: &TeamsClient) -> Result<(String, String)> {
     super::tabs::middle_tier(client).await
 }
 
+/// Teams' Copy link for a team (the team row's menu): the team's thread
+/// (its General channel) in /l/team/…/conversations, and as HTML an anchor
+/// reading "{General's name} | {team}".
+pub fn team_link(team_thread: &str, general_name: &str, team_name: &str, group_id: &str, tenant: &str) -> (String, String) {
+    let url = format!(
+        "https://teams.microsoft.com/l/team/{}/conversations?groupId={}&tenantId={}",
+        enc(team_thread),
+        group_id,
+        tenant
+    );
+    let esc = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    };
+    let html = format!("<a href=\"{}\">{} | {}</a>", esc(&url), esc(general_name), esc(team_name));
+    (url, html)
+}
+
+/// Hide all channels (the team row's menu): Teams' provisioning service,
+/// `PUT {teamsAndChannelsProvisioningService}/team/{teamThread}/hide`.
+pub async fn hide_all_channels(client: &TeamsClient, team_thread: &str) -> Result<()> {
+    let base = client
+        .region_endpoint("teamsAndChannelsProvisioningService")
+        .context("No Teams provisioning endpoint")?;
+    let (_, token) = middle_tier(client).await?;
+    client
+        .http()
+        .put(format!("{}/team/{}/hide", base.trim_end_matches('/'), enc(team_thread)))
+        .bearer_auth(&token)
+        .header(reqwest::header::CONTENT_LENGTH, "0")
+        .send()
+        .await?
+        .error_for_status()
+        .context("Hide all channels")?;
+    Ok(())
+}
+
 /// Edit channel: what changed (Teams sends only those, with `csav1`).
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct Edit {
@@ -559,6 +598,21 @@ mod tests {
         assert_eq!(Notify::from_properties("", false).mode, NotifyMode::Mute);
         let s = notify_state_from(&serde_json::json!({"alerts": "true", "followAllRc": "1794248093719"}));
         assert!(s.follow_all && s.notify.mode == NotifyMode::Mentions);
+    }
+
+    #[test]
+    fn team_link_is_teams() {
+        // Teams' Copy link on OST Test Team's row (winpc clipboard,
+        // 2026-11-09).
+        let (url, html) = team_link(
+            "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2",
+            "General",
+            "OST Test Team",
+            "1fac3ae3-c9c0-4ddb-90bb-58f52209c181",
+            "2716d134-5614-4856-a48d-2002edd9a570",
+        );
+        assert_eq!(url, "https://teams.microsoft.com/l/team/19%3AekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1%40thread.tacv2/conversations?groupId=1fac3ae3-c9c0-4ddb-90bb-58f52209c181&tenantId=2716d134-5614-4856-a48d-2002edd9a570");
+        assert_eq!(html, "<a href=\"https://teams.microsoft.com/l/team/19%3AekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1%40thread.tacv2/conversations?groupId=1fac3ae3-c9c0-4ddb-90bb-58f52209c181&amp;tenantId=2716d134-5614-4856-a48d-2002edd9a570\">General | OST Test Team</a>");
     }
 
     #[test]

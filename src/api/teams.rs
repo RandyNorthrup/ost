@@ -136,6 +136,14 @@ pub struct ListChannel {
     pub owner: bool,
     /// Its layout: "PostReply" (Posts) or "Conversational" (Threads).
     pub layout: String,
+    /// When it was last active (its last message's compose time, ISO);
+    /// Manage team's "Last active".
+    pub last_active: String,
+    /// Teams' channelType: 0 standard, 1 private, 2 shared.
+    pub channel_type: u8,
+    pub archived: bool,
+    /// Shared into this team from another one.
+    pub shared_in: bool,
 }
 
 /// A team as the chat list shows it.
@@ -153,6 +161,10 @@ pub struct ListTeam {
     /// read horizon).
     pub new: bool,
     pub channels: Vec<ListChannel>,
+    /// Deleted channels (Manage team ▸ Channels ▸ Deleted).
+    pub deleted_channels: Vec<ListChannel>,
+    /// The team's description.
+    pub description: String,
 }
 
 fn read_horizon(c: &serde_json::Value) -> bool {
@@ -170,16 +182,15 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
         .flatten()
         .filter(|t| !b(t, "isDeleted"))
         .map(|t| {
-            let channels: Vec<&serde_json::Value> = t
+            let all: Vec<&serde_json::Value> = t
                 .get("channels")
                 .and_then(|c| c.as_array())
                 .into_iter()
                 .flatten()
-                .filter(|c| !b(c, "isDeleted"))
                 .collect();
-            let mut list: Vec<ListChannel> = channels
-                .iter()
-                .map(|c| ListChannel {
+            let channels: Vec<&serde_json::Value> = all.iter().copied().filter(|c| !b(c, "isDeleted")).collect();
+            let thread = s(t, "id");
+            let channel_of = |c: &&serde_json::Value| ListChannel {
                     id: s(c, "id"),
                     name: s(c, "displayName"),
                     // General's place in the list is the team's
@@ -201,8 +212,13 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                     .mode,
                     owner: s(c, "memberRoleString") == "admin",
                     layout: Some(s(c, "modality")).filter(|m| !m.is_empty()).unwrap_or_else(|| "PostReply".into()),
-                })
-                .collect();
+                    last_active: c.pointer("/lastMessage/composeTime").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                    channel_type: c.get("channelType").and_then(|v| v.as_u64()).unwrap_or(0).min(2) as u8,
+                    archived: b(c, "isArchived"),
+                    shared_in: b(c, "isShared") && !s(c, "parentTeamId").is_empty() && s(c, "parentTeamId") != thread,
+                };
+            let mut list: Vec<ListChannel> = channels.iter().map(channel_of).collect();
+            let deleted: Vec<ListChannel> = all.iter().filter(|c| b(c, "isDeleted")).map(channel_of).collect();
             // General first, then by name (Teams' channel order).
             list.sort_by(|a, b| b.general.cmp(&a.general).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
             let group = channels
@@ -219,6 +235,8 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 archived: b(t, "isArchived"),
                 new: !channels.iter().any(|c| read_horizon(c)),
                 channels: list,
+                deleted_channels: deleted,
+                description: s(t, "description"),
             }
         })
         .collect()

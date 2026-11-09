@@ -600,6 +600,19 @@ Rectangle {
     }
     function channelMenuForTest() { return channelMenu }
 
+    // The team menu, shared by every team row.
+    signal manageTeam(string teamId)
+    TeamMenu {
+        id: teamMenu
+        onManageTeam: id => root.manageTeam(id)
+    }
+    function openTeamMenu(team, anchor, px, py) {
+        // The full team (with its hidden and deleted channels).
+        teamMenu.team = root.teams.find(t => t.id === team.id) || team
+        teamMenu.show(anchor, px, py)
+    }
+    function teamMenuForTest() { return teamMenu }
+
     // A channel row: in a team (indented under it) or in a section.
     component ChannelRow: Item {
         id: chRow
@@ -698,6 +711,25 @@ Rectangle {
             NewBadge { id: teamNew; visible: !!teamRows.team.new; x: teamName.x + teamName.width + 8; anchors.verticalCenter: parent.verticalCenter }
             HoverHandler { id: teamHover }
             TapHandler { onTapped: teamRows.open = !teamRows.open }
+            // Its menu: "More team options" (24 x 23.3, 8 from the row's
+            // end) on hover, or a right-click (Teams' team menu).
+            readonly property bool menuOpen: teamMenu.menu.opened && teamMenu.team.id === teamRows.team.id
+            Rectangle {
+                id: teamMore
+                visible: teamHover.hovered || parent.menuOpen
+                x: parent.width - 16 - 8 - 24; anchors.verticalCenter: parent.verticalCenter
+                width: 24; height: 23.3; radius: theme.radius
+                color: teamMoreHover.hovered ? theme.hover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: teamMore.parent.menuOpen ? theme.brand : theme.textStrong }
+                HoverHandler { id: teamMoreHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.openTeamMenu(teamRows.team, teamMore, 0, -teamMenu.menu.implicitHeight - 3) }
+                Accessible.role: Accessible.Button
+                Accessible.name: "More team options"
+            }
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                onTapped: point => root.openTeamMenu(teamRows.team, parent, point.position.x, point.position.y)
+            }
             Accessible.role: Accessible.Button
             Accessible.name: "Team " + teamRows.team.name + (teamRows.open ? ", expanded" : ", collapsed")
         }

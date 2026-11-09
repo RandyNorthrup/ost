@@ -9251,12 +9251,25 @@ impl qobject::Backend {
             .into_iter()
             .flatten()
             .any(|c| c["id"].as_str() == Some(channel.as_str()) && c["general"].as_bool() == Some(true));
-        if op == "copy-link" {
+        if op == "copy-link" || op == "team-link" {
             let tenant = teams_cli::config::Config::load()
                 .ok()
                 .and_then(|c| c.tenant_id())
                 .unwrap_or_default();
-            let (url, html) = api::channels::channel_link(&channel, &arg, &team, &tenant);
+            let (url, html) = if op == "team-link" {
+                // The team's thread (its General) and Teams' anchor text.
+                let general = team_entry["channels"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|c| c["general"].as_bool() == Some(true))
+                    .and_then(|c| c["name"].as_str())
+                    .unwrap_or("General")
+                    .to_string();
+                api::channels::team_link(&team_thread, &general, team_entry["name"].as_str().unwrap_or_default(), &team, &tenant)
+            } else {
+                api::channels::channel_link(&channel, &arg, &team, &tenant)
+            };
             if let (Ok(u), Ok(h)) = (std::ffi::CString::new(url), std::ffi::CString::new(html)) {
                 // SAFETY: two NUL-terminated strings, copied by Qt before returning.
                 unsafe { ost_set_clipboard(u.as_ptr(), h.as_ptr()) };
@@ -9332,6 +9345,11 @@ impl qobject::Backend {
                     }
                     "posts-at-top" | "posts-at-bottom" => {
                         api::channels::set_new_posts_at_bottom(&client, op == "posts-at-bottom").await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    // The team row's Hide all channels.
+                    "hide-all" => {
+                        api::channels::hide_all_channels(&client, &team_thread).await?;
                         Ok(serde_json::Value::Null)
                     }
                     // Manage channel ▸ Settings ▸ Moderation (General).

@@ -19,6 +19,11 @@ Item {
     id: av
     property string teamId: ""
     property string channelId: ""
+    /// The whole team (Manage team ▸ Analytics): All Channels, Active
+    /// guests, "Analytics across teams"; `channelId` is then the team's
+    /// General (the request goes through it).
+    property bool teamScope: false
+    signal acrossTeams()
     property var channels: []
     property string period: "last-seven-days"
     property var result: null
@@ -34,7 +39,7 @@ Item {
     function load() {
         if (!teamId || !channelId) return
         loading = true; failed = false
-        backend.channelAction("analytics", teamId, channelId, JSON.stringify({ period: period }))
+        backend.channelAction("analytics", teamId, channelId, JSON.stringify({ period: period, team: teamScope }))
     }
     onChannelIdChanged: { result = null; load() }
     onPeriodChanged: load()
@@ -44,7 +49,7 @@ Item {
         function onChannelActionResultChanged() {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.op !== "analytics" || r.channel !== av.channelId) return
-            if (r.ok && r.data && (r.data.team || r.data.period !== av.period)) return
+            if (r.ok && r.data && (!!r.data.team !== av.teamScope || r.data.period !== av.period)) return
             av.loading = false
             av.failed = !r.ok
             av.result = r.ok ? r.data.analytics : null
@@ -64,7 +69,7 @@ Item {
     Rectangle {
         id: errorBar
         visible: av.failed
-        x: 20; y: 0; width: av.width - 68; height: visible ? 36 : 0
+        x: 20; y: 0; width: av.width - 20 - av.rightGutter; height: visible ? 36 : 0
         radius: 4
         color: theme.pick("#FDF3F4", "#3F1011")
         border.color: theme.pick("#EEACB2", "#6E0811"); border.width: 0.67
@@ -81,15 +86,19 @@ Item {
         }
     }
 
-    readonly property real controlsW: width - 88
-    readonly property real dropW: Math.max(120, (controlsW - 20 - 192.5) / 2)
+    // Teams' team page is 14 wider on the right (no channel gutter).
+    readonly property real rightGutter: teamScope ? 34 : 48
+    readonly property real controlsW: width - 40 - rightGutter
+    // Measured: the period's dates take 192.5 (channel) / 197.1 (team).
+    readonly property real dateW: teamScope ? 197.1 : 192.5
+    readonly property real dropW: Math.max(120, (controlsW - 20 - dateW) / 2)
     Text { x: 30; y: 30; text: "Select a channel"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
     Dropdown {
         x: 30; y: 50; width: av.dropW; height: 31.3
         options: [["", "All Channels"]].concat(av.channels.map(c => [c.id, c.general ? "General" : c.name]))
-        label: { const o = options.find(o => o[0] === av.channelId); return o ? o[1] : "" }
+        label: { const o = options.find(o => o[0] === (av.teamScope ? "" : av.channelId)); return o ? o[1] : "" }
         accessibleName: "Channel Dropdown"
-        onPicked: code => code === "" ? av.teamAnalytics() : (code !== av.channelId ? av.pickChannel(code) : null)
+        onPicked: code => code === "" ? (av.teamScope ? null : av.teamAnalytics()) : (av.teamScope || code !== av.channelId ? av.pickChannel(code) : null)
     }
     Text { x: 30 + av.dropW + 10; y: 30; text: "Time period"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
     Dropdown {
@@ -113,10 +122,10 @@ Item {
         x: 30 + av.controlsW - width; y: 91.3
         width: acrossText.implicitWidth + 24; height: 31.3; radius: 4
         color: acrossHover.hovered ? theme.brandHover : theme.brandFill
-        Text { id: acrossText; anchors.centerIn: parent; text: "Analytics across channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+        Text { id: acrossText; anchors.centerIn: parent; text: av.teamScope ? "Analytics across teams" : "Analytics across channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
         HoverHandler { id: acrossHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: av.teamAnalytics() }
-        Accessible.role: Accessible.Button; Accessible.name: "Analytics across channels"
+        TapHandler { onTapped: av.teamScope ? av.acrossTeams() : av.teamAnalytics() }
+        Accessible.role: Accessible.Button; Accessible.name: acrossText.text
     }
 
     component Card: Rectangle {
@@ -169,7 +178,7 @@ Item {
 
     Column {
         id: cards
-        x: 20; y: 152.7; width: av.width - 68
+        x: 20; y: 152.7; width: av.width - 20 - av.rightGutter
         spacing: 10
         Row {
             width: parent.width; spacing: 10
@@ -177,7 +186,9 @@ Item {
                 id: summary
                 width: (parent.width - 10) / 2
                 title: "Summary"
-                readonly property var items: [[av.total("activeUsers"), "Active users"], [av.total("meetingsOrganized"), "Meetings"]].filter(i => i[0] !== undefined)
+                readonly property var items: (av.teamScope
+                    ? [[av.total("activeUsers"), "Active users"], [av.total("guests"), "Active guests"], [av.total("meetingsOrganized"), "Meetings"]]
+                    : [[av.total("activeUsers"), "Active users"], [av.total("meetingsOrganized"), "Meetings"]]).filter(i => i[0] !== undefined)
                 empty: items.length === 0
                 bodyHeight: 56
                 height: Math.max(implicitHeightOf(summary), implicitHeightOf(engagement))

@@ -3239,6 +3239,30 @@ Window {
         }
     }
 
+    // --manage-team-test=<team group id> --shots=<dir>: Manage team's
+    // Channels (mt-channels.png, the rows logged), Analytics
+    // (mt-analytics.png), the team row's menu (mt-menu.png); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--manage-team-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--manage-team-test=")) || "").slice(19)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => t.id === id)
+            if (!team) return
+            if (step === 0) window.openManageTeam(id, "channels")
+            else if (step === 2) { console.warn("MTEAM rows", JSON.stringify(manageTeam.rowsForTest().map(c => [c.name, c.last_active, c.channel_type, c.shown]))); shot("mt-channels") }
+            else if (step === 3) manageTeam.tab = "analytics"
+            else if (step === 6) { const a = manageTeam.analyticsForTest(); console.warn("MTEAM analytics", a.failed, JSON.stringify(a.result).slice(0, 300)); shot("mt-analytics") }
+            else if (step === 7) { window.manageTeamId = ""; const m = chatList.teamMenuForTest(); chatList.openTeamMenu(team, chatList, 250, 400) }
+            else if (step === 8) { console.warn("MTEAM menu", JSON.stringify(chatList.teamMenuForTest().menu.items.map(i => i.label || "-"))); shot("mt-menu") }
+            else if (step === 9) Qt.quit()
+            step++
+        }
+    }
+
     // --row-menu-test=<channel id> --shots=<dir>: with
     // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
     Timer {
@@ -4209,12 +4233,38 @@ Window {
         rail.current = "chat"
         window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
         if (backend.currentChatId !== channelId) backend.selectChat(channelId, ch.name)
+        window.manageTeamId = ""
         window.manage = { teamId: team.id, teamName: team.name, channelId: channelId }
         window.raise(); window.requestActivate()
     }
     Connections {
         target: backend
         function onCurrentChatIdChanged() { if (window.manage && backend.currentChatId !== window.manage.channelId) window.manage = null }
+    }
+    // Manage team: Teams' page in the conversation's place.
+    property string manageTeamId: ""
+    function openManageTeam(teamId, tab) {
+        rail.current = "chat"
+        window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
+        window.manage = null
+        window.manageTeamId = teamId
+        manageTeam.tab = tab || "channels"
+        window.raise(); window.requestActivate()
+    }
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() { window.manageTeamId = "" }
+    }
+    ManageTeam {
+        id: manageTeam
+        visible: !!window.manageTeamId && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        teamId: window.manageTeamId
+        onOpenChannel: (id, name) => { window.manageTeamId = ""; backend.selectChat(id, name) }
+        onManageChannel: id => { window.manageTeamId = ""; window.openManageChannel(id) }
+        onManageChannelAnalytics: id => { window.manageTeamId = ""; window.openManageChannel(id); manageChannel.tab = "analytics" }
+        onOpenChannelWindow: id => window.openChannelWindow(id)
+        onChannelWorkflows: id => window.openWorkflows(id)
     }
     ManageChannel {
         id: manageChannel
@@ -4226,6 +4276,8 @@ Window {
         onGoToChannel: window.manage = null
         onOpenInNewWindow: id => window.openChannelWindow(id)
         onManageChannel: id => window.openManageChannel(id)
+        // All Channels / Analytics across channels: the team's analytics.
+        onTeamAnalytics: id => window.openManageTeam(id, "analytics")
     }
     // A channel's Workflows (Teams' dialog with the Workflows app).
     WorkflowsDialog { id: workflowsDialog }
@@ -4241,13 +4293,14 @@ Window {
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: (id, name) => window.openManageChannel(id)
+        onManageTeam: id => window.openManageTeam(id, "channels")
         // An expanded tab takes the list's place (Teams' Expand tab).
         visible: rail.current === "chat" && !conversation.tabExpanded
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; backend.selectChat(id, name) }
+        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; backend.selectChat(id, name) }
         onNewChat: { draftsOpen = false; mentionsOpen = false; window.composing = true }
         onMarkAllRead: backend.markAllRead()
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
@@ -4383,7 +4436,7 @@ Window {
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible && !manageTeam.visible)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: titleBar.bottom; bottom: statusBar.top; right: tabConversation.left

@@ -29,6 +29,8 @@ Item {
     /// See new posts at top / bottom: only for the channel that's open
     /// (Teams leaves it out on other channels' rows).
     property bool postsOrder: true
+    /// Manage team's channel rows: no Hide / Show (the row has its own).
+    property bool rowMode: false
     /// The section it's in, for Move to section.
     readonly property var folderList: backend.foldersJson ? (JSON.parse(backend.foldersJson).folders || []) : []
     readonly property string holder: { const f = folderList.find(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.items.indexOf(root.channel.id) >= 0); return f ? f.id : "" }
@@ -67,7 +69,7 @@ Item {
                { separator: true }])).concat([
             { key: "notify", label: "Manage notifications", icon: "alert-20", flyout: true },
             { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
-            root.channel.shown === false
+            root.rowMode ? null : root.channel.shown === false
                 ? { key: "show", label: "Show", icon: "eye-20" }
                 : { key: "hide", label: "Hide", icon: "eye-off-20" },
             { separator: true },
@@ -75,7 +77,7 @@ Item {
             { key: "manage", label: "Manage channel", icon: "settings-20" },
             { key: "link", label: "Copy link", icon: "link-20" },
             { key: "email", label: "Get email address", icon: "mail-20" }
-        ], root.manageMode ? [] : [{ key: "workflows", label: "Workflows", icon: "workflows-20" }])
+        ], root.manageMode ? [] : [{ key: "workflows", label: "Workflows", icon: "workflows-20" }]).filter(i => i !== null)
         onFlyoutRequested: (i, row) => {
             if (i < 0 || !row) { notifyFlyout.close(); return }
             const p = row.mapToItem(menu.contentItem, 0, 0)
