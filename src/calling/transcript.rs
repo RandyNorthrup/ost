@@ -1,7 +1,7 @@
 //! Teams' live meeting transcript (the Transcript side pane).
 //!
 //! - **Live.** The media processor sends the meeting's speech recognition
-//!   on the MCP data channel ([`super::mcp::transcript_payload`]):
+//!   on the MCP data channel (data id 3, [`super::mcp::TRANSCRIPT_DATA_ID`]):
 //!   `recognitionResults`, each a partial (`isFinal: false`,
 //!   `temporaryStorageOnly: true`, what live captions show) or a final
 //!   (`isFinal: true`). The pane lists the finals, as Teams' pane does
@@ -26,6 +26,11 @@ pub enum Kind {
     Started,
     /// "<name> stopped transcription".
     Stopped,
+    /// A line of someone's real-time text, in the captions window (typed
+    /// still, or ended: [`super::rtt`]).
+    RealTimeText,
+    /// The captions window's card saying RTT is on for everyone.
+    RealTimeTextIntro,
 }
 
 /// One row.

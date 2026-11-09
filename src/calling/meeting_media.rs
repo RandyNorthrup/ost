@@ -186,6 +186,8 @@ pub fn data_stream(sdp: &str) -> Option<i64> {
 enum Command {
     /// (Re)send what changed in the source requests.
     Resend,
+    /// Send what we typed for real-time text since the last.
+    RealTimeText(String),
 }
 
 /// The source id that asks for nothing (MS-RTP's SOURCE_NONE): Teams
@@ -204,6 +206,8 @@ struct State {
     widths: HashMap<i64, u32>,
     /// Whose screen to receive (their applicationsharing-video source).
     share: Option<i64>,
+    /// Our data source id, once the processor named it.
+    source_id: Option<u32>,
 }
 
 /// Others' video in a meeting: which source is in which slot, and the
@@ -313,6 +317,17 @@ impl MeetingVideo {
             self.changed();
         }
         out
+    }
+
+    /// Send what we typed for real-time text since the last (Teams'
+    /// `{s}`: characters, backspaces, a newline ending the line).
+    pub fn send_real_time_text(&self, text: &str) {
+        let _ = self.commands.send(Command::RealTimeText(text.to_string()));
+    }
+
+    /// Our data source id (whose real-time text is ours), once known.
+    pub fn source_id(&self) -> Option<u32> {
+        lock(&self.state).source_id
     }
 
     /// Receive this presenter's screen (their applicationsharing-video
@@ -438,6 +453,7 @@ async fn run(
             ev = events.recv() => match ev {
                 Some(DataEvent::Open) => {
                     sent.clear();
+                    lock(&state).source_id = None;
                     sender.send(session.syn());
                 }
                 Some(DataEvent::Message(m)) => {
@@ -445,6 +461,7 @@ async fn run(
                         match inc {
                             Incoming::Ack { id } => {
                                 tracing::info!(id, "MCP session up");
+                                lock(&state).source_id = session.source_id();
                                 sent.clear();
                                 send_requests(&mut session, &mut sent);
                             }
@@ -480,6 +497,17 @@ async fn run(
                                     .to_string(),
                                 );
                             }
+                            Incoming::RealTimeText { source, text } => {
+                                tracing::debug!(source, len = text.chars().count(), "real-time text");
+                                crate::event_hub::publish(
+                                    crate::event_hub::EventKind::Call,
+                                    serde_json::json!({
+                                        "callAgentPath": "ost/rtt/",
+                                        "body": {"sourceId": source, "s": text},
+                                    })
+                                    .to_string(),
+                                );
+                            }
                             Incoming::Other(v) => tracing::debug!("MCP message {v}"),
                         }
                     }
@@ -505,6 +533,12 @@ async fn run(
                         send_requests(&mut session, &mut sent);
                     }
                 }
+                Some(Command::RealTimeText(text)) => match session.real_time_text(&text) {
+                    Some(packet) => {
+                        sender.send(packet);
+                    }
+                    None => tracing::warn!("real-time text before the data channel is up: dropped"),
+                },
                 None => return,
             },
             _ = tick.tick() => {
@@ -611,6 +645,7 @@ m=x-data 3478 RTP/SAVP 127 126\r\na=x-source-streamid:639\r\na=mid:12\r\n";
             assigned: [("2".to_string(), 2244), ("3".to_string(), 2031)].into(),
             widths: [(2244, 450), (2031, 156)].into(),
             share: Some(17143),
+            source_id: None,
         };
         let r = requests(&st);
         let caps = |m: i64| (r[&m].source_id, r[&m].max_fs, r[&m].max_mbps, r[&m].max_fps);

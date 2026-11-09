@@ -9,7 +9,10 @@ import QtQuick.Controls.Basic
 // - dividers: 1 px, 4 above and below.
 // items: [{ label, icon?, iconColor?, chevron?, keys?, checked?, endCheck?, separator?,
 // enabled?, submenu? }] (endCheck: Teams' 16 px check at the row's end, 6 in,
-// as on More ▸ Record and transcribe ▸ Hide transcript); picking an enabled row emits picked(index) and closes. A row
+// as on More ▸ Record and transcribe ▸ Hide transcript; toggle: a Fluent
+// switch row, 36 tall, its 40 x 20 track 8 in and the label at 60, as the
+// RTT captions menu's "Live Captions": picking it leaves the menu open);
+// picking an enabled row emits picked(index) and closes. A row
 // with a submenu (a list of items) opens it beside the list on hover;
 // picking there emits subPicked(index, subIndex).
 Popup {
@@ -47,7 +50,7 @@ Popup {
             let w = 0
             for (const i of root.items) {
                 if (i.separator) continue
-                let row = root.labelX + metrics.advanceWidth(i.label || "") + 6
+                let row = (i.toggle ? 60 : root.labelX) + metrics.advanceWidth(i.label || "") + (i.toggle ? 8 : 6)
                 if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
                 if (i.chevron || i.submenu) row += root.chevronSize + root.chevronMargin
                 if (i.endCheck !== undefined) row += 16 + 6
@@ -121,7 +124,7 @@ Popup {
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
-                height: modelData.separator ? root.separatorHeight : 32
+                height: modelData.separator ? root.separatorHeight : modelData.toggle ? 36 : 32
                 Rectangle {
                     visible: !!row.modelData.separator
                     anchors.verticalCenter: parent.verticalCenter
@@ -130,7 +133,21 @@ Popup {
                 Rectangle {
                     visible: !row.modelData.separator
                     anchors.fill: parent; radius: 4
-                    color: mh.hovered && row.on ? theme.menuHover : "transparent"
+                    color: mh.hovered && row.on && !row.modelData.toggle ? theme.menuHover : "transparent"
+                    // A switch row's track and knob.
+                    Rectangle {
+                        visible: !!row.modelData.toggle
+                        x: 8; y: 8; width: 40; height: 20; radius: 10
+                        color: row.modelData.checked ? (mh.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+                        border.color: row.modelData.checked ? "transparent" : (mh.hovered ? theme.text : theme.textStrong)
+                        border.width: 0.67
+                        Rectangle {
+                            width: 14; height: 14; radius: 7
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: row.modelData.checked ? parent.width - width - 3 : 3
+                            color: row.modelData.checked ? "white" : (mh.hovered ? theme.text : theme.textStrong)
+                        }
+                    }
                     FluentIcon {
                         visible: !!row.modelData.icon
                         x: 6; anchors.verticalCenter: parent.verticalCenter; size: 20
@@ -138,7 +155,7 @@ Popup {
                         color: row.modelData.iconColor ? row.modelData.iconColor : row.modelData.checked ? theme.brand : row.ink
                     }
                     FluentIcon {
-                        visible: !root.viewStyle && !row.modelData.icon && row.modelData.checked === true
+                        visible: !root.viewStyle && !row.modelData.icon && !row.modelData.toggle && row.modelData.checked === true
                         x: 8; anchors.verticalCenter: parent.verticalCenter; size: 16
                         name: "checkmark-12"; color: row.ink
                     }
@@ -148,16 +165,16 @@ Popup {
                         name: "view-check-16"; color: row.ink
                     }
                     FluentIcon {
-                        visible: root.viewStyle && row.modelData.checked === true
+                        visible: root.viewStyle && !row.modelData.toggle && row.modelData.checked === true
                         anchors.right: parent.right; anchors.rightMargin: 6; y: 8; size: 16
                         name: "view-check-16"; color: row.ink
                     }
                     Text {
-                        x: root.viewStyle && !row.modelData.icon ? 10 : root.labelX; anchors.verticalCenter: parent.verticalCenter
+                        x: row.modelData.toggle ? 60 : root.viewStyle && !row.modelData.icon ? 10 : root.labelX; anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - x - 6; elide: Text.ElideRight
                         text: row.modelData.label || ""
                         font.family: theme.font; font.pixelSize: theme.base
-                        color: row.ink
+                        color: row.modelData.toggle ? theme.text : row.ink
                     }
                     FluentIcon {
                         visible: !!row.modelData.chevron || !!row.modelData.submenu
@@ -204,10 +221,13 @@ Popup {
                         enabled: row.on
                         onTapped: {
                             if (row.modelData.submenu) { root.hoverRow(row.index, row); return }
+                            if (row.modelData.toggle) { root.picked(row.index); return }
                             root.close(); root.picked(row.index)
                         }
                     }
-                    Accessible.role: Accessible.MenuItem
+                    Accessible.role: row.modelData.toggle ? Accessible.CheckBox : Accessible.MenuItem
+                    Accessible.checkable: !!row.modelData.toggle
+                    Accessible.checked: !!row.modelData.toggle && row.modelData.checked === true
                     Accessible.name: row.modelData.label || ""
                     enabled: row.on
                 }

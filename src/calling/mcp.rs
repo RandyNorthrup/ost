@@ -2,21 +2,30 @@
 //! media processor over the call's "main-channel" data channel. Video
 //! subscriptions (source requests), bandwidth estimates, dominant speaker
 //! history and our camera's layer requests travel here. Format captured
-//! from Teams; see docs/spec/meeting-video.md.
+//! from Teams; see docs/spec/meeting-video.md. The same channel carries
+//! the meeting's speech recognition and real-time text, each under its
+//! own data id ([`super::datapacket`]).
 
 use serde_json::{Value, json};
+
+use super::datapacket::{self, Depacketizer};
 
 /// The media processor's MCP id.
 pub const PROCESSOR_ID: i32 = -4;
 /// Ours until the processor's `ack` names us.
 const UNASSIGNED_ID: i32 = -2;
-const HEADER_LEN: usize = 16;
-/// Bytes 1–2 of every header.
-const MAGIC: [u8; 2] = [0x0f, 0x92];
+/// The data ids of what we read and send on the channel.
+pub const MCP_DATA_ID: u8 = 18;
+/// The meeting's speech recognition (the transcript and live captions).
+pub const TRANSCRIPT_DATA_ID: u8 = 3;
+/// Real-time text (Teams' RTT handler).
+pub const RTT_DATA_ID: u8 = 24;
+/// An MCP payload's first byte: its format's version.
+const PAYLOAD_VERSION: u8 = 1;
 /// What we take part in, as Teams declares it in `syn`.
 const CLIENT_CAPABILITIES: [&str; 7] = ["dsh", "bwe", "sr", "ssbwe", "leave", "vdclc", "heartbeat"];
 
-/// One message's header fields.
+/// One MCP message's packet fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
     pub seq: u16,
@@ -24,56 +33,36 @@ pub struct Header {
     pub to: i32,
 }
 
-/// A frame: the 16-byte header, then a JSON array holding the message.
+/// An MCP packet: the version byte, then a JSON array holding the message.
 pub fn encode(h: Header, message: &Value) -> Vec<u8> {
-    let mut f = Vec::with_capacity(HEADER_LEN + 128);
-    f.push(HEADER_LEN as u8);
-    f.extend_from_slice(&MAGIC);
-    f.extend_from_slice(&h.seq.to_be_bytes());
-    f.push(0);
-    f.extend_from_slice(&h.from.to_be_bytes());
-    f.push(1);
-    f.extend_from_slice(&h.to.to_be_bytes());
-    f.push(1);
-    f.extend_from_slice(json!([message]).to_string().as_bytes());
-    f
+    let mut payload = vec![PAYLOAD_VERSION];
+    payload.extend_from_slice(json!([message]).to_string().as_bytes());
+    datapacket::packetize(MCP_DATA_ID, h.seq, h.from as u32, &[h.to as u32], &payload)
 }
 
-/// A frame's header and messages, or None for something else.
-pub fn decode(frame: &[u8]) -> Option<(Header, Vec<Value>)> {
-    let len = usize::from(*frame.first()?);
-    if len < HEADER_LEN || frame.len() < len || frame[1..3] != MAGIC {
+/// An MCP packet's header and messages, or None for something else.
+pub fn decode(packet: &[u8]) -> Option<(Header, Vec<Value>)> {
+    let m = Depacketizer::new().push(packet)?;
+    let seq = u16::from_be_bytes([packet[3], packet[4]]);
+    mcp_messages(&m).map(|messages| (header(seq, &m), messages))
+}
+
+fn header(seq: u16, m: &datapacket::Message) -> Header {
+    Header {
+        seq,
+        from: m.source_id as i32,
+        to: m.recipients.first().map_or(0, |r| *r as i32),
+    }
+}
+
+fn mcp_messages(m: &datapacket::Message) -> Option<Vec<Value>> {
+    if m.data_id != MCP_DATA_ID || m.payload.first() != Some(&PAYLOAD_VERSION) {
         return None;
     }
-    let i32_at =
-        |i: usize| i32::from_be_bytes([frame[i], frame[i + 1], frame[i + 2], frame[i + 3]]);
-    let header = Header {
-        seq: u16::from_be_bytes([frame[3], frame[4]]),
-        from: i32_at(6),
-        to: i32_at(11),
-    };
-    let body: Value = serde_json::from_slice(&frame[len..]).ok()?;
-    let messages = match body {
+    Some(match serde_json::from_slice(&m.payload[1..]).ok()? {
         Value::Array(list) => list,
         other => vec![other],
-    };
-    Some((header, messages))
-}
-
-/// Bytes 1–2 of the frames that carry the meeting's speech recognition
-/// (the transcript and live captions).
-const TRANSCRIPT_MAGIC: [u8; 2] = [0x0b, 0x83];
-
-/// A speech recognition frame's JSON (`{"version": "1.1",
-/// "recognitionResults": […]}` or `{"events": […]}`): the media processor
-/// sends them on the same channel with their own header, the JSON from its
-/// first `{`.
-pub fn transcript_payload(frame: &[u8]) -> Option<Value> {
-    if frame.len() < 4 || frame[1..3] != TRANSCRIPT_MAGIC {
-        return None;
-    }
-    let start = frame.iter().skip(3).position(|&b| b == b'{')? + 3;
-    serde_json::from_slice(&frame[start..]).ok()
+    })
 }
 
 /// What the media processor told us.
@@ -103,6 +92,10 @@ pub enum Incoming {
     },
     /// Speech recognition (transcript or captions) results and events.
     Transcript(Value),
+    /// Someone's real-time text: what they typed since their last (`s`:
+    /// characters, a backspace removing one, a newline ending the line),
+    /// from their data source.
+    RealTimeText { source: u32, text: String },
     Other(Value),
 }
 
@@ -126,6 +119,9 @@ pub struct SourceRequest {
 pub struct Session {
     id: i32,
     seq: u16,
+    /// Real-time text's own packet sequence.
+    rtt_seq: u16,
+    packets: Depacketizer,
     /// Source requests are numbered across the call (Teams keeps one
     /// counter for all of its video control messages).
     request_seq: u64,
@@ -142,6 +138,8 @@ impl Session {
         Self {
             id: UNASSIGNED_ID,
             seq: 0,
+            rtt_seq: 0,
+            packets: Depacketizer::new(),
             request_seq: 0,
         }
     }
@@ -149,6 +147,26 @@ impl Session {
     /// Whether the processor has acknowledged us.
     pub fn is_up(&self) -> bool {
         self.id != UNASSIGNED_ID
+    }
+
+    /// Our data source id, once the processor named it.
+    pub fn source_id(&self) -> Option<u32> {
+        self.is_up().then_some(self.id as u32)
+    }
+
+    /// What we typed for real-time text since the last (Teams' `{s}`),
+    /// to everyone; None until the session is up.
+    pub fn real_time_text(&mut self, text: &str) -> Option<Vec<u8>> {
+        let source = self.source_id()?;
+        let packet = datapacket::packetize(
+            RTT_DATA_ID,
+            self.rtt_seq,
+            source,
+            &[],
+            json!({ "s": text }).to_string().as_bytes(),
+        );
+        self.rtt_seq = self.rtt_seq.wrapping_add(1);
+        Some(packet)
     }
 
     fn frame(&mut self, message: &Value) -> Vec<u8> {
@@ -165,6 +183,8 @@ impl Session {
     pub fn syn(&mut self) -> Vec<u8> {
         self.id = UNASSIGNED_ID;
         self.seq = 0;
+        self.rtt_seq = 0;
+        self.packets = Depacketizer::new();
         self.frame(&json!({"type": "syn", "client_capabilities": CLIENT_CAPABILITIES}))
     }
 
@@ -203,14 +223,40 @@ impl Session {
         }))
     }
 
-    /// Read a frame from the processor.
-    pub fn receive(&mut self, frame: &[u8]) -> Vec<Incoming> {
-        if let Some(t) = transcript_payload(frame) {
-            return vec![Incoming::Transcript(t)];
+    /// Read a packet from the channel (a whole message once its last
+    /// piece is in).
+    pub fn receive(&mut self, packet: &[u8]) -> Vec<Incoming> {
+        let seq = if packet.len() > 4 { u16::from_be_bytes([packet[3], packet[4]]) } else { 0 };
+        let Some(m) = self.packets.push(packet) else {
+            if datapacket::data_id(packet).is_none() {
+                let hex: String = packet.iter().take(32).map(|b| format!("{b:02x}")).collect();
+                tracing::debug!(len = packet.len(), %hex, "data channel packet not read");
+            }
+            return Vec::new();
+        };
+        match m.data_id {
+            TRANSCRIPT_DATA_ID => {
+                return serde_json::from_slice(&m.payload)
+                    .map(|v| vec![Incoming::Transcript(v)])
+                    .unwrap_or_default();
+            }
+            RTT_DATA_ID => {
+                // Ours shouldn't come back; if one does, Teams has shown it
+                // already, as it was typed.
+                if Some(m.source_id) == self.source_id() {
+                    return Vec::new();
+                }
+                return serde_json::from_slice::<Value>(&m.payload)
+                    .ok()
+                    .and_then(|v| v.get("s")?.as_str().map(str::to_string))
+                    .map(|text| vec![Incoming::RealTimeText { source: m.source_id, text }])
+                    .unwrap_or_default();
+            }
+            _ => {}
         }
-        let Some((header, messages)) = decode(frame) else {
-            let hex: String = frame.iter().take(32).map(|b| format!("{b:02x}")).collect();
-            tracing::debug!(len = frame.len(), %hex, "MCP frame not decoded");
+        let header = header(seq, &m);
+        let Some(messages) = mcp_messages(&m) else {
+            tracing::debug!(data_id = m.data_id, len = m.payload.len(), "data channel message not read");
             return Vec::new();
         };
         messages
@@ -285,14 +331,36 @@ mod tests {
 
     #[test]
     fn reads_speech_recognition_frames() {
-        // Captured: 10 0b 83, the sequence, then the JSON.
+        // Captured: 10 0b 83 (data id 3), the sequence, no more pieces,
+        // the sender's source, no recipients, then the JSON.
         let mut f = vec![0x10, 0x0b, 0x83, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x9e, 0x7a, 0x00];
         f.extend_from_slice(br#"{"version":"1.1","recognitionResults":[{"text":"Front.","isFinal":false}]}"#);
-        let v = transcript_payload(&f).unwrap();
-        assert_eq!(v["recognitionResults"][0]["text"], "Front.");
         let mut s = Session::new();
-        assert!(matches!(s.receive(&f).as_slice(), [Incoming::Transcript(_)]));
-        assert!(transcript_payload(&encode(Header { seq: 1, from: -4, to: 1 }, &json!({"type": "heartbeat"}))).is_none());
+        match s.receive(&f).as_slice() {
+            [Incoming::Transcript(v)] => assert_eq!(v["recognitionResults"][0]["text"], "Front."),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn real_time_text_goes_to_everyone_from_our_source() {
+        let mut s = Session::new();
+        assert!(s.real_time_text("h").is_none(), "not before the ack");
+        s.syn();
+        let mut ack = hex("10 0f 92 65 07 00 ff ff ff fc 01 00 00 0c 7b 01");
+        ack.extend_from_slice(br#"[{"type":"ack"}]"#);
+        s.receive(&ack);
+        let p = s.real_time_text("hi").unwrap();
+        assert_eq!(&p[..11], &hex("10 0b 98 00 00 00 00 00 0c 7b 00")[..]);
+        assert_eq!(&p[11..], br#"{"s":"hi"}"#);
+        assert_eq!(s.real_time_text("\u{8}").unwrap()[4], 1, "its own sequence");
+        // Someone else's, and ours (not shown twice).
+        let theirs = datapacket::packetize(RTT_DATA_ID, 4, 1030, &[], br#"{"s":"Hello"}"#);
+        assert_eq!(
+            s.receive(&theirs),
+            vec![Incoming::RealTimeText { source: 1030, text: "Hello".into() }]
+        );
+        assert!(s.receive(&p).is_empty());
     }
 
     fn hex(s: &str) -> Vec<u8> {

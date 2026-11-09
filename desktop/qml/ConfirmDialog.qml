@@ -10,12 +10,14 @@ import QtQuick.Controls
 // them 96 and wraps their labels, as Teams' 410-wide attendee dialogs do).
 // - "End the meeting?", "Lower all hands?": 400 x 152.67.
 // - "Disable mic for attendees?": 410 x 204.67, "Disable mics" on two lines.
+// - `stacked` (Teams' RTT dialog, 320 x 204): the buttons fill the width,
+//   Cancel above the primary action, 8 apart.
 Popup {
     id: root
     parent: Overlay.overlay
     modal: true; focus: true
     padding: 0
-    width: 400; height: buttons.y + buttons.height + 24.67
+    width: stacked ? 320 : 400; height: buttons.y + buttons.height + 24.67
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
@@ -26,6 +28,7 @@ Popup {
     /// A glyph before the title ("alert-warning-16-filled").
     property string titleIcon: ""
     property bool fixedButtons: false
+    property bool stacked: false
     signal confirmed()
 
     FluentIcon {
@@ -53,10 +56,11 @@ Popup {
         color: theme.text
     }
     TextMetrics { id: confirmMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: root.confirmText }
-    Row {
+    Grid {
         id: buttons
         x: root.width - 24.67 - width
         y: 58.67 + Math.max(32, bodyText.height + 4) + 6
+        columns: root.stacked ? 1 : 2
         spacing: 8
         component DialogButton: Rectangle {
             id: db
@@ -64,7 +68,7 @@ Popup {
             property bool primary: false
             signal clicked()
             readonly property real labelWidth: root.fixedButtons ? 72 : Math.ceil(confirmMetrics.advanceWidth * 100) / 100
-            width: primary && !root.fixedButtons ? Math.max(96, labelWidth + 25.33) : 96
+            width: root.stacked ? root.width - 49.33 : primary && !root.fixedButtons ? Math.max(96, labelWidth + 25.33) : 96
             height: label.length > 0 ? Math.max(31.33, dbText.height + 11.33) : 31.33
             radius: 4
             color: primary ? (dbHover.hovered ? theme.brandHover : theme.brandFill)

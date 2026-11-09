@@ -840,6 +840,17 @@ impl OutgoingCall {
         }
     }
 
+    /// Send what we typed for real-time text since the last; false when
+    /// the call has no meeting data channel.
+    pub fn send_real_time_text(&self, text: &str) -> bool {
+        self.media.as_ref().is_some_and(|m| m.send_real_time_text(text))
+    }
+
+    /// Our data source id in the meeting (whose real-time text is ours).
+    pub fn data_source_id(&self) -> Option<u32> {
+        self.media.as_ref().and_then(|m| m.data_source_id())
+    }
+
     /// The processor asks for one of our streams (controlVideoStreaming).
     pub fn control_video(&self, source_id: i64, fmt_params: &str) {
         if let Some(m) = &self.media {

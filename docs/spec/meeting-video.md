@@ -93,18 +93,23 @@ Every video line carries `a=x-signaling-fb:* x-message app send:src recv:src,vc`
 
 **The answer and slots.** Each answered video line has its own `a=x-source-streamid` (e.g. 7761) and SSRC range with an FID pair (e.g. `117238 117288`). The data line's `x-source-streamid` is the client's MCP id.
 
-**The channel.** After DTLS, the client opens an SCTP data channel labelled `main-channel` (default reliable, ordered). Each message is binary: a 16-byte header, then a JSON array of one message.
+**The channel.** After DTLS, the client opens an SCTP data channel labelled `main-channel` (default reliable, ordered). Every message on it is a packet in Teams' packetizer format (calling-pluginless; `src/calling/datapacket.rs`): an 11-byte header, 4 bytes per recipient, then the payload.
 
 | bytes | value |
 |---|---|
-| 0 | `0x10` (header length) |
-| 1–2 | `0x0f 0x92` |
-| 3–4 | sequence number, big-endian, per sender, from 0 |
-| 5 | `0x00` |
-| 6–9, 10 | sender id (i32), `0x01` |
-| 11–14, 15 | receiver id (i32), `0x01` |
+| 0 | `0x10` (version 1) with the header length's high 4 bits |
+| 1 | the header length's low 8 bits (11 + 4 × recipients) |
+| 2 | `0x80` on a message's first packet, with the data id (6 bits) |
+| 3–4 | the sender's packet sequence for that data id, big-endian, from 0 |
+| 5 | how many more packets the message takes (0: whole) |
+| 6–9 | the sender's data source id (u32) |
+| 10 | how many recipients follow (0: everyone), 4 bytes each |
 
-The MP's id is `0xfffffffc`. The client is `0xfffffffe` until the `ack`, then its data line's `x-source-streamid`.
+A message split into several packets carries its source and recipients in the first; the rest follow in sequence and are joined.
+
+Data ids: 18 the media control plane (MCP, below), 3 speech recognition (the transcript and live captions; JSON), 24 real-time text (`{"s": …}` as UTF-8; see call-and-meeting-window.md §1.8f).
+
+An MCP payload is a version byte `0x01`, then a JSON array of one message, to the MP alone: `10 0f 92 <seq> 00 <our id> 01 ff ff ff fc 01 [...]`. The MP's id is `0xfffffffc`. The client is `0xfffffffe` until the `ack`, which names it as its recipient; that is the client's data source id from then on (other data ids are sent from it too).
 
 **Messages** (client → MP unless marked):
 

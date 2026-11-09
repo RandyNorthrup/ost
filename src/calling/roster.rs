@@ -45,6 +45,10 @@ pub struct Participant {
     /// Their shared screen's stream (`applicationsharing-video` sourceId)
     /// while they present.
     pub share_source: Option<i64>,
+    /// Their endpoints' data streams (`data` sourceIds): whose real-time
+    /// text a data channel message is.
+    #[serde(skip)]
+    pub data_sources: Vec<i64>,
     /// The update listed their endpoints' streams; one that didn't (Teams'
     /// first update after joining names people only) leaves the
     /// stream-derived fields as they were.
@@ -224,6 +228,11 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                         .iter()
                         .find(|m| m.get("label").and_then(|l| l.as_str()) == Some("main-audio"))
                         .and_then(|m| m.get("sourceId")?.as_i64()),
+                    data_sources: all_streams
+                        .iter()
+                        .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("data"))
+                        .filter_map(|m| m.get("sourceId")?.as_i64())
+                        .collect(),
                 }
             })
             .collect(),
@@ -430,6 +439,7 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
                     p.video_source = x.video_source;
                     p.share_source = x.share_source;
                     p.audio_source = x.audio_source;
+                    p.data_sources = std::mem::take(&mut x.data_sources);
                     p.server_muted = x.server_muted;
                     p.muted = x.muted;
                     p.devices = x.devices;
@@ -569,9 +579,12 @@ mod tests {
             "8:orgid:4287":{"state":"active","details":{"displayName":"OST Test 1"},
                 "endpoints":{"f648":{"call":{"mediaStreams":[
                     {"direction":"sendrecv","label":"main-audio","sourceId":201,"type":"audio"},
-                    {"direction":"recvonly","label":"main-video","sourceId":202,"type":"video"}]}}}}}}}"#;
+                    {"direction":"recvonly","label":"main-video","sourceId":202,"type":"video"},
+                    {"direction":"sendrecv","label":"data","sourceId":213,"subTypes":[],"type":"data"}]}}}}}}}"#;
         let people = roster_delta(json).unwrap();
         let by = |id: &str| people.iter().find(|p| p.id == id).unwrap().clone();
+        assert_eq!(by("8:orgid:4287").data_sources, vec![213]);
+        assert!(by("8:teamsvisitor:43cf").data_sources.is_empty());
         assert_eq!(by("8:teamsvisitor:43cf").video_source, Some(2031));
         assert_eq!(by("8:teamsvisitor:43cf").audio_source, Some(2030));
         assert_eq!(

@@ -161,6 +161,15 @@ pub mod qobject {
         #[qproperty(QString, call_captions_json)]
         /// You turned live captions on (the caption window shows).
         #[qproperty(bool, call_captions_on)]
+        /// Real-time text is on in this call (Language and speech ▸ Turn
+        /// on RTT for this call, or someone's words arrived): the captions
+        /// window shows with its typing box.
+        #[qproperty(bool, call_rtt_on)]
+        /// You turned RTT on (its card says "enabled by you").
+        #[qproperty(bool, call_rtt_initiator)]
+        /// The privacy statement RTT's card links (the tenant's, else
+        /// Microsoft's).
+        #[qproperty(QString, call_privacy_url)]
         /// The meeting's spoken language for its captions ("en-us").
         #[qproperty(QString, call_captions_language)]
         /// Teams' calling accessibility settings (the callAccessibility
@@ -504,6 +513,25 @@ pub mod qobject {
         /// Set the meeting's spoken language ("de-de") for its captions.
         #[qinvokable]
         fn set_captions_language(self: Pin<&mut Backend>, language: &QString);
+        /// Turn real-time text on for this call (after Teams' "RTT
+        /// (real-time text) will be turned on for everyone in the call.").
+        #[qinvokable]
+        fn start_rtt(self: Pin<&mut Backend>);
+        /// The RTT box now says `text`: what changed waits for the next
+        /// rtt_flush (Teams sends every 300 ms). False past 2000
+        /// characters (the box keeps what it had; Teams says "You cannot
+        /// type more than 2000 characters").
+        #[qinvokable]
+        fn rtt_input(self: Pin<&mut Backend>, text: &QString) -> bool;
+        /// Send what was typed since the last flush; true when something
+        /// went.
+        #[qinvokable]
+        fn rtt_flush(self: Pin<&mut Backend>) -> bool;
+        /// End the line: Enter (`manual`), or 3 s without a key. Returns
+        /// false when Enter found only spaces (Teams then says "Please type
+        /// a message to continue." and sends nothing). The box empties.
+        #[qinvokable]
+        fn rtt_commit(self: Pin<&mut Backend>, manual: bool) -> bool;
         /// Change calling accessibility settings (a JSON patch such as
         /// {"profanityFilterEnabled": true}), saved as Teams saves them.
         #[qinvokable]
@@ -668,6 +696,10 @@ pub mod qobject {
         /// chat bubble): their MRI, name and the message's text.
         #[qsignal]
         fn chat_bubble(self: Pin<&mut Backend>, mri: QString, name: QString, text: QString);
+        /// You typed RTT on another of your devices: Teams empties this
+        /// device's RTT box.
+        #[qsignal]
+        fn rtt_input_cleared(self: Pin<&mut Backend>);
         /// A More actions request failed ("lock" or "unlock": Teams offers
         /// Try again).
         #[qsignal]
@@ -1164,6 +1196,16 @@ pub struct BackendRust {
     call_transcript_json: QString,
     call_captions_json: QString,
     call_captions_on: bool,
+    call_rtt_on: bool,
+    call_rtt_initiator: bool,
+    call_privacy_url: QString,
+    /// Real-time text lines being typed, by sender's data source.
+    rtt_lines: teams_cli::calling::rtt::Lines,
+    /// The RTT lines typed now, one per person (the captions window lists
+    /// them after the captions).
+    rtt_typing: Vec<teams_cli::calling::transcript::Entry>,
+    /// The RTT box: what it says, and what's still to send.
+    rtt_box: teams_cli::calling::rtt::Input,
     call_captions_language: QString,
     call_accessibility_json: QString,
     call_notifications_muted: bool,
@@ -1549,6 +1591,32 @@ fn live_roster_json(w: &teams_cli::calling::live_roster::LiveRoster) -> String {
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
     static SLOT: OnceLock<tokio::sync::Mutex<CallSlot>> = OnceLock::new();
     SLOT.get_or_init(Default::default)
+}
+
+/// Where our own RTT lines are kept apart from everyone else's (Teams
+/// uses its own data source; ours is known only once the channel is up).
+const OWN_RTT_SOURCE: u32 = u32::MAX;
+
+/// Our RTT chunks, sent in the order typed by one task.
+fn rtt_outbox() -> &'static tokio::sync::mpsc::UnboundedSender<String> {
+    static OUTBOX: OnceLock<tokio::sync::mpsc::UnboundedSender<String>> = OnceLock::new();
+    OUTBOX.get_or_init(|| {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        runtime().spawn(async move {
+            while let Some(chunk) = rx.recv().await {
+                let sent = call_slot()
+                    .lock()
+                    .await
+                    .outgoing
+                    .as_ref()
+                    .is_some_and(|call| call.send_real_time_text(&chunk));
+                if !sent {
+                    tracing::warn!("real-time text: the call has no meeting data channel");
+                }
+            }
+        });
+        tx
+    })
 }
 
 /// Log media health every 5 s while a call lasts.
@@ -2123,6 +2191,19 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     this.show_transcript(rows, false);
                 }
             });
+        }
+        return;
+    }
+    // Someone's real-time text (Teams' RTT on the data channel).
+    if json.contains("\"callAgentPath\":\"ost/rtt/\"") {
+        let body = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v.get("body").cloned());
+        let source = body.as_ref().and_then(|b| b.get("sourceId")?.as_u64());
+        let text = body.as_ref().and_then(|b| b.get("s")?.as_str().map(str::to_string));
+        if let (Some(source), Some(text)) = (source.and_then(|s| u32::try_from(s).ok()), text) {
+            let own = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.data_source_id());
+            let _ = qt.queue(move |mut this| this.as_mut().receive_rtt(source, text, own));
         }
         return;
     }
@@ -3892,8 +3973,19 @@ impl qobject::Backend {
     fn show_captions(mut self: Pin<&mut Self>, rows: Vec<teams_cli::calling::transcript::Entry>) {
         let now = chrono::Utc::now().timestamp_millis();
         teams_cli::calling::transcript::merge_captions(&mut self.as_mut().rust_mut().captions, rows, now);
-        let json = serde_json::to_string(&self.rust().captions).unwrap_or_else(|_| "[]".into());
-        self.as_mut().set_call_captions_json(QString::from(json.as_str()));
+        self.publish_captions();
+    }
+
+    /// The captions window's list: captions and ended RTT lines in time
+    /// order, then the RTT lines being typed (yours last).
+    fn publish_captions(mut self: Pin<&mut Self>) {
+        let me = self.rust().user_mri.to_string();
+        let mut rows = self.rust().captions.clone();
+        rows.extend(teams_cli::calling::rtt::typing_order(&self.rust().rtt_typing, &me));
+        let json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
+        if self.rust().call_captions_json.to_string() != json {
+            self.as_mut().set_call_captions_json(QString::from(json.as_str()));
+        }
     }
 
     /// Forget the last call's captions (a new call starts without them).
@@ -3903,8 +3995,129 @@ impl qobject::Backend {
         self.as_mut().set_call_chat_bubbles_suppressed(false);
         self.as_mut().rust_mut().captions.clear();
         self.as_mut().rust_mut().captions_published = false;
+        self.as_mut().rust_mut().rtt_lines.clear();
+        self.as_mut().rust_mut().rtt_typing.clear();
+        self.as_mut().rust_mut().rtt_box.clear();
+        self.as_mut().set_call_rtt_on(false);
+        self.as_mut().set_call_rtt_initiator(false);
         self.as_mut().set_call_captions_json(QString::from("[]"));
         self.as_mut().set_call_captions_on(false);
+    }
+
+    /// RTT turns on for this call: by you, or with someone's first words.
+    /// The captions window opens on its card.
+    fn turn_rtt_on(mut self: Pin<&mut Self>, initiator: bool) {
+        if self.rust().call_rtt_on {
+            return;
+        }
+        tracing::info!(initiator, "real-time text on");
+        self.as_mut().set_call_rtt_initiator(initiator);
+        self.as_mut().set_call_rtt_on(true);
+        let now = chrono::Utc::now().timestamp_millis();
+        teams_cli::calling::transcript::merge_captions(
+            &mut self.as_mut().rust_mut().captions,
+            vec![teams_cli::calling::rtt::intro(now)],
+            now,
+        );
+        self.as_mut().publish_captions();
+        if self.rust().call_privacy_url.is_empty() {
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                let url = match TeamsClient::new().await {
+                    Ok(client) => api::directory::privacy_statement_url(&client).await,
+                    Err(_) => api::directory::MICROSOFT_PRIVACY_STATEMENT.to_string(),
+                };
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_privacy_url(QString::from(url.as_str())));
+            });
+        }
+    }
+
+    pub fn start_rtt(self: Pin<&mut Self>) {
+        self.turn_rtt_on(true);
+    }
+
+    /// Show RTT lines as they changed.
+    fn show_rtt(mut self: Pin<&mut Self>, updates: Vec<teams_cli::calling::rtt::Update>) {
+        if updates.is_empty() {
+            return;
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut typing = std::mem::take(&mut self.as_mut().rust_mut().rtt_typing);
+        let mut window = std::mem::take(&mut self.as_mut().rust_mut().captions);
+        for u in &updates {
+            teams_cli::calling::rtt::show(u, &mut typing, &mut window, now);
+        }
+        self.as_mut().rust_mut().rtt_typing = typing;
+        self.as_mut().rust_mut().captions = window;
+        self.publish_captions();
+    }
+
+    /// Someone's real-time text arrived from data source `source`.
+    fn receive_rtt(mut self: Pin<&mut Self>, source: u32, text: String, own_source: Option<u32>) {
+        let (user_id, name) = self
+            .rust()
+            .roster
+            .iter()
+            .find(|p| p.data_sources.contains(&i64::from(source)))
+            .map(|p| (p.id.clone(), p.name.clone()))
+            .unwrap_or_default();
+        let now = chrono::Utc::now().timestamp_millis();
+        let updates = self.as_mut().rust_mut().rtt_lines.receive(source, &user_id, &name, &text, now);
+        if !self.rust().call_rtt_on && updates.iter().any(|u| !u.text.is_empty()) {
+            self.as_mut().turn_rtt_on(false);
+        }
+        if !self.rust().call_rtt_on {
+            return;
+        }
+        // You, typing on another device: Teams empties this one's box.
+        let me = self.rust().user_mri.to_string();
+        let mine_elsewhere = updates
+            .iter()
+            .any(|u| u.user_id.eq_ignore_ascii_case(&me) && Some(u.source) != own_source && !u.text.is_empty());
+        self.as_mut().show_rtt(updates);
+        if mine_elsewhere && !self.rust().rtt_box.is_empty() {
+            self.as_mut().rust_mut().rtt_box.clear();
+            self.as_mut().rtt_input_cleared();
+        }
+    }
+
+    /// Send our RTT chunk and show it as typed (Teams shows its own at
+    /// once rather than as it comes back).
+    fn send_rtt_chunk(mut self: Pin<&mut Self>, chunk: String) {
+        let me = self.rust().user_mri.to_string();
+        let name = self.rust().user_name.to_string();
+        let now = chrono::Utc::now().timestamp_millis();
+        let updates = self.as_mut().rust_mut().rtt_lines.receive(OWN_RTT_SOURCE, &me, &name, &chunk, now);
+        self.as_mut().show_rtt(updates);
+        let _ = rtt_outbox().send(chunk);
+    }
+
+    pub fn rtt_input(mut self: Pin<&mut Self>, text: &QString) -> bool {
+        self.as_mut().rust_mut().rtt_box.changed(&text.to_string())
+    }
+
+    pub fn rtt_flush(mut self: Pin<&mut Self>) -> bool {
+        if !self.rust().call_rtt_on {
+            return false;
+        }
+        match self.as_mut().rust_mut().rtt_box.flush() {
+            Some(chunk) => {
+                self.send_rtt_chunk(chunk);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn rtt_commit(mut self: Pin<&mut Self>, manual: bool) -> bool {
+        match self.as_mut().rust_mut().rtt_box.commit(manual) {
+            Ok(Some(chunk)) if self.rust().call_rtt_on => {
+                self.send_rtt_chunk(chunk);
+                true
+            }
+            Ok(_) => true,
+            Err(teams_cli::calling::rtt::OnlySpaces) => false,
+        }
     }
 
     pub fn set_captions(mut self: Pin<&mut Self>, on: bool) {
@@ -3914,8 +4127,15 @@ impl qobject::Backend {
         self.as_mut().set_call_captions_on(on);
         let running = self.rust().processing.captions;
         if !on {
-            self.as_mut().rust_mut().captions.clear();
-            self.as_mut().set_call_captions_json(QString::from("[]"));
+            // RTT's lines stay in the window.
+            self.as_mut().rust_mut().captions.retain(|e| {
+                matches!(
+                    e.kind,
+                    teams_cli::calling::transcript::Kind::RealTimeText
+                        | teams_cli::calling::transcript::Kind::RealTimeTextIntro
+                )
+            });
+            self.as_mut().publish_captions();
         }
         let was_published = self.rust().captions_published;
         let language = self.rust().call_captions_language.to_string();
@@ -4510,6 +4730,13 @@ impl qobject::Backend {
     /// ask for the cameras that are on (as Teams' gallery does, in the
     /// roster's order).
     fn apply_roster(mut self: Pin<&mut Self>, delta: Vec<teams_cli::calling::roster::Participant>) {
+        // Someone who left ends their RTT line where it stood.
+        let left: Vec<String> = delta.iter().filter(|p| !p.active).map(|p| p.id.clone()).collect();
+        let mut ended = Vec::new();
+        for id in &left {
+            ended.extend(self.as_mut().rust_mut().rtt_lines.end_user(id));
+        }
+        self.as_mut().show_rtt(ended);
         let mut roster = std::mem::take(&mut self.as_mut().rust_mut().roster);
         teams_cli::calling::roster::apply(&mut roster, delta);
 

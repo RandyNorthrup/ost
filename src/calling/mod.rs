@@ -14,6 +14,7 @@ pub mod camera;
 #[cfg(feature = "video")]
 pub mod codec;
 pub mod datachannel;
+pub mod datapacket;
 #[cfg(feature = "video-capture")]
 pub mod display;
 pub mod frames;
@@ -34,6 +35,7 @@ pub mod recording;
 #[cfg(feature = "audio")]
 pub mod ringtone;
 pub mod roster;
+pub mod rtt;
 pub mod rtcp;
 pub mod rtp;
 #[cfg(feature = "screencast")]

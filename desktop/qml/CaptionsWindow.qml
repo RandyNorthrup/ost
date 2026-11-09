@@ -21,6 +21,15 @@ import QtQuick.Controls.Basic
 // - Its buttons, 32 px, 6 down and 8 from the right: caption settings and
 //   Hide live captions; when they don't fit beside the list, settings
 //   folds into "…".
+// - While RTT is on (rtt-*, measured 2026-11-09): only "…"; the list opens
+//   on the RTT card (596 wide, 9 in and 7 down, padding 12, radius 4, a
+//   card shadow: "RTT" 14/20 bold, then the notice with its privacy link);
+//   RTT lines show as captions do, one being typed with a 1.33 px brand
+//   line 12 in (40 tall, 8 down), the row 14.67 further in and "RTT
+//   Typing" (the name's size, semibold) 12 after the name; the RTT box is
+//   under the list (its width, 6 above the bottom; 38 px for it). In the
+//   window of its own the box is 23 in and 24 from the right, the list
+//   10 above it.
 Rectangle {
     id: root
     /// Live captions: [{id, userId, name, text, rawText, isFinal}].
@@ -41,6 +50,17 @@ Rectangle {
     signal popOut()
     /// In the captions window of its own: no buttons, the list 15 in.
     property bool popout: false
+    /// Real-time text is on: the RTT box shows under the list.
+    property bool rttOn: false
+    /// You turned RTT on (the card says "by you").
+    property bool rttInitiator: false
+    property string privacyUrl: ""
+    /// A meeting rather than a call (the card's wording).
+    property bool isMeeting: true
+    readonly property Item rttBoxForTest: rttBox
+    /// Room under the list: the RTT box (and its message bar), or the
+    /// window of its own's bottom margin.
+    readonly property real boxSpace: rttOn ? 6 + rttBox.height + (popout ? 10 : 0) : (popout ? 10 : 0)
     readonly property Item settingsAnchorForTest: settingsButton
 
     readonly property bool lightTheme: theme.pick(true, false)
@@ -97,7 +117,7 @@ Rectangle {
     ListView {
         id: list
         x: root.popout ? 15 : root.listFits ? (root.width - width) / 2 : 0
-        width: root.listWidth; height: parent.height
+        width: root.listWidth; height: parent.height - root.boxSpace
         clip: true
         visible: count > 0
         model: root.captions
@@ -108,25 +128,68 @@ Rectangle {
         onMovementEnded: following = atYEnd
         onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
         onContentHeightChanged: if (following) Qt.callLater(positionViewAtEnd)
+        // The RTT box's message bar takes room from the list.
+        onHeightChanged: if (following) Qt.callLater(positionViewAtEnd)
         Accessible.role: Accessible.List
         Accessible.name: "Live captions"
         delegate: Item {
             id: cap
             required property var modelData
             required property int index
+            readonly property bool intro: modelData.kind === "realTimeTextIntro"
+            readonly property bool typing: modelData.kind === "realTimeText" && !modelData.isFinal
             readonly property bool header: true
             readonly property real wordsTop: 15
+            // A line being typed sits in from its brand line.
+            readonly property real inset: typing ? 14.67 : 0
             width: list.width - 14
-            height: Math.max(header ? 39 : 0, wordsTop + words.implicitHeight + 2)
+            height: intro ? card.height + 19
+                : Math.max(typing ? 48 : 0, header ? 39 : 0, wordsTop + words.implicitHeight + 2)
+            Rectangle {
+                visible: cap.typing
+                x: 12; y: 8; width: 1.33; height: 40
+                color: theme.brand
+            }
+            Item {
+                id: card
+                visible: cap.intro
+                x: 9; y: 7; width: cap.width - 10
+                height: visible ? notice.y + notice.height + 12 : 0
+                FluentSurface { anchors.fill: parent; depth: 2; radius: 4; color: theme.surface }
+                Text {
+                    x: 12; y: 12; height: 20
+                    verticalAlignment: Text.AlignVCenter
+                    text: "RTT"
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
+                    color: theme.text
+                }
+                Text {
+                    id: notice
+                    x: 12; y: 44; width: card.width - 24
+                    wrapMode: Text.Wrap
+                    textFormat: Text.StyledText
+                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    linkColor: theme.brandLink
+                    text: "RTT (Real-time text) has been enabled " + (root.rttInitiator ? "by you " : "")
+                        + "for all participants throughout this " + (root.isMeeting ? "meeting" : "call")
+                        + ". All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the <a href=\"" + root.privacyUrl + "\">Microsoft Privacy Statement</a>."
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                    onLinkActivated: link => { if (link) Qt.openUrlExternally(link) }
+                    HoverHandler { cursorShape: notice.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                }
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "RTT. " + notice.text.replace(/<[^>]*>/g, "")
+            }
             Avatar {
-                visible: cap.header
-                x: 8; y: 4; size: 32
+                visible: cap.header && !cap.intro
+                x: 8 + cap.inset; y: 4; size: 32
                 name: root.nameOf(cap.modelData)
                 photoId: root.isGuest(cap.modelData.userId) ? "" : (cap.modelData.userId || "")
             }
             Row {
-                visible: cap.header
-                x: 52; y: cap.wordsTop + 1.33 - height
+                visible: cap.header && !cap.intro
+                x: 52 + cap.inset; y: cap.wordsTop + 1.33 - height
                 height: root.size.authorLine
                 spacing: 4
                 Text {
@@ -142,19 +205,37 @@ Rectangle {
                     Accessible.role: Accessible.Graphic
                     Accessible.name: "Unverified"
                 }
+                Text {
+                    visible: cap.typing
+                    leftPadding: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "RTT Typing"
+                    font.family: theme.font; font.pixelSize: root.size.author; font.weight: Font.DemiBold
+                    color: root.ink
+                }
             }
             Text {
                 id: words
-                x: 52; y: cap.wordsTop; width: cap.width - 52 - 8
+                visible: !cap.intro
+                x: 52 + cap.inset; y: cap.wordsTop; width: cap.width - 52 - cap.inset - 8
                 wrapMode: Text.Wrap
-                text: root.wordsOf(cap.modelData)
+                text: cap.intro ? "" : root.wordsOf(cap.modelData)
                 font.family: theme.font; font.pixelSize: root.size.text
                 lineHeight: root.size.line; lineHeightMode: Text.FixedHeight
                 color: root.ink
             }
             Accessible.role: Accessible.ListItem
-            Accessible.name: root.nameOf(modelData) + ": " + root.wordsOf(modelData)
+            Accessible.name: cap.intro ? card.Accessible.name
+                : root.nameOf(modelData) + (cap.typing ? ", RTT Typing" : "") + ": " + root.wordsOf(modelData)
         }
+    }
+
+    RttBox {
+        id: rttBox
+        visible: root.rttOn
+        x: root.popout ? 23 : list.x
+        width: root.popout ? root.width - 47 : list.width
+        y: root.height - 6 - height
     }
 
     Text {
@@ -168,7 +249,7 @@ Rectangle {
 
     // Settings, Open captions in new window and close; the first two fold
     // into "…" when the buttons don't fit beside the list.
-    readonly property bool overflow: (root.width - list.x - list.width) < 8 + 3 * 32
+    readonly property bool overflow: root.rttOn || (root.width - list.x - list.width) < 8 + 3 * 32
     component CapButton: Rectangle {
         id: b
         property string icon
@@ -195,6 +276,6 @@ Rectangle {
             onClicked: root.settingsRequested(settingsButton)
         }
         CapButton { visible: !root.overflow; icon: "captions-pop-out-20"; tip: "Open captions in new window"; onClicked: root.popOut() }
-        CapButton { icon: "dismiss-20"; tip: "Hide live captions"; onClicked: root.closed() }
+        CapButton { visible: !root.rttOn; icon: "dismiss-20"; tip: "Hide live captions"; onClicked: root.closed() }
     }
 }

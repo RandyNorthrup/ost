@@ -1,11 +1,11 @@
 ---
 id: TASK-0062
 title: In-meeting More menu items as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T06:32:00Z'
+updated_date: '2026-11-09T07:21:00Z'
 labels:
   - calls
   - meetings
@@ -26,7 +26,7 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - [x] #4 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
 - [x] #5 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
 - [x] #6 Report a concern as Teams (no real reports filed while testing)
-- [ ] #7 Language and speech ▸ (live captions with their settings, pop-out window and RTT), Settings ▸ (Accessibility, Chat bubbles, Mute notifications) and Help as Teams
+- [x] #7 Language and speech ▸ (live captions with their settings, pop-out window and RTT), Settings ▸ (Accessibility, Chat bubbles, Mute notifications) and Help as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -76,4 +76,29 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - AC#6 Report a concern: Teams' meeting report dialog (measured on winpc, strings from the installed Teams localization), participant picker (chat members then participants, not you), unified report body reportType Meeting (unit test). No report filed (rule); the success toast's look is unverified for that reason.
 
 - Captions pop-out window (Open captions in new window): Teams' 606x353 window, pinned on top, Pop in, Live Captions header with settings; strip hides while out. Verified live (open, capture, pop in). Left in AC#7: RTT.
+
+- RTT (Language and speech ▸ Turn on RTT for this call): Teams' confirm dialog, the RTT card (tenant privacy statement link, else Microsoft's), the RTT box (300 ms sends, Enter / 3 s idle ends the line, 2000 max, "Please type a message to continue."), typing rows with "RTT Typing", ended lines among the captions, the "…" menu's Live Captions switch and "Open RTT/Captions in new window", the pop-out's RTT header. Protocol: {s} on data id 24 of main-channel, from our data source; senders named from the roster's data streams.
+- The data channel is now read with Teams' packetizer format (src/calling/datapacket.rs: header, data ids, fragments joined); MCP, speech recognition and RTT share it.
+- Verified live against winpc Teams (same account on both): OST's lines appear in Teams; Teams' lines (Enter and its 3 s idle end) appear in OST; typing in Teams empties OST's box and ends its line; only-spaces notice; pop-out.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' in-meeting More menu items, built from Teams' own code and measured on winpc.
+
+What's in:
+- Meeting info pane (title, time, join link, Copy join info byte-identical to Teams).
+- Audio settings pane (noise suppression, High fidelity music mode).
+- Record and transcribe ▸: start/stop transcription and recording via the meeting's recorder (invited when absent), language and record-mode dialogs, stop confirmations.
+- Transcript pane: live finals and partials from the data channel, stored history, events.
+- Language and speech ▸: live captions (window, settings menu, Caption styles, position, Always on, profanity filter), the pop-out window, and RTT (dialog, card, box, typing rows, Live Captions switch, pop-out).
+- Settings ▸: Accessibility pane, Mute notifications, chat bubbles.
+- Report a concern (never submitted in tests) and Help.
+
+Tests:
+- cargo test --lib (332 pass): recorder bodies, transcript merge, RTT model (diff, lines, typing order, box rules), data-channel packets (Teams' bytes, fragments), MCP, privacy statement, roster data streams.
+- Live: --join-transcript, --join-captions, --join-captions-popout, --join-accessibility, --join-report, --join-chat-bubble, --join-rtt against winpc Teams.
+
+Follow-ups: TASK-0066 (avatar colours), TASK-0067 (timer), TASK-0068 (muted notice), TASK-0069 (Call health); the Help window's header.
+<!-- SECTION:FINAL_SUMMARY:END -->

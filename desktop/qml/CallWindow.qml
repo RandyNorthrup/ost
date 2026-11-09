@@ -479,6 +479,10 @@ Window {
         if (n === "ClosedCaptionsButton") return {
             label: captionsOn ? "Hide live captions" : "Show live captions",
             icon: "closed-caption-20", keys: "Alt+Shift+C", endCheck: captionsOn }
+        // Once on, RTT stays on for the call (Teams greys it, checked).
+        if (n === "RealTimeTextButton") return {
+            label: "Turn on RTT for this call", icon: "real-time-text-20",
+            endCheck: rttOn, enabled: !rttOn }
         // Once a transcript has run in the meeting: show or hide its pane.
         if (n === "TranscriptPanelButton") return transcriptStarted
             ? { label: side === "transcript" ? "Hide transcript" : "Show transcript",
@@ -541,6 +545,20 @@ Window {
     property var captionStyles: ({})
     signal setCaptions(bool on)
     signal setCaptionsLanguage(string code)
+    /// Real-time text (Language and speech ▸ Turn on RTT for this call).
+    property bool rttOn: false
+    property bool rttInitiator: false
+    property string privacyUrl: ""
+    signal startRtt()
+    ConfirmDialog {
+        id: rttAsk
+        stacked: true
+        title: "RTT"
+        body: "RTT (real-time text) will be turned on for everyone in the call."
+        confirmText: "Turn on"
+        onConfirmed: win.startRtt()
+    }
+    function rttAskForTest() { return rttAsk }
     signal updateAccessibility(string patch)
     signal saveCaptionStyles(var styles)
     /// The 'You're muted' notice while you speak muted (Accessibility ▸
@@ -621,6 +639,7 @@ Window {
     }
     function closeMoreForTest() { moreMenu.close() }
     function captionsPopoutForTest() { return captionsPopout }
+    function captionsWindowForTest() { return captionsWindow }
     function meetingReportForTest() { return meetingReport }
     function helpWindowForTest() { return helpWindow }
     function moreSubmenuForTest(name) {
@@ -641,6 +660,7 @@ Window {
     }
     function recordControl(name) {
         if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
+        else if (name === "RealTimeTextButton") { if (!rttOn) rttAsk.open() }
         else if (name === "AccessibilitySettingsButton") side = side === "accessibility" ? "" : "accessibility"
         else if (name === "ChatBubblesButton") setChatBubblesSuppressed(!chatBubblesSuppressed)
         else if (name === "MuteNotificationsButton") {
@@ -786,7 +806,7 @@ Window {
     // bar, "At top"), the stage above (or below) it.
     CaptionsWindow {
         id: captionsWindow
-        visible: win.captionsOn && win.state === "connected" && !win.captionsPoppedOut
+        visible: (win.captionsOn || win.rttOn) && win.state === "connected" && !win.captionsPoppedOut
         x: 4; width: (sidePane.visible ? sidePane.x : win.contentItem.width) - 8
         height: implicitHeight
         y: win.captionsAtTop ? bar.y + bar.height + 4 : win.contentItem.height - 4 - height
@@ -799,16 +819,19 @@ Window {
         styles: win.captionStyles
         windowHeight: win.height
         areaHeight: win.contentItem.height - bar.y - bar.height
+        rttOn: win.rttOn
+        rttInitiator: win.rttInitiator
+        privacyUrl: win.privacyUrl
         onClosed: win.setCaptions(false)
         onSettingsRequested: anchor => win.openCaptionSettings(anchor)
         onPopOut: win.captionsPoppedOut = true
     }
     // Captions in a window of their own (Open captions in new window).
     property bool captionsPoppedOut: false
-    onCaptionsOnChanged: if (!captionsOn) captionsPoppedOut = false
+    onCaptionsOnChanged: if (!captionsOn && !rttOn) captionsPoppedOut = false
     CaptionsPopout {
         id: captionsPopout
-        visible: win.captionsOn && win.captionsPoppedOut && win.state === "connected"
+        visible: (win.captionsOn || win.rttOn) && win.captionsPoppedOut && win.state === "connected"
         meetingTitle: win.meetingInfo ? win.meetingInfo.title : win.peer
         captions: win.captions
         roster: win.people
@@ -817,6 +840,11 @@ Window {
         filterProfanity: win.accessibility.profanityFilterEnabled === true
         languageName: win.languageName(win.captionsLanguage)
         styles: win.captionStyles
+        rttOn: win.rttOn
+        rttInitiator: win.rttInitiator
+        privacyUrl: win.privacyUrl
+        captionsOn: win.captionsOn
+        onSetCaptions: on => win.setCaptions(on)
         onPopIn: win.captionsPoppedOut = false
         onSettingsRequested: anchor => win.showCaptionSettings(anchor)
     }
@@ -835,11 +863,19 @@ Window {
         onFilterProfanityToggled: on => win.updateAccessibility(JSON.stringify({ profanityFilterEnabled: on }))
     }
     // "…" when the buttons don't fit: Open caption settings ▸.
+    // With RTT on it leads with a "Live Captions" switch and pops out
+    // "RTT/Captions".
     MenuPopup {
         id: captionsOverflow
-        items: [{ label: "Open caption settings", icon: "settings-20", chevron: true },
-                { label: "Open captions in new window", icon: "captions-pop-out-20" }]
-        onPicked: i => { if (i === 0) win.showCaptionSettings(captionsOverflow.parent); else win.captionsPoppedOut = true }
+        items: (win.rttOn ? [{ label: "Live Captions", toggle: true, checked: win.captionsOn }] : []).concat([
+                { label: "Open caption settings", icon: "settings-20", chevron: true },
+                { label: win.rttOn ? "Open RTT/Captions in new window" : "Open captions in new window", icon: "captions-pop-out-20" }])
+        onPicked: i => {
+            const k = win.rttOn ? i - 1 : i
+            if (k < 0) win.setCaptions(!win.captionsOn)
+            else if (k === 0) win.showCaptionSettings(captionsOverflow.parent)
+            else win.captionsPoppedOut = true
+        }
     }
 
     // More ▸ Report a concern: the meeting, and everyone in it or its chat

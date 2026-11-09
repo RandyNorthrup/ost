@@ -474,6 +474,9 @@ impl Facts {
             // Language and speech ▸ Show live captions (the meeting's
             // recorder provides them).
             "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.scheduled,
+            // Language and speech ▸ Turn on RTT for this call (real-time
+            // text on the meeting's data channel).
+            "RealTimeTextButton" => self.scheduled,
             // More ▸ Help (Teams' Help app on its meetings page).
             "MeetingHelpButton" => self.scheduled,
             // More ▸ Report a concern (a security report about the meeting).

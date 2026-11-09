@@ -767,6 +767,10 @@ Window {
         captionStyles: { const s = backend.setting("captionStyles"); try { return s ? JSON.parse(s) : {} } catch (e) { return {} } }
         onSetCaptions: on => backend.setCaptions(on)
         onSetCaptionsLanguage: code => backend.setCaptionsLanguage(code)
+        rttOn: backend.callRttOn
+        rttInitiator: backend.callRttInitiator
+        privacyUrl: backend.callPrivacyUrl
+        onStartRtt: backend.startRtt()
         onUpdateAccessibility: patch => backend.updateCallAccessibility(patch)
         onSaveCaptionStyles: styles => { backend.setSetting("captionStyles", JSON.stringify(styles)); captionStyles = styles }
         showMutedNotice: backend.setting("showMutedNotice") !== "false"
@@ -1475,6 +1479,46 @@ Window {
                     24: () => callWindow.recordControl("ClosedCaptionsButton")
                 }
                 if (plan[step]) plan[step]()
+            } else if (step >= 9 && step <= Math.min(60, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-rtt") >= 0) {
+                // --join-rtt: Language and speech ▸ Turn on RTT for this
+                // call, its dialog, the card, typing (a line ended by Enter,
+                // one by 3 s idle), the "…" menu and the pop-out; someone
+                // else's RTT is typed in Teams meanwhile.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rtt-" + n + ".png")))
+                const box = () => callWindow.captionsWindowForTest().rttBoxForTest
+                const rows = () => console.warn("JOIN rtt", step, "on", backend.callRttOn, "initiator", backend.callRttInitiator,
+                                                "rows", backend.callCaptionsJson)
+                const pw = callWindow.captionsPopoutForTest()
+                const plan = {
+                    9: () => callWindow.moreSubmenuForTest("LanguageSpeechMenuControl"), 10: () => grab("menu"),
+                    11: () => { callWindow.closeMoreForTest(); callWindow.recordControl("RealTimeTextButton") },
+                    12: () => grab("dialog"),
+                    13: () => { const d = callWindow.rttAskForTest(); d.close(); d.confirmed() },
+                    15: () => { grab("card"); rows() },
+                    16: () => box().typeForTest("Hello from OST"),
+                    17: () => { grab("typing"); rows() },
+                    18: () => box().enterForTest(),
+                    19: () => { grab("ended"); rows() },
+                    20: () => box().typeForTest("Idle line"),
+                    23: () => { grab("idle"); rows() },
+                    24: () => callWindow.captionSettingsForTest(), 25: () => grab("overflow"),
+                    26: () => callWindow.closeCaptionSettingsForTest(),
+                    27: () => { box().typeForTest("   "); box().enterForTest() },
+                    28: () => { grab("spaces"); console.warn("JOIN rtt bar", box().barForTest()) },
+                    29: () => callWindow.moreSubmenuForTest("LanguageSpeechMenuControl"), 30: () => grab("menu-on"),
+                    31: () => callWindow.closeMoreForTest(),
+                    32: () => callWindow.captionsPoppedOut = true,
+                    34: () => console.warn("JOIN rtt popout", pw.visible, pw.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rtt-popout.png")))),
+                    36: () => pw.popIn(),
+                    // Kept in the box while Teams (the same account) types.
+                    37: () => { box().typeForTest("Will be cleared"); box().holdForTest() },
+                    60: () => rows()
+                }
+                if (plan[step]) plan[step]()
+                else if (step > 36 && step % 4 === 0) {
+                    rows(); grab("live-" + step)
+                    console.warn("JOIN rtt box", JSON.stringify(box().textForTest()), "bar", box().barForTest())
+                }
             } else if (step >= 9 && step <= Math.min(18, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-report") >= 0) {
                 // --join-report: More ▸ Report a concern, its picker, a
                 // participant chosen, then Cancel. Never sends a report.

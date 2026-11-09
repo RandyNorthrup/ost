@@ -470,7 +470,7 @@ only holds what is left (Merge, Park, Lock).
 - **Buttons.** 32 px, 6 down, 8 from the right.
   - Teams shows Thumb up, Thumb down, caption settings, Open captions in new window and Hide live captions.
   - When they don't fit beside the list, all but Hide fold into "…".
-  - OST leaves out the thumbs (they only send Microsoft telemetry, which OST never sends) and the pop-out window (not built yet).
+  - OST leaves out the thumbs (they only send Microsoft telemetry, which OST never sends).
 - **Caption settings menu.** It opens above the gear, right-aligned.
   - "Meeting spoken language" with the language (12/20 #616161) and a chevron. The languages open to the left: the current one first with its check, a divider, then the 57 languages; the list scrolls past 270.
   - A divider, then Caption styles.
@@ -494,6 +494,18 @@ only holds what is left (Merge, Park, Lock).
   - A speaker has one partial at a time: the next replaces it and the final removes it.
   - A partial not refined for 5 s is dropped.
   - The Transcript pane lists the finals, then the current partials.
+- **RTT (real-time text; measured on winpc, 2026-11-09).**
+  - Language and speech ▸ "Turn on RTT for this call" asks first: "RTT" (20/28 semibold), "RTT (real-time text) will be turned on for everyone in the call." (14/20), then Cancel above Turn on, each the full width (270.67 × 31.33, 8 apart). The dialog is 320 × 204, padding 24.67.
+  - Once on, the item is greyed with its check; RTT stays on for the call. Nothing is signalled: everyone else's turns on with the first words that reach them, and their card leaves out "by you".
+  - The captions window shows while RTT is on, captions or not. Its only button is "…": a "Live Captions" switch (36 tall: a 40 × 20 track 8 in, the label at 60) that starts and stops captions, Open caption settings ▸, and "Open RTT/Captions in new window".
+  - The list opens on a card: 596 wide, 9 in and 7 down, padding 12, radius 4, a card shadow. "RTT" (14/20 bold), then 12 below: "RTT (Real-time text) has been enabled [by you] for all participants throughout this meeting [call]. All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the Microsoft Privacy Statement." The link is the tenant's privacy statement (`GET {mt}/beta/tenant/privacyProfile` `statementUrl`), else Microsoft's (go.microsoft.com/fwlink/p/?linkid=857875).
+  - The RTT box sits under the list, as wide as it, 6 above the window's bottom (38 px for it). It's an outlined input 32 tall, radius 4: sides #B3B3B3, bottom #4D4D4D, a 2 px brand line while focused, "Type a message in real-time" 12 in.
+  - What's typed goes every 300 ms: a backspace (U+0008) for each character after what the old and new text share, then the new end. A change of nothing but spaces waits. Enter ends the line (what's left and `\n`); so do 3 s without a key (`\n`). The box then empties. 2000 characters at most.
+  - Above the box, when needed, a 36 px bar (#F5F5F5, a #D1D1D1 border, radius 4, its words 20.67 in): "Please type a message to continue." (Enter on nothing but spaces; nothing is sent) or "You cannot type more than 2000 characters" (the box keeps what it had).
+  - A sender's line is built per data source: characters append, a backspace removes one, a newline ends it (a line of only spaces ends empty). It keeps the time it began. Someone typing on a second device ends their line on the first. Someone who leaves has their line ended.
+  - Each person has one line being typed. It shows as a caption does, but 14.67 further in after a 1.33 px brand line 12 in (40 tall, 8 down), with "RTT Typing" (the name's size, semibold) 12 after the name. The lines being typed are at the bottom, yours last. An ended line joins the captions at the time it ended. One erased to nothing goes.
+  - Your own lines show as you type (Teams doesn't wait for them to come back). When your account types on another device, this box empties.
+  - In the window of its own the heading is "RTT", the "Live Captions" switch sits at 333.93 (its label ending 122 from the right), and the box is 23 in, 24 from the right, the list 10 above it.
 
 ### 1.8g Settings ▸ and the in-meeting Accessibility pane (measured on winpc, 2026-11-09)
 - **Settings ▸ items.** Call health, Accessibility settings, a divider, "Don't show chat bubbles" / "Show chat bubbles", and "Mute notifications" / "Allow notifications".

@@ -1317,6 +1317,19 @@ impl WebRtcAudioSession {
         }
     }
 
+    /// In a meeting: send what we typed for real-time text since the last.
+    pub fn send_real_time_text(&self, text: &str) -> bool {
+        self.meeting_video
+            .as_ref()
+            .map(|v| v.send_real_time_text(text))
+            .is_some()
+    }
+
+    /// Our data source id in a meeting, once the processor named it.
+    pub fn data_source_id(&self) -> Option<u32> {
+        self.meeting_video.as_ref().and_then(|v| v.source_id())
+    }
+
     /// The other side has the call on hold.
     pub fn is_held_by_peer(&self) -> bool {
         self.held_by_peer.load(Ordering::Relaxed)

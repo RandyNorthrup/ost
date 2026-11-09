@@ -63,9 +63,68 @@ pub fn one_on_one_chat_id(a: &str, b: &str) -> String {
     format!("19:{x}_{y}@unq.gbl.spaces")
 }
 
+/// Microsoft's privacy statement: what Teams links when the tenant names
+/// none of its own.
+pub const MICROSOFT_PRIVACY_STATEMENT: &str = "https://go.microsoft.com/fwlink/p/?linkid=857875";
+
+/// A privacy profile's statement link (`{"statementUrl": …}`), when it
+/// names an https one.
+fn privacy_statement_from(profile: &serde_json::Value) -> Option<String> {
+    profile
+        .get("statementUrl")
+        .and_then(|u| u.as_str())
+        .filter(|u| u.starts_with("https://"))
+        .map(str::to_string)
+}
+
+/// The privacy statement Teams links from recording, transcript and RTT
+/// notices: the tenant's (its privacy profile, as Teams reads it from the
+/// middle tier), else Microsoft's.
+pub async fn privacy_statement_url(client: &TeamsClient) -> String {
+    let profile = async {
+        let mt = client.middle_tier_url()?;
+        let token = middle_tier_token().await.ok()?;
+        let resp = client
+            .http()
+            .get(format!("{mt}/beta/tenant/privacyProfile"))
+            .bearer_auth(token)
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            tracing::debug!(status = resp.status().as_u16(), "tenant privacy profile");
+            return None;
+        }
+        resp.json::<serde_json::Value>().await.ok()
+    }
+    .await;
+    profile
+        .as_ref()
+        .and_then(privacy_statement_from)
+        .unwrap_or_else(|| MICROSOFT_PRIVACY_STATEMENT.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tenants_privacy_statement_wins_over_microsofts() {
+        let tenant =
+            serde_json::json!({"statementUrl": "https://contoso.com/privacy", "contactEmail": ""});
+        assert_eq!(
+            privacy_statement_from(&tenant).as_deref(),
+            Some("https://contoso.com/privacy")
+        );
+        assert_eq!(
+            privacy_statement_from(&serde_json::json!({"statementUrl": ""})),
+            None
+        );
+        assert_eq!(
+            privacy_statement_from(&serde_json::json!({"statementUrl": "javascript:x"})),
+            None
+        );
+    }
 
     #[test]
     fn chat_id_matches_teams_ordering() {
