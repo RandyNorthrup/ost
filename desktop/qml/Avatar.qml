@@ -12,6 +12,8 @@ Rectangle {
     property string photoId: ""
     /// Teams draw teams as rounded squares, people as circles.
     property bool square: false
+    /// A square's corner: 4 in lists, 2 in headers (as measured).
+    property real squareRadius: theme.radius
     /// A group chat without a picture: Teams' grey circle with people.
     property bool group: false
     /// A meeting's chat: Teams' #C5CBFA circle with the 16 px calendar
@@ -39,7 +41,7 @@ Rectangle {
     property string presence: ""
     width: size
     height: size
-    radius: square ? theme.radius : size / 2
+    radius: square ? squareRadius : size / 2
     readonly property var swatches: ["#E8C8CA", "#D6E6F7", "#DFF6DD", "#FCE4D6", "#E9E3F7", "#D4EDEB"]
     readonly property var inks: ["#751D1F", "#0F548C", "#0E700E", "#8A3707", "#5C2E91", "#00666D"]
     readonly property int hue: {
@@ -90,7 +92,7 @@ Rectangle {
             if (src.status !== Image.Ready) return
             ctx.beginPath()
             if (root.square) {
-                ctx.roundedRect(0, 0, width, height, theme.radius * oversample, theme.radius * oversample)
+                ctx.roundedRect(0, 0, width, height, root.squareRadius * oversample, root.squareRadius * oversample)
             } else {
                 ctx.arc(width / 2, height / 2, width / 2, 0, 2 * Math.PI)
             }

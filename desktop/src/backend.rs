@@ -129,6 +129,9 @@ pub mod qobject {
         /// Your status message as the presence service has it: {text,
         /// html (mentions marked), pinned}.
         #[qproperty(QString, my_note_json)]
+        /// The channel threads open in windows of their own:
+        /// {"<channel>;messageid=<post>": [messages, oldest first]}.
+        #[qproperty(QString, thread_windows_json)]
         /// The open chat has older messages to load (scroll up).
         #[qproperty(bool, messages_has_older)]
         /// Older messages are being fetched.
@@ -898,6 +901,34 @@ pub mod qobject {
         #[qinvokable]
         fn send_reply(self: Pin<&mut Backend>, root_id: &QString, text: &QString);
 
+        /// Open a channel post's thread in a window of its own (Teams' Open
+        /// conversation in new window): its messages load into
+        /// thread_windows_json and stay live until it closes.
+        #[qinvokable]
+        fn open_thread_window(self: Pin<&mut Backend>, channel_id: &QString, root_id: &QString);
+        #[qinvokable]
+        fn close_thread_window(self: Pin<&mut Backend>, channel_id: &QString, root_id: &QString);
+        /// Files sent as a reply in a thread window.
+        #[qinvokable]
+        fn send_thread_files(
+            self: Pin<&mut Backend>,
+            channel_id: &QString,
+            root_id: &QString,
+            paths: &QString,
+            text: &QString,
+        );
+        /// Reply in a thread window: the compose's rich text, media and
+        /// quote, sent to "<channel>;messageid=<post>".
+        #[qinvokable]
+        fn send_thread_reply(
+            self: Pin<&mut Backend>,
+            channel_id: &QString,
+            root_id: &QString,
+            editor_html: &QString,
+            media_json: &QString,
+            quote_json: &QString,
+        );
+
         /// Start a group chat with these people (comma-separated object
         /// ids), optionally named, and send its first message.
         #[qinvokable]
@@ -1322,6 +1353,9 @@ pub struct BackendRust {
     shared_to: String,
     status_note_result: QString,
     my_note_json: QString,
+    thread_windows_json: QString,
+    /// The threads open in windows ("<channel>;messageid=<post>").
+    thread_windows: Vec<String>,
     messages_has_older: bool,
     messages_loading_older: bool,
     /// The channel name channel_tabs_load was last given (reloads reuse it).
@@ -2238,6 +2272,60 @@ fn with_lies(
     let arrived = api::outbox::merge_lies(&mut timeline, &lies);
     outbox().arrived(&arrived);
     timeline
+}
+
+/// A thread window's messages with what is being sent to it; translations
+/// are kept per channel (Teams translates the channel's messages).
+fn with_thread_lies(
+    thread: &str,
+    mut timeline: Vec<api::messages::MessageView>,
+) -> Vec<api::messages::MessageView> {
+    apply_translations(thread.split(';').next().unwrap_or_default(), &mut timeline);
+    let lies = outbox().for_conversation(thread);
+    let arrived = api::outbox::merge_lies(&mut timeline, &lies);
+    outbox().arrived(&arrived);
+    timeline
+}
+
+/// A channel post and its replies ("<channel>;messageid=<post>", the reply
+/// chain Teams reads), with saved, pinned and followed marks and pictures,
+/// into server_timelines.
+async fn load_thread(thread: &str) -> anyhow::Result<()> {
+    let client = TeamsClient::new().await?;
+    let channel = thread.split(';').next().unwrap_or_default().to_string();
+    let page = api::messages::read_timeline_page(&client, thread, 200, None).await?;
+    let mut timeline = page.messages;
+    {
+        let here = deleted_here().lock().unwrap();
+        timeline.retain(|m| !m.deleted || here.contains(&m.id));
+    }
+    let (rc, pinned) = tokio::join!(
+        api::msgactions::rc_metadata(&client, &channel),
+        api::msgactions::pinned_ids(&client, &channel),
+    );
+    let (saved, follow) = rc.unwrap_or_default();
+    let pinned = pinned.unwrap_or_default();
+    api::messages::apply_following(&mut timeline, &follow);
+    for m in timeline.iter_mut() {
+        m.saved = saved.contains(&m.id);
+        m.pinned = pinned.contains(&m.id);
+    }
+    for img in timeline.iter_mut().flat_map(|m| m.images.iter_mut()) {
+        match cached_image(&client, img).await {
+            Ok(path) => img.local_path = format!("file://{}", path.display()),
+            Err(e) => tracing::warn!("image download failed: {}", short_error(&e)),
+        }
+    }
+    for m in timeline.iter_mut() {
+        localize_custom_emoji(&client, m).await;
+        localize_emoticons(m).await;
+        localize_edit_images(m);
+    }
+    server_timelines()
+        .lock()
+        .unwrap()
+        .insert(thread.to_string(), timeline);
+    Ok(())
 }
 
 /// Each chat's older pages loaded so far (scrolling up), and the token
@@ -5782,14 +5870,16 @@ impl qobject::Backend {
         if text.trim().is_empty() {
             return;
         }
-        self.message_action(move |client, chat| {
+        let at = id.clone();
+        self.message_action(&at, move |client, chat| {
             Box::pin(async move { api::messages::edit_message(&client, &chat, &id, &text).await })
         });
     }
 
     pub fn set_thread_following(self: Pin<&mut Self>, root_id: &QString, follow: bool) {
         let id = root_id.to_string();
-        self.message_action(move |client, chat| {
+        let at = id.clone();
+        self.message_action(&at, move |client, chat| {
             Box::pin(
                 async move { api::msgactions::set_following(&client, &chat, &id, follow).await },
             )
@@ -5815,7 +5905,8 @@ impl qobject::Backend {
         }
         let quote: Option<api::messages::Quote> =
             serde_json::from_str(&quote_json.to_string()).ok();
-        self.message_action(move |client, chat| {
+        let at = id.clone();
+        self.message_action(&at, move |client, chat| {
             Box::pin(async move {
                 api::messages::edit_message_html(
                     &client,
@@ -5833,7 +5924,8 @@ impl qobject::Backend {
     pub fn delete_message(self: Pin<&mut Self>, message_id: &QString) {
         let id = message_id.to_string();
         deleted_here().lock().unwrap().insert(id.clone());
-        self.message_action(move |client, chat| {
+        let at = id.clone();
+        self.message_action(&at, move |client, chat| {
             Box::pin(async move { api::messages::delete_message(&client, &chat, &id).await })
         });
     }
@@ -5842,13 +5934,14 @@ impl qobject::Backend {
     pub fn undo_delete_message(self: Pin<&mut Self>, message_id: &QString) {
         let id = message_id.to_string();
         deleted_here().lock().unwrap().remove(&id);
-        self.message_action(move |client, chat| {
+        let at = id.clone();
+        self.message_action(&at, move |client, chat| {
             Box::pin(async move { api::messages::undelete_message(&client, &chat, &id).await })
         });
     }
 
     /// Run a message change in the open chat, then reload it.
-    fn message_action<F>(self: Pin<&mut Self>, act: F)
+    fn message_action<F>(self: Pin<&mut Self>, message_id: &str, act: F)
     where
         F: FnOnce(
                 TeamsClient,
@@ -5858,18 +5951,19 @@ impl qobject::Backend {
             > + Send
             + 'static,
     {
-        let chat_id = self.rust().current_chat_id.to_string();
+        let chat_id = self.chat_of(message_id);
         if chat_id.is_empty() {
             return;
         }
         let qt = self.qt_thread();
         runtime().spawn(async move {
+            let changed = chat_id.clone();
             let result = match TeamsClient::new().await {
                 Ok(client) => act(client, chat_id).await,
                 Err(e) => Err(e),
             };
             let _ = qt.queue(move |mut this| match result {
-                Ok(()) => this.as_mut().reload_messages(),
+                Ok(()) => this.as_mut().reload_where(&changed),
                 Err(e) => this
                     .as_mut()
                     .set_status_text(QString::from(short_error(&e).as_str())),
@@ -5878,8 +5972,8 @@ impl qobject::Backend {
     }
 
     pub fn toggle_reaction(self: Pin<&mut Self>, message_id: &QString, key: &QString, on: bool) {
-        let chat_id = self.rust().current_chat_id.to_string();
         let (message_id, key) = (message_id.to_string(), key.to_string());
+        let chat_id = self.chat_of(&message_id);
         if chat_id.is_empty() || message_id.is_empty() {
             return;
         }
@@ -5887,8 +5981,7 @@ impl qobject::Backend {
         // that one (Teams: one tone per emoticon).
         let replaces: Option<String> = on
             .then(|| {
-                let shown: serde_json::Value =
-                    serde_json::from_str(&self.rust().messages_json.to_string()).ok()?;
+                let shown: serde_json::Value = serde_json::from_str(&self.shown_json_of(&chat_id)).ok()?;
                 let common = api::messages::common_key(&key);
                 let m = shown
                     .as_array()?
@@ -5920,6 +6013,7 @@ impl qobject::Backend {
                 .set_recent_reactions_json(QString::from(text.as_str()));
         }
         let qt = this.qt_thread();
+        let changed = chat_id.clone();
         runtime().spawn(async move {
             // One reaction write at a time: the service rejects concurrent
             // changes to a message's emotions.
@@ -5944,7 +6038,7 @@ impl qobject::Backend {
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
-                Ok(()) => this.as_mut().reload_messages(),
+                Ok(()) => this.as_mut().reload_where(&changed),
                 Err(e) => {
                     tracing::warn!("reaction not changed: {}", short_error(&e));
                     this.as_mut()
@@ -6000,6 +6094,19 @@ impl qobject::Backend {
         // New notifications: refresh Activity (and its badge).
         if ids.iter().any(|i| i == "48:notifications") {
             self.as_mut().load_activity();
+        }
+        for id in ids.iter().filter(|i| !i.starts_with("48:")) {
+            let channel = id.split(';').next().unwrap_or_default().to_string();
+            let open: Vec<String> = self
+                .rust()
+                .thread_windows
+                .iter()
+                .filter(|t| t.split(';').next() == Some(channel.as_str()))
+                .cloned()
+                .collect();
+            for t in open {
+                self.as_mut().reload_thread_window(t);
+            }
         }
         for id in ids.into_iter().filter(|i| !i.starts_with("48:")) {
             if id == current {
@@ -6211,6 +6318,154 @@ impl qobject::Backend {
         self.enqueue(chat_id, api::outbox::plain_html(&body));
     }
 
+    /// The conversation a message action applies to: where that message
+    /// is shown, the open chat or a thread window's channel.
+    fn chat_of(&self, message_id: &str) -> String {
+        let current = self.rust().current_chat_id.to_string();
+        let timelines = server_timelines().lock().unwrap();
+        let has = |key: &str| {
+            timelines
+                .get(key)
+                .is_some_and(|t| t.iter().any(|m| m.id == message_id))
+        };
+        if current.is_empty() || has(&current) {
+            return current;
+        }
+        self.rust()
+            .thread_windows
+            .iter()
+            .find(|t| has(t))
+            .map(|t| t.split(';').next().unwrap_or_default().to_string())
+            .unwrap_or(current)
+    }
+
+    /// The messages shown for `chat` (JSON array): the open chat's, or
+    /// those of the thread windows in that channel.
+    fn shown_json_of(&self, chat: &str) -> String {
+        if chat == self.rust().current_chat_id.to_string() {
+            return self.rust().messages_json.to_string();
+        }
+        let channel = chat.split(';').next().unwrap_or_default();
+        let all: serde_json::Value =
+            serde_json::from_str(&self.rust().thread_windows_json.to_string()).unwrap_or_default();
+        let list: Vec<serde_json::Value> = all
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(k, _)| k.split(';').next() == Some(channel))
+            .flat_map(|(_, v)| v.as_array().cloned().unwrap_or_default())
+            .collect();
+        serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())
+    }
+
+    /// Something changed in `chat`: reload it where it shows (the open
+    /// chat, and the thread windows of that channel).
+    fn reload_where(mut self: Pin<&mut Self>, chat: &str) {
+        let channel = chat.split(';').next().unwrap_or_default().to_string();
+        if self.rust().current_chat_id.to_string() == channel || self.rust().current_chat_id.to_string() == chat {
+            self.as_mut().reload_messages();
+        }
+        let open: Vec<String> = self
+            .rust()
+            .thread_windows
+            .iter()
+            .filter(|t| t.split(';').next() == Some(channel.as_str()))
+            .cloned()
+            .collect();
+        for t in open {
+            self.as_mut().reload_thread_window(t);
+        }
+    }
+
+    pub fn open_thread_window(mut self: Pin<&mut Self>, channel_id: &QString, root_id: &QString) {
+        let (channel, root) = (channel_id.to_string(), root_id.to_string());
+        if !channel.ends_with("@thread.tacv2") || root.is_empty() || !root.bytes().all(|b| b.is_ascii_digit()) {
+            return;
+        }
+        let thread = format!("{channel};messageid={root}");
+        if !self.rust().thread_windows.contains(&thread) {
+            self.as_mut().rust_mut().thread_windows.push(thread.clone());
+        }
+        self.as_mut().refresh_thread_windows();
+        self.as_mut().reload_thread_window(thread);
+    }
+
+    pub fn close_thread_window(mut self: Pin<&mut Self>, channel_id: &QString, root_id: &QString) {
+        let thread = format!("{};messageid={}", channel_id, root_id);
+        self.as_mut().rust_mut().thread_windows.retain(|t| *t != thread);
+        server_timelines().lock().unwrap().remove(&thread);
+        self.as_mut().refresh_thread_windows();
+    }
+
+    /// Load a thread window's post and replies again.
+    fn reload_thread_window(self: Pin<&mut Self>, thread: String) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = load_thread(&thread).await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().refresh_thread_windows(),
+                Err(e) => tracing::warn!("thread not loaded: {}", short_error(&e)),
+            });
+        });
+    }
+
+    /// thread_windows_json from the loaded threads and what is being sent.
+    fn refresh_thread_windows(mut self: Pin<&mut Self>) {
+        let mut all = serde_json::Map::new();
+        for thread in self.rust().thread_windows.clone() {
+            let timeline = server_timelines()
+                .lock()
+                .unwrap()
+                .get(&thread)
+                .cloned()
+                .unwrap_or_default();
+            let shown = with_thread_lies(&thread, timeline);
+            all.insert(thread, serde_json::to_value(&shown).unwrap_or_default());
+        }
+        let json = serde_json::Value::Object(all).to_string();
+        if self.rust().thread_windows_json.to_string() != json {
+            self.as_mut()
+                .set_thread_windows_json(QString::from(json.as_str()));
+        }
+    }
+
+    pub fn send_thread_reply(
+        mut self: Pin<&mut Self>,
+        channel_id: &QString,
+        root_id: &QString,
+        editor_html: &QString,
+        media_json: &QString,
+        quote_json: &QString,
+    ) {
+        let (channel, root) = (channel_id.to_string(), root_id.to_string());
+        if !channel.ends_with("@thread.tacv2") || root.is_empty() || !root.bytes().all(|b| b.is_ascii_digit()) {
+            return;
+        }
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (html, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        if html.trim().is_empty() {
+            return;
+        }
+        if html.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
+            self.as_mut()
+                .set_status_text(QString::from(api::outbox::TOO_LARGE_TO_SEND));
+            return;
+        }
+        let mentions = if mentions.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&mentions).unwrap_or_default()
+        };
+        let quote: Option<api::messages::Quote> =
+            serde_json::from_str(&quote_json.to_string()).ok();
+        let thread = format!("{channel};messageid={root}");
+        let o = self.outgoing(&thread, thread.clone(), html, mentions, quote, String::new());
+        let _rt = runtime().enter();
+        outbox().submit(o);
+    }
+
     pub fn send_reply(self: Pin<&mut Self>, root_id: &QString, text: &QString) {
         let (root, body) = (root_id.to_string(), text.to_string());
         let channel = self.rust().current_chat_id.to_string();
@@ -6249,6 +6504,26 @@ impl qobject::Backend {
         let chat_id = self.rust().current_chat_id.to_string();
         let quote = self.as_mut().rust_mut().reply_quote.take();
         let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
+        let o = self.outgoing(&chat_id, conversation, content, mentions, quote, importance);
+        // Sent: the draft for this chat is done.
+        self.as_mut()
+            .set_draft(&QString::from(chat_id.as_str()), &QString::default());
+        let _rt = runtime().enter();
+        outbox().submit(o);
+    }
+
+    /// A message to send: its arrival placed after the newest message of
+    /// `timeline` (the conversation shown), sent or still being sent.
+    fn outgoing(
+        &self,
+        timeline: &str,
+        conversation: String,
+        content: String,
+        mentions: String,
+        quote: Option<api::messages::Quote>,
+        importance: String,
+    ) -> api::outbox::Outgoing {
+        let chat_id = timeline.to_string();
         let content = match &quote {
             Some(q) => format!("{}{}", api::messages::quote_html(q), content),
             None => content,
@@ -6266,7 +6541,7 @@ impl qobject::Backend {
             .map(|o| o.arrival_ms)
             .max();
         let last = last_server.max(last_lie);
-        let o = api::outbox::Outgoing {
+        api::outbox::Outgoing {
             conversation_id: conversation,
             client_message_id: api::outbox::new_client_message_id(),
             content,
@@ -6283,12 +6558,7 @@ impl qobject::Backend {
             quote,
             importance,
             mentions,
-        };
-        // Sent: the draft for this chat is done.
-        self.as_mut()
-            .set_draft(&QString::from(chat_id.as_str()), &QString::default());
-        let _rt = runtime().enter();
-        outbox().submit(o);
+        }
     }
 
     pub fn copy_message_link(&self, message_json: &QString, place_json: &QString) {
@@ -6698,10 +6968,13 @@ impl qobject::Backend {
         message_id: &str,
         f: impl Fn(&mut api::messages::MessageView),
     ) {
-        let chat_id = self.rust().current_chat_id.to_string();
-        if let Some(t) = server_timelines().lock().unwrap().get_mut(&chat_id) {
-            for m in t.iter_mut().filter(|m| m.id == message_id) {
-                f(m);
+        let chat_id = self.chat_of(message_id);
+        let channel = chat_id.split(';').next().unwrap_or_default().to_string();
+        for (key, t) in server_timelines().lock().unwrap().iter_mut() {
+            if *key == chat_id || key.split(';').next() == Some(channel.as_str()) {
+                for m in t.iter_mut().filter(|m| m.id == message_id) {
+                    f(m);
+                }
             }
         }
         self.as_mut().refresh_lies();
@@ -6709,7 +6982,7 @@ impl qobject::Backend {
 
     pub fn set_message_saved(mut self: Pin<&mut Self>, message_id: &QString, save: bool) {
         let (chat_id, id) = (
-            self.rust().current_chat_id.to_string(),
+            self.chat_of(&message_id.to_string()),
             message_id.to_string(),
         );
         // Teams flips the label at once and puts it back if the save fails.
@@ -6742,7 +7015,7 @@ impl qobject::Backend {
         client_message_id: &QString,
     ) {
         let (chat_id, id, cmid) = (
-            self.rust().current_chat_id.to_string(),
+            self.chat_of(&message_id.to_string()),
             message_id.to_string(),
             client_message_id.to_string(),
         );
@@ -6767,7 +7040,7 @@ impl qobject::Backend {
 
     pub fn set_message_pinned(mut self: Pin<&mut Self>, message_id: &QString, pin: bool) {
         let (chat_id, id) = (
-            self.rust().current_chat_id.to_string(),
+            self.chat_of(&message_id.to_string()),
             message_id.to_string(),
         );
         self.as_mut().update_shown(&id, |m| m.pinned = pin);
@@ -6780,8 +7053,11 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(order) => {
-                    *pinned_order().lock().unwrap() = (chat_id, order);
-                    this.as_mut().reload_messages();
+                    // The pins kept are the open chat's.
+                    if this.rust().current_chat_id.to_string() == chat_id {
+                        *pinned_order().lock().unwrap() = (chat_id.clone(), order);
+                    }
+                    this.as_mut().reload_where(&chat_id);
                 }
                 Err(e) => {
                     tracing::warn!("pin failed: {}", short_error(&e));
@@ -6846,7 +7122,7 @@ impl qobject::Backend {
         targets_json: &QString,
         note: &QString,
     ) {
-        let source = self.rust().current_chat_id.to_string();
+        let source = self.chat_of(&message_id.to_string());
         let id = message_id.to_string();
         let note = note.to_string();
         let targets: Vec<serde_json::Value> =
@@ -6884,7 +7160,7 @@ impl qobject::Backend {
 
     pub fn report_message(mut self: Pin<&mut Self>, message_id: &QString, comment: &QString) {
         let (chat_id, id, comment) = (
-            self.rust().current_chat_id.to_string(),
+            self.chat_of(&message_id.to_string()),
             message_id.to_string(),
             comment.to_string(),
         );
@@ -6934,7 +7210,7 @@ impl qobject::Backend {
 
     pub fn translate_message(mut self: Pin<&mut Self>, message_id: &QString, on: bool) {
         let (chat_id, id) = (
-            self.rust().current_chat_id.to_string(),
+            self.chat_of(&message_id.to_string()),
             message_id.to_string(),
         );
         let key = (chat_id.clone(), id.clone());
@@ -7001,6 +7277,7 @@ impl qobject::Backend {
 
     /// Redraw the open chat's messages being sent over its last timeline.
     fn refresh_lies(mut self: Pin<&mut Self>) {
+        self.as_mut().refresh_thread_windows();
         let chat_id = self.rust().current_chat_id.to_string();
         if chat_id.is_empty() {
             return;
@@ -9601,8 +9878,25 @@ impl qobject::Backend {
         });
     }
 
-    pub fn send_files(mut self: Pin<&mut Self>, paths: &QString, text: &QString) {
+    pub fn send_files(self: Pin<&mut Self>, paths: &QString, text: &QString) {
         let chat_id = self.rust().current_chat_id.to_string();
+        self.send_files_in(chat_id.clone(), chat_id, paths, text);
+    }
+
+    /// Files into a thread window's thread: uploaded to the channel's
+    /// folder, sent as a reply.
+    pub fn send_thread_files(self: Pin<&mut Self>, channel_id: &QString, root_id: &QString, paths: &QString, text: &QString) {
+        let (channel, root) = (channel_id.to_string(), root_id.to_string());
+        if !channel.ends_with("@thread.tacv2") || root.is_empty() || !root.bytes().all(|b| b.is_ascii_digit()) {
+            return;
+        }
+        let thread = format!("{channel};messageid={root}");
+        self.send_files_in(channel, thread, paths, text);
+    }
+
+    /// Upload `paths` for `chat_id`'s files and send them, with `text`, to
+    /// `conversation`.
+    fn send_files_in(mut self: Pin<&mut Self>, chat_id: String, conversation: String, paths: &QString, text: &QString) {
         let text = text.to_string();
         let paths: Vec<std::path::PathBuf> = paths
             .to_string()
@@ -9631,15 +9925,16 @@ impl qobject::Backend {
                 for p in &paths {
                     files.push(api::files::upload_for_chat(&client, &chat_id, p).await?);
                 }
-                api::files::send_with_files(&client, &chat_id, &text, files).await
+                api::files::send_with_files(&client, &conversation, &text, files).await
             }
             .await;
+            let sent_to = chat_id.clone();
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_busy(false);
                 match result {
                     Ok(()) => {
                         this.as_mut().set_status_text(QString::default());
-                        this.as_mut().reload_messages();
+                        this.as_mut().reload_where(&sent_to);
                     }
                     Err(e) => this
                         .as_mut()

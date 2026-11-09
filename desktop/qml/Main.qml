@@ -2994,6 +2994,87 @@ Window {
         }
     }
 
+    // --thread-window-view=<post id> with --open-chat=<channel id>
+    // --shots=<dir>: open that post's window, capture it at the top
+    // (view-top.png) and with the newest reply's hover bar up (view-bar.png).
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--thread-window-view=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var w: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const rootId = (Qt.application.arguments.find(a => a.startsWith("--thread-window-view=")) || "").slice(21)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (step === 0) {
+                if (backend.currentChatId !== id) {
+                    const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                    if (ch) backend.selectChat(ch.id, ch.name)
+                    return
+                }
+                if (!conversation.teamName) return
+                w = conversation.openThreadWindow({ id: rootId, root_id: rootId })
+            }
+            else if (step === 3) { w.flickForTest().contentY = 0; w.contentItem.grabToImage(r => r.saveToFile(dir + "view-top.png")) }
+            else if (step === 4) { const r = w.replies[w.replies.length - 1]; if (r) w.hostForTest().forceChannelBarId = r.id; w.flickForTest().contentY = w.flickForTest().contentHeight - w.flickForTest().height }
+            else if (step === 5) w.contentItem.grabToImage(r => r.saveToFile(dir + "view-bar.png"))
+            else if (step === 6) { w.close(); const p = conversation.messages.find(m => m.id === rootId); if (p) conversation.openMessageMenu(p, conversation, false, conversation.width - 400, 150, "post") }
+            else if (step === 7) window.contentItem.grabToImage(r => r.saveToFile(dir + "view-postmenu.png"))
+            else if (step === 8) Qt.quit()
+            step++
+        }
+    }
+
+    // --thread-window-test=<post id> with --open-chat=<channel id>
+    // --shots=<dir>: open that post's conversation in a new window
+    // (thread.png), its More channel options (thread-menu.png); move the
+    // main window to another chat, then reply from the window, react to the
+    // reply and edit it (each logged; thread-*.png), and quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--thread-window-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var w: null
+        property string replyId: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const rootId = (Qt.application.arguments.find(a => a.startsWith("--thread-window-test=")) || "").slice(21)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => { if (w) w.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png")) }
+            if (step === 0) {
+                if (backend.currentChatId !== id) {
+                    const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                    if (ch) backend.selectChat(ch.id, ch.name)
+                    return
+                }
+                if (!conversation.teamName) return
+                w = conversation.openThreadWindow({ id: rootId, root_id: rootId })
+            }
+            const t = w ? w.thread : []
+            if (step === 3) { console.warn("THREADWIN", w.title, w.width, w.height, t.length, JSON.stringify(t.map(m => m.text))); shot("thread") }
+            else if (step === 4) w.moreMenuForTest()
+            else if (step === 5) shot("thread-menu")
+            else if (step === 6) { w.contentItem.forceActiveFocus(); const g = JSON.parse(backend.chatsJson || "[]").find(c => c.title === "OST group test" || c.name === "OST group test"); backend.selectChat(g ? g.id : "19:ef213c7c46cf4036b11608300e96fee4@thread.v2", "OST group test") }
+            else if (step === 8) { console.warn("THREADWIN main now", backend.currentChatId); w.composeForTest().insertText("OST TEST 71 reply from OST's thread window") }
+            else if (step === 9) w.send()
+            else if (step === 14) {
+                const r = t.filter(m => m.mine && (m.text || "").indexOf("OST TEST 71") >= 0).pop()
+                console.warn("THREADWIN replied", t.length, r ? r.id + " " + (r.send_state || "") : "none")
+                replyId = r ? r.id : ""
+                shot("thread-sent")
+            }
+            else if (step === 15 && replyId) w.hostForTest().react(replyId, "yes", true)
+            else if (step === 19) { const r = t.find(m => m.id === replyId); console.warn("THREADWIN reacted", r ? JSON.stringify((r.reactions || []).map(x => x.key + ":" + x.count)) : "none"); shot("thread-reacted") }
+            else if (step === 20 && replyId) backend.editMessageRich(replyId, "<p>OST TEST 71 reply from OST's thread window (edited)</p>", "", "[]")
+            else if (step === 24) { const r = t.find(m => m.id === replyId); console.warn("THREADWIN edited", r ? r.text + " edited=" + r.edited : "none", "main", backend.currentChatId); shot("thread-edited") }
+            else if (step === 25 && replyId) { const r = t.find(m => m.id === replyId); w.hostForTest().openMessageMenu(r, w.contentItem, false, 100, 100, "reply") }
+            else if (step === 26) shot("thread-reply-menu")
+            else if (step === 27) { w.hostForTest().messageMenu.close(); w.close() }
+            else if (step === 28) Qt.quit()
+            step++
+        }
+    }
+
     // --tab-shot=<tab name> with --open-chat=<channel id> --shots=<dir>:
     // open that channel tab, capture it after 12 s (tab.png) and quit.
     Timer {

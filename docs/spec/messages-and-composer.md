@@ -611,6 +611,21 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
   - On a post it sits inside the card, 10 from the end and 11 down.
   - On a reply it sits at the card's end, its bottom 3.7 above the reply.
 - ··· on a post: Forward, Follow thread / Unfollow thread ("New" badge), Copy link, Save this message, Delete, Pin for everyone, Open conversation in new window | Mark as unread, Share to Outlook, Translate | More actions. 260 wide.
+- **Open conversation in new window** (measured on winpc, 2026-11-09):
+  - A child window, 588 x 493, titled "<team> | <channel>", with the child-window title row.
+  - Header (61, #FAFAFA, a #E0E0E0 line under it, padding 0 7 0 20):
+    - the team's picture (32, radius 2) at 20;
+    - the channel (14/20 semibold) at 62, 9.7 down, and "Post by {author}" (12/16 #616161) at 31.7;
+    - at the right, a 1 px #F0F0F0 line from 18 down, then More channel options (32 x 31.3): Find in post (Ctrl+F) | Follow / Unfollow thread;
+    - while finding, Find in post's toggle (32, brand) comes before it, and the find pane fills the window.
+  - The thread on #FAFAFA (runway padding 7 16 3), as one 526-wide card (radius 8, shadow 4):
+    - the post: the avatar 32 at (18, 16), the name (14/20) at 60, 13.4 down, the time (12/17.14 #616161) under it at 33.4 then "Edited" 8 after, the text at (18, 64), the reaction summary 17 under it;
+    - a 0.67 px #F0F0F0 line;
+    - each reply in a 70.3 block: the avatar 20 at (18, 8), the name (12/17.14) at 50, 8 down, the time under it at 25.1, the text at (50, 42.2), 8 below;
+    - where the day changes, a 16 px timestamp-divider ("Today", 12/16 #424242, centred).
+  - Hover bars: on the post, 10 from the card's end and 11 down. On a reply, flush with the card's end, 28 above the block (its bottom 4 into it).
+  - "Reply in thread": Teams' compose (Format, Emoji, Attach, Loop, Actions and apps | Send), 28 in and 30 from the right, 26.7 above the bottom.
+  - Messages come from the reply chain, `GET {chatsvc}/v1/users/ME/conversations/{channel};messageid={post}/messages` (the post first, then its replies). Replies go to the same conversation.
 - **Follow thread** (seen on the wire while toggling it in Teams):
   - `PUT {chatsvc}/v1/users/{me}/conversations/{conv}/rcmetadata/{root}` with `{"f":1}` to follow, `{"f":3}` to unfollow;
   - then `PUT …/messages/{root}/properties?name=emotions` with `{"emotions":{"key":"follow","value":1|0}}`.

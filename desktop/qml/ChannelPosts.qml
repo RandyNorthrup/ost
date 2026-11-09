@@ -416,54 +416,6 @@ Item {
             onCancelled: root.host.editingId = ""
         }
     }
-
-    // A message's text, as the chat draws it (the engine's safe HTML).
-    component MessageText: Text {
-        property var message
-        lineHeight: 20; lineHeightMode: Text.FixedHeight
-        text: !message ? "" : message.deleted ? "This message has been deleted."
-            : "<style>a { color: " + theme.brand + "; text-decoration: none; } .mention { color: " + theme.brandForeground1
-              + "; } .mention-me { color: " + theme.mentionMe + "; font-weight: 700; }</style>" + (message.html ? theme.messageHtml(message.html) : message.text)
-        textFormat: message && message.deleted ? Text.PlainText : Text.RichText
-        wrapMode: Text.Wrap
-        font.family: theme.font; font.pixelSize: theme.base
-        font.italic: !!message && message.deleted === true
-        color: message && message.deleted ? theme.textSecondary : theme.text
-        linkColor: theme.brand
-        onLinkActivated: link => Qt.openUrlExternally(link)
-        HoverHandler { cursorShape: parent && parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
-        Accessible.name: message ? message.text : ""
-    }
-
-    // Teams' relative dates, as in chats.
-    // Teams' post indicator (763654 `L`, measured): which highlight a post
-    // or reply gets, in Teams' order: pinned, mentions you (Important or
-    // Urgent shown instead), @Everyone, Important, Urgent, a channel or
-    // team mention, then your own. {color, icon ("" for a bar only), tip}.
-    function highlight(m) {
-        if (!m || m.deleted) return null
-        const orange = theme.mentionMe, red = theme.danger
-        const important = { color: red, icon: "badge-important-16", tip: "Important" }
-        const urgent = { color: red, icon: "badge-urgent-16", tip: "Urgent" }
-        if (m.pinned) return { color: theme.pick("#237B4B", "#92C353"), icon: "badge-pin-16", tip: "Pinned" }
-        const k = m.mention_kind || ""
-        if (k === "me") return m.importance === "high" ? important : m.importance === "urgent" ? urgent : { color: orange, icon: "badge-mention-16", tip: "Mentions you" }
-        if (k === "everyone") return { color: orange, icon: "badge-everyone-16", tip: "Mentions everyone" }
-        if (m.importance === "high") return important
-        if (m.importance === "urgent") return urgent
-        if (k === "channel") return { color: orange, icon: "badge-channel-16", tip: "Channel message" }
-        if (k === "team") return { color: orange, icon: "badge-team-16", tip: "Team message" }
-        if (m.mine) return { color: theme.brand, icon: "", tip: "" }
-        return null
-    }
-    function conversationStamp(t) {
-        const d = new Date(t), now = new Date()
-        const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)
-        const time = Qt.formatTime(d, "h:mm AP")
-        if (days === 0) return time
-        if (days === 1) return "Yesterday " + time
-        if (days > 1 && days < 7) return Qt.formatDate(d, "dddd") + " " + time
-        if (d.getFullYear() === now.getFullYear()) return Qt.formatDate(d, "M/d") + " " + time
-        return Qt.formatDate(d, "M/d/yyyy") + " " + time
-    }
+    function highlight(m) { return root.host ? root.host.highlight(m) : null }
+    function conversationStamp(t) { return root.host ? root.host.conversationStamp(t) : "" }
 }
