@@ -65,7 +65,10 @@ Window {
     property int mutedRemotely: 0
     property bool mutedNoticeShown: false
     onMutedRemotelyChanged: if (mutedRemotely > 0) { mutedNoticeShown = true; mutedNoticeTimer.restart() }
-    onMutedChanged: if (!muted) mutedNoticeShown = false
+    onMutedChanged: {
+        if (!muted) mutedNoticeShown = false
+        if (side === "callHealth") refreshCallHealth()
+    }
     Timer { id: mutedNoticeTimer; interval: 30000; onTriggered: win.mutedNoticeShown = false }
     // Teams' DeviceSpeakWhileMuted alert: you're talking with the mic off.
     // It shows while that lasts (unless the meeting disabled attendees'
@@ -478,6 +481,8 @@ Window {
         if (n === "LanguageSpeechMenuControl") return { label: "Language and speech", icon: "local-language-20" }
         if (n === "SettingsMenuControl") return { label: "Settings", icon: "settings-20" }
         if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "accessibility-20" }
+        // Teams toggles the pane (toggle_call_health_on/off).
+        if (n === "CallHealth") return { label: side === "callHealth" ? "Hide call health" : "Call health", icon: "pulse-20" }
         if (n === "ChatBubblesButton") return chatBubblesSuppressed
             ? { label: "Show chat bubbles", icon: "chat-bubbles-20" }
             : { label: "Don't show chat bubbles", icon: "chat-bubbles-off-20" }
@@ -675,6 +680,7 @@ Window {
         if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
         else if (name === "RealTimeTextButton") { if (!rttOn) rttAsk.open() }
         else if (name === "AccessibilitySettingsButton") side = side === "accessibility" ? "" : "accessibility"
+        else if (name === "CallHealth") side = side === "callHealth" ? "" : "callHealth"
         else if (name === "ChatBubblesButton") setChatBubblesSuppressed(!chatBubblesSuppressed)
         else if (name === "MuteNotificationsButton") {
             setNotificationsMuted(!notificationsMuted)
@@ -822,6 +828,14 @@ Window {
     // More ▸ Timer: Teams' meeting timer strip under the bar (its
     // visibility rules: timer/spec.md §5). Teams shows it where everyone
     // can present; attendees get it view-only.
+    /// Call health's values ({values: {data-tid: {value, enabled}}});
+    /// refreshCallHealth() asks the backend for fresh ones.
+    property var callHealth: ({})
+    signal refreshCallHealth()
+    // Teams refreshes at once when your media turns on or off.
+    onCameraOnChanged: if (side === "callHealth") refreshCallHealth()
+    onSharingChanged: if (side === "callHealth") refreshCallHealth()
+    function callHealthPaneForTest() { return callHealthPane }
     property var timerData: null
     property bool everyonePresents: false
     readonly property bool timerCanView: meeting && everyonePresents
@@ -1416,7 +1430,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -1456,6 +1470,14 @@ Window {
             onClosed: win.side = ""
             onUpdateAccessibility: patch => win.updateAccessibility(patch)
             onMutedNoticeToggled: on => win.setShowMutedNotice(on)
+        }
+        CallHealthPane {
+            id: callHealthPane
+            visible: win.side === "callHealth"
+            anchors.fill: parent
+            health: win.callHealth
+            onClosed: win.side = ""
+            onRefresh: win.refreshCallHealth()
         }
         CaptionStylesPane {
             id: captionStylesPane

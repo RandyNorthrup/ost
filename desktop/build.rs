@@ -94,6 +94,7 @@ fn main() {
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
         "qml/MeetingTimerStrip.qml",
+        "qml/CallHealthPane.qml",
         "qml/TimerSpin.qml",
     ];
     let mut resources: Vec<String> = Vec::new();

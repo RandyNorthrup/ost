@@ -768,6 +768,8 @@ Window {
         onSetCaptions: on => backend.setCaptions(on)
         onSetCaptionsLanguage: code => backend.setCaptionsLanguage(code)
         timerData: backend.callTimerJson ? JSON.parse(backend.callTimerJson) : null
+        callHealth: backend.callHealthJson ? JSON.parse(backend.callHealthJson) : ({})
+        onRefreshCallHealth: backend.callHealthRefresh()
         everyonePresents: backend.callEveryonePresents
         onTimerAction: (name, arg) => backend.meetingTimer(name, arg)
         onTimerChime: backend.timerChime()
@@ -1580,6 +1582,49 @@ Window {
                     33: () => ts.openControls(), 34: () => grab("setup"), 35: () => ts.popupForTest.close(),
                     36: () => act("startWith", 90000), 39: () => { log("new"); grab("new") },
                     42: () => act("pause"), 45: () => log("end")
+                }
+                if (plan[step]) plan[step]()
+            } else if (step >= 9 && step <= Math.min(70, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-call-health-share") >= 0) {
+                // --join-call-health-share: Call health open, then share
+                // (the desktop's picker asks what: the kitty OST-share-test
+                // window), the Screen Sharing card and page, stop sharing.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-health-" + n + ".png")))
+                const pane = callWindow.callHealthPaneForTest()
+                const log = n => console.warn("JOIN health", step, n, pane.page, "sharing", backend.callSharing, backend.callHealthJson)
+                const plan = {
+                    9: () => callWindow.recordControl("CallHealth"),
+                    10: () => backend.toggleShare(),
+                    // The picker waits for a person: a minute to choose.
+                    55: () => { log("root-share"); grab("root-share") },
+                    56: () => pane.pageForTest("ScreenSharing"), 57: () => { log("share"); grab("share-on") },
+                    58: () => { if (backend.callSharing) backend.toggleShare() },
+                    61: () => { pane.pageForTest(""); log("off"); grab("share-off") }
+                }
+                if (plan[step]) plan[step]()
+            } else if (step >= 9 && step <= Math.min(60, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-call-health") >= 0) {
+                // --join-call-health: More ▸ Settings ▸ Call health muted,
+                // then the camera on (the v4l2loopback test camera), each
+                // detail page, the mic on (Guest audio is what's heard)
+                // and off again, camera off.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-health-" + n + ".png")))
+                const pane = callWindow.callHealthPaneForTest()
+                const log = n => console.warn("JOIN health", step, n, pane.page, backend.callHealthJson)
+                const plan = {
+                    9: () => callWindow.moreSubmenuForTest("SettingsMenuControl"), 10: () => grab("menu"),
+                    11: () => { callWindow.closeMenusForTest(); callWindow.recordControl("CallHealth") },
+                    13: () => { log("root"); grab("root") },
+                    14: () => { backend.setCameraDevice("/dev/video20"); backend.toggleCamera() },
+                    26: () => { log("camera"); grab("root-camera") },
+                    27: () => pane.pageForTest("Network"), 28: () => { log("net"); grab("network") },
+                    29: () => pane.pageForTest("Audio"), 30: () => grab("audio"),
+                    31: () => pane.pageForTest("Video"), 32: () => { log("video"); grab("video") },
+                    33: () => pane.pageForTest("ScreenSharing"), 34: () => grab("share"),
+                    35: () => { pane.pageForTest(""); backend.toggleMute() },
+                    50: () => { log("mic"); grab("root-mic") },
+                    51: () => pane.pageForTest("Audio"), 52: () => { log("audio-mic"); grab("audio-mic") },
+                    53: () => backend.toggleMute(),
+                    54: () => { backend.toggleCamera(); pane.pageForTest("") },
+                    56: () => { log("off"); grab("root-off") }
                 }
                 if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= Math.min(18, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-report-person") >= 0) {

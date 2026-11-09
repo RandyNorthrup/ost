@@ -1390,7 +1390,7 @@ impl WebRtcAudioSession {
                 return Ok(());
             }
             let v = self.video_out.as_ref().context("This call has no video")?;
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             let sender = super::webrtc_video::VideoSender::start(
                 tx,
                 v.pt,
@@ -1400,15 +1400,14 @@ impl WebRtcAudioSession {
             )?;
             *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) =
                 Some(sender.keyframe.clone());
-            let (socket, peer, srtp) = (v.socket.clone(), v.peer, v.srtp.clone());
-            let fwd = tokio::spawn(async move {
-                while let Some(p) = rx.recv().await {
-                    let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect(&p).ok());
-                    if let Some(p) = sealed {
-                        let _ = socket.send_to(&p, peer).await;
-                    }
-                }
-            });
+            let fwd = tokio::spawn(forward_video(
+                rx,
+                v.socket.clone(),
+                v.peer,
+                v.srtp.clone(),
+                super::call_health::Kind::VideoSend,
+                v.ssrc,
+            ));
             self.camera = Some((sender, fwd));
             Ok(())
         }
@@ -1556,7 +1555,7 @@ impl WebRtcAudioSession {
             .share_out
             .as_ref()
             .context("This call has no screen-sharing line")?;
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let sender = super::webrtc_video::VideoSender::start_screen(
             tx,
             v.pt,
@@ -1566,15 +1565,14 @@ impl WebRtcAudioSession {
             Some(self.share_control.clone()),
         )?;
         *v.keyframe_req.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender.keyframe.clone());
-        let (socket, peer, srtp) = (v.socket.clone(), v.peer, v.srtp.clone());
-        let fwd = tokio::spawn(async move {
-            while let Some(p) = rx.recv().await {
-                let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect(&p).ok());
-                if let Some(p) = sealed {
-                    let _ = socket.send_to(&p, peer).await;
-                }
-            }
-        });
+        let fwd = tokio::spawn(forward_video(
+            rx,
+            v.socket.clone(),
+            v.peer,
+            v.srtp.clone(),
+            super::call_health::Kind::ShareSend,
+            v.ssrc,
+        ));
         self.share = Some((sender, fwd));
         Ok(())
     }
@@ -1833,6 +1831,8 @@ impl WebRtcAudioSession {
             tracker
         });
 
+        // Call health counts this call from here.
+        super::call_health::begin_call();
         // Receive and demultiplex.
         tasks.push(tokio::spawn(recv_loop(RecvCtx {
             socket: socket.clone(),
@@ -2216,6 +2216,8 @@ type KeyframeSlot = Arc<std::sync::Mutex<Option<Arc<AtomicBool>>>>;
 
 async fn recv_loop(ctx: RecvCtx) {
     let mut buf = vec![0u8; 2048];
+    let health = super::call_health::current();
+    let started = std::time::Instant::now();
     let mut decoder = super::audio_codec::Decoder::new(ctx.opus_pt);
     let mut rr_logged = std::time::Instant::now() - Duration::from_secs(10);
     let mut announced = false;
@@ -2253,6 +2255,14 @@ async fn recv_loop(ctx: RecvCtx) {
                 // peer got of it.
                 if pt == 72 || pt == 73 {
                     let plain = ctx.srtp.lock().await.as_mut().and_then(|c| c.unprotect_rtcp(data).ok());
+                    // Round-trip times for what we send (Call health).
+                    if let Some(p) = &plain {
+                        for (ssrc, lsr, dlsr) in report_timings(p) {
+                            if let Some(s) = health.sending(ssrc) {
+                                s.report(lsr, dlsr);
+                            }
+                        }
+                    }
                     if let Some(p) = plain
                         && let Some(rb) = report_block(&p, ctx.audio_ssrc)
                     {
@@ -2346,6 +2356,12 @@ async fn recv_loop(ctx: RecvCtx) {
                         tracing::debug!(ssrc, pt, to = stream.rx.key(), "video stream routed");
                     }
                     if let Ok(pkt) = rtp::decode(&plain) {
+                        let kind = if stream.rx.key() == "share" {
+                            super::call_health::Kind::ShareRecv
+                        } else {
+                            super::call_health::Kind::VideoRecv
+                        };
+                        health.stream(kind, pkt.ssrc).received(pkt.payload.len(), pkt.sequence_number);
                         stream.ssrc.store(pkt.ssrc, Ordering::Relaxed);
                         stream.rx.push(super::webrtc_video::VideoPacket {
                             payload: pkt.payload.to_vec(),
@@ -2371,6 +2387,22 @@ async fn recv_loop(ctx: RecvCtx) {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .record(&csrcs, std::time::Instant::now());
+                }
+                // Call health counts every audio packet that arrives,
+                // whether or not it's played.
+                if decoder.handles(pt)
+                    && let Ok(pkt) = rtp::decode(&plain)
+                {
+                    let s = health.stream(super::call_health::Kind::AudioRecv, pkt.ssrc);
+                    s.received(pkt.payload.len(), pkt.sequence_number);
+                    let clock = if pkt.payload_type == 0 { 8_000 } else { 48_000 };
+                    s.arrived(pkt.timestamp, started.elapsed().as_secs_f64(), clock);
+                    if s.packets.load(Ordering::Relaxed) == 1 {
+                        health.set_codec(
+                            super::call_health::Kind::AudioRecv,
+                            if pkt.payload_type == 0 { "PCMU" } else { "OPUS" },
+                        );
+                    }
                 }
                 if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain))
                     && decoder.handles(pkt.payload_type)
@@ -2408,6 +2440,32 @@ struct SendCtx {
     dtmf: Option<(u8, mpsc::UnboundedReceiver<u8>)>,
     /// Encodes the microphone (Opus or PCMU, as negotiated).
     encoder: super::audio_codec::Encoder,
+}
+
+/// Every report block's (SSRC, LSR, DLSR) in a compound RTCP packet.
+fn report_timings(rtcp: &[u8]) -> Vec<(u32, u32, u32)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at + 8 <= rtcp.len() {
+        let rc = usize::from(rtcp[at] & 0x1f);
+        let pt = rtcp[at + 1];
+        let len = (usize::from(u16::from_be_bytes([rtcp[at + 2], rtcp[at + 3]])) + 1) * 4;
+        let blocks = match pt {
+            200 => at + 28,
+            201 => at + 8,
+            _ => {
+                at += len.max(4);
+                continue;
+            }
+        };
+        for i in 0..rc {
+            let Some(b) = rtcp.get(blocks + i * 24..blocks + i * 24 + 24) else { break };
+            let word = |o: usize| u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
+            out.push((word(0), word(16), word(20)));
+        }
+        at += len.max(4);
+    }
+    out
 }
 
 /// The report block on `ssrc` in a compound RTCP packet (SR or RR):
@@ -2460,12 +2518,71 @@ fn tone_packet(tone: &Tone, step: u32) -> Option<(bool, [u8; 4])> {
     ))
 }
 
+/// Seal and send what a camera or screen sender produced, counting it for
+/// Call health, with an RTCP sender report each second (as WebRTC sends
+/// for video: the processor's receiver reports on it then carry the
+/// round-trip time).
+#[cfg(feature = "video")]
+async fn forward_video(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    socket: Arc<UdpSocket>,
+    peer: SocketAddr,
+    srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
+    kind: super::call_health::Kind,
+    ssrc: u32,
+) {
+    let health = super::call_health::current().stream(kind, ssrc);
+    let (mut packets, mut octets, mut last_ts) = (0u32, 0u32, 0u32);
+    let mut last_report = std::time::Instant::now();
+    while let Some(p) = rx.recv().await {
+        let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect(&p).ok());
+        if let Some(sealed) = sealed
+            && socket.send_to(&sealed, peer).await.is_ok()
+        {
+            let payload = p.len().saturating_sub(12);
+            health.sent(payload);
+            packets = packets.wrapping_add(1);
+            octets = octets.wrapping_add(payload as u32);
+            if let Some(b) = p.get(4..8) {
+                last_ts = u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+            }
+        }
+        if last_report.elapsed() >= Duration::from_secs(1) {
+            last_report = std::time::Instant::now();
+            let sr = super::rtcp::build_sender_report(
+                &super::rtcp::RtpSendStats {
+                    packets_sent: packets,
+                    bytes_sent: octets,
+                    ssrc,
+                    last_rtp_timestamp: last_ts,
+                },
+                &super::rtcp::RtpRecvStats::default(),
+                0,
+                "ost",
+            );
+            let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect_rtcp(&sr).ok());
+            if let Some(sealed) = sealed {
+                let _ = socket.send_to(&sealed, peer).await;
+            }
+        }
+    }
+}
+
 async fn send_loop(mut ctx: SendCtx) {
     let r = random_u64();
     let (mut seq, mut ts) = (r as u16, (r >> 16) as u32);
     let mut tick = tokio::time::interval(Duration::from_millis(rtp::PACKET_INTERVAL_MS));
     let mut tone: Option<Tone> = None;
     let (mut sent_packets, mut sent_octets) = (0u32, 0u32);
+    let health = super::call_health::current();
+    let health_send = health.stream(super::call_health::Kind::AudioSend, ctx.ssrc);
+    health.set_codec(
+        super::call_health::Kind::AudioSend,
+        match ctx.encoder.codec() {
+            super::audio_codec::Codec::Pcmu => "PCMU",
+            super::audio_codec::Codec::Opus(_) => "OPUS",
+        },
+    );
     loop {
         tick.tick().await;
         let frame = ctx.mic_rx.as_ref().and_then(|rx| rx.try_recv().ok());
@@ -2510,6 +2627,7 @@ async fn send_loop(mut ctx: SendCtx) {
             let mut st = ctx.stats.lock().await;
             st.packets_sent += 1;
             st.audio_bytes_sent += packet.len().saturating_sub(12) as u64;
+            health_send.sent(packet.len().saturating_sub(12));
             sent_packets = sent_packets.wrapping_add(1);
             sent_octets = sent_octets.wrapping_add(packet.len().saturating_sub(12) as u32);
         }

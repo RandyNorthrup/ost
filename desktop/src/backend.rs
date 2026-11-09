@@ -167,6 +167,9 @@ pub mod qobject {
         #[qproperty(QString, call_captions_json)]
         /// You turned live captions on (the caption window shows).
         #[qproperty(bool, call_captions_on)]
+        /// Call health's values: {values: {data-tid: {value, enabled}}}
+        /// (call_health_refresh fills it).
+        #[qproperty(QString, call_health_json)]
         /// The meeting timer (More ▸ Timer): {adhoc: Teams' timer object
         /// (remainingDuration as of lastEditMs), lastEditMs, totalMs,
         /// skewMs, sequence, live (it came in a live update), facilitator}.
@@ -532,6 +535,11 @@ pub mod qobject {
         /// The timer ran out: Teams' chime.
         #[qinvokable]
         fn timer_chime(self: &Backend);
+        /// Recompute Call health's values from the last 15 seconds (Teams
+        /// refreshes the open pane every 15 s, and at once when media
+        /// turns on).
+        #[qinvokable]
+        fn call_health_refresh(self: Pin<&mut Backend>);
         /// Turn real-time text on for this call (after Teams' "RTT
         /// (real-time text) will be turned on for everyone in the call.").
         #[qinvokable]
@@ -1218,6 +1226,7 @@ pub struct BackendRust {
     call_captions_json: QString,
     call_captions_on: bool,
     call_timer_json: QString,
+    call_health_json: QString,
     /// The meeting timer's clock skew (now − the service's stamp, from
     /// live updates only), ms.
     timer_skew_ms: i64,
@@ -1649,10 +1658,17 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
     runtime().spawn(async move {
         let mut tick = 0u64;
         let mut muted_speech = teams_cli::calling::muted_speech::Detector::new();
+        // Call health's 15 s window starts with the call.
+        *health_sampler().lock().unwrap_or_else(|e| e.into_inner()) =
+            teams_cli::calling::call_health::Sampler::new();
         let mut speaking_muted = false;
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             tick += 1;
+            health_sampler().lock().unwrap_or_else(|e| e.into_inner()).sample(
+                &teams_cli::calling::call_health::current(),
+                chrono::Utc::now().timestamp_millis(),
+            );
             // Talking with the mic off (Teams checks with each stats poll).
             let muted = {
                 let slot = call_slot().lock().await;
@@ -1723,6 +1739,12 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
             }
         }
     });
+}
+
+/// Call health's samples of the call in progress.
+fn health_sampler() -> &'static std::sync::Mutex<teams_cli::calling::call_health::Sampler> {
+    static S: OnceLock<std::sync::Mutex<teams_cli::calling::call_health::Sampler>> = OnceLock::new();
+    S.get_or_init(Default::default)
 }
 
 /// How many calls the Calls history shows.
@@ -2318,13 +2340,15 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let admitted = match call_slot().lock().await.outgoing.as_mut() {
             Some(call) if call.in_lobby() => {
                 call.admit_from_lobby(&update);
-                Some(call.capability())
+                Some((call.capability(), call.can_send_video(), call.can_share()))
             }
             _ => None,
         };
-        if let Some(cap) = admitted {
+        if let Some((cap, can_video, can_share)) = admitted {
             let _ = qt.queue(move |mut this| {
                 this.as_mut().show_capability(cap, false);
+                this.as_mut().set_call_can_video(can_video);
+                this.as_mut().set_call_can_share(can_share);
                 this.as_mut().set_call_state(QString::from("connected"));
             });
         }
@@ -3563,7 +3587,9 @@ impl qobject::Backend {
                 Ok(call) => {
                     let has_audio = call.has_audio();
                     let can_dtmf = call.can_dtmf();
-                    tracing::info!(has_audio, can_dtmf, "group call started");
+                    let can_video = call.can_send_video();
+                    let can_share = call.can_share();
+                    tracing::info!(has_audio, can_dtmf, can_video, can_share, "group call started");
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
@@ -3571,6 +3597,8 @@ impl qobject::Backend {
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
+                        this.as_mut().set_call_can_video(can_video);
+                        this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }
@@ -3660,7 +3688,11 @@ impl qobject::Backend {
                     let in_lobby = call.in_lobby();
                     let started = call.meeting_started();
                     let timers = call.timers().clone();
-                    tracing::info!(has_audio, can_dtmf, in_lobby, "meeting joined");
+                    // Camera and Share as the joined media allows (in the
+                    // lobby Share waits for the admission's links).
+                    let can_video = call.can_send_video();
+                    let can_share = call.can_share();
+                    tracing::info!(has_audio, can_dtmf, can_video, can_share, in_lobby, "meeting joined");
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
@@ -3676,6 +3708,8 @@ impl qobject::Backend {
                         this.as_mut().set_call_ai_indicator(ai_indicator);
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
+                        this.as_mut().set_call_can_video(can_video);
+                        this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_lobby_presenter(started);
                         // Held in the lobby: Teams keeps the pre-join
                         // screen until someone admits us.
@@ -4121,6 +4155,23 @@ impl qobject::Backend {
                 tracing::warn!("meeting timer: {}", short_error(&e));
             }
         });
+    }
+
+    pub fn call_health_refresh(mut self: Pin<&mut Self>) {
+        let state = teams_cli::calling::call_health::MediaState {
+            microphone: !self.rust().call_muted && self.rust().call_has_audio,
+            camera: self.rust().call_camera_on,
+            sharing: self.rust().call_sharing,
+            watching_share: !self.rust().call_share_mri.is_empty(),
+        };
+        let report = health_sampler()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .report(&teams_cli::calling::call_health::current(), &state);
+        let json = serde_json::json!({ "values": report.values }).to_string();
+        if self.rust().call_health_json.to_string() != json {
+            self.as_mut().set_call_health_json(QString::from(json.as_str()));
+        }
     }
 
     pub fn timer_chime(&self) {

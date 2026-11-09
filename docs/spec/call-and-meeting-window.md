@@ -568,6 +568,33 @@ Full code reading: scratchpad timer/spec.md (session 744c3998); the model is `ca
 - **Agenda and Run of Show** need Teams' Facilitator (Copilot); without it (as in the test tenant: `groupCopilotDetails.enabled` false) Teams shows neither and OST keeps their shared state untouched (TASK-0073).
 - Verified live both ways with Teams on winpc: start, pause, resume, +1 min, cancel (the canceller keeps the strip), a new 1:30 timer, Teams' own resume and pause, a 10 s timer running out on both.
 
+### 1.8i Call health (More ▸ Settings ▸ Call health; call-health-panel bundle, measured on winpc, 2026-11-09)
+
+- **Menu item.** `CallHealth` in Settings ▸ group 1, in every call (meetings: `enableCallHealthForMeetings`, live true). Pulse glyph; the label toggles: "Call health" / "Hide call health" while the pane is open. It toggles the right-side pane.
+- **Root page.** Header "Call health" (16/22 bold) and a close button ("Close call health pane"). Below it:
+  - "Your call is receiving data. Most metrics refresh every 15 seconds." and a "Learn more" link (12/16).
+  - "Last updated at: h:mm:ss AM".
+  - Four cards (#F0F0F0, 313.33 wide, title 14/20 semibold, rows "Label: value" 14/20 every 23 px), each followed by a "View more … data" card with a chevron:
+    - Network: round trip time and received packet loss.
+    - Audio: sent bitrate and received jitter.
+    - Video: sent and received bitrate, sent frame rate, resolution, codec, and video processing.
+    - Screen Sharing: the same for sending, plus the received ones.
+  - A card whose sending media is off shows an ⓘ after its title: "Turn on your microphone to get metrics", "Turn on your camera to get metrics" or "Start screensharing to get metrics".
+- **Detail pages.** A back button ("Go back to call health root panel") and the category title, then one tile per metric (#F0F0F0, 73.33 high, 2 px apart). Each tile has the label (12/16 semibold) with an ⓘ, and the value below it (16/22). The ⓘ's tooltip is the metric's help text, or its "turn on" text while the metric is disabled.
+- **Values.** The values are pre-formatted strings, for example "29.00 ms", "0.00%", "40 Kbps", "1.25 Mbps", "30.00 fps", "1280 x 720 px", "742 packets" and "H264 sw". A metric shows "--" when it is empty or its media is off. There are no colours, warnings or badges.
+- **Refresh.** Values refresh every 15 s, and at once when your mic, camera or screen share turns on or off.
+  - Each refresh reads a 15-sample, 1 s window:
+    - bitrates and frame rates are averages of deltas;
+    - packet counts are the window's difference;
+    - sizes and loss are the last value;
+    - RTT and jitter are running means.
+  - RTT comes from RTCP report blocks: now − LSR − DLSR.
+- **OST.** The `CallHealthPane` QML pane gets its values from `calling::call_health`:
+  - the media path counts every stream it sends and receives (audio, video, share);
+  - `Sampler` turns the counts into Teams' strings;
+  - the receive limit is the MCP bandwidth estimate.
+  - The send limit stays "--" until OST has a send-side estimator.
+
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
 - Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.

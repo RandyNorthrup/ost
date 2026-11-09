@@ -429,12 +429,12 @@ Source: https://mc.merill.net/message/MC1426709
 
 ## 21. Call quality: health panel, network indicator, rating survey
 
-- [ ] More actions > Settings > **Call health** panel, refreshed every 15 s:
-  - [ ] **Network**: Roundtrip time (<200 ms), Received packet loss (<2%), Teams send limit and Teams receive limit (Audio 70 kbps, Video 1.5 Mbps).
-  - [ ] **Audio**: Sent bitrate (>24 kbps; 36–128 typical), Sent packets, Roundtrip time, Sent codec, Received jitter (<30 ms), Received packets, Received packet loss, Received codec.
-  - [ ] **Video**: Sent frame rate (1–30), Sent width/height (160×90 to 1920×1080), Sent bitrate, Roundtrip time, Sent packets, Sent codec, Video processing (hardware preferred).
-  - [ ] **Screen sharing**: Sent and received frame rate, width/height, codec, plus processing (hardware or software).
-  - [ ] Roundtrip in 1:1 calls is measured peer to peer. In group calls it is to the Teams service.
+- [x] More actions > Settings > **Call health** panel, refreshed every 15 s (TASK-0069; the Teams send limit waits for TASK-0074):
+  - [x] **Network**: Roundtrip time (<200 ms), Received packet loss (<2%), Teams send limit and Teams receive limit (Audio 70 kbps, Video 1.5 Mbps).
+  - [x] **Audio**: Sent bitrate (>24 kbps; 36–128 typical), Sent packets, Roundtrip time, Sent codec, Received jitter (<30 ms), Received packets, Received packet loss, Received codec.
+  - [x] **Video**: Sent frame rate (1–30), Sent width/height (160×90 to 1920×1080), Sent bitrate, Roundtrip time, Sent packets, Sent codec, Video processing (hardware preferred).
+  - [x] **Screen sharing**: Sent and received frame rate, width/height, codec, plus processing (hardware or software).
+  - [x] Roundtrip in 1:1 calls is measured peer to peer. In group calls it is to the Teams service.
 - [ ] Network strength indicator: 3 bars, Good (3) / Poor (2) / Bad (1). It also shows when other participants have poor networks and suggests actions to save bandwidth when limited. Desktop and Mac, GA Feb 2026.
 - [ ] Post-call **Rate my call** survey, shown occasionally after calls and meetings. A single screen with thumbs up (Good) / thumbs down (Had issues), optional problem tokens and an optional comment (since Feb 2026; replaced the 1–5 stars). **[verify token labels]**
 

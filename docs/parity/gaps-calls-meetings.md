@@ -61,7 +61,7 @@ Counts: 37 P1, 109 P2, 61 P3 (207 gaps).
 
   OST: two items, "Device settings" (which jumps to the main window's Settings) and "Full screen" (ref: spec §1.8 L297–336; OST: CallWindow.qml:630–639, Main.qml:577)
 - [ ] [P2] "Device settings" isn't a More item while `enableAVFramework` is on — Teams: Devices is hidden, and settings are reached through "Video effects and settings" / "Audio settings" side panes — OST: has a "Device settings" item that leaves the call window (ref: spec §1.8 L329, §2 L443; OST: CallWindow.qml:635)
-- [ ] [P2] Settings ▸ Call health side pane — Teams: Network / Audio / Video / Screen sharing stats, refreshed every 15 s — OST: stats are only logged every 5 s (ref: spec §1.8 L329; calls.md §21; OST: backend.rs:886–915)
+- [x] [P2] Settings ▸ Call health side pane — Teams: Network / Audio / Video / Screen sharing stats, refreshed every 15 s — OST: done (TASK-0069; spec §1.8i). The send limit waits for a send-side estimator (TASK-0074).
 - [ ] [P3] Music mode ("High fidelity music mode") toggle — OST: absent (ref: spec §1.8 L316; OST: absent)
 - [ ] [P3] Timer (ad-hoc / agenda) — OST: absent (ref: spec §1.8 L320; OST: absent)
 - [ ] [P3] Settings ▸ Chat bubbles, Mute notifications, Accessibility, Privacy mode, Data — OST: absent (ref: spec §1.8 L329; OST: absent)
@@ -324,7 +324,7 @@ Counts: 37 P1, 109 P2, 61 P3 (207 gaps).
 ## 21. Call quality and status (calls.md §21)
 
 - [ ] [P2] Network strength indicator (3 bars; others' poor networks; bandwidth suggestions) — OST: absent (ref: calls.md §21; OST: absent)
-- [ ] [P2] Call health panel (see §3) — OST: logs only (ref: calls.md §21; OST: backend.rs:886–915)
+- [x] [P2] Call health panel (see §3) — OST: done (TASK-0069)
 
 ## 22. PSTN, E2EE, delegation, events (calls.md §3, §14–16, §24–27; meetings.md §19, §26, §32)
 

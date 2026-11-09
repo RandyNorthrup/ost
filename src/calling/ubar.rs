@@ -484,6 +484,9 @@ impl Facts {
             "MeetingHelpButton" => self.scheduled,
             // More ▸ Report a concern (a security report about the meeting).
             "ReportMeetingButton" => self.scheduled,
+            // Settings ▸ Call health (every call: the media path counts
+            // its streams in any call).
+            "CallHealth" => true,
             // Settings ▸ Accessibility settings (the in-meeting pane).
             "SettingsMenuControl" | "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => {
                 self.scheduled

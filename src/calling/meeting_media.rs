@@ -484,6 +484,11 @@ async fn run(
                             }
                             Incoming::Bandwidth { total, video } => {
                                 tracing::debug!(total, ?video, "MCP bandwidth");
+                                // What the processor says we can receive
+                                // (Call health's "Teams receive limit").
+                                super::call_health::current()
+                                    .receive_estimate
+                                    .store(total, std::sync::atomic::Ordering::Relaxed);
                             }
                             Incoming::Heartbeat => {}
                             Incoming::Transcript(v) => {

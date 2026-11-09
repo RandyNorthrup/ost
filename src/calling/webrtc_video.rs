@@ -188,6 +188,16 @@ impl Drop for VideoReceiver {
 }
 
 fn decode_loop(rx: mpsc::Receiver<VideoPacket>, want: Arc<AtomicBool>, key: &str) {
+    // Call health: what's decoded (in software) of others' cameras or a
+    // shared screen.
+    let kind = if key == "share" {
+        super::call_health::Kind::ShareRecv
+    } else {
+        super::call_health::Kind::VideoRecv
+    };
+    let media = super::call_health::current();
+    media.set_codec(kind, "H264 sw");
+    let health = media.stream(kind, 0);
     use openh264::OpenH264API;
     use openh264::decoder::{Decoder, DecoderConfig};
     use openh264::formats::YUVSource;
@@ -215,6 +225,7 @@ fn decode_loop(rx: mpsc::Receiver<VideoPacket>, want: Arc<AtomicBool>, key: &str
                         let mut rgba = vec![0u8; w * h * 4];
                         yuv.write_rgba8(&mut rgba);
                         super::frames::publish(key, w as u32, h as u32, rgba);
+                        health.frame(w as u32, h as u32);
                         decoded += 1;
                         if decoded == 1 || decoded.is_multiple_of(300) {
                             tracing::info!(decoded, w, h, "video frames decoded");
@@ -377,6 +388,8 @@ struct SendConfig {
     /// Resend the last picture this often when nothing new arrives (a
     /// still screen sends no frames, but viewers joining need one).
     repeat: Option<std::time::Duration>,
+    /// What Call health counts it as.
+    health: super::call_health::Kind,
 }
 
 const CAMERA: SendConfig = SendConfig {
@@ -384,6 +397,7 @@ const CAMERA: SendConfig = SendConfig {
     kbps: SEND_KBPS,
     preview: Some("self"),
     repeat: None,
+    health: super::call_health::Kind::VideoSend,
 };
 
 /// A shared screen: up to 1280x720 at 10 fps, sharper (more bits a
@@ -394,6 +408,7 @@ const SCREEN: SendConfig = SendConfig {
     kbps: 1500,
     preview: None,
     repeat: Some(std::time::Duration::from_secs(1)),
+    health: super::call_health::Kind::ShareSend,
 };
 
 /// What a meeting's media processor asks our camera for (Teams' `vdclc`):
@@ -606,6 +621,10 @@ fn send_loop(
     let mut last_sent = std::time::Instant::now();
     let started = std::time::Instant::now();
     let RtpOut { tx: out, pt, ssrc } = out;
+    // Call health: OpenH264 encodes in software.
+    let media = super::call_health::current();
+    media.set_codec(cfg.health, "H264 sw");
+    let health = media.stream(cfg.health, ssrc);
     let mut seq: u16 = (ssrc >> 7) as u16;
     let mut sent = 0u64;
     let mut last_frame: Option<std::time::Instant> = None;
@@ -713,6 +732,7 @@ fn send_loop(
             seq = seq.wrapping_add(1);
         }
         sent += 1;
+        health.frame(f.width, f.height);
         if sent == 1 || sent.is_multiple_of(300) {
             tracing::info!(sent, w = f.width, h = f.height, "video frames sent");
         }
