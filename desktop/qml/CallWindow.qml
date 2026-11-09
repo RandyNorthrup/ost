@@ -620,6 +620,7 @@ Window {
         if (i >= 0) moreMenu.openSubmenuForTest(i)
     }
     function closeMoreForTest() { moreMenu.close() }
+    function captionsPopoutForTest() { return captionsPopout }
     function meetingReportForTest() { return meetingReport }
     function helpWindowForTest() { return helpWindow }
     function moreSubmenuForTest(name) {
@@ -785,7 +786,7 @@ Window {
     // bar, "At top"), the stage above (or below) it.
     CaptionsWindow {
         id: captionsWindow
-        visible: win.captionsOn && win.state === "connected"
+        visible: win.captionsOn && win.state === "connected" && !win.captionsPoppedOut
         x: 4; width: (sidePane.visible ? sidePane.x : win.contentItem.width) - 8
         height: implicitHeight
         y: win.captionsAtTop ? bar.y + bar.height + 4 : win.contentItem.height - 4 - height
@@ -800,6 +801,24 @@ Window {
         areaHeight: win.contentItem.height - bar.y - bar.height
         onClosed: win.setCaptions(false)
         onSettingsRequested: anchor => win.openCaptionSettings(anchor)
+        onPopOut: win.captionsPoppedOut = true
+    }
+    // Captions in a window of their own (Open captions in new window).
+    property bool captionsPoppedOut: false
+    onCaptionsOnChanged: if (!captionsOn) captionsPoppedOut = false
+    CaptionsPopout {
+        id: captionsPopout
+        visible: win.captionsOn && win.captionsPoppedOut && win.state === "connected"
+        meetingTitle: win.meetingInfo ? win.meetingInfo.title : win.peer
+        captions: win.captions
+        roster: win.people
+        meId: backend.userMri
+        meName: backend.userName
+        filterProfanity: win.accessibility.profanityFilterEnabled === true
+        languageName: win.languageName(win.captionsLanguage)
+        styles: win.captionStyles
+        onPopIn: win.captionsPoppedOut = false
+        onSettingsRequested: anchor => win.showCaptionSettings(anchor)
     }
     CaptionsSettingsMenu {
         id: captionSettings
@@ -818,8 +837,9 @@ Window {
     // "…" when the buttons don't fit: Open caption settings ▸.
     MenuPopup {
         id: captionsOverflow
-        items: [{ label: "Open caption settings", icon: "settings-20", chevron: true }]
-        onPicked: i => win.showCaptionSettings(captionsOverflow.parent)
+        items: [{ label: "Open caption settings", icon: "settings-20", chevron: true },
+                { label: "Open captions in new window", icon: "captions-pop-out-20" }]
+        onPicked: i => { if (i === 0) win.showCaptionSettings(captionsOverflow.parent); else win.captionsPoppedOut = true }
     }
 
     // More ▸ Report a concern: the meeting, and everyone in it or its chat

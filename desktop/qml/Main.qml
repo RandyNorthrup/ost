@@ -1461,6 +1461,20 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 3 === 0) rows()
+            } else if (step >= 9 && step <= Math.min(26, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-captions-popout") >= 0) {
+                // --join-captions-popout: captions on, popped out into their
+                // own window (captured), popped back in, off.
+                const pw = callWindow.captionsPopoutForTest()
+                const plan = {
+                    9: () => callWindow.recordControl("ClosedCaptionsButton"),
+                    13: () => callWindow.captionsPoppedOut = true,
+                    17: () => console.warn("JOIN popout", pw.visible, pw.width, pw.height, pw.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-popout.png")))),
+                    18: () => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-popout-main.png"))),
+                    20: () => pw.popIn(),
+                    22: () => { console.warn("JOIN popped in", pw.visible, callWindow.captionsPoppedOut); callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-popin.png"))) },
+                    24: () => callWindow.recordControl("ClosedCaptionsButton")
+                }
+                if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= Math.min(18, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-report") >= 0) {
                 // --join-report: More ▸ Report a concern, its picker, a
                 // participant chosen, then Cancel. Never sends a report.

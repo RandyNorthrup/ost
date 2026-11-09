@@ -38,6 +38,9 @@ Rectangle {
     property real areaHeight: 0
     signal closed()
     signal settingsRequested(Item anchor)
+    signal popOut()
+    /// In the captions window of its own: no buttons, the list 15 in.
+    property bool popout: false
     readonly property Item settingsAnchorForTest: settingsButton
 
     readonly property bool lightTheme: theme.pick(true, false)
@@ -88,12 +91,12 @@ Rectangle {
     }
     function wordsOf(e) { return filterProfanity ? (e.text || e.rawText || "") : (e.rawText || e.text || "") }
 
-    readonly property real listWidth: Math.min(size.width, width - 75)
-    readonly property bool listFits: size.width <= width - 75
+    readonly property real listWidth: popout ? width - 30 : Math.min(size.width, width - 75)
+    readonly property bool listFits: popout || size.width <= width - 75
 
     ListView {
         id: list
-        x: root.listFits ? (root.width - width) / 2 : 0
+        x: root.popout ? 15 : root.listFits ? (root.width - width) / 2 : 0
         width: root.listWidth; height: parent.height
         clip: true
         visible: count > 0
@@ -163,9 +166,9 @@ Rectangle {
         color: root.ink
     }
 
-    // Settings and close; settings folds into "…" when the buttons don't
-    // fit beside the list.
-    readonly property bool overflow: (root.width - list.x - list.width) < 8 + 2 * 32
+    // Settings, Open captions in new window and close; the first two fold
+    // into "…" when the buttons don't fit beside the list.
+    readonly property bool overflow: (root.width - list.x - list.width) < 8 + 3 * 32
     component CapButton: Rectangle {
         id: b
         property string icon
@@ -183,6 +186,7 @@ Rectangle {
         Accessible.name: b.tip
     }
     Row {
+        visible: !root.popout
         anchors.right: parent.right; anchors.rightMargin: 8; y: 6
         CapButton {
             id: settingsButton
@@ -190,6 +194,7 @@ Rectangle {
             tip: root.overflow ? "Closed captions overflow menu" : "Open caption settings"
             onClicked: root.settingsRequested(settingsButton)
         }
+        CapButton { visible: !root.overflow; icon: "captions-pop-out-20"; tip: "Open captions in new window"; onClicked: root.popOut() }
         CapButton { icon: "dismiss-20"; tip: "Hide live captions"; onClicked: root.closed() }
     }
 }

@@ -509,6 +509,12 @@ only holds what is left (Merge, Park, Lock).
   - URL: `https://help.svc.cloud.microsoft/f1/home/?shownav=True&NS=MSFTTEAMS&version=16&omkt=<locale>&RingId=general&context=<JSON>`.
   - The context has `SubEntityId: "helpappmeetings"`, plus the theme, session, app version, `HostClientType: "desktop"` and `TeamsHostName: "TeamsModern"`. Teams also sends the tenant SKU and licence type, which OST doesn't know for every tenant.
   - The page opens on "Get help with Microsoft Teams meetings".
+- **Captions in a window of their own** (Open captions in new window; flyout-closed-captions).
+  - 606 × 353, kept on top until unpinned. Once unpinned, Teams no longer shows the pin.
+  - Title row, 32 tall: Pop in (32 × 31.33), the meeting title (12/16), and the pin (24 × 23.33, "Unpin window").
+  - "Live Captions" (20/28.57 bold) sits 20 in, with caption settings 18 from the right. Then the captions, 15 in.
+  - The strip under the stage goes away while it's out. Pop in, or closing the window, brings it back.
+  - In the strip, the pop-out button sits between settings and close; when the strip is narrow it moves under "…".
 - **Chat bubbles** (ufd_chatBubble). Someone else's message in the call's chat shows while the chat pane is closed.
   - One bubble at a time; a newer message replaces it. It lasts about 4 s (measured) and fades over 300 ms.
   - Placement: 320 wide, centred over the stage, 10.67 under the bar.

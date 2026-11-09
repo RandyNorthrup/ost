@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T06:20:00Z'
+updated_date: '2026-11-09T06:32:00Z'
 labels:
   - calls
   - meetings
@@ -74,4 +74,6 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - More ▸ Help: Teams' Help app window on its meetings page (help.svc helpappmeetings), verified the same page loads. Follow-up: the Help window's header is OST's web-app header (Reload/Open in browser); Teams shows the app tile and a … menu.
 
 - AC#6 Report a concern: Teams' meeting report dialog (measured on winpc, strings from the installed Teams localization), participant picker (chat members then participants, not you), unified report body reportType Meeting (unit test). No report filed (rule); the success toast's look is unverified for that reason.
+
+- Captions pop-out window (Open captions in new window): Teams' 606x353 window, pinned on top, Pop in, Live Captions header with settings; strip hides while out. Verified live (open, capture, pop in). Left in AC#7: RTT.
 <!-- SECTION:NOTES:END -->
