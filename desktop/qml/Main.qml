@@ -2356,8 +2356,9 @@ Window {
         }
     }
 
-    // --store-test: open the Store, capture Home, search "planner", open
-    // Whiteboard's details.
+    // --store-test: open the Store and capture Home, scrolled; the Featured
+    // and Categories menus; a See all page; a category page; a search for
+    // "planner"; then Polls' details. Logs what loaded and quits.
     Timer {
         running: Qt.application.arguments.indexOf("--store-test") >= 0 && backend.signedIn
         interval: 3000; repeat: true
@@ -2365,13 +2366,25 @@ Window {
         onTriggered: {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
             if (step === 0) rail.current = "add"
-            else if (step === 4 && store.busy) return
-            else if (step === 4) { console.warn("STORE apps", store.apps.length, "microsoft", store.microsoft.length, store.reply.error || ""); cap("home") }
-            else if (step === 5) { store.searchForTest("planner") }
-            else if (step === 6) { console.warn("STORE results", store.results.length, store.results.slice(0, 3).map(a => a.name).join(", ")); cap("search") }
-            else if (step === 7) { store.searchForTest(""); console.warn("STORE details", store.detailsForTest("Whiteboard")) }
-            else if (step === 9) cap("details")
-            else if (step === 10) Qt.quit()
+            else if (step < 12 && (store.busy || !store.feedCols.length) && !store.reply.error) { step++; return }
+            else if (step < 13) {
+                console.warn("STORE feed", JSON.stringify(store.feedCols.map(c => c.title + ": " + c.apps.slice(0, 4).map(a => a.name).join(", "))))
+                console.warn("STORE menus", JSON.stringify({ featured: store.featuredNav.map(g => g.map(n => n.title + "/" + n.icon)), categories: store.categoryNav.map(n => n.title + "/" + n.icon) }), store.reply.error || "")
+                cap("home"); step = 13; return
+            }
+            else if (step === 14) store.menuForTest("featured")
+            else if (step === 15) cap("featured")
+            else if (step === 16) { store.closeMenuForTest(); store.menuForTest("categories") }
+            else if (step === 17) cap("categories")
+            else if (step === 18) { store.closeMenuForTest(); store.openPage("popularapps") }
+            else if (step === 20) { console.warn("STORE page", store.pageData ? store.pageData.title + " " + (store.pageData.apps || []).length : null); cap("seeall") }
+            else if (step === 21) { const c = store.categoryNav[0]; if (c) store.openPage(c.id) }
+            else if (step === 23) { console.warn("STORE group", store.pageData ? store.pageData.title + ": " + (store.pageData.sections || []).map(x => x.title).join(", ") : null); cap("group") }
+            else if (step === 24) store.searchForTest("planner")
+            else if (step === 26) { console.warn("STORE search", store.found ? (store.found.results || []).slice(0, 5).map(a => a.name).join(", ") : null); cap("search") }
+            else if (step === 27) { store.home(); console.warn("STORE details", store.detailsForTest("Polls")) }
+            else if (step === 29) cap("details")
+            else if (step === 30) Qt.quit()
             step++
         }
     }

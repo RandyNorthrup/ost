@@ -97,6 +97,11 @@ pub mod qobject {
         /// loading, installed: [app], collections: [{id, title, apps}],
         /// error}.
         #[qproperty(QString, agent_store_json)]
+        /// A Store page (See all, a menu entry): {id, loading | title,
+        /// description, apps, sections | error}.
+        #[qproperty(QString, store_page_json)]
+        /// The Store's search: {query, loading | results}.
+        #[qproperty(QString, store_search_json)]
         /// The agent Store's search: {query, results: [app], loading}.
         #[qproperty(QString, agent_search_json)]
         /// The last Add: {app, conversation, busy | ok, name, bot,
@@ -895,6 +900,12 @@ pub mod qobject {
         /// Store: load the app catalog into store_json.
         #[qinvokable]
         fn store_load(self: Pin<&mut Backend>);
+        /// Load a Store page (a collection's See all, or a menu entry).
+        #[qinvokable]
+        fn store_page_load(self: Pin<&mut Backend>, id: &QString);
+        /// Search the Store.
+        #[qinvokable]
+        fn store_search(self: Pin<&mut Backend>, query: &QString);
 
         /// A channel's tabs (Page, Notes, apps) into channel_tabs_json.
         #[qinvokable]
@@ -1272,6 +1283,8 @@ pub struct BackendRust {
     app_reviews_json: QString,
     app_similar_json: QString,
     agent_store_json: QString,
+    store_page_json: QString,
+    store_search_json: QString,
     agent_search_json: QString,
     app_added_json: QString,
     app_links_json: QString,
@@ -7875,14 +7888,55 @@ impl qobject::Backend {
         self.as_mut().set_store_busy(true);
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::store::apps(&TeamsClient::new().await?).await }.await;
+            // Teams' Store home: its feed and header menus (the store
+            // content doc over the ranked catalog).
+            let result = async { api::store_content::store_home(&TeamsClient::new().await?).await }.await;
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_store_busy(false);
                 let text = match result {
-                    Ok(apps) => json!({ "apps": apps }).to_string(),
+                    Ok(home) => json!(home).to_string(),
                     Err(e) => json!({ "error": short_error(&e) }).to_string(),
                 };
                 this.as_mut().set_store_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn store_page_load(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        self.as_mut().set_store_page_json(QString::from(json!({ "id": id, "loading": true }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::store_content::store_page(&TeamsClient::new().await?, &id).await }.await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(p) => json!(p),
+                    Err(e) => json!({ "id": id, "error": short_error(&e) }),
+                };
+                this.as_mut().set_store_page_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn store_search(mut self: Pin<&mut Self>, query: &QString) {
+        let q = query.to_string();
+        self.as_mut().set_store_search_json(QString::from(json!({ "query": q, "loading": true }).to_string().as_str()));
+        if q.trim().is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::store_content::search_store(&TeamsClient::new().await?, q.trim()).await }.await;
+            let _ = qt.queue(move |mut this| {
+                let current: serde_json::Value = serde_json::from_str(&this.rust().store_search_json.to_string()).unwrap_or_default();
+                if current.get("query").and_then(|x| x.as_str()) != Some(q.as_str()) {
+                    return;
+                }
+                let v = match result {
+                    Ok(r) => json!({ "query": q, "results": r }),
+                    Err(e) => json!({ "query": q, "results": [], "error": short_error(&e) }),
+                };
+                this.as_mut().set_store_search_json(QString::from(v.to_string().as_str()));
             });
         });
     }

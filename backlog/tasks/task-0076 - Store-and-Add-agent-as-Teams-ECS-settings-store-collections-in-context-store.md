@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T13:23:00Z'
-updated_date: '2026-11-09T14:36:00Z'
+updated_date: '2026-11-09T15:00:00Z'
 labels:
   - desktop
   - apps
@@ -23,7 +23,7 @@ Teams' @ picker 'Add agent to the chat/channel' opens its in-context Store (bots
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 OST reads Teams' live ECS settings (the request Teams desktop makes, with the user's license details) and exposes them to features
-- [ ] #2 The Store home shows Teams' collections, titles, order and apps from the store content doc and catalog, as Teams on winpc
+- [x] #2 The Store home shows Teams' collections, titles, order and apps from the store content doc and catalog, as Teams on winpc
 - [x] #3 @ picker 'Add agent to the chat/channel' opens the in-context store with installed bots, Teams' bot collections, search and See all, measured on winpc
 - [x] #4 Adding an agent installs it in the conversation as Teams does (verified with a Microsoft app in OST group test)
 <!-- AC:END -->
@@ -51,4 +51,9 @@ Teams' @ picker 'Add agent to the chat/channel' opens its in-context Store (bots
 - Chat events: AddCustomApp/DeleteCustomApp now read as Teams words them (apps icon, bold app name), and bots' member events are hidden.
 - Not verified live: adding an agent to a channel (team endpoint plus X-Ms-Appinstall-Channelid, from Teams' code), and the @mention after adding a conversational bot. The details' generic Add (from the Store) now does the personal install instead of opening Teams on the web.
 - Left: AC2, the Store home from the same data.
+
+- Store home rebuilt (AC2) from Teams' data: the feed collections in feedOrder (with Teams' cards, the installed check, and disableRatings), the Featured and Categories menus (nav sections, Teams' icon map), See all and category pages, and search. Checked against Teams on winpc: the same feed titles and order, and the same menus.
+- Root cause of the earlier CDN differences: without authz licenseDetails, OST asked for the Enterprise store doc instead of apps/smb. ecs::license now fetches them when missing, so ECS and the Store use the same filters as Teams.
+- Also found: the build script copied a stale binary after a failed build; it now fails.
+- Follow-up TASK-0077: the Devices tab, See all filter and Manage your apps.
 <!-- SECTION:NOTES:END -->

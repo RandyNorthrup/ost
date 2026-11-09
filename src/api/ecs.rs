@@ -121,6 +121,28 @@ fn install(v: serde_json::Value) {
     }
 }
 
+/// The user's licence details (Teams' authz `licenseDetails`): from the
+/// config, else from a fresh authz exchange (kept in the config). Teams
+/// has them from its start; ECS filters and the Store's doc depend on them.
+pub async fn license(client: &TeamsClient) -> Option<serde_json::Value> {
+    if let Some(l) = client.license_details() {
+        return Some(l);
+    }
+    static FETCHED: std::sync::Mutex<Option<serde_json::Value>> = std::sync::Mutex::new(None);
+    if let Some(l) = FETCHED.lock().ok()?.clone() {
+        return Some(l);
+    }
+    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.ok()?;
+    let x = crate::auth::skype::exchange_skype_token(&token, false).await.ok()?;
+    let l = x.license_details?;
+    if let Ok(mut c) = crate::config::Config::load() {
+        c.set_license_details(l.clone());
+        let _ = c.save();
+    }
+    *FETCHED.lock().ok()? = Some(l.clone());
+    Some(l)
+}
+
 /// Load the settings: the cached reply at once, then ECS (If-None-Match).
 /// `cache_dir` keeps `ecs.json` (the reply) between runs.
 pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {
@@ -140,7 +162,7 @@ pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {
         .and_then(|h| h.split('.').next())
         .unwrap_or_default()
         .to_string();
-    let license = client.license_details();
+    let license = license(client).await;
     let session = uuid::Uuid::new_v4().to_string();
     let device = uuid::Uuid::new_v4().to_string();
     let q = query(&user, &tenant, &region, license.as_ref(), &session, &device);

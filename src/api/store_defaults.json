@@ -1,5 +1,5 @@
 {
- "_source": "Teams 26276.513 config-prod (storeAppsCollections, inContextStoreCollectionIdsOverwrite, setting defaults) and its en-us extensibility strings, 2026-11-09",
+ "_source": "Teams 26276.513 config-prod (storeAppsCollections, inContextStoreCollectionIdsOverwrite, setting defaults, storeGroupCollectionIconMap) and its en-us extensibility strings, 2026-11-09",
  "settings": {
   "storeAppsCollectionsDoc": "storev2?v=2",
   "enableCopilotExtensions": true,
@@ -82,7 +82,188 @@
     "app:co:microsoft",
     "app:co:education"
    ]
-  }
+  },
+  "storeGroupCollectionIconMap": [
+   {
+    "collectionId": "app:co:datalearning-group1",
+    "icon": "Briefcase",
+    "title": "_store_grouped_category_productivity_title"
+   },
+   {
+    "collectionId": "app:co:datalearning-group2",
+    "icon": "ChatMultiple",
+    "title": "_store_grouped_category_content_collaborations_title"
+   },
+   {
+    "collectionId": "app:co:datalearning-group3",
+    "icon": "Building",
+    "title": "_store_grouped_category_business_operations_title"
+   },
+   {
+    "collectionId": "app:co:datalearning-group4",
+    "icon": "Code",
+    "title": "_store_grouped_category_it_developer_tools_title"
+   },
+   {
+    "collectionId": "app:co:datalearning-group5",
+    "icon": "DataPie",
+    "title": "_store_grouped_category_data_learning_title"
+   },
+   {
+    "collectionId": "app:co:datalearning-group6",
+    "icon": "Headset",
+    "title": "_store_grouped_category_support_tools_title"
+   },
+   {
+    "collectionId": "app:co:datalearning-group7",
+    "icon": "Map",
+    "title": "_store_grouped_category_navigation_mapping_title"
+   },
+   {
+    "collectionId": "app:co:productivity-group",
+    "icon": "Briefcase",
+    "title": "_store_grouped_category_productivity_title"
+   },
+   {
+    "collectionId": "app:co:content-collaboration",
+    "icon": "ChatMultiple",
+    "title": "_store_grouped_category_content_collaborations_title"
+   },
+   {
+    "collectionId": "app:co:business-operations",
+    "icon": "Building",
+    "title": "_store_grouped_category_business_operations_title"
+   },
+   {
+    "collectionId": "app:co:it-developer-tools",
+    "icon": "Code",
+    "title": "_store_grouped_category_it_developer_tools_title"
+   },
+   {
+    "collectionId": "app:co:data-learning",
+    "icon": "DataPie",
+    "title": "_store_grouped_category_data_learning_title"
+   },
+   {
+    "collectionId": "app:co:support-tools",
+    "icon": "Headset",
+    "title": "_store_grouped_category_support_tools_title"
+   },
+   {
+    "collectionId": "app:co:navigation-mapping",
+    "icon": "Map",
+    "title": "_store_grouped_category_navigation_mapping_title"
+   },
+   {
+    "collectionId": "app:co:youragentsandapps-group",
+    "icon": "Person"
+   },
+   {
+    "collectionId": "app:co:industries-group-collection",
+    "icon": "BuildingFactory",
+    "title": "_store_grouped_category_industries_title"
+   },
+   {
+    "collectionId": "app:co:agentblueprints",
+    "icon": "BotSparkle"
+   },
+   {
+    "collectionId": "app:co:copilotplugins",
+    "icon": "Agents"
+   },
+   {
+    "collectionId": "app:co:powerplatform",
+    "icon": "Flash"
+   },
+   {
+    "collectionId": "device:co:headsets",
+    "icon": "Headset"
+   },
+   {
+    "collectionId": "device:co:webcameras",
+    "icon": "Video"
+   },
+   {
+    "collectionId": "device:co:speakerphones",
+    "icon": "Speaker"
+   },
+   {
+    "collectionId": "device:co:deskphonesandteamsdisplays",
+    "icon": "DeviceMeetingRoom"
+   },
+   {
+    "collectionId": "device:co:monitors",
+    "icon": "Desktop"
+   },
+   {
+    "collectionId": "device:co:teamsrooms",
+    "icon": "SurfaceHub"
+   },
+   {
+    "collectionId": "device:co:roomsystemsaccessories",
+    "icon": "DeviceMeetingRoomRemote"
+   },
+   {
+    "collectionId": "app:co:agriculture",
+    "icon": "FoodGrains"
+   },
+   {
+    "collectionId": "app:co:finance",
+    "icon": "Money"
+   },
+   {
+    "collectionId": "app:co:healthcareandlifesciences",
+    "icon": "HeartPulse"
+   },
+   {
+    "collectionId": "app:co:retail",
+    "icon": "ShoppingBag"
+   },
+   {
+    "collectionId": "app:co:professionalservices",
+    "icon": "PersonAccounts"
+   },
+   {
+    "collectionId": "app:co:education-industry",
+    "icon": "Teaching"
+   },
+   {
+    "collectionId": "app:co:distribution",
+    "icon": "VehicleShip"
+   },
+   {
+    "collectionId": "app:co:government",
+    "icon": "BuildingGovernment"
+   },
+   {
+    "collectionId": "app:co:manufacturing",
+    "icon": "BuildingFactory"
+   },
+   {
+    "collectionId": "app:co:sustainability",
+    "icon": "EarthLeaf"
+   },
+   {
+    "collectionId": "app:co:tenantapps",
+    "icon": "Guest"
+   },
+   {
+    "collectionId": "app:co:popularapps",
+    "icon": "StarEmphasis"
+   },
+   {
+    "collectionId": "app:co:toppicks",
+    "icon": "Ribbon"
+   },
+   {
+    "collectionId": "app:co:frequentcollaboratorsapps",
+    "icon": "ArrowTrending"
+   },
+   {
+    "collectionId": "device:co:featured",
+    "icon": "Star"
+   }
+  ]
  },
  "inContextStoreMinAppsCategory": 6,
  "collections": [

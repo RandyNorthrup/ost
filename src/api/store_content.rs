@@ -119,6 +119,20 @@ pub struct Collection {
     /// id of that featured collection (its rank list orders them).
     pub featured: Vec<String>,
     pub featured_by: String,
+    /// On the Store's home feed, in `feed_order` (Teams' isInFeed /
+    /// feedOrder), with its description.
+    pub in_feed: bool,
+    pub feed_order: Option<i64>,
+    pub description: String,
+    /// A category group's collections (its childCollectionId items).
+    pub children: Vec<String>,
+    /// Where the Store's header menus list it: "featured" or "category",
+    /// grouped by `nav_sub` (dividers) in `nav_order`.
+    pub nav_section: String,
+    pub nav_sub: String,
+    pub nav_order: Option<i64>,
+    /// Teams hides its apps' ratings (disableRatings: your org's apps).
+    pub no_ratings: bool,
 }
 
 /// Merge the burnt-in collections with the content doc's.
@@ -149,6 +163,13 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
             linked: list(c, "linkedEntities"),
             items: Vec::new(),
             hidden: c.get("isHidden").and_then(|h| h.as_bool()).unwrap_or(false),
+            in_feed: c.get("isInFeed").and_then(|h| h.as_bool()).unwrap_or(false),
+            feed_order: c.get("feedOrder").and_then(|h| h.as_i64()),
+            description: s(c, "description"),
+            nav_section: s(c, "navSection"),
+            nav_sub: s(c, "navSubSection"),
+            nav_order: c.get("navSectionOrder").and_then(|h| h.as_i64()),
+            no_ratings: c.get("disableRatings").and_then(|h| h.as_bool()).unwrap_or(false),
             ..Default::default()
         })
         .collect();
@@ -167,6 +188,8 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
             .flatten()
             .filter_map(|i| Some((i.get("id")?.as_str()?.to_string(), s(i, "type"))))
             .collect();
+        let children: Vec<String> =
+            typed.iter().filter(|(_, k)| k == "childCollectionId").map(|(i, _)| i.clone()).collect();
         if let Some((target, kind)) = typed.first()
             && kind == "linkedCollectionId"
         {
@@ -195,6 +218,19 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
                 if let Some(h) = hidden {
                     o.hidden = o.hidden || h;
                 }
+                // The doc's feed placement and description win.
+                if let Some(f) = c.get("isInFeed").and_then(|x| x.as_bool()) {
+                    o.in_feed = f;
+                }
+                if let Some(f) = c.get("feedOrder").and_then(|x| x.as_i64()) {
+                    o.feed_order = Some(f);
+                }
+                if let Some(d) = c.get("description").and_then(|x| x.as_str()).filter(|d| !d.is_empty()) {
+                    o.description = d.to_string();
+                }
+                if let Some(n) = c.get("navSection").and_then(|x| x.as_str()).filter(|n| !n.is_empty()) {
+                    o.nav_section = n.to_string();
+                }
                 if o.linked.is_empty() && o.items.is_empty() && !self_link {
                     o.items = items;
                 }
@@ -206,8 +242,15 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
                 } else {
                     Vec::new()
                 },
-                items: if self_link { Vec::new() } else { items },
                 hidden: hidden.unwrap_or(false),
+                in_feed: c.get("isInFeed").and_then(|x| x.as_bool()).unwrap_or(false),
+                feed_order: c.get("feedOrder").and_then(|x| x.as_i64()),
+                description: s(c, "description"),
+                nav_section: s(c, "navSection"),
+                nav_sub: s(c, "navSubSection"),
+                nav_order: c.get("navSectionOrder").and_then(|x| x.as_i64()),
+                items: if self_link || !children.is_empty() { Vec::new() } else { items },
+                children,
                 id,
                 ..Default::default()
             }),
@@ -221,6 +264,7 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
     }
     for c in &mut out {
         c.title = text(&c.title);
+        c.description = text(&c.description);
     }
     out
 }
@@ -237,7 +281,7 @@ async fn content(client: &TeamsClient) -> Result<serde_json::Value> {
     let ts = (chrono::Utc::now().timestamp_millis() / 7_200_000) as u64;
     let url = format!(
         "{CDN}/{}",
-        content_path(doc, client.license_details().as_ref(), ts)
+        content_path(doc, ecs::license(client).await.as_ref(), ts)
     );
     let v: serde_json::Value = client
         .http()
@@ -450,6 +494,8 @@ pub struct StoreApp {
     pub count_text: String,
     /// Teams' agent mark (sparkle) after the name.
     pub agent: bool,
+    /// You have it (Teams' check on the icon).
+    pub installed: bool,
 }
 
 /// One of the in-context Store's collections.
@@ -508,6 +554,7 @@ fn store_app(def: &serde_json::Value, r: Option<&Ranked>) -> StoreApp {
         average_text: format!("{:.1}", r.map(|r| r.average).unwrap_or(0.0)),
         count_text: app_details::compact(r.map(|r| r.count).unwrap_or(0)),
         agent: r.is_some_and(|r| is_agent(&r.caps)),
+        installed: false,
     }
 }
 
@@ -665,6 +712,234 @@ pub async fn in_context(
         installed,
         collections,
     })
+}
+
+/// One collection on the Store's home feed.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct FeedCollection {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub apps: Vec<StoreApp>,
+    pub no_ratings: bool,
+}
+
+/// Teams' feed order: collections with a feedOrder first, by it; the rest
+/// after, as listed.
+pub fn feed(collections: &[Collection]) -> Vec<Collection> {
+    let mut v: Vec<(usize, Collection)> = collections.iter().filter(|c| c.in_feed).cloned().enumerate().collect();
+    v.sort_by_key(|(i, c)| (c.feed_order.is_none(), c.feed_order.unwrap_or(0), *i));
+    v.into_iter().map(|(_, c)| c).collect()
+}
+
+/// An entry of the Store's Featured or Categories menu.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct NavItem {
+    pub id: String,
+    pub title: String,
+    /// The Fluent icon (Teams' storeGroupCollectionIconMap), as OST's
+    /// kebab name ("star-emphasis").
+    pub icon: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct StoreHome {
+    pub feed: Vec<FeedCollection>,
+    /// Featured: groups (divided in the menu) of entries.
+    pub featured: Vec<Vec<NavItem>>,
+    pub categories: Vec<NavItem>,
+}
+
+/// "StarEmphasis" -> "star-emphasis".
+fn kebab(name: &str) -> String {
+    let mut out = String::new();
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() && i > 0 {
+            out.push('-');
+        }
+        out.push(ch.to_ascii_lowercase());
+    }
+    out
+}
+
+/// A collection's menu icon: Teams' icon map by "app:co:{id}", else by
+/// title key.
+fn nav_icon(c: &Collection, title_key: &str) -> String {
+    let map = setting("storeGroupCollectionIconMap");
+    let list = map.as_array().cloned().unwrap_or_default();
+    let key = format!("app:co:{}", c.id);
+    list.iter()
+        .find(|e| e.get("collectionId").and_then(|x| x.as_str()) == Some(key.as_str()))
+        .or_else(|| list.iter().find(|e| !title_key.is_empty() && e.get("title").and_then(|x| x.as_str()) == Some(title_key)))
+        .and_then(|e| e.get("icon")?.as_str().map(kebab))
+        .unwrap_or_default()
+}
+
+/// The Store's header menus from the collections (Teams'
+/// getCollectionIdsForNavSection): Featured grouped by sub-section in
+/// navSectionOrder; Categories alphabetically.
+pub fn nav(collections: &[Collection], raw_titles: &HashMap<String, String>) -> (Vec<Vec<NavItem>>, Vec<NavItem>) {
+    let item = |c: &Collection| NavItem {
+        id: c.id.clone(),
+        title: c.title.clone(),
+        icon: nav_icon(c, raw_titles.get(&c.id).map(String::as_str).unwrap_or_default()),
+    };
+    let mut seen = HashSet::new();
+    let mut featured: Vec<&Collection> = collections
+        .iter()
+        .filter(|c| c.nav_section == "featured" && seen.insert(c.id.clone()))
+        .collect();
+    featured.sort_by_key(|c| c.nav_order.unwrap_or(i64::MAX));
+    let mut groups: Vec<(String, Vec<NavItem>)> = Vec::new();
+    for c in featured {
+        match groups.iter_mut().find(|(g, _)| *g == c.nav_sub) {
+            Some((_, v)) => v.push(item(c)),
+            None => groups.push((c.nav_sub.clone(), vec![item(c)])),
+        }
+    }
+    let mut categories: Vec<NavItem> =
+        collections.iter().filter(|c| c.nav_section == "category").map(item).collect();
+    categories.sort_by_key(|n| n.title.to_lowercase());
+    (groups.into_iter().map(|(_, v)| v).collect(), categories)
+}
+
+/// Everything needed to resolve collections into apps.
+struct Resolver {
+    collections: Vec<Collection>,
+    ranked: HashMap<String, Vec<Ranked>>,
+    rank: HashMap<String, Vec<String>>,
+    catalog: std::sync::Arc<Vec<serde_json::Value>>,
+    raw_titles: HashMap<String, String>,
+    /// Your apps' states, by lowercase id.
+    mine: HashMap<String, String>,
+}
+
+impl Resolver {
+    async fn new(client: &TeamsClient, wanted: impl Fn(&Collection) -> bool) -> Result<Self> {
+        let doc = content(client).await?;
+        let collections = collections_from(&doc);
+        let mut cats: Vec<String> = vec!["popularApps".into()];
+        for c in collections.iter().filter(|c| wanted(c)) {
+            if let Some(l) = c.linked.first()
+                && !l.to_lowercase().starts_with("cp_")
+                && !cats.iter().any(|x| x.eq_ignore_ascii_case(l))
+            {
+                cats.push(l.clone());
+            }
+        }
+        let ranked = ranked(client, &cats).await?;
+        let rank = items_rank(client, &rank_input(&doc)).await;
+        let catalog = app_details::catalog(client).await?;
+        // The title keys before translation (the icon map matches them).
+        let raw_titles = defaults()
+            .pointer("/collections")
+            .and_then(|c| c.as_array())
+            .into_iter()
+            .flatten()
+            .chain(doc.get("collectionsList").and_then(|l| l.as_array()).into_iter().flatten())
+            .filter_map(|c| {
+                let id = c.get("collectionId").or(c.get("id"))?.as_str()?.to_string();
+                Some((id, c.get("title")?.as_str()?.to_string()))
+            })
+            .collect();
+        let mine = app_details::entitlements(client).await.unwrap_or_default();
+        Ok(Self { collections, ranked, rank, catalog, raw_titles, mine })
+    }
+
+    fn apps(&self, c: &Collection) -> Vec<StoreApp> {
+        let defs: HashMap<String, &serde_json::Value> =
+            self.catalog.iter().filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d))).collect();
+        let by_id: HashMap<String, &Ranked> = self.ranked.values().flatten().map(|r| (r.id.to_lowercase(), r)).collect();
+        let mut seen = HashSet::new();
+        collection_ids(c, &self.ranked, &self.rank)
+            .into_iter()
+            .filter(|id| seen.insert(id.to_lowercase()))
+            .filter_map(|id| {
+                let mut a = store_app(defs.get(&id.to_lowercase())?, by_id.get(&id.to_lowercase()).copied());
+                a.installed = self.mine.get(&id.to_lowercase()).is_some_and(|s| s.starts_with("Installed"));
+                Some(a)
+            })
+            .collect()
+    }
+
+    fn feed_collection(&self, c: &Collection, top: Option<usize>) -> FeedCollection {
+        let mut apps = self.apps(c);
+        if let Some(n) = top {
+            apps.truncate(n);
+        }
+        FeedCollection { id: c.id.clone(), title: c.title.clone(), description: c.description.clone(), apps, no_ratings: c.no_ratings }
+    }
+}
+
+/// The Store's home: its feed collections (up to nine apps each, as Teams
+/// shows them) and the header menus.
+pub async fn store_home(client: &TeamsClient) -> Result<StoreHome> {
+    let r = Resolver::new(client, |c| c.in_feed).await?;
+    let feed_cols = feed(&r.collections);
+    let feed = feed_cols.iter().map(|c| r.feed_collection(c, Some(9))).filter(|f| !f.apps.is_empty()).collect();
+    let (featured, categories) = nav(&r.collections, &r.raw_titles);
+    Ok(StoreHome { feed, featured, categories })
+}
+
+/// A Store page: a collection with all its apps, or a category group with
+/// its collections (nine apps each).
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct StorePage {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub apps: Vec<StoreApp>,
+    pub sections: Vec<FeedCollection>,
+    pub no_ratings: bool,
+}
+
+pub async fn store_page(client: &TeamsClient, id: &str) -> Result<StorePage> {
+    let r = Resolver::new(client, |_| true).await?;
+    let c = r.collections.iter().find(|c| c.id == id).cloned().context("No such collection")?;
+    if c.children.is_empty() {
+        let f = r.feed_collection(&c, None);
+        return Ok(StorePage { id: c.id, title: c.title, description: c.description, apps: f.apps, sections: Vec::new(), no_ratings: c.no_ratings });
+    }
+    let sections = c
+        .children
+        .iter()
+        .filter_map(|ch| r.collections.iter().find(|x| &x.id == ch))
+        .map(|x| r.feed_collection(x, Some(9)))
+        .filter(|f| !f.apps.is_empty())
+        .collect();
+    Ok(StorePage { id: c.id, title: c.title, description: c.description, apps: Vec::new(), sections, no_ratings: false })
+}
+
+/// Search the Store (Teams' server search), every kind of app.
+pub async fn search_store(client: &TeamsClient, query: &str) -> Result<Vec<StoreApp>> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/users/apps/search"))
+        .bearer_auth(token)
+        .header("x-client-ui-language", "en-us")
+        .header("x-ms-client-caller", "SearchStoreAppsJob")
+        .json(&serde_json::json!({
+            "searchQuery": query,
+            "includeOpenAiPlugins": flag("includeOpenAIPlugins") || flag("enableCopilotExtensions"),
+            "includeSharedApps": flag("enableCopilotExtensions"),
+        }))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Store search")?
+        .json()
+        .await?;
+    let catalog = app_details::catalog(client).await?;
+    let ranked = popular(client).await.unwrap_or_default();
+    Ok(search_ids(&v)
+        .into_iter()
+        .filter_map(|id| {
+            let d = catalog.iter().find(|d| d.get("id").and_then(|i| i.as_str()).is_some_and(|i| i.eq_ignore_ascii_case(&id)))?;
+            Some(store_app(d, ranked.iter().find(|r| r.id.eq_ignore_ascii_case(&id))))
+        })
+        .collect())
 }
 
 /// The ranked catalog (all apps, by Teams' ranking), kept 30 minutes.
@@ -976,6 +1251,30 @@ mod tests {
                 )
             ]
         );
+    }
+
+    #[test]
+    fn store_menus_as_teams() {
+        // Shaped as storev3 on 2026-11-09: two category groups and the
+        // burnt-in featured collections.
+        let content = serde_json::json!({"collectionsList": [
+            {"id": "support-tools-group", "title": "_store_grouped_category_support_tools_title", "navSection": "category", "itemsList": [{"id": "customersupport", "type": "childCollectionId"}]},
+            {"id": "business-operations-group", "title": "_store_grouped_category_business_operations_title", "navSection": "category", "itemsList": [{"id": "finance", "type": "childCollectionId"}]}
+        ]});
+        let all = collections_from(&content);
+        let raw: HashMap<String, String> = [
+            ("support-tools-group".to_string(), "_store_grouped_category_support_tools_title".to_string()),
+            ("business-operations-group".to_string(), "_store_grouped_category_business_operations_title".to_string()),
+        ]
+        .into();
+        let (featured, categories) = nav(&all, &raw);
+        let titles: Vec<Vec<String>> = featured.iter().map(|g| g.iter().map(|n| n.title.clone()).collect()).collect();
+        assert_eq!(titles[0], ["Built for your org"]);
+        assert!(titles.iter().flatten().any(|t| t == "Popular on Teams"));
+        assert_eq!(featured[0][0].icon, "guest");
+        assert_eq!(categories.iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), ["Business operations", "Support and tools"]);
+        assert_eq!(categories[0].icon, "building");
+        assert_eq!(all.iter().find(|c| c.id == "business-operations-group").unwrap().children, ["finance"]);
     }
 
     #[test]

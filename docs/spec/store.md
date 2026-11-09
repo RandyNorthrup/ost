@@ -100,3 +100,49 @@ The reply (about 430 KB) holds the agents plus `Headers` (with an `ETag`) and `C
   - The app's events are shown instead: `ThreadActivity/AddCustomApp` reads "{name} added **{app}** here." and `DeleteCustomApp` reads "{name} removed {app} from the chat.", both with the Apps icon.
   - The first time, Teams may add "Try an action below to see how it works." with the app's action buttons.
 - **Manage apps ▸ Remove** sends `DELETE {mt}/beta/chats/{threadId}/apps/entitlements/{appId}` after "Remove {app}? Are you sure you want to remove {app}?".
+
+## 4. The Store (Apps)
+
+Measured on winpc on 2026-11-09. OST: `StoreView.qml`, plus `store_home`, `store_page` and `search_store` in `api::store_content`.
+
+### Header
+- 60 tall: "Store" (18/24 bold), then the tabs Home, Featured ▾ and Categories ▾ (14/20, 12 × 10 padding, brand underline), then Devices ▾ and the "Manage your apps" button.
+- **Featured** is a 256-wide menu of the collections with `navSection` "featured", grouped by `navSubSection` (divided) in `navSectionOrder`: Built for your org | Agents | Popular on Teams, Trending with your peers.
+- **Categories** lists the category groups (content `navSection` "category") alphabetically: Business operations, Content and collaboration, Data and learning, IT and developer tools, Navigation and mapping, Productivity, Support and tools.
+- Menu icons come from `storeGroupCollectionIconMap`, by "app:co:{id}" or by title key: Guest, Agents, StarEmphasis, ArrowTrending, Building, ChatMultiple, DataPie, Code, Map, Briefcase, Headset.
+
+### Banner
+276 tall, lavender:
+- "Do more in Teams" (40/56 semibold);
+- "Discover agents and apps that can help you tackle any task." (14/20);
+- a 530 × 48 pill search, "Search agents and apps".
+
+### Feed
+- The collections with `isInFeed`, by `feedOrder`. The content doc overrides the burnt-in placement and description.
+- For ost-test1 the feed is:
+  - Added by your org
+  - Popular on Teams
+  - Agents We Love
+  - Productivity tools
+  - Built by Microsoft
+  - Project management
+  - Create effective online surveys
+  - Review and approve leaves
+  - Education
+- Each collection is 90 in:
+  - the title (18/24 bold) at 26;
+  - the description (14/20 #424242) at 54;
+  - "See all" (14/16 semibold, brand) at the right.
+- Then up to nine apps, three to a row from 92. Cards are 330 × 128 (104 without ratings), 16 apart, radius 12, with a hover fill. Each card has:
+  - a 52 px squircle icon at (16, 16), with a 24 px check circle when you have the app;
+  - the name (16/20 semibold) at (84, 21);
+  - two lines of description (14/20) at 45;
+  - the rating (12/16) at 91. `disableRatings` collections (your org's) leave it out.
+
+### Pages
+- See all, a menu entry and search open a page: Back (32), the title (30/36 semibold) and the description (16/22).
+- Then cards 340 apart, with the developer (12/16) under the name. A category group instead shows its child collections as on the feed.
+
+### The Store doc path depends on the licence
+- For SMB users, Teams asks for `apps/smb/…`. Without authz `licenseDetails` OST asked for the Enterprise doc instead, which has different collections and featured entries.
+- OST now fetches `licenseDetails` when the config lacks them (`api::ecs::license`).
