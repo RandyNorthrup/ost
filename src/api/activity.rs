@@ -11,7 +11,7 @@ use super::client::TeamsClient;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ActivityItem {
     pub id: String,
-    /// "reaction", "mention", "reply", "missedCall", "voicemail",
+    /// "reaction", "mention", "tagMention", "reply", "missedCall", "voicemail",
     /// "addedToTeam", or the service's own type for anything else.
     pub kind: String,
     /// The headline, as Teams words it.
@@ -128,6 +128,22 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         ("reactionInChat" | "reaction", _) => (
             "reaction",
             format!("{who} reacted to your message"),
+            in_where(&thread_type, &topic),
+        ),
+        // A tag you are in (Teams' mention_tag processor: "{name}
+        // mentioned {tag}", the tag from activityContext.tagname; only the
+        // Tag mentions filter shows it).
+        ("mention", "tag") => (
+            "tagMention",
+            {
+                let ctx = match act.get("activityContext") {
+                    Some(serde_json::Value::String(t)) => serde_json::from_str(t).unwrap_or_default(),
+                    Some(v) => v.clone(),
+                    None => serde_json::Value::Null,
+                };
+                let tag = ctx.get("tagname").and_then(|t| t.as_str()).unwrap_or_default();
+                format!("{who} mentioned {tag}")
+            },
             in_where(&thread_type, &topic),
         ),
         ("mention" | "mentionInChat", _) => (
@@ -253,5 +269,19 @@ mod tests {
         assert_eq!(items[1].thread_id, "19:x@unq.gbl.spaces");
         assert_eq!(items[2].context, "Teams call");
         assert!(parse_feed("not json").is_empty());
+    }
+
+    #[test]
+    fn tag_mentions_name_the_tag() {
+        let feed = serde_json::json!({ "messages": [
+            msg("4", serde_json::json!({"activityType":"mention","activitySubtype":"tag",
+                "activityTimestamp":"2026-11-09T13:03:45Z","sourceThreadTopic":"General",
+                "sourceThreadType":"topic","sourceUserId":"8:orgid:a",
+                "sourceUserImDisplayName":"Randy Northrup",
+                "activityContext":{"tagname":"OST test tag"}}), false),
+        ]});
+        let items = parse_feed(&feed.to_string());
+        assert_eq!(items[0].kind, "tagMention");
+        assert_eq!(items[0].title, "Randy Northrup mentioned OST test tag");
     }
 }

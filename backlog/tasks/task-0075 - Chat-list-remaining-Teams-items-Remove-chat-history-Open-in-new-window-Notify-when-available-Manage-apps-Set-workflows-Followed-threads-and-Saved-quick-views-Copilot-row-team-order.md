@@ -7,7 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-09T12:32:00Z'
-updated_date: '2026-11-09T12:42:00Z'
+updated_date: '2026-11-09T12:50:00Z'
 labels:
   - desktop
   - chatlist
@@ -38,4 +38,6 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 
 <!-- SECTION:NOTES:BEGIN -->
 - The chat header's ··· (More chat options) also lacks Open in new window (Ctrl+O), Share screen (Ctrl+Shift+E) and Remove chat history; they belong with this task.
+
+- Also from the old TASK-0046 list: the meeting chat's "+4" tabs (Attendance, Breakout Rooms, Q&A, Meeting Whiteboard) and Add a tab; Report a concern in a meeting chat's ··· (tenant policy reportMeeting); Add agents.
 <!-- SECTION:NOTES:END -->

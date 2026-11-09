@@ -3012,6 +3012,10 @@ Rectangle {
             const general = t ? (t.channels.find(c => c.name === "General") || t.channels[0]) : null
             return general ? { id: general.id, name: root.teamName, groupId: root.teamId } : null
         }
+        tagMentions: {
+            const all = backend.teamTagsJson ? JSON.parse(backend.teamTagsJson) : {}
+            return teamMention ? (all[teamMention.id] || []) : []
+        }
         readonly property var roster: backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
         memberCount: roster.length
         mentionables: roster.filter(m => !m.me).map(m => ({ mri: m.mri, name: m.name, mail: m.mail }))

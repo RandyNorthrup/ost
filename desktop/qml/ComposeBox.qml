@@ -51,6 +51,9 @@ Item {
     property bool canAddPeople: false
     signal addPeopleRequested()
     property var teamMention: null
+    // The team's tags ({id, name, count}), offered after the team and
+    // channel as Teams' picker does.
+    property var tagMentions: []
     property int memberCount: 0
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
@@ -609,7 +612,7 @@ Item {
             shareContact.start()
             return
         }
-        if (person.kind === "team" || person.kind === "channel") {
+        if (person.kind === "team" || person.kind === "channel" || person.kind === "tag") {
             const at1 = mentionAt, end1 = input.cursorPosition
             mentionAt = -1; mentionPicker.close()
             input.remove(at1, end1)
@@ -660,6 +663,10 @@ Item {
                 out.push({ kind: "team", mri: t.id, name: t.name, mail: "Team", photoId: t.groupId })
             if (q && c && (words(c.name).some(w => w.startsWith(q)) || c.name.toLowerCase().startsWith(q) || "channel".startsWith(q)))
                 out.push({ kind: "channel", mri: c.id, name: c.name, mail: "Channel", photoId: t ? t.groupId : "" })
+            // Tags, by a word of their name ("1 person", "N people").
+            if (q) for (const g of root.tagMentions || [])
+                if (words(g.name).some(w => w.startsWith(q)) || g.name.toLowerCase().startsWith(q))
+                    out.push({ kind: "tag", mri: g.id, name: g.name, mail: g.count === 1 ? "1 person" : g.count + " people" })
             for (const p of fromRoster) out.push(p)
             for (const p of found) if (!out.some(o => o.mri === p.mri)) out.push(p)
             // Everyone, in group chats up to 250 people.
@@ -703,6 +710,13 @@ Item {
                         name: team
                         initialsText: team.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
                         photoId: prow.modelData.photoId ? "team:" + prow.modelData.photoId : ""
+                    }
+                    // A tag: the tag icon on a 32 px lavender circle.
+                    Rectangle {
+                        visible: prow.modelData.kind === "tag"
+                        x: 19.6; y: 7.6; width: 32; height: 32; radius: 16
+                        color: theme.pick("#C5CBFA", "#3D3E78")
+                        FluentIcon { anchors.centerIn: parent; name: "tag-20"; size: 20; color: theme.pick("#444791", "#C5CBFA") }
                     }
                     FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.textStrong }
                     // Share someone's contact info: the contact card icon (20).
@@ -764,7 +778,7 @@ Item {
     }
     function pickShareForTest() { insertMention({ kind: "share" }) }
     function mentionForTest(text) { input.insert(input.cursorPosition, text); input.cursorPosition = input.length }
-    function pickMentionForTest() { mentionPicker.pick() }
+    function pickMentionForTest(n) { mentionPicker.current = n || 0; mentionPicker.pick() }
 
     function deliveryForTest() { deliveryPopup.anchorItem = sideTools; deliveryPopup.open() }
     function plusForTest() { plusFlyout.anchorItem = sideTools; plusFlyout.open() }

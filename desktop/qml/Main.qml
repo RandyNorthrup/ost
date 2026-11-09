@@ -2890,7 +2890,8 @@ Window {
     }
 
     // --mention-test=<query> with --open-chat=<id> --shots=<dir>: type a
-    // message with "@<query>", capture the picker, pick the first person,
+    // message with "@<query>", capture the picker, pick the first row (or
+    // row --mention-pick=<n>),
     // capture, send it and log the newest message.
     Timer {
         running: Qt.application.arguments.some(a => a.startsWith("--mention-test=")) && backend.signedIn
@@ -2908,8 +2909,8 @@ Window {
             const c = conversation.composeForTest()
             const text = (Qt.application.arguments.find(a => a.startsWith("--mention-text=")) || "--mention-text=OST test 54: mention for ").slice(15)
             if (step === 0) { if (conversation.isChannel) conversation.posting = true; conversation.setPlain(text); c.focusEditor(); c.mentionForTest("@" + q) }
-            else if (step === 1) { shot("picker"); console.warn("MENTION-TEST targets", JSON.stringify(c.channelMention), JSON.stringify(c.teamMention), conversation.chatName, conversation.teamId) }
-            else if (step === 2) c.pickMentionForTest()
+            else if (step === 1) { shot("picker"); console.warn("MENTION-TEST targets", JSON.stringify(c.channelMention), JSON.stringify(c.teamMention), JSON.stringify(c.tagMentions), conversation.chatName, conversation.teamId) }
+            else if (step === 2) c.pickMentionForTest(parseInt((Qt.application.arguments.find(a => a.startsWith("--mention-pick=")) || "--mention-pick=0").slice(15)))
             else if (step === 3) { c.insertText("check"); shot("picked"); console.warn("MENTION-TEST editor", c.formattedText().replace(/\n/g, " ").slice(-400)) }
             else if (step === 4) conversation.sendForTest()
             else if (step === 6) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => m.mine).pop(); console.warn("MENTION-TEST newest", JSON.stringify({ html: m.html, state: m.send_state })); Qt.quit() }

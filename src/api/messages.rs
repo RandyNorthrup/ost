@@ -1538,10 +1538,11 @@ fn my_mention_ids(props: Option<&serde_json::Value>, me: &str) -> Vec<String> {
             m.get("mentionType").and_then(|t| t.as_str()) != Some("share-contact")
         })
         .filter(|m| {
-            !me.is_empty()
-                && m.get("mri")
-                    .and_then(|x| x.as_str())
-                    .is_some_and(|x| x.eq_ignore_ascii_case(me))
+            let mri = m.get("mri").and_then(|x| x.as_str());
+            (!me.is_empty() && mri.is_some_and(|x| x.eq_ignore_ascii_case(me)))
+                // A tag you are in mentions you (Teams' currentUserTagIds).
+                || (m.get("mentionType").and_then(|t| t.as_str()) == Some("tag")
+                    && mri.is_some_and(super::teams::is_my_tag))
         })
         .filter_map(|m| match m.get("itemid")? {
             serde_json::Value::Number(n) => Some(n.to_string()),
@@ -2211,6 +2212,7 @@ fn mentions_as_tokens(html: &str, mentions: &[(String, String)]) -> String {
                     "everyone" => "mention-everyone",
                     "channel" => "mention-channel",
                     "team" => "mention-team",
+                    "tag" => "mention-tag",
                     "share-contact" => "mention-contact",
                     _ => "mention",
                 };
@@ -3303,6 +3305,8 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                             .map(|c| (c, "channel"))
                     })
                     .or_else(|| href.strip_prefix("mention-team:").map(|t| (t, "team")))
+                    // A team tag (its tagId).
+                    .or_else(|| href.strip_prefix("mention-tag:").map(|t| (t, "tag")))
                     // A shared contact (Share someone's contact info).
                     .or_else(|| {
                         href.strip_prefix("mention-contact:")
@@ -3321,9 +3325,17 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                     } else {
                         ""
                     };
-                    out.push_str(&format!(
-                        "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"{scope}\" itemid=\"{itemid}\">"
-                    ));
+                    if mention_type == "tag" {
+                        // As Teams posted a tag mention (OST Test Team, on
+                        // winpc): its editor's read-only wrapper stays.
+                        out.push_str(&format!(
+                            "<readonly class=\"skipProofing\" itemtype=\"http://schema.skype.com/Mention\" spellcheck=\"false\"><span itemtype=\"http://schema.skype.com/Mention\" itemscope itemid=\"{itemid}\">"
+                        ));
+                    } else {
+                        out.push_str(&format!(
+                            "<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"{scope}\" itemid=\"{itemid}\">"
+                        ));
+                    }
                     mentions.push(OutMention {
                         kind: "http://schema.skype.com/Mention",
                         itemid,
@@ -3361,6 +3373,9 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                     out.truncate(mention_start);
                     out.push_str(&escape(&name));
                     out.push_str("</span>");
+                    if mentions.last().is_some_and(|m| m.mention_type == "tag") {
+                        out.push_str("</readonly>");
+                    }
                     if let Some(m) = mentions.last_mut() {
                         m.display_name = name;
                     }
@@ -3621,6 +3636,36 @@ mod quote_tests {
                 {"@type": "http://schema.skype.com/Mention", "itemid": 1, "mri": team, "mentionType": "team", "displayName": "OST Test Team"}
             ])
         );
+    }
+
+    #[test]
+    fn tag_mentions_send_and_highlight_as_teams() {
+        // As Teams posted "OST TEST 69 tag mention: @OST test tag check" in
+        // OST Test Team's General channel.
+        let (html, m) = teams_html_and_mentions(
+            r#"<p>OST TEST 69 tag mention: <a href="mention-tag:tmu3aacUko">OST test tag</a>&nbsp;check</p>"#,
+        );
+        assert_eq!(
+            html,
+            r#"<p>OST TEST 69 tag mention: <readonly class="skipProofing" itemtype="http://schema.skype.com/Mention" spellcheck="false"><span itemtype="http://schema.skype.com/Mention" itemscope itemid="0">OST test tag</span></readonly>&nbsp;check</p>"#
+        );
+        assert_eq!(
+            serde_json::to_value(&m).unwrap(),
+            serde_json::json!([{"@type": "http://schema.skype.com/Mention", "itemid": 0, "mri": "tmu3aacUko", "mentionType": "tag", "displayName": "OST test tag"}])
+        );
+        // Received: a tag you are in mentions you; your own post stays
+        // editable with the tag kept.
+        let mentions = r#"[{"@type":"http://schema.skype.com/Mention","itemid":"0","mri":"tmu3aacUko","mentionType":"tag","displayName":"OST test tag"}]"#;
+        let msg = |from: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": html, "from": format!("https://x/contacts/{from}"), "imdisplayname": "X", "properties": {"mentions": mentions}});
+        let v = view_of(&msg("8:orgid:x"), "8:orgid:me", "Me").unwrap();
+        assert!(v.html.contains("OST test tag") && !v.html.contains("readonly"));
+        let tag = |mine| crate::api::teams::TeamTag { id: "tmu3aacUko".into(), name: "OST test tag".into(), count: 1, mine };
+        crate::api::teams::note_tags_for_test(&[tag(true)]);
+        let v = view_of(&msg("8:orgid:x"), "8:orgid:me", "Me").unwrap();
+        assert!(v.mentions_me && v.mention_kind == "me" && v.html.contains("mention-me"));
+        let own = view_of(&msg("8:orgid:me"), "8:orgid:me", "Me").unwrap();
+        assert!(own.edit_html.contains(r#"href="mention-tag:tmu3aacUko""#), "{}", own.edit_html);
+        crate::api::teams::note_tags_for_test(&[tag(false)]);
     }
 
     #[test]

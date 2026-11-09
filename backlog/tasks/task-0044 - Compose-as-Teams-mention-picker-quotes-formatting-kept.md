@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-08T00:59:00Z'
+updated_date: '2026-11-09T13:12:00Z'
 labels:
   - desktop
   - messages
@@ -74,4 +74,7 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - Formatting bar (6ca36fe): all Teams groups except tables, Teams' overflow (flex gap calc(100% - 49rem)), popups measured (highlight/font colour palettes, font size, rich style, insert link), code block with Teams' languages, RichText C++ layer exporting clean HTML -> Teams wire; OST TEST 69 rendered by Teams web like its own.
 - Received formatting: quotes, code cards, colours/sizes, headings (measured 18/300, 14/700, 12/700), inline code.
 - Left: tables (insert/rows/columns/delete), code card ··· menu, syntax colours, inline-code hairline box (Qt rich text limit), Rich style button width in bar never shows (always overflows at 458).
+
+- Tags (AC1): the @ picker offers the team's tags after the team and channel (CSA tagCards; lavender circle with the Tag icon, "1 person"/"N people"), sends Teams' tag mention (readonly wrapper, mentionType "tag", mri = tagId), and keeps it when editing. A tag you are in counts as mentioning you (orange bold, @ badge), as Teams' currentUserTagIds. Activity names tag mentions "{name} mentioned {tag}" under the Tag mentions filter. Verified live: OST's "OST TEST 70" renders on winpc Teams exactly like Teams' own "OST TEST 69".
+- Left in AC1: Add agent to the chat/channel (agent picker), and the Everyone limits banner.
 <!-- SECTION:NOTES:END -->

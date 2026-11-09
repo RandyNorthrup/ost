@@ -98,6 +98,9 @@ pub mod qobject {
         #[qproperty(QString, folders_json)]
         /// Group chats' member counts: {chatId: n}.
         #[qproperty(QString, chat_member_counts_json)]
+        /// Each team's tags by its General thread id:
+        /// {threadId: [{id, name, count, mine}]}.
+        #[qproperty(QString, team_tags_json)]
         /// Apps' privacy and terms links for shared app cards:
         /// {appId: {privacy, terms, name}}.
         #[qproperty(QString, app_links_json)]
@@ -1251,6 +1254,7 @@ pub struct BackendRust {
     app_links_json: QString,
     folders_json: QString,
     chat_member_counts_json: QString,
+    team_tags_json: QString,
     folders: teams_cli::api::folders::Folders,
     /// Apps whose links were asked for already.
     app_links_asked: std::collections::HashSet<String>,
@@ -7032,13 +7036,28 @@ impl qobject::Backend {
             let result = async {
                 let client = TeamsClient::new().await?;
                 // Teams' own list: which channels you show, unread, New.
-                api::teams::list_teams_csa(&client).await
+                let teams = api::teams::list_teams_csa(&client).await?;
+                Ok::<_, anyhow::Error>((client, teams))
             }
             .await;
             match result {
-                Ok(teams) => {
+                Ok((client, teams)) => {
                     let text = serde_json::to_string(&teams).unwrap_or_else(|_| "[]".into());
                     let _ = qt.queue(move |mut this| this.as_mut().set_teams_json(QString::from(text.as_str())));
+                    // Every team's tags: the @ picker offers them, and a
+                    // mention of a tag you are in mentions you (as Teams'
+                    // currentUserTagIds).
+                    let mut all = serde_json::Map::new();
+                    for t in teams.iter().filter(|t| !t.thread_id.is_empty()) {
+                        match api::teams::team_tags(&client, &t.thread_id).await {
+                            Ok(tags) => {
+                                all.insert(t.thread_id.clone(), json!(tags));
+                            }
+                            Err(e) => tracing::warn!("tags of {}: {}", t.name, short_error(&e)),
+                        }
+                    }
+                    let text = serde_json::Value::Object(all).to_string();
+                    let _ = qt.queue(move |mut this| this.as_mut().set_team_tags_json(QString::from(text.as_str())));
                 }
                 Err(e) => tracing::warn!("teams failed: {}", short_error(&e)),
             }

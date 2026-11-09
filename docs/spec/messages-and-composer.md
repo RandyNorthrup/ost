@@ -985,6 +985,16 @@ Groups are separated by dividers; empty groups are skipped.
   - The badge (`channel-badge` and the like) is a 24 px circle centred on the card's right edge, 20 down, with shadow 0 0 2 / 0 2 4. It holds a white 16 px icon: Fluent's 20 px icon drawn with viewBox "2 2 16 16".
   - Orange is #DA3B01.
 
+### Tags (measured on winpc, 2026-11-09, OST Test Team > General, "OST TEST 69")
+- **Source.** The picker reads the team's tags from `GET {csa}/api/v1/teams/{teamThreadId}/tagCards?tagType=any` (chatsvcagg token): `tagCards[] {tagId, tagName, memberIds, memberCount, tagType, currentMemberIsPartOfTag}`.
+- **Picker row.** After the team and channel rows, matched by a word of the tag's name. 47.3 tall like a person row: a 32 px circle #C5CBFA holding the Tag 20 icon in #444791, the name 14/20 with the typed part bold, and "1 person" / "N people" (12/16) under it. (The code's "Channel tag | # people" label did not show on this build.)
+- **Compose.** The tag is one token in BrandForeground1.
+- **Wire format** (Teams-sent "OST TEST 69"; OST-sent "OST TEST 70" rendered the same):
+  - the content keeps the editor's wrapper: `<readonly class="skipProofing" itemtype="http://schema.skype.com/Mention" spellcheck="false"><span itemtype="http://schema.skype.com/Mention" itemscope itemid="0">OST test tag</span></readonly>`. The service stores it without the wrapper;
+  - its mention has `mentionType` "tag", `mri` = the `tagId` and `displayName` = the tag name.
+- **Rendering.** A mention of a tag you are in (Teams' `currentUserTagIds`, from `currentMemberIsPartOfTag`) mentions you: the name in the mention-me orange bold, and the post gets the orange @ badge. Other tags render as ordinary mentions.
+- **Activity.** Its feed item has `activityType` "mention" and `activitySubtype` "tag" (the `mention_tag` processor). The title is "{name} mentioned {tag}", the tag from `activityContext.tagname`. Only the Tag mentions filter shows it.
+
 ## 20. Keyboard shortcuts (504800, Windows class `P`; per-flag, all live on unless noted)
 | key | command | key | command |
 |---|---|---|---|
@@ -1060,5 +1070,5 @@ Menu items show the shortcut text; hover-bar buttons expose it through `aria-key
 - [ ] "+" flyout items; Attach menu; fun picker tabs.
 - [ ] Delivery options (Urgent disabled above 20 members), schedule send on right-click of Send, Enter behaviour and setting, hint text.
 - [ ] Pre-send checks, 90112-byte message limit and its error text, draft save, debounced at 400 ms.
-- [ ] @mention rules: Everyone limits and tags (channel and team mentions done).
+- [ ] @mention rules: Everyone limits (channel, team and tag mentions done).
 - [ ] Message and compose keyboard shortcuts in §20.

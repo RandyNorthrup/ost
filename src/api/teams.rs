@@ -230,9 +230,113 @@ pub async fn list_teams_csa(client: &TeamsClient) -> Result<Vec<ListTeam>> {
     Ok(teams)
 }
 
+/// A team tag, as Teams' @ picker offers it (CSA `tagCards`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TeamTag {
+    /// `tagId`, the mention's `mri`.
+    pub id: String,
+    pub name: String,
+    /// `memberCount` ("1 person", "N people").
+    pub count: u64,
+    /// `currentMemberIsPartOfTag`: a mention of it mentions you.
+    pub mine: bool,
+}
+
+/// The tags in a CSA `tagCards` reply.
+pub fn team_tags_from(v: &serde_json::Value) -> Vec<TeamTag> {
+    v.get("tagCards")
+        .and_then(|t| t.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            Some(TeamTag {
+                id: t.get("tagId")?.as_str()?.to_string(),
+                name: t.get("tagName")?.as_str()?.to_string(),
+                count: t.get("memberCount").and_then(|c| c.as_u64()).unwrap_or(0),
+                mine: t
+                    .get("currentMemberIsPartOfTag")
+                    .and_then(|m| m.as_bool())
+                    .unwrap_or(false),
+            })
+        })
+        .collect()
+}
+
+/// The ids of the tags you are in, from every team whose tags were read
+/// (Teams' `currentUserTagIds`: a mention of one of them mentions you).
+static MY_TAGS: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+/// Whether `id` is a tag you are in (as far as the tags read so far say).
+pub fn is_my_tag(id: &str) -> bool {
+    MY_TAGS.read().is_ok_and(|t| t.iter().any(|x| x == id))
+}
+
+#[cfg(test)]
+pub(crate) fn note_tags_for_test(tags: &[TeamTag]) {
+    note_tags(tags)
+}
+
+fn note_tags(tags: &[TeamTag]) {
+    if let Ok(mut mine) = MY_TAGS.write() {
+        for t in tags {
+            mine.retain(|x| x != &t.id);
+            if t.mine {
+                mine.push(t.id.clone());
+            }
+        }
+    }
+}
+
+/// A team's tags (`team_thread_id` is its General channel's thread), as
+/// Teams reads them for the @ picker:
+/// `GET {csa}/api/v1/teams/{id}/tagCards?tagType=any`.
+pub async fn team_tags(client: &TeamsClient, team_thread_id: &str) -> Result<Vec<TeamTag>> {
+    let token = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default").await?;
+    let region = client
+        .chat_service_url()
+        .split("//")
+        .nth(1)
+        .and_then(|h| h.split('.').next())
+        .unwrap_or("amer")
+        .to_string();
+    let v: serde_json::Value = client
+        .http()
+        .get(format!(
+            "https://teams.microsoft.com/api/csa/{region}/api/v1/teams/{team_thread_id}/tagCards?tagType=any"
+        ))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Team tags")?
+        .json()
+        .await?;
+    let tags = team_tags_from(&v);
+    note_tags(&tags);
+    Ok(tags)
+}
+
 #[cfg(test)]
 mod list_tests {
     use super::*;
+
+    #[test]
+    fn tag_cards_read_as_teams_picker_shows_them() {
+        // As Teams read OST Test Team's tags on winpc.
+        let v = serde_json::json!({"tagCards":[{"tagId":"tmu3aacUko","tagName":"OST test tag","memberIds":["8:orgid:4287e791-1b98-4963-8b94-281c50472683"],"memberCount":1,"tagType":"team","currentMemberIsPartOfTag":true,"scheduledMembers":[],"version":1}],"continuationToken":""});
+        let tags = team_tags_from(&v);
+        assert_eq!(
+            tags,
+            vec![TeamTag { id: "tmu3aacUko".into(), name: "OST test tag".into(), count: 1, mine: true }]
+        );
+        note_tags(&tags);
+        // (Another id, as the messages tests use this one.)
+        let t = TeamTag { id: "listTestTag".into(), ..tags[0].clone() };
+        note_tags(std::slice::from_ref(&t));
+        assert!(is_my_tag("listTestTag") && !is_my_tag("other"));
+        note_tags(&[TeamTag { mine: false, ..t }]);
+        assert!(!is_my_tag("listTestTag"));
+    }
 
     #[test]
     fn teams_list_reads_shown_channels_unread_and_new() {
