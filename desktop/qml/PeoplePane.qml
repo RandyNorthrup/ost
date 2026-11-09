@@ -517,10 +517,12 @@ Rectangle {
             corner = button.mapToItem(root, button.width, button.height)
             open()
         }
-        TextMetrics { id: moreMetrics; font.family: theme.font; font.pixelSize: 14 }
+        // Measured without writing to anything the binding reads (a
+        // TextMetrics' text would loop the binding).
+        FontMetrics { id: moreMetrics; font.family: theme.font; font.pixelSize: 14 }
         readonly property real itemWidth: {
             let w = 0
-            for (const it of root.moreItems) { moreMetrics.text = it.t; w = Math.max(w, moreMetrics.advanceWidth) }
+            for (const it of root.moreItems) w = Math.max(w, moreMetrics.advanceWidth(it.t))
             return Math.ceil(w * 100) / 100 + 40
         }
         contentItem: Column {
