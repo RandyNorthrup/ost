@@ -29,6 +29,8 @@ fn main() {
         "qml/StoreView.qml",
         "qml/WebApp.qml",
         "qml/AppDetailsDialog.qml",
+        "qml/AgentStore.qml",
+        "qml/AboutBotDialog.qml",
         "qml/ShareForm.qml",
         "qml/AppCardFooter.qml",
         "qml/SectionDialog.qml",

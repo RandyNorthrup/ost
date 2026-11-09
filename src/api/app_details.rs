@@ -1197,7 +1197,7 @@ pub fn details_from(
     }
 }
 
-fn suggestions_base(client: &TeamsClient) -> Result<String> {
+pub(crate) fn suggestions_base(client: &TeamsClient) -> Result<String> {
     let base = client
         .region_endpoint("appsSuggestionService")
         .context("No app suggestions endpoint")?;
@@ -1205,7 +1205,7 @@ fn suggestions_base(client: &TeamsClient) -> Result<String> {
     Ok(base.strip_suffix("/api").unwrap_or(base).to_string())
 }
 
-async fn suggestions_token() -> Result<String> {
+pub(crate) async fn suggestions_token() -> Result<String> {
     static CACHE: Mutex<Option<(String, std::time::Instant)>> = Mutex::new(None);
     if let Some((t, at)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
         && at.elapsed() < std::time::Duration::from_secs(45 * 60)
@@ -1218,7 +1218,7 @@ async fn suggestions_token() -> Result<String> {
 }
 
 /// Teams' clientInfo header for these services.
-fn client_info() -> String {
+pub(crate) fn client_info() -> String {
     let offset = chrono::Local::now().offset().local_minus_utc();
     let sign = if offset < 0 { '-' } else { '+' };
     let o = offset.abs();
@@ -1414,7 +1414,7 @@ pub async fn details(client: &TeamsClient, app_id: &str) -> Result<AppDetails> {
 
 /// The middle tier's catalog of apps (Teams' definitionsv2), kept for the
 /// session.
-async fn catalog(client: &TeamsClient) -> Result<std::sync::Arc<Vec<serde_json::Value>>> {
+pub async fn catalog(client: &TeamsClient) -> Result<std::sync::Arc<Vec<serde_json::Value>>> {
     static CACHE: Mutex<Option<std::sync::Arc<Vec<serde_json::Value>>>> = Mutex::new(None);
     if let Some(c) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).clone() {
         return Ok(c);

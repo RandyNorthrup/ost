@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-09T13:12:00Z'
+updated_date: '2026-11-09T14:36:00Z'
 labels:
   - desktop
   - messages
@@ -77,4 +77,7 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 
 - Tags (AC1): the @ picker offers the team's tags after the team and channel (CSA tagCards; lavender circle with the Tag icon, "1 person"/"N people"), sends Teams' tag mention (readonly wrapper, mentionType "tag", mri = tagId), and keeps it when editing. A tag you are in counts as mentioning you (orange bold, @ badge), as Teams' currentUserTagIds. Activity names tag mentions "{name} mentioned {tag}" under the Tag mentions filter. Verified live: OST's "OST TEST 70" renders on winpc Teams exactly like Teams' own "OST TEST 69".
 - Left in AC1: Add agent to the chat/channel (agent picker), and the Everyone limits banner.
+
+- Add agent (AC1): the picker row opens Teams' in-context agent Store (TASK-0076).
+- Left in AC1: the Everyone limits banner (more than 50 people: "# people will be notified"; over 1,000: not available). This can't be tested live with the test chats.
 <!-- SECTION:NOTES:END -->

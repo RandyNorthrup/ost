@@ -26,6 +26,13 @@ Popup {
     /// from the Store or a chat).
     signal openApp(string appId, string name)
     property bool offerOpen: false
+    /// Opened from "Add agent" for a conversation ({id, channel}): Add puts
+    /// the app there, and Back returns to that Store.
+    property var addTo: null
+    signal backToStore()
+    /// The app was added to `addTo` (the Add's result).
+    signal addedTo(var result)
+    readonly property var adding: { const a = backend.appAddedJson ? JSON.parse(backend.appAddedJson) : null; return a && a.app === appId ? a : null }
     modal: true; focus: true
     width: Math.min(899, (parent ? parent.width : 899) - 32)
     height: Math.min(564, (parent ? parent.height : 564) - 32)
@@ -50,7 +57,7 @@ Popup {
     readonly property var similar: { const r = backend.appSimilarJson ? JSON.parse(backend.appSimilarJson) : null; return r && r.app === appId ? (r.apps || []) : [] }
     readonly property string name: d ? d.name : ""
 
-    function show(id) { history = []; load(id); open() }
+    function show(id, target) { history = []; addTo = target || null; load(id); open() }
     function load(id) {
         appId = id; view = "main"; languagesOpen = false; rating = 0
         backend.appDetailsLoad(id)
@@ -59,9 +66,22 @@ Popup {
         mainFlick.contentY = 0
     }
     function addOrOpen() {
-        if (root.d && root.d.installed) { root.openApp(root.appId, root.name); root.close() }
-        else Qt.openUrlExternally("https://teams.microsoft.com/l/app/" + encodeURIComponent(root.appId))
+        if (root.adding && root.adding.busy) return
+        // Teams' Add: for you, and into the conversation it was opened for.
+        if (root.addTo) backend.addApp(root.appId, root.addTo.id, root.addTo.channel)
+        else if (root.d && root.d.installed) { root.openApp(root.appId, root.name); root.close() }
+        else backend.addApp(root.appId, "", false)
     }
+    Connections {
+        target: backend
+        function onAppAddedJsonChanged() {
+            const a = root.adding
+            if (!a || !a.ok) return
+            if (root.addTo && a.conversation === root.addTo.id) { root.close(); root.addedTo(a) }
+            else if (!root.addTo) backend.appDetailsLoad(root.appId)
+        }
+    }
+    function leaveToStore() { root.close(); root.backToStore() }
     function openSimilar(id) { history = history.concat([appId]); load(id) }
     function back() {
         if (view === "report") { view = "reviews"; return }
@@ -295,11 +315,11 @@ Popup {
                     id: page
                     width: 899
                     height: moreLike.y + moreLike.height
-                    readonly property bool canAdd: !!root.d && (!root.d.installed || root.offerOpen)
-                    readonly property real heroX: root.history.length > 0 ? 88 : 56
+                    readonly property bool canAdd: !!root.d && (!root.d.installed || root.offerOpen || !!root.addTo)
+                    readonly property real heroX: root.history.length > 0 || root.addTo ? 88 : 56
 
-                    IconButton { visible: root.history.length > 0; x: 56; y: 24; icon: "chevron-left-20"; tip: "Back"; onClicked: root.back() }
-                    AppTile { id: heroTile; x: page.heroX; y: root.history.length > 0 ? 24 : 29; width: 64; height: 64; src: root.d ? root.d.icon : "" }
+                    IconButton { visible: root.history.length > 0 || !!root.addTo; x: 56; y: 24; icon: "chevron-left-20"; tip: "Back"; onClicked: root.history.length > 0 ? root.back() : root.leaveToStore() }
+                    AppTile { id: heroTile; x: page.heroX; y: root.history.length > 0 || root.addTo ? 24 : 29; width: 64; height: 64; src: root.d ? root.d.icon : "" }
                     Text {
                         x: page.heroX + 86; y: heroTile.y + 4; height: 29
                         text: root.name
@@ -314,10 +334,8 @@ Popup {
                         Rectangle {
                             width: 96; height: 32; radius: 4
                             color: addHover.hovered ? theme.brandHover : theme.brandFill
-                            Text { anchors.centerIn: parent; text: root.d && root.d.installed ? "Open" : "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                            Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; opacity: root.adding && root.adding.busy ? 0.6 : 1; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
                             HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
-                            // Adding installs the app in Teams (OST's sign-in
-                            // can't install apps: Teams on the web does it).
                             TapHandler { onTapped: root.addOrOpen() }
                             Accessible.role: Accessible.Button; Accessible.name: root.d && root.d.installed ? "Open" : "Add"
                         }
@@ -587,14 +605,14 @@ Popup {
                 width: parent.width; height: 80
                 color: theme.surface
                 visible: mainFlick.contentY > 100
-                IconButton { visible: root.history.length > 0; x: 56; y: 24; icon: "chevron-left-20"; tip: "Back"; onClicked: root.back() }
-                AppTile { x: root.history.length > 0 ? 98 : 56; y: 20; width: 40; height: 40; src: root.d ? root.d.icon : "" }
-                Text { x: root.history.length > 0 ? 148 : 106; y: 29; height: 22; text: root.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                IconButton { visible: root.history.length > 0 || !!root.addTo; x: 56; y: 24; icon: "chevron-left-20"; tip: "Back"; onClicked: root.history.length > 0 ? root.back() : root.leaveToStore() }
+                AppTile { x: root.history.length > 0 || root.addTo ? 98 : 56; y: 20; width: 40; height: 40; src: root.d ? root.d.icon : "" }
+                Text { x: root.history.length > 0 || root.addTo ? 148 : 106; y: 29; height: 22; text: root.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                 Rectangle {
                     visible: page.canAdd
                     x: 707; y: 24; width: 96; height: 32; radius: 4
                     color: addHover2.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: root.d && root.d.installed ? "Open" : "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                    Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
                     HoverHandler { id: addHover2; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.addOrOpen() }
                 }

@@ -1,0 +1,862 @@
+{
+ "_source": "Teams 26276.513 config-prod (storeAppsCollections, inContextStoreCollectionIdsOverwrite, setting defaults) and its en-us extensibility strings, 2026-11-09",
+ "settings": {
+  "storeAppsCollectionsDoc": "storev2?v=2",
+  "enableCopilotExtensions": true,
+  "enableStoreWorkerDataProvider": true,
+  "enableStoreAppsContentCollectionsItemsRank": false,
+  "appSuggestionsExperiments": [],
+  "enableFrequentCollaborators": true,
+  "enableFrequentCollaboratorsFacetiles": true,
+  "enableSubscriptionAppsCategory": true,
+  "enableStoreAgentBlueprints": false,
+  "enableIndustriesSectionInStore": false,
+  "enableStoreV3Phase3": false,
+  "includeOpenAIPlugins": true,
+  "enablePreinstalledApps": false,
+  "inContextStoreMinAgentsCategory": 1,
+  "inContextStoreHiddenApps": [
+   "5ae80e49-7ada-461a-a6bd-c5df2e0cdb06"
+  ],
+  "inContextStoreCollectionIdsOverwrite": {
+   "BotTeam": [
+    "app:co:copilotplugins",
+    "app:co:tenantapps",
+    "app:co:suggestedapps",
+    "app:co:abcbot4",
+    "app:co:popularapps",
+    "app:co:abcbot1",
+    "app:co:productivity",
+    "app:co:abcbot2",
+    "app:co:abcbot3",
+    "app:co:microsoft",
+    "app:co:education"
+   ],
+   "Bot": [
+    "app:co:tenantapps",
+    "app:co:suggestedapps",
+    "app:co:abcbot4",
+    "app:co:popularapps",
+    "app:co:abcbot1",
+    "app:co:productivity",
+    "app:co:abcbot2",
+    "app:co:abcbot3",
+    "app:co:microsoft",
+    "app:co:education"
+   ],
+   "BotGroupChat": [
+    "app:co:copilotplugins",
+    "app:co:tenantapps",
+    "app:co:suggestedapps",
+    "app:co:abcbot4",
+    "app:co:popularapps",
+    "app:co:abcbot1",
+    "app:co:productivity",
+    "app:co:abcbot2",
+    "app:co:abcbot3",
+    "app:co:microsoft",
+    "app:co:education"
+   ],
+   "Connector": [],
+   "Messaging": [
+    "app:co:tenantapps",
+    "app:co:suggestedapps",
+    "app:co:abcme4",
+    "app:co:popularapps",
+    "app:co:abcme1",
+    "app:co:productivity",
+    "app:co:abcme2",
+    "app:co:abcme3",
+    "app:co:microsoft",
+    "app:co:education"
+   ],
+   "Tab": [
+    "app:co:tenantapps",
+    "app:co:suggestedapps",
+    "app:co:abctab4",
+    "app:co:popularapps",
+    "app:co:abctab1",
+    "app:co:productivity",
+    "app:co:abctab2",
+    "app:co:abctab3",
+    "app:co:microsoft",
+    "app:co:education"
+   ]
+  }
+ },
+ "inContextStoreMinAppsCategory": 6,
+ "collections": [
+  {
+   "collectionId": "adminPreInstalledApps",
+   "title": "_store_apps_collection_admin_preinstalled_apps",
+   "linkedEntities": [
+    "adminPreInstalledApps"
+   ],
+   "isInFeed": true,
+   "feedOrder": 1,
+   "description": "_store_apps_collection_admin_preinstalled_apps_desc",
+   "disableRatings": true
+  },
+  {
+   "collectionId": "frequentcollaboratorsapps",
+   "title": "_store_category_frequent_collaborators_apps",
+   "group": "_extensibility_featured_sub_section_header",
+   "order": 15,
+   "feedOrder": 19,
+   "linkedEntities": [
+    "frequentCollaboratorsApps"
+   ],
+   "isInFeed": true,
+   "description": "_store_category_frequent_collaborators_app_desc",
+   "activeFlags": [
+    "enableFrequentCollaborators",
+    "enableFrequentCollaboratorsFacetiles"
+   ],
+   "navSection": "featured",
+   "navSubSection": "_store_header_nav_popular",
+   "navSectionOrder": 50
+  },
+  {
+   "collectionId": "suggestedapps",
+   "title": "_store_category_suggested_apps",
+   "linkedEntities": [
+    "suggestedApps"
+   ],
+   "isInFeed": true,
+   "isHidden": true,
+   "feedOrder": 20,
+   "description": "_store_category_suggested_app_desc"
+  },
+  {
+   "collectionId": "popularapps",
+   "title": "_extensibility_apps_gallery_popular_apps",
+   "group": "_extensibility_featured_sub_section_header",
+   "groupOrder": 5,
+   "order": 10,
+   "linkedEntities": [
+    "popularApps"
+   ],
+   "isInFeed": true,
+   "feedOrder": 30,
+   "description": "_extensibility_apps_gallery_popular_apps_desc",
+   "navSection": "featured",
+   "navSubSection": "_store_header_nav_popular",
+   "navSectionOrder": 40
+  },
+  {
+   "collectionId": "copilotplugins",
+   "title": "_store_apps_collection_copilot_plugins",
+   "group": "_extensibility_featured_sub_section_header",
+   "order": 15,
+   "linkedEntities": [
+    "cp_copilotPlugins"
+   ],
+   "activeFlags": [
+    "!enableCopilotExtensions"
+   ],
+   "navSection": "featured",
+   "navSubSection": "_store_header_nav_agents",
+   "navSectionOrder": 20
+  },
+  {
+   "collectionId": "copilotplugins",
+   "title": "_store_apps_collection_copilot_plugins",
+   "group": "_extensibility_featured_sub_section_header",
+   "order": 15,
+   "feedTimeoutInMs": 500,
+   "linkedEntities": [
+    "cp_copilotExtensions"
+   ],
+   "activeFlags": [
+    "enableCopilotExtensions",
+    "enableStoreWorkerDataProvider"
+   ],
+   "navSection": "featured",
+   "navSubSection": "_store_header_nav_agents",
+   "navSectionOrder": 20
+  },
+  {
+   "collectionId": "agentblueprints",
+   "title": "_store_apps_collection_agent_blueprints",
+   "group": "_extensibility_featured_sub_section_header",
+   "order": 16,
+   "linkedEntities": [
+    "cp_agenticBlueprints"
+   ],
+   "activeFlags": [
+    "enableStoreAgentBlueprints"
+   ],
+   "navSection": "featured",
+   "navSubSection": "_store_header_nav_agents",
+   "navSectionOrder": 30
+  },
+  {
+   "collectionId": "tenantapps",
+   "title": "_extensibility_apps_gallery_lob_apps_option_label",
+   "linkedEntities": [
+    "tenantApps"
+   ],
+   "isInFeed": true,
+   "feedOrder": 10,
+   "description": "_extensibility_apps_gallery_lob_apps_option_desc",
+   "disableRatings": true,
+   "navSection": "featured",
+   "navSubSection": "_store_header_nav_for_you",
+   "navSectionOrder": 10
+  },
+  {
+   "collectionId": "toppicks",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "order": 20,
+   "description": "_extensibility_featured_sub_section_desc"
+  },
+  {
+   "collectionId": "whatsnew",
+   "title": "_extensibility_apps_gallery_new_apps_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "order": 30,
+   "description": "_extensibility_apps_gallery_new_apps_desc"
+  },
+  {
+   "collectionId": "subscriptionApps",
+   "title": "_extensibility_apps_gallery_subscription_apps",
+   "group": "_extensibility_featured_sub_section_header",
+   "order": 40,
+   "linkedEntities": [
+    "subscriptionApps"
+   ],
+   "description": "_extensibility_apps_gallery_subscription_apps_desc"
+  },
+  {
+   "collectionId": "microsoft",
+   "title": "_extensibility_apps_store_category_microsoft",
+   "group": "_extensibility_categories_sub_section_header",
+   "groupOrder": 10,
+   "linkedEntities": [
+    "microsoft"
+   ],
+   "isInFeed": true,
+   "feedOrder": 40,
+   "order": 10,
+   "groupFoldingCount": 6
+  },
+  {
+   "collectionId": "education",
+   "title": "_extensibility_apps_store_category_education",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "education"
+   ],
+   "isInFeed": true,
+   "feedOrder": 50,
+   "order": 20
+  },
+  {
+   "collectionId": "productivity",
+   "title": "_extensibility_apps_store_category_productivity_tools",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "productivity"
+   ],
+   "isInFeed": true,
+   "feedOrder": 60,
+   "order": 30
+  },
+  {
+   "collectionId": "imageandvideogalleries",
+   "title": "_extensibility_apps_store_category_workflow_image_video_galleries",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "imageandvideogalleries"
+   ],
+   "order": 40
+  },
+  {
+   "collectionId": "industries-feed-group-collection",
+   "title": "_store_apps_collection_industries",
+   "collectionType": "CollectionGroup",
+   "linkedEntities": [
+    "agriculture",
+    "distribution",
+    "education-industry",
+    "finance",
+    "government",
+    "healthcareandlifesciences",
+    "manufacturing",
+    "professionalservices",
+    "retail",
+    "sustainability"
+   ],
+   "isInFeed": true,
+   "isHidden": true,
+   "feedOrder": 50,
+   "order": 50,
+   "activeFlags": [
+    "enableIndustriesSectionInStore",
+    "enableStoreV3Phase3"
+   ],
+   "navSection": "none"
+  },
+  {
+   "collectionId": "projectmanagement",
+   "title": "_extensibility_apps_store_category_project_management",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "projectmanagement"
+   ],
+   "order": 50
+  },
+  {
+   "collectionId": "utilities",
+   "title": "_extensibility_apps_store_category_utilities",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "utilities"
+   ],
+   "order": 60
+  },
+  {
+   "collectionId": "partner-powerapps",
+   "title": "_extensibility_store_power_apps_section_header",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "ba1cabe6-dfd2-4334-96c0-0dcdf86e18e5",
+    "f6405520-7907-4464-8f6e-9889e2fb7d8f",
+    "0fa58992-1b03-41e1-8b1d-4aa556715d20",
+    "958bb540-13ba-46ab-8d6a-8ab39e3e1fd8"
+   ],
+   "order": 70,
+   "disableRatings": true,
+   "collectionType": "PartnerApps",
+   "activeFlags": [
+    "!enableCopilotExtensions"
+   ]
+  },
+  {
+   "collectionId": "powerplatform",
+   "title": "_extensibility_store_power_apps_section_header",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "cp_powerPlatform"
+   ],
+   "order": 70,
+   "disableRatings": true,
+   "collectionType": "SharedPartnerApps",
+   "activeFlags": [
+    "enableCopilotExtensions",
+    "enableStoreWorkerDataProvider"
+   ]
+  },
+  {
+   "collectionId": "social",
+   "title": "_extensibility_apps_store_category_social",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "social"
+   ],
+   "order": 80
+  },
+  {
+   "collectionId": "communication",
+   "title": "_extensibility_apps_store_category_communication",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "communication"
+   ],
+   "order": 90
+  },
+  {
+   "collectionId": "contentmanagement",
+   "title": "_extensibility_apps_store_category_content_management",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "contentmanagement"
+   ],
+   "order": 100
+  },
+  {
+   "collectionId": "filesanddocuments",
+   "title": "_extensibility_apps_store_category_file_documents",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "filesanddocuments"
+   ],
+   "order": 110
+  },
+  {
+   "collectionId": "workflowandbusinessmanagement",
+   "title": "_extensibility_apps_store_category_workflow_business_management",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "workflowandbusinessmanagement"
+   ],
+   "order": 120
+  },
+  {
+   "collectionId": "itadmin",
+   "title": "_extensibility_apps_store_category_it_admin",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "itadmin"
+   ],
+   "order": 130
+  },
+  {
+   "collectionId": "humanresourcesandrecruiting",
+   "title": "_extensibility_apps_store_category_human_resources_recruiting",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "humanresourcesandrecruiting"
+   ],
+   "order": 140
+  },
+  {
+   "collectionId": "developertools",
+   "title": "_extensibility_apps_store_category_developer_tools",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "developertools"
+   ],
+   "order": 150
+  },
+  {
+   "collectionId": "meetingsandscheduling",
+   "title": "_extensibility_apps_store_category_meetings_scheduling",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "meetingsandscheduling"
+   ],
+   "order": 160
+  },
+  {
+   "collectionId": "datavisualizationandbi",
+   "title": "_extensibility_apps_store_category_data_visualization_bi",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "datavisualizationandbi"
+   ],
+   "order": 170
+  },
+  {
+   "collectionId": "trainingandtutorial",
+   "title": "_extensibility_apps_store_category_training_tutorial",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "trainingandtutorial"
+   ],
+   "order": 180
+  },
+  {
+   "collectionId": "newsandweather",
+   "title": "_extensibility_apps_store_category_news_weather",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "newsandweather"
+   ],
+   "order": 190
+  },
+  {
+   "collectionId": "customersupport",
+   "title": "_extensibility_apps_store_category_customer_support",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "customersupport"
+   ],
+   "order": 200
+  },
+  {
+   "collectionId": "reference",
+   "title": "_extensibility_apps_store_category_reference",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "reference"
+   ],
+   "order": 210
+  },
+  {
+   "collectionId": "salesandmarketing",
+   "title": "_extensibility_apps_store_category_sales_marketing",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "salesandmarketing"
+   ],
+   "order": 220
+  },
+  {
+   "collectionId": "lookandfeel",
+   "title": "_extensibility_apps_store_category_look_Feel",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "lookandfeel"
+   ],
+   "order": 230
+  },
+  {
+   "collectionId": "customerandcontactmanagement",
+   "title": "_extensibility_apps_store_category_customer_contact_management",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "customerandcontactmanagement"
+   ],
+   "order": 240
+  },
+  {
+   "collectionId": "financialmanagement",
+   "title": "_extensibility_apps_store_category_financial_management",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "financialmanagement"
+   ],
+   "order": 250
+  },
+  {
+   "collectionId": "mapsandfeeds",
+   "title": "_extensibility_apps_store_category_maps_feeds",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "mapsandfeeds"
+   ],
+   "order": 260
+  },
+  {
+   "collectionId": "travelandnavigation",
+   "title": "_extensibility_apps_store_category_travel_navigation",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "travelandnavigation"
+   ],
+   "order": 270
+  },
+  {
+   "collectionId": "other",
+   "title": "_extensibility_apps_store_category_other",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "other"
+   ],
+   "order": 280
+  },
+  {
+   "collectionId": "agriculture",
+   "title": "_extensibility_apps_store_industry_agriculture",
+   "group": "_extensibility_industries_sub_section_header",
+   "groupOrder": 15,
+   "linkedEntities": [
+    "iN_Agriculture"
+   ],
+   "order": 10,
+   "groupFoldingCount": 6
+  },
+  {
+   "collectionId": "distribution",
+   "title": "_extensibility_apps_store_industry_distribution",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Distribution"
+   ],
+   "order": 20
+  },
+  {
+   "collectionId": "education-industry",
+   "title": "_extensibility_apps_store_industry_education",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Education"
+   ],
+   "order": 30
+  },
+  {
+   "collectionId": "finance",
+   "title": "_extensibility_apps_store_industry_finance",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Finance"
+   ],
+   "order": 40
+  },
+  {
+   "collectionId": "government",
+   "title": "_extensibility_apps_store_industry_government",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Government"
+   ],
+   "order": 50
+  },
+  {
+   "collectionId": "healthcareandlifesciences",
+   "title": "_extensibility_apps_store_industry_health_care_life_sciences",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_HealthCareAndLifeSciences"
+   ],
+   "order": 60
+  },
+  {
+   "collectionId": "manufacturing",
+   "title": "_extensibility_apps_store_industry_manufacturing",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Manufacturing"
+   ],
+   "order": 70
+  },
+  {
+   "collectionId": "professionalservices",
+   "title": "_extensibility_apps_store_industry_professional_services",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_ProfessionalServices"
+   ],
+   "order": 80
+  },
+  {
+   "collectionId": "retail",
+   "title": "_extensibility_apps_store_industry_retail",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Retail"
+   ],
+   "order": 90
+  },
+  {
+   "collectionId": "sustainability",
+   "title": "_extensibility_apps_store_industry_sustainability",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Sustainability"
+   ],
+   "order": 100
+  },
+  {
+   "collectionId": "other-industry",
+   "title": "_extensibility_apps_store_industry_other",
+   "group": "_extensibility_industries_sub_section_header",
+   "linkedEntities": [
+    "iN_Other"
+   ],
+   "order": 110
+  },
+  {
+   "collectionId": "youragentsandapps-group",
+   "title": "_extensibility_apps_store_your_agents_group_title",
+   "description": "_extensibility_apps_store_your_agents_group_desc",
+   "order": 1000,
+   "collectionType": "CollectionGroup",
+   "linkedEntities": [
+    "yours-addedbyyou",
+    "yours-createdbyyou",
+    "yours-addedbyorg",
+    "yours-builtfororg",
+    "yours-sharedwithyou"
+   ],
+   "navSection": "button",
+   "activeFlags": [
+    "enableStoreYourAgentsAndApps"
+   ]
+  },
+  {
+   "collectionId": "yours-addedbyyou",
+   "title": "_extensibility_apps_store_yours_category_added_by_you",
+   "order": 1010,
+   "linkedEntities": [
+    "ur_addedByYou"
+   ],
+   "isHidden": true,
+   "activeFlags": [
+    "enableStoreYourAgentsAndApps"
+   ]
+  },
+  {
+   "collectionId": "yours-createdbyyou",
+   "title": "_extensibility_apps_store_yours_category_created_by_you",
+   "order": 1015,
+   "linkedEntities": [
+    "ur_createdByYou"
+   ],
+   "isHidden": true,
+   "activeFlags": [
+    "enableStoreYourAgentsAndApps"
+   ]
+  },
+  {
+   "collectionId": "yours-addedbyorg",
+   "title": "_extensibility_apps_store_yours_category_added_by_your_org",
+   "order": 1020,
+   "linkedEntities": [
+    "ur_addedByOrg"
+   ],
+   "isHidden": true,
+   "activeFlags": [
+    "enableStoreYourAgentsAndApps"
+   ]
+  },
+  {
+   "collectionId": "yours-builtfororg",
+   "title": "_extensibility_apps_store_yours_category_built_for_your_org",
+   "order": 1030,
+   "linkedEntities": [
+    "ur_builtForOrg"
+   ],
+   "isHidden": true,
+   "activeFlags": [
+    "enableStoreYourAgentsAndApps"
+   ]
+  },
+  {
+   "collectionId": "yours-sharedwithyou",
+   "title": "_extensibility_apps_store_yours_category_shared_with_you",
+   "order": 1030,
+   "linkedEntities": [
+    "ur_sharedWithYou"
+   ],
+   "isHidden": true,
+   "activeFlags": [
+    "enableStoreYourAgentsAndApps"
+   ]
+  },
+  {
+   "collectionId": "banner1",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "isHidden": true
+  },
+  {
+   "collectionId": "banner2",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "isHidden": true
+  },
+  {
+   "collectionId": "banner3",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "isHidden": true
+  },
+  {
+   "collectionId": "banner4",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "isHidden": true
+  },
+  {
+   "collectionId": "banner5",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "isHidden": true
+  },
+  {
+   "collectionId": "banner6",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "isHidden": true
+  },
+  {
+   "collectionId": "banner7",
+   "title": "_extensibility_apps_gallery_featured_option",
+   "group": "_extensibility_featured_sub_section_header",
+   "isHidden": true
+  },
+  {
+   "collectionId": "all",
+   "title": "_extensibility_apps_store_category_all",
+   "group": "_extensibility_categories_sub_section_header",
+   "linkedEntities": [
+    "all"
+   ],
+   "isHidden": true
+  }
+ ],
+ "strings": {
+  "_extensibility_apps_gallery_featured_option": "Top picks",
+  "_extensibility_apps_gallery_lob_apps_option_desc": "Created and approved by your organization’s technology team",
+  "_extensibility_apps_gallery_lob_apps_option_label": "Built for your org",
+  "_extensibility_apps_gallery_new_apps_desc": "Brand new to Teams or updated with new features",
+  "_extensibility_apps_gallery_new_apps_option": "What's new",
+  "_extensibility_apps_gallery_popular_apps": "Popular on Teams",
+  "_extensibility_apps_gallery_popular_apps_desc": "Added and used the most on Microsoft Teams",
+  "_extensibility_apps_gallery_subscription_apps": "Best selling",
+  "_extensibility_apps_gallery_subscription_apps_desc": "Apps with the most subscriptions purchased",
+  "_extensibility_apps_store_category_communication": "Communication",
+  "_extensibility_apps_store_category_content_management": "Content management",
+  "_extensibility_apps_store_category_customer_contact_management": "Customer & contact management (CRM)",
+  "_extensibility_apps_store_category_customer_support": "Customer support",
+  "_extensibility_apps_store_category_data_visualization_bi": "Data visualization & BI",
+  "_extensibility_apps_store_category_developer_tools": "Developer tools",
+  "_extensibility_apps_store_category_education": "Education",
+  "_extensibility_apps_store_category_file_documents": "Files & documents",
+  "_extensibility_apps_store_category_financial_management": "Financial management",
+  "_extensibility_apps_store_category_human_resources_recruiting": "Human resources & recruiting",
+  "_extensibility_apps_store_category_it_admin": "IT/Admin",
+  "_extensibility_apps_store_category_maps_feeds": "Maps & feeds",
+  "_extensibility_apps_store_category_meetings_scheduling": "Meetings & scheduling",
+  "_extensibility_apps_store_category_microsoft": "Built by Microsoft",
+  "_extensibility_apps_store_category_news_weather": "News & weather",
+  "_extensibility_apps_store_category_other": "Other",
+  "_extensibility_apps_store_category_productivity": "Productivity",
+  "_extensibility_apps_store_category_productivity_tools": "Productivity tools",
+  "_extensibility_apps_store_category_project_management": "Project management",
+  "_extensibility_apps_store_category_reference": "Reference",
+  "_extensibility_apps_store_category_sales_marketing": "Sales & marketing",
+  "_extensibility_apps_store_category_social": "Social",
+  "_extensibility_apps_store_category_training_tutorial": "Training & tutorial",
+  "_extensibility_apps_store_category_travel_navigation": "Travel & navigation",
+  "_extensibility_apps_store_category_utilities": "Utilities",
+  "_extensibility_apps_store_category_workflow_business_management": "Workflow & business management",
+  "_extensibility_apps_store_category_workflow_image_video_galleries": "Image & video galleries",
+  "_extensibility_apps_store_industry_agriculture": "Agriculture",
+  "_extensibility_apps_store_industry_distribution": "Distribution",
+  "_extensibility_apps_store_industry_education": "Education",
+  "_extensibility_apps_store_industry_finance": "Finance",
+  "_extensibility_apps_store_industry_government": "Government",
+  "_extensibility_apps_store_industry_health_care_life_sciences": "Health care and life sciences",
+  "_extensibility_apps_store_industry_manufacturing": "Manufacturing",
+  "_extensibility_apps_store_industry_other": "Other",
+  "_extensibility_apps_store_industry_professional_services": "Professional services",
+  "_extensibility_apps_store_industry_retail": "Retail",
+  "_extensibility_apps_store_industry_sustainability": "Sustainability",
+  "_extensibility_apps_store_your_agents_group_desc": "See all the apps and agents you added, your org added for you, or people shared with you.",
+  "_extensibility_apps_store_your_agents_group_title": "Your agents and apps",
+  "_extensibility_apps_store_yours_category_added_by_you": "Added by you",
+  "_extensibility_apps_store_yours_category_added_by_your_org": "Added by your org",
+  "_extensibility_apps_store_yours_category_built_for_your_org": "Built for your org",
+  "_extensibility_apps_store_yours_category_created_by_you": "Created by you",
+  "_extensibility_apps_store_yours_category_shared_with_you": "Shared with you",
+  "_extensibility_categories_sub_section_header": "Categories",
+  "_extensibility_featured_sub_section_desc": "Handpicked by our editors, refreshed every two weeks",
+  "_extensibility_featured_sub_section_header": "Featured",
+  "_extensibility_industries_sub_section_header": "Industries",
+  "_extensibility_store_power_apps_section_header": "Built with Power Platform",
+  "_extensibility_workflows_social_media": "Social media",
+  "_store_apps_collection_admin_preinstalled_apps": "Added by your org",
+  "_store_apps_collection_admin_preinstalled_apps_desc": "Made available by your organization's technology team",
+  "_store_apps_collection_agent_blueprints": "Agent templates",
+  "_store_apps_collection_copilot_plugins": "Agents",
+  "_store_apps_collection_industries": "Agents and apps by industry",
+  "_store_category_agents_desc": "Find agents with the expertise to help you complete complex tasks.",
+  "_store_category_built_power_platform_desc": "Discover custom business apps created with the Microsoft Power Platform.",
+  "_store_category_frequent_collaborators_app_desc": " ",
+  "_store_category_frequent_collaborators_apps": "Trending with your peers",
+  "_store_category_suggested_app_desc": "Added and used the most in your organization",
+  "_store_category_suggested_apps": "Popular in your org",
+  "_store_grouped_category_business_operations_desc": "Work smarter with apps and agents designed for sales, marketing, HR, finance, and customer relationship management.",
+  "_store_grouped_category_business_operations_title": "Business operations",
+  "_store_grouped_category_content_collaborations_desc": "Improve collaboration and how you manage content with these apps and agents.",
+  "_store_grouped_category_content_collaborations_title": "Content and collaboration",
+  "_store_grouped_category_data_learning_desc": "Enhance learning and better visualize your data with these apps and agents.",
+  "_store_grouped_category_data_learning_title": "Data and learning",
+  "_store_grouped_category_industries_desc": "Explore apps and agents tailored to specific industries.",
+  "_store_grouped_category_industries_title": "By industry",
+  "_store_grouped_category_it_developer_tools_desc": "Discover apps and agents that assist with specific IT and development tasks.",
+  "_store_grouped_category_it_developer_tools_title": "IT and developer tools",
+  "_store_grouped_category_navigation_mapping_desc": "Stay up to date with news and weather apps, and find where you’re going with map apps.",
+  "_store_grouped_category_navigation_mapping_title": "Navigation and mapping",
+  "_store_grouped_category_productivity_desc": "Do more in your day with apps and agents that help you be more productive and manage specific tasks.",
+  "_store_grouped_category_productivity_title": "Productivity",
+  "_store_grouped_category_support_tools_desc": "Find apps and agents to help you support customers, find info, and complete tasks.",
+  "_store_grouped_category_support_tools_title": "Support and tools",
+  "_store_header_nav_for_you": "For you",
+  "_store_header_nav_popular": "Popular"
+ }
+}

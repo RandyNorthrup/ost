@@ -176,6 +176,8 @@ Rectangle {
     signal shareApp(string appId)
     /// Open an app OST has (a shared app's card ▸ Open).
     signal openAppById(string appId)
+    /// Teams' "Add agent to the chat / channel" Store for a conversation.
+    signal openAgentStore(string conversationId, bool channel)
     /// Links in messages: Teams opens its app links as the app's details.
     function openLink(link) {
         const m = /^https:\/\/teams\.microsoft\.com\/l\/app\/([0-9A-Za-z._-]+)/.exec(link)
@@ -277,6 +279,9 @@ Rectangle {
     function forceChannelBarForTest(id) { forceChannelBarId = id }
     function channelMenuForTest(m, context) { openMessageMenu(m, channelPosts, false, channelPosts.width - 300, 120, context) }
     function composeForTest() { return compose }
+    /// Start an @mention of a bot just added here (Teams puts "@{bot}" in
+    /// the compose box).
+    function mentionBot(name, mri) { compose.focusEditor(); compose.insertMentionOf({ mri: mri, name: name }) }
     function closePickerForTest() { reactionPicker.close() }
     function closeMessageMenuForTest() { messageMenu.close() }
     function forwardDialogForTest() { return forwardDialog }
@@ -1090,6 +1095,7 @@ Rectangle {
             readonly property bool isCall: modelData.kind === "call"
             // Teams' control messages (someone added, renamed, left…).
             readonly property bool isEvent: modelData.kind === "event"
+            readonly property bool appAdded: isEvent && !!modelData.event && modelData.event.kind === "AddCustomApp"
             readonly property bool isRow: isCall || isEvent
             readonly property var reactions: modelData.reactions || []
             // Being edited in place (Teams: the compose replaces the bubble,
@@ -1163,7 +1169,7 @@ Rectangle {
                 name: msg.isCall ? (msg.modelData.call_huddle ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
                     : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20",
                          PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
-                         MemberRenamed: "person-edit-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
+                         MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", DeleteCustomApp: "apps-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
                 color: theme.textSecondary
             }
             Row {
@@ -1180,8 +1186,13 @@ Rectangle {
                 Text {
                     width: Math.min(implicitWidth, msg.width - root.gutContent - root.gutR)
                     wrapMode: Text.Wrap
-                    textFormat: msg.isCall ? Text.StyledText : Text.PlainText
+                    textFormat: msg.isCall || msg.appAdded ? Text.StyledText : Text.PlainText
                     text: {
+                        // "{name} added <b>{app}</b> here." (Teams bolds the app).
+                        if (msg.appAdded) {
+                            const t = msg.modelData.text, v = msg.modelData.event.value, i = t.lastIndexOf(v)
+                            return root.escapeHtml(t.slice(0, i)) + "<b>" + root.escapeHtml(v) + "</b>" + root.escapeHtml(t.slice(i + v.length))
+                        }
                         if (msg.isEvent) return msg.modelData.text
                         // Meet now (Teams: "You started a meeting." /
                         // "{{initiator}} started a meeting.", then
@@ -3005,6 +3016,8 @@ Rectangle {
         channelMention: root.isChannel ? { id: root.chatId, name: root.chatName } : null
         canAddPeople: root.isGroup && !root.isChannel
         onAddPeopleRequested: root.openAddPeople()
+        canAddAgent: root.isGroup || root.isChannel
+        onAddAgentRequested: root.openAgentStore(root.chatId, root.isChannel)
         // A team is mentioned by its thread id, its General channel's.
         teamMention: {
             if (!root.isChannel || !root.teamId) return null

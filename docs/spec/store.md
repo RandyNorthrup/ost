@@ -85,3 +85,18 @@ The reply (about 430 KB) holds the agents plus `Headers` (with an `ETag`) and `C
   - The heading is the collection title, 12/24 semibold.
   - The full list follows, in cards 848 × 122 with 134 between them. Each card has the developer (12/16) under the name, the description at 166 and the rating at 192.
   - A Back button sits at the bottom left.
+
+### Adding an agent (captured on winpc, adding Polls to OST group test)
+- Clicking a card opens the app's details in place of the Store. A back arrow at the top left returns to the Store. "Add" adds the app to the conversation.
+- **Requests:**
+  - `POST {mt}/beta/users/apps/entitlements`, for you (when you don't have the app);
+  - then `POST {mt}/beta/chats/{threadId}/apps/entitlements`. For a channel this is the team's endpoint, with `X-Ms-Appinstall-Channelid`.
+  - Each body is the app's definition (as batchedDefinitions returns it). Each reply is `{value: {id, state: "Installed", installedVersion, …}}`.
+- **Afterwards:**
+  - A bot that only sends notifications gets "About this bot": "This bot sends notifications only. You're not able to chat with or @mention it." with OK.
+  - Other bots start an @mention in the compose box.
+- **In the chat:**
+  - The bot's own AddMember / DeleteMember events are not shown.
+  - The app's events are shown instead: `ThreadActivity/AddCustomApp` reads "{name} added **{app}** here." and `DeleteCustomApp` reads "{name} removed {app} from the chat.", both with the Apps icon.
+  - The first time, Teams may add "Try an action below to see how it works." with the app's action buttons.
+- **Manage apps ▸ Remove** sends `DELETE {mt}/beta/chats/{threadId}/apps/entitlements/{appId}` after "Remove {app}? Are you sure you want to remove {app}?".

@@ -93,6 +93,15 @@ pub mod qobject {
         #[qproperty(QString, app_reviews_json)]
         /// Its "More like this": {app, apps[]}.
         #[qproperty(QString, app_similar_json)]
+        /// Teams' "Add agent" Store for a conversation: {conversation,
+        /// loading, installed: [app], collections: [{id, title, apps}],
+        /// error}.
+        #[qproperty(QString, agent_store_json)]
+        /// The agent Store's search: {query, results: [app], loading}.
+        #[qproperty(QString, agent_search_json)]
+        /// The last Add: {app, conversation, busy | ok, name, bot,
+        /// notificationOnly | error}.
+        #[qproperty(QString, app_added_json)]
         /// The chat list's sections from the server (Teams' conversation
         /// folders): {version, folders: [{id, kind, title, sort, expanded, items}]}.
         #[qproperty(QString, folders_json)]
@@ -945,6 +954,17 @@ pub mod qobject {
         /// Load an app's "More like this".
         #[qinvokable]
         fn app_similar_load(self: Pin<&mut Backend>, app_id: &QString);
+        /// Load Teams' "Add agent to the chat/channel" Store for a
+        /// conversation (a channel when `channel`).
+        #[qinvokable]
+        fn agent_store_load(self: Pin<&mut Backend>, conversation_id: &QString, channel: bool);
+        /// Search the agent Store for a conversation.
+        #[qinvokable]
+        fn agent_store_search(self: Pin<&mut Backend>, conversation_id: &QString, channel: bool, query: &QString);
+        /// Add an app as Teams' Add does: for you, and to a conversation
+        /// when `conversation_id` isn't empty.
+        #[qinvokable]
+        fn add_app(self: Pin<&mut Backend>, app_id: &QString, conversation_id: &QString, channel: bool);
         /// Share an app (Teams' Share form): `targets_json` as the Forward
         /// dialog's picks.
         #[qinvokable]
@@ -1251,6 +1271,9 @@ pub struct BackendRust {
     app_details_json: QString,
     app_reviews_json: QString,
     app_similar_json: QString,
+    agent_store_json: QString,
+    agent_search_json: QString,
+    app_added_json: QString,
     app_links_json: QString,
     folders_json: QString,
     chat_member_counts_json: QString,
@@ -8241,6 +8264,97 @@ impl qobject::Backend {
                 this.as_mut().set_app_similar_json(QString::from(
                     json!({ "app": app, "apps": apps }).to_string().as_str(),
                 ));
+            });
+        });
+    }
+
+    pub fn agent_store_load(mut self: Pin<&mut Self>, conversation_id: &QString, channel: bool) {
+        let conv = conversation_id.to_string();
+        self.as_mut().set_agent_store_json(QString::from(
+            json!({ "conversation": conv, "loading": true }).to_string().as_str(),
+        ));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let apps = if channel {
+                    api::store_content::channel_apps(&client, &conv).await.unwrap_or_default()
+                } else {
+                    api::store_content::chat_apps(&client, &conv).await.unwrap_or_default()
+                };
+                api::store_content::in_context(&client, channel, &apps).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(ic) => json!({ "conversation": conv, "installed": ic.installed, "collections": ic.collections }),
+                    Err(e) => {
+                        tracing::warn!("agent store: {}", short_error(&e));
+                        json!({ "conversation": conv, "error": short_error(&e) })
+                    }
+                };
+                this.as_mut().set_agent_store_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn agent_store_search(mut self: Pin<&mut Self>, conversation_id: &QString, channel: bool, query: &QString) {
+        let conv = conversation_id.to_string();
+        let q = query.to_string();
+        self.as_mut().set_agent_search_json(QString::from(json!({ "query": q, "loading": true }).to_string().as_str()));
+        if q.trim().is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let apps = if channel {
+                    api::store_content::channel_apps(&client, &conv).await.unwrap_or_default()
+                } else {
+                    api::store_content::chat_apps(&client, &conv).await.unwrap_or_default()
+                };
+                api::store_content::search_agents(&client, q.trim(), channel, &apps).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                // Only the newest query's answer shows.
+                let current: serde_json::Value = serde_json::from_str(&this.rust().agent_search_json.to_string()).unwrap_or_default();
+                if current.get("query").and_then(|x| x.as_str()) != Some(q.as_str()) {
+                    return;
+                }
+                let v = match result {
+                    Ok(r) => json!({ "query": q, "results": r }),
+                    Err(e) => json!({ "query": q, "results": [], "error": short_error(&e) }),
+                };
+                this.as_mut().set_agent_search_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn add_app(mut self: Pin<&mut Self>, app_id: &QString, conversation_id: &QString, channel: bool) {
+        let app = app_id.to_string();
+        let conv = conversation_id.to_string();
+        self.as_mut().set_app_added_json(QString::from(
+            json!({ "app": app, "conversation": conv, "busy": true }).to_string().as_str(),
+        ));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let target = (!conv.is_empty()).then_some((conv.as_str(), channel));
+                api::store_content::add_app(&client, &app, target).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(a) => json!({ "app": app, "conversation": conv, "ok": true, "name": a.name, "bot": a.bot, "notificationOnly": a.notification_only }),
+                    Err(e) => {
+                        tracing::warn!("add app: {}", short_error(&e));
+                        json!({ "app": app, "conversation": conv, "error": short_error(&e) })
+                    }
+                };
+                this.as_mut().set_app_added_json(QString::from(v.to_string().as_str()));
             });
         });
     }

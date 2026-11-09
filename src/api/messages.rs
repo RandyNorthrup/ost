@@ -712,6 +712,14 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
         }
     }
     let mut targets: Vec<String> = tag_values(content, "target");
+    // A bot joining or leaving with its app: Teams shows the app's own
+    // event (AddCustomApp / DeleteCustomApp) instead.
+    if kind == "AddMember" || kind == "DeleteMember" {
+        targets.retain(|t| !t.starts_with("28:"));
+        if targets.is_empty() && tag_values(content, "target").iter().any(|t| t.starts_with("28:")) {
+            return None;
+        }
+    }
     let ev = |kind: &str, targets: Vec<String>, value: String, history_days| ChatEvent {
         kind: kind.into(),
         actor: actor.clone(),
@@ -748,6 +756,12 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
             (!targets.is_empty()).then(|| ev(kind, targets, String::new(), None))
         }
         "MemberRenamed" => Some(ev("MemberRenamed", Vec::new(), first("value"), None)),
+        // An app added to or removed from the chat (its name in
+        // <targetName>).
+        "AddCustomApp" | "DeleteCustomApp" => {
+            let app = first("targetName");
+            (!actor.is_empty() && !app.is_empty()).then(|| ev(kind, targets, app, None))
+        }
         _ => None,
     }
 }
@@ -814,6 +828,8 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
             format!("{} {verb}.", list(&e.targets))
         }
         "MemberRenamed" => format!("{actor} changed their display name to {}.", e.value),
+        "AddCustomApp" => format!("{actor} added {} here.", e.value),
+        "DeleteCustomApp" => format!("{actor} removed {} from the chat.", e.value),
         _ => String::new(),
     }
 }
@@ -4562,6 +4578,16 @@ mod paging_and_event_tests {
             "Ann joined the conversation."
         );
         assert!(chat_event("ThreadActivity/PinnedItemsUpdate", "<x/>").is_none());
+        // Adding Polls to OST group test (OST, 2026-11-09): the bot's
+        // AddMember is hidden; the app events read as Teams words them.
+        let bot = "<addmember><eventtime>1794234644843</eventtime><initiator>8:orgid:a</initiator><target>28:fd931076-bbfb-4a38-a85c-1f0fb5b61bee</target><detailedtargetinfo><id>28:fd931076-bbfb-4a38-a85c-1f0fb5b61bee</id></detailedtargetinfo></addmember>";
+        assert!(chat_event("ThreadActivity/AddMember", bot).is_none());
+        let add = "<AddCustomApp><eventtime>1794234645103</eventtime><initiator>8:orgid:a</initiator><target>0e3bedea-4720-48b5-9e13-5a1ce1387d45</target><DeprecatedTargetName></DeprecatedTargetName><targetName>Polls</targetName><initiatorType>User</initiatorType></AddCustomApp>";
+        let e = chat_event("ThreadActivity/AddCustomApp", add).unwrap();
+        assert_eq!(event_text(&e, &names, false), "Ann added Polls here.");
+        let del = add.replace("AddCustomApp", "DeleteCustomApp");
+        let e = chat_event("ThreadActivity/DeleteCustomApp", &del).unwrap();
+        assert_eq!(event_text(&e, &names, false), "Ann removed Polls from the chat.");
     }
 
     #[test]

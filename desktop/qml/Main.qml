@@ -2889,6 +2889,90 @@ Window {
         }
     }
 
+    // --chat-shot with --open-chat=<id> --shots=<dir>: open the chat,
+    // capture it once it has loaded (chat.png) and quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--chat-shot") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST chat"); return }
+            if (step === 2) window.contentItem.grabToImage(r => r.saveToFile(dir + "chat.png"))
+            else if (step === 3) Qt.quit()
+            step++
+        }
+    }
+
+    // --agent-add-test=<app name> with --open-chat=<id> --shots=<dir>: open
+    // the agent Store, open that app's details from it and press Add, as a
+    // user would; logs the result and quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--agent-add-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--agent-add-test=")) || "").slice(17)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "agentadd-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST agent test"); return }
+            const s = agentStore.store
+            if (step === 0) agentStore.show(id, conversation.isChannel)
+            else if (step < 12 && (!s || s.loading)) { step++; return }
+            else if (step < 13) {
+                let app = null
+                for (const c of (s.collections || [])) for (const a of c.apps) if (!app && a.name === name) app = a
+                console.warn("AGENTADD found", JSON.stringify(app ? { id: app.id, name: app.name } : null))
+                if (!app) { Qt.quit(); return }
+                agentStore.openApp(app.id); step = 13; return
+            }
+            else if (step === 15) shot("details")
+            else if (step === 16) appDetails.addOrOpen()
+            else if (step === 20) { console.warn("AGENTADD result", backend.appAddedJson); shot("after") }
+            else if (step === 21) { aboutBot.close(); Qt.quit() }
+            step++
+        }
+    }
+
+    // --agent-store-test with --open-chat=<id> --shots=<dir>: the @ picker
+    // (its Add agent row), then Teams' agent Store: overview, scrolled,
+    // See all, a search for "poll"; logs what loaded, then quits.
+    Timer {
+        running: Qt.application.arguments.indexOf("--agent-store-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "agents-" + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).flatMap(t => t.channels).find(c => c.id === id)
+                backend.selectChat(id, ch ? ch.name : "OST agent test"); return
+            }
+            const c = conversation.composeForTest()
+            const s = agentStore.store
+            if (step === 0) { if (conversation.isChannel) conversation.posting = true; c.focusEditor(); c.mentionForTest("@") }
+            else if (step === 1) shot("picker")
+            else if (step === 2) { c.clearForTest(); agentStore.show(id, conversation.isChannel) }
+            else if (step > 2 && step < 13) {
+                // Wait for the Store (up to ~25 s), then log and capture it.
+                if ((!s || s.loading) && step < 12) { step++; return }
+                console.warn("AGENTS loaded", JSON.stringify(s ? { installed: (s.installed || []).map(a => a.name), collections: (s.collections || []).map(x => x.title + " (" + x.apps.length + "): " + x.apps.slice(0, 3).map(a => a.name).join(", ")), error: s.error || "" } : null))
+                shot("overview"); step = 14; return
+            }
+            else if (step === 14) agentStore.scrollForTest(600)
+            else if (step === 15) shot("scrolled")
+            else if (step === 16) { agentStore.seeAll = agentStore.collections[0] || null }
+            else if (step === 17) shot("seeall")
+            else if (step === 18) { agentStore.seeAll = null; agentStore.searchForTest("poll") }
+            else if (step === 21) { const f = agentStore.found; console.warn("AGENTS search", JSON.stringify(f ? (f.results || []).map(a => a.name) : null)); shot("search") }
+            else if (step === 22) { agentStore.close(); Qt.quit() }
+            step++
+        }
+    }
+
     // --mention-test=<query> with --open-chat=<id> --shots=<dir>: type a
     // message with "@<query>", capture the picker, pick the first row (or
     // row --mention-pick=<n>),
@@ -3569,8 +3653,24 @@ Window {
         offerOpen: true
         onShareApp: id => appShare.start(id)
         onOpenApp: (id, name) => window.openAppById(id, name)
+        onBackToStore: agentStore.open()
+        onAddedTo: r => {
+            if (r.notificationOnly) aboutBot.open()
+            else if (r.bot && backend.currentChatId === r.conversation) conversation.mentionBot(r.name, "28:" + r.bot)
+        }
     }
     ShareForm { id: appShare }
+    // Teams' in-context Store behind the @ picker's "Add agent". An app's
+    // details open in its place; their Back returns to it, and Add puts
+    // the app in the conversation.
+    AgentStore {
+        id: agentStore
+        onOpenApp: id => { agentStore.close(); appDetails.show(id, { id: agentStore.conversationId, channel: agentStore.channel }) }
+        onGetMoreApps: rail.current = "add"
+    }
+    // Teams' "About this bot" after adding a bot that only notifies; other
+    // bots start an @mention in the compose box, as Teams does.
+    AboutBotDialog { id: aboutBot }
     /// Open an app OST has (by Teams app id or name); the rest in Teams on
     /// the web.
     function openAppById(id, name) {
@@ -3588,6 +3688,7 @@ Window {
         // Meeting details: the meeting in the calendar.
         onOpenMeetingDetails: (url, ical, start) => { rail.current = "calendar"; calendarView.showMeeting(url, ical, start) }
         onOpenAppById: id => window.openAppById(id, "")
+        onOpenAgentStore: (id, isChannel) => agentStore.show(id, isChannel)
         myName: backend.userName
         visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0))
             || (rail.current === "activity" && activityView.selectedId.length > 0)

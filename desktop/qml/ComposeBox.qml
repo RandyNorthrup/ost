@@ -50,6 +50,10 @@ Item {
     // Group chats offer "Add someone to the chat" in the @ picker.
     property bool canAddPeople: false
     signal addPeopleRequested()
+    // Group chats and channels offer "Add agent to the chat / channel",
+    // which opens Teams' agent Store.
+    property bool canAddAgent: false
+    signal addAgentRequested()
     property var teamMention: null
     // The team's tags ({id, name, count}), offered after the team and
     // channel as Teams' picker does.
@@ -597,11 +601,11 @@ Item {
     }
     function insertMention(person) {
         if (mentionAt < 0) return
-        if (person.kind === "add") {
-            // The "@" and what follows it go; Teams' Add dialog opens.
+        if (person.kind === "add" || person.kind === "agent") {
+            // The "@" and what follows it go; Teams' dialog opens.
             input.remove(mentionAt, Math.max(mentionAt, input.cursorPosition))
             mentionAt = -1; mentionPicker.close()
-            root.addPeopleRequested()
+            if (person.kind === "agent") root.addAgentRequested(); else root.addPeopleRequested()
             return
         }
         if (person.kind === "share") {
@@ -673,6 +677,7 @@ Item {
             if (root.everyoneId && root.memberCount <= 250 && (!q || "everyone".startsWith(q)))
                 out.push({ everyone: true, name: "Everyone", mail: "Notify everyone in the chat" })
             const rows = out.slice(0, 20)
+            if (root.canAddAgent) rows.push({ kind: "agent", name: root.channelMention ? "Add agent to the channel" : "Add agent to the chat", mail: "" })
             if (root.canAddPeople) rows.push({ kind: "add", name: "Add someone to the chat", mail: "" })
             // Always last (Teams): share someone's contact card.
             rows.push({ kind: "share", name: "Share someone\u2019s contact info", mail: "" })
@@ -691,15 +696,16 @@ Item {
         }
         Column {
             id: rowsCol
-            x: 0.7; y: 43.2
+            // Rows sit 5 apart (measured on winpc, 2026-11-09).
+            x: 0.7; y: 43.2; spacing: 5
             Repeater {
                 model: mentionPicker.people
                 Rectangle {
                     id: prow
                     required property var modelData
                     required property int index
-                    readonly property bool action: modelData.kind === "share" || modelData.kind === "add"
-                    width: 298.7; height: modelData.kind === "share" ? 49.3 : modelData.kind === "add" ? 48.7 : 47.3
+                    readonly property bool action: modelData.kind === "share" || modelData.kind === "add" || modelData.kind === "agent"
+                    width: 298.7; height: modelData.kind === "share" || modelData.kind === "agent" || modelData.everyone ? 49.3 : modelData.kind === "add" ? 48.7 : 47.3
                     color: index === mentionPicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : prowHover.hovered ? theme.menuHover : "transparent"
                     Avatar { visible: !prow.modelData.everyone && !prow.modelData.kind; x: 19.6; y: 7.6; size: 32; name: prow.modelData.name; photoId: prow.modelData.mri || "" }
                     // A team or channel: the team's picture, a 4 px square.
@@ -721,6 +727,8 @@ Item {
                     FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.textStrong }
                     // Share someone's contact info: the contact card icon (20).
                     FluentIcon { visible: prow.modelData.kind === "share"; x: 19.6; y: 14.6; name: "contact-card-20"; size: 20; color: theme.textStrong }
+                    // Add agent: bot-add (20).
+                    FluentIcon { visible: prow.modelData.kind === "agent"; x: 19.6; y: 14.6; name: "bot-add-20"; size: 20; color: theme.textStrong }
                     // Add someone to the chat: person-add (20).
                     FluentIcon { visible: prow.modelData.kind === "add"; x: 19.6; y: 14.3; name: "people-add-20"; size: 20; color: theme.textStrong }
                     // The typed part in bold (Teams).
@@ -777,6 +785,12 @@ Item {
         input.cursorPosition = input.length
     }
     function pickShareForTest() { insertMention({ kind: "share" }) }
+    /// Insert a mention at the cursor, as if picked after an "@".
+    function insertMentionOf(person) {
+        mentionAt = input.cursorPosition
+        insertMention(person)
+    }
+    function clearForTest() { input.clear(); mentionAt = -1; mentionPicker.close() }
     function mentionForTest(text) { input.insert(input.cursorPosition, text); input.cursorPosition = input.length }
     function pickMentionForTest(n) { mentionPicker.current = n || 0; mentionPicker.pick() }
 
