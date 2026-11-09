@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T02:35:00Z'
-updated_date: '2026-11-07T03:23:00Z'
+updated_date: '2026-11-09T15:09:00Z'
 labels:
   - desktop
   - tabs
@@ -27,8 +27,8 @@ OST's channel tab strip and tab menu were built from screenshots and differ from
 - [x] #3 Move left/right use Teams' order algorithm (one tab re-ordered, one PATCH) and are disabled, not hidden, at the ends
 - [x] #4 Rename dialog: title, Tab name label, validity icon, empty / 128-char / duplicate errors, Save, X close; saved through the middle tier
 - [x] #5 Remove dialog: tab and Page variants, Remove → Removing, failure text; removed through the middle tier
-- [ ] #6 Copy link to tab writes Teams' exact deep link (channel or entity form) as rich text with the tab name
-- [ ] #7 Open in browser opens the tab's website URL in the system browser
+- [x] #6 Copy link to tab writes Teams' exact deep link (channel or entity form) as rich text with the tab name
+- [x] #7 Open in browser opens the tab's website URL in the system browser
 - [ ] #8 Reload tab, Expand tab, Open tab in new window, About this tab and App permissions act on OST's native tab views as Teams' do
 - [ ] #9 Verified side by side against Windows Teams on winpc in OST Test Team
 <!-- AC:END -->
@@ -53,4 +53,8 @@ OST's channel tab strip and tab menu were built from screenshots and differ from
 - Built: tabs from the middle tier (Page now shows), per-type menus in Rust with unit tests reproducing the live menus, Teams' move algorithm (one PATCH), rename/remove via UpdatePinnedTabs/DeletePinnedTab, Teams' Rename/Remove dialogs and errors, rich-text Copy link, shared MenuPopup now Fluent-exact everywhere, FluentSurface shadows.
 - Verified: --tab-menu-test in OST Test Team (menus logged per tab, shots, rename/move/remove end to end); offscreen shots need QT_QUICK_BACKEND=rhi for shadows.
 - Left: AC6 runtime clipboard check, AC7 browser open check, AC8 native Reload/Expand/Pop out/About/App permissions, AC9 full side-by-side.
+
+- AC6 verified at runtime: OST's Copy link to tab is byte-identical to Teams' clipboard (read on winpc) for the Notes (entity form) and Page (channel form) tabs. That meant dropping `groupId` from the link and adding `itemprop="teams-copy-link"` to the HTML.
+- AC7: Teams' Open in browser opens the tab's websiteUrl (Notes: https://onenote.com/, which redirects to onenote.cloud.microsoft). OST opens the same URL in the system browser.
+- Harness: --tab-link-test=<tab> --open-chat=<channel> copies the link and holds 20 s for wl-paste.
 <!-- SECTION:NOTES:END -->

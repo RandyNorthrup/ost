@@ -2902,6 +2902,27 @@ Window {
         }
     }
 
+    // --tab-link-test=<tab name> with --open-chat=<channel id>: Copy link
+    // to that tab, then stay 20 s (so the clipboard can be read) and quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tab-link-test=")) && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--tab-link-test=")) || "").slice(16)
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            if (step === 0 && conversation.tabNames.indexOf(name) < 0) return
+            if (step === 0) console.warn("TABLINK copied", conversation.tabActionForTest(name, "copyLink"))
+            else if (step === 6) Qt.quit()
+            step++
+        }
+    }
+
     // --chat-shot with --open-chat=<id> --shots=<dir>: open the chat,
     // capture it once it has loaded (chat.png) and quit.
     Timer {

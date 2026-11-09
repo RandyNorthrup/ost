@@ -925,7 +925,12 @@ Groups are separated by dividers; empty groups are skipped.
   - Team and channel results are labelled "Team" / "Channel"; "@Channel — Notify everyone who's joined the channel".
   - Tags show as "Channel tag | # people" / "Team tag | # people".
   - At most 20 channel results.
-- **Extra rows**: "Add someone to the chat" (group chats), "Share someone's contact info". Name suffixes "(You)" and "(External)".
+- **Extra rows**: "Add agent to the chat / channel" (opens the in-context Store, store.md §3), "Add someone to the chat" (group chats), "Share someone's contact info". Name suffixes "(You)" and "(External)". Rows sit 5 apart; Everyone, Add agent and Share are 49.3 tall, Add someone 48.7, people 47.3 (measured on winpc, 2026-11-09).
+- **Everyone row rules** (worker `getEveryoneActionItem`):
+  - It is offered when (members − 1) fits the chat's limit.
+  - When it would only fit the larger (meeting) limit, it is shown disabled, with the tooltip "Not available for chats over 1,000 users." (peoplePicker).
+  - Above People `atMentionEveryoneBannerThreshold` it carries the banner `AtMentionEveryoneOverThreshold`: messaging `tmp_at_mention_everyone_over_threshold_banner_message_mf`, "{n, plural, =1{1 person will be notified} other{# people will be notified}}".
+  - Not built yet: the banner's look couldn't be measured, because no test chat has that many members.
 
 ### Measured (winpc, 2026-11-07)
 - Typing "@" opens `AutocompletePopup-Mentions`: 300 wide, white, radius 4, a drop-shadow, its bottom at the caret line.

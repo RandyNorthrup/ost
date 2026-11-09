@@ -2428,6 +2428,7 @@ Rectangle {
     function tabMenuForTest(name) { const t = root.channelTabs.find(x => x.name === name); return t ? t.menu.map(e => e.enabled ? e.key : e.key + "(off)") : [] }
     function tabMenuShowForTest(name) { const i = root.tabNames.indexOf(name); const t = root.channelTabs[i]; if (t) tabMenu.show(t, t.menu, tabs.children[i], 0, 56) }
     function tabMenuCloseForTest() { tabMenu.close() }
+    function tabActionForTest(name, key) { const t = root.channelTabs.find(x => x.name === name); if (t) root.tabAction(key, t); return t ? JSON.stringify({ website: t.website_url || "" }) : "" }
     function tabAboutForTest(name) { const t = root.channelTabs.find(x => x.name === name); if (t) aboutDialog.start(t); return !!t }
     function tabAboutCloseForTest() { aboutDialog.close() }
     function tabAboutStateForTest() { return JSON.stringify({ visible: aboutDialog.visible, opened: aboutDialog.opened, w: aboutDialog.width, h: aboutDialog.height, json: (backend.appAboutJson || "").slice(0, 120) }) }

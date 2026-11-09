@@ -268,10 +268,10 @@ pub fn copy_link(tab: &Tab, channel_id: &str, group_id: &str, tenant_id: &str) -
     // JSON.stringify({subEntityId: undefined, channelId}) drops the
     // undefined key.
     let context = format!("{{\"channelId\":{}}}", serde_json::Value::from(channel_id));
+    // Teams' links carry the context and tenant only (read from its
+    // clipboard on winpc, 2026-11-09, for the Notes and Page tabs).
+    let _ = group_id;
     let mut query = vec![format!("context={}", enc(&context))];
-    if !group_id.is_empty() {
-        query.push(format!("groupId={group_id}"));
-    }
     if !tenant_id.is_empty() {
         query.push(format!("tenantId={tenant_id}"));
     }
@@ -284,7 +284,7 @@ pub fn copy_link(tab: &Tab, channel_id: &str, group_id: &str, tenant_id: &str) -
             .replace('\'', "&#39;")
     };
     let html = format!(
-        "<div><a href=\"{}\" title=\"{}\" data-origin-known=\"true\">{}</a></div>",
+        "<div itemprop=\"teams-copy-link\"><a href=\"{}\" title=\"{}\" data-origin-known=\"true\">{}</a></div>",
         esc(&link),
         esc(&link),
         esc(&tab.name)
@@ -954,9 +954,9 @@ mod tests {
         let (link, html) = copy_link(&tab, "19:ab@thread.tacv2", "g-1", "t-1");
         assert_eq!(
             link,
-            "https://teams.microsoft.com/l/channel/19%3Aab%40thread.tacv2/tab%3A%3Aa62a7cb0-4528-4db8-958e-c6a5ce6b364e?context=%7B%22channelId%22%3A%2219%3Aab%40thread.tacv2%22%7D&groupId=g-1&tenantId=t-1"
+            "https://teams.microsoft.com/l/channel/19%3Aab%40thread.tacv2/tab%3A%3Aa62a7cb0-4528-4db8-958e-c6a5ce6b364e?context=%7B%22channelId%22%3A%2219%3Aab%40thread.tacv2%22%7D&tenantId=t-1"
         );
-        assert!(html.ends_with(">Page &lt;1&gt;</a></div>"));
+        assert!(html.starts_with("<div itemprop=\"teams-copy-link\"><a href=") && html.ends_with(">Page &lt;1&gt;</a></div>"));
         tab.entity_id = "NOTES".into();
         tab.app_id = "0d820ecd-def2-4297-adad-78056cde7c78".into();
         let (link, _) = copy_link(&tab, "19:ab@thread.tacv2", "", "");
