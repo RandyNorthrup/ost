@@ -7,6 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-09T12:32:00Z'
+updated_date: '2026-11-09T12:42:00Z'
 labels:
   - desktop
   - chatlist
@@ -32,3 +33,9 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 - [ ] #2 Quick views show Followed threads and Saved with their views, and Drafts as Teams lists them
 - [ ] #3 Teams are ordered as Teams orders them
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- The chat header's ··· (More chat options) also lacks Open in new window (Ctrl+O), Share screen (Ctrl+Shift+E) and Remove chat history; they belong with this task.
+<!-- SECTION:NOTES:END -->

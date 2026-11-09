@@ -3,11 +3,11 @@ id: TASK-0046
 title: >-
   Conversation header as Teams: call controls per chat kind, roster count, More
   chat options
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T18:26:00Z'
+updated_date: '2026-11-09T12:49:00Z'
 labels:
   - desktop
   - header
@@ -24,8 +24,8 @@ Header gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/chat-list
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 1:1: one sticky Audio/Video call button (last choice remembered) + chevron; group: Meet now with Audio call; meeting chat: Join and Meeting details
-- [ ] #2 Roster count button and More chat options ··· as Teams, with the header breakpoints (640/720/834)
+- [x] #1 1:1: one sticky Audio/Video call button (last choice remembered) + chevron; group: Meet now with Audio call; meeting chat: Join and Meeting details
+- [x] #2 Roster count button and More chat options ··· as Teams, with the header breakpoints (640/720/834)
 - [x] #3 Rename pencil only for group chats (250 chars, no ':'), saved as Teams does
 <!-- AC:END -->
 
@@ -63,4 +63,30 @@ Header gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/chat-list
   - the right side packs from the edge (···, context buttons, divider, actions).
 - Tabs overflow by width into "+N" with a menu.
 - Verified with --breakpoints-test at 892/781/681/604/460 for group and 1:1 chats, including the ··· menus.
+
+- 2026-11-09:
+  - Added the meeting chat's Meeting details (chat-meeting-details, TextBulletList, after the roster count; inline from 640 wide, else in ···). It opens the meeting in OST's calendar: the meeting's week, then its card. Teams' full event page is TASK-0050.
+  - The header ··· gained Move to section ▸ (with New section).
+  - Verified on linuxlt (--meeting-details-test) in the "OST calendar test" meeting chat.
+- The 1:1 sticky call button, group Meet now / Audio call / Join, the roster count, ··· and the 640/720/834 breakpoints were built and verified live earlier (28fbb5d and the breakpoints harness).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The chat header matches Teams' controls for each chat kind.
+
+Changes (this round):
+- The meeting chat's **Meeting details** button: Teams' TextBulletList, after the roster count, inline from 640 wide, else in ···. It opens the meeting in OST's calendar (its week, then its card).
+- The header ··· gained **Move to section ▸** (Favorites, your sections, New section), on Teams' folder API.
+- Earlier work covered the rest:
+  - the 1:1 sticky Audio/Video button with its last choice (`mruChatHeaderCallOption`) and More call options;
+  - group chats' Meet now / Audio call and Join while a call is on;
+  - the roster count and its tooltips;
+  - the rename pencil;
+  - the 640/720/834 breakpoints that move controls into ···.
+
+Tests: live on linuxlt (`--meeting-details-test`): the header, Meeting details opening the meeting's card in the calendar, and the header ··· menu.
+
+Still to come (TASK-0075): Open in new window, Share screen and Remove chat history in the header ···. Teams' full meeting page is TASK-0050.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -925,9 +925,9 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
 - [ ] Shortcuts in §6.
 - [ ] Header layout: 61 px, title 18 px bold, toolbar order action items › divider › context buttons › ···.
 - [ ] Header breakpoints on the header's own width (ResizeObserver): <640 tabs under title + dropdown, Meeting details into ···; <720 Participants into ···; ≥834 Meet now text; context buttons 3/2/0 at ≥640/480–639/<480, overflow into a "Sidepane Features" group at the top of ···.
-- [ ] 1:1 call control: one sticky Audio/Video button (last used, saved to `mruChatHeaderCallOption`) + "More call options" chevron.
-- [ ] Group chat: Meet now (video icon) + chevron with only Audio call; roster count button with its tooltips.
-- [ ] Meeting chat: Join, Meeting details, meeting tabs; Leave/Delete hidden for the creator.
+- [x] 1:1 call control: one sticky Audio/Video button (last used, saved to `mruChatHeaderCallOption`) + "More call options" chevron.
+- [x] Group chat: Meet now (video icon) + chevron with only Audio call; roster count button with its tooltips.
+- [x] Meeting chat: Join and Meeting details (inline from 640, else in ···; opens the meeting in the calendar, its week then its card); meeting tabs; Leave hidden for the creator.
 - [ ] Rename pencil only for group chats (member, not policy-disabled); popover with 250-char and ':' rules; PUT thread property `topic`.
 - [ ] Channel: Meet now split button (Meet now / Schedule a meeting) with its disabled reasons; Find / Channel details only on Posts; Show/Hide tab conversation on Extension/Website tabs.
 - [ ] Chat and channel header ··· menus per §7.4–7.7.

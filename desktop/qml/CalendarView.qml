@@ -405,12 +405,42 @@ Item {
     // OST) and Chat for Teams meetings, the time, location and the start of
     // the description, and Edit / Delete for meetings you organise.
     signal openMeetingChat(string joinUrl, string subject)
+    /// Show a meeting's details: its week, then its card. False when the
+    /// calendar doesn't have it.
+    property var pendingMeeting: null
+    function showMeeting(joinUrl, icalUid, startIso) {
+        const e = root.events.find(x => (joinUrl && x.join_url === joinUrl) || (icalUid && x.ical_uid === icalUid))
+        if (e) {
+            const d = new Date(e.start_utc || e.start)
+            if (!isNaN(d)) root.start = root.startFor(d)
+            pendingMeeting = null
+            details.show(e, null)
+            return true
+        }
+        // Not in this week: go to the meeting's week and show it once it loads.
+        const d = new Date(startIso || "")
+        if (isNaN(d)) return false
+        pendingMeeting = { joinUrl: joinUrl, icalUid: icalUid }
+        root.start = root.startFor(d)
+        return true
+    }
+    onEventsChanged: if (pendingMeeting) {
+        const p = pendingMeeting
+        const e = root.events.find(x => (p.joinUrl && x.join_url === p.joinUrl) || (p.icalUid && x.ical_uid === p.icalUid))
+        if (e) { pendingMeeting = null; details.show(e, null) }
+    }
     Popup {
         id: details
         property var ev: ({})
         property bool confirming: false
         function show(e, item) {
             ev = e; confirming = false
+            if (!item) {
+                // Opened from elsewhere (a meeting chat's Meeting details).
+                x = (root.width - width) / 2; y = 80
+                open()
+                return
+            }
             // Beside the event: to its left when there's room, else right.
             const p = item.mapToItem(root, 0, 0)
             x = p.x - width - 8 >= 0 ? p.x - width - 8 : Math.min(root.width - width - 8, p.x + item.width + 8)

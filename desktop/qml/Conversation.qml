@@ -102,7 +102,24 @@ Rectangle {
     // Right to left from ···: the inline context buttons (32 each), a
     // 16 px divider, then the action items.
     readonly property real contextLeft: width - 43 - 32 * contextInline
-    readonly property real actionRight: contextLeft - 16
+    // A meeting chat's Meeting details (inline from 640 wide, else in ···).
+    readonly property bool meetingDetailsShown: isMeetingChat && !!meeting && !!meeting.ical_uid && !meeting.cancelled
+    readonly property bool meetingDetailsInline: meetingDetailsShown && width >= 640
+    readonly property real actionRight: contextLeft - 16 - (meetingDetailsInline ? 32 : 0)
+    // Move to section ▸ (Teams' chat ···): Favorites and your sections the
+    // chat isn't in, a divider, New section.
+    readonly property var folderList: backend.foldersJson ? (JSON.parse(backend.foldersJson).folders || []) : []
+    readonly property string sectionHolder: { const f = folderList.find(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.items.indexOf(chatId) >= 0); return f ? f.id : "" }
+    function moveTargets() {
+        const out = folderList.filter(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.id !== sectionHolder)
+            .map(f => ({ label: f.title, to: f.id }))
+        if (out.length) out.push({ separator: true })
+        out.push({ label: "New section", icon: "folder-add-20", newSection: true })
+        return out
+    }
+    SectionDialog { id: headerSectionDialog; existing: root.folderList.map(f => f.title) }
+    /// Teams' Meeting details (calendar.meetingDetails) for this chat's meeting.
+    signal openMeetingDetails(string joinUrl, string icalUid, string start)
     // The meeting chat's meeting (join link, iCalUid, cancelled).
     readonly property var meeting: isMeetingChat && backend.chatMeetingJson ? JSON.parse(backend.chatMeetingJson) : null
     // Load a channel's tabs once it's known which team it's in.
@@ -935,6 +952,13 @@ Rectangle {
             Accessible.role: Accessible.Button
             Accessible.name: "View and add participants, " + count + " participants"
         }
+        // Meeting details (chat-meeting-details): 32 x 31.3, TextBulletList,
+        // after the roster count (measured on winpc).
+        HeaderAction {
+            visible: root.meetingDetailsInline
+            x: root.contextLeft - 16 - 32; icon: "text-bullet-list-20"; Accessible.name: "Meeting details"
+            onClicked: root.openMeetingDetails(root.meeting.join_url, root.meeting.ical_uid, root.meeting.start || "")
+        }
         Rectangle {
             visible: !root.isSelf
             x: root.contextLeft - 8; width: 1; height: 20
@@ -970,12 +994,14 @@ Rectangle {
                 readonly property var moved: [
                     root.contextInline < 1 ? { key: "find", label: "Find in chat", icon: "search-20" } : null,
                     root.contextInline < 2 ? { key: "details", label: "In this chat", icon: "panel-left-20", keys: "Alt+P" } : null,
-                    root.rosterInMenu ? { key: "participants", label: "Participants", icon: "people-add-20" } : null
+                    root.rosterInMenu ? { key: "participants", label: "Participants", icon: "people-add-20" } : null,
+                    root.meetingDetailsShown && !root.meetingDetailsInline ? { key: "meetingDetails", label: "Meeting details", icon: "text-bullet-list-20" } : null
                 ].filter(i => i !== null)
                 items: (moved.length ? moved.concat([{ separator: true }]) : []).concat([
                     { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" },
                     { separator: true },
-                    { key: "unread", label: "Mark as unread", icon: "mail-unread-20" },
+                    { key: "unread", label: "Mark as unread", icon: "glasses-off-20" },
+                    { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
                     root.isSelf ? null : { key: "mute", label: root.chatMuted ? "Unmute" : "Mute", icon: root.chatMuted ? "alert-20" : "alert-off-20" },
                     { key: "link", label: "Copy link", icon: "link-20" }
                 ]).filter(i => i !== null)
@@ -983,10 +1009,16 @@ Rectangle {
                     const k = items[i].key
                     if (k === "details" || k === "participants") participants.visible = !participants.visible
                     else if (k === "find") root.toggleFind()
+                    else if (k === "meetingDetails") root.openMeetingDetails(root.meeting.join_url, root.meeting.ical_uid, root.meeting.start || "")
                     else if (k === "mute") backend.setChatMuted(root.chatId, !root.chatMuted)
                     else if (k === "meeting") root.scheduleMeeting()
                     else if (k === "link") backend.copyChatLink()
                     else if (k === "unread") { const m = root.messages.filter(m => m.kind === "message").pop(); if (m) backend.markMessageUnread(m.id, m.client_message_id || "") }
+                }
+                onSubPicked: (i, j) => {
+                    const t = items[i].submenu[j]
+                    if (t.newSection) headerSectionDialog.create(root.chatId, root.sectionHolder)
+                    else if (t.to) backend.folderAction("move", JSON.stringify({ item: root.chatId, to: t.to, from: root.sectionHolder }))
                 }
             }
         }
