@@ -236,6 +236,7 @@ Rectangle {
     function forceChannelBarForTest(id) { msgHost.forceChannelBarId = id }
     function channelMenuForTest(m, context) { openMessageMenu(m, channelPosts, false, channelPosts.width - 300, 120, context) }
     function composeForTest() { return compose }
+    function channelPostsForTest() { return channelPosts }
     /// Start an @mention of a bot just added here (Teams puts "@{bot}" in
     /// the compose box).
     function mentionBot(name, mri) { compose.focusEditor(); compose.insertMentionOf({ mri: mri, name: name }) }
@@ -1091,8 +1092,13 @@ Rectangle {
     ChannelPosts {
         id: channelPosts
         visible: root.isChannel && root.tab === ""
-        anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: root.posting ? compose.top : parent.bottom; left: parent.left; right: parent.right }
-        anchors.bottomMargin: root.posting ? 12 : 0
+        anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: root.posting && !newestAtTop ? compose.top : parent.bottom; left: parent.left; right: parent.right }
+        anchors.bottomMargin: root.posting && !newestAtTop ? 12 : 0
+        // See new posts at top: the composer opens in the list's top card.
+        newestAtTop: backend.channelPostsAtTop
+        composerHeight: compose.boxHeight
+        myPresence: root.myPresence
+        onStartAnnouncement: { root.posting = true; compose.announcement = true; compose.focusSubject() }
         messages: root.isChannel ? root.messages : []
         myName: root.myName
         busy: root.busy
@@ -1104,7 +1110,7 @@ Rectangle {
     }
     // Behind the post composer: the channel's page colour.
     Rectangle {
-        visible: channelPosts.visible && root.posting
+        visible: channelPosts.visible && root.posting && !channelPosts.newestAtTop
         anchors { top: channelPosts.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         color: theme.channelPage
     }
@@ -2865,14 +2871,20 @@ Rectangle {
     ComposeBox {
         id: compose
         visible: root.chatName.length > 0 && (!root.isChannel || root.posting)
-        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        // New posts at the top: in the list's top card, scrolling with it.
+        readonly property bool atTop: post && channelPosts.newestAtTop
+        anchors { left: parent.left; right: parent.right }
+        // One binding for its place (an anchor would win over y): at the
+        // bottom, or in the list's top card.
+        y: atTop ? channelPosts.y + channelPosts.composerY : parent.height - height - bottomGap
+        readonly property real bottomGap: post ? 27.7 : 6
         // Teams' post composer (a new channel post) lines up with the post
         // cards, 27.7 above the bottom.
         post: root.isChannel && !root.threadRoot && !root.pane
         readonly property real postGut: (root.width - Math.min(1100, root.width - 2 * (root.width > 480 ? 88 : 16))) / 2
         anchors.leftMargin: post ? postGut : root.pane ? 12 : root.composeGut
         anchors.rightMargin: post ? postGut : root.pane ? 12 : root.composeGut
-        anchors.bottomMargin: post ? 27.7 : 6
+
         onCloseRequested: { compose.resetPost(); compose.clear(); root.posting = false }
         // Under 480 px Teams' compose is compact: its tools on their own row.
         compact: !root.pane && root.width < 480

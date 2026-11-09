@@ -827,6 +827,22 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
      team.
   → TODO: the live render (the menu could not be opened).
 
+### 7.7.0 See new posts at top (measured 2026-11-09)
+
+Turning it on writes the user property `enableChannelsV2` "false" (it is
+"true" for new posts at the bottom). Posts are then newest activity first,
+under Teams' collapsed composer (`post-compose-collapsed`):
+- the post cards' width, 15 under the header, 108 tall, radius 6, shadow
+  0 0 2 / 0 2 4;
+- your avatar (32, presence) at (16, 12), and the **Post in channel**
+  button (14/20 semibold #424242, 31.3 tall) from 46;
+- the post types 68 down: **Post** (96 × 30, #EBEBEB, brand text and the
+  channel icon) and **Announcement** (147.5 × 30, white, megaphone) at
+  123.5.
+
+The first post is 32 under the card. The composer opens in the card's
+place, and Announcement opens it as an announcement.
+
 ### 7.7.1 Manage channel (measured 2026-11-09)
 
 Opened from either channel menu's **Manage channel**; it takes the

@@ -3187,6 +3187,34 @@ Window {
         }
     }
 
+    // --posts-top-test=<channel id> --shots=<dir>: See new posts at top
+    // (top-list.png), Post in channel there (top-compose.png),
+    // Announcement (top-announce.png), then back to new posts at the
+    // bottom; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--posts-top-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--posts-top-test=")) || "").slice(17)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => (t.channels || []).some(c => c.id === id))
+            if (!team) return
+            if (backend.currentChatId !== id) { backend.selectChat(id, "General"); return }
+            const c = conversation.composeForTest()
+            if (step === 0) backend.channelAction("posts-at-top", team.id, id, "")
+            else if (step === 3) { console.warn("TOP", backend.channelPostsAtTop); shot("top-list") }
+            else if (step === 4) { conversation.posting = true; c.focusSubject() }
+            else if (step === 5) { const cp = conversation.channelPostsForTest(); console.warn("TOPLAYOUT", c.atTop, c.post, c.y, c.height, c.boxHeight, cp.composerY, cp.composerHeight, cp.posting, cp.headerHeightForTest()); shot("top-compose") }
+            else if (step === 6) { c.announcement = true }
+            else if (step === 7) shot("top-announce")
+            else if (step === 8) { c.resetPost(); conversation.posting = false; backend.channelAction("posts-at-bottom", team.id, id, "") }
+            else if (step === 11) { console.warn("TOP after", backend.channelPostsAtTop); Qt.quit() }
+            step++
+        }
+    }
+
     // --row-menu-test=<channel id> --shots=<dir>: with
     // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
     Timer {

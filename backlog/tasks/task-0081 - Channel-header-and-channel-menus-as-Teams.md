@@ -1,11 +1,11 @@
 ---
 id: TASK-0081
 title: Channel header and channel menus as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T17:38:00Z'
-updated_date: '2026-11-09T20:55:00Z'
+updated_date: '2026-11-09T22:36:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,10 +19,10 @@ Teams' channel header has a Meet now split button and More channel options, and 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Channel header: Meet now split button (Meet now / Schedule a meeting) with Teams' disabled reasons; Find and Channel details only on Posts
-- [ ] #2 More channel options and the channel row's ··· show Teams' items in Teams' order
-- [ ] #3 Each item acts as Teams': See new posts at top, Open in new window, Manage notifications, Move to section, Hide, Edit channel, Manage channel, Copy link, Get email address, Workflows
-- [ ] #4 Verified side by side with Teams on winpc in OST Test Team
+- [x] #1 Channel header: Meet now split button (Meet now / Schedule a meeting) with Teams' disabled reasons; Find and Channel details only on Posts
+- [x] #2 More channel options and the channel row's ··· show Teams' items in Teams' order
+- [x] #3 Each item acts as Teams': See new posts at top, Open in new window, Manage notifications, Move to section, Hide, Edit channel, Manage channel, Copy link, Get email address, Workflows
+- [x] #4 Verified side by side with Teams on winpc in OST Test Team
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -67,4 +67,29 @@ Teams' channel header has a Meet now split button and More channel options, and 
 - The row ··· for a channel that isn't open has no See new posts at top/bottom (Teams' dump, verified in OST: same 11 items).
 - "See all your teams" opens Teams' Your teams and channels page. That is TASK-0084 (also the way back for hidden teams).
 - Left: See new posts at top layout (needs TASK-0044's subject / Announcement composer).
+
+- See new posts at top: Teams' layout (newest first under the collapsed "Post in channel" card with Post / Announcement). The composer opens in the card's place. Measured on winpc with enableChannelsV2 "false", then set back to "true". OST's harness switched it the same way and back.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' channel header and channel menus in OST, each item acting as in Teams (verified side by side on winpc in OST Test Team).
+
+Changes:
+- Header: Meet now split button (Meet now / Schedule a meeting), with the meet-now pre-join and the channel's adHocMeeting. Find and Channel details show only on Posts.
+- More channel options and every channel row's ··· (ChannelMenu.qml) use Teams' items, order, icons and conditions. The row of a channel that isn't open has no posts-order item. Manage channel's own menu starts with Go to channel.
+- Items:
+  - See new posts at top/bottom (enableChannelsV2, with Teams' top layout);
+  - Open in new window (ChannelWindow);
+  - Manage notifications (flyout and Customize);
+  - Move to section, Hide / Show (a hidden open channel in italics);
+  - Edit channel, Copy link (byte-identical), Get email address;
+  - Manage channel (Settings with General moderation; Analytics with Teams' dashboard and charts);
+  - Workflows (Teams' dialog over the Workflows web app).
+- Backend: api::channels (notifications, follow, hide, edit, email, posts order, link, moderation, analytics) and the channel_action invokable.
+
+Tests: lib tests (373 pass), including notification settings, channel link, edits, moderation in place, analytics parsing; harnesses --channel-menu-test, --channel-actions-test, --channel-visibility-test, --channel-window-test, --manage-channel-test, --workflows-test, --row-menu-test, --posts-top-test.
+
+Follow-ups: TASK-0083 (team menu, Manage team, non-General channel settings), TASK-0084 (Your teams and channels page).
+<!-- SECTION:FINAL_SUMMARY:END -->

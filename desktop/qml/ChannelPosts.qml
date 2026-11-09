@@ -19,10 +19,26 @@ Item {
     signal startPost()
     /// The post composer is open (Teams then hides Post in channel).
     property bool posting: false
+    /// See new posts at top (Teams' enableChannelsV2 "false", measured on
+    /// winpc 2026-11-09): newest activity first, under Teams' collapsed
+    /// "Post in channel" card (post-compose-collapsed: 108 tall, radius 6,
+    /// shadow 4, 15 under the header; posts 32 under it). The composer opens
+    /// in the card's place; `composerHeight` is its height, `composerY`
+    /// where it goes.
+    property bool newestAtTop: false
+    property real composerHeight: 0
+    /// Your presence (the top card's avatar shows it).
+    property string myPresence: ""
+    readonly property real composerY: (list.contentY, list.headerItem ? list.headerItem.mapToItem(root, 0, 15).y : 15)
+    signal startAnnouncement()
+    // The order changed, or the composer opened at the top: show the start.
+    onNewestAtTopChanged: Qt.callLater(() => newestAtTop ? list.positionViewAtBeginning() : list.positionViewAtEnd())
+    onPostingChanged: if (posting && newestAtTop) Qt.callLater(list.positionViewAtBeginning)
     signal react(string messageId, string key, bool on)
     /// The post whose reply box is open.
     property string replying: ""
     function toEnd() { list.positionViewAtEnd() }
+    function headerHeightForTest() { return list.headerItem ? list.headerItem.height : -1 }
     /// For the test harness: reply to the newest post.
     function replyToNewestForTest(text) {
         if (root.posts.length === 0) return false
@@ -49,7 +65,7 @@ Item {
         // Replies whose post is older than the loaded page still show,
         // under a placeholder header.
         const out = order.map(r => byRoot[r])
-        out.sort((a, b) => a.last - b.last)
+        out.sort((a, b) => root.newestAtTop ? b.last - a.last : a.last - b.last)
         return out
     }
 
@@ -57,14 +73,16 @@ Item {
 
     ListView {
         id: list
-        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: postButton.top; bottomMargin: 16 }
+        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: root.newestAtTop ? parent.bottom : postButton.top; bottomMargin: root.newestAtTop ? 0 : 16 }
         clip: true
         spacing: 12
         // Newest activity at the bottom: posts sit at the top while they
-        // fit, and the list opens scrolled to the end once they don't.
+        // fit, and the list opens scrolled to the end once they don't. At
+        // the top: the list opens at its start.
         model: root.posts
-        onCountChanged: Qt.callLater(positionViewAtEnd)
-        topMargin: 8; bottomMargin: 8
+        onCountChanged: Qt.callLater(() => root.newestAtTop ? positionViewAtBeginning() : positionViewAtEnd())
+        topMargin: root.newestAtTop ? 0 : 8; bottomMargin: 8
+        header: root.newestAtTop ? topCard : null
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         readonly property real cardW: root.compact ? width - 62 : Math.min(1100, width - 2 * (width > 480 ? 88 : 16))
         delegate: Item {
@@ -452,10 +470,67 @@ Item {
         color: theme.textSecondary
     }
 
+    // New posts at the top: Teams' collapsed post composer.
+    Component {
+        id: topCard
+        Item {
+            width: list.width
+            height: 15 + (root.posting ? root.composerHeight : 108) + 32
+            FluentSurface {
+                visible: !root.posting
+                x: root.compact ? 30 : (list.width - list.cardW) / 2; y: 15
+                width: list.cardW; height: 108
+                depth: 4; radius: 6; color: theme.surface
+                Avatar { x: 16; y: 12; size: 32; name: root.myName; photoId: backend.userMri || ""; presence: root.myPresence }
+                Rectangle {
+                    x: 46; y: 12; width: parent.width - 74; height: 31.3; radius: 4
+                    color: startHover.hovered ? theme.rowHover : "transparent"
+                    Text {
+                        x: 12.7; anchors.verticalCenter: parent.verticalCenter
+                        text: "Post in channel"
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                        color: theme.textStrong
+                    }
+                    HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.startPost() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Post in channel"
+                }
+                // The post types: Post (chosen) and Announcement.
+                Rectangle {
+                    x: 12; y: 68; width: 96; height: 30; radius: 4
+                    color: postTypeHover.hovered ? theme.rowHover : theme.pick("#EBEBEB", "#3D3D3D")
+                    Row {
+                        anchors.centerIn: parent; spacing: 6
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: postTypeHover.hovered ? "channel-20-filled" : "channel-20"; color: theme.brandForeground1 }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Post"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brandForeground1 }
+                    }
+                    HoverHandler { id: postTypeHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.startPost() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Post"
+                }
+                Rectangle {
+                    x: 123.5; y: 68; width: 147.5; height: 30; radius: 4
+                    color: annTypeHover.hovered ? theme.rowHover : theme.surface
+                    Row {
+                        anchors.centerIn: parent; spacing: 6
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: annTypeHover.hovered ? "fmt-announcement-filled" : "fmt-announcement"; color: annTypeHover.hovered ? theme.brand : theme.text }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Announcement"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    }
+                    HoverHandler { id: annTypeHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.startAnnouncement() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Announcement"
+                }
+            }
+        }
+    }
+
     // Post in channel
     Rectangle {
         id: postButton
-        visible: !root.posting
+        visible: !root.posting && !root.newestAtTop
         x: root.compact ? 30 : (root.width - list.cardW) / 2
         anchors.bottom: parent.bottom; anchors.bottomMargin: 25
         width: pbRow.implicitWidth + 32; height: 32; radius: theme.radius

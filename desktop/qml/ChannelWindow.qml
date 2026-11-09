@@ -199,8 +199,8 @@ Window {
 
     ChannelPosts {
         id: posts
-        anchors { top: findBar.bottom; left: parent.left; right: parent.right; bottom: win.posting ? compose.top : parent.bottom }
-        anchors.bottomMargin: win.posting ? 12 : 0
+        anchors { top: findBar.bottom; left: parent.left; right: parent.right; bottom: win.posting && !backend.channelPostsAtTop ? compose.top : parent.bottom }
+        anchors.bottomMargin: win.posting && !backend.channelPostsAtTop ? 12 : 0
         compact: true
         messages: win.messages
         myName: backend.userName
@@ -210,14 +210,19 @@ Window {
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         posting: win.posting
         onStartPost: { win.posting = true; compose.focusSubject() }
+        newestAtTop: backend.channelPostsAtTop
+        composerHeight: compose.boxHeight
+        onStartAnnouncement: { win.posting = true; compose.announcement = true; compose.focusSubject() }
     }
 
     // A new post.
     ComposeBox {
         id: compose
         visible: win.posting
-        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        anchors.leftMargin: 28; anchors.rightMargin: 30; anchors.bottomMargin: 8.7
+        readonly property bool atTop: backend.channelPostsAtTop
+        anchors { left: parent.left; right: parent.right }
+        y: atTop ? posts.y + posts.composerY : parent.height - height - 8.7
+        anchors.leftMargin: 28; anchors.rightMargin: 30
         placeholder: "Type a message"
         post: true
         deliveryOptions: false

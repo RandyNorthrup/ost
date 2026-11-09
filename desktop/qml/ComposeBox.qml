@@ -229,7 +229,7 @@ Item {
                     Accessible.role: Accessible.Button
                     Accessible.name: root.postEmpty ? "Close" : "Discard"
                 }
-                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+                Rectangle { y: Math.round(parent.height - 1); width: parent.width; height: 1; color: theme.divider }
             }
             // Announcement: the banner.
             Rectangle {
