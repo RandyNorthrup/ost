@@ -185,7 +185,7 @@ Rectangle {
                 visible: cap.header && !cap.intro
                 x: 8 + cap.inset; y: 4; size: 32
                 name: root.nameOf(cap.modelData)
-                photoId: root.isGuest(cap.modelData.userId) ? "" : (cap.modelData.userId || "")
+                photoId: cap.modelData.userId || ""
             }
             Row {
                 visible: cap.header && !cap.intro

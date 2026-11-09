@@ -108,7 +108,7 @@ Popup {
                         id: pillRow
                         x: 1.67; anchors.verticalCenter: parent.verticalCenter
                         spacing: 6
-                        Avatar { size: 16; name: modelData.name; photoId: (modelData.id || "").startsWith("8:teamsvisitor:") ? "" : modelData.id }
+                        Avatar { size: 16; name: modelData.name; photoId: modelData.id || "" }
                         Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
                     }
                     TapHandler { onTapped: root.chosen = root.chosen.filter(p => p.id !== modelData.id) }

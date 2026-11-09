@@ -228,7 +228,7 @@ Rectangle {
                 visible: row.first
                 x: 10.67; y: 13.19; size: 32
                 name: root.nameOf(row.modelData)
-                photoId: row.speech && !root.isGuest(row.modelData.userId) ? row.modelData.userId : ""
+                photoId: row.speech ? row.modelData.userId : ""
             }
             Row {
                 visible: row.first

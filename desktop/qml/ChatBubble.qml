@@ -41,7 +41,7 @@ Item {
         Avatar {
             x: 12; y: 12; size: 32
             name: root.bubble ? root.bubble.name : ""
-            photoId: root.bubble && !root.bubble.guest ? root.bubble.mri : ""
+            photoId: root.bubble ? root.bubble.mri : ""
             presence: root.bubble ? (root.bubble.presence || "") : ""
         }
         Row {

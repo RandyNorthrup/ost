@@ -346,7 +346,7 @@ Rectangle {
             property var entry: ({ p: {} })
             readonly property var p: entry.p || ({})
             height: 48
-            Avatar { visible: !p.suspected; x: 21.7; y: 8; size: 32; name: p.name || ""; photoId: p.guest ? "" : (p.id || ""); presence: p.presence || "" }
+            Avatar { visible: !p.suspected; x: 21.7; y: 8; size: 32; name: p.name || ""; photoId: p.id || ""; presence: p.presence || "" }
             GuestAvatar { visible: !!p.suspected; x: 21.7; y: 8; personId: p.id || "" }
             Column {
                 x: 65.7; anchors.verticalCenter: parent.verticalCenter

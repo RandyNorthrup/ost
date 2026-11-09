@@ -2900,6 +2900,10 @@ fn photo_dir() -> Option<std::path::PathBuf> {
 /// The owner and object id behind a photo_for id.
 fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::PhotoOwner, String)> {
     use api::directory::PhotoOwner;
+    // A meeting guest has no directory id: Teams draws them by name.
+    if id.starts_with("8:teamsvisitor:") {
+        return Some((PhotoOwner::Named, String::new()));
+    }
     let (owner, oid) = if id == "me" {
         (PhotoOwner::User, my_oid?.to_string())
     } else if let Some(g) = id.strip_prefix("team:") {
@@ -7229,10 +7233,10 @@ impl qobject::Backend {
         });
         let key = format!(
             "{}-{oid}-{name_hash:08x}",
-            if owner == api::directory::PhotoOwner::Team {
-                "team"
-            } else {
-                "user"
+            match owner {
+                api::directory::PhotoOwner::Team => "team",
+                api::directory::PhotoOwner::Named => "named",
+                api::directory::PhotoOwner::User => "user",
             }
         );
         let (cached, fresh) = photo_from_disk(&key);
@@ -8890,6 +8894,11 @@ mod tests {
             Some((PhotoOwner::User, OID.to_string()))
         );
         assert_eq!(photo_target("me", None), None);
+        // A guest is drawn by name, as Teams asks for their picture.
+        assert_eq!(
+            photo_target("8:teamsvisitor:43cf0b1e5a8d4c2f9e7f0a1b2c3d4e5f", None),
+            Some((PhotoOwner::Named, String::new()))
+        );
         // Anything that could change the request path is refused.
         assert_eq!(photo_target("../../me", None), None);
         assert_eq!(photo_target("8:orgid:abc?x=1", None), None);

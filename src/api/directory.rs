@@ -144,6 +144,9 @@ pub enum PhotoOwner {
     User,
     /// A team, by its group id.
     Team,
+    /// Someone known only by name (a meeting guest): Teams' initials
+    /// picture for that name (`defaultProfilePictureV2`).
+    Named,
 }
 
 /// A middle-tier token (audience api.spaces.skype.com), reused until close
@@ -172,21 +175,30 @@ pub async fn photo(
     id: &str,
     display_name: &str,
 ) -> Result<Option<Vec<u8>>> {
-    if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-        anyhow::bail!("Not an object id");
-    }
-    let me = client.object_id().context("No signed-in user")?;
     let base = client
         .middle_tier_url()
         .context("No Teams middle-tier endpoint")?;
     let name: String = url::form_urlencoded::byte_serialize(display_name.as_bytes()).collect();
-    // 196 px is sharp for every avatar size (up to the 144 px call stage at
-    // 1.5x scaling); teams come at one fixed size.
-    let path = match owner {
-        PhotoOwner::User => format!("8:orgid:{id}?displayname={name}&size=HR196x196"),
-        PhotoOwner::Team => format!("teams/{id}?displayName={name}"),
+    let url = if owner == PhotoOwner::Named {
+        if display_name.trim().is_empty() {
+            anyhow::bail!("No name to draw");
+        }
+        // Teams asks for a guest's picture by name (HR64 for its 32 px
+        // avatars); 196 px keeps it sharp at every size OST draws.
+        format!("{base}/beta/users/defaultProfilePictureV2?displayname={name}&size=HR196x196")
+    } else {
+        if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+            anyhow::bail!("Not an object id");
+        }
+        let me = client.object_id().context("No signed-in user")?;
+        // 196 px is sharp for every avatar size (up to the 144 px call stage
+        // at 1.5x scaling); teams come at one fixed size.
+        let path = match owner {
+            PhotoOwner::Team => format!("teams/{id}?displayName={name}"),
+            _ => format!("8:orgid:{id}?displayname={name}&size=HR196x196"),
+        };
+        format!("{base}/beta/users/{me}/profilepicturev2/{path}")
     };
-    let url = format!("{base}/beta/users/{me}/profilepicturev2/{path}");
     let token = middle_tier_token().await?;
     let resp = client
         .http()
