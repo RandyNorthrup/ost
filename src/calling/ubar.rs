@@ -476,6 +476,8 @@ impl Facts {
             "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.scheduled,
             // More ▸ Help (Teams' Help app on its meetings page).
             "MeetingHelpButton" => self.scheduled,
+            // More ▸ Report a concern (a security report about the meeting).
+            "ReportMeetingButton" => self.scheduled,
             // Settings ▸ Accessibility settings (the in-meeting pane).
             "SettingsMenuControl" | "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => {
                 self.scheduled

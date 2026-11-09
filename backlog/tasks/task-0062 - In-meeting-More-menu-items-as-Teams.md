@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T06:06:00Z'
+updated_date: '2026-11-09T06:20:00Z'
 labels:
   - calls
   - meetings
@@ -25,7 +25,7 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - [x] #3 Record and transcribe ▸ starts and stops transcription and recording as Teams (menu, language and record-mode dialogs, stop confirmations), verified live
 - [x] #4 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
 - [x] #5 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
-- [ ] #6 Report a concern as Teams (no real reports filed while testing)
+- [x] #6 Report a concern as Teams (no real reports filed while testing)
 - [ ] #7 Language and speech ▸ (live captions with their settings, pop-out window and RTT), Settings ▸ (Accessibility, Chat bubbles, Mute notifications) and Help as Teams
 <!-- AC:END -->
 
@@ -72,4 +72,6 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 - Call health moved to its own task (metrics pipeline + pane).
 
 - More ▸ Help: Teams' Help app window on its meetings page (help.svc helpappmeetings), verified the same page loads. Follow-up: the Help window's header is OST's web-app header (Reload/Open in browser); Teams shows the app tile and a … menu.
+
+- AC#6 Report a concern: Teams' meeting report dialog (measured on winpc, strings from the installed Teams localization), participant picker (chat members then participants, not you), unified report body reportType Meeting (unit test). No report filed (rule); the success toast's look is unverified for that reason.
 <!-- SECTION:NOTES:END -->

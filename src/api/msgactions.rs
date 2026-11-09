@@ -490,6 +490,64 @@ pub async fn report_security(
     Ok(())
 }
 
+/// Teams' security report body for a meeting (More ▸ Report a concern:
+/// the unified report service's `reportType: "Meeting"`), naming the
+/// participants you chose (MRIs).
+pub fn meeting_report_body(
+    thread_id: &str,
+    call_id: &str,
+    ical_uid: &str,
+    reported_users: &[String],
+    comment: &str,
+    now_iso: &str,
+) -> serde_json::Value {
+    let mut b = serde_json::json!({
+        "reportTimestamp": now_iso,
+        "reportType": "Meeting",
+        "reportedUsers": reported_users,
+        "actions": [],
+        "category": "Security",
+        "comment": comment,
+    });
+    if !call_id.is_empty() {
+        b["callId"] = call_id.into();
+    }
+    if !ical_uid.is_empty() {
+        b["iCalUId"] = ical_uid.into();
+    }
+    b["threadId"] = thread_id.into();
+    b
+}
+
+/// Report a meeting as a security concern (the unified report API, as
+/// messages are reported). This reaches the tenant's admins and Microsoft.
+pub async fn report_meeting(
+    client: &TeamsClient,
+    thread_id: &str,
+    call_id: &str,
+    ical_uid: &str,
+    reported_users: &[String],
+    comment: &str,
+) -> Result<()> {
+    let mt = client
+        .middle_tier_url()
+        .context("No middle-tier address for this account")?;
+    let token = super::directory::middle_tier_token().await?;
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let resp = client
+        .http()
+        .post(format!("{mt}/beta/reports"))
+        .bearer_auth(token)
+        .json(&meeting_report_body(thread_id, call_id, ical_uid, reported_users, comment, &now))
+        .send()
+        .await
+        .context("report request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reporting", resp.status().as_u16());
+    }
+    Ok(())
+}
+
 /// An AAD token for CSA (the chat service aggregator's resource), cached
 /// for 45 minutes.
 async fn csa_token() -> Result<String> {
@@ -597,6 +655,19 @@ pub async fn translate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meeting_report_as_teams_sends_it() {
+        let b = meeting_report_body("19:meeting_x@thread.v2", "call-1", "0400", &["8:teamsvisitor:abc".to_string()], "why", "2026-11-09T00:00:00.000Z");
+        let mut keys: Vec<_> = b.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["actions", "callId", "category", "comment", "iCalUId", "reportTimestamp", "reportType", "reportedUsers", "threadId"]);
+        assert_eq!(b["reportType"], "Meeting");
+        assert_eq!(b["category"], "Security");
+        assert_eq!(b["reportedUsers"], serde_json::json!(["8:teamsvisitor:abc"]));
+        let c = meeting_report_body("19:x", "", "", &[], "", "t");
+        assert!(c.get("callId").is_none() && c.get("iCalUId").is_none());
+    }
 
     #[test]
     fn links_are_teams() {

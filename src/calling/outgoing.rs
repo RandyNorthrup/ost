@@ -678,6 +678,11 @@ impl OutgoingCall {
         super::transcript::history(&self.http, &link, &self.call_id).await
     }
 
+    /// The call's id (the chain id everyone in it shares).
+    pub fn call_id(&self) -> &str {
+        &self.call_id
+    }
+
     /// The meeting's title, times, location and calendar link (Meeting info).
     pub fn meeting_info(&self) -> Option<super::meeting_info::MeetingInfo> {
         self.meeting_info.clone()

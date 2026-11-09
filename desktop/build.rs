@@ -89,6 +89,7 @@ fn main() {
         "qml/CaptionStylesPane.qml",
         "qml/AccessibilityPane.qml",
         "qml/ChatBubble.qml",
+        "qml/MeetingReportDialog.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

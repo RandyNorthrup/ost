@@ -1461,6 +1461,18 @@ Window {
                 }
                 if (plan[step]) plan[step]()
                 else if (step % 3 === 0) rows()
+            } else if (step >= 9 && step <= Math.min(18, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-report") >= 0) {
+                // --join-report: More ▸ Report a concern, its picker, a
+                // participant chosen, then Cancel. Never sends a report.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-report-" + n + ".png")))
+                const d = callWindow.meetingReportForTest()
+                const plan = {
+                    9: () => callWindow.runControl("ReportMeetingButton"), 11: () => grab("dialog"),
+                    12: () => d.openListForTest(), 13: () => grab("list"),
+                    14: () => d.chooseFirstForTest(), 15: () => grab("chosen"),
+                    16: () => { console.warn("JOIN report people", JSON.stringify(d.people), "meeting", JSON.stringify(d.meeting)); d.close() }
+                }
+                if (plan[step]) plan[step]()
             } else if (step >= 9 && step <= Math.min(27, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-accessibility") >= 0) {
                 // --join-accessibility: More ▸ Settings ▸, then the
                 // Accessibility pane.

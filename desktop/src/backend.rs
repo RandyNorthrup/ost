@@ -401,6 +401,11 @@ pub mod qobject {
         /// message); the outcome lands in reportResult ("ok" or "error").
         #[qinvokable]
         fn report_message(self: Pin<&mut Backend>, message_id: &QString, comment: &QString);
+        /// Report the meeting we're in as a security concern (More ▸
+        /// Report a concern), naming the chosen participants (a JSON list
+        /// of MRIs); the outcome comes back in report_result.
+        #[qinvokable]
+        fn report_meeting(self: Pin<&mut Backend>, comment: &QString, reported_json: &QString);
         /// Translate a message (Teams' Translate) or show its original.
         #[qinvokable]
         fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
@@ -4106,8 +4111,14 @@ impl qobject::Backend {
             };
             let body = event.as_ref().map(|e| e.body_html.clone()).unwrap_or_default();
             let copy = mi::copy_join_info(&body, &info.join_url);
+            // "Nov 6, 3:00 PM", as the report dialog's meeting card shows it.
+            let start_text = info
+                .start
+                .map(|t| t.with_timezone(&tz).format("%b %-d, %-I:%M %p").to_string())
+                .unwrap_or_default();
             let json = serde_json::json!({
                 "title": info.title,
+                "startText": start_text,
                 "hours": hours.unwrap_or_default(),
                 "schedule": schedule.unwrap_or_default(),
                 "location": info.location,
@@ -6295,6 +6306,32 @@ impl qobject::Backend {
             .await;
             if let Err(e) = &result {
                 tracing::warn!("report failed: {}", short_error(e));
+            }
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_report_result(QString::from(if result.is_ok() { "ok" } else { "error" }))
+            });
+        });
+    }
+
+    pub fn report_meeting(mut self: Pin<&mut Self>, comment: &QString, reported_json: &QString) {
+        let thread = self.rust().call_thread_id.to_string();
+        let comment = comment.to_string();
+        let reported: Vec<String> = serde_json::from_str(&reported_json.to_string()).unwrap_or_default();
+        self.as_mut().set_report_result(QString::from("sending"));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let (call_id, ical) = match call_slot().lock().await.outgoing.as_ref() {
+                Some(c) => (c.call_id().to_string(), c.meeting_info().map(|i| i.ical_uid).unwrap_or_default()),
+                None => (String::new(), String::new()),
+            };
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::report_meeting(&client, &thread, &call_id, &ical, &reported, &comment).await
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("meeting report failed: {}", short_error(e));
             }
             let _ = qt.queue(move |mut this| {
                 this.as_mut()

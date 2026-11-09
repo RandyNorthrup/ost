@@ -410,6 +410,7 @@ Window {
         else if (name === "AudioSettingsButton") side = side === "audio" ? "" : "audio"
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
         else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
+        else if (name === "ReportMeetingButton") openMeetingReport()
     }
     function controlEnabled(name) {
         if (!holdOk(name)) return false
@@ -471,6 +472,7 @@ Window {
             ? { label: "Show chat bubbles", icon: "chat-bubbles-20" }
             : { label: "Don't show chat bubbles", icon: "chat-bubbles-off-20" }
         if (n === "MeetingHelpButton") return { label: "Help", icon: "question-circle-20" }
+        if (n === "ReportMeetingButton") return { label: "Report a concern", icon: "shield-error-20" }
         if (n === "MuteNotificationsButton") return notificationsMuted
             ? { label: "Allow notifications", icon: "alert-20" }
             : { label: "Mute notifications", icon: "alert-off-20" }
@@ -618,6 +620,7 @@ Window {
         if (i >= 0) moreMenu.openSubmenuForTest(i)
     }
     function closeMoreForTest() { moreMenu.close() }
+    function meetingReportForTest() { return meetingReport }
     function helpWindowForTest() { return helpWindow }
     function moreSubmenuForTest(name) {
         moreMenu.parent = barItem("MoreButton") || moreMenu.parent
@@ -818,6 +821,35 @@ Window {
         items: [{ label: "Open caption settings", icon: "settings-20", chevron: true }]
         onPicked: i => win.showCaptionSettings(captionsOverflow.parent)
     }
+
+    // More ▸ Report a concern: the meeting, and everyone in it or its chat
+    // but you.
+    function openMeetingReport() {
+        if (!meetingInfo) loadMeetingInfo()
+        const me = (backend.userMri || "").toLowerCase()
+        const seen = {}
+        const people = []
+        // Teams lists the chat's members first, then who else is here.
+        for (const p of (win.chatMembers || []).concat(win.people)) {
+            const id = (p.id || p.mri || "").toLowerCase()
+            // The roster names you "me".
+            if (!id || id === "me" || id === me || seen[id] || id.startsWith("28:")) continue
+            seen[id] = true
+            people.push({ id: p.id || p.mri, name: p.name || p.displayName || "" })
+        }
+        const org = win.people.find(p => (p.role || "").toLowerCase() === "organizer")
+        meetingReport.people = people
+        meetingReport.organizer = org ? org.name : ""
+        meetingReport.open()
+    }
+    MeetingReportDialog {
+        id: meetingReport
+        property string organizer: ""
+        meeting: ({ title: win.meetingInfo ? win.meetingInfo.title : "", start: win.meetingInfo ? (win.meetingInfo.startText || "") : "", organizer: organizer })
+        onReported: { win.reportSent = true; reportSentTimer.restart() }
+    }
+    property bool reportSent: false
+    Timer { id: reportSentTimer; interval: 5000; onTriggered: win.reportSent = false }
 
     // More ▸ Help: Teams' Help app in a window of its own, opened on its
     // meetings page (help.svc's "helpappmeetings").
@@ -1400,6 +1432,20 @@ Window {
         z: 5
         onDismissed: win.mutedNoticeShown = false
         onUnmute: { win.mutedNoticeShown = false; win.toggleMute() }
+    }
+    // Report a concern sent: Teams says "Your report was sent" (its shell
+    // toast; shown here as the meeting's notice card, its layout not yet
+    // measured: that takes a real report).
+    MutedNotice {
+        visible: win.reportSent
+        x: stage.x + (stage.width - width) / 2
+        y: bar.height + 10.7
+        z: 5
+        icon: "checkmark-circle-20-filled"
+        title: "Your report was sent"
+        text: ""
+        action: ""
+        onDismissed: win.reportSent = false
     }
     // Teams' MeetingLocked / MeetingUnlocked alerts (ufd_MeetingLocked):
     // the notice card with the filled lock, for 10 s.

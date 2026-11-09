@@ -497,6 +497,14 @@ only holds what is left (Merge, Park, Lock).
 
 ### 1.8g Settings ▸ and the in-meeting Accessibility pane (measured on winpc, 2026-11-09)
 - **Settings ▸ items.** Call health, Accessibility settings, a divider, "Don't show chat bubbles" / "Show chat bubbles", and "Mute notifications" / "Allow notifications".
+- **More ▸ Report a concern.** Opens "Report a security concern", 600 × 460.67.
+  - Meeting card: #E8EBFA with a 6 px brand bar, showing the title, the start ("Nov 6, 3:00 PM") and the organizer.
+  - Explanation: up to 250 characters, a 4-row filled text area, with a character counter.
+  - "Report participants (optional)" picker: the chat's members, then the meeting's other participants, never you. Chosen people show as pills.
+  - Disclaimer, then Cancel and Report.
+  - Report sends the unified report API (`POST {mt}/beta/reports`) with `{reportTimestamp, reportType: "Meeting", reportedUsers: [MRIs], actions: [], category: "Security", comment, callId, iCalUId, threadId}`.
+  - Success shows "Your report was sent". Failure shows "Failed to submit report. Please try again.".
+  - No live report was filed to check the success toast's layout.
 - **More ▸ Help.** Opens Teams' Help app in a window of its own (946 × 593 content).
   - URL: `https://help.svc.cloud.microsoft/f1/home/?shownav=True&NS=MSFTTEAMS&version=16&omkt=<locale>&RingId=general&context=<JSON>`.
   - The context has `SubEntityId: "helpappmeetings"`, plus the theme, session, app version, `HostClientType: "desktop"` and `TeamsHostName: "TeamsModern"`. Teams also sends the tenant SKU and licence type, which OST doesn't know for every tenant.
