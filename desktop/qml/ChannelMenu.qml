@@ -54,10 +54,30 @@ Item {
     }
     function act(op, arg) { backend.channelAction(op, root.teamId, root.channel.id, arg || "") }
 
+    // Owners' items for a channel other than General (Teams: Recommend for
+    // everyone / Stop recommending, then Archive channel and Delete
+    // channel); an archived channel has Teams' short menu.
+    readonly property bool teamOwner: { const t = JSON.parse(backend.teamsJson || "[]").find(t => t.id === root.teamId); return !!t && t.owner === true }
+    readonly property bool ownedChannel: (root.channel.owner === true || teamOwner) && root.channel.general !== true
+    readonly property var archivedItems: [
+        { key: "window", label: "Open in new window", icon: "open-window-20" },
+        { key: "manage", label: "Manage channel", icon: "settings-20" },
+        { key: "link", label: "Copy link", icon: "link-20" },
+        { key: "restore", label: "Restore channel", icon: "arrow-clockwise-20" },
+        { key: "delete", label: "Delete channel", icon: "delete-20" }
+    ]
+    readonly property var ownerItems: ownedChannel ? [
+        root.channel.recommended
+            ? { key: "unrecommend", label: "Stop recommending for everyone", icon: "sparkle-20" }
+            : { key: "recommend", label: "Recommend for everyone", icon: "sparkle-20" },
+        { separator: true },
+        { key: "archive", label: "Archive channel", icon: "archive-20" },
+        { key: "delete", label: "Delete channel", icon: "delete-20" }
+    ] : []
     MenuPopup {
         id: menu
         margins: 8
-        items: (root.manageMode
+        items: root.channel.archived === true ? root.archivedItems : (root.manageMode
             ? [{ key: "go", label: "Go to channel", icon: "channel-20" },
                { key: "window", label: "Open in new window", icon: "open-window-20" },
                { separator: true }]
@@ -77,7 +97,7 @@ Item {
             { key: "manage", label: "Manage channel", icon: "settings-20" },
             { key: "link", label: "Copy link", icon: "link-20" },
             { key: "email", label: "Get email address", icon: "mail-20" }
-        ], root.manageMode ? [] : [{ key: "workflows", label: "Workflows", icon: "workflows-20" }]).filter(i => i !== null)
+        ], root.manageMode ? [] : [{ key: "workflows", label: "Workflows", icon: "workflows-20" }], root.ownerItems).filter(i => i !== null)
         onFlyoutRequested: (i, row) => {
             if (i < 0 || !row) { notifyFlyout.close(); return }
             const p = row.mapToItem(menu.contentItem, 0, 0)
@@ -98,6 +118,9 @@ Item {
             else if (k === "link") root.act("copy-link", root.channel.name)
             else if (k === "email") emailDialog.start(root.channel)
             else if (k === "workflows") root.workflows()
+            else if (k === "recommend" || k === "unrecommend" || k === "restore") root.act(k)
+            else if (k === "archive") archiveDialog.start(root.channel)
+            else if (k === "delete") deleteDialog.start(root.channel)
         }
         onSubPicked: (i, j) => {
             const t = items[i].submenu[j]
@@ -171,10 +194,107 @@ Item {
     ChannelEditDialog { id: editDialog; teamId: root.teamId }
     ChannelEmailDialog { id: emailDialog; teamId: root.teamId; teamName: root.teamName }
 
+    // Teams' channel dialogs (measured 2026-11-09): 600 wide, padding 20 30
+    // 32, the title 18/28 semibold, the text 14/20, Cancel and the action
+    // (96 x 31.3) at the end.
+    component ChannelDialog: Popup {
+        id: cd
+        property var channel: ({})
+        property string titleText
+        property string actionText
+        default property alias body: bodyCol.data
+        signal accepted()
+        function start(c) { channel = c; open() }
+        anchors.centerIn: Overlay.overlay
+        modal: true; width: 600; padding: 0
+        height: bodyCol.y + bodyCol.implicitHeight + 8 + 31.3 + 32.7
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Text {
+            x: 30.7; y: 22.7; width: 508.8
+            wrapMode: Text.Wrap
+            text: cd.titleText
+            font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
+            lineHeight: 28; lineHeightMode: Text.FixedHeight
+            color: theme.text
+            Accessible.role: Accessible.Heading
+            Component.onCompleted: bodyCol.y = Qt.binding(() => y + height + 10)
+        }
+        Column { id: bodyCol; x: 30.7; width: 538.7 }
+        Row {
+            x: parent.width - 30.7 - width; y: cd.height - 32.7 - 31.3
+            spacing: 8
+            Rectangle {
+                width: 96; height: 31.3; radius: 4
+                color: cdCancelHover.hovered ? theme.rowHover : theme.surface
+                border.color: theme.stroke; border.width: 0.67
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                HoverHandler { id: cdCancelHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: cd.close() }
+                Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+            }
+            Rectangle {
+                width: 96; height: 31.3; radius: 4
+                color: cdOkHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: cd.actionText; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                HoverHandler { id: cdOkHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { cd.close(); cd.accepted() } }
+                Accessible.role: Accessible.Button; Accessible.name: cd.actionText
+            }
+        }
+    }
+    ChannelDialog {
+        id: archiveDialog
+        property bool readOnly: false
+        titleText: "Archive the " + (channel.name || "") + " channel?"
+        actionText: "Archive"
+        onOpened: readOnly = false
+        onAccepted: backend.channelAction("archive", root.teamId, channel.id, JSON.stringify({ readOnly: readOnly }))
+        Text {
+            width: parent.width; wrapMode: Text.Wrap
+            text: "This will freeze all conversations in the channel. You can restore the channel any time."
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+        }
+        Item {
+            width: parent.width; height: 36
+            Rectangle {
+                x: 8; y: 10; width: 16; height: 16; radius: 2
+                color: archiveDialog.readOnly ? theme.brand : "transparent"
+                border.color: archiveDialog.readOnly ? theme.brand : theme.textSecondary; border.width: 0.67
+                FluentIcon { visible: archiveDialog.readOnly; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: "white" }
+            }
+            Text { x: 36; y: 8; text: "Make the SharePoint folder read-only for team members"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: archiveDialog.readOnly ? theme.text : theme.textSecondary }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: archiveDialog.readOnly = !archiveDialog.readOnly }
+            Accessible.role: Accessible.CheckBox
+            Accessible.checked: archiveDialog.readOnly
+            Accessible.name: "Make the SharePoint folder read-only for team members"
+        }
+    }
+    ChannelDialog {
+        id: deleteDialog
+        titleText: "Delete the " + (channel.name || "") + " channel from the " + root.teamName + " team"
+        actionText: "Delete"
+        onAccepted: backend.channelAction("delete-channel", root.teamId, channel.id, "")
+        readonly property string site: { const t = JSON.parse(backend.teamsJson || "[]").find(t => t.id === root.teamId); return t ? t.site_url || "" : "" }
+        Text {
+            width: parent.width; wrapMode: Text.Wrap
+            textFormat: Text.StyledText
+            readonly property string esc: (deleteDialog.channel.name || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+            text: "Are you sure you want to delete the <b>" + esc + "</b> channel? All conversations will be deleted. "
+                + (deleteDialog.site ? "<a href=\"" + deleteDialog.site + "/Shared%20Documents/" + encodeURI(deleteDialog.channel.name || "") + "\">Your files are still accessible here</a>." : "")
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            linkColor: theme.brandForeground1
+            onLinkActivated: link => Qt.openUrlExternally(link)
+            HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        }
+    }
+
     // Test hooks.
     function openNotifyForTest() { menu.open(); notifyFlyout.parent = menu.contentItem; notifyFlyout.x = -notifyFlyout.width + 4; notifyFlyout.y = 60; notifyFlyout.open() }
     function customizeForTest() { notifyDialog.start(root.channel) }
     function editForTest() { editDialog.start(root.channel) }
     function emailForTest() { emailDialog.start(root.channel) }
-    function closeAllForTest() { notifyFlyout.close(); menu.close(); notifyDialog.close(); editDialog.close(); emailDialog.close() }
+    function closeAllForTest() { notifyFlyout.close(); menu.close(); notifyDialog.close(); editDialog.close(); emailDialog.close(); archiveDialog.close(); deleteDialog.close() }
+    function archiveForTest() { archiveDialog.start(root.channel) }
+    function deleteForTest() { deleteDialog.start(root.channel) }
 }

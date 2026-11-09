@@ -249,18 +249,26 @@ pub async fn create_channel(
         "channelType": channel_type,
         "chatModalityType": layout,
     });
-    let v: serde_json::Value = client
+    let resp = client
         .http()
         .post(format!("{base}/beta/teams/{team_thread}/channels"))
         .bearer_auth(&token)
         .json(&body)
         .send()
-        .await?
-        .error_for_status()
-        .context("Create channel")?
-        .json()
-        .await
-        .context("Create channel")?;
+        .await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        // A name in use (also by a recently deleted channel) comes back as
+        // a 400/409 that names it; Teams says "Channel name is already
+        // taken."
+        let lower = text.to_lowercase();
+        if status.as_u16() == 409 || lower.contains("already") || lower.contains("duplicate") || lower.contains("namealready") {
+            bail!("Channel name is already taken. ({status})");
+        }
+        bail!("Create channel: {status} {}", text.chars().take(200).collect::<String>());
+    }
+    let v: serde_json::Value = serde_json::from_str(&text).context("Create channel")?;
     let id = v.pointer("/value/objectId").and_then(|i| i.as_str()).context("No channel id")?.to_string();
     let favorite = format!(
         "{}/properties?name=favorite&requirePermanentJoinedState=true",
@@ -285,16 +293,80 @@ pub async fn create_channel(
     Ok(id)
 }
 
-/// Hide all channels (the team row's menu): Teams' provisioning service,
-/// `PUT {teamsAndChannelsProvisioningService}/team/{teamThread}/hide`.
-pub async fn hide_all_channels(client: &TeamsClient, team_thread: &str) -> Result<()> {
+/// Teams' provisioning service and a token for it (its resource is
+/// teamsAndChannelsProvisioningServiceConstants.resource, prod
+/// https://templates.teams.microsoft.com).
+async fn provisioning(client: &TeamsClient) -> Result<(String, String)> {
     let base = client
         .region_endpoint("teamsAndChannelsProvisioningService")
         .context("No Teams provisioning endpoint")?;
-    let (_, token) = middle_tier(client).await?;
+    let token = crate::auth::oauth::access_token_for("https://templates.teams.microsoft.com/.default").await?;
+    Ok((base.trim_end_matches('/').to_string(), token))
+}
+
+/// Archive a channel (Teams' Archive channel; Restore with `restore`):
+/// `POST {teamsAndChannelsProvisioningService}/teams/{group}/channels/
+/// {channel}/archive[?setSpoSiteReadOnlyForMembers=true]` or `/unarchive`.
+pub async fn archive_channel(client: &TeamsClient, group_id: &str, channel: &str, restore: bool, read_only: bool) -> Result<()> {
+    let (base, token) = provisioning(client).await?;
+    let mut url = format!(
+        "{base}/teams/{group_id}/channels/{channel}/{}",
+        if restore { "unarchive" } else { "archive" }
+    );
+    if !restore && read_only {
+        url.push_str("?setSpoSiteReadOnlyForMembers=true");
+    }
     client
         .http()
-        .put(format!("{}/team/{}/hide", base.trim_end_matches('/'), enc(team_thread)))
+        .post(url)
+        .bearer_auth(&token)
+        .header(reqwest::header::CONTENT_LENGTH, "0")
+        .send()
+        .await?
+        .error_for_status()
+        .context(if restore { "Restore channel" } else { "Archive channel" })?;
+    Ok(())
+}
+
+/// Delete a channel: `DELETE {mt}/beta/teams/{team}/channels/{channel}`.
+pub async fn delete_channel(client: &TeamsClient, team_thread: &str, channel: &str) -> Result<()> {
+    let (base, token) = middle_tier(client).await?;
+    client
+        .http()
+        .delete(format!("{base}/beta/teams/{}/channels/{}", enc(team_thread), enc(channel)))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Delete channel")?;
+    Ok(())
+}
+
+/// Recommend a channel for everyone's list, or stop:
+/// `PUT` / `DELETE {mt}/beta/teams/{channel}/setDefaultChannel`.
+pub async fn recommend_channel(client: &TeamsClient, channel: &str, on: bool) -> Result<()> {
+    let (base, token) = middle_tier(client).await?;
+    let url = format!("{base}/beta/teams/{channel}/setDefaultChannel");
+    let req = if on {
+        client.http().put(url).header(reqwest::header::CONTENT_LENGTH, "0")
+    } else {
+        client.http().delete(url)
+    };
+    req.bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Recommend for everyone")?;
+    Ok(())
+}
+
+/// Hide all channels (the team row's menu): Teams' provisioning service,
+/// `PUT {teamsAndChannelsProvisioningService}/team/{teamThread}/hide`.
+pub async fn hide_all_channels(client: &TeamsClient, team_thread: &str) -> Result<()> {
+    let (base, token) = provisioning(client).await?;
+    client
+        .http()
+        .put(format!("{base}/team/{}/hide", enc(team_thread)))
         .bearer_auth(&token)
         .header(reqwest::header::CONTENT_LENGTH, "0")
         .send()

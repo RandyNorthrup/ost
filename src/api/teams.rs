@@ -168,6 +168,10 @@ pub struct ListTeam {
     pub deleted_channels: Vec<ListChannel>,
     /// The team's description.
     pub description: String,
+    /// Its SharePoint site (teamSiteInformation.sharepointSiteUrl).
+    pub site_url: String,
+    /// You own the team (memberRoleString "admin").
+    pub owner: bool,
 }
 
 fn read_horizon(c: &serde_json::Value) -> bool {
@@ -249,6 +253,8 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 channels: list,
                 deleted_channels: deleted,
                 description: s(t, "description"),
+                site_url: t.pointer("/teamSiteInformation/sharepointSiteUrl").and_then(|u| u.as_str()).unwrap_or_default().to_string(),
+                owner: s(t, "memberRoleString") == "admin",
             }
         })
         .collect()

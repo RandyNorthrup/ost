@@ -3291,6 +3291,44 @@ Window {
         }
     }
 
+    // --channel-owner-test=<team group id> --shots=<dir>: on the OST test
+    // channels: the owner menu (co-menu.png) and the Archive / Delete
+    // dialogs (co-archive.png, co-delete.png); then Restore "OST test
+    // channel 2", Recommend / Stop recommending "OST test channel", Archive
+    // and Restore it, create "OST test channel 4" and Delete it, logging
+    // each result and what the team list then says; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--channel-owner-test=")) && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        property string made: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--channel-owner-test=")) || "").slice(21)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => t.id === id)
+            if (!team) return
+            const ch = n => team.channels.find(c => c.name === n) || {}
+            const log = tag => console.warn("OWNER", tag, backend.channelActionResult, JSON.stringify(team.channels.map(c => [c.name, c.archived, c.recommended])))
+            const m = chatList.channelMenuForTest()
+            if (step === 0) { chatList.openChannelMenu(ch("OST test channel"), team, chatList, 250, 300) }
+            else if (step === 1) { console.warn("OWNER menu", JSON.stringify(m.menu.items.map(i => i.label || "-"))); shot("co-menu") }
+            else if (step === 2) { m.closeAllForTest(); m.channel = ch("OST test channel"); m.archiveForTest() }
+            else if (step === 3) shot("co-archive")
+            else if (step === 4) { m.closeAllForTest(); m.deleteForTest() }
+            else if (step === 5) shot("co-delete")
+            else if (step === 6) { m.closeAllForTest(); backend.channelAction("restore", team.id, ch("OST test channel 2").id || "19:e1974817d2fe48858ad1cb8f9df219bb@thread.tacv2", "") }
+            else if (step === 9) { log("restore 2"); backend.channelAction("archive", team.id, ch("OST test channel").id, "{}") }
+            else if (step === 12) { log("archive 1"); backend.channelAction("restore", team.id, ch("OST test channel").id, "") }
+            else if (step === 15) { log("restore 1"); backend.channelAction("create-channel", team.id, ch("General").id, JSON.stringify({ name: "OST test channel 4", type: "Standard", layout: "PostReply" })) }
+            else if (step === 17) { log("create 4"); const r = JSON.parse(backend.channelActionResult); made = r.data ? r.data.id : ""; if (made) backend.channelAction("delete-channel", team.id, made, "") }
+            else if (step === 19) { log("delete 4"); backend.channelAction("hide-all", team.id, ch("General").id, "") }
+            else if (step === 22) { log("hide-all"); team.channels.forEach(c => backend.channelAction("show", team.id, c.id, "")) }
+            else if (step === 25) { log("show all"); Qt.quit() }
+            step++
+        }
+    }
+
     // --row-menu-test=<channel id> --shots=<dir>: with
     // OST group test open, the channel row's ··· menu (rowmenu.png); quit.
     Timer {

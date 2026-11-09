@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T20:42:00Z'
-updated_date: '2026-11-09T23:34:00Z'
+updated_date: '2026-11-09T23:52:00Z'
 labels:
   - desktop
 dependencies: []
@@ -54,4 +54,12 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
   - Verified: OST created "OST test channel 3" and Teams lists it. Teams made "OST test channel" and "OST test channel 2" (recommended) for the non-General work.
   - Manage team rows show Recommended, and Last active falls back to the creation time, as Teams does.
   - Private and Shared creation still need Teams' member step: next piece.
+
+- Piece 3: channel owner items for channels other than General (Teams' menu, measured): Recommend for everyone / Stop recommending, Archive channel (Teams' dialog with the SharePoint read-only box), Delete channel (Teams' dialog with the files link). An archived channel gets Teams' short menu (Open in new window, Manage channel, Copy link, Restore channel, Delete channel).
+  - APIs captured:
+    - archive/unarchive on the provisioning service (its token resource https://templates.teams.microsoft.com, from Teams' config), with ?setSpoSiteReadOnlyForMembers=true;
+    - DELETE {mt}/beta/teams/{team}/channels/{channel};
+    - PUT/DELETE {mt}/beta/teams/{channel}/setDefaultChannel.
+  - Fixed: Hide all channels used the middle-tier token (401). It now uses the provisioning token and was verified from OST, then everything was shown again.
+  - Verified from OST (--channel-owner-test): restore, archive, restore, recommend, unrecommend, create, delete, hide all, show. Create errors map to "Channel name is already taken." when the server names a conflict (a deleted channel's name too).
 <!-- SECTION:NOTES:END -->

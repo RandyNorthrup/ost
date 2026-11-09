@@ -9364,6 +9364,20 @@ impl qobject::Backend {
                         .await?;
                         Ok(json!({ "id": id, "name": f("name").trim() }))
                     }
+                    // A channel's Archive / Restore / Delete / Recommend.
+                    "archive" | "restore" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        api::channels::archive_channel(&client, &team, &channel, op == "restore", a["readOnly"].as_bool().unwrap_or(false)).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "delete-channel" => {
+                        api::channels::delete_channel(&client, &team_thread, &channel).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "recommend" | "unrecommend" => {
+                        api::channels::recommend_channel(&client, &channel, op == "recommend").await?;
+                        Ok(serde_json::Value::Null)
+                    }
                     // The team row's Hide all channels.
                     "hide-all" => {
                         api::channels::hide_all_channels(&client, &team_thread).await?;
