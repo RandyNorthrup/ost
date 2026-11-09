@@ -402,6 +402,26 @@ only holds what is left (Merge, Park, Lock).
   - Music mode per Microsoft: 32 kHz sampling at up to 128 kbps, mono, no gain control, echo cancellation optional.
 - **InfoButton.** 24 px with the 16 px Info (regular at rest, filled and brand on hover). Its popover is 264 wide, padding 12, 12/16 text, 6 above the button. When it would leave the pane it sits at the pane's left edge.
 
+### 1.8d Record and transcribe ▸ (RecordingMenuControl; captured on winpc, 2026-11-09)
+- **Submenu.** Opens to the left of More, its surface's right edge at More's list and its top at the row's.
+- **Items, by state.**
+  - Recording: Start recording / Stop recording. Tooltips: "Start recording and transcription", or "Start recording only" while transcribing; "Stop recording and transcription".
+  - Transcription: Start transcription / Stop transcription.
+  - Hide / Show transcript (the Transcript pane).
+- **Dialogs.**
+  - "What language is everyone speaking?" (480 wide): the language dropdown with the current choice first, then 57 languages.
+  - "Start recording and transcription" (522 wide): the same, plus More options ▸ Choose what to record (Video and audio / Audio only).
+  - "Start recording" (522 wide, while transcribing): only the record-mode choice.
+  - Stops ask "Stop transcription?" / "Stop recording and transcription?" (400 × 152.67, Cancel / Stop).
+- **Protocol.** A POST to the hidden recorder participant's `endpointMetadata.commandUrl`:
+  - Auth: Bearer token, aud 4580fd1d-…, scope `access_recorder_service`, plus `x-microsoft-skype-chain-id`.
+  - Body: `{timestamp, participantMri, participantLegId, action, mode?, processingModes, actionParameters?, participantSkypeToken: ""}`.
+  - Transcription: mode "transcription", modes `["realTimeTranscript"]`.
+  - Recording: modes `["recording","realTimeTranscript"]` and `recordingMode` Normal / AudioOnly.
+  - A start's `actionParameters`: features, OneDrive storage "<title>-YYYYMMDD_HHMMSS-Meeting Transcript|Recording", iCalUid, correlationId, meetingTitle, meetingOrganizer, spokenLanguage, type "start".
+  - The reply is `{CorrelationId}`; the roster's processingModes then change.
+- **Roster.** The recorder is hidden: its endpoint has `__platform.ui.hidden`, though not every update repeats it. Its updates can arrive out of order, so a participant's `version` decides.
+
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.
 - Format `MM:SS`, becoming `HH:MM:SS` once hours > 0. Every field is zero-padded to 2 digits.

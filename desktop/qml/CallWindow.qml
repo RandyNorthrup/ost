@@ -447,25 +447,97 @@ Window {
         m.enabled = controlEnabled(name)
         return m
     }
-    readonly property var moreLabels: ({
-        MeetingInfoButton: { label: "Meeting info", icon: "info-20" },
-        CameraEffectsButton: { label: "Video effects and settings", icon: "video-background-effect-20" },
-        AudioSettingsButton: { label: "Audio settings", icon: "speaker-settings-20" }
-    })
+    // More's own rows (Teams' labels and icons); Record and transcribe
+    // follows the recorder's state.
+    readonly property bool transcribing: recordingState === "Transcribing" || recordingState === "RecordingAndTranscribing"
+    readonly property bool recording: recordingState === "Recording" || recordingState === "RecordingAndTranscribing"
+    function moreLabel(n) {
+        if (n === "MeetingInfoButton") return { label: "Meeting info", icon: "info-20" }
+        if (n === "CameraEffectsButton") return { label: "Video effects and settings", icon: "video-background-effect-20" }
+        if (n === "AudioSettingsButton") return { label: "Audio settings", icon: "speaker-settings-20" }
+        if (n === "RecordingMenuControl") return { label: "Record and transcribe", icon: "record-20" }
+        if (n === "RecordingButton") return recording
+            ? { label: "Stop recording", icon: "record-stop-20", tip: "Stop recording and transcription" }
+            : { label: "Start recording", icon: "record-20", tip: transcribing ? "Start recording only" : "Start recording and transcription" }
+        if (n === "TranscriptButton") return transcribing
+            ? { label: "Stop transcription", icon: "call-transcript-stop-20" }
+            : { label: "Start transcription", icon: "call-transcript-20" }
+        return null
+    }
+    // A menu control's sections as one list (a divider after a section of
+    // more than one, as More's own).
+    function submenuOf(item) {
+        const secs = (item.sections || []).map(sec => sec.items.filter(i => !!moreLabel(i.name)))
+                                         .filter(sec => sec.length > 0)
+        const out = []
+        secs.forEach((sec, i) => {
+            sec.forEach(i2 => out.push(Object.assign({ name: i2.name }, moreLabel(i2.name))))
+            if (i < secs.length - 1 && sec.length > 1) out.push({ separator: true })
+        })
+        return out
+    }
     /// More's rows: what overflowed, a divider, then More's own sections
-    /// (a section of one merges into the next, as on the bar).
+    /// (a section of one merges into the next, as on the bar); a menu
+    /// control carries its items as a submenu.
     readonly property var barMoreItems: {
         const out = []
         for (const n of ubar.overflowed) { const it = overflowItem(n); if (it) out.push(it) }
-        const sections = ubar.more.map(sec => sec.items.map(i => i.name).filter(n => !!moreLabels[n]))
+        const sections = ubar.more.map(sec => sec.items.filter(i => !!moreLabel(i.name) && (!i.sections || submenuOf(i).length > 0)))
                                   .filter(sec => sec.length > 0)
         if (out.length > 0 && sections.length > 0) out.push({ separator: true })
         sections.forEach((sec, i) => {
-            sec.forEach(n => out.push(Object.assign({ name: n }, moreLabels[n])))
+            sec.forEach(it => {
+                const row = Object.assign({ name: it.name }, moreLabel(it.name))
+                if (it.sections) row.submenu = submenuOf(it)
+                out.push(row)
+            })
             if (i < sections.length - 1 && sec.length > 1) out.push({ separator: true })
         })
         return out
     }
+    // Record and transcribe: the starts ask first, as Teams.
+    signal recorderCommand(string command, string language, bool audioOnly)
+    RecordStartDialog {
+        id: recordStart
+        onConfirmed: (language, audioOnly) => win.recorderCommand(
+            mode === "transcription" ? "startTranscription" : "startRecording", language, audioOnly)
+    }
+    ConfirmDialog {
+        id: stopTranscriptAsk
+        title: "Stop transcription?"; body: ""; confirmText: "Stop"
+        onConfirmed: win.recorderCommand("stopTranscription", "", false)
+    }
+    ConfirmDialog {
+        id: stopRecordingAsk
+        title: "Stop recording and transcription?"; body: ""; confirmText: "Stop"
+        onConfirmed: win.recorderCommand("stopRecording", "", false)
+    }
+    function recordMenuForTest() {
+        moreMenu.parent = barItem("MoreButton") || moreMenu.parent
+        moreMenu.open()
+        const i = barMoreItems.findIndex(it => it.name === "RecordingMenuControl")
+        if (i >= 0) moreMenu.openSubmenuForTest(i)
+    }
+    function closeMoreForTest() { moreMenu.close() }
+    function cancelRecordDialogForTest() { recordStart.close() }
+    function confirmRecordDialogForTest() {
+        if (recordStart.opened) { recordStart.close(); recordStart.confirmed(recordStart.language, recordStart.audioOnly); return true }
+        for (const d of [stopTranscriptAsk, stopRecordingAsk])
+            if (d.opened) { d.close(); d.confirmed(); return true }
+        return false
+    }
+    function recordControl(name) {
+        if (name === "RecordingButton") {
+            if (recording) stopRecordingAsk.open()
+            else recordStart.ask(transcribing ? "recording" : "recordingAndTranscription")
+        } else if (name === "TranscriptButton") {
+            if (transcribing) stopTranscriptAsk.open()
+            else recordStart.ask("transcription")
+        }
+    }
+    // Teams' alerts when the recorder refuses (10 s, as the lock notices).
+    property string recorderFailure: ""
+    Timer { id: recorderFailureTimer; interval: 10000; onTriggered: win.recorderFailure = "" }
 
     Rectangle { anchors.fill: parent; color: theme.surface }
 
@@ -1114,6 +1186,17 @@ Window {
         action: ""
         onDismissed: win.lockNoticeShown = false
     }
+    MutedNotice {
+        visible: win.recorderFailure.length > 0
+        x: stage.x + (stage.width - width) / 2
+        y: bar.height + 10.7
+        z: 5
+        icon: "alert-warning-16-filled"
+        title: win.recorderFailure
+        text: ""
+        action: ""
+        onDismissed: win.recorderFailure = ""
+    }
     LobbyToast {
         id: lobbyToast
         x: stage.x + (stage.width - width) / 2
@@ -1256,6 +1339,10 @@ Window {
     }
     function meetingActionFailed(action) {
         if (action === "lock" || action === "unlock") { lockRetry.unlocking = action === "unlock"; lockRetry.open() }
+        else if (action === "startRecording") { recorderFailure = "Couldn't start recording"; recorderFailureTimer.restart() }
+        else if (action.indexOf("Transcription") >= 0 || action === "stopRecording") {
+            recorderFailure = "Something went wrong with transcription. Please try again later."; recorderFailureTimer.restart()
+        }
     }
     function moreMenuForTest() { side = "people"; peoplePane.moreMenuForTest() }
     function peopleRowsForTest() { return peoplePane.rowsForTest() }
@@ -1460,11 +1547,13 @@ Window {
         viewStyle: true
         x: 4; y: 59.3
         items: win.barMoreItems
+        submenuLeft: true
         onPicked: i => {
             const it = win.barMoreItems[i]
             // Overflowed menus open from More's place on the bar.
             win.runControl(it.name)
         }
+        onSubPicked: (i, j) => win.recordControl(win.barMoreItems[i].submenu[j].name)
     }
     // Dial pad: Teams' keypad under the button; keys send tones.
     Popup {

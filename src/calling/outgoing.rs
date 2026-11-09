@@ -72,10 +72,15 @@ pub struct OutgoingCall {
     /// What the meeting's call recorder does (transcript, recording,
     /// Copilot), by its participant id.
     processing: std::collections::HashMap<String, super::roster::Processing>,
+    /// The roster version each recorder entry came with (newer wins).
+    processing_versions: std::collections::HashMap<String, u64>,
     /// Teams' bar shows the AI indicator in this meeting.
     ai_indicator: bool,
     /// What the join response says about the meeting (Meeting info).
     meeting_info: Option<super::meeting_info::MeetingInfo>,
+    /// The meeting's call recorder's command URL, once the roster names it
+    /// (Record and transcribe).
+    recorder_url: Option<String>,
     /// The conversation controller (`conversationController`): deleting it
     /// ends the meeting for everyone.
     controller: Option<String>,
@@ -529,8 +534,20 @@ impl OutgoingCall {
     /// Note a roster update's call recorder state; true when what it does
     /// changed.
     pub fn apply_processing(&mut self, json: &serde_json::Value) -> bool {
+        if let Some(url) = super::recorder::command_url(json) {
+            self.recorder_url = Some(url);
+        }
         let before = self.processing();
-        for (id, modes) in super::roster::processing_updates(json) {
+        for (id, modes, version) in super::roster::versioned_processing_updates(json) {
+            // An update older than what we have (they can arrive out of
+            // order) changes nothing.
+            let seen = self.processing_versions.get(&id).copied().unwrap_or(0);
+            if version != 0 && version <= seen {
+                continue;
+            }
+            if version != 0 {
+                self.processing_versions.insert(id.clone(), version);
+            }
             match modes {
                 Some(m) => {
                     self.processing.insert(id, m);
@@ -546,6 +563,35 @@ impl OutgoingCall {
     /// Teams' bar shows the AI indicator in this meeting.
     pub fn shows_ai_indicator(&self) -> bool {
         self.ai_indicator
+    }
+
+    /// The meeting has a call recorder to command (Record and transcribe).
+    pub fn has_recorder(&self) -> bool {
+        self.recorder_url.is_some()
+    }
+
+    /// Ask the meeting's call recorder to start or stop the transcript or
+    /// recording, as Teams' Record and transcribe menu does.
+    pub async fn recorder_command(
+        &self,
+        command: super::recorder::Command,
+        meeting: &super::recorder::Meeting,
+    ) -> Result<()> {
+        let url = self
+            .recorder_url
+            .clone()
+            .context("The meeting's recorder isn't in the call")?;
+        let token = crate::auth::oauth::access_token_for(super::recorder::RECORDER_SCOPE).await?;
+        let body = super::recorder::body(
+            command,
+            self.me.0["id"].as_str().unwrap_or_default(),
+            self.me.0["participantId"].as_str().unwrap_or_default(),
+            meeting,
+            chrono::Local::now(),
+            &uuid::Uuid::new_v4().to_string(),
+        );
+        tracing::info!(?command, "recorder command");
+        super::recorder::send(&self.http, &url, &token, &self.call_id, &body).await
     }
 
     /// The meeting's title, times, location and calendar link (Meeting info).
@@ -1841,6 +1887,10 @@ async fn start(
         meeting_info: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
             .and_then(|v| super::meeting_info::from_join_response(&v)),
+        processing_versions: Default::default(),
+        recorder_url: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| super::recorder::command_url(&v)),
         controller,
         invite_url,
         mute_link,

@@ -465,6 +465,13 @@ pub mod qobject {
         /// attendance list).
         #[qinvokable]
         fn download_attendance_list(self: Pin<&mut Backend>);
+        /// Teams' Record and transcribe: "startTranscription",
+        /// "stopTranscription", "startRecording" (recording only when the
+        /// transcript runs) or "stopRecording", in `language` ("en-us"),
+        /// `audio_only` for "Audio only". A failure comes back as
+        /// meeting_action_failed(command).
+        #[qinvokable]
+        fn recorder_command(self: Pin<&mut Backend>, command: &QString, language: &QString, audio_only: bool);
         /// Fill call_meeting_info_json for Teams' Meeting info pane.
         #[qinvokable]
         fn load_meeting_info(self: Pin<&mut Backend>);
@@ -3708,6 +3715,48 @@ impl qobject::Backend {
                     this.as_mut()
                         .set_status_text(QString::from(short_error(&e).as_str()))
                 });
+            }
+        });
+    }
+
+    pub fn recorder_command(self: Pin<&mut Self>, command: &QString, language: &QString, audio_only: bool) {
+        use teams_cli::calling::recorder::{Command, Meeting};
+        let name = command.to_string();
+        let transcribing = self.rust().processing.transcript.is_some();
+        let cmd = match name.as_str() {
+            "startTranscription" => Command::StartTranscription,
+            "stopTranscription" => Command::StopTranscription,
+            "startRecording" if transcribing => Command::StartRecordingOnly { audio_only },
+            "startRecording" => Command::StartRecording { audio_only },
+            "stopRecording" => Command::StopRecording,
+            _ => return,
+        };
+        // The organizer as the roster names them (else us).
+        let organizer = self
+            .rust()
+            .roster
+            .iter()
+            .find(|p| p.role.eq_ignore_ascii_case("organizer"))
+            .map(|p| p.name.clone())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| self.rust().user_name.to_string());
+        let language = language.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_ref() else { return };
+            let info = call.meeting_info().unwrap_or_default();
+            let meeting = Meeting {
+                title: info.title,
+                ical_uid: info.ical_uid,
+                organizer,
+                spoken_language: language,
+            };
+            let result = call.recorder_command(cmd, &meeting).await;
+            drop(slot);
+            if let Err(e) = result {
+                tracing::warn!(command = %name, "recorder: {}", short_error(&e));
+                let _ = qt.queue(move |this| this.meeting_action_failed(QString::from(name.as_str())));
             }
         });
     }

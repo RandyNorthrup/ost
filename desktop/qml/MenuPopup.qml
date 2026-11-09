@@ -57,6 +57,8 @@ Popup {
     // The open submenu: beside the list (overlapping our padding), its
     // list's top level with the row's top, as Teams' View menu opens them.
     property int subIndex: -1
+    /// Open submenus to the left of the list (Teams' More menu).
+    property bool submenuLeft: false
     // A submenu is this same menu, made on first use (QML won't nest a
     // type inside itself).
     property var subMenu: null
@@ -77,7 +79,8 @@ Popup {
         subIndex = i
         const p = rowItem.mapToItem(root.contentItem, 0, 0)
         sub.items = it.submenu
-        sub.x = root.contentItem.width
+        // Beside the list, or to its left (More, at the window's right).
+        sub.x = root.submenuLeft ? -sub.width : root.contentItem.width
         sub.y = p.y
         sub.open()
     }
@@ -158,6 +161,30 @@ Popup {
                     HoverHandler {
                         id: mh; cursorShape: row.on ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onHoveredChanged: if (hovered) root.hoverRow(row.index, row)
+                    }
+                    // A row's tooltip (`tip`), 10 px after the row, centred
+                    // on it, as Teams' Record and transcribe items show it.
+                    ToolTip {
+                        id: rowTip
+                        visible: !!row.modelData.tip && mh.hovered
+                        delay: 250
+                        topPadding: 4; bottomPadding: 6; leftPadding: 11; rightPadding: 11
+                        x: row.width + 10
+                        y: (row.height - implicitHeight) / 2
+                        contentItem: Text {
+                            text: row.modelData.tip || ""
+                            font.family: theme.font; font.pixelSize: 12
+                            lineHeight: 16; lineHeightMode: Text.FixedHeight
+                            color: theme.text
+                        }
+                        background: Item {
+                            FluentSurface { anchors.fill: parent; depth: 8; radius: 4; color: theme.surface }
+                            Rectangle {
+                                width: 8.48; height: 8.48; rotation: 45
+                                color: theme.surface
+                                x: -width / 2; y: rowTip.implicitHeight / 2 - height / 2
+                            }
+                        }
                     }
                     TapHandler {
                         enabled: row.on

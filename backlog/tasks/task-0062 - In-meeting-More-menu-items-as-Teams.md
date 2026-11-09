@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-08T20:41:00Z'
-updated_date: '2026-11-09T01:18:00Z'
+updated_date: '2026-11-09T02:21:00Z'
 labels:
   - calls
   - meetings
@@ -22,8 +22,11 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 <!-- AC:BEGIN -->
 - [x] #1 Meeting info opens Teams' meeting info pane (title, time, join link, dial-in, copy)
 - [ ] #2 Language and speech ▸ with Captions, Settings ▸ (Call health, Accessibility, Chat bubbles, Mute notifications), Timer and Help as Teams
-- [ ] #3 Record and transcribe ▸ and Report a concern as Teams (no real reports filed while testing)
-- [x] #4 Audio settings opens Teams' Audio settings side pane (Speaker, Microphone, Advanced settings with noise suppression and High fidelity music mode), as measured on winpc
+- [x] #3 Audio settings opens Teams' Audio settings side pane (Speaker, Microphone, Advanced settings with noise suppression and High fidelity music mode), as measured on winpc
+- [x] #4 Record and transcribe ▸ starts and stops transcription and recording as Teams (menu, language and record-mode dialogs, stop confirmations), verified live
+- [ ] #5 Teams' Transcript side pane: opens when transcription starts, Hide/Show transcript in the menu, the live transcript and its events
+- [ ] #6 Starting transcription or recording where the meeting's recorder hasn't joined yet (group calls, fresh meetings) works as Teams
+- [ ] #7 Report a concern as Teams (no real reports filed while testing)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -43,4 +46,8 @@ Teams' More (…) menu in meetings (verified on winpc): Record and transcribe �
 
 - Record and transcribe research (winpc capture 2026-11-09): Teams POSTs to the hidden recorder participant's endpointMetadata.commandUrl (from the roster; port changes) with Bearer token aud 4580fd1d-e5a3-4f56-9ad1-aab0e3bf8f76 scp access_recorder_service, header x-microsoft-skype-chain-id = call id. Body {timestamp, participantMri, participantLegId, action start|stop, mode "transcription" (transcript only), processingModes ["realTimeTranscript"] or ["recording","realTimeTranscript"], actionParameters {recordingFeatures{...}, recordingStorageSettings[{StorageType OnedriveForBusiness, StorageLocation Recordings, FileName "<title>-YYYYMMDD_HHMMSS-Meeting Transcript|Recording"}], iCalUid, correlationId, meetingTitle, exchangeId, meetingOrganizer, recordingMode "Normal" (recording), spokenLanguage, type start}, participantSkypeToken ""}; stop sends only the first fields. Response {CorrelationId}.
 - Dialogs: spoken-language-selection-dialog 480 wide ("What language is everyone speaking?" / "Start recording and transcription" 522 wide with More options > Choose what to record: Video and audio); stop confirmations 400 wide ("Stop transcription?", "Stop recording and transcription?"). Teams then opens the Transcript side pane (RTAF storage artifacts).
+
+- AC#4 done: src/calling/recorder.rs builds Teams' recorder commands (start/stop transcription, start recording [+transcript], recording only when the transcript runs, stop) and POSTs them to the recorder's commandUrl from the roster with a recorder-audience token (auth::oauth::access_token_for). Desktop: More > Record and transcribe ▸ (submenu opens left, Teams' glyphs and tooltips), RecordStartDialog (Teams' 57 spoken languages, verified against its loc keys; More options > Choose what to record), stop confirmations; failures show Teams' "Couldn't start recording" / transcription error notice.
+- Verified live (--join-record): OST started and stopped transcription and recording in the test meeting; 200 from the recorder; roster states followed; Teams on winpc showed the same.
+- Fixed on the way: roster updates are applied by participant version (an older update arrived after the stop and showed recording again); the call recorder (CallRecorder Bot) is hidden from the stage and count like Teams.
 <!-- SECTION:NOTES:END -->

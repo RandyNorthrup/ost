@@ -751,6 +751,7 @@ Window {
         meetingInfo: backend.callMeetingInfoJson ? JSON.parse(backend.callMeetingInfoJson) : null
         onLoadMeetingInfo: backend.loadMeetingInfo()
         onCopyMeetingJoinInfo: backend.copyMeetingJoinInfo()
+        onRecorderCommand: (command, language, audioOnly) => backend.recorderCommand(command, language, audioOnly)
         lockNotices: backend.callLockNotices
         onMeetingAction: action => backend.meetingAction(action)
         onSetAttendeeRestrictions: bits => backend.setAttendeeRestrictions(bits)
@@ -1351,6 +1352,30 @@ Window {
                 else if (step === 22) { shot("on-a2"); backend.toggleCamera() }
                 else if (step === 23) callWindow.audioOptionsForTest()
                 else if (step === 24) shot("audio-flyout")
+            } else if (step >= 9 && step <= 60 && Qt.application.arguments.indexOf("--join-record") >= 0) {
+                // --join-record: Record and transcribe from the More menu:
+                // start transcription (dialog), stop it, start recording
+                // (dialog), stop it; the menu and dialogs captured, the
+                // recorder's state logged as the roster reports it.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rec-" + n + ".png")))
+                const st = () => console.warn("JOIN rec", step, "state", JSON.stringify(backend.callRecordingState), backend.callRecordingTip)
+                const plan = {
+                    9: () => callWindow.recordMenuForTest(), 10: () => grab("menu-idle"), 11: () => callWindow.closeMoreForTest(),
+                    12: () => callWindow.recordControl("TranscriptButton"), 13: () => grab("dialog-transcription"),
+                    14: () => console.warn("JOIN rec confirm", callWindow.confirmRecordDialogForTest()),
+                    22: () => { st(); callWindow.recordMenuForTest() }, 23: () => grab("menu-transcribing"), 24: () => callWindow.closeMoreForTest(),
+                    25: () => callWindow.recordControl("RecordingButton"), 26: () => grab("dialog-recording-only"), 27: () => callWindow.cancelRecordDialogForTest(),
+                    28: () => callWindow.recordControl("TranscriptButton"), 29: () => grab("dialog-stop-transcription"),
+                    30: () => console.warn("JOIN rec confirm", callWindow.confirmRecordDialogForTest()),
+                    38: () => { st(); callWindow.recordControl("RecordingButton") }, 39: () => grab("dialog-recording"),
+                    40: () => console.warn("JOIN rec confirm", callWindow.confirmRecordDialogForTest()),
+                    50: () => { st(); callWindow.recordMenuForTest() }, 51: () => grab("menu-recording"), 52: () => callWindow.closeMoreForTest(),
+                    53: () => callWindow.recordControl("RecordingButton"), 54: () => grab("dialog-stop-recording"),
+                    55: () => console.warn("JOIN rec confirm", callWindow.confirmRecordDialogForTest()),
+                    60: () => st()
+                }
+                if (plan[step]) plan[step]()
+                else if (step % 4 === 0) st()
             } else if (step >= 9 && step <= 16 && Qt.application.arguments.indexOf("--join-audio-pane") >= 0) {
                 // --join-audio-pane: More > Audio settings, captured at the
                 // top and the end; then music mode on (captured, and the

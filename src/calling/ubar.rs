@@ -465,6 +465,8 @@ impl Facts {
             "AudioSettingsButton" | "CameraEffectsButton" => true,
             // Meetings (Teams' isMeeting), not a chat's group call.
             "MeetingInfoButton" => self.scheduled,
+            // Record and transcribe ▸ (the meeting's call recorder).
+            "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" => self.scheduled,
             _ => false,
         }
     }

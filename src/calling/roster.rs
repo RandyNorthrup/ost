@@ -52,6 +52,23 @@ pub struct Participant {
     pub streams_known: bool,
 }
 
+/// The meeting's call recorder (transcription and recording).
+pub const CALL_RECORDER_MRI: &str = "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5";
+
+/// The roster marks this participant hidden (Teams leaves them out of the
+/// People pane and the stage).
+fn is_hidden(mri: &str, p: &serde_json::Value) -> bool {
+    // The call recorder is always hidden; not every update repeats its
+    // endpoint's flag, which Teams keeps from an earlier one.
+    mri.eq_ignore_ascii_case(CALL_RECORDER_MRI)
+        || p.pointer("/details/hidden").and_then(|h| h.as_bool()) == Some(true)
+        || p.get("endpoints").and_then(|e| e.as_object()).is_some_and(|eps| {
+            eps.values().any(|ep| {
+                ep.pointer("/endpointMetadata/__platform/ui/hidden").and_then(|h| h.as_bool()) == Some(true)
+            })
+        })
+}
+
 /// The sourceId of an endpoint stream labelled `label`, when it sends.
 fn sending_source(streams: &[&serde_json::Value], label: &str) -> Option<i64> {
     streams
@@ -90,12 +107,15 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
     Some(
         participants
             .iter()
-            // Service bots (28:…, such as Hold's music) aren't people.
+            // Service bots (28:…, such as Hold's music) aren't people, nor
+            // is anyone the service marks hidden (the call recorder:
+            // `details.hidden`, or its endpoint's `__platform.ui.hidden`).
             .filter(|(mri, p)| {
                 !(mri.starts_with("28:")
                     && p.pointer("/details/displayName")
                         .and_then(|n| n.as_str())
                         .is_none_or(str::is_empty))
+                    && !is_hidden(mri, p)
             })
             .map(|(mri, p)| {
                 let s = |ptr: &str| p.pointer(ptr).and_then(|x| x.as_str()).unwrap_or_default();
@@ -351,6 +371,12 @@ impl Processing {
 /// for one whose endpoint carries them, `None` for one that left.
 /// Participants the update names without endpoints are left out.
 pub fn processing_updates(json: &serde_json::Value) -> Vec<(String, Option<Processing>)> {
+    versioned_processing_updates(json).into_iter().map(|(id, m, _)| (id, m)).collect()
+}
+
+/// The same with each participant's roster `version`: updates can arrive
+/// out of order, and the newer version wins (as Teams merges the roster).
+pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Option<Processing>, u64)> {
     let participants = match json.get("callAgentPath").and_then(|p| p.as_str()) {
         Some(path) if path.starts_with("conversation/rosterUpdate") => json.pointer("/body/participants"),
         Some(_) => None,
@@ -363,8 +389,9 @@ pub fn processing_updates(json: &serde_json::Value) -> Vec<(String, Option<Proce
         .iter()
         .filter_map(|(mri, p)| {
             let id = mri.to_ascii_lowercase();
+            let version = p.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
             if p.get("state").and_then(|s| s.as_str()).is_some_and(|s| s != "active") {
-                return Some((id, None));
+                return Some((id, None, version));
             }
             let modes = p
                 .get("endpoints")?
@@ -383,6 +410,7 @@ pub fn processing_updates(json: &serde_json::Value) -> Vec<(String, Option<Proce
                     recording: started_by("recording"),
                     copilot: started_by("copilot").is_some(),
                 }),
+                version,
             ))
         })
         .collect()
@@ -432,6 +460,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hidden_participants_are_left_out() {
+        let ev = serde_json::json!({"callAgentPath": "conversation/rosterUpdate/", "body": {"participants": {
+            "28:bdd": {"state": "active", "details": {"displayName": "CallRecorder Bot"},
+                "endpoints": {"e": {"endpointMetadata": {"__platform": {"ui": {"hidden": true}}}}}},
+            "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5": {"state": "active", "details": {"displayName": "CallRecorder Bot"},
+                "endpoints": {"e": {"call": {}}}},
+            "8:orgid:a": {"state": "active", "details": {"displayName": "A"}}
+        }}});
+        let d = roster_delta(&ev.to_string()).unwrap();
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].name, "A");
+    }
+
+    #[test]
     fn call_recorder_processing() {
         let bot = |state: &str, transcript: &str| serde_json::json!({
             "callAgentPath": "conversation/rosterUpdate/",
@@ -454,6 +496,9 @@ mod tests {
         let joined = serde_json::json!({"roster": {"participants": bot("active", "Active")["body"]["participants"].clone()}});
         assert!(processing_updates(&joined)[0].1.clone().unwrap().transcript.is_some());
         assert!(processing_updates(&serde_json::json!({"callAgentPath": "call/x"})).is_empty());
+        let mut v = bot("active", "Active");
+        v["body"]["participants"]["28:BDD75849-e0a6"]["version"] = 578.into();
+        assert_eq!(versioned_processing_updates(&v)[0].2, 578);
     }
 
     #[test]
