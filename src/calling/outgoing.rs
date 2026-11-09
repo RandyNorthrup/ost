@@ -1713,6 +1713,18 @@ pub async fn start_group_call(
     start(thread_id, Target::Group(kind), cancel).await
 }
 
+/// Start a meeting in a channel now (Teams' channel Meet now).
+pub async fn start_channel_meeting(
+    channel_id: &str,
+    subject: &str,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    if !(channel_id.starts_with("19:") && channel_id.ends_with("@thread.tacv2")) {
+        bail!("Not a channel");
+    }
+    start(channel_id, Target::ChannelMeeting(subject), cancel).await
+}
+
 /// Group chats (not meetings, channels or 1:1 chats).
 pub fn is_group_chat(thread_id: &str) -> bool {
     thread_id.starts_with("19:")
@@ -1727,6 +1739,8 @@ enum Target<'a> {
     Group(signaling::GroupCallKind),
     /// The meeting with this message id on the thread.
     Meeting(&'a str),
+    /// A new meeting in a channel (Meet now), with this title.
+    ChannelMeeting(&'a str),
 }
 
 async fn start(
@@ -1857,6 +1871,9 @@ async fn start(
         }
         Target::Meeting(message_id) => {
             signaling::join_meeting(&http, &epconv_url, &params, &offer, message_id).await?
+        }
+        Target::ChannelMeeting(subject) => {
+            signaling::create_channel_meeting(&http, &epconv_url, &params, &offer, subject).await?
         }
     };
     let leave_url = leave_link(&created.response_body);

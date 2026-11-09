@@ -26,6 +26,14 @@ Window {
     /// starts").
     property bool presenterConnected: true
     property string userName: ""
+    /// Starting a meeting now (a channel's Meet now, measured on winpc
+    /// 2026-11-09): Teams heads it "Microsoft Teams meeting" (here, OST's
+    /// name) with the title in a field under it (prejoin-title-input:
+    /// 270 x 32, 16/20 medium, "Meeting in \"<channel>\"" to start with),
+    /// and no time; Join now starts the meeting with that title.
+    property bool meetNow: false
+    /// The channel a Meet now starts in.
+    property string meetChannel: ""
     signal join(bool micOn, bool withAudio, bool cameraOn)
     signal cancelled()
     /// Leave the lobby (Cancel, Escape).
@@ -36,7 +44,14 @@ Window {
     color: theme.pane
     title: "Meeting join | " + subject
 
+    function openMeetNow(channel, subj) {
+        meetNow = true; meetChannel = channel; joinUrl = ""; subject = subj
+        micOn = true; audio = "computer"; cameraOn = false
+        show(); raise(); requestActivate()
+        titleField.forceActiveFocus(); titleField.cursorPosition = titleField.text.length
+    }
     function openFor(url, subj, start, end) {
+        meetNow = false; meetChannel = ""
         joinUrl = url; subject = subj
         startTime = start ? new Date(start) : new Date()
         endTime = end ? new Date(end) : new Date()
@@ -69,13 +84,36 @@ Window {
         // The title, or in the lobby Teams' lobby text in its place.
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: !win.lobby ? win.subject
+            text: win.meetNow ? Qt.application.name + " meeting" : !win.lobby ? win.subject
                 : win.presenterConnected ? "Hi, " + win.userName + ". Someone will let you in shortly."
                 : "Hi, " + win.userName + ". Someone will let you in when the meeting starts."
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             color: theme.text
         }
+        // Meet now: the meeting's title, to edit before joining.
+        Item {
+            visible: win.meetNow
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: 270; height: visible ? 32 : 0
+            TextInput {
+                id: titleField
+                anchors.fill: parent; leftPadding: 3; rightPadding: 3
+                verticalAlignment: TextInput.AlignVCenter
+                text: win.subject
+                onTextEdited: win.subject = text
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.Medium
+                color: theme.text
+                clip: true
+                maximumLength: 256
+                Accessible.name: "Meeting title"
+            }
+            Rectangle {
+                anchors.bottom: parent.bottom; width: parent.width; height: titleField.activeFocus ? 2 : 1
+                color: titleField.activeFocus ? theme.brand : theme.pick("#757575", "#ADADAD")
+            }
+        }
         Text {
+            visible: !win.meetNow
             anchors.horizontalCenter: parent.horizontalCenter
             text: Qt.formatDate(win.startTime, "dddd, MMM d") + "  •  " + Qt.formatTime(win.startTime, "h:mm AP") + " – " + Qt.formatTime(win.endTime, "h:mm AP")
             font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold

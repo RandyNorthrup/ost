@@ -1035,6 +1035,32 @@ pub async fn create_group_call(
             _ => None,
         },
         suppress_dialout: matches!(kind, GroupCallKind::Join),
+        subject: None,
+        meetup: false,
+    };
+    create_call_with(http, epconv_url, params, sdp_offer, &opts).await
+}
+
+/// Start a channel's meeting (Teams' Meet now in a channel): an ad hoc
+/// meeting on the channel thread, nobody rung, its title as the subject.
+/// The call service posts the meeting in the channel (meetup generation)
+/// and the meeting is keyed by that post.
+pub async fn create_channel_meeting(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    sdp_offer: &str,
+    subject: &str,
+) -> Result<(ConversationCreated, ConversationJoined)> {
+    let opts = CreateOptions {
+        group_chat: true,
+        meeting_message_id: None,
+        to: Vec::new(),
+        conversation_type: Some("adHocMeeting"),
+        invitation_type: None,
+        suppress_dialout: true,
+        subject: Some(subject),
+        meetup: true,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1046,6 +1072,10 @@ struct CreateOptions<'a> {
     conversation_type: Option<&'a str>,
     invitation_type: Option<&'a str>,
     suppress_dialout: bool,
+    /// The conversation's subject (a channel meeting's title).
+    subject: Option<&'a str>,
+    /// Have the call service post the meeting in the thread.
+    meetup: bool,
 }
 
 async fn create_call(
@@ -1064,6 +1094,8 @@ async fn create_call(
         invitation_type: None,
         // false = ring the callee; nobody is rung when joining a meeting.
         suppress_dialout: meeting_message_id.is_some(),
+        subject: None,
+        meetup: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1092,7 +1124,7 @@ async fn create_call_with(
     let payload = serde_json::json!({
         "conversationRequest": {
             "conversationType": opts.conversation_type,
-            "subject": "",
+            "subject": opts.subject.unwrap_or(""),
             "suppressDialout": opts.suppress_dialout,
             "roster": {
                 "type": "Delta",
@@ -1102,7 +1134,7 @@ async fn create_call_with(
                 "allowConversationWithoutHost": true,
                 "enableGroupCallEventMessages": true,
                 "enableGroupCallUpgradeMessage": false,
-                "enableGroupCallMeetupGeneration": false
+                "enableGroupCallMeetupGeneration": opts.meetup
             },
             "links": {
                 "conversationEnd": tc("conversation/conversationEnd/"),

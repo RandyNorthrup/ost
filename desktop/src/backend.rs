@@ -501,6 +501,10 @@ pub mod qobject {
         /// Group chats: Teams' Meet now (a huddle; members are nudged).
         #[qinvokable]
         fn meet_now(self: Pin<&mut Backend>);
+        /// Channels: Teams' Meet now, a new meeting in the channel with
+        /// this title (from the pre-join's title field).
+        #[qinvokable]
+        fn channel_meet_now(self: Pin<&mut Backend>, channel_id: &QString, title: &QString);
 
         /// Group chats: join the chat's ongoing call (Teams' Join).
         #[qinvokable]
@@ -3688,7 +3692,7 @@ impl qobject::Backend {
             self.start_group_call(
                 chat_id,
                 peer,
-                teams_cli::calling::signaling::GroupCallKind::Ring,
+                Some(teams_cli::calling::signaling::GroupCallKind::Ring),
             );
             return;
         }
@@ -3766,6 +3770,14 @@ impl qobject::Backend {
         });
     }
 
+    pub fn channel_meet_now(self: Pin<&mut Self>, channel_id: &QString, title: &QString) {
+        let channel = channel_id.to_string();
+        if !self.rust().call_state.is_empty() || !channel.ends_with("@thread.tacv2") {
+            return;
+        }
+        self.start_group_call(channel, title.clone(), None);
+    }
+
     pub fn meet_now(self: Pin<&mut Self>) {
         let chat_id = self.rust().current_chat_id.to_string();
         let title = self.rust().current_chat_name.clone();
@@ -3775,7 +3787,7 @@ impl qobject::Backend {
         self.start_group_call(
             chat_id,
             title,
-            teams_cli::calling::signaling::GroupCallKind::Huddle,
+            Some(teams_cli::calling::signaling::GroupCallKind::Huddle),
         );
     }
 
@@ -3833,7 +3845,7 @@ impl qobject::Backend {
         self.start_group_call(
             chat_id,
             title,
-            teams_cli::calling::signaling::GroupCallKind::Join,
+            Some(teams_cli::calling::signaling::GroupCallKind::Join),
         );
     }
 
@@ -3843,8 +3855,10 @@ impl qobject::Backend {
         mut self: Pin<&mut Self>,
         chat_id: String,
         title: QString,
-        kind: teams_cli::calling::signaling::GroupCallKind,
+        // None: a new meeting in a channel, titled `title` (Meet now).
+        kind: Option<teams_cli::calling::signaling::GroupCallKind>,
     ) {
+        let subject = title.to_string();
         self.as_mut().set_call_peer(title);
         self.as_mut().set_call_peer_id(QString::default());
         self.as_mut().rust_mut().roster.clear();
@@ -3872,7 +3886,10 @@ impl qobject::Backend {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
         runtime().spawn(async move {
-            let result = outgoing::start_group_call(&chat_id, kind, cancel_rx).await;
+            let result = match kind {
+                Some(kind) => outgoing::start_group_call(&chat_id, kind, cancel_rx).await,
+                None => outgoing::start_channel_meeting(&chat_id, &subject, cancel_rx).await,
+            };
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
             match result {

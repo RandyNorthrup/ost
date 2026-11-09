@@ -941,6 +941,43 @@ Rectangle {
             Accessible.role: Accessible.Button
             Accessible.name: "View and add participants, " + count + " participants"
         }
+        Rectangle {
+            id: channelMeet
+            visible: root.isChannel && !root.pane
+            x: root.channelMeetLeft; anchors.verticalCenter: parent.verticalCenter
+            width: root.channelMeetWide ? 97.17 : 32; height: 32; radius: 4
+            readonly property bool blocked: backend.callState !== ""
+            color: channelMeetHover.hovered && !blocked ? theme.hover : "transparent"
+            Row {
+                anchors.centerIn: parent; spacing: 6
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: channelMeetHover.hovered && !channelMeet.blocked ? "video-20-filled" : "video-20"; size: 20; color: channelMeet.blocked ? theme.disabled : channelMeetHover.hovered ? theme.brand : root.hdrStrong }
+                Text { visible: root.channelMeetWide; anchors.verticalCenter: parent.verticalCenter; text: "Meet now"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: channelMeet.blocked ? theme.disabled : channelMeetHover.hovered ? theme.brand : root.hdrStrong }
+            }
+            HoverHandler { id: channelMeetHover; cursorShape: channelMeet.blocked ? Qt.ArrowCursor : Qt.PointingHandCursor }
+            TapHandler { enabled: !channelMeet.blocked; onTapped: root.channelMeetNow() }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Meet now"
+        }
+        HeaderAction {
+            id: channelMeetMore
+            visible: channelMeet.visible
+            x: channelMeet.x + channelMeet.width; width: 20; height: 32
+            icon: "chevron-down-16"; iconSize: 16
+            iconColor: channelMeetMenu.opened ? theme.brand : root.hdrStrong
+            onClicked: channelMeetMenu.open()
+            Accessible.name: "More channel meeting options"
+            // Meet now / Schedule a meeting (161.8 wide, its end 4.5 inside
+            // the chevron's, 4.5 below it).
+            MenuPopup {
+                id: channelMeetMenu
+                x: parent.width - 4.5 - width; y: parent.height + 4.5
+                items: [
+                    { key: "meet", label: "Meet now", icon: "video-20", enabled: !channelMeet.blocked },
+                    { key: "schedule", label: "Schedule a meeting", icon: "calendar-add-20" }
+                ]
+                onPicked: i => items[i].key === "meet" ? root.channelMeetNow() : root.scheduleMeeting()
+            }
+        }
         HeaderAction {
             id: tabConvButton
             visible: !root.pane && !!root.currentTab && root.currentTab.can_converse === true
@@ -972,12 +1009,12 @@ Rectangle {
         // In a channel, Find and Channel details show only on Posts (Teams).
         HeaderAction {
             visible: root.contextInline >= 1 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft; icon: "search-20"; Accessible.name: "Find in chat"
+            x: root.contextLeft; icon: "search-20"; Accessible.name: root.isChannel ? "Find in channel" : "Find in chat"
             onClicked: root.toggleFind()
         }
         HeaderAction {
             visible: root.contextInline >= 2 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft + 32; icon: "panel-left-20"; Accessible.name: "Open chat details"
+            x: root.contextLeft + 32; icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? "Open channel details" : "Open chat details"
             onClicked: participants.visible = !participants.visible
         }
         // More chat options (chat-header-more-menu-trigger). Items Teams has
@@ -2057,8 +2094,14 @@ Rectangle {
     // beside the channel (Main hosts it).
     readonly property var currentTab: isChannel && tab ? (channelTabs.find(t => t.name === tab) || null) : null
     property var tabConversationTab: null
-    // Where Teams' channel Meet now starts (its chevron 36 before ···).
-    readonly property real channelMeetLeft: width - 79 - (width >= 834 ? 97.17 : 32)
+    // Teams' channel Meet now (channel-meet-header-main-btn, measured on
+    // winpc 2026-11-09): the video icon and "Meet now" (14 semibold), 97.2
+    // wide from 834, else the icon alone (32); its chevron (20 x 32, a 16 px
+    // glyph) ends 16 before Find on Posts, or before ··· on other tabs.
+    readonly property bool channelMeetWide: width >= 834
+    readonly property real channelMeetRight: (isChannel && tab !== "" ? width - 43 : contextLeft) - 16
+    readonly property real channelMeetLeft: channelMeetRight - 20 - (channelMeetWide ? 97.17 : 32)
+    signal channelMeetNow()
     function expandTab(t) {
         expandedTab = t
         expandedAbout = null

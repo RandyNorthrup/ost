@@ -734,7 +734,8 @@ Window {
             window.muteOnJoin = !micOn
             window.noAudioOnJoin = !withAudio
             window.cameraOnJoin = !!cameraOn
-            backend.joinMeeting(joinUrl, subject)
+            if (meetNow) backend.channelMeetNow(meetChannel, subject.trim() || "Meeting")
+            else backend.joinMeeting(joinUrl, subject)
         }
         // The switches still count in the lobby: they apply once admitted.
         onMicOnChanged: if (lobby) window.muteOnJoin = !micOn
@@ -3057,6 +3058,34 @@ Window {
         }
     }
 
+    // --channel-meet-test with --open-chat=<channel id> --shots=<dir>:
+    // press the channel's Meet now (prejoin.png), join with Don't use
+    // audio, stay 20 s (meet.png), hang up and quit once the call has
+    // ended (each state logged).
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-meet-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            if (step === 0) { if (!conversation.teamName) return; conversation.channelMeetNow() }
+            else if (step === 1) { console.warn("CHMEET prejoin", preJoin.visible, preJoin.meetNow, preJoin.subject); preJoin.contentItem.grabToImage(r => r.saveToFile(dir + "prejoin.png")) }
+            else if (step === 2) { preJoin.audio = "none"; preJoin.close(); preJoin.join(false, false, false) }
+            else if (step >= 3 && step <= 9) console.warn("CHMEET state", backend.callState, backend.callThreadId, backend.callPeer)
+            else if (step === 10) { console.warn("CHMEET in call", backend.callState); window.contentItem.grabToImage(r => r.saveToFile(dir + "meet.png")) }
+            else if (step === 11) backend.hangUp()
+            else if (step >= 12 && backend.callState !== "" && backend.callState !== "ended") { console.warn("CHMEET leaving", backend.callState); return }
+            else if (step >= 12) { console.warn("CHMEET left", backend.callState); Qt.quit() }
+            step++
+        }
+    }
+
     // --thread-window-view=<post id> with --open-chat=<channel id>
     // --shots=<dir>: open that post's window, capture it at the top
     // (view-top.png) and with the newest reply's hover bar up (view-bar.png).
@@ -3995,6 +4024,8 @@ Window {
         onOpenMeetingDetails: (url, ical, start) => { rail.current = "calendar"; calendarView.showMeeting(url, ical, start) }
         onOpenAppById: id => window.openAppById(id, "")
         onOpenAgentStore: (id, isChannel) => agentStore.show(id, isChannel)
+        // A channel's Meet now: Teams' pre-join, titled for the channel.
+        onChannelMeetNow: preJoin.openMeetNow(conversation.chatId, "Meeting in \"" + conversation.chatName + "\"")
         myName: backend.userName
         visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0))
             || (rail.current === "activity" && activityView.selectedId.length > 0)
