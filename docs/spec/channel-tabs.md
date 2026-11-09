@@ -262,14 +262,44 @@ Shared header (`dn`):
   - The body text, 14/20 #242424, 20 below the header.
   - 20 below it, **Remove**: primary, 96×31.3, right-aligned.
 
+## Expand tab (modules 277379, 339525 `ExpandedTabHeader`; measured on winpc, 2026-11-09)
+- Expand routes to the tab with `isFullScreenMode: true`. Anything else that routes (another tab, channel or app) leaves it, and Collapse routes back with `false`.
+- The chat list goes; the tab fills everything right of the app rail.
+- The channel header gives way to the tab's own `entity-header`:
+  - 61 tall, white, with a 0.67 px #E0E0E0 line under it, padding 0 7 0 20;
+  - the app's icon, 32 px at 20, 14.2 down: the app's `largeImageUrl` on #FAFAFA, border-radius 50% with `corner-shape: superellipse(2)` (the squircle |x|^4 + |y|^4 = 1);
+  - the **tab's** name (h2, 18/25.7 bold, #242424) 20 after the icon;
+  - the actions at the right: "Show tab conversation" when the tab can have one (TASK-0079), then **Collapse tab** (30 x 44, radius 4, the filled 20 px arrow-minimize in #242424, title "Collapse tab").
+- Pixel check (1280 css wide in both): icon 88,62 to 120,94; "Shared" glyphs 141.3,72 to 197.3,85.3; the collapse glyph 1250,70 to 1266,86. OST matches within a pixel.
+
+## Open tab in new window (popOut; measured on winpc, 2026-11-09)
+- An app tab (ExtensionTab, FileViewTab) opens in a child window, 946 x 593 css:
+  - Teams' child-window title row, titled "<team> / <channel>". Its Settings and more menu has Pin window on top (Ctrl+Shift+T), Zoom and Report a problem.
+  - The `entity-header` as above, but with the **app's** name ("OneNote", 18/25.7 bold, black) at 72 and the icon at 20, 14.2 down.
+  - Header actions (`PlatformTabHeader`, worker list), each 30 x 44, padding 12 5, a 20 px icon in black:
+    1. Show tab conversation (32 x 20, when the tab can have one);
+    2. Reload tab (`reload`), always;
+    3. Go to website (`goToWebsite`), when the tab has a website URL;
+    4. Copy link (`copyLink`, no title);
+    5. About this tab (`aboutTab`);
+    6. App permissions (`devicePermissions`), when the app asks for device permissions.
+  - The tab's content under the header.
+- A channel Page (`popOutChannelPage`) opens in a 946-wide window titled with the product's name ("Microsoft Teams"; "OST" in OST). It has no tab header: the Loop page's own row (the page's icon and title, then Shared locations, Copy component, See who has access) and the page fill it.
+
+## Reload tab
+- Teams renders the tab again (`reloadTabTrigger`), so its own state goes.
+- In OST:
+  - Shared opens the channel's folder afresh;
+  - a Page reloads its web view.
+
 ## OST status against this spec
-- [ ] Rename and Remove through the middle tier's pinned tabs (as Teams does), not Graph. OST uses Graph today.
-- [ ] Chevron only on the active tab, and only when the tab has a menu. (OST: the ▾ shows on any selected tab.)
-- [ ] Right-click menu on any tab (the `m` filter).
-- [ ] Item order and visibility exactly as above, per tab type. (OST: five items, and it hides an unavailable move.)
-- [ ] Move left/right disabled, not hidden; also disabled when the list has overflowed.
-- [ ] Drag to reorder (not on predefined tabs).
-- [ ] Overflow and the small-width dropdown; tabs moving under the title.
-- [ ] Rename and Remove dialogs matching platform-modal (the empty and duplicate name errors).
-- [ ] Copy link as Teams builds it (deep link, rich text with the tab's name).
-- [ ] Reload, Expand, Open in new window, Open in browser, About, App permissions, Settings.
+- [x] Rename, Remove and Move through the middle tier's pinned tabs, as Teams does.
+- [x] Chevron only on the active tab, and only when the tab has a menu; a right-click menu on any tab.
+- [x] Item order and visibility exactly as above, per tab type; Move left/right disabled, not hidden.
+- [x] Rename and Remove dialogs matching platform-modal (the empty, 128-character and duplicate name errors).
+- [x] Copy link byte-identical to Teams' clipboard; Open in browser opens the tab's website.
+- [x] Reload, Expand and Open tab in new window (the header, the window and its actions, as measured); About and App permissions.
+- [ ] Show tab conversation (TASK-0079).
+- [x] Overflow ("+N" and the open tab's name).
+- [ ] Drag to reorder, not on predefined tabs (TASK-0080).
+- [ ] Settings (`updateTab`) for configurable app tabs.

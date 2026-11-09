@@ -41,6 +41,8 @@ Item {
     }
     onAppIdChanged: if (appId.length > 0) backend.appAboutLoad(appId)
     function moreMenuForTest() { teamsMore.openMenu() }
+    /// Reload the page (Teams' Reload tab).
+    function reload() { web.reload() }
 
     Rectangle {
         id: header

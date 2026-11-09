@@ -2953,6 +2953,47 @@ Window {
         }
     }
 
+    // Going elsewhere in the app collapses an expanded tab, as Teams'
+    // routing does.
+    Connections {
+        target: rail
+        function onCurrentChanged() { conversation.tabExpanded = false }
+    }
+
+    // --tab-window-test=<tab name> with --open-chat=<channel id>
+    // --shots=<dir>: open that tab, expand it (expanded.png), collapse it
+    // (collapsed.png), reload it, open it in a new window (window.png,
+    // logging the window's header actions), close that and quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tab-window-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var popout: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const name = (Qt.application.arguments.find(a => a.startsWith("--tab-window-test=")) || "").slice(18)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) backend.selectChat(ch.id, ch.name)
+                return
+            }
+            if (step === 0 && conversation.tabNames.indexOf(name) < 0) return
+            const t = conversation.channelTabs.find(x => x.name === name)
+            if (!t) return
+            if (step === 0) { conversation.tab = name; console.warn("TABWIN menu", JSON.stringify(t.menu.map(e => e.key))) }
+            else if (step === 2 && t.menu.some(e => e.key === "expandTab")) conversation.tabActionForTest(name, "expandTab")
+            else if (step === 4) { console.warn("TABWIN about", (backend.appAboutJson || "").slice(0, 300)); console.warn("TABWIN expanded", conversation.tabExpanded, chatList.visible, conversation.x); window.contentItem.grabToImage(r => r.saveToFile(dir + "expanded.png")) }
+            else if (step === 5) conversation.tabExpanded = false
+            else if (step === 6) { console.warn("TABWIN collapsed", conversation.tabExpanded, chatList.visible, conversation.x); window.contentItem.grabToImage(r => r.saveToFile(dir + "collapsed.png")); if (t.menu.some(e => e.key === "reloadTab")) conversation.tabActionForTest(name, "reloadTab") }
+            else if (step === 8 && t.menu.some(e => e.key === "popOut")) { popout = conversation.popOutTab(t) }
+            else if (step === 11 && popout) { console.warn("TABWIN window", popout.title, popout.width, popout.height, JSON.stringify(popout.actionsForTest())); popout.contentItem.grabToImage(r => r.saveToFile(dir + "window.png")) }
+            else if (step === 12 && popout) popout.close()
+            else if (step === 13) Qt.quit()
+            step++
+        }
+    }
+
     // --tab-shot=<tab name> with --open-chat=<channel id> --shots=<dir>:
     // open that channel tab, capture it after 12 s (tab.png) and quit.
     Timer {
@@ -3674,7 +3715,8 @@ Window {
     }
     ChatList {
         id: chatList
-        visible: rail.current === "chat"
+        // An expanded tab takes the list's place (Teams' Expand tab).
+        visible: rail.current === "chat" && !conversation.tabExpanded
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
@@ -3814,7 +3856,7 @@ Window {
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: titleBar.bottom; bottom: statusBar.top; right: parent.right
-            left: rail.current === "activity" ? activityView.right : chatList.right
+            left: conversation.tabExpanded ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
             leftMargin: rail.current === "chat" && chatList.mentionsOpen ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")

@@ -1,11 +1,11 @@
 ---
 id: TASK-0040
 title: Channel tabs behave exactly as Teams desktop (per docs/spec/channel-tabs.md)
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T02:35:00Z'
-updated_date: '2026-11-09T15:19:00Z'
+updated_date: '2026-11-09T16:43:00Z'
 labels:
   - desktop
   - tabs
@@ -29,8 +29,8 @@ OST's channel tab strip and tab menu were built from screenshots and differ from
 - [x] #5 Remove dialog: tab and Page variants, Remove → Removing, failure text; removed through the middle tier
 - [x] #6 Copy link to tab writes Teams' exact deep link (channel or entity form) as rich text with the tab name
 - [x] #7 Open in browser opens the tab's website URL in the system browser
-- [ ] #8 Reload tab, Expand tab, Open tab in new window, About this tab and App permissions act on OST's native tab views as Teams' do
-- [ ] #9 Verified side by side against Windows Teams on winpc in OST Test Team
+- [x] #8 Reload tab, Expand tab, Open tab in new window, About this tab and App permissions act on OST's native tab views as Teams' do
+- [x] #9 Verified side by side against Windows Teams on winpc in OST Test Team
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -60,4 +60,41 @@ OST's channel tab strip and tab menu were built from screenshots and differ from
 
 - AC8 (part): App permissions is Teams' dialog (measured on winpc): the app's device permissions from its manifest, Teams' strings, switches defaulting on for ECS autoApprovedDevicePermissionApps, and "Learn more". Changes are kept per device in OST settings, and OST's web views grant camera, microphone, location and notifications only as the app's permissions allow (no other permission is ever granted). Verified with OneNote in OST Test Team: the dialog matches Teams, and turning the switch off and on is read back.
 - Still left in AC8: Expand tab and Open tab in new window. The Notes tab itself waits on TASK-0053.
+
+- AC8 done:
+  - Expand tab is Teams' full-screen tab: the chat list goes and the tab's header replaces the channel's (app icon in Teams' squircle, tab name, Collapse tab); leaving the tab, channel or app collapses it.
+  - Open tab in new window (TabWindow.qml): Teams' child window titled "team / channel", with the app's header and actions (Reload, Go to website, Copy link, About, App permissions); a Page opens alone in a window titled OST.
+  - Reload tab now works (it was emitted but unhandled): Shared opens the folder afresh, a Page reloads.
+  - All of it measured on winpc and matched within a pixel (`--tab-window-test`).
+- Follow-ups: tab conversations (TASK-0079), drag to reorder (TASK-0080).
+
+- AC9: every item compared live with Teams on winpc in OST Test Team > General: the menus per tab (11-06), Rename/Move/Remove end to end, Copy link (byte-identical), Open in browser, App permissions, About, and Expand / Open in new window (11-09, pixel-checked). The Notes tab's own content is TASK-0053.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Channel tabs behave as Teams desktop's, from the middle tier's pinned tabs to every menu action.
+
+Changes:
+- Tabs come from the middle tier, including the channel Page. Menus are built in Rust exactly as Teams builds them per tab type: the chevron on the active tab, the right-click menu, and disabled moves.
+- Moving, renaming and removing go through Teams' pinned-tabs calls. Teams' order algorithm makes one PATCH.
+- Rename and Remove dialogs match Teams' platform modal.
+- Copy link to tab is byte-identical to Teams' clipboard.
+- Open in browser opens the tab's website.
+- App permissions: Teams' dialog. OST's web views honour it.
+- About this tab is now its own component (TabAboutDialog.qml).
+- Expand tab: full screen with the tab's header (app icon in Teams' squircle, tab name, Collapse tab). Navigating away collapses it.
+- Open tab in new window: TabWindow.qml (Teams' child window, app header, Reload / Go to website / Copy link / About / App permissions). A Page opens alone.
+- Reload tab: Shared opens its folder afresh, and a Page reloads.
+
+Tests:
+- tabs unit tests (menus per type, order, copy link)
+- harnesses on linuxlt: `--tab-menu-test`, `--tab-link-test`, `--tab-perms-test`, `--tab-window-test`
+- compared with Teams on winpc (CDP measurements and VNC captures)
+
+Follow-ups:
+- TASK-0079: tab conversations
+- TASK-0080: drag to reorder
+- TASK-0053: Notes content (needs the SPA sign-in)
+<!-- SECTION:FINAL_SUMMARY:END -->
