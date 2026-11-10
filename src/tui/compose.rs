@@ -195,22 +195,18 @@ fn compute_cursor_position(
     }
 }
 
-/// Render the formatting toolbar line.
+/// Render the toolbar line: only what the compose box can do. The TUI
+/// sends plain text, so there are no formatting, attach, emoji, camera or
+/// microphone controls; the send arrow with its keys (Enter sends,
+/// Ctrl+Enter starts a new line) is all there is.
 fn render_toolbar(area: Rect, buf: &mut Buffer, focused: bool) {
     let w = area.width as usize;
 
-    // Left side: formatting icons
-    let left_items = " \u{1D401}  \u{1D43C}  U  ~  \u{1F517}  \u{1F4CE}  \u{1F60A}";
-    // Right side: camera, mic, send
-    let right_items = "\u{1F4F7}  \u{1F3A4}  \u{27A4}";
+    let hint = " Ctrl+Enter: new line";
+    let send = "Enter \u{27A4}";
 
-    let left_style = if focused {
-        Style::default().fg(Color::White)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-
-    let right_style = if focused {
+    let hint_style = Style::default().fg(Color::DarkGray);
+    let send_style = if focused {
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD)
@@ -218,14 +214,16 @@ fn render_toolbar(area: Rect, buf: &mut Buffer, focused: bool) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let left_w = unicode_width::UnicodeWidthStr::width(left_items);
-    let right_w = unicode_width::UnicodeWidthStr::width(right_items) + 1; // include trailing space
-    let padding = w.saturating_sub(left_w + right_w);
+    let hint_w = unicode_width::UnicodeWidthStr::width(hint);
+    let send_w = unicode_width::UnicodeWidthStr::width(send) + 1; // include trailing space
+    // On a narrow box the hint goes first; the send arrow stays.
+    let hint = if hint_w + send_w <= w { hint } else { "" };
+    let padding = w.saturating_sub(unicode_width::UnicodeWidthStr::width(hint) + send_w);
 
     let line = Line::from(vec![
-        Span::styled(left_items, left_style),
+        Span::styled(hint, hint_style),
         Span::raw(" ".repeat(padding)),
-        Span::styled(right_items, right_style),
+        Span::styled(send, send_style),
         Span::raw(" "),
     ]);
 
@@ -319,5 +317,29 @@ fn compose_display_text(input: &str, cursor_pos: usize, width: usize) -> Display
             visible,
             cursor_offset,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_toolbar_shows_only_working_controls() {
+        let area = Rect::new(0, 0, 60, 1);
+        let mut buf = Buffer::empty(area);
+        render_toolbar(area, &mut buf, true);
+        let row: String = (0..60).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        assert!(row.contains("Enter \u{27A4}"), "{row}");
+        assert!(row.contains("Ctrl+Enter: new line"), "{row}");
+        for gone in ["\u{1D401}", "\u{1F517}", "\u{1F4CE}", "\u{1F60A}", "\u{1F4F7}", "\u{1F3A4}"] {
+            assert!(!row.contains(gone), "{gone} is not wired up: {row}");
+        }
+        // Narrow: just the send arrow.
+        let area = Rect::new(0, 0, 12, 1);
+        let mut buf = Buffer::empty(area);
+        render_toolbar(area, &mut buf, true);
+        let row: String = (0..12).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        assert!(row.contains("\u{27A4}") && !row.contains("Ctrl"), "{row}");
     }
 }
