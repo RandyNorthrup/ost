@@ -476,6 +476,13 @@ For a forced status, Never (the 9999 date) means **no**
     {location: "Remote", expiry, isForced, locationSource:
     "ForcedLocation"}`.
   - Teams reads its own location again when the flyout reopens.
+- **Status message banner** (the same job, `presence-statusmessage-banner`):
+  when your status message or its expiry changes and it is pinned, the
+  banner says "Your status message is showing in chat and channels when
+  people message or @mention you until {M/d/yyyy h:mm AM}." (no "until"
+  for Never). It has no action and is dismissed when the message stops
+  being pinned. Banners queue: the newest shows, and dismissing it shows
+  the one under it (checked on winpc with a pinned note and a pause).
 - **Do not disturb banner** (pre-warm job `presence-donotdisturb-banner`):
   whenever your availability changes to DoNotDisturb, the app banner says
   "Your status is set to do not disturb. You'll only get notifications for

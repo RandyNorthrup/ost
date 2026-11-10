@@ -715,6 +715,9 @@ pub struct UserPresence {
     pub note_text: String,
     /// "Show when people message me" (`<pinnednote>`).
     pub note_pinned: bool,
+    /// When the status message is cleared (`note.expiry`, ISO; Never is
+    /// year 9999), or "".
+    pub note_expiry: String,
     /// When a status you set yourself ends (`forcedAvailability.expiry`,
     /// ISO UTC; only your own), or "" when it doesn't.
     pub forced_until: String,
@@ -771,6 +774,7 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                 note_html: if body.trim().is_empty() { String::new() } else { super::messages::sanitize_html_marking(&body, &[]) },
                 note_text: super::strip_html(&body).trim().to_string(),
                 note_pinned: pinned,
+                note_expiry: p.pointer("/note/expiry").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
                 forced_until: p
                     .pointer("/forcedAvailability/expiry")
                     .and_then(|x| x.as_str())

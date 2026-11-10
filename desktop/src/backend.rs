@@ -5570,7 +5570,7 @@ impl qobject::Backend {
                             let me = this.rust().my_mri.clone().unwrap_or_default();
                             for p in list {
                                 if p.mri.eq_ignore_ascii_case(&me) {
-                                    let note = json!({ "text": p.note_text, "html": p.note_html, "pinned": p.note_pinned }).to_string();
+                                    let note = json!({ "text": p.note_text, "html": p.note_html, "pinned": p.note_pinned, "expiry": p.note_expiry }).to_string();
                                     if this.rust().my_note_json.to_string() != note {
                                         this.as_mut().set_my_note_json(QString::from(note.as_str()));
                                     }
@@ -11066,6 +11066,19 @@ impl qobject::Backend {
             let result =
                 teams_cli::api::presence::publish_note(&http, &message, pinned, until).await;
             let _ = qt.queue(move |mut this| {
+                // Yours as the presence service will now say (Never is the
+                // year 9999).
+                if result.is_ok() {
+                    let cleared = message.trim().is_empty();
+                    let note = json!({
+                        "text": if cleared { String::new() } else { teams_cli::api::presence::note_plain(&message) },
+                        "html": if cleared { String::new() } else { teams_cli::api::messages::sanitize_html_marking(&teams_cli::api::presence::note_html_any(&message), &[]) },
+                        "pinned": pinned && !cleared,
+                        "expiry": if cleared { String::new() } else { until.map(|t| t.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)).unwrap_or_else(|| "9999-12-31T23:59:59.999Z".into()) },
+                    })
+                    .to_string();
+                    this.as_mut().set_my_note_json(QString::from(note.as_str()));
+                }
                 let text = match &result {
                     Ok(()) => json!({
                         "ok": true,

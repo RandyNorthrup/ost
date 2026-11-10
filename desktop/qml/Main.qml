@@ -3700,6 +3700,15 @@ Window {
                 else if (step === 19) { lg("cleared"); Qt.quit() }
                 step++; return
             }
+            // =note-on: a pinned status message until today's end and a
+            // 10-minute pause; =note-off: clear both.
+            if (mode === "note-on" || mode === "note-off") {
+                if (step === 1) backend.setStatusNote(mode === "note-on" ? "OST test 81 pinned status message" : "", mode === "note-on", "Today", "")
+                else if (step === 2) titleBar.pauseForTest(mode === "note-on" ? "10 minutes" : "resume")
+                else if (step === 5) { console.warn("NB", mode, backend.myNoteJson, window.noteBanner, window.dndBanner); shot("nb-" + mode) }
+                else if (step === 6) Qt.quit()
+                step++; return
+            }
             if (mode === "wl-office" || mode === "wl-clear") { if (step === 1) titleBar.pauseForTest(mode === "wl-office" ? "Office" : "clear"); else if (step === 4) { console.warn("WL", mode, backend.myWorkLocation); Qt.quit() } step++; return }
             if (mode === "resume") { if (step === 1) titleBar.pauseForTest("resume"); else if (step === 4) { log("resumed"); Qt.quit() } step++; return }
             if (step === 1) { log("start"); titleBar.pauseForTest("flyout") }
@@ -4571,16 +4580,44 @@ Window {
     // access.
     property string bannerAvailability: ""
     property bool dndBanner: false
+    // Which of the two banners came last.
+    property string bannerOrder: ""
+    onDndBannerChanged: if (dndBanner) bannerOrder = "dnd"
+    onNoteBannerChanged: if (noteBanner) bannerOrder = "note"
     readonly property string myAvailability: titleBar.presence
     onMyAvailabilityChanged: {
         const dnd = myAvailability.toLowerCase() === "donotdisturb"
         if (dnd !== (bannerAvailability.toLowerCase() === "donotdisturb")) dndBanner = dnd
         bannerAvailability = myAvailability
     }
+    // Teams' other presence banner ("presence-statusmessage-banner"): when
+    // your status message changes and it is pinned ("Show when people
+    // message me"), "Your status message is showing in chat and channels
+    // when people message or @mention you[ until {time}]."; no action;
+    // dismissed when the message stops being pinned.
+    property bool noteBanner: false
+    property string noteBannerText: ""
+    property string lastNoteKey: ""
+    readonly property var myNote: backend.myNoteJson ? JSON.parse(backend.myNoteJson) : null
+    onMyNoteChanged: {
+        const n = myNote || {}
+        const key = (n.html || n.text || "") + "|" + (n.expiry || "")
+        if (key === lastNoteKey) return
+        lastNoteKey = key
+        if ((n.text || n.html) && n.pinned) {
+            const end = n.expiry ? new Date(n.expiry) : null
+            noteBannerText = !end || end.getFullYear() >= 9999
+                ? "Your status message is showing in chat and channels when people message or @mention you."
+                : "Your status message is showing in chat and channels when people message or @mention you until " + Qt.formatDateTime(end, "M/d/yyyy h:mm AP") + "."
+            noteBanner = true
+        } else noteBanner = false
+    }
     Rectangle {
         id: appBanner
         anchors { top: titleBar.bottom; left: parent.left; right: parent.right }
-        readonly property bool shown: window.dndBanner && backend.hasCredentials
+        // The newest banner shows (Teams' shell keeps one at a time).
+        readonly property string kind: window.dndBanner && (!window.noteBanner || window.bannerOrder === "dnd") ? "dnd" : window.noteBanner ? "note" : ""
+        readonly property bool shown: kind !== "" && backend.hasCredentials
         height: shown ? 36 : 0
         visible: shown
         color: theme.pick("#F5F5F5", "#292929")
@@ -4589,13 +4626,14 @@ Window {
         Text {
             x: 40; anchors.verticalCenter: parent.verticalCenter
             width: bannerAction.x - 12 - x; elide: Text.ElideRight
-            text: "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
+            text: appBanner.kind === "note" ? window.noteBannerText : "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
         }
         Rectangle {
             id: bannerAction
-            anchors.right: bannerDismiss.left; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
-            width: bannerActionText.implicitWidth + 16; height: 23.3; radius: 4
+            visible: appBanner.kind === "dnd"
+            anchors.right: bannerDismiss.left; anchors.rightMargin: visible ? 12 : 0; anchors.verticalCenter: parent.verticalCenter
+            width: visible ? bannerActionText.implicitWidth + 16 : 0; height: 23.3; radius: 4
             color: bannerActionHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
             Text { id: bannerActionText; anchors.centerIn: parent; text: "Change settings"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
@@ -4611,7 +4649,7 @@ Window {
             color: bannerDismissHover.hovered ? theme.menuHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
             HoverHandler { id: bannerDismissHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: window.dndBanner = false }
+            TapHandler { onTapped: appBanner.kind === "note" ? window.noteBanner = false : window.dndBanner = false }
             Accessible.role: Accessible.Button
             Accessible.name: "Dismiss"
         }
