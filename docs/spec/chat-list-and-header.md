@@ -875,6 +875,52 @@ the channel again, or **Go to channel**, returns to its posts).
     `userSettings.generalChannelSetting` 0 / 1 / 2:
     `PUT {chatsvc}/v1/threads/{teamThread}/properties?name=spaceAdminSettings`
     `{"spaceAdminSettings": "<json>"}`.
+  - **Moderation** for any other channel (body offsets from its top, 38 in):
+    "Channel moderation" (12/16) and a filled-darker dropdown 26 down
+    (355 × 31.3, #F5F5F5, radius 4, the value 14/20 semibold at 12; its list
+    2 under it, 355 wide, padding 4, 32 tall rows 2 apart with the names at
+    32, the chosen one bold): **On** / **Off**.
+    - Off: "Who can start a new post?" 72.4 down, then radios **Everyone can
+      start a new post** / **Everyone except guests can start a new post**
+      (32 apart from 98.4); the line after it 182.4 under the body's top.
+    - On: "Who are the moderators?" 72.4 down; who (14/20 brand) 104.7 down:
+      Team owners (Channel owners for private/shared channels) and up to two
+      added moderators (15 letters then "..."), "+ N" for the rest; hovering
+      it shows a card above (padding 16 0; group names 12/16 at 12; people
+      32 px pictures at 10.7 with names 12/16 at 47.7; a name opens a chat).
+      **Manage** (brand 96 × 31.3) 260 in, 98.4 down. "Who can start a new
+      post?" 144.7, "Only moderators" (14/20) 170.7, **Team member
+      permissions** (Channel member… in private/shared; 14/20 semibold)
+      205.7 and checkboxes 42 apart from 235.7: Allow members to reply to
+      channel messages, Allow members to pin channel messages, Allow bots to
+      submit channel messages (connectors are off in Teams' build).
+    - Only team owners (and moderators) can change it; otherwise disabled.
+    - Wire: the channel thread's `channelSettings`, numbers in Teams' key
+      order: `PUT {chatsvc}/v1/threads/{channel}/properties?name=channelSettings`
+      `{"channelSettings": "{\"allowReplies\":0,\"allowPinPosts\":0,\"allowBotsPost\":1,\"allowConnectorsPost\":1,\"postPermissions\":1}"}`.
+      postPermissions 0 everyone, 1 moderators, 2 everyone but guests;
+      allowReplies / allowPinPosts 0 everyone, 1 moderators; bots /
+      connectors 1 allowed. The dropdown writes Teams' defaults with only the
+      post permission changed; radios and checkboxes change one field of
+      the current settings. Read from `GET {chatsvc}/v1/threads/{channel}`
+      (`properties.channelSettings`; unset = defaults).
+    - Moderators: `GET …/threads/{channel}/members?view=msnp24Equivalent&pageSize=100&filterOnIsModerator=true`;
+      owners: the team thread's members with `selectMemberRoles=Admin`.
+  - **Add or remove moderators** (Manage): 600 × 600, padding 24, radius 8;
+    title 20/28 bold; search box 52 under it (546 × 32, white, #D1D1D1
+    hairline, a darker bottom line, brand underline focused, "Type a name of
+    a person"); its matches 2 under it (546, padding 4; "We didn't find any
+    matches"); the list 44 under the box (532 wide, 48.3 rows with #E0E0E0
+    lines: "Team owners / {n} people" with the people-team picture, then each
+    moderator with e-mail and Remove); "Moderator capability is not audited."
+    (12) and Cancel / Done (96 × 31.3, 10 apart) along the bottom. Search:
+    `POST {userProfileService}/api/v1.0/teams/{teamThread}/users/profilesearch?top=100&includeDLs=false&includeBots=false&enableGuest=false`
+    `{"keyword": "…"}` (middle-tier token; owners and listed moderators left
+    out; the second line "(ALIAS) job title"). Done: `PUT
+    {chatsvc}/v1/threads/{channel}/members` `{"members": [{id, isModerator:
+    true, expiration: 0} | {id, isModerator: false}]}`; a failure shows Teams'
+    toast ("There was an error adding moderators." / "…removing…" /
+    "…adding or removing…").
 - **Analytics** (channel-dashboard): "Select a channel" (All Channels +
   the team's channels; All Channels opens the team's analytics) and "Time
   period" (Last Seven / Thirty / Ninety Days), two 31.3 dropdowns 10 apart

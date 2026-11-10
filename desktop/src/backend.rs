@@ -9393,6 +9393,73 @@ impl qobject::Backend {
                         api::channels::set_general_channel_setting(&client, &team_thread, value).await?;
                         Ok(json!({ "general": value }))
                     }
+                    // Moderation for other channels: the settings, the team's
+                    // owners and the added moderators.
+                    "channel-settings-load" => {
+                        let s = api::channels::channel_settings(&client, &channel).await?;
+                        let owners = api::channels::team_owners(&client, &team_thread).await.unwrap_or_default();
+                        let moderators = if s.moderated() {
+                            api::channels::channel_moderators(&client, &channel).await.unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+                        Ok(json!({ "settings": s, "owners": owners, "moderators": moderators }))
+                    }
+                    // arg {post?, replies?, pins?, bots?, connectors?, reset}:
+                    // the change on the channel's current settings, or on
+                    // Teams' defaults when `reset` (turning moderation On or
+                    // Off), written back whole.
+                    "channel-settings" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Settings")?;
+                        let mut s = if a["reset"].as_bool() == Some(true) {
+                            api::channels::ChannelSettings::default()
+                        } else {
+                            api::channels::channel_settings(&client, &channel).await?
+                        };
+                        if let Some(p) = a["post"].as_u64() {
+                            s.post = p.min(2) as u8;
+                        }
+                        for (key, field) in [("replies", &mut s.replies), ("pins", &mut s.pins), ("bots", &mut s.bots), ("connectors", &mut s.connectors)] {
+                            if let Some(b) = a[key].as_bool() {
+                                *field = b;
+                            }
+                        }
+                        api::channels::set_channel_settings(&client, &channel, &s).await?;
+                        let moderators = if s.moderated() {
+                            api::channels::channel_moderators(&client, &channel).await.unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+                        Ok(json!({ "settings": s, "moderators": moderators }))
+                    }
+                    // Add or remove moderators: search the team's members.
+                    "moderator-search" => {
+                        let people = api::channels::search_team_members(&client, &team_thread, arg.trim()).await?;
+                        Ok(json!({ "query": arg, "people": people }))
+                    }
+                    // arg {add: [mri], remove: [mri]}.
+                    "moderators" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Moderators")?;
+                        let list = |k: &str| -> Vec<String> {
+                            a[k].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect()
+                        };
+                        let (add, remove) = (list("add"), list("remove"));
+                        let changed = api::channels::set_moderators(&client, &channel, &add, &remove).await;
+                        let moderators = api::channels::channel_moderators(&client, &channel).await.unwrap_or_default();
+                        match changed {
+                            Ok(()) => Ok(json!({ "moderators": moderators })),
+                            // Teams' toast for what failed.
+                            Err(e) => {
+                                tracing::warn!("moderators failed: {e:#}");
+                                let msg = match (add.is_empty(), remove.is_empty()) {
+                                    (false, false) => "There was an error adding or removing moderators.",
+                                    (true, false) => "There was an error removing moderators.",
+                                    _ => "There was an error adding moderators.",
+                                };
+                                Ok(json!({ "moderators": moderators, "error": msg }))
+                            }
+                        }
+                    }
                     // Manage channel ▸ Analytics: arg {"period", "team": bool}.
                     "analytics" => {
                         let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
@@ -9418,7 +9485,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });

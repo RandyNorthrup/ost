@@ -615,6 +615,230 @@ pub async fn set_general_channel_setting(client: &TeamsClient, team_thread: &str
     Ok(())
 }
 
+/// A channel's moderation settings (Manage channel ▸ Settings ▸ Moderation
+/// for a channel other than General): the channel thread's
+/// `channelSettings` property, a JSON string of numbers Teams writes back
+/// whole (captured 2026-11-09).
+/// - `post`: who can start a new post: 0 everyone, 1 only moderators
+///   (moderation On), 2 everyone except guests.
+/// - `replies` / `pins`: whether members may reply / pin (0 everyone, 1
+///   moderators only, on the wire).
+/// - `bots` / `connectors`: whether bots / connectors may post (1 allowed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ChannelSettings {
+    pub post: u8,
+    pub replies: bool,
+    pub pins: bool,
+    pub bots: bool,
+    pub connectors: bool,
+}
+
+impl Default for ChannelSettings {
+    /// Teams' defaults (an unset property): everyone posts, replies and
+    /// pins; bots and connectors may post.
+    fn default() -> Self {
+        Self { post: 0, replies: true, pins: true, bots: true, connectors: true }
+    }
+}
+
+impl ChannelSettings {
+    /// Whether the channel is moderated (only moderators start posts).
+    pub fn moderated(&self) -> bool {
+        self.post == 1
+    }
+}
+
+/// The settings in a `channelSettings` property (Teams' defaults for
+/// anything missing or unreadable).
+pub fn channel_settings_from(s: &str) -> ChannelSettings {
+    let d = ChannelSettings::default();
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(s) else {
+        return d;
+    };
+    let n = |k: &str| v[k].as_u64();
+    ChannelSettings {
+        post: n("postPermissions").map(|p| p.min(2) as u8).unwrap_or(d.post),
+        replies: n("allowReplies").map(|x| x == 0).unwrap_or(d.replies),
+        pins: n("allowPinPosts").map(|x| x == 0).unwrap_or(d.pins),
+        bots: n("allowBotsPost").map(|x| x != 0).unwrap_or(d.bots),
+        connectors: n("allowConnectorsPost").map(|x| x != 0).unwrap_or(d.connectors),
+    }
+}
+
+/// The property as Teams writes it (its key order).
+pub fn channel_settings_wire(s: &ChannelSettings) -> String {
+    format!(
+        "{{\"allowReplies\":{},\"allowPinPosts\":{},\"allowBotsPost\":{},\"allowConnectorsPost\":{},\"postPermissions\":{}}}",
+        u8::from(!s.replies),
+        u8::from(!s.pins),
+        u8::from(s.bots),
+        u8::from(s.connectors),
+        s.post.min(2)
+    )
+}
+
+/// A channel's moderation settings, read from its thread.
+pub async fn channel_settings(client: &TeamsClient, channel: &str) -> Result<ChannelSettings> {
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        enc(channel)
+    );
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Channel")?;
+    Ok(channel_settings_from(v["properties"]["channelSettings"].as_str().unwrap_or_default()))
+}
+
+/// Write a channel's moderation settings (PUT
+/// …/threads/{channel}/properties?name=channelSettings).
+pub async fn set_channel_settings(client: &TeamsClient, channel: &str, s: &ChannelSettings) -> Result<()> {
+    let url = format!(
+        "{}/v1/threads/{}/properties?name=channelSettings",
+        client.chat_service_url(),
+        enc(channel)
+    );
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "channelSettings": channel_settings_wire(s) }),
+        )
+        .await?;
+    Ok(())
+}
+
+/// Someone in a moderation list: a team owner, a moderator, or a team
+/// member found by name.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct ModerationPerson {
+    pub mri: String,
+    pub name: String,
+    pub mail: String,
+    /// What Teams shows under the name in search results: "(ALIAS) job
+    /// title", or the job title alone.
+    pub detail: String,
+}
+
+/// The people of a thread's member list with their names (Graph).
+async fn named_members(client: &TeamsClient, url: &str) -> Result<Vec<ModerationPerson>> {
+    let v: serde_json::Value = client.chat_get(url).await?.json().await.context("Members")?;
+    let mut out = Vec::new();
+    for m in v["members"].as_array().into_iter().flatten() {
+        let Some(mri) = m["id"].as_str() else { continue };
+        let mut p = ModerationPerson { mri: mri.to_string(), ..Default::default() };
+        if let Some(oid) = mri.strip_prefix("8:orgid:")
+            && uuid::Uuid::parse_str(oid).is_ok()
+            && let Ok(resp) = client
+                .graph_get(&format!("/users/{oid}?$select=displayName,mail,userPrincipalName"))
+                .await
+            && let Ok(u) = resp.json::<serde_json::Value>().await
+        {
+            p.name = u["displayName"].as_str().unwrap_or_default().to_string();
+            p.mail = u["mail"]
+                .as_str()
+                .or_else(|| u["userPrincipalName"].as_str())
+                .unwrap_or_default()
+                .to_string();
+        }
+        out.push(p);
+    }
+    Ok(out)
+}
+
+/// A channel's added moderators (its thread's members flagged
+/// `isModerator`, as Teams asks for them).
+pub async fn channel_moderators(client: &TeamsClient, channel: &str) -> Result<Vec<ModerationPerson>> {
+    let url = format!(
+        "{}/v1/threads/{}/members?view=msnp24Equivalent&pageSize=100&filterOnIsModerator=true",
+        client.chat_service_url(),
+        enc(channel)
+    );
+    named_members(client, &url).await
+}
+
+/// A team's owners (its thread's Admin members); in a standard channel
+/// they are always moderators.
+pub async fn team_owners(client: &TeamsClient, team_thread: &str) -> Result<Vec<ModerationPerson>> {
+    let url = format!(
+        "{}/v1/threads/{}/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles=Admin",
+        client.chat_service_url(),
+        enc(team_thread)
+    );
+    named_members(client, &url).await
+}
+
+/// "(ALIAS) job title" as Teams' moderator search shows it under a name:
+/// the part of the UPN before "@" in capitals, then the job title.
+pub fn moderation_detail(upn: &str, job_title: &str) -> String {
+    match upn.split_once('@') {
+        Some((alias, _)) => format!("({}) {}", alias.to_uppercase(), job_title).trim_end().to_string(),
+        None => job_title.to_string(),
+    }
+}
+
+/// Team members matching a name, for Add or remove moderators: the user
+/// profile service's team profile search (POST
+/// …/userprofilesvc/…/api/v1.0/teams/{teamThread}/users/profilesearch,
+/// `{"keyword"}`, guests left out), as Teams searches.
+pub async fn search_team_members(client: &TeamsClient, team_thread: &str, query: &str) -> Result<Vec<ModerationPerson>> {
+    let base = client
+        .region_endpoint("userProfileService")
+        .unwrap_or_else(|| "https://teams.microsoft.com/api/userprofilesvc/amer".to_string());
+    let token = super::directory::middle_tier_token().await?;
+    let resp = client
+        .http()
+        .post(format!(
+            "{base}/api/v1.0/teams/{}/users/profilesearch?top=100&includeDLs=false&includeBots=false&enableGuest=false",
+            enc(team_thread)
+        ))
+        .bearer_auth(&token)
+        .header("x-ms-client-type", "web")
+        .json(&serde_json::json!({ "keyword": query }))
+        .send()
+        .await?
+        .error_for_status()?;
+    let v: serde_json::Value = resp.json().await.context("Profile search")?;
+    Ok(v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|u| {
+            Some(ModerationPerson {
+                mri: u["mri"].as_str()?.to_string(),
+                name: u["displayName"].as_str().unwrap_or_default().to_string(),
+                mail: u["email"].as_str().unwrap_or_default().to_string(),
+                detail: moderation_detail(
+                    u["userPrincipalName"].as_str().unwrap_or_default(),
+                    u["jobTitle"].as_str().unwrap_or_default(),
+                ),
+            })
+        })
+        .collect())
+}
+
+/// The members body for adding and removing moderators: added ones
+/// `{id, isModerator: true, expiration: 0}`, removed ones `{id,
+/// isModerator: false}` (Teams' channel-thread roster update, no role).
+pub fn moderators_body(add: &[String], remove: &[String]) -> serde_json::Value {
+    let members: Vec<serde_json::Value> = add
+        .iter()
+        .map(|id| serde_json::json!({ "id": id, "isModerator": true, "expiration": 0 }))
+        .chain(remove.iter().map(|id| serde_json::json!({ "id": id, "isModerator": false })))
+        .collect();
+    serde_json::json!({ "members": members })
+}
+
+/// Add and remove a standard channel's moderators (PUT
+/// …/threads/{channel}/members).
+pub async fn set_moderators(client: &TeamsClient, channel: &str, add: &[String], remove: &[String]) -> Result<()> {
+    if add.is_empty() && remove.is_empty() {
+        return Ok(());
+    }
+    let url = format!("{}/v1/threads/{}/members", client.chat_service_url(), enc(channel));
+    client
+        .chat_request(reqwest::Method::PUT, &url, &moderators_body(add, remove))
+        .await?;
+    Ok(())
+}
+
 /// One analytics metric: its total and its days.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Metric {
@@ -733,6 +957,40 @@ mod tests {
         assert_eq!(Notify::from_properties("", false).mode, NotifyMode::Mute);
         let s = notify_state_from(&serde_json::json!({"alerts": "true", "followAllRc": "1794248093719"}));
         assert!(s.follow_all && s.notify.mode == NotifyMode::Mentions);
+    }
+
+    #[test]
+    fn channel_settings_are_teams() {
+        // Teams' writes on "OST test channel" (2026-11-09): moderation On,
+        // then Off.
+        let on = ChannelSettings { post: 1, ..Default::default() };
+        assert_eq!(
+            channel_settings_wire(&on),
+            r#"{"allowReplies":0,"allowPinPosts":0,"allowBotsPost":1,"allowConnectorsPost":1,"postPermissions":1}"#
+        );
+        assert_eq!(
+            channel_settings_wire(&ChannelSettings::default()),
+            r#"{"allowReplies":0,"allowPinPosts":0,"allowBotsPost":1,"allowConnectorsPost":1,"postPermissions":0}"#
+        );
+        // Read back, and Teams' defaults for an unset property.
+        assert_eq!(channel_settings_from(&channel_settings_wire(&on)), on);
+        assert!(channel_settings_from(&channel_settings_wire(&on)).moderated());
+        assert_eq!(channel_settings_from(""), ChannelSettings::default());
+        let s = channel_settings_from(r#"{"allowReplies":1,"allowPinPosts":1,"allowBotsPost":0,"allowConnectorsPost":0,"postPermissions":2}"#);
+        assert_eq!(s, ChannelSettings { post: 2, replies: false, pins: false, bots: false, connectors: false });
+    }
+
+    #[test]
+    fn moderator_changes_are_teams() {
+        let b = moderators_body(&["8:orgid:a".into()], &["8:orgid:b".into()]);
+        assert_eq!(
+            b.to_string(),
+            r#"{"members":[{"expiration":0,"id":"8:orgid:a","isModerator":true},{"id":"8:orgid:b","isModerator":false}]}"#
+        );
+        // Search results' second line, as Teams builds it.
+        assert_eq!(moderation_detail("ost-test1@scnetsolutions.com", ""), "(OST-TEST1)");
+        assert_eq!(moderation_detail("ab@x.com", "Engineer"), "(AB) Engineer");
+        assert_eq!(moderation_detail("", "Engineer"), "Engineer");
     }
 
     #[test]

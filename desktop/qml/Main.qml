@@ -3113,6 +3113,42 @@ Window {
         }
     }
 
+    // --channel-moderation-test=<channel id> --shots=<dir> [--moderation-on]:
+    // Manage channel ▸ Moderation for a channel other than General
+    // (cm-off.png, the settings logged); with --moderation-on, turn it On
+    // (cm-on.png), the moderators card (cm-card.png), the channel
+    // moderation list (cm-options.png), Add or remove moderators
+    // (cm-dialog.png) searching "OST" (cm-search.png, the results logged),
+    // then Off again (cm-after.png, logged); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--channel-moderation-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--channel-moderation-test=")) || "").slice(26)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const on = Qt.application.arguments.indexOf("--moderation-on") >= 0
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) { window.openManageChannel(id); if (!window.manage) return }
+            const m = manageChannel.moderationForTest()
+            if (step === 2) { console.warn("MOD settings", JSON.stringify(m.settings), "owners", JSON.stringify(m.owners)); shot("cm-off") }
+            else if (step === 3) { if (!on) Qt.quit(); else m.change({ post: 1, replies: true, pins: true, bots: true, connectors: true, reset: true }) }
+            else if (step === 5) { console.warn("MOD on", JSON.stringify(m.settings), JSON.stringify(m.moderators)); shot("cm-on") }
+            else if (step === 6) m.openCardForTest()
+            else if (step === 7) shot("cm-card")
+            else if (step === 8) { m.closeAllForTest(); m.openOptionsForTest() }
+            else if (step === 9) shot("cm-options")
+            else if (step === 10) { m.closeAllForTest(); m.dialogForTest().start() }
+            else if (step === 11) shot("cm-dialog")
+            else if (step === 12) m.dialogForTest().searchForTest("OST")
+            else if (step === 14) { const d = m.dialogForTest(); console.warn("MOD search", d.searched, JSON.stringify(d.results)); shot("cm-search") }
+            else if (step === 15) { m.closeAllForTest(); m.change({ post: 0, replies: true, pins: true, bots: true, connectors: true, reset: true }) }
+            else if (step === 17) { console.warn("MOD after", JSON.stringify(m.settings)); shot("cm-after") }
+            else if (step === 18) Qt.quit()
+            step++
+        }
+    }
+
     // --post-composer-test=<channel id> --shots=<dir> [--post-send]: Post in
     // channel (pc-open.png), a subject and body (pc-subject.png), sent with
     // --post-send; then Announcement with Navy blue, a headline,
@@ -4339,6 +4375,7 @@ Window {
         teamId: window.manage ? window.manage.teamId : ""
         teamName: window.manage ? window.manage.teamName : ""
         channelId: window.manage ? window.manage.channelId : ""
+        myPresence: window.myPresence
         onGoToChannel: window.manage = null
         onOpenInNewWindow: id => window.openChannelWindow(id)
         onManageChannel: id => window.openManageChannel(id)

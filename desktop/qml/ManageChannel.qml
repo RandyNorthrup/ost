@@ -18,7 +18,9 @@ import QtQuick.Controls.Basic
 //     (Posts / Threads), Edit (brand, 96 x 31.3) opening Edit channel.
 //   - Moderation (General): "General Channel:" and Teams' three choices
 //     (16 px radios 8 in a 32 box; names 14/20, #616161 unless chosen),
-//     saved as the team's spaceAdminSettings when picked.
+//     saved as the team's spaceAdminSettings when picked. Other channels:
+//     ChannelModeration (Channel moderation On/Off, moderators, who can
+//     post, members' permissions).
 // - Analytics: AnalyticsView.
 Rectangle {
     id: page
@@ -26,6 +28,7 @@ Rectangle {
     property string teamName: ""
     property string channelId: ""
     property string tab: "settings"
+    property string myPresence: ""
     readonly property var team: {
         const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         return teams.find(t => t.id === page.teamId) || null
@@ -186,11 +189,21 @@ Rectangle {
             }
             Section {
                 id: moderation
-                visible: page.general
                 label: "Moderation"; hint: "Set channel moderation preferences"
                 open: page.moderationOpen
                 onToggled: page.moderationOpen = !page.moderationOpen
+                ChannelModeration {
+                    id: channelModeration
+                    visible: !page.general
+                    teamId: page.teamId
+                    channelId: page.general ? "" : page.channelId
+                    channelType: page.channel.channel_type || "Standard"
+                    canChange: !!(page.team && page.team.owner)
+                    myMri: backend.userMri || ""
+                    myPresence: page.myPresence
+                }
                 Item {
+                    visible: page.general
                     width: parent.width; height: 148.7
                     Text { x: 38; y: 2; text: "General Channel:"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                     Column {
@@ -282,4 +295,5 @@ Rectangle {
     // Test hooks.
     function analyticsForTest() { return analytics }
     function menuForTest() { return channelMenu }
+    function moderationForTest() { return channelModeration }
 }
