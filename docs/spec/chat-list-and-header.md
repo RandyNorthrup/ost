@@ -652,6 +652,35 @@ The team menu's **Manage tags** opens Manage team on its **Tags** tab.
   with the tag's people. Verified both ways on "OST test tag" (description
   set in Teams, read and cleared from OST).
 
+#### 5.6.3 Archive, Leave and Delete (measured 2026-11-09)
+
+Dialogs: 600 wide, padding 20 30.7 32, radius 8, title 18/28 semibold,
+text 14/20 36 down, buttons 96 × 31.3 (8 apart) at the right.
+
+- **Archive** (owners; 200.7): "Want to archive the {team} team?" / "This
+  will freeze all team activity, but you'll still be able to remove members
+  and update roles. Go to **Manage teams** to restore the team." / checkbox
+  "Make the SharePoint site read-only for team members" / Cancel, Archive.
+  `POST {teamsAndChannelsProvisioningService}/groups/{group}/archive[?setSpoSiteReadOnlyForMembers=true]`
+  (templates token); an archived team's menu offers **Restore team**
+  (`…/groups/{group}/unarchive`) and drops Add member, Leave and Delete.
+- **Leave** (128.7): "Are you sure you want to leave the {team} team?" /
+  No, Yes. `PUT {mt}/beta/teams/{teamThread}/members` `{"userMri",
+  "updateType": "DemotedAndLeft", "groupId"}` → `{errorCode}`;
+  `OperationDeniedAsMemberIsLastAdminInTeam` shows "The last owner can't
+  leave the team" / "You're the last owner of the {team} team. There has to
+  be at least one other owner for you to leave the team." / OK; other codes
+  toast "Leaving the team failed".
+- **Delete** (owners; 220.7): "Delete the {team} team" / "Are you sure you
+  want to delete the **{team}** team? All hosted channels, conversations,
+  files, and the Microsoft 365 group for this team will be deleted. You'll
+  lose access to any shared channels that have been shared with the team."
+  / "I understand that everything will be deleted" (Delete team waits for
+  it). `DELETE {mt}/beta/teams/{teamThread}/delete`.
+- Verified from OST: Leave as the last owner (the service refuses, OST
+  shows Teams' dialog); Archive (Teams drops the team from its list) and
+  Restore team (it returns). Delete is not run.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

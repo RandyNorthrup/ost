@@ -3401,6 +3401,44 @@ Window {
         }
     }
 
+    // --team-actions-test=<team group id> --shots=<dir> [--team-leave]
+    // [--team-archive]: the team menu (ta-menu.png), Teams' Archive, Leave
+    // and Delete confirmations (ta-archive.png, ta-leave.png, ta-delete.png
+    // with its checkbox ticked), all cancelled. --team-leave says Yes to
+    // Leave (the last owner: ta-lastowner.png). --team-archive archives the
+    // team (logged) and restores it; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--team-actions-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--team-actions-test=")) || "").slice(20)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const leave = Qt.application.arguments.indexOf("--team-leave") >= 0
+            const archive = Qt.application.arguments.indexOf("--team-archive") >= 0
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+            const team = teams.find(t => t.id === id)
+            if (!team) return
+            const tm = chatList.teamMenuForTest(), d = tm.teamActionForTest()
+            if (step === 0) { tm.team = team; tm.show(chatList, 120, 200) }
+            else if (step === 1) shot("ta-menu")
+            else if (step === 2) { tm.menu.close(); d.start("archive", team.name) }
+            else if (step === 3) shot("ta-archive")
+            else if (step === 4) { d.close(); d.start("leave", team.name) }
+            else if (step === 5) shot("ta-leave")
+            else if (step === 6) { d.close(); d.start("delete", team.name); d.checked = true }
+            else if (step === 7) shot("ta-delete")
+            else if (step === 8) { d.close(); if (leave) { tm.team = team; backend.channelAction("team-leave", team.id, team.thread_id, "") } }
+            else if (step === 10) { console.warn("TEAM leave", backend.channelActionResult); if (leave) shot("ta-lastowner") }
+            else if (step === 11) { d.close(); if (!archive) Qt.quit(); else backend.channelAction("team-archive", team.id, team.thread_id, JSON.stringify({ readOnly: false })) }
+            else if (step === 16) console.warn("TEAM archived", backend.channelActionResult, JSON.stringify((JSON.parse(backend.teamsJson || "[]").find(t => t.id === id) || {}).archived))
+            else if (step === 17) backend.channelAction("team-restore", team.id, team.thread_id, "")
+            else if (step === 22) { console.warn("TEAM restored", backend.channelActionResult, JSON.stringify((JSON.parse(backend.teamsJson || "[]").find(t => t.id === id) || {}).archived)); Qt.quit() }
+            step++
+        }
+    }
+
     // --channel-owner-test=<team group id> --shots=<dir>: on the OST test
     // channels: the owner menu (co-menu.png) and the Archive / Delete
     // dialogs (co-archive.png, co-delete.png); then Restore "OST test

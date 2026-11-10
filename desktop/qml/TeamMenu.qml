@@ -11,6 +11,8 @@ import QtQuick.Controls.Basic
 // - Hide all channels asks first ("Hide all channels in {team}?", 600 wide)
 //   and then hides them through Teams' provisioning service.
 // - Copy link copies Teams' team link.
+// - Archive / Restore team (owners), Leave, Delete (owners) with Teams'
+//   confirmations (TeamActionDialog).
 // - Manage team opens the Manage team page; Manage tags its Tags tab.
 Item {
     id: root
@@ -38,7 +40,11 @@ Item {
             { key: "manage", label: "Manage team", icon: "settings-20" },
             { key: "tags", label: "Manage tags", icon: "tag-20" },
             { key: "link", label: "Copy link", icon: "link-20" }
-        ])
+        ]).concat(!root.team.owner ? [] : root.team.archived
+            ? [{ key: "restore", label: "Restore team", icon: "archive-arrow-back-20" }]
+            : [{ key: "archive", label: "Archive", icon: "archive-20" }]
+        ).concat(root.team.archived ? [] : [{ separator: true }, { key: "leave", label: "Leave", icon: "person-arrow-left-20" }]
+        ).concat(root.team.owner && !root.team.archived ? [{ key: "delete", label: "Delete", icon: "delete-20" }] : [])
         onPicked: i => {
             const k = items[i].key
             if (k === "hide-all") hideAll.open()
@@ -47,6 +53,10 @@ Item {
             else if (k === "manage") root.manageTeam(root.team.id)
             else if (k === "tags") root.manageTags(root.team.id)
             else if (k === "link") root.act("team-link")
+            else if (k === "archive") teamAction.start("archive", root.team.name)
+            else if (k === "restore") root.act("team-restore")
+            else if (k === "leave") teamAction.start("leave", root.team.name)
+            else if (k === "delete") teamAction.start("delete", root.team.name)
         }
     }
 
@@ -61,11 +71,35 @@ Item {
     }
 
     AddMembersDialog { id: addMembers }
+    TeamActionDialog {
+        id: teamAction
+        onConfirmed: checked => {
+            if (kind === "archive") backend.channelAction("team-archive", root.team.id, root.team.thread_id, JSON.stringify({ readOnly: checked }))
+            else if (kind === "leave") backend.channelAction("team-leave", root.team.id, root.team.thread_id, "")
+            else if (kind === "delete") backend.channelAction("team-delete", root.team.id, root.team.thread_id, "")
+        }
+    }
+    // Leaving: Teams' answer for the last owner, a toast for other failures.
+    Connections {
+        target: backend
+        function onChannelActionResultChanged() {
+            const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.channel !== root.team.thread_id) return
+            if (r.op === "team-leave") {
+                const code = r.ok ? r.data.code : "failed"
+                if (code === "OperationDeniedAsMemberIsLastAdminInTeam") teamAction.start("lastOwner", root.team.name)
+                else if (code) backend.toast("Leaving the team failed", "error")
+            } else if ((r.op === "team-archive" || r.op === "team-restore" || r.op === "team-delete") && !r.ok) {
+                backend.toast("Something went wrong on our end. Please try again.", "error")
+            }
+        }
+    }
     CreateChannelDialog { id: createChannel; onCreated: (id, name) => root.channelCreated(id, name) }
 
     // Test hooks.
     function createChannelForTest() { return createChannel }
     function addMembersForTest() { return addMembers }
+    function teamActionForTest() { return teamAction }
     function hideAllForTest() { hideAll.open() }
     function closeAllForTest() { hideAll.close(); menu.close() }
 }

@@ -328,6 +328,81 @@ pub async fn archive_channel(client: &TeamsClient, group_id: &str, channel: &str
     Ok(())
 }
 
+/// Archive a team (the team menu's Archive; Restore with `restore`), as
+/// Teams does through the provisioning service:
+/// `POST …/groups/{group}/archive[?setSpoSiteReadOnlyForMembers=true]` or
+/// `/unarchive`.
+pub async fn archive_team(client: &TeamsClient, group_id: &str, restore: bool, read_only: bool) -> Result<()> {
+    let (base, token) = provisioning(client).await?;
+    let mut url = format!("{base}/groups/{}/{}", enc(group_id), if restore { "unarchive" } else { "archive" });
+    if !restore && read_only {
+        url.push_str("?setSpoSiteReadOnlyForMembers=true");
+    }
+    client
+        .http()
+        .post(url)
+        .bearer_auth(&token)
+        .header(reqwest::header::CONTENT_LENGTH, "0")
+        .send()
+        .await?
+        .error_for_status()
+        .context(if restore { "Restore team" } else { "Archive team" })?;
+    Ok(())
+}
+
+/// Teams' body for leaving a team.
+pub fn leave_team_body(me: &str, group_id: &str) -> serde_json::Value {
+    serde_json::json!({ "userMri": me, "updateType": "DemotedAndLeft", "groupId": group_id })
+}
+
+/// Leave a team (`PUT {mt}/beta/teams/{teamThread}/members`, DemotedAndLeft).
+/// The service's error code when it says no (Teams'
+/// `OperationDeniedAsMemberIsLastAdminInTeam` for the last owner).
+pub async fn leave_team(client: &TeamsClient, team_thread: &str, group_id: &str) -> Result<Option<String>> {
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .context("Who you are")?;
+    let (base, token) = middle_tier(client).await?;
+    let resp = client
+        .http()
+        .put(format!("{base}/beta/teams/{}/members", enc(team_thread)))
+        .bearer_auth(&token)
+        .json(&leave_team_body(&me, group_id))
+        .send()
+        .await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let code = v["errorCode"]
+        .as_str()
+        .or_else(|| v.pointer("/value/errorCode").and_then(|c| c.as_str()))
+        .or_else(|| v.pointer("/error/code").and_then(|c| c.as_str()))
+        .filter(|c| !c.is_empty())
+        .map(str::to_string);
+    if code.is_some() {
+        return Ok(code);
+    }
+    if !status.is_success() {
+        bail!("Leave team: {status} {}", text.chars().take(200).collect::<String>());
+    }
+    Ok(None)
+}
+
+/// Delete a team: `DELETE {mt}/beta/teams/{teamThread}/delete`.
+pub async fn delete_team(client: &TeamsClient, team_thread: &str) -> Result<()> {
+    let (base, token) = middle_tier(client).await?;
+    client
+        .http()
+        .delete(format!("{base}/beta/teams/{}/delete", enc(team_thread)))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Delete team")?;
+    Ok(())
+}
+
 /// Delete a channel: `DELETE {mt}/beta/teams/{team}/channels/{channel}`.
 pub async fn delete_channel(client: &TeamsClient, team_thread: &str, channel: &str) -> Result<()> {
     let (base, token) = middle_tier(client).await?;

@@ -9432,6 +9432,21 @@ impl qobject::Backend {
                         };
                         Ok(json!({ "settings": s, "moderators": moderators }))
                     }
+                    // The team menu's Archive (arg {readOnly}) / Restore team,
+                    // Leave and Delete.
+                    "team-archive" | "team-restore" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        api::channels::archive_team(&client, &team, op == "team-restore", a["readOnly"].as_bool().unwrap_or(false)).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "team-leave" => {
+                        let code = api::channels::leave_team(&client, &team_thread, &team).await?;
+                        Ok(json!({ "code": code }))
+                    }
+                    "team-delete" => {
+                        api::channels::delete_team(&client, &team_thread).await?;
+                        Ok(serde_json::Value::Null)
+                    }
                     // Manage team ▸ Tags.
                     "tags-load" => {
                         let list = api::teams::tag_list(&client, &team_thread).await?;
