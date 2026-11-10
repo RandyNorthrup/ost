@@ -594,7 +594,7 @@ async fn wait_for_recorder_info(
                                     Duration::from_secs(5),
                                     signaling::acknowledge_call_acceptance(http, ack_url, conv_params),
                                 ).await {
-                                    Ok(Ok(())) => {},
+                                    Ok(Ok(_)) => {},
                                     Ok(Err(e)) => tracing::warn!("Failed to acknowledge callAcceptance: {:#}", e),
                                     Err(_) => tracing::warn!("Timed out acknowledging callAcceptance (5s)"),
                                 }

@@ -556,11 +556,22 @@ fn cc_call_links(tc: &dyn Fn(&str) -> String) -> serde_json::Value {
 /// POST to the acknowledgement URL from the callAcceptance Trouter callback.
 /// This tells the Call Controller we received the SDP answer and keeps the call alive.
 /// Without this, CC times out and kills the call (error 430/subCode 10065).
+/// Whether a 1:1 call's acceptance shows the callee never answered: the call
+/// controller made it a hostless ad-hoc meeting (`state.isMultiParty`,
+/// `isHostless`) holding only the caller. Seen with the Echo bot about 1
+/// call in 5 (TASK-0018): the 1:1 POST got 201 Created instead of 200 OK,
+/// the acceptance came 10 s later, and the media processor's stream sent
+/// no packets because nobody else was in the conversation.
+pub fn became_hostless_meeting(ack: &serde_json::Value) -> bool {
+    let state = &ack["state"];
+    state["isMultiParty"] == true && state["isHostless"] == true
+}
+
 pub async fn acknowledge_call_acceptance(
     http: &reqwest::Client,
     acknowledgement_url: &str,
     params: &ConversationCallParams<'_>,
-) -> Result<()> {
+) -> Result<serde_json::Value> {
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
 
     tracing::info!(
@@ -591,7 +602,9 @@ pub async fn acknowledge_call_acceptance(
 
     if status.is_success() {
         tracing::info!("Call acceptance acknowledged ({}): {}", status, body);
-        Ok(())
+        // 202 Accepted carries no body; 201 Created describes the
+        // conversation the call became.
+        Ok(serde_json::from_str(&body).unwrap_or(serde_json::Value::Null))
     } else {
         anyhow::bail!(
             "Call acceptance acknowledgement failed ({}): {}",
@@ -1586,3 +1599,21 @@ pub async fn end_call(
         anyhow::bail!("Call end failed ({}): {}", status, body);
     }
 }
+
+#[cfg(test)]
+mod hostless_tests {
+    use super::became_hostless_meeting;
+
+    #[test]
+    fn an_unanswered_echo_call_is_recognised() {
+        // The acknowledgement Echo call 1 got (2026-11-10, trimmed): 201
+        // Created, a hostless ad-hoc meeting with only the caller.
+        let ack = serde_json::json!({"sequenceNumber": 2, "state": {"isMultiParty": true,
+            "groupCallInitiator": "8:orgid:4287e791-1b98-4963-8b94-281c50472683", "isHostless": true,
+            "conversationType": "adHocMeeting", "isBroadcast": false, "isMeetingActivated": false}});
+        assert!(became_hostless_meeting(&ack));
+        // 202 Accepted (the answered calls) has no body.
+        assert!(!became_hostless_meeting(&serde_json::Value::Null));
+    }
+}
+

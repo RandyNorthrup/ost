@@ -199,10 +199,20 @@ async fn main() -> Result<()> {
             display,
             tone,
         } => {
-            calling::call_test::run_call_test(
-                duration, record, echo, thread, camera, display, tone,
-            )
-            .await?;
+            // About 1 Echo call in 5 is never answered: the service turns
+            // it into a hostless meeting with only us in it (TASK-0018).
+            // Redial then, as a person would.
+            for attempt in 1..=3 {
+                let result = calling::call_test::run_call_test(
+                    duration, record, echo, thread.clone(), camera, display, tone,
+                )
+                .await?;
+                if !result.callee_never_joined || attempt == 3 {
+                    break;
+                }
+                tracing::warn!("Redialing (attempt {} of 3)", attempt + 1);
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            }
         }
         #[cfg(feature = "audio")]
         Commands::MicTest => {

@@ -32,6 +32,9 @@ pub struct CallTestResult {
     pub echo_detected: bool,
     pub echo_delay_ms: f64,
     pub echo_correlation: f64,
+    /// The callee never answered: the service made the 1:1 call a hostless
+    /// meeting with only us in it (worth redialing).
+    pub callee_never_joined: bool,
 }
 
 impl CallTestResult {
@@ -51,6 +54,7 @@ impl CallTestResult {
             echo_detected: false,
             echo_delay_ms: 0.0,
             echo_correlation: 0.0,
+            callee_never_joined: false,
         }
     }
 }
@@ -367,8 +371,23 @@ pub async fn run_call_test(
 
     // 7b. Phase 3: Acknowledge call acceptance and register CC callbacks
     if let Some(ref ack_url) = acceptance.acknowledgement_url {
-        if let Err(e) = signaling::acknowledge_call_acceptance(&http, ack_url, &conv_params).await {
-            tracing::warn!("Failed to acknowledge call acceptance: {:#}", e);
+        match signaling::acknowledge_call_acceptance(&http, ack_url, &conv_params).await {
+            Ok(ack) if signaling::became_hostless_meeting(&ack) => {
+                tracing::warn!("The callee never answered: the service made the call a hostless meeting with only us in it");
+                println!("callee_never_joined=true");
+                let end = acceptance.end_url.clone().or_else(|| {
+                    acceptance.call_leg_url.as_ref().map(|u| match u.find('?') {
+                        Some(i) => format!("{}/end{}", &u[..i], &u[i..]),
+                        None => format!("{u}/end"),
+                    })
+                });
+                if let Some(url) = end {
+                    end_call_by_url(&http, skype_token_str, &url).await.ok();
+                }
+                return Ok(CallTestResult { callee_never_joined: true, ..CallTestResult::failed(None) });
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("Failed to acknowledge call acceptance: {:#}", e),
         }
     } else {
         tracing::error!(
@@ -640,6 +659,7 @@ pub async fn run_call_test(
         echo_detected: echo_result.detected,
         echo_delay_ms: echo_result.delay_ms,
         echo_correlation: echo_result.correlation_peak,
+        callee_never_joined: false,
     };
 
     println!("audio_packets_sent={}", result.packets_sent);
