@@ -135,6 +135,7 @@ fn main() {
         "qml/CreateTeamPage.qml",
         "qml/JoinTeamPage.qml",
         "qml/ChatWindow.qml",
+        "qml/QuickListView.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",

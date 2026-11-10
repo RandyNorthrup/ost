@@ -25,6 +25,9 @@ Rectangle {
     /// Quick views > Mentions: shown once someone has @mentioned you.
     property bool hasMentions: false
     property bool mentionsOpen: false
+    /// Quick views ▸ Followed threads / Saved ("followed", "saved" or "").
+    property string quickOpen: ""
+    signal openQuick(string kind)
     signal openMentions()
     signal chatSelected(string id, string name)
     signal newChat()
@@ -155,7 +158,9 @@ Rectangle {
             if (category || unreadOn || nameFilter) rows = []
             else {
                 if (root.hasMentions) rows.push({ type: "slice", key: "mentions", label: "Mentions", icon: "mention-20" })
+                rows.push({ type: "slice", key: "followed", label: "Followed threads", icon: "followed-threads-20" })
                 if (root.draftIds.length > 0) rows.push({ type: "slice", key: "drafts", label: "Drafts", icon: "drafts-20" })
+                rows.push({ type: "slice", key: "saved", label: "Saved", icon: "bookmark-20" })
             }
         } else if (f.kind === "Favorites") {
             rows = f.id ? heldRows(f) : root.favorites.map(c => ({ type: "chat", chat: c }))
@@ -420,8 +425,8 @@ Rectangle {
         id: sliceComp
         ListRow {
             label: parent.row.label; icon: parent.row.icon
-            selected: parent.row.key === "mentions" ? root.mentionsOpen : root.draftsOpen
-            onClicked: parent.row.key === "mentions" ? root.openMentions() : root.openDrafts()
+            selected: parent.row.key === "mentions" ? root.mentionsOpen : parent.row.key === "drafts" ? root.draftsOpen : root.quickOpen === parent.row.key
+            onClicked: parent.row.key === "mentions" ? root.openMentions() : parent.row.key === "drafts" ? root.openDrafts() : root.openQuick(parent.row.key)
         }
     }
     // See all your teams: Teams' Your teams and channels page (the row
@@ -487,7 +492,7 @@ Rectangle {
         function closeMenu() { rowMenu.close() }
         Component.onCompleted: if (chat && chat.id) root.rowsForTest[chat.id] = row
         Component.onDestruction: if (chat && root.rowsForTest[chat.id] === row) delete root.rowsForTest[chat.id]
-        readonly property bool selected: !root.draftsOpen && !root.mentionsOpen && chat.id === root.currentId
+        readonly property bool selected: !root.draftsOpen && !root.mentionsOpen && !root.quickOpen && chat.id === root.currentId
         readonly property bool unread: chat.unread === true && !selected
         width: list.width; height: 32
         Rectangle {

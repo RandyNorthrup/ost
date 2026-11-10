@@ -9410,7 +9410,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "notify-tagged" | "notify-on" | "notify-off" | "remove-chat-history" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "remove-chat-history" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -9747,6 +9747,23 @@ impl qobject::Backend {
                         client.chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null).await?;
                         Ok(serde_json::Value::Null)
                     }
+                    // Quick views ▸ Saved and Followed threads (Teams'
+                    // 48:saved / 48:threads); unsave {thread, chain, message};
+                    // unfollow {thread, chain}.
+                    "quick-saved" => Ok(serde_json::to_value(api::quick_views::saved(&client).await?)?),
+                    "quick-followed" => Ok(serde_json::to_value(api::quick_views::followed(&client).await?)?),
+                    "quick-unsave" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        api::msgactions::set_saved(&client, &f("thread"), &f("chain"), &f("message"), false).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "quick-unfollow" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        api::msgactions::set_following(&client, &f("thread"), &f("chain"), false).await?;
+                        Ok(serde_json::Value::Null)
+                    }
                     // A chat's Manage apps: its installed apps with names,
                     // publishers and pictures from their definitions.
                     "chat-apps" => {
@@ -10047,7 +10064,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "notify-tagged" | "notify-on" | "notify-off" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
                     this.as_mut().load_teams();
                 }
                 if result.is_ok() && op == "remove-chat-history" {

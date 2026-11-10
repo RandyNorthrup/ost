@@ -298,7 +298,7 @@ pub async fn list_teams_csa(client: &TeamsClient) -> Result<Vec<ListTeam>> {
         .get(format!(
             "https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/teams?enableMembershipSummary=true"
         ))
-        .bearer_auth(token)
+        .bearer_auth(&token)
         .send()
         .await?
         .error_for_status()
@@ -306,8 +306,62 @@ pub async fn list_teams_csa(client: &TeamsClient) -> Result<Vec<ListTeam>> {
         .json()
         .await?;
     let mut teams = list_teams_from(&v);
-    teams.sort_by_key(|t| t.name.to_lowercase());
+    // Teams' order: the order you set (the teamsOrder preference), the rest
+    // as the service lists them (a stable sort, as Teams' sortBy).
+    let order = teams_order(client, &token, &region).await.unwrap_or_default();
+    apply_teams_order(&mut teams, &order);
     Ok(teams)
+}
+
+/// Your team order (`GET {csa}/api/v1/teams/users/me/discover/preferences`,
+/// category teamsOrder: [{teamId, order}]), by team thread id.
+pub fn teams_order_from(v: &serde_json::Value) -> std::collections::HashMap<String, i64> {
+    fn find(v: &serde_json::Value) -> Option<serde_json::Value> {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let Some(t) = m.get("teamsOrder") {
+                    return Some(t.clone());
+                }
+                if m.get("category").and_then(|c| c.as_str()) == Some("teamsOrder") {
+                    return m.get("value").cloned();
+                }
+                m.values().find_map(find)
+            }
+            serde_json::Value::Array(a) => a.iter().find_map(find),
+            _ => None,
+        }
+    }
+    let mut list = find(v).unwrap_or_default();
+    if let Some(s) = list.as_str() {
+        list = serde_json::from_str(s).unwrap_or_default();
+    }
+    if let Some(s) = list.get("value").and_then(|x| x.as_str()) {
+        list = serde_json::from_str(s).unwrap_or_default();
+    }
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| Some((e["teamId"].as_str()?.to_string(), e["order"].as_i64()?)))
+        .collect()
+}
+
+/// Sort teams by the order you set; teams without one keep their place
+/// after them.
+pub fn apply_teams_order(teams: &mut [ListTeam], order: &std::collections::HashMap<String, i64>) {
+    teams.sort_by_key(|t| order.get(&t.thread_id).or_else(|| order.get(&t.id)).copied().unwrap_or(i64::MAX));
+}
+
+async fn teams_order(client: &TeamsClient, token: &str, region: &str) -> Result<std::collections::HashMap<String, i64>> {
+    let v: serde_json::Value = client
+        .http()
+        .get(format!("https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/discover/preferences"))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(teams_order_from(&v))
 }
 
 /// A team tag, as Teams' @ picker offers it (CSA `tagCards`).
@@ -749,6 +803,21 @@ mod list_tests {
         let hidden = serde_json::json!([{"id": "t1", "displayName": "T", "isGeneralChannelFavorite": false, "channels": [
             {"id": "c1", "displayName": "General", "isFavorite": true, "isGeneral": true}]}]);
         assert!(!list_teams_from(&hidden)[0].channels[0].shown);
+    }
+
+    #[test]
+    fn teams_follow_your_order_then_the_service_order() {
+        let v = serde_json::json!([
+            {"id": "t1", "displayName": "OST Test Team", "channels": []},
+            {"id": "t2", "displayName": "Secure Coast", "channels": []},
+            {"id": "t3", "displayName": "Another", "channels": []}]);
+        let mut t = list_teams_from(&v);
+        apply_teams_order(&mut t, &Default::default());
+        assert_eq!(t.iter().map(|t| t.thread_id.as_str()).collect::<Vec<_>>(), vec!["t1", "t2", "t3"]);
+        let order = teams_order_from(&serde_json::json!({"preferences": [{"category": "teamsOrder", "value": "[{\"teamId\":\"t3\",\"order\":0}]"}]}));
+        apply_teams_order(&mut t, &order);
+        assert_eq!(t.iter().map(|t| t.thread_id.as_str()).collect::<Vec<_>>(), vec!["t3", "t1", "t2"]);
+        assert!(teams_order_from(&serde_json::json!({})).is_empty());
     }
 
     #[test]

@@ -3564,6 +3564,27 @@ Window {
         }
     }
 
+    // --quick-views-test --shots=<dir>: Quick views ▸ Followed threads
+    // (qv-followed, then its first thread picked: qv-followed-open) and
+    // Saved (qv-saved); the rows are logged. Nothing is changed; quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--quick-views-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) { console.warn("QV team order", JSON.stringify(JSON.parse(backend.teamsJson || "[]").map(t => t.name))); chatList.openQuick("followed") }
+            else if (step === 2) { console.warn("QV followed", JSON.stringify(quickView.itemsForTest())); shot("qv-followed") }
+            else if (step === 3) { const i = quickView.itemsForTest()[0]; if (i) { quickView.selectedKey = quickView.key(i); quickView.openItem(i) } }
+            else if (step === 5) shot("qv-followed-open")
+            else if (step === 6) chatList.openQuick("saved")
+            else if (step === 9) { console.warn("QV saved", JSON.stringify(quickView.itemsForTest())); shot("qv-saved") }
+            else if (step === 10) Qt.quit()
+            step++
+        }
+    }
+
     // --members-test=<team group id> --shots=<dir>: Manage team ▸ Members
     // (mb-members.png, the roster logged), then Pending requests
     // (mb-pending.png, logged); quit.
@@ -4679,7 +4700,7 @@ Window {
         rail.current = "chat"
         window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
         if (backend.currentChatId !== channelId) backend.selectChat(channelId, ch.name)
-        window.manageTeamId = ""; chatList.yourTeamsOpen = false
+        window.manageTeamId = ""; chatList.yourTeamsOpen = false; chatList.quickOpen = ""
         window.manage = { teamId: team.id, teamName: team.name, channelId: channelId }
         window.raise(); window.requestActivate()
     }
@@ -4693,7 +4714,7 @@ Window {
         rail.current = "chat"
         window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
         window.manage = null
-        chatList.yourTeamsOpen = false
+        chatList.yourTeamsOpen = false; chatList.quickOpen = ""
         window.manageTeamId = teamId
         manageTeam.tab = tab || "channels"
         window.raise(); window.requestActivate()
@@ -4707,7 +4728,7 @@ Window {
         rail.current = "chat"
         window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
         window.manage = null; window.manageTeamId = ""
-        chatList.yourTeamsOpen = true
+        chatList.yourTeamsOpen = true; chatList.quickOpen = ""
         yourTeams.tab = tab || "teams"
         window.raise(); window.requestActivate()
     }
@@ -4824,7 +4845,7 @@ Window {
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
+        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
         onNewChat: { draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.composing = true }
         onOpenYourTeams: window.openYourTeams("teams")
         onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
@@ -4832,9 +4853,10 @@ Window {
         onChatWorkflows: (id, name) => workflowsDialog.startChat(id, name)
         onMarkAllRead: backend.markAllRead()
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
-        onOpenDrafts: { window.composing = false; mentionsOpen = false; yourTeamsOpen = false; draftsOpen = true }
+        onOpenDrafts: { window.composing = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; draftsOpen = true }
         hasMentions: mentionsView.mentions.length > 0
-        onOpenMentions: { window.composing = false; draftsOpen = false; yourTeamsOpen = false; mentionsOpen = true; mentionsView.selectedId = "" }
+        onOpenMentions: { window.composing = false; draftsOpen = false; yourTeamsOpen = false; quickOpen = ""; mentionsOpen = true; mentionsView.selectedId = "" }
+        onOpenQuick: kind => { window.composing = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""; quickOpen = kind; quickView.selectedKey = "" }
         onOpenCommunities: rail.openApp("communities")
     }
     MentionsView {
@@ -4851,6 +4873,18 @@ Window {
                 const c = chatList.chats.find(c => c.id === item.thread_id)
                 backend.selectChat(item.thread_id, c ? c.name : (item.context || item.actor_name || "Chat"))
             }
+        }
+    }
+    // Quick views ▸ Followed threads / Saved: the list, and the picked
+    // item's chat or channel beside it.
+    QuickListView {
+        id: quickView
+        kind: chatList.quickOpen || "followed"
+        visible: rail.current === "chat" && !!chatList.quickOpen
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        onOpenItem: item => {
+            const c = chatList.chats.find(c => c.id === item.thread_id)
+            backend.selectChat(item.thread_id, c ? c.name : quickView.titleOf(item))
         }
     }
     DraftsView {
@@ -4964,12 +4998,12 @@ Window {
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || quickView.selectedKey.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: titleBar.bottom; bottom: statusBar.top; right: tabConversation.left
             left: conversation.tabExpanded ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
-            leftMargin: rail.current === "chat" && chatList.mentionsOpen ? mentionsView.paneWidth : 0 }
+            leftMargin: rail.current === "chat" && (chatList.mentionsOpen || !!chatList.quickOpen) ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
         isSelf: backend.currentChatId === "48:notes"

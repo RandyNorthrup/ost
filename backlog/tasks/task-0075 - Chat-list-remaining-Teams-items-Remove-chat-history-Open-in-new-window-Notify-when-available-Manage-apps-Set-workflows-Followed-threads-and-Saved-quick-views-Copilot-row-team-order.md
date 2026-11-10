@@ -8,7 +8,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T12:32:00Z'
-updated_date: '2026-11-10T06:17:00Z'
+updated_date: '2026-11-10T07:13:00Z'
 labels:
   - desktop
   - chatlist
@@ -31,8 +31,8 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Chat menu has Open in new window, Notify when available, Manage apps, Set workflows and Remove chat history as Teams (Remove chat history verified on a disposable chat)
-- [ ] #2 Quick views show Followed threads and Saved with their views, and Drafts as Teams lists them
-- [ ] #3 Teams are ordered as Teams orders them
+- [x] #2 Quick views show Followed threads and Saved with their views, and Drafts as Teams lists them
+- [x] #3 Teams are ordered as Teams orders them
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -51,4 +51,7 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 - Also from the old TASK-0046 list: the meeting chat's "+4" tabs (Attendance, Breakout Rooms, Q&A, Meeting Whiteboard) and Add a tab; Report a concern in a meeting chat's ··· (tenant policy reportMeeting); Add agents.
 
 - Chat menu: Open in new window (ChatWindow, sends to its chat), Notify when available / Turn off notifications (contactsv3 Tagged, captured on and turned back off), Manage apps (chat's Installed apps), Set workflows (chatworkflows URL captured), Remove chat history (question measured; request not tried). Report a concern on meeting chats still to do.
+
+- Quick views: Followed threads (48:threads) and Saved (48:saved) as Teams lays them out, compared on winpc; team order from the teamsOrder preference then the service order (Secure Coast before OST Test Team, as Teams).
+- Left for AC #1: Remove chat history can't be verified without a disposable chat with other members; meeting chats' Report a concern item.
 <!-- SECTION:NOTES:END -->

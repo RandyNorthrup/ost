@@ -963,6 +963,30 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
   from your list and search. It affects you only." Cancel / Remove;
   `DELETE {chatsvc}/v1/threads/{chat}` (not tried: no disposable chat).
 
+#### 5.6.12 Quick views ▸ Followed threads and Saved; team order (measured 2026-11-09)
+
+- Quick views: Mentions (when there are any), Followed threads, Drafts
+  (when there are any), Saved.
+- Both views: a 380 px list (title 16/22 bold at 32, 19; pills 12/16,
+  23.3 tall, 69.5 down: Unread / Channels / Chats, Saved without Unread),
+  rows from 104.8 with a 36 px picture at 32 (square for a channel's team,
+  round for a chat) and text 48 after it; until a row is picked Teams'
+  192 px picture and "When you select a thread, it'll show up here" /
+  "When you select a saved item, it'll show up here." (16 bold) centred in
+  the rest. A row opens its chat or channel beside the list.
+- Followed threads from `{chatsvc}/v1/users/ME/conversations/48:threads/
+  messages` (activity records; the newest per reply chain): the channel
+  and "· N replies" (activityContext.repliesCount), the time, the root's
+  preview (parentMessagePreview, 12/16 #424242), then "picture Name: text"
+  of the newest reply (two lines). Hover: Unfollow thread, More options.
+  (Teams' time follows the thread's last edit; OST shows the record's.)
+- Saved from `48:saved/messages` (savedMessage records; a later unSaved
+  record removes one): the chat or channel, then "picture Name: text";
+  Unsave this message (filled bookmark) and More options at 292 / 324.
+- Team order: the teamsOrder preference (`GET {csa}/api/v1/teams/users/me/
+  discover/preferences`), the rest in the service's order (Teams' stable
+  sortBy), not by name.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**
