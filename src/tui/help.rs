@@ -192,21 +192,21 @@ const MISC: Category = Category {
     ],
 };
 
-/// Render the help popup overlay centered on screen.
+/// Render the help overlay over `area` (everything between the header and
+/// the status bar).
 ///
-/// Clears the area behind the popup and draws a bordered box with all
-/// keyboard shortcuts organized in a two-column layout.
-pub fn render_help_popup(frame: &mut Frame) {
-    let area = frame.area();
-
-    // Calculate centered popup area, clamped to terminal size.
+/// The whole area is cleared first, so no message or sidebar text shows
+/// around the popup, then a bordered box with all keyboard shortcuts is
+/// drawn centered in it, in a two-column layout.
+pub fn render_help_popup(frame: &mut Frame, area: Rect) {
+    // Calculate centered popup area, clamped to the area.
     let popup_w = POPUP_WIDTH.min(area.width.saturating_sub(2));
     let popup_h = POPUP_HEIGHT.min(area.height.saturating_sub(2));
 
     let popup_area = centered_rect(popup_w, popup_h, area);
 
-    // Clear the background behind the popup.
-    frame.render_widget(Clear, popup_area);
+    // Clear everything behind and around the popup.
+    frame.render_widget(Clear, area);
 
     // Outer block with title and footer.
     let block = Block::default()
@@ -303,4 +303,32 @@ fn inset(area: Rect, h: u16, v: u16) -> Rect {
         area.width.saturating_sub(h * 2),
         area.height.saturating_sub(v * 2),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_help_overlay_hides_everything_around_it() {
+        use ratatui::{Terminal, backend::TestBackend, widgets::Paragraph};
+        let mut term = Terminal::new(TestBackend::new(160, 45)).unwrap();
+        term.draw(|f| {
+            let area = f.area();
+            // Message text everywhere, then the overlay over the middle rows.
+            let filler = (0..area.height).map(|_| "█".repeat(area.width as usize)).collect::<Vec<_>>().join("\n");
+            f.render_widget(Paragraph::new(filler), area);
+            render_help_popup(f, Rect::new(0, 1, area.width, area.height - 2));
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        for y in 1..44 {
+            for x in 0..160 {
+                assert_ne!(buf[(x, y)].symbol(), "█", "text shows through at {x},{y}");
+            }
+        }
+        // The header and status rows are left alone.
+        assert_eq!(buf[(0, 0)].symbol(), "█");
+        assert_eq!(buf[(0, 44)].symbol(), "█");
+    }
 }

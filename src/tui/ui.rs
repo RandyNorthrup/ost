@@ -109,7 +109,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     // Render help popup overlay (on top of everything else)
     if app.show_help {
-        help::render_help_popup(frame);
+        help::render_help_popup(frame, main_area);
     }
 }
 
