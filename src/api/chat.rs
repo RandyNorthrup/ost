@@ -1126,6 +1126,17 @@ mod tui_message_tests {
     }
 
     #[test]
+    fn mentions_keep_their_names() {
+        // "OST test 54" as the service holds it: one person mentioned in
+        // two parts. (Its neighbour "OST test 54: mention for check" really
+        // has no mention in its content: nothing was lost on the way.)
+        let m = serde_json::json!({"id": "1", "messagetype": "RichText/Html", "from": OWN, "imdisplayname": "OST Test 1",
+            "content": "<p>OST test 54: mention for <span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\">Randy</span>&nbsp;<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"1\">Northrup</span>&nbsp;check</p>",
+            "properties": {"mentions": "[{\"@type\":\"http://schema.skype.com/Mention\",\"itemid\":0,\"mri\":\"8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3\",\"mentionType\":\"person\",\"displayName\":\"Randy\"},{\"@type\":\"http://schema.skype.com/Mention\",\"itemid\":1,\"mri\":\"8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3\",\"mentionType\":\"person\",\"displayName\":\"Northrup\"}]"}});
+        assert_eq!(show(m).unwrap().content, "OST test 54: mention for Randy Northrup check");
+    }
+
+    #[test]
     fn no_raw_json_or_card_buttons() {
         // A system event shows as Teams' sentence, not its JSON.
         let event = serde_json::json!({"id": "2", "messagetype": "ThreadActivity/AddMember",
