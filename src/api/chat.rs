@@ -182,7 +182,6 @@ struct NativeMessage {
     im_display_name: Option<String>,
     content: Option<String>,
     messagetype: Option<String>,
-    from: Option<String>,
     #[serde(default)]
     properties: Option<serde_json::Value>,
 }
@@ -252,30 +251,81 @@ fn between<'a>(s: &'a str, a: &str, b: &str) -> Option<&'a str> {
     Some(&s[i..j])
 }
 
-#[derive(Debug, Deserialize)]
-struct MessagesResponse {
-    messages: Option<Vec<NativeMessage>>,
+/// A meeting recording message (`RichText/Media_CallRecording`) in Teams'
+/// words (docs/spec/message-types.md §17):
+/// - the start and stop rows ("{name} started recording." / "Recording has
+///   started", "Recording stopped. Saving recording…");
+/// - the result card as "Recording · {title} · {duration} · organizer
+///   {name}".
+/// None for messages Teams doesn't show (no content type).
+pub fn recording_summary(content: &str, organizer: Option<&str>) -> Option<String> {
+    let attr = |tag: &str, name: &str| -> Option<String> {
+        let start = content.find(&format!("<{tag}"))?;
+        let rest = &content[start..];
+        let end = rest.find('>')?;
+        let head = &rest[..end];
+        let key = format!("{name}=\"");
+        let i = head.find(&key)? + key.len();
+        let j = head[i..].find('"')? + i;
+        Some(head[i..j].to_string())
+    };
+    let name_of = |mri: Option<String>| {
+        mri.and_then(|m| super::messages::cached_name(&m)).filter(|n| !n.is_empty())
+    };
+    let status = attr("RecordingStatus", "status").unwrap_or_default();
+    if status == "Initial" {
+        let auto = attr("RecordingInitiatorId", "isAutoRecording").as_deref() == Some("True");
+        return Some(if auto {
+            "Recording started automatically per the organizer's setting.".to_string()
+        } else {
+            match name_of(attr("RecordingInitiatorId", "value")) {
+                Some(n) => format!("{n} started recording."),
+                None => "Recording has started".to_string(),
+            }
+        });
+    }
+    if status == "ChunkFinished" {
+        return Some(match name_of(attr("RecordingTerminatorId", "value")) {
+            Some(n) => format!("{n} stopped recording. Saving recording…"),
+            None => "Recording stopped. Saving recording…".to_string(),
+        });
+    }
+    let title = between(content, "<Title>", "</Title>").map(|t| strip_html(t).trim().to_string());
+    let duration = attr("RecordingContent", "duration").map(|d| {
+        // "hh:mm:ss[.fff]" as Teams' "#h #m #s" (zero parts left out).
+        let parts: Vec<u64> = d.split(['.']).next().unwrap_or_default().split(':').filter_map(|p| p.parse().ok()).collect();
+        let (h, m, s) = match parts.as_slice() { [h, m, s] => (*h, *m, *s), _ => (0, 0, 0) };
+        [(h, "h"), (m, "m"), (s, "s")].iter().filter(|(v, _)| *v > 0).map(|(v, u)| format!("{v}{u}")).collect::<Vec<_>>().join(" ")
+    }).filter(|d| !d.is_empty());
+    let organizer = organizer
+        .map(str::to_string)
+        .or_else(|| name_of(attr("MeetingOrganizerId", "value")))
+        .filter(|n| !n.is_empty())
+        .map(|n| format!("organizer {n}"));
+    let parts: Vec<String> = std::iter::once("Recording".to_string()).chain(title).chain(duration).chain(organizer).filter(|p| !p.is_empty()).collect();
+    Some(parts.join(" · "))
 }
 
-/// Who sent a message: its `imdisplayname`, else the signed-in user's own
-/// name when the sender is them, else "Unknown".
-fn sender_name(msg: &NativeMessage, own_oid: Option<&str>, own_name: Option<&str>) -> String {
-    if let Some(name) = msg
-        .im_display_name
-        .as_deref()
-        .filter(|n| !n.trim().is_empty())
-    {
-        return name.to_string();
+/// A message as the TUI lists it: the desktop's reading of it, its sender
+/// being the name it carries, else your own name (or "You") on yours, else
+/// "Unknown"; None when there's nothing to show (deleted, or no text).
+fn tui_message(view: super::messages::MessageView, own_name: Option<&str>) -> Option<MessageInfo> {
+    let text = view.text.trim();
+    if view.deleted || text.is_empty() {
+        return None;
     }
-    let is_own = match (msg.from.as_deref(), own_oid) {
-        (Some(from), Some(oid)) => from.ends_with(&format!("8:orgid:{oid}")),
-        _ => false,
+    let sender = if !view.sender.trim().is_empty() {
+        view.sender.clone()
+    } else if view.mine {
+        own_name.filter(|n| !n.is_empty()).unwrap_or("You").to_string()
+    } else {
+        "Unknown".to_string()
     };
-    match (is_own, own_name) {
-        (true, Some(name)) => name.to_string(),
-        (true, None) => "You".to_string(),
-        _ => "Unknown".to_string(),
-    }
+    Some(MessageInfo {
+        sender,
+        timestamp: view.time.clone(),
+        content: text.to_string(),
+    })
 }
 
 /// Strip HTML tags from message content and decode the common entities.
@@ -958,46 +1008,41 @@ pub async fn read_messages_data(
 
     tracing::debug!("Reading messages from {}", url);
     let resp = client.chat_get(&url).await?;
-    let body: MessagesResponse = resp
+    let body: serde_json::Value = resp
         .json()
         .await
         .context("Failed to parse messages response")?;
 
-    let messages = body.messages.unwrap_or_default();
-
-    // Messages come newest-first; reverse for chronological display
-    let mut msgs: Vec<&NativeMessage> = messages.iter().collect();
-    msgs.reverse();
-
-    let own_oid = client.object_id();
+    // Read each message as the desktop does (super::messages::message_view):
+    // system events become Teams' sentences, meeting and call cards their
+    // titles, and nothing shows as raw JSON or with a card's button labels.
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
     let own_name = client.display_name();
+    let mut names: std::collections::HashMap<String, Option<String>> = Default::default();
     let mut result = Vec::new();
-    for msg in &msgs {
-        let msgtype = msg.messagetype.as_deref().unwrap_or("");
-        // Skip non-text messages (e.g. ThreadActivity/*)
-        if !msgtype.contains("Text") && !msgtype.contains("RichText") {
+    // Messages come newest-first; show them oldest first.
+    for m in body["messages"].as_array().into_iter().flatten().rev() {
+        let Some(mut view) = super::messages::message_view(m, &me, own_name.as_deref().unwrap_or_default()) else {
             continue;
+        };
+        // A meeting recording: Teams' words for it, not its XML's text
+        // (which ends in the card's "Play" link), with its organizer.
+        let kind = m["messagetype"].as_str().unwrap_or_default();
+        if kind.starts_with("RichText/Media_CallRecording") || kind == "RichText/Media_CallLocalRecording" {
+            let content = m["content"].as_str().unwrap_or_default();
+            let organizer = match between(content, "<MeetingOrganizerId value=\"8:orgid:", "\"") {
+                Some(oid) => resolve_user_name(client, oid, &mut names).await,
+                None => None,
+            };
+            let Some(text) = recording_summary(content, organizer.as_deref()) else { continue };
+            view.text = text;
         }
-
-        let sender = sender_name(msg, own_oid.as_deref(), own_name.as_deref());
-        let time = msg
-            .original_arrival_time
-            .as_deref()
-            .or(msg.compose_time.as_deref())
-            .unwrap_or("")
-            .to_string();
-        let content = msg.content.as_deref().unwrap_or("");
-        let text = strip_html(content);
-
-        if text.trim().is_empty() {
-            continue;
+        if let Some(info) = tui_message(view, own_name.as_deref()) {
+            result.push(info);
         }
-
-        result.push(MessageInfo {
-            sender,
-            timestamp: time,
-            content: text.trim().to_string(),
-        });
     }
 
     Ok(result)
@@ -1029,48 +1074,49 @@ mod chat_name_tests {
 }
 
 #[cfg(test)]
-mod sender_name_tests {
+mod tui_message_tests {
     use super::*;
 
-    fn msg(name: Option<&str>, from: Option<&str>) -> NativeMessage {
-        NativeMessage {
-            compose_time: None,
-            original_arrival_time: None,
-            im_display_name: name.map(String::from),
-            content: None,
-            messagetype: None,
-            from: from.map(String::from),
-            properties: None,
-        }
-    }
-
-    const OID: &str = "4287e791-1b98-4963-8b94-281c50472683";
+    const ME: &str = "8:orgid:4287e791-1b98-4963-8b94-281c50472683";
     const OWN: &str = "https://amer.ng.msg.teams.microsoft.com/v1/users/ME/contacts/8:orgid:4287e791-1b98-4963-8b94-281c50472683";
 
-    #[test]
-    fn uses_the_name_the_message_carries() {
-        assert_eq!(
-            sender_name(&msg(Some("Randy Northrup"), None), Some(OID), None),
-            "Randy Northrup"
-        );
+    fn show(m: serde_json::Value) -> Option<MessageInfo> {
+        tui_message(super::super::messages::message_view(&m, ME, "")?, Some("OST Test 1"))
     }
 
     #[test]
-    fn blank_name_on_own_message_shows_own_name() {
-        assert_eq!(
-            sender_name(&msg(Some(""), Some(OWN)), Some(OID), Some("OST Test 1")),
-            "OST Test 1"
-        );
-        assert_eq!(sender_name(&msg(None, Some(OWN)), Some(OID), None), "You");
+    fn senders_as_the_tui_shows_them() {
+        let text = |name: &str, from: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": "<p>hi</p>", "imdisplayname": name, "from": from});
+        assert_eq!(show(text("Randy Northrup", "https://x/contacts/8:orgid:aaaa")).unwrap().sender, "Randy Northrup");
+        // A blank name on your own message shows your name…
+        assert_eq!(show(text("", OWN)).unwrap().sender, "OST Test 1");
+        // …and someone else's shows as Unknown.
+        assert_eq!(show(text(" ", &OWN.replace("4287e791", "00000000"))).unwrap().sender, "Unknown");
     }
 
     #[test]
-    fn blank_name_from_someone_else_is_unknown() {
-        let other = OWN.replace("4287e791", "00000000");
-        assert_eq!(
-            sender_name(&msg(Some(" "), Some(&other)), Some(OID), Some("OST Test 1")),
-            "Unknown"
-        );
+    fn recordings_read_as_teams_words_them() {
+        // As the service sent OST calendar test's recording (trimmed).
+        let done = r#"<URIObject type="Video.2/CallRecording.1"><RecordingStatus status="Success" code="200"></RecordingStatus><Title>OST calendar test created from OST</Title><a href="https://x">Play</a><RecordingContent duration="00:01:05.120" contentTypes="Recording"/><MeetingOrganizerId value="8:orgid:nobody" /></URIObject>"#;
+        let s = recording_summary(done, None).unwrap();
+        assert_eq!(s, "Recording · OST calendar test created from OST · 1m 5s");
+        assert_eq!(recording_summary(done, Some("OST Test 1")).unwrap(), "Recording · OST calendar test created from OST · 1m 5s · organizer OST Test 1");
+        assert!(!s.contains("Play"));
+        assert_eq!(recording_summary(r#"<URIObject><RecordingStatus status="Initial" code="0"/></URIObject>"#, None).unwrap(), "Recording has started");
+        assert_eq!(recording_summary(r#"<URIObject><RecordingStatus status="ChunkFinished" code="202"/></URIObject>"#, None).unwrap(), "Recording stopped. Saving recording…");
+    }
+
+    #[test]
+    fn no_raw_json_or_card_buttons() {
+        // A system event shows as Teams' sentence, not its JSON.
+        let event = serde_json::json!({"id": "2", "messagetype": "ThreadActivity/AddMember",
+            "content": "<addmember><eventtime>1</eventtime><initiator>8:orgid:a</initiator><target>8:orgid:b</target></addmember>",
+            "from": "https://x/contacts/8:orgid:a"});
+        if let Some(m) = show(event) {
+            assert!(!m.content.starts_with('{') && !m.content.contains("<addmember>"), "{}", m.content);
+        }
+        // Deleted messages and empty ones aren't listed.
+        assert!(show(serde_json::json!({"id": "3", "messagetype": "RichText/Html", "content": "", "from": OWN})).is_none());
     }
 }
 
