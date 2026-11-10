@@ -435,6 +435,40 @@ For a forced status, Never (the 9999 date) means **no**
   notes ("Status of {name}: {message}"), and an OOF banner.
 - **Sign out** (`nova:me_control_sign_out_button_text` "Sign out") →
   `signOut` command.
+- **Pause notifications** (me control `pauseNotificationsControl`,
+  async-entry ≈9 634 000; measured on winpc 2026-11-09):
+  - The row (bell, filled brand while its menu is open) opens a submenu to
+    the flyout's left: 10 minutes, 30 minutes, 1 hour, Today, Custom |
+    Notifications settings (settings glyph; only that row leaves room for
+    an icon).
+  - A choice sends `setPresenceAvailability({availability: "DoNotDisturb",
+    expiry: {custom: ISO}})`: now + 10 / 30 / 60 minutes, Today = 23:59:59.999
+    local. That is `PUT …/v1/me/forceavailability/` with
+    `desiredExpirationTime`, as the status menu's Duration.
+  - Paused = DoNotDisturb with an expiry. The presence service gives your
+    own expiry in `getpresence` as `forcedAvailability.expiry` (probed
+    2026-11-10). So DND set from the status menu with a duration also shows
+    as paused, as in Teams.
+  - Paused, the row becomes a card (76 in, 234 x 54, #F5F5F5, radius 4,
+    padding 8): "Notifications paused" 12/20 semibold, "Until {time}" 10/10
+    #424242 (the time today, else "Nov 10, 12:02 AM"). On hover or focus:
+    Edit pause duration (edit 16, filled brand on hover; the same menu,
+    below and end-aligned) and Resume notifications (dismiss 16), 20 px
+    buttons 184 and 206 in. Resume = `setPresenceAvailability(null)`, the
+    forceavailability reset.
+  - Custom: "Pause notifications until" (600 x 170): Date (Fluent
+    DatePicker, M/d/yy, today to a year ahead) and Time (a dropdown of the
+    day's 48 half hours, past ones greyed), starting at the next half hour.
+    Picking a date keeps the time unless that is past. Save is off while
+    the time is past.
+- **Do not disturb banner** (pre-warm job `presence-donotdisturb-banner`):
+  whenever your availability changes to DoNotDisturb, the app banner says
+  "Your status is set to do not disturb. You'll only get notifications for
+  urgent messages and from your priority contacts." with "Change settings"
+  (Settings ▸ Privacy ▸ Manage priority access). It is dismissable and
+  dismissed when the availability changes away. Banner: full width, 36,
+  #F5F5F5, info 20 filled at 12, text 14/20 at 40, a small secondary
+  button and Dismiss (24 x 23.3) 12 from the right.
 
 ## Sign-out / stop
 - When the worker sync engine stops a strategy (`16708.Ke` →

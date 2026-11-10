@@ -35,6 +35,17 @@ Rectangle {
     function openProfileForTest() { menu.visible = true; statusMenu.open() }
     function profilePageForTest(page) { statusMenu.close(); if (page === "duration") durationPage.start(); if (page === "note") notePage.start(); menu.visible = true; menu.page = page }
     function closeProfileForTest() { menu.visible = false }
+    function pauseForTest(what) {
+        if (what === "flyout") { statusMenu.close(); menu.page = "main"; menu.visible = true }
+        else if (what === "menu") pauseMenu.open()
+        else if (what === "edit") editMenu.open()
+        else if (what === "custom") { menu.visible = false; pauseDialog.start() }
+        else if (what === "calendar") pauseDialog.datePickerForTest().openForTest()
+        else if (what === "close") { pauseMenu.close(); editMenu.close(); pauseDialog.close(); menu.visible = false }
+        else if (what === "resume") root.setStatusUntil("Reset", "Never")
+        else if (what === "dbg") return [pauseMenu.implicitWidth, pauseMenu.width, pauseMenu.rowLabelX(pauseItems[6]), pauseMenu.perItemIcons].join(",")
+        else { const i = pauseItems.findIndex(x => x.label === what); if (i >= 0) pickPause(i) }
+    }
     function noteTypeForTest(t) { noteText.insert(noteText.cursorPosition, t); noteText.cursorPosition = noteText.length }
     function notePickForTest() { if (notePicker.people.length) notePage.pickMention(notePicker.people[0]); return notePicker.people.length }
     function noteHtmlForTest() { return noteText.text }
@@ -353,6 +364,35 @@ Rectangle {
         return k === "available" ? "available" : (k === "away" || k === "berightback") ? "away"
             : k === "busy" ? "busy" : k === "donotdisturb" ? "dnd" : "offline"
     }
+    // Pause notifications (Teams' me control, measured on winpc
+    // 2026-11-09): Do not disturb until a time. Paused is Do not disturb
+    // with an end (the presence service's forcedAvailability.expiry).
+    property string statusUntil: ""
+    signal pauseUntil(string iso)
+    signal openNotificationSettings()
+    readonly property bool paused: (presence || "").toLowerCase() === "donotdisturb" && statusUntil.length > 0
+    // Teams' "Until …": the time today, else "Nov 10, 12:02 AM".
+    function untilText(iso) {
+        const d = new Date(iso), now = new Date()
+        const t = Qt.formatTime(d, "h:mm AP")
+        return d.toDateString() === now.toDateString() ? t : Qt.formatDate(d, "MMM d") + ", " + t
+    }
+    readonly property var pauseItems: [
+        { label: "10 minutes", minutes: 10 }, { label: "30 minutes", minutes: 30 }, { label: "1 hour", minutes: 60 },
+        { label: "Today", minutes: -1 }, { label: "Custom", custom: true },
+        { separator: true }, { label: "Notifications settings", icon: "settings-20", settings: true }
+    ]
+    function pickPause(i) {
+        const it = pauseItems[i]
+        menu.visible = false
+        if (it.settings) { root.openNotificationSettings(); return }
+        if (it.custom) { pauseDialog.start(); return }
+        let end
+        if (it.minutes > 0) end = new Date(Date.now() + it.minutes * 60000)
+        else { end = new Date(); end.setHours(23, 59, 59, 999) }
+        root.pauseUntil(end.toISOString())
+    }
+    PauseNotificationsDialog { id: pauseDialog; onSaved: d => root.pauseUntil(d.toISOString()) }
     // Your status message (Set status message), as last saved here.
     property string statusNote: ""
     /// The same with mentions marked (from the presence service).
@@ -370,7 +410,7 @@ Rectangle {
         radius: 8
         color: theme.menu
         border.color: theme.dividerSoft
-        onVisibleChanged: if (!visible) { statusMenu.close(); page = "main" }
+        onVisibleChanged: if (!visible) { statusMenu.close(); pauseMenu.close(); editMenu.close(); page = "main" }
         Column {
             id: menuCol
             visible: menu.page === "main"
@@ -421,12 +461,13 @@ Rectangle {
                 property string label
                 property bool chevron: true
                 property bool active: false
+                property color iconColor: theme.textStrong
                 default property alias lead: frLead.data
                 signal clicked()
                 width: menuCol.width - 8; x: 4; height: 36; radius: theme.radius
                 color: frh.hovered || active ? theme.rowHover : "transparent"
                 Item { id: frLead; x: 78; width: 20; height: 20; anchors.verticalCenter: parent.verticalCenter }
-                FluentIcon { visible: !!fr.icon; x: 78; anchors.verticalCenter: parent.verticalCenter; name: fr.icon; size: 20; color: theme.textStrong }
+                FluentIcon { visible: !!fr.icon; x: 78; anchors.verticalCenter: parent.verticalCenter; name: fr.icon; size: 20; color: fr.iconColor }
                 Text { x: 108; anchors.verticalCenter: parent.verticalCenter; text: fr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 FluentIcon { visible: fr.chevron; anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.textStrong }
                 HoverHandler { id: frh; cursorShape: Qt.PointingHandCursor }
@@ -441,6 +482,78 @@ Rectangle {
                 active: statusMenu.opened
                 PresenceBadge { anchors.centerIn: parent; total: 16; presence: root.presence || "Available" }
                 onClicked: statusMenu.opened ? statusMenu.close() : statusMenu.open()
+            }
+            // Pause notifications ▸ 10 minutes, 30 minutes, 1 hour, Today,
+            // Custom | Notifications settings (a submenu to the flyout's
+            // left, its top at the row's).
+            FlyoutRow {
+                id: pauseRow
+                visible: !root.paused
+                icon: pauseMenu.opened || pauseRowHover.hovered ? "alert-20-filled" : "alert-20"
+                iconColor: pauseMenu.opened || pauseRowHover.hovered ? theme.brand : theme.textStrong
+                label: "Pause notifications"
+                active: pauseMenu.opened
+                HoverHandler { id: pauseRowHover }
+                onClicked: pauseMenu.opened ? pauseMenu.close() : pauseMenu.open()
+                MenuPopup {
+                    id: pauseMenu
+                    perItemIcons: true
+                    x: -4 - implicitWidth + 3; y: 0
+                    items: root.pauseItems
+                    onPicked: i => root.pickPause(i)
+                }
+            }
+            // Paused: Teams' card (76 in, 234 x 54, #F5F5F5, radius 4,
+            // padding 8): "Notifications paused" (12/20 semibold) and
+            // "Until …" (10/10, #424242) 8 under it; on hover or focus Edit
+            // pause duration (the same choices, below, end-aligned) and
+            // Resume notifications (16 px icons in 20 px buttons, 184 and
+            // 206 in, 17 down).
+            Item {
+                visible: root.paused
+                width: parent.width; height: 58
+                Rectangle {
+                    id: pausedCard
+                    x: 76; y: 2; width: 234; height: 54; radius: 4
+                    color: theme.pick("#F5F5F5", "#2E2E2E")
+                    HoverHandler { id: pausedHover }
+                    readonly property bool actions: pausedHover.hovered || editPause.activeFocus || resumePause.activeFocus || editMenu.opened
+                    Text { x: 8; y: 8; height: 20; verticalAlignment: Text.AlignVCenter; text: "Notifications paused"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                    Text { x: 8; y: 36; height: 10; verticalAlignment: Text.AlignVCenter; text: "Until " + (root.statusUntil ? root.untilText(root.statusUntil) : ""); font.family: theme.font; font.pixelSize: 10; color: theme.textStrong }
+                    Rectangle {
+                        id: editPause
+                        x: 184; y: 17; width: 20; height: 20; radius: 4
+                        opacity: pausedCard.actions ? 1 : 0
+                        color: "transparent"
+                        activeFocusOnTab: true
+                        FluentIcon { anchors.centerIn: parent; name: editHoverP.hovered || editMenu.opened ? "edit-16-filled" : "edit-16"; size: 16; color: editHoverP.hovered || editMenu.opened ? theme.brand : theme.textStrong }
+                        HoverHandler { id: editHoverP; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: editMenu.opened ? editMenu.close() : editMenu.open() }
+                        ToolTip.visible: editHoverP.hovered && !editMenu.opened; ToolTip.delay: 500; ToolTip.text: "Edit pause duration"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Edit pause duration, Notifications paused, until " + (root.statusUntil ? root.untilText(root.statusUntil) : "") + ", Your presence was changed to Do not disturb."
+                        MenuPopup {
+                            id: editMenu
+                            perItemIcons: true
+                            x: 42 - implicitWidth; y: 20 + 4
+                            items: root.pauseItems
+                            onPicked: i => root.pickPause(i)
+                        }
+                    }
+                    Rectangle {
+                        id: resumePause
+                        x: 206; y: 17; width: 20; height: 20; radius: 4
+                        opacity: pausedCard.actions ? 1 : 0
+                        color: "transparent"
+                        activeFocusOnTab: true
+                        FluentIcon { anchors.centerIn: parent; name: resumeHover.hovered ? "dismiss-16-filled" : "dismiss-16"; size: 16; color: resumeHover.hovered ? theme.brand : theme.textStrong }
+                        HoverHandler { id: resumeHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.setStatusUntil("Reset", "Never") }
+                        ToolTip.visible: resumeHover.hovered; ToolTip.delay: 500; ToolTip.text: "Resume notifications"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Resume notifications"
+                    }
+                }
             }
             FlyoutRow {
                 visible: !root.statusNote

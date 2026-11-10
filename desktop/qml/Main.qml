@@ -632,7 +632,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && Qt.application.arguments.indexOf("--meeting-details-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && Qt.application.arguments.indexOf("--meeting-details-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3665,6 +3665,44 @@ Window {
         }
     }
 
+    // --pause-test --shots=<dir>: Pause notifications: the flyout and its
+    // menu (pz-menu), 10 minutes (paused; pz-paused with the banner, and
+    // the edit menu pz-edit), Custom's dialog (pz-custom) and its calendar
+    // (pz-calendar), cancelled; then Resume (pz-resumed). Logs what the
+    // flyout says. Changes only ost-test1's own status, and puts it back.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--pause-test")) && backend.signedIn && backend.userMail.length > 0
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const log = n => console.warn("PZ", n, "presence", titleBar.presence, "until", backend.myStatusEnds, "paused", titleBar.paused, "banner", window.dndBanner)
+            // --pause-test=hold: pause 10 minutes and quit; =resume: resume and quit.
+            const mode = (Qt.application.arguments.find(a => a.startsWith("--pause-test=")) || "").slice(13)
+            if (mode === "hold") { if (step === 1) titleBar.pauseForTest("10 minutes"); else if (step === 4) { log("held"); Qt.quit() } step++; return }
+            if (mode === "resume") { if (step === 1) titleBar.pauseForTest("resume"); else if (step === 4) { log("resumed"); Qt.quit() } step++; return }
+            if (step === 1) { log("start"); titleBar.pauseForTest("flyout") }
+            else if (step === 2) titleBar.pauseForTest("menu")
+            else if (step === 3) { console.warn("PZ dbg", titleBar.pauseForTest("dbg")); shot("pz-menu") }
+            else if (step === 4) titleBar.pauseForTest("10 minutes")
+            else if (step === 7) { log("paused"); titleBar.pauseForTest("flyout") }
+            else if (step === 8) shot("pz-paused")
+            else if (step === 9) titleBar.pauseForTest("edit")
+            else if (step === 10) shot("pz-edit")
+            else if (step === 11) titleBar.pauseForTest("custom")
+            else if (step === 12) shot("pz-custom")
+            else if (step === 13) titleBar.pauseForTest("calendar")
+            else if (step === 14) shot("pz-calendar")
+            else if (step === 15) titleBar.pauseForTest("close")
+            else if (step === 16) titleBar.pauseForTest("resume")
+            else if (step === 19) { log("resumed"); titleBar.pauseForTest("flyout") }
+            else if (step === 20) shot("pz-resumed")
+            else if (step === 21) { titleBar.pauseForTest("close"); Qt.quit() }
+            step++
+        }
+    }
+
     // --tab-drag-test=<tab>,<onto>[,drop] --open-chat=<channel> --shots=<dir>:
     // pick up the tab, hold it over Shared (td-fixed) and over <onto>
     // (td-over), then drop it there (saved) or cancel; log the tabs; quit.
@@ -4493,13 +4531,72 @@ Window {
         onSetStatus: st => backend.setMyStatus(st)
         onSetStatusUntil: (st, dur) => backend.setMyStatusUntil(st, dur, "")
         onSetStatusNote: (msg, pinned, clearAfter) => backend.setStatusNote(msg, pinned, clearAfter, "")
+        statusUntil: backend.myStatusEnds
+        onPauseUntil: iso => backend.setMyStatusUntil("DoNotDisturb", "Custom", iso)
+        onOpenNotificationSettings: { settingsView.page = "notifications"; rail.current = "settings" }
         pinned: window.pinned
         onTogglePin: window.pinned = !window.pinned
         windowButtons: !backend.systemFrame
     }
 
+    // Teams' app banner under the title bar (measured on winpc 2026-11-09):
+    // full width, 36 tall, #F5F5F5; info (20, filled, #616161) at 12; the
+    // text 14/20 at 40; then its action as a small secondary button (12/16,
+    // padding 3 x 8, 23.3 tall) and Dismiss (24 x 23.3, a 20 px glyph) 12
+    // from the right. Teams' presence job shows "Your status is set to do
+    // not disturb…" whenever your status becomes Do not disturb and takes it
+    // away when it changes again; Change settings opens Privacy's priority
+    // access.
+    property string bannerAvailability: ""
+    property bool dndBanner: false
+    readonly property string myAvailability: titleBar.presence
+    onMyAvailabilityChanged: {
+        const dnd = myAvailability.toLowerCase() === "donotdisturb"
+        if (dnd !== (bannerAvailability.toLowerCase() === "donotdisturb")) dndBanner = dnd
+        bannerAvailability = myAvailability
+    }
+    Rectangle {
+        id: appBanner
+        anchors { top: titleBar.bottom; left: parent.left; right: parent.right }
+        readonly property bool shown: window.dndBanner && backend.hasCredentials
+        height: shown ? 36 : 0
+        visible: shown
+        color: theme.pick("#F5F5F5", "#292929")
+        z: 9
+        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "info-20-filled"; size: 20; color: theme.textSecondary }
+        Text {
+            x: 40; anchors.verticalCenter: parent.verticalCenter
+            width: bannerAction.x - 12 - x; elide: Text.ElideRight
+            text: "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+        }
+        Rectangle {
+            id: bannerAction
+            anchors.right: bannerDismiss.left; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+            width: bannerActionText.implicitWidth + 16; height: 23.3; radius: 4
+            color: bannerActionHover.hovered ? theme.menuHover : theme.surface
+            border.color: theme.stroke; border.width: 0.67
+            Text { id: bannerActionText; anchors.centerIn: parent; text: "Change settings"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            HoverHandler { id: bannerActionHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { settingsView.page = settingsView.pages.some(p => p.key === "privacy") ? "privacy" : "notifications"; rail.current = "settings" } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Change settings"
+        }
+        Rectangle {
+            id: bannerDismiss
+            anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+            width: 24; height: 23.3; radius: 4
+            color: bannerDismissHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            HoverHandler { id: bannerDismissHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: window.dndBanner = false }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Dismiss"
+        }
+    }
+
     SignIn {
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         z: 5
         visible: !backend.hasCredentials
         code: backend.signInCode
@@ -4511,7 +4608,7 @@ Window {
 
     AppRail {
         id: rail
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: parent.left }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: parent.left }
         // Muted chats don't count toward the badge (Teams' doesContributeToBadgeCount).
         noneChosen: !!window.teamPage && rail.current === "chat"
         unreadChats: chatList.chats.filter(c => c.unread && !c.muted).length
@@ -4534,7 +4631,7 @@ Window {
         id: newChat
         visible: window.composing && rail.current === "chat"
         z: 3
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: chatList.right; right: parent.right }
         people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
         onSearch: q => backend.searchPeople(q)
         onChosen: (oid, name, text) => {
@@ -4548,7 +4645,7 @@ Window {
 
     CallsView {
         visible: rail.current === "calls"
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         calls: backend.callsJson ? JSON.parse(backend.callsJson) : []
         people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
         onSearchPeople: q => backend.searchPeople(q)
@@ -4570,7 +4667,7 @@ Window {
     CalendarView {
         id: calendarView
         visible: rail.current === "calendar"
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         events: backend.calendarJson ? JSON.parse(backend.calendarJson) : []
         onRangeChanged: (s, e) => backend.loadCalendar(s, e)
         onCreateEvent: (subject, s, e, who, teams) => backend.createEvent(subject, s, e, who, teams)
@@ -4594,7 +4691,7 @@ Window {
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
         visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "help", "communities"].indexOf(rail.current) < 0
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
             anchors.centerIn: parent
@@ -4619,14 +4716,14 @@ Window {
             visible: rail.current === modelData.key
             onVisibleChanged: if (visible) opened = true
             active: opened
-            anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+            anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
             sourceComponent: WebApp { appName: modelData.name; appIcon: modelData.icon; appColor: modelData.color; home: modelData.url }
         }
     }
     StoreView {
         id: store
         visible: rail.current === "add"
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         reply: backend.storeJson ? JSON.parse(backend.storeJson) : ({})
         busy: backend.storeBusy
         onLoad: backend.storeLoad()
@@ -4635,7 +4732,7 @@ Window {
     PeopleView {
         id: peopleApp
         visible: rail.current === "people"
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         data_: backend.contactsJson ? JSON.parse(backend.contactsJson) : ({})
         busy: backend.contactsBusy
         onLoad: backend.contactsLoad()
@@ -4646,7 +4743,7 @@ Window {
     OneNoteView {
         id: oneNote
         visible: rail.current === "onenote"
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         reply: backend.onenoteJson ? JSON.parse(backend.onenoteJson) : ({})
         busy: backend.onenoteBusy
         onLoad: (v, id) => backend.onenoteLoad(v, id)
@@ -4656,7 +4753,7 @@ Window {
     PlannerView {
         id: planner
         visible: rail.current === "planner"
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         plannerData: backend.plannerJson ? JSON.parse(backend.plannerJson) : ({})
         busy: backend.plannerBusy
         teams: (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).map(t => ({ id: t.id, name: t.name }))
@@ -4671,7 +4768,7 @@ Window {
     OneDriveView {
         id: oneDrive
         visible: rail.current === "onedrive"
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         driveData: backend.driveJson ? JSON.parse(backend.driveJson) : ({})
         busy: backend.driveBusy
         userName: backend.userName
@@ -4780,7 +4877,7 @@ Window {
     YourTeams {
         id: yourTeams
         visible: chatList.yourTeamsOpen && !window.manageTeamId && !window.manage && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen && !window.teamPage
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         onManageTeam: id => window.openManageTeam(id, "channels")
         onManageTags: id => window.openManageTeam(id, "tags")
         onOpenChannel: (id, name) => { chatList.yourTeamsOpen = false; backend.selectChat(id, name) }
@@ -4821,14 +4918,14 @@ Window {
     CreateTeamPage {
         id: createTeamPage
         visible: window.teamPage === "create" && rail.current === "chat"
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         onBack: window.teamPage = ""
         onTeamCreated: (g, t) => window.teamReady(g, t)
     }
     JoinTeamPage {
         id: joinTeamPage
         visible: window.teamPage === "join" && rail.current === "chat"
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         onBack: window.teamPage = ""
         onCreateTeam: createTeamDialog.startScratch()
         onJoined: (g, t) => window.teamReady(g, t)
@@ -4836,7 +4933,7 @@ Window {
     ManageTeam {
         id: manageTeam
         visible: !!window.manageTeamId && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         teamId: window.manageTeamId
         onOpenChannel: (id, name) => { window.manageTeamId = ""; backend.selectChat(id, name) }
         onManageChannel: id => { window.manageTeamId = ""; window.openManageChannel(id) }
@@ -4857,7 +4954,7 @@ Window {
     ManageChannel {
         id: manageChannel
         visible: !!window.manage && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         teamId: window.manage ? window.manage.teamId : ""
         teamName: window.manage ? window.manage.teamName : ""
         channelId: window.manage ? window.manage.channelId : ""
@@ -4886,7 +4983,7 @@ Window {
         onManageTags: id => window.openManageTeam(id, "tags")
         // An expanded tab takes the list's place (Teams' Expand tab).
         visible: rail.current === "chat" && !conversation.tabExpanded && !window.teamPage
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
@@ -4907,7 +5004,7 @@ Window {
     MentionsView {
         id: mentionsView
         visible: rail.current === "chat" && chatList.mentionsOpen
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         items: backend.activityJson ? JSON.parse(backend.activityJson) : []
         myName: backend.userName
         // A mention opens its chat beside the list.
@@ -4926,7 +5023,7 @@ Window {
         id: quickView
         kind: chatList.quickOpen || "followed"
         visible: rail.current === "chat" && !!chatList.quickOpen
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         onOpenItem: item => {
             const c = chatList.chats.find(c => c.id === item.thread_id)
             backend.selectChat(item.thread_id, c ? c.name : quickView.titleOf(item))
@@ -4935,7 +5032,7 @@ Window {
     DraftsView {
         id: draftsView
         visible: rail.current === "chat" && chatList.draftsOpen
-        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         drafts: backend.draftsJson ? JSON.parse(backend.draftsJson) : []
         onOpenDraft: (id, name) => { chatList.draftsOpen = false; backend.selectChat(id, name) }
     }
@@ -4953,12 +5050,12 @@ Window {
     SettingsView {
         id: settingsView
         visible: rail.current === "settings"
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
     }
     ActivityView {
         id: activityView
         visible: rail.current === "activity"
-        anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right }
         items: backend.activityJson ? JSON.parse(backend.activityJson) : []
         onMarkAllRead: {
             for (const it of items) if (it.unread) backend.markActivityItemRead(it.id)
@@ -5046,7 +5143,7 @@ Window {
         visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || quickView.selectedKey.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
-        anchors { top: titleBar.bottom; bottom: statusBar.top; right: tabConversation.left
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: tabConversation.left
             left: conversation.tabExpanded ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
             leftMargin: rail.current === "chat" && (chatList.mentionsOpen || !!chatList.quickOpen) ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
@@ -5101,7 +5198,7 @@ Window {
         id: tabConversation
         readonly property bool shown: conversation.visible && !!conversation.tabConversationTab
         visible: shown
-        anchors { top: titleBar.bottom; bottom: statusBar.top; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: parent.right }
         width: shown ? 360 : 0
         // The tab as now listed (its conversation appears once started).
         tab: conversation.tabConversationTab ? (conversation.channelTabs.find(t => t.id === conversation.tabConversationTab.id) || conversation.tabConversationTab) : null

@@ -666,6 +666,9 @@ pub struct UserPresence {
     pub note_text: String,
     /// "Show when people message me" (`<pinnednote>`).
     pub note_pinned: bool,
+    /// When a status you set yourself ends (`forcedAvailability.expiry`,
+    /// ISO UTC; only your own), or "" when it doesn't.
+    pub forced_until: String,
 }
 
 /// Look up several users' presence by MRI (`8:orgid:<oid>`).
@@ -716,6 +719,12 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                 note_html: if body.trim().is_empty() { String::new() } else { super::messages::sanitize_html_marking(&body, &[]) },
                 note_text: super::strip_html(&body).trim().to_string(),
                 note_pinned: pinned,
+                forced_until: p
+                    .pointer("/forcedAvailability/expiry")
+                    .and_then(|x| x.as_str())
+                    .filter(|_| p.pointer("/forcedAvailability/availability").is_some())
+                    .unwrap_or_default()
+                    .to_string(),
             })
         })
         .collect()

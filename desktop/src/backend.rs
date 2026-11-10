@@ -129,6 +129,9 @@ pub mod qobject {
         /// Your status message as the presence service has it: {text,
         /// html (mentions marked), pinned}.
         #[qproperty(QString, my_note_json)]
+        /// When the status you set ends (ISO UTC), or "" (Teams' "Until …"
+        /// for paused notifications).
+        #[qproperty(QString, my_status_ends)]
         /// The channel threads open in windows of their own:
         /// {"<channel>;messageid=<post>": [messages, oldest first]}.
         #[qproperty(QString, thread_windows_json)]
@@ -1426,6 +1429,7 @@ pub struct BackendRust {
     shared_to: String,
     status_note_result: QString,
     my_note_json: QString,
+    my_status_ends: QString,
     thread_windows_json: QString,
     channel_action_result: QString,
     channel_posts_at_top: bool,
@@ -5562,6 +5566,9 @@ impl qobject::Backend {
                                     let note = json!({ "text": p.note_text, "html": p.note_html, "pinned": p.note_pinned }).to_string();
                                     if this.rust().my_note_json.to_string() != note {
                                         this.as_mut().set_my_note_json(QString::from(note.as_str()));
+                                    }
+                                    if this.rust().my_status_ends.to_string() != p.forced_until {
+                                        this.as_mut().set_my_status_ends(QString::from(p.forced_until.as_str()));
                                     }
                                 }
                                 this.as_mut()
@@ -10939,10 +10946,13 @@ impl qobject::Backend {
         let status = status.to_string();
         let duration = duration.to_string();
         let custom = custom.to_string();
+        // A custom end is part of the choice (Pause notifications' 10
+        // minutes twice is two different ends).
+        let choice = format!("{duration}|{custom}");
         {
             let last = LAST.lock().unwrap();
             if let Some((a, d, at, pending)) = last.as_ref() {
-                let same = *a == status && *d == duration;
+                let same = *a == status && *d == choice;
                 // Identical while in flight, any request within 10 s of a
                 // pending one, or equal to the current one within 300 s.
                 if (*pending && (same || at.elapsed().as_secs() < 10))
@@ -10954,7 +10964,7 @@ impl qobject::Backend {
         }
         *LAST.lock().unwrap() = Some((
             status.clone(),
-            duration.clone(),
+            choice,
             std::time::Instant::now(),
             true,
         ));
@@ -10971,16 +10981,34 @@ impl qobject::Backend {
             teams_cli::api::presence::expiry_for(&duration, chrono::Local::now())
         };
         let until = forced.as_ref().and(until);
+        let until_iso = until
+            .map(|t| t.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            .unwrap_or_default();
+        self.as_mut().set_my_status_ends(QString::from(until_iso.as_str()));
+        let me = self.rust().my_mri.clone();
+        let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
-            if let Err(e) =
-                teams_cli::api::presence::force_availability_until(&http, forced.as_deref(), until)
-                    .await
-            {
-                tracing::warn!("set status failed: {}", short_error(&e));
+            let sent = teams_cli::api::presence::force_availability_until(&http, forced.as_deref(), until).await;
+            if let Err(e) = &sent {
+                tracing::warn!("set status failed: {}", short_error(e));
             }
             if let Some(l) = LAST.lock().unwrap().as_mut() {
                 l.3 = false;
+            }
+            // Reset: your status is what your activity says again, so
+            // read it back now rather than at the next refresh.
+            if sent.is_ok()
+                && forced.is_none()
+                && let Some(me) = me
+                && let Ok(list) = teams_cli::api::presence::get_presences(&http, std::slice::from_ref(&me)).await
+                && let Some(p) = list.into_iter().next()
+            {
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_my_status_ends(QString::from(p.forced_until.as_str()));
+                    this.as_mut().rust_mut().presence.insert(p.mri, p.availability);
+                    this.as_mut().publish_chats();
+                });
             }
         });
     }

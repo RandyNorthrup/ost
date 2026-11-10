@@ -41,6 +41,11 @@ Popup {
     // divider under it.
     property Component header: null
     readonly property real labelX: labelInset >= 0 ? labelInset : hasIcons ? 30 : 6
+    /// Fluent menus without hasIcons: only rows with an icon leave room
+    /// for it (Teams' Pause notifications: "10 minutes" at 6,
+    /// "Notifications settings" at 30).
+    property bool perItemIcons: false
+    function rowLabelX(i) { return perItemIcons ? (i.icon ? 30 : 6) : labelX }
     padding: viewStyle ? 16.67 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
     property real minRowWidth: 0
@@ -48,13 +53,19 @@ Popup {
     /// The pointer is over the menu (for menus that open on hover).
     readonly property bool hovered: surfaceHover.hovered
     background: FluentSurface { depth: 16; radius: 4; HoverHandler { id: surfaceHover } }
+    // advanceWidth() is a call, not a property: a menu measured before
+    // Selawik finished loading kept the fallback font's narrower widths and
+    // elided its labels. Measure again each time the menu opens.
+    property int measureRev: 0
+    onAboutToShow: measureRev++
     QtObject {
         id: widest
         readonly property real value: {
+            root.measureRev
             let w = 0
             for (const i of root.items) {
                 if (i.separator) continue
-                let row = (i.toggle ? 60 : root.labelX) + metrics.advanceWidth(i.label || "") + (i.toggle ? 8 : 6)
+                let row = (i.toggle ? 60 : root.rowLabelX(i)) + metrics.advanceWidth(i.label || "") + (i.toggle ? 8 : 6)
                 if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
                 if (i.chevron || i.submenu || i.flyout) row += root.chevronSize + root.chevronMargin
                 if (i.endCheck !== undefined) row += 16 + 6
@@ -182,7 +193,7 @@ Popup {
                         name: "view-check-16"; color: row.ink
                     }
                     Text {
-                        x: row.modelData.toggle ? 60 : root.viewStyle && !row.modelData.icon ? 10 : root.labelX; anchors.verticalCenter: parent.verticalCenter
+                        x: row.modelData.toggle ? 60 : root.viewStyle && !row.modelData.icon ? 10 : root.rowLabelX(row.modelData); anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - x - 6; elide: Text.ElideRight
                         text: row.modelData.label || ""
                         font.family: theme.font; font.pixelSize: theme.base

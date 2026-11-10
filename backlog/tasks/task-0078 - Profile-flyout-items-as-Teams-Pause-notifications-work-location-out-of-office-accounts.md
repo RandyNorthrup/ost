@@ -3,9 +3,11 @@ id: TASK-0078
 title: >-
   Profile flyout items as Teams: Pause notifications, work location, out of
   office, accounts
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-09T16:14:00Z'
+updated_date: '2026-11-10T07:50:00Z'
 labels:
   - desktop
 dependencies: []
