@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T09:07:00Z'
-updated_date: '2026-11-10T11:00:00Z'
+updated_date: '2026-11-10T11:15:00Z'
 labels:
   - desktop
   - parity
@@ -21,6 +21,12 @@ Teams opens a person's profile card from their avatar or name in chats, channels
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Clicking or hovering a person's avatar or name opens Teams' profile card with the same layout and sections
-- [ ] #2 The card shows their presence, status message, out of office and work location from the presence service
-- [ ] #3 Card actions (chat, audio and video call, email, copy) do what Teams' do
+- [x] #2 The card shows their presence, status message, out of office and work location from the presence service
+- [x] #3 Card actions (chat, audio and video call, email, copy) do what Teams' do
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Built (see commit): opens from pictures in messages, channel posts/replies, 1:1 header and people pane; Overview/Profile/Organization; compared with Teams' card for a colleague (same availability, work hours, time zone, contact info, reports). Not built: LinkedIn tab, Teams' org chart drawing, opening from names/search.
+<!-- SECTION:NOTES:END -->

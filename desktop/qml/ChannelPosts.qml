@@ -147,6 +147,8 @@ Item {
                         font.family: theme.font; font.pixelSize: theme.base
                         lineHeight: root.compact ? 20 : 1; lineHeightMode: root.compact ? Text.FixedHeight : Text.ProportionalHeight
                         color: card.post ? theme.text : theme.textSecondary
+                        HoverHandler { enabled: !!card.post && (card.post.sender_mri || "").indexOf("8:orgid:") === 0; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { enabled: !!card.post && (card.post.sender_mri || "").indexOf("8:orgid:") === 0; onTapped: backend.requestProfile(card.post.sender_mri) }
                         Row {
                             visible: !!card.post
                             x: root.compact ? 0 : parent.implicitWidth + 10
@@ -335,6 +337,8 @@ Item {
                                     visible: !rep.editing
                                     x: 50; y: root.compact ? 0 : 1.4
                                     text: rep.modelData.sender; font.family: theme.font; font.pixelSize: theme.small; color: theme.text
+                                    HoverHandler { enabled: (rep.modelData.sender_mri || "").indexOf("8:orgid:") === 0; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { enabled: (rep.modelData.sender_mri || "").indexOf("8:orgid:") === 0; onTapped: backend.requestProfile(rep.modelData.sender_mri) }
                                     Row {
                                         x: root.compact ? 0 : parent.implicitWidth + 8; y: root.compact ? 17.1 : 0
                                         spacing: 8

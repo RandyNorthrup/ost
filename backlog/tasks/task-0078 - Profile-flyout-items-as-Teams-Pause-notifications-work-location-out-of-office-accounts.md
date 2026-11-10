@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T16:14:00Z'
-updated_date: '2026-11-10T09:57:00Z'
+updated_date: '2026-11-10T11:15:00Z'
 labels:
   - desktop
 dependencies: []
@@ -40,4 +40,6 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
 - AC #5 (others' status message / out of office above compose, profile cards): strings found ("Status of {memberOne}: {message}", "{memberOne} is out of office and may not respond"); measuring the compose banner needs a second account's view (Randy's Teams web) and the Chrome Control extension is disconnected (native host registered to app/current, server is versions/1.11.0; needs browser_extension_install or the user to reload). Profile cards don't exist in OST yet: TASK-0089.
 
 - Schedule out of office: opens Settings > General > Out of office (Teams' page), saving Teams' automatic replies (updateAutomaticRepliesSetting); OST saved on/off, checked with the server read.
+
+- AC5: profile cards (TASK-0089) show others' status messages; the compose status/OOF banner still needs measuring from a second account.
 <!-- SECTION:NOTES:END -->

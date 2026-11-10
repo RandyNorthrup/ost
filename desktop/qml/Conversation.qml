@@ -1490,10 +1490,16 @@ Rectangle {
                     Accessible.name: text
                 }
                 Text {
+                    id: metaText
                     text: (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
                         + (msg.modelData.edited && !msg.sendFailed ? "   Edited" : "")
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
+                    // The sender's name opens their profile card, as in Teams.
+                    readonly property bool person: !msg.mine && (msg.modelData.sender_mri || "").indexOf("8:orgid:") === 0
+                    TextMetrics { id: senderMetrics; font: metaText.font; text: msg.modelData.sender || "" }
+                    HoverHandler { id: senderHover; enabled: metaText.person; cursorShape: senderHover.point.position.x <= senderMetrics.advanceWidth ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler { enabled: metaText.person; onTapped: ev => { if (ev.position.x <= senderMetrics.advanceWidth) backend.requestProfile(msg.modelData.sender_mri) } }
                 }
                 // Teams' delivery option label: IMPORTANT / URGENT, 12 px
                 // semibold, RedForeground3, 8 after the time (measured).

@@ -37,11 +37,11 @@ Measured on winpc 2026-11-10 by opening a colleague's card from their picture in
 
 ## OST status
 
-- **Built:** the card from people's pictures in messages, channel posts and replies, the 1:1
+- **Built:** the card from people's pictures and names in messages, channel posts and replies, the 1:1
   header and the people pane, with Overview, Profile and Organization.
   - It shows their status message and work location.
   - Chat, calls and the quick message open their 1:1 chat.
 - **Not built:**
   - The LinkedIn tab and button (an embedded linkedin.com page).
   - Teams' full org chart layout on the Organization tab.
-  - Opening from names and search results.
+  - Opening from search results.
