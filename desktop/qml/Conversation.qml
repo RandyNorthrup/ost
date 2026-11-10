@@ -35,6 +35,13 @@ Rectangle {
     /// Shown as a side pane (in the call window): a plain "Chat" header
     /// with a close button instead of the title, tabs and actions.
     property bool pane: false
+    /// A chat in its own window (the chat menu's Open in new window): no
+    /// tab row, and the compose sends to this chat rather than the open one.
+    property bool popout: false
+    /// The chat menu's Manage apps: the chat's apps in place of its
+    /// messages (Teams keeps the Chat tab chosen) until a tab is picked.
+    property bool manageApps: false
+    signal getMoreApps()
     /// The side pane's title ("Chat"; a tab's conversation says
     /// "Conversation").
     property string paneTitle: "Chat"
@@ -253,8 +260,10 @@ Rectangle {
     function openParticipantsForTest() { participants.visible = true }
     function findForTest(q) { root.finding = true; findField.text = q; return root.findHits.length }
     function sendForTest() { root.sendCompose() }
+    function chatAppsForTest() { return chatApps }
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
+        manageApps = false
         tabExpanded = false
         tabConversationTab = null
         openedAt = new Date()
@@ -374,6 +383,16 @@ Rectangle {
         return out.reverse()
     }
     color: theme.surface
+
+    TeamAppsView {
+        id: chatApps
+        visible: root.manageApps && !root.isChannel
+        z: 5
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        chatId: visible ? root.chatId : ""
+        onGetMoreApps: root.getMoreApps()
+        Rectangle { anchors.fill: parent; z: -1; color: theme.surface }
+    }
 
     // Header
     Item {
@@ -546,7 +565,7 @@ Rectangle {
         }
         Row {
             id: tabs
-            visible: !(root.headerNarrow && !root.isChannel)
+            visible: !(root.headerNarrow && !root.isChannel) && !root.popout
             x: (renameButton.visible ? renameButton.x + renameButton.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {
@@ -591,7 +610,7 @@ Rectangle {
                             // Teams opens website tabs in the browser; they never become the selected tab.
                             if (t && t.opens_in_browser) { if (t.website_url) Qt.openUrlExternally(t.website_url); return }
                             if (tabItem.menuable) { tabMenu.show(t, t.menu, tabItem, 0, tabItem.height); return }
-                            root.tab = tabItem.index === 0 ? "" : tabItem.modelData
+                            root.manageApps = false; root.tab = tabItem.index === 0 ? "" : tabItem.modelData
                         }
                     }
                     // A website tab's tooltip: its address and the open-in-new-window icon.
@@ -642,7 +661,7 @@ Rectangle {
         // 12 px chevron 4 after it; a menu of the tabs, the open one checked).
         Item {
             id: tabDropdown
-            visible: root.headerNarrow && !root.isChannel && !root.pane && header.toolbarLeft - title.x >= ddRow.implicitWidth
+            visible: root.headerNarrow && !root.isChannel && !root.pane && !root.popout && header.toolbarLeft - title.x >= ddRow.implicitWidth
             x: title.x; y: 28; width: ddRow.implicitWidth; height: 17.3
             Row {
                 id: ddRow
@@ -2111,7 +2130,7 @@ Rectangle {
     property bool tabExpanded: false
     property var expandedTab: null
     property var expandedAbout: null
-    onTabChanged: { tabExpanded = false; tabConversationTab = null }
+    onTabChanged: { tabExpanded = false; tabConversationTab = null; manageApps = false }
     // A channel tab's conversation (Teams' btn-tab-conversation, measured
     // on winpc 2026-11-09): for app and website tabs, a 32 x 31.3 button
     // just before Meet now, "Show tab conversation" / "Hide tab
@@ -2756,6 +2775,19 @@ Rectangle {
     }
     // Send what's in the compose box: text, files, or both.
     function sendCompose() {
+        if (root.popout) {
+            // A chat window sends to its own chat.
+            if (root.pendingFiles.length > 0) {
+                backend.sendChatWindowFiles(root.chatId, root.pendingFiles.join("\n"), root.plainText())
+                root.pendingFiles = []
+            } else if (root.plainText().trim().length > 0 || compose.mediaInUse().length > 0) {
+                backend.sendChatWindowMessage(root.chatId, compose.formattedText(), JSON.stringify(compose.mediaInUse()), root.quoting ? JSON.stringify(root.quoting) : "")
+            }
+            compose.clear()
+            root.quoting = null
+            compose.formatting = false
+            return
+        }
         if (root.threadRoot) {
             // A thread pane replies in its thread.
             if (root.pendingFiles.length > 0) {

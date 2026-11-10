@@ -932,6 +932,20 @@ pub mod qobject {
         fn open_channel_window(self: Pin<&mut Backend>, channel_id: &QString);
         #[qinvokable]
         fn close_channel_window(self: Pin<&mut Backend>, channel_id: &QString);
+        /// A chat in a window of its own (its menu's Open in new window):
+        /// its messages load into thread_windows_json under "win:<chat>"
+        /// and stay live until it closes.
+        #[qinvokable]
+        fn open_chat_window(self: Pin<&mut Backend>, chat_id: &QString);
+        #[qinvokable]
+        fn close_chat_window(self: Pin<&mut Backend>, chat_id: &QString);
+        /// A message from a chat window (its compose's rich text, media and
+        /// quote), to that chat.
+        #[qinvokable]
+        fn send_chat_window_message(self: Pin<&mut Backend>, chat_id: &QString, editor_html: &QString, media_json: &QString, quote_json: &QString);
+        /// Files from a chat window, to that chat.
+        #[qinvokable]
+        fn send_chat_window_files(self: Pin<&mut Backend>, chat_id: &QString, paths: &QString, text: &QString);
         /// A new post from a channel window (its compose's rich text,
         /// media and quote).
         #[qinvokable]
@@ -2335,6 +2349,12 @@ fn with_lies(
 
 /// A window's conversation: "win:<channel>" is a whole channel's window (its
 /// timeline kept apart from the open chat's), else "<channel>;messageid=…".
+/// A chat's conversation id ("19:…@thread.v2", "19:…@unq.gbl.spaces",
+/// meeting chats), as a chat window takes it.
+fn is_chat_id(id: &str) -> bool {
+    id.starts_with("19:") && id.contains('@') && !id.contains(';') && !id.ends_with("@thread.tacv2")
+}
+
 fn window_conversation(key: &str) -> &str {
     key.strip_prefix("win:").unwrap_or(key)
 }
@@ -6621,6 +6641,57 @@ impl qobject::Backend {
         self.as_mut().reload_thread_window(key);
     }
 
+    pub fn open_chat_window(mut self: Pin<&mut Self>, chat_id: &QString) {
+        let chat = chat_id.to_string();
+        if !is_chat_id(&chat) {
+            return;
+        }
+        let key = format!("win:{chat}");
+        if !self.rust().thread_windows.contains(&key) {
+            self.as_mut().rust_mut().thread_windows.push(key.clone());
+        }
+        self.as_mut().refresh_thread_windows();
+        self.as_mut().reload_thread_window(key);
+    }
+
+    pub fn close_chat_window(mut self: Pin<&mut Self>, chat_id: &QString) {
+        let key = format!("win:{}", chat_id);
+        self.as_mut().rust_mut().thread_windows.retain(|t| *t != key);
+        server_timelines().lock().unwrap().remove(&key);
+        self.as_mut().refresh_thread_windows();
+    }
+
+    pub fn send_chat_window_message(
+        self: Pin<&mut Self>,
+        chat_id: &QString,
+        editor_html: &QString,
+        media_json: &QString,
+        quote_json: &QString,
+    ) {
+        let chat = chat_id.to_string();
+        if !is_chat_id(&chat) {
+            return;
+        }
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (html, mentions) = api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        if html.trim().is_empty() {
+            return;
+        }
+        let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
+        let quote: Option<api::messages::Quote> = serde_json::from_str(&quote_json.to_string()).ok();
+        let o = self.outgoing(&format!("win:{chat}"), chat.clone(), html, mentions, quote, String::new());
+        self.submit_outgoing(o);
+    }
+
+    pub fn send_chat_window_files(self: Pin<&mut Self>, chat_id: &QString, paths: &QString, text: &QString) {
+        let chat = chat_id.to_string();
+        if !is_chat_id(&chat) {
+            return;
+        }
+        self.send_files_in(chat.clone(), chat, paths, text);
+    }
+
     pub fn close_channel_window(mut self: Pin<&mut Self>, channel_id: &QString) {
         let key = format!("win:{}", channel_id);
         self.as_mut().rust_mut().thread_windows.retain(|t| *t != key);
@@ -9339,7 +9410,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "notify-tagged" | "notify-on" | "notify-off" | "remove-chat-history" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -9651,6 +9722,58 @@ impl qobject::Backend {
                         }
                         Ok(json!({ "apps": apps }))
                     }
+                    // Notify when available (Teams' contacts v3 "Tagged"):
+                    // who is tagged, tag {mri}, untag {id, mri, email}.
+                    "notify-tagged" => {
+                        let t = api::contacts::tagged(&client).await?;
+                        Ok(json!(t.iter().map(|(mri, id, email)| json!({ "mri": mri, "id": id, "email": email })).collect::<Vec<_>>()))
+                    }
+                    "notify-on" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let mri = a["mri"].as_str().unwrap_or_default();
+                        let id = api::contacts::notify_when_available(&client, mri).await?;
+                        Ok(json!({ "mri": mri.to_lowercase(), "id": id }))
+                    }
+                    "notify-off" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        api::contacts::stop_notify(&client, &f("id"), &f("mri"), &f("email")).await?;
+                        Ok(json!({ "mri": f("mri").to_lowercase() }))
+                    }
+                    // Remove chat history (Teams' chat menu; it affects you
+                    // only): `DELETE {chatsvc}/v1/threads/{chat}`.
+                    "remove-chat-history" => {
+                        let url = format!("{}/v1/threads/{}", client.chat_service_url(), channel.replace(':', "%3A").replace('@', "%40"));
+                        client.chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    // A chat's Manage apps: its installed apps with names,
+                    // publishers and pictures from their definitions.
+                    "chat-apps" => {
+                        let ents = api::store_content::chat_apps(&client, &channel).await?;
+                        // Teams lists the apps added to the chat (Installed),
+                        // not the built-in permanent ones.
+                        let installed = ["Installed"];
+                        let ids: Vec<String> = ents.iter().filter(|(_, st)| installed.contains(&st.as_str())).map(|(id, _)| id.clone()).collect();
+                        let defs = api::team_create::definitions(&client, &ids).await.unwrap_or_default();
+                        let mut apps = Vec::new();
+                        for (id, state) in ents.iter().filter(|(_, st)| installed.contains(&st.as_str())) {
+                            let Some(d) = defs.iter().find(|d| d["id"].as_str().is_some_and(|x| x.eq_ignore_ascii_case(id))) else { continue };
+                            let mut icon = [d["largeImageUrl"].as_str(), d["smallImageUrl"].as_str()].into_iter().flatten().find(|u| !u.is_empty()).unwrap_or_default().to_string();
+                            if icon.starts_with("https://")
+                                && let Ok(path) = public_image_file(&client, &icon).await
+                            {
+                                icon = format!("file://{}", path.display());
+                            }
+                            apps.push(json!({ "id": id, "name": d["name"], "publisher": d["developerName"], "icon": icon, "state": state }));
+                        }
+                        apps.sort_by_key(|a| a["name"].as_str().unwrap_or_default().to_lowercase());
+                        Ok(json!({ "apps": apps }))
+                    }
+                    "chat-app-remove" => {
+                        api::store_content::remove_from_chat(&client, &channel, arg.trim()).await?;
+                        Ok(json!({ "id": arg }))
+                    }
                     "team-app-remove" => {
                         api::store_content::remove_from_team(&client, &team_thread, arg.trim()).await?;
                         Ok(json!({ "id": arg }))
@@ -9924,8 +10047,11 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "notify-tagged" | "notify-on" | "notify-off" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
                     this.as_mut().load_teams();
+                }
+                if result.is_ok() && op == "remove-chat-history" {
+                    this.as_mut().reload_chats();
                 }
             });
         });

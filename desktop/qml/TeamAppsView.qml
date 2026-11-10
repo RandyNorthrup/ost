@@ -18,6 +18,12 @@ Item {
     property string teamId: ""
     property string teamThread: ""
     property bool owner: false
+    /// A chat's apps (its menu's Manage apps; Teams shows them in the chat's
+    /// place): no webhooks; Get more apps 24 in, the list 1 in and 890 wide,
+    /// 49 down.
+    property string chatId: ""
+    readonly property bool chatMode: chatId.length > 0
+    readonly property string scope: chatMode ? chatId : teamThread
     property var apps: []
     property bool descending: false
     property bool sorted: false
@@ -29,16 +35,19 @@ Item {
         return descending ? list.reverse() : list
     }
 
-    function load() { if (teamThread) backend.channelAction("team-apps", teamId, teamThread, "") }
-    onTeamThreadChanged: { apps = []; find.text = ""; descending = false; sorted = false; load() }
+    function load() {
+        if (chatMode) backend.channelAction("chat-apps", "", chatId, "")
+        else if (teamThread) backend.channelAction("team-apps", teamId, teamThread, "")
+    }
+    onScopeChanged: { apps = []; find.text = ""; descending = false; sorted = false; load() }
     Component.onCompleted: load()
     Connections {
         target: backend
         function onChannelActionResultChanged() {
             const r = JSON.parse(backend.channelActionResult || "{}")
-            if (r.channel !== view.teamThread) return
-            if (r.op === "team-apps" && r.ok) view.apps = r.data.apps || []
-            else if (r.op === "team-app-remove" || r.op === "team-webhook") {
+            if (r.channel !== view.scope) return
+            if ((r.op === "team-apps" || r.op === "chat-apps") && r.ok) view.apps = r.data.apps || []
+            else if (r.op === "team-app-remove" || r.op === "chat-app-remove" || r.op === "team-webhook") {
                 if (!r.ok) backend.toast("Something went wrong on our end. Please try again.", "error")
                 view.load()
             }
@@ -46,7 +55,7 @@ Item {
     }
 
     Rectangle {
-        x: 44; y: 28.6; width: 140.8; height: 31.3; radius: 4
+        x: view.chatMode ? 24 : 44; y: view.chatMode ? 13.3 : 28.6; width: 140.8; height: view.chatMode ? 21.3 : 31.3; radius: 4
         color: moreHover.hovered ? theme.menuHover : theme.surface
         border.color: theme.stroke; border.width: 0.67
         Row {
@@ -61,19 +70,19 @@ Item {
         Accessible.name: "Get more apps"
     }
     Plain {
-        visible: view.owner
+        visible: view.owner && !view.chatMode
         x: 199.8; y: 28.6
         icon: "webhook-20"; text: "Create an outgoing webhook"
         onClicked: webhook.start()
     }
     Plain {
-        x: 531; y: 28.3
+        x: view.chatMode ? 551 : 531; y: view.chatMode ? 8 : 28.3
         icon: "arrow-sort-20"; text: "Sort"
         active: view.sorted
         onClicked: { if (view.sorted) view.descending = !view.descending; view.sorted = true }
     }
     Rectangle {
-        x: parent.width - 40 - width; y: 28.3; width: 210; height: 32; radius: 4
+        x: view.chatMode ? 662 : parent.width - 40 - width; y: view.chatMode ? 8 : 28.3; width: 210; height: 32; radius: 4
         color: theme.inputFilled
         Rectangle { visible: find.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
         TextInput {
@@ -91,7 +100,8 @@ Item {
     }
 
     Flickable {
-        x: 21; y: 68.3; width: Math.min(836, parent.width - 56); height: parent.height - y
+        x: view.chatMode ? 1 : 21; y: view.chatMode ? 49 : 68.3
+        width: view.chatMode ? Math.min(890, parent.width - 2) : Math.min(836, parent.width - 56); height: parent.height - y
         contentHeight: list.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -150,7 +160,7 @@ Item {
         onPicked: i => {
             const k = items[i].key
             if (k === "link") backend.copyText("https://teams.microsoft.com/l/app/" + rowMenu.app.id + "?source=manage-apps-copy-link")
-            else if (k === "remove") backend.channelAction("team-app-remove", view.teamId, view.teamThread, rowMenu.app.id)
+            else if (k === "remove") backend.channelAction(view.chatMode ? "chat-app-remove" : "team-app-remove", view.teamId, view.scope, rowMenu.app.id)
         }
     }
 

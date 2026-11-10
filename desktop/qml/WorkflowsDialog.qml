@@ -14,21 +14,35 @@ Popup {
     property string channelName: ""
     property string teamId: ""
     property string teamName: ""
+    /// A chat's Set workflows (Teams' chatworkflows with the chat's name
+    /// and id, measured 2026-11-09).
+    property string chatId: ""
+    property string chatName: ""
     property var about: null
     readonly property string url: {
-        if (!channelId) return ""
-        const q = [
+        if (!channelId && !chatId) return ""
+        const q = (chatId ? [
+            ["renderMode", "modal"], ["subContext", "chatworkflows"],
+            ["chatName", chatName], ["chatId", chatId]
+        ] : [
             ["renderMode", "modal"], ["subContext", "channelworkflows"],
             ["channelName", channelName], ["channelId", channelId],
-            ["teamId", teamId], ["teamName", teamName],
+            ["teamId", teamId], ["teamName", teamName]
+        ]).concat([
             ["theme", theme.dark ? "dark" : "default"], ["locale", "en-us"], ["ringId", "general"],
             ["userId", (backend.userMri || "").replace(/^8:orgid:/, "")], ["tenantId", backend.tenantId()],
             ["clientType", "desktop"]
-        ].map(p => p[0] + "=" + encodeURIComponent(p[1])).join("&")
+        ]).map(p => p[0] + "=" + encodeURIComponent(p[1])).join("&")
         return "https://automations.teams.cloud.microsoft/webapps/workflows/prod/home?" + q
     }
+    function startChat(id, name) {
+        chatId = id; chatName = name; channelId = ""
+        takeAbout()
+        if (!about) backend.appAboutLoad(appId)
+        open()
+    }
     function start(cid, cname, tid, tname) {
-        channelId = cid; channelName = cname; teamId = tid; teamName = tname
+        chatId = ""; channelId = cid; channelName = cname; teamId = tid; teamName = tname
         takeAbout()
         if (!about) backend.appAboutLoad(appId)
         open()

@@ -32,6 +32,31 @@ Rectangle {
     signal markAllRead()
     /// Communities ▸ Join communities.
     signal openCommunities()
+    /// The chat menu's Open in new window, Manage apps and Set workflows.
+    signal openChatWindow(string chatId, string name, string photoId, string presence)
+    signal manageChatApps(string chatId, string name)
+    signal chatWorkflows(string chatId, string name)
+    /// Notify when available: the people tagged, by lower-case MRI
+    /// ({id, email}); loaded at start and after each change.
+    property var notifyTagged: ({})
+    readonly property bool signedIn: backend.signedIn
+    onSignedInChanged: if (signedIn) backend.channelAction("notify-tagged", "", "", "")
+    Component.onCompleted: if (signedIn) backend.channelAction("notify-tagged", "", "", "")
+    Connections {
+        target: backend
+        function onChannelActionResultChanged() {
+            const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.op === "notify-tagged" && r.ok) {
+                const m = {}
+                for (const t of r.data || []) m[t.mri] = { id: t.id, email: t.email }
+                root.notifyTagged = m
+            } else if ((r.op === "notify-on" || r.op === "notify-off") && r.ok) {
+                backend.channelAction("notify-tagged", "", "", "")
+            } else if ((r.op === "notify-on" || r.op === "notify-off" || r.op === "remove-chat-history") && !r.ok) {
+                backend.toast("Something went wrong on our end. Please try again.", "error")
+            }
+        }
+    }
     /// See all your teams.
     property bool yourTeamsOpen: false
     signal openYourTeams()
@@ -551,13 +576,21 @@ Rectangle {
             const sub = dest.map(d => ({ label: d.label, to: d.id }))
             if (sub.length) sub.push({ separator: true })
             sub.push({ label: "New section", icon: "folder-add-20", newSection: true })
+            const oneOnOne = !!row.chat.peerMri && !row.chat.isSelf
+            const tagged = oneOnOne && root.notifyTagged[row.chat.peerMri.toLowerCase()]
             rowMenu.items = [
+                { key: "window", label: "Open in new window", icon: "open-window-20" },
+                { separator: true },
                 { key: row.unread ? "read" : "unread", label: row.unread ? "Mark as read" : "Mark as unread", icon: row.unread ? "glasses-20" : "glasses-off-20" },
                 { key: "move", label: "Move to section", icon: "star-20", submenu: sub },
                 row.holder ? { key: "removeFrom", label: "Remove from section", icon: "star-off-20" } : null,
                 row.chat.isSelf ? null : { key: row.chat.muted ? "unmute" : "mute", label: row.chat.muted ? "Unmute" : "Mute", icon: row.chat.muted ? "alert-20" : "alert-off-20" },
+                oneOnOne ? { key: tagged ? "notifyOff" : "notifyOn", label: tagged ? "Turn off notifications" : "Notify when available", icon: "notify-available-20" } : null,
+                row.chat.isSelf ? null : { key: "apps", label: "Manage apps", icon: "manage-apps-20" },
+                row.chat.isSelf ? null : { key: "workflows", label: "Set workflows", icon: "workflows-20" },
                 { key: "link", label: "Copy link", icon: "link-20" },
                 { separator: true },
+                !row.chat.isSelf && !root.isMeeting(row.chat) ? { key: "removeHistory", label: "Remove chat history", icon: "delete-20" } : null,
                 row.canLeave ? { key: "leave", label: "Leave", icon: "door-arrow-left-20" } : null,
                 { key: row.chat.hidden ? "unhide" : "hide", label: row.chat.hidden ? "Unhide" : "Hide", icon: row.chat.hidden ? "eye-20" : "eye-off-20" }
             ].filter(i => i !== null)
@@ -576,12 +609,29 @@ Rectangle {
                 else if (k === "removeFrom") backend.folderAction("remove", JSON.stringify({ item: row.chat.id, from: row.holder }))
                 else if (k === "hide" || k === "unhide") backend.setChatHidden(row.chat.id, k === "hide")
                 else if (k === "leave") leaveAsk.open()
+                else if (k === "window") root.openChatWindow(row.chat.id, row.chat.name, row.chat.peerMri || "", row.chat.presence || "")
+                else if (k === "apps") root.manageChatApps(row.chat.id, row.chat.name)
+                else if (k === "workflows") root.chatWorkflows(row.chat.id, row.chat.name)
+                else if (k === "removeHistory") removeHistoryAsk.open()
+                else if (k === "notifyOn") backend.channelAction("notify-on", "", "", JSON.stringify({ mri: row.chat.peerMri }))
+                else if (k === "notifyOff") { const t = root.notifyTagged[row.chat.peerMri.toLowerCase()]; backend.channelAction("notify-off", "", "", JSON.stringify({ id: t.id, mri: row.chat.peerMri, email: t.email })) }
             }
             onSubPicked: (i, j) => {
                 const s = items[i].submenu[j]
                 if (s.newSection) sectionDialog.create(row.chat.id, row.holder)
                 else if (s.to) backend.folderAction("move", JSON.stringify({ item: row.chat.id, to: s.to, from: row.holder }))
             }
+        }
+        function closeMenuForTest() { rowMenu.close() }
+        function removeHistoryForTest() { return removeHistoryAsk }
+        // Teams' "Remove chat history?" (600 wide).
+        ConfirmDialog {
+            id: removeHistoryAsk
+            width: 600
+            title: "Remove chat history?"
+            body: "This will remove the chat from your list and search. It affects you only."
+            confirmText: "Remove"
+            onConfirmed: backend.channelAction("remove-chat-history", "", row.chat.id, "")
         }
         ConfirmDialog {
             id: leaveAsk

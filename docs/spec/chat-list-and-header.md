@@ -939,6 +939,30 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 - Checked side by side with Teams; nothing was created or joined (the
   tenant rule), the bodies are from Teams' code and unit-tested.
 
+#### 5.6.11 Chat menu: the rest of Teams' items (measured 2026-11-09)
+
+- Order: Open in new window | Mark as read/unread, Move to section, Mute,
+  Notify when available (1:1; "Turn off notifications" once on), Manage
+  apps, Set workflows, Copy link | Remove chat history (not meeting
+  chats), Leave, Hide. Meeting chats end Hide | Report a concern.
+- Open in new window: the chat in a 588 x 493 window (Teams' child title
+  row, the chat's header without tabs, its messages and compose; sends go
+  to that chat).
+- Notify when available: `POST {mt}/beta/contactsv3/` {mri, names [],
+  webAccounts [{userId "OID:{oid}@{tenant}", service Profile, source
+  Profile}], systemTags [{displayName "Tagged"}]}; off: `PATCH {mt}/beta/
+  contactsv3/{id}?isConcatenatedId=false` {id, mri, defaultEmail,
+  systemTags [{displayName "Tagged", action "Delete"}]}; who is tagged from
+  `GET {mt}/beta/contactsv3/?pageSize=1000`.
+- Manage apps: the chat's added (Installed) apps from `beta/chats/{chat}/
+  apps/chatentitlements` in the messages' place (Get more apps 24 in,
+  Sort, Find by name; rows 65 tall), the Chat tab kept chosen.
+- Set workflows: the Workflows dialog with `subContext=chatworkflows&
+  chatName&chatId`.
+- Remove chat history: "Remove chat history?" / "This will remove the chat
+  from your list and search. It affects you only." Cancel / Remove;
+  `DELETE {chatsvc}/v1/threads/{chat}` (not tried: no disposable chat).
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

@@ -3533,6 +3533,37 @@ Window {
         }
     }
 
+    // --chat-menu-test=<chat id> --shots=<dir>: the chat's menu (cm-menu),
+    // Open in new window (cm-window), Manage apps (cm-apps), Set workflows
+    // (cm-workflows) and the Remove chat history question (cm-remove,
+    // cancelled); the people tagged for Notify when available are logged.
+    // Nothing is changed; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--chat-menu-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property var win: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--chat-menu-test=")) || "").slice(17)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const row = chatList.rowsForTest[id]
+            const chat = chatList.chats.find(c => c.id === id) || {}
+            if (step === 0) { if (!row) return; row.openMenu(40, 30) }
+            else if (step === 1) { console.warn("CM tagged", JSON.stringify(chatList.notifyTagged)); shot("cm-menu") }
+            else if (step === 2) { row.closeMenuForTest(); win = window.openChatWindow(id, chat.name, chat.peerMri || "", "") }
+            else if (step === 5) { console.warn("CM window", win.messages.length); win.contentItem.grabToImage(r => r.saveToFile(dir + "cm-window.png")) }
+            else if (step === 6) { win.close(); chatList.manageChatApps(id, chat.name) }
+            else if (step === 9) { console.warn("CM apps", JSON.stringify(conversation.chatAppsForTest().apps.map(a => [a.name, a.state, a.id]))); shot("cm-apps") }
+            else if (step === 10) workflowsDialog.startChat(id, chat.name)
+            else if (step === 13) { console.warn("CM workflows", workflowsDialog.url.replace(/userId=[^&]*/, "userId=X").replace(/tenantId=[^&]*/, "tenantId=X")); shot("cm-workflows") }
+            else if (step === 14) { workflowsDialog.close(); row.removeHistoryForTest().open() }
+            else if (step === 15) shot("cm-remove")
+            else if (step === 16) { row.removeHistoryForTest().close(); Qt.quit() }
+            step++
+        }
+    }
+
     // --members-test=<team group id> --shots=<dir>: Manage team ▸ Members
     // (mb-members.png, the roster logged), then Pending requests
     // (mb-pending.png, logged); quit.
@@ -4622,6 +4653,21 @@ Window {
         w.show()
         return w
     }
+    // A chat in a window of its own (its menu's Open in new window), one per
+    // chat: opening it again brings it forward.
+    Component { id: chatWindowComponent; ChatWindow {} }
+    property var chatWindows: ({})
+    function openChatWindow(chatId, name, photoId, presence) {
+        const open = window.chatWindows[chatId]
+        if (open) { open.raise(); open.requestActivate(); return open }
+        const w = chatWindowComponent.createObject(null, { chatId: chatId, chatName: name, photoId: photoId || "", presence: presence || "" })
+        const all = Object.assign({}, window.chatWindows); all[chatId] = w; window.chatWindows = all
+        w.startCall.connect(id => { backend.selectChat(id, name); backend.startCall() })
+        w.startVideoCall.connect(id => { backend.selectChat(id, name); backend.startVideoCall() })
+        w.closing.connect(() => { const rest = Object.assign({}, window.chatWindows); delete rest[chatId]; window.chatWindows = rest; w.destroy() })
+        w.show()
+        return w
+    }
     // Manage channel: Teams' page in the conversation's place, for the
     // channel (selected in the list) until another chat is picked.
     property var manage: null
@@ -4781,6 +4827,9 @@ Window {
         onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
         onNewChat: { draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.composing = true }
         onOpenYourTeams: window.openYourTeams("teams")
+        onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
+        onManageChatApps: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; if (backend.currentChatId !== id) backend.selectChat(id, name); conversation.manageApps = true }
+        onChatWorkflows: (id, name) => workflowsDialog.startChat(id, name)
         onMarkAllRead: backend.markAllRead()
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
         onOpenDrafts: { window.composing = false; mentionsOpen = false; yourTeamsOpen = false; draftsOpen = true }
@@ -4956,6 +5005,7 @@ Window {
         onScheduleMeeting: { rail.current = "calendar"; calendarView.newMeeting() }
         onDeleteMessage: id => backend.deleteMessage(id)
         onSendReply: (id, text) => backend.sendReply(id, text)
+        onGetMoreApps: rail.current = "add"
         typingText: backend.typingText
         typingAvatar: backend.typingAvatar
         typingAvatarId: backend.typingAvatarId

@@ -237,3 +237,118 @@ mod tests {
         assert!(check_id("").is_err());
     }
 }
+
+// ---- Notify when available (Teams' contacts v3 "Tagged" system tag) ----
+
+/// The people you get a notice about when they become available, by MRI,
+/// with their contact id (`GET {mt}/beta/contactsv3/?pageSize=1000`, the
+/// contacts whose systemTags include "Tagged").
+pub fn tagged_from(v: &serde_json::Value) -> Vec<(String, String, String)> {
+    let list = ["contacts", "value", "items"]
+        .iter()
+        .find_map(|k| v.get(*k).and_then(|x| x.as_array()))
+        .or_else(|| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    list.iter()
+        .filter(|c| {
+            c["systemTags"].as_array().into_iter().flatten().any(|t| t["displayName"].as_str() == Some("Tagged"))
+        })
+        .filter_map(|c| {
+            Some((
+                c["mri"].as_str()?.to_lowercase(),
+                c["id"].as_str()?.to_string(),
+                c["defaultEmail"].as_str().unwrap_or_default().to_string(),
+            ))
+        })
+        .collect()
+}
+
+pub async fn tagged(client: &TeamsClient) -> Result<Vec<(String, String, String)>> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let mut out = Vec::new();
+    let mut skip = String::new();
+    for _ in 0..20 {
+        let mut url = format!("{base}/beta/contactsv3/?pageSize=1000");
+        if !skip.is_empty() {
+            url.push_str(&format!("&skipToken={skip}"));
+        }
+        let v: serde_json::Value = client.http().get(url).bearer_auth(&token).send().await?.error_for_status().context("Contacts")?.json().await?;
+        out.extend(tagged_from(&v));
+        skip = v["skipToken"].as_str().or(v["nextSkipToken"].as_str()).unwrap_or_default().to_string();
+        if skip.is_empty() {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// Teams' Notify when available body: the person as a contact with the
+/// "Tagged" system tag.
+pub fn notify_body(mri: &str, tenant: &str) -> serde_json::Value {
+    let oid = mri.trim_start_matches("8:orgid:");
+    serde_json::json!({
+        "mri": mri,
+        "names": [],
+        "webAccounts": [{ "userId": format!("OID:{oid}@{tenant}"), "service": { "name": "Profile" }, "source": { "type": "Profile" } }],
+        "systemTags": [{ "displayName": "Tagged" }],
+    })
+}
+
+/// Notify when available: `POST {mt}/beta/contactsv3/`; returns the
+/// contact's id.
+pub async fn notify_when_available(client: &TeamsClient, mri: &str) -> Result<String> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let tenant = client.tenant_id().unwrap_or_default();
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/contactsv3/"))
+        .bearer_auth(&token)
+        .json(&notify_body(mri, &tenant))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Notify when available")?
+        .json()
+        .await?;
+    Ok(v["id"].as_str().unwrap_or_default().to_string())
+}
+
+/// Turn off notifications: `PATCH {mt}/beta/contactsv3/{id}?isConcatenatedId=false`
+/// with the tag deleted, as Teams does.
+pub async fn stop_notify(client: &TeamsClient, contact_id: &str, mri: &str, email: &str) -> Result<()> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let id = contact_id.replace('/', "-");
+    let enc: String = url::form_urlencoded::byte_serialize(id.as_bytes()).collect();
+    client
+        .http()
+        .patch(format!("{base}/beta/contactsv3/{enc}?isConcatenatedId=false"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "id": contact_id, "mri": mri, "defaultEmail": email, "systemTags": [{ "displayName": "Tagged", "action": "Delete" }] }))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Turn off notifications")?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tagged_tests {
+    use super::*;
+
+    #[test]
+    fn notify_when_available_is_teams() {
+        // Teams' request for ost-test1's 1:1 (2026-11-09).
+        assert_eq!(
+            notify_body("8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3", "2716d134-5614-4856-a48d-2002edd9a570").to_string(),
+            r#"{"mri":"8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3","names":[],"systemTags":[{"displayName":"Tagged"}],"webAccounts":[{"service":{"name":"Profile"},"source":{"type":"Profile"},"userId":"OID:5050c9d6-b8a7-41f2-830a-0c51777b7dc3@2716d134-5614-4856-a48d-2002edd9a570"}]}"#
+        );
+        let v = serde_json::json!({"contacts": [
+            {"id": "c1", "mri": "8:orgid:A", "defaultEmail": "a@x", "systemTags": [{"displayName": "Tagged"}]},
+            {"id": "c2", "mri": "8:orgid:b", "systemTags": []}]});
+        assert_eq!(tagged_from(&v), vec![("8:orgid:a".to_string(), "c1".to_string(), "a@x".to_string())]);
+    }
+}
