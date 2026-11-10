@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-10T17:18:00Z'
+updated_date: '2026-11-10T17:27:00Z'
 labels:
   - desktop
   - messages
@@ -55,4 +55,6 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 - AC2 (cards): card messages parse (Media_Card SWIFT b64 / JSON fallback, properties.cards) and Adaptive Cards render natively with Teams' host config and frame (measured against the desktop client). Left: hero / thumbnail / list / O365 connector cards, Action.Submit / Execute bot invokes and the result footer, carousels, AMS-authenticated images.
 
 - 2026-11-10: meeting recordings render as Teams' control rows (started, stopped, saved with "Remove expiration"). Transcript-only rows and legacy Media_CallTranscript are hidden outside 1:1, and Media_MeetingObjects is never shown (this was the raw {"scopeId"…} JSON). Meeting chats' call rows read "Meeting ended: {duration}" with the video icon. Verified side by side in OST calendar test.
+
+- Meeting chats' JSON member events (guests "left the chat" / "was invited to the meeting") now render, with Teams' Unverified badge after visitors' names. Call durations drop whole days as Teams does ("1h 28m 28s" for a 25h 28m meeting).
 <!-- SECTION:NOTES:END -->

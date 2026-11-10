@@ -1551,7 +1551,9 @@ Rectangle {
                 Text {
                     width: Math.min(implicitWidth, msg.width - root.gutContent - root.gutR)
                     wrapMode: Text.Wrap
-                    textFormat: msg.recordingRow ? Text.RichText : msg.isCall || msg.appAdded ? Text.StyledText : Text.PlainText
+                    // Unverified visitors' names carry Teams' 16 px badge.
+                    readonly property var unverified: msg.isEvent && msg.modelData.event ? (msg.modelData.event.unverified || []) : []
+                    textFormat: msg.recordingRow || unverified.length > 0 ? Text.RichText : msg.isCall || msg.appAdded ? Text.StyledText : Text.PlainText
                     linkColor: theme.brandForeground1
                     // A saved recording's "Remove expiration" opens it (Teams
                     // opens its player's About panel, which is web content).
@@ -1568,6 +1570,12 @@ Rectangle {
                             const t = msg.modelData.text, v = msg.modelData.event.value, i = t.lastIndexOf(v)
                             return root.escapeHtml(t.slice(0, i)) + "<b>" + root.escapeHtml(v) + "</b>" + root.escapeHtml(t.slice(i + v.length))
                         }
+                        if (msg.isEvent && unverified.length > 0) {
+                            let t = root.escapeHtml(msg.modelData.text)
+                            const badge = "&nbsp;<img src=\"../assets/icons/person-unverified-16-" + (theme.dark ? "dark" : "light") + ".svg\" width=\"16\" height=\"16\" style=\"vertical-align: middle\">"
+                            for (const n of unverified) { const e = root.escapeHtml(n), i = t.indexOf(e); if (i >= 0) t = t.slice(0, i + e.length) + badge + t.slice(i + e.length) }
+                            return t
+                        }
                         if (msg.isEvent) return msg.modelData.text
                         // Meet now (Teams: "You started a meeting." /
                         // "{{initiator}} started a meeting.", then
@@ -1576,7 +1584,9 @@ Rectangle {
                             return msg.mine ? "You started a meeting." : root.escapeHtml(msg.modelData.sender || root.memberName(msg.modelData.sender_mri) || "Someone") + " started a meeting."
                         if (msg.modelData.call_state === "missed") return "Call missed"
                         const s = msg.modelData.call_seconds
-                        const parts = [[Math.floor(s / 3600), "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
+                        // Teams leaves out whole days ("d.hh:mm:ss" reads as
+                        // its hours): a 25h 28m meeting shows "1h 28m 28s".
+                        const parts = [[Math.floor(s / 3600) % 24, "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
                             .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
                         // A meeting chat says "Meeting ended: {duration}" (seen in OST
                         // calendar test on winpc, 2026-11-10).

@@ -753,6 +753,10 @@ pub struct ChatEvent {
     /// A link the row offers (a saved recording's "Remove expiration").
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub link: String,
+    /// The names in the row that belong to unverified visitors
+    /// (`8:teamsvisitor:`), which Teams follows with its Unverified badge.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unverified: Vec<String>,
 }
 
 /// A meeting recording message (`RichText/Media_CallRecording`) as Teams'
@@ -831,6 +835,33 @@ fn tag_values(xml: &str, tag: &str) -> Vec<String> {
 /// needs, or none for types Teams doesn't show.
 pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
     let kind = message_type.strip_prefix("ThreadActivity/")?;
+    // Meeting chats send members joining and leaving as JSON
+    // ({"initiator", "members": [{"id", "friendlyname"}]}), seen in OST
+    // calendar test for its guests.
+    if content.trim_start().starts_with('{')
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(content)
+        && let Some(members) = v["members"].as_array()
+    {
+        let mut names = std::collections::HashMap::new();
+        let targets: Vec<String> = members
+            .iter()
+            .filter_map(|m| {
+                let id = m["id"].as_str()?.to_string();
+                if let Some(n) = m["friendlyname"].as_str().filter(|n| !n.is_empty()) {
+                    names.insert(id.clone(), n.to_string());
+                }
+                Some(id)
+            })
+            .collect();
+        let actor = v["initiator"].as_str().unwrap_or_default().to_string();
+        return (matches!(kind, "MemberJoined" | "MemberLeft" | "AddMember" | "DeleteMember") && !targets.is_empty()).then(|| ChatEvent {
+            kind: kind.into(),
+            actor,
+            targets,
+            names,
+            ..ChatEvent::default()
+        });
+    }
     let first = |t: &str| {
         tag_values(content, t)
             .into_iter()
@@ -870,6 +901,7 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
         history_days,
         names: names.clone(),
         link: String::new(),
+        unverified: Vec::new(),
     };
     match kind {
         "AddMember" => {
@@ -1230,8 +1262,14 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
             .unwrap_or_else(|| "Unknown user".into())
     };
     for m in out.iter_mut() {
-        if let Some(e) = &m.event {
+        if let Some(e) = &mut m.event {
             m.text = event_text(e, &name, meeting);
+            e.unverified = e
+                .targets
+                .iter()
+                .filter(|t| t.starts_with("8:teamsvisitor:"))
+                .map(|t| name(t))
+                .collect();
         }
     }
 }
@@ -4893,5 +4931,16 @@ mod paging_and_event_tests {
         // Transcript-only messages show nothing.
         assert!(recording_event(&rec("Success", "Transcript", ""), now).is_none());
         assert!(recording_event(&rec("Initial", "Transcript", ""), now).is_none());
+    }
+
+    #[test]
+    fn meeting_chat_members_from_json_events() {
+        // As OST calendar test holds its guests leaving and joining.
+        let left = chat_event("ThreadActivity/MemberLeft", r#"{"eventtime":1794200002535,"initiator":"8:orgid:me","members":[{"id":"8:teamsvisitor:dfeeb0b8","friendlyname":"OST Guest 1"}]}"#).unwrap();
+        let names = |id: &str| if id == "8:teamsvisitor:dfeeb0b8" { "OST Guest 1".to_string() } else { "Unknown user".to_string() };
+        assert_eq!(event_text(&left, &names, true), "OST Guest 1 left the chat.");
+        assert_eq!(left.names.get("8:teamsvisitor:dfeeb0b8").map(String::as_str), Some("OST Guest 1"));
+        let joined = chat_event("ThreadActivity/MemberJoined", r#"{"initiator":"8:orgid:me","members":[{"id":"8:teamsvisitor:dfeeb0b8","friendlyname":"OST Guest 1"}]}"#).unwrap();
+        assert_eq!(event_text(&joined, &names, true), "OST Guest 1 was invited to the meeting.");
     }
 }
