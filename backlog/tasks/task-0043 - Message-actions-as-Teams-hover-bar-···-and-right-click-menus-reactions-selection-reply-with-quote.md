@@ -3,10 +3,11 @@ id: TASK-0043
 title: >-
   Message actions as Teams: hover bar, ··· and right-click menus, reactions,
   selection, reply with quote
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T20:24:00Z'
+updated_date: '2026-11-10T17:32:00Z'
 labels:
   - desktop
   - messages
@@ -24,11 +25,11 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Hover bar with the user's quick reactions (4 by default), More reactions picker, contextual action and ··· on every message, as the spec
-- [ ] #2 ··· menu items, order and MRU top-level rule exactly as Teams; right-click opens it at the pointer with the reaction strip
-- [ ] #3 Every reaction key renders as its emoji; any emoji can be a reaction; who reacted
+- [x] #2 ··· menu items, order and MRU top-level rule exactly as Teams; right-click opens it at the pointer with the reaction strip
+- [x] #3 Every reaction key renders as its emoji; any emoji can be a reaction; who reacted
 - [x] #4 Message text can be selected and copied
 - [x] #5 Reply with quote, Edit rules as Teams (no edit of Urgent; formatting kept)
-- [ ] #6 Channel posts and replies get the same hover bar and menu
+- [x] #6 Channel posts and replies get the same hover bar and menu
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -63,4 +64,16 @@ Message action gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/m
   - the Custom section in both pickers, with the Add cell and right-click "Created by … on …";
   - Delete for org, offered only when the messaging policy allows it.
 - ost-test1 isn't allowed to delete: DELETE answered 403, and Teams' policy default is off. An admin has to delete ost-test.
+
+- 2026-11-10: a reaction refused for message size (HTTP 413) now shows Teams' words: "Current message size limit reached. We can't add any more reactions.". Teams has no other reaction error string, so the 400 case keeps the service's error. Share to Outlook and Immersive Reader are web content embedded in Teams; they moved to TASK-0038 (new ACs there).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Message actions match Teams: the hover bar, the ··· and right-click menus (with the reaction strip), reactions, selection, reply with quote, in-place edit and channel parity, as listed in the notes above, each verified against Teams on winpc.
+
+Since the last summary:
+- a 413 reaction failure shows Teams' message;
+- Share to Outlook and Immersive Reader (embedded web content) are tracked under TASK-0038.
+<!-- SECTION:FINAL_SUMMARY:END -->

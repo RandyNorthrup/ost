@@ -6450,8 +6450,14 @@ impl qobject::Backend {
                 Ok(()) => this.as_mut().reload_where(&changed),
                 Err(e) => {
                     tracing::warn!("reaction not changed: {}", short_error(&e));
-                    this.as_mut()
-                        .set_status_text(QString::from(short_error(&e).as_str()));
+                    // A message at the service's size limit takes no more
+                    // reactions (413); Teams' words for it.
+                    let text = if format!("{e:#}").contains("HTTP 413") {
+                        "Current message size limit reached. We can't add any more reactions.".to_string()
+                    } else {
+                        short_error(&e)
+                    };
+                    this.as_mut().set_status_text(QString::from(text.as_str()));
                 }
             });
         });
