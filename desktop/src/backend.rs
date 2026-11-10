@@ -10153,6 +10153,11 @@ impl qobject::Backend {
                     "left" | "right" => {
                         api::tabs::move_tab(&client, &channel, &tab, op == "right").await.map(|_| String::new())
                     }
+                    // A drag and drop: arg is the place among the movable tabs.
+                    "to" => {
+                        let to: usize = arg.parse().context("No such place")?;
+                        api::tabs::move_tab_to(&client, &channel, &tab, to).await.map(|_| String::new())
+                    }
                     "converse" => {
                         let tabs = api::tabs::channel_tabs(&client, &team, &channel, &tabs_name).await?;
                         let t = tabs.iter().find(|t| t.id == tab).context("The tab is gone")?;

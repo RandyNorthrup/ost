@@ -737,7 +737,7 @@ pub async fn move_tab(
     right: bool,
 ) -> Result<()> {
     check_tab(tab)?;
-    let mut tabs: Vec<serde_json::Value> = pinned(client, channel_id)
+    let tabs: Vec<serde_json::Value> = pinned(client, channel_id)
         .await?
         .into_iter()
         .filter(|t| str_at(t, "/appId") != FILES_APP)
@@ -749,6 +749,31 @@ pub async fn move_tab(
     let j = if right { Some(i + 1) } else { i.checked_sub(1) }
         .filter(|j| *j < tabs.len())
         .context("The tab is already at that end")?;
+    save_moved(client, channel_id, tabs, i, j).await
+}
+
+/// Drop a dragged tab at `to` among the movable tabs (Teams' tab list
+/// drag and drop: the same single-tab order change as Move left/right).
+pub async fn move_tab_to(client: &TeamsClient, channel_id: &str, tab: &str, to: usize) -> Result<()> {
+    check_tab(tab)?;
+    let tabs: Vec<serde_json::Value> = pinned(client, channel_id)
+        .await?
+        .into_iter()
+        .filter(|t| str_at(t, "/appId") != FILES_APP)
+        .collect();
+    let i = tabs
+        .iter()
+        .position(|t| str_at(t, "/id") == tab)
+        .context("No such tab")?;
+    anyhow::ensure!(to < tabs.len(), "No such place");
+    if to == i {
+        return Ok(());
+    }
+    save_moved(client, channel_id, tabs, i, to).await
+}
+
+/// Move tab `i` to `j` and save only its new order.
+async fn save_moved(client: &TeamsClient, channel_id: &str, mut tabs: Vec<serde_json::Value>, i: usize, j: usize) -> Result<()> {
     let moved = tabs.remove(i);
     tabs.insert(j, moved);
     let orders: Vec<f64> = tabs.iter().map(order_of).collect();

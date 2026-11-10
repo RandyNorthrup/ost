@@ -8,7 +8,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T12:32:00Z'
-updated_date: '2026-11-10T07:26:00Z'
+updated_date: '2026-11-10T07:36:00Z'
 labels:
   - desktop
   - chatlist
@@ -56,4 +56,8 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 - Left for AC #1: Remove chat history can't be verified without a disposable chat with other members; meeting chats' Report a concern item.
 
 - Meeting chats' Report a concern done (a763659): Hide | Report a concern, the meeting's "Report a security concern" filled from the chat (subject, Nov 6, 3:00 PM, OST Test 1), members to name; dialog checked, never sent.
+
+- Chat header More chat options as Teams (33e553f): group/1:1, meeting and own-chat lists match winpc item for item; Ctrl+O and Ctrl+Shift+E. Share screen (call + share on connect) not tried live: it would ring a real member.
+
+- Copilot row moved to TASK-0038 (Teams hosts Copilot as an embedded web app, which needs that task's web-app host). Left here: Remove chat history verified on a disposable chat (needs the user: every chat with other members is a real one).
 <!-- SECTION:NOTES:END -->

@@ -76,9 +76,108 @@ Rectangle {
         if (!isChannel || !backend.channelTabsJson) return []
         const r = JSON.parse(backend.channelTabsJson)
         if (r.channel !== chatId || !r.tabs) return []
-        // In the channel's own order (Graph's sortOrderIndex).
-        return r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
+        // In the channel's own order (Graph's sortOrderIndex); a dropped
+        // tab shows in its new place until the list reloads.
+        const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
+        const p = tabOrderPending
+        if (p && p.channel === chatId) tabs.sort((a, b) => p.ids.indexOf(a.id) - p.ids.indexOf(b.id))
+        return tabs
     }
+    // Dragging a channel tab into a new place, as Teams (dnd-kit sortable;
+    // measured on winpc 2026-11-09):
+    // - only tabs that can move (not Posts or Shared) can be picked up;
+    // - the tab leaves an empty slot and a card follows the pointer: white,
+    //   radius 4, Fluent shadow8, padding 10, its name 14/20, 48 tall,
+    //   from the tab's top;
+    // - the movable tabs between slide aside (250 ms); fixed tabs stay;
+    // - over a fixed tab the card shows Prohibited (12) at the press point
+    //   + (10, 22), and a drop there does nothing; Esc cancels;
+    // - a drop saves only the moved tab's order (as Move left/right).
+    // Screen readers hear Teams' "Grabbed …", "Moved after … and before …",
+    // "Tab dropped" and "Cancelled".
+    property var tabOrderPending: null
+    Connections { target: backend; function onChannelTabsJsonChanged() { root.tabOrderPending = null } }
+    property int tabDragFrom: -1
+    property int tabDragOver: -1
+    property bool tabDragAnimate: false
+    property bool tabDragCancelled: false
+    property real tabDragX: 0
+    property real tabDragY: 0
+    property point tabDragPress: Qt.point(0, 0)
+    readonly property bool tabDragCanDrop: tabDragOver < 0 || tabIsDraggable(tabDragOver)
+    function tabIsDraggable(i) { const t = channelTabs[i]; return !!t && !!t.draggable && tabNames[i] === t.name }
+    function tabW(i) { const it = tabRepeater.itemAt(i); return it && it.visible ? it.width : 0 }
+    function tabShift(i) {
+        const f = tabDragFrom, o = tabDragOver
+        if (f < 0 || o < 0 || o === f) return 0
+        if (i === f) {
+            let s = 0
+            if (o > f) for (let k = f + 1; k <= o; k++) s += tabW(k)
+            else for (let k = o; k < f; k++) s -= tabW(k)
+            return s
+        }
+        if (!tabIsDraggable(i)) return 0
+        if (f < o && i > f && i <= o) return -tabW(f)
+        if (o < f && i >= o && i < f) return tabW(f)
+        return 0
+    }
+    function tabAnnounce(text) { tabs.Accessible.announce(text) }
+    function tabDragStart(i, press) {
+        tabDragCancelled = false
+        tabDragPress = press
+        tabDragAnimate = true
+        tabDragFrom = i; tabDragOver = i
+        const it = tabRepeater.itemAt(i)
+        tabDragX = it.x; tabDragY = 0
+        const movable = tabNames.map((n, k) => k).filter(k => tabIsDraggable(k))
+        const name = tabNames[i]
+        tabAnnounce(i === 0 || movable.indexOf(i) === 0 ? "Grabbed " + name + ". First draggable tab."
+            : i === tabNames.length - 1 ? "Grabbed " + name + ". Last draggable tab." : "Grabbed " + name)
+    }
+    function tabDragMove(i, t) {
+        if (tabDragCancelled || tabDragFrom < 0) return
+        const it = tabRepeater.itemAt(i)
+        tabDragX = it.x + t.x; tabDragY = t.y
+        // Over: the tab (where it was laid out) under the pointer.
+        const px = it.x + tabDragPress.x + t.x
+        let over = -1
+        for (let k = 0; k < tabNames.length; k++) {
+            const o = tabRepeater.itemAt(k)
+            if (o && o.visible && px >= o.x && px < o.x + o.width) { over = k; break }
+        }
+        if (over === tabDragOver) return
+        tabDragOver = over
+        if (over < 0) return
+        const n = tabNames.length
+        if (over === 0) tabAnnounce("Moved to beginning of draggable tabs")
+        else if (over === n - 1) tabAnnounce("Moved to end of draggable tabs")
+        else {
+            const rest = tabNames.filter((x, k) => k !== over), right = i < over
+            tabAnnounce("Moved after " + (right ? rest[i] : rest[over - 1]) + " and before " + (right ? rest[i + 1] : rest[over]))
+        }
+    }
+    function tabDragEnd() {
+        const f = tabDragFrom, o = tabDragOver
+        if (tabDragCancelled || f < 0) { tabDragCancelled = false; return }
+        tabDragAnimate = false
+        if (o >= 0 && o !== f && tabIsDraggable(o) && tabIsDraggable(f)) {
+            const movable = tabNames.map((n, k) => k).filter(k => tabIsDraggable(k))
+            const ids = channelTabs.map(t => t.id)
+            const moved = ids.splice(f, 1)[0]
+            ids.splice(o, 0, moved)
+            tabOrderPending = { channel: chatId, ids: ids }
+            backend.channelTabChange("to", teamId, chatId, moved, String(movable.indexOf(o)))
+        }
+        tabDragFrom = -1; tabDragOver = -1
+        tabAnnounce("Tab dropped")
+    }
+    function tabDragCancel() {
+        tabDragCancelled = true
+        tabDragAnimate = false
+        tabDragFrom = -1; tabDragOver = -1
+        tabAnnounce("Cancelled")
+    }
+    Shortcut { sequence: "Escape"; enabled: root.tabDragFrom >= 0; onActivated: root.tabDragCancel() }
     readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map(t => t.name) : ["Posts", "Shared"])
         // Teams (worker Ct): Storyline only in 1:1 chats.
         // Meeting chats: Chat, Shared, Recap (Teams lists Attendance, Breakout
@@ -589,11 +688,25 @@ Rectangle {
             x: (renameButton.visible ? renameButton.x + renameButton.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {
+                id: tabRepeater
                 model: root.tabNames
                 delegate: Item {
                     id: tabItem
                     required property string modelData
                     required property int index
+                    // Dragging: the picked-up tab's slot is empty; the
+                    // others slide aside.
+                    opacity: root.tabDragFrom === index ? 0 : 1
+                    transform: Translate {
+                        x: root.tabShift(tabItem.index)
+                        Behavior on x { enabled: root.tabDragAnimate; NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    }
+                    DragHandler {
+                        target: null
+                        enabled: root.isChannel && root.tabIsDraggable(tabItem.index)
+                        onActiveChanged: active ? root.tabDragStart(tabItem.index, centroid.pressPosition) : root.tabDragEnd()
+                        onTranslationChanged: if (active) root.tabDragMove(tabItem.index, translation)
+                    }
                     readonly property bool sel: root.tab === modelData || (index === 0 && root.tab === "")
                     // Teams: the selected tab shows a chevron when it has a
                     // menu; any tab with a right-click menu opens it there.
@@ -655,6 +768,29 @@ Rectangle {
                     Accessible.role: Accessible.PageTab
                     Accessible.name: modelData
                     Accessible.selected: sel
+                }
+            }
+            // The dragged tab's card (above).
+            FluentSurface {
+                id: tabDragCard
+                visible: root.tabDragFrom >= 0
+                parent: header
+                z: 1000
+                x: tabs.x + root.tabDragX; y: tabs.y + root.tabDragY
+                width: Math.min(150, tabDragText.implicitWidth + 20); height: 48
+                depth: 8; radius: 4; color: theme.surface
+                Text {
+                    id: tabDragText
+                    x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
+                    text: root.tabDragFrom >= 0 ? root.tabNames[root.tabDragFrom] || "" : ""
+                    elide: Text.ElideRight
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                }
+                FluentIcon {
+                    visible: !root.tabDragCanDrop
+                    x: root.tabDragPress.x + 10; y: root.tabDragPress.y + 22
+                    name: "prohibited-12"; size: 12; color: theme.text
                 }
             }
             // "+N" (tab-overflow-button, measured): 14 px #616161, padding
@@ -2602,6 +2738,13 @@ Rectangle {
         Accessible.name: label
     }
     // Test hooks for the tab menu.
+    // Drags tab `name` (start), over tab `name` (over), and drop / cancel.
+    function tabDragForTest(kind, name) {
+        if (kind === "start") { const i = tabNames.indexOf(name); const it = tabRepeater.itemAt(i); tabDragStart(i, Qt.point(it.width / 2, 28)); return i }
+        if (kind === "over") { const f = tabDragFrom, a = tabRepeater.itemAt(f), b = tabRepeater.itemAt(tabNames.indexOf(name)); tabDragMove(f, Qt.point(b.x + b.width / 2 - (a.x + tabDragPress.x), 1)); return tabDragOver }
+        if (kind === "drop") { tabDragEnd(); return 0 }
+        tabDragCancel(); return 0
+    }
     function tabMenuForTest(name) { const t = root.channelTabs.find(x => x.name === name); return t ? t.menu.map(e => e.enabled ? e.key : e.key + "(off)") : [] }
     function tabMenuShowForTest(name) { const i = root.tabNames.indexOf(name); const t = root.channelTabs[i]; if (t) tabMenu.show(t, t.menu, tabs.children[i], 0, 56) }
     function tabMenuCloseForTest() { tabMenu.close() }

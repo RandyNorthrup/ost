@@ -1,9 +1,11 @@
 ---
 id: TASK-0080
 title: Drag to reorder channel tabs as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-09T16:43:00Z'
+updated_date: '2026-11-10T07:37:00Z'
 labels:
   - desktop
 dependencies: []

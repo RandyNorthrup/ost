@@ -17,7 +17,22 @@ against later builds.
 - A **right-click** on a tab that has a `rightClickSubmenu` opens that
   menu, whether or not the tab is active.
 - **Drag to reorder**: dnd-kit sortable. Tabs with `isNotDraggable` (the
-  predefined ones) can't be dragged.
+  predefined ones) can't be dragged. Measured on winpc 2026-11-09:
+  - The picked-up tab leaves an empty slot; a DragOverlay card follows the
+    pointer from the tab's top-left: white (colorNeutralBackground1),
+    radius 4, shadow8, padding 10, the name 14/20 #242424, 48 tall, at
+    most 15rem wide.
+  - "Over" is the tab under the pointer. Movable tabs between the slot and
+    "over" slide by the dragged tab's width (250 ms); fixed tabs never
+    move, and the dragged slot moves onto a fixed tab's place.
+  - Over a fixed tab the card shows Prohibited (12) at the press point +
+    (10, 22) (`iconOffset`, in 0.1 rem of a 10 px rem), and a drop there
+    does nothing. Esc cancels.
+  - A drop calls moveTab with the new index: one PATCH of the moved tab's
+    order, as Move left/right.
+  - Announcements: "Grabbed {tab}" (". First draggable tab." / ". Last
+    draggable tab."), "Moved to beginning/end of draggable tabs", "Moved
+    after {previousTab} and before {nextTab}", "Tab dropped", "Cancelled".
 - **Move left / Move right flags**, set per rendered tab:
   - `canMoveTabLeft = !isNotDraggable && !isActiveOverflowPlaceholder`.
     It is forced false for the first draggable tab.
@@ -324,5 +339,5 @@ Shared header (`dn`):
 - [x] Reload, Expand and Open tab in new window (the header, the window and its actions, as measured); About and App permissions.
 - [x] Show tab conversation: the header button, the pane, Start conversation, the tab card, and replies (TASK-0079).
 - [x] Overflow ("+N" and the open tab's name).
-- [ ] Drag to reorder, not on predefined tabs (TASK-0080).
+- [x] Drag to reorder, not on predefined tabs (TASK-0080).
 - [ ] Settings (`updateTab`) for configurable app tabs.
