@@ -223,8 +223,8 @@ pub fn render(area: Rect, buf: &mut Buffer, state: &MessagesState, focused: bool
         return;
     }
 
-    // Show loading indicator.
-    if state.loading {
+    // Show loading indicator (older messages load with the list still shown).
+    if state.loading && state.messages.is_empty() {
         let loading_area = Rect::new(messages_area.x, messages_area.y, messages_area.width, 1);
         let line = Line::from(Span::styled(
             " Loading messages...",
@@ -247,9 +247,12 @@ pub fn render(area: Rect, buf: &mut Buffer, state: &MessagesState, focused: bool
         return;
     }
 
+    // The last column is the scroll indicators' gutter: text and timestamps
+    // stop short of it, so an arrow never covers a character.
+    let text_width = messages_area.width.saturating_sub(1);
+
     // Pre-render all messages into a line buffer (single pass produces lines + ranges).
-    let (all_lines, msg_line_ranges) =
-        build_message_lines(state, messages_area.width as usize, user_name);
+    let (all_lines, msg_line_ranges) = build_message_lines(state, text_width as usize, user_name);
     let total_lines = all_lines.len();
     let visible_height = messages_area.height as usize;
 
@@ -268,7 +271,7 @@ pub fn render(area: Rect, buf: &mut Buffer, state: &MessagesState, focused: bool
         if y >= messages_area.y + messages_area.height {
             break;
         }
-        let line_area = Rect::new(messages_area.x, y, messages_area.width, 1);
+        let line_area = Rect::new(messages_area.x, y, text_width, 1);
         Paragraph::new(all_lines[line_idx].clone()).render(line_area, buf);
     }
 
@@ -760,5 +763,20 @@ mod tests {
         assert!(st.all_loaded);
         st.selected = 0;
         assert_eq!(st.wants_older(), None);
+    }
+
+    #[test]
+    fn scroll_arrows_never_cover_timestamps() {
+        let msg = |i: usize| api::MessageInfo { sender: "Someone".into(), timestamp: "2026-11-10T12:24:00Z".into(), content: format!("message {i}") };
+        let mut st = MessagesState::default();
+        st.update_messages("h", (0..30).map(msg).collect());
+        st.selected = 15; // arrows at both ends
+        let area = Rect::new(0, 0, 60, 20);
+        let mut buf = Buffer::empty(area);
+        render(area, &mut buf, &st, true, "Me");
+        // Inner area is 1..59; its last column (58) is the gutter.
+        let gutter: String = (2..19).map(|y| buf[(58, y)].symbol().to_string()).collect();
+        assert!(gutter.chars().all(|c| c == ' ' || c == '^' || c == 'v'), "text in the gutter: {gutter:?}");
+        assert!(gutter.contains('^') && gutter.contains('v'));
     }
 }
