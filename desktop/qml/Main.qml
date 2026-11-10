@@ -3440,7 +3440,8 @@ Window {
     }
 
     // --members-test=<team group id> --shots=<dir>: Manage team ▸ Members
-    // (mb-members.png, the roster logged), the role list (mb-role.png); quit.
+    // (mb-members.png, the roster logged), then Pending requests
+    // (mb-pending.png, logged); quit.
     Timer {
         running: Qt.application.arguments.some(a => a.startsWith("--members-test=")) && backend.signedIn
         interval: 3000; repeat: true
@@ -3451,7 +3452,9 @@ Window {
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
             if (step === 0) window.openManageTeam(id, "members")
             else if (step === 3) { console.warn("MEMBERS", JSON.stringify(manageTeam.membersForTest().members)); shot("mb-members") }
-            else if (step === 4) Qt.quit()
+            else if (step === 4) manageTeam.tab = "pending"
+            else if (step === 6) { console.warn("PENDING", manageTeam.pendingForTest().loaded, JSON.stringify(manageTeam.pendingForTest().requests)); shot("mb-pending") }
+            else if (step === 7) Qt.quit()
             step++
         }
     }

@@ -17,6 +17,7 @@ import QtQuick.Controls.Basic
 //   the channel's menu at the end.
 // - Analytics: the team's dashboard (AnalyticsView, team scope).
 // - Members: MembersView.
+// - Pending requests: PendingRequestsView.
 // - Tags: TagsView.
 Rectangle {
     id: page
@@ -397,6 +398,16 @@ Rectangle {
         onAddMember: teamMenu.addMember()
     }
 
+    // ---- Pending requests ----
+    PendingRequestsView {
+        id: pendingView
+        visible: page.tab === "pending"
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        teamId: page.teamId
+        teamThread: page.tab === "pending" ? (page.team.thread_id || "") : ""
+        teamName: page.team.name || ""
+    }
+
     // ---- Tags ----
     property string myPresence: ""
     signal chatWithPeople(var mris)
@@ -417,4 +428,5 @@ Rectangle {
     function createChannelForTest() { return createChannel }
     function tagsForTest() { return tagsView }
     function membersForTest() { return membersView }
+    function pendingForTest() { return pendingView }
 }

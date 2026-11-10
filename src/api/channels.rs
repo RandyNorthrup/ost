@@ -464,6 +464,87 @@ pub async fn team_roster(client: &TeamsClient, team_thread: &str) -> Result<Vec<
     Ok(out)
 }
 
+/// A request to join a team (Manage team ▸ Pending requests).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct JoinRequest {
+    pub mri: String,
+    pub name: String,
+    pub title: String,
+    pub location: String,
+    /// Who asked for them (names), when someone did.
+    pub requested_by: Vec<String>,
+}
+
+/// The requests in a `findJoinRequests` reply for one team.
+pub fn join_requests_from(v: &serde_json::Value, group_id: &str) -> Vec<JoinRequest> {
+    let s = |x: &serde_json::Value, k: &str| x[k].as_str().unwrap_or_default().to_string();
+    let per = &v["joinRequestsPerTeam"];
+    let list = per[group_id]
+        .as_array()
+        .or_else(|| per.as_array())
+        .cloned()
+        .unwrap_or_default();
+    list.iter()
+        .filter_map(|r| {
+            let u = &r["user"];
+            let mri = u["mri"].as_str().or_else(|| r["userMri"].as_str())?.to_string();
+            Some(JoinRequest {
+                mri,
+                name: s(u, "displayName"),
+                title: s(u, "jobTitle"),
+                location: s(u, "userLocation"),
+                requested_by: r["sponsors"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| p["displayName"].as_str().map(str::to_string))
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+/// A team's pending join requests (`POST {mt}/beta/teams/findJoinRequests`
+/// `{"GroupIdList": [group]}`).
+pub async fn join_requests(client: &TeamsClient, group_id: &str) -> Result<Vec<JoinRequest>> {
+    let (base, token) = middle_tier(client).await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/teams/findJoinRequests"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "GroupIdList": [group_id] }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await
+        .context("Join requests")?;
+    Ok(join_requests_from(&v, group_id))
+}
+
+/// Accept or deny join requests: one (`joinRequestAdminAction`, `UserMri`)
+/// or several (`bulkJoinRequestAdminAction`, `UserMris`), as Teams sends
+/// them (`silentAction=false`).
+pub async fn answer_join_requests(client: &TeamsClient, group_id: &str, mris: &[String], accept: bool) -> Result<()> {
+    let (base, token) = middle_tier(client).await?;
+    let action = if accept { "Accept" } else { "Reject" };
+    let (path, body) = if mris.len() == 1 {
+        ("joinRequestAdminAction", serde_json::json!({ "GroupId": group_id, "UserMri": mris[0], "ActionType": action }))
+    } else {
+        ("bulkJoinRequestAdminAction", serde_json::json!({ "GroupId": group_id, "UserMris": mris, "ActionType": action }))
+    };
+    client
+        .http()
+        .post(format!("{base}/beta/teams/{path}?silentAction=false"))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Join request")?;
+    Ok(())
+}
+
 /// Delete a team: `DELETE {mt}/beta/teams/{teamThread}/delete`.
 pub async fn delete_team(client: &TeamsClient, team_thread: &str) -> Result<()> {
     let (base, token) = middle_tier(client).await?;
@@ -1332,6 +1413,14 @@ mod tests {
             r#"{"groupId":"g","users":[{"mri":"8:orgid:a","role":0},{"mri":"8:orgid:b","role":1}]}"#
         );
         assert_eq!(guest_body(" a@example.com ", "A")["emailAddress"], "a@example.com");
+    }
+
+    #[test]
+    fn join_requests_are_teams() {
+        // Teams' empty reply for OST Test Team, and the shape Teams reads.
+        assert!(join_requests_from(&serde_json::json!({"joinRequestsPerTeam":{}}), "g").is_empty());
+        let v = serde_json::json!({"joinRequestsPerTeam":{"g":[{"user":{"mri":"8:orgid:a","displayName":"A","jobTitle":"T","userLocation":"L"},"sponsors":[{"displayName":"S"}]}]}});
+        assert_eq!(join_requests_from(&v, "g"), vec![JoinRequest { mri: "8:orgid:a".into(), name: "A".into(), title: "T".into(), location: "L".into(), requested_by: vec!["S".into()] }]);
     }
 
     #[test]

@@ -700,6 +700,24 @@ text 14/20 36 down, buttons 96 × 31.3 (8 apart) at the right.
   `{memberIds}`. Changes: `PUT {mt}/beta/teams/{team}/members`
   `{userMri, updateType: Promoted | Demoted | Left, groupId}`.
 
+#### 5.6.5 Manage team ▸ Pending requests (measured 2026-11-09)
+
+- None: Teams' illustration (`empty_pendingRequestsJoinTeam.svg`, 245 ×
+  228.4) centred 70.3 under the header and "No requests right now. When
+  people ask to join your team, they'll show up here." (18/25.7 semibold,
+  centred) 343.7 down.
+- Requests (from Teams' code; none could be raised in the test team):
+  "Search for members" (filled-darker) with **Accept all** (primary) and
+  **Deny all** (asks "Deny all join requests" / "Are you sure you want to
+  deny all join requests for {team}?"); Name, Title, Location, Requested by
+  (first sponsor, ", +n" for more) and Accept / Deny per row, replaced by
+  "You accepted the request." / "You denied the request.".
+- Wire: `POST {mt}/beta/teams/findJoinRequests` `{"GroupIdList": [group]}`
+  → `{joinRequestsPerTeam: {group: [{user, sponsors}]}}`; answers
+  `POST {mt}/beta/teams/joinRequestAdminAction?silentAction=false`
+  `{GroupId, UserMri, ActionType: Accept | Reject}` or
+  `…/bulkJoinRequestAdminAction` with `UserMris`.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

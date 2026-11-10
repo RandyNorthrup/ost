@@ -14,6 +14,7 @@
 | `fonts/CascadiaMono-Regular.ttf` | [Cascadia Code](https://github.com/microsoft/cascadia-code) 2407.24 (the code font Teams uses) | SIL Open Font License 1.1, see `fonts/CASCADIA-LICENSE.txt` |
 | `logo.png`, `../packaging/ost-desktop.png` | The OST app icon (the cheese team icon with "OST"), made for this project with an image generator and approved by the project; derived from the OST logo concept (`docs/logo_ost.jpg`) | MIT, as the rest of OST |
 | `../../src/api/app_permission_strings.json`, `../../src/api/app_permission_categories.json`, `../../src/api/app_locales.json` | Teams' app permission sentences (en-us), its permission category map and its locale names table, copied from the Teams client so the app details dialog reads the same. Not covered by an open-source licence; review before redistributing | Microsoft |
+| `illustrations/pending-requests.svg` | Teams' empty Pending requests illustration (a door and two people), copied from the Teams client so Manage team's Pending requests tab looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
 | `illustrations/all-caught-up.svg` | Teams' empty-filter illustration ("You're all caught up!"), copied from the Teams client so the chat list's empty state looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
 
 OST is not affiliated with or endorsed by Microsoft. "Microsoft Teams" is a

@@ -14,6 +14,7 @@ import QtQuick.Controls.Basic
 // - Delete (220.7): "Delete the {team} team", Teams' warning and "I
 //   understand that everything will be deleted", which Delete team waits
 //   for.
+// - Pending requests' Deny all: "Deny all join requests"; Cancel / Deny all.
 // - The last owner leaving: "The last owner can't leave the team", why;
 //   OK.
 Popup {
@@ -36,6 +37,11 @@ Popup {
             body: "Are you sure you want to delete the <b>" + esc + "</b> team? All hosted channels, conversations, files, and the Microsoft 365 group for this team will be deleted. You'll lose access to any shared channels that have been shared with the team.",
             check: "I understand that everything will be deleted",
             cancel: "Cancel", action: "Delete team"
+        },
+        denyAll: {
+            title: "Deny all join requests",
+            body: "Are you sure you want to deny all join requests for " + esc + "?",
+            check: "", cancel: "Cancel", action: "Deny all"
         },
         lastOwner: {
             title: "The last owner can't leave the team",
