@@ -143,9 +143,226 @@ pub async fn update_call_accessibility_settings(
     Ok(all)
 }
 
+/// Settings kept as user properties whose value is a JSON object in a
+/// string (Teams merges the changed keys into the whole object).
+pub const JSON_PROPERTIES: [&str; 4] = [
+    PROPERTY,
+    CALL_ACCESSIBILITY,
+    "simpleCollabUserSettings",
+    "suggestedRepliesSettings",
+];
+
+/// Settings kept as plain string user properties ("true", "COMFY", …),
+/// written as Teams' Settings writes them.
+pub const PLAIN_PROPERTIES: [&str; 7] = [
+    "messageDensity",
+    "readReceiptsEnabled",
+    "enableChannelsV2",
+    "userEnableSurveysNotification",
+    "showInMeetingReport",
+    "enablePushToTalk",
+    "preferredSkinToneIndex",
+];
+
+/// All your user properties, the JSON-string ones parsed (Settings reads
+/// these; unsaved settings are absent and take Teams' defaults).
+pub async fn all_properties(client: &TeamsClient) -> Result<serde_json::Value> {
+    let url = format!("{}/v1/users/ME/properties", client.chat_service_url());
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("User properties reply")?;
+    Ok(parsed_properties(&v))
+}
+
+/// The properties with JSON-string objects parsed into objects.
+pub fn parsed_properties(v: &serde_json::Value) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    for (k, x) in v.as_object().into_iter().flatten() {
+        let parsed = x
+            .as_str()
+            .filter(|_| JSON_PROPERTIES.contains(&k.as_str()))
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .unwrap_or_else(|| x.clone());
+        out.insert(k.clone(), parsed);
+    }
+    serde_json::Value::Object(out)
+}
+
+/// Change a setting kept in a user property: for a JSON one, `value` is a
+/// patch merged into what is saved; for a plain one, the string itself.
+/// Returns the property's new value.
+pub async fn set_property(client: &TeamsClient, name: &str, value: &serde_json::Value) -> Result<serde_json::Value> {
+    let saved = if JSON_PROPERTIES.contains(&name) {
+        if name == CALL_ACCESSIBILITY {
+            return update_call_accessibility_settings(client, value).await;
+        }
+        let all = all_properties(client).await?;
+        let base = all.get(name).cloned().filter(|b| b.is_object()).unwrap_or_else(|| serde_json::json!({}));
+        let next = merged(base, value);
+        (next.to_string(), next)
+    } else if PLAIN_PROPERTIES.contains(&name) {
+        let s = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
+        (s.clone(), serde_json::Value::String(s))
+    } else {
+        anyhow::bail!("Not a setting: {name}");
+    };
+    let url = format!("{}/v1/users/ME/properties?name={name}", client.chat_service_url());
+    client
+        .chat_request(reqwest::Method::PUT, &url, &serde_json::json!({ name: saved.0 }))
+        .await?;
+    Ok(saved.1)
+}
+
+/// Settings Teams keeps in the middle tier (captured on winpc 2026-11-10):
+/// "Set my status to do not disturb when I'm sharing my screen"
+/// (`PUT beta/usersettings/allowAutoDndSettings {isEnabled}`, write only;
+/// on unless saved off), "Block calls with no caller ID" (`POST
+/// beta/usersettings/blockedCallers {blockAnonymousCaller}`, read with GET)
+/// and "Automatically identify me in live captions and live transcripts"
+/// (`beta/users/{get,update}UserTranscriptMeetingSettings/tenant/{t}/user/{o}`
+/// with `attributionSettings.enableSpeakerAttribution`).
+pub async fn middle_tier_settings(client: &TeamsClient) -> Result<serde_json::Value> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let get = |path: String| {
+        let req = client.http().get(format!("{mt}/{path}")).bearer_auth(token.clone());
+        async move {
+            let r = req.send().await.ok()?;
+            if !r.status().is_success() {
+                return None;
+            }
+            r.json::<serde_json::Value>().await.ok()
+        }
+    };
+    let blocked = get("beta/usersettings/blockedCallers".into()).await;
+    let transcript = match (client.tenant_id(), client.object_id()) {
+        (Some(t), Some(o)) => get(format!("beta/users/getUserTranscriptMeetingSettings/tenant/{t}/user/{o}")).await,
+        _ => None,
+    };
+    Ok(serde_json::json!({
+        "blockAnonymousCaller": blocked.as_ref().and_then(|b| b["blockAnonymousCaller"].as_bool()).unwrap_or(false),
+        "enableSpeakerAttribution": transcript.as_ref().and_then(|t| t.pointer("/attributionSettings/enableSpeakerAttribution")?.as_bool()).unwrap_or(true),
+    }))
+}
+
+/// Change one of the middle tier's settings: "allowAutoDnd",
+/// "blockAnonymousCaller" or "enableSpeakerAttribution".
+pub async fn set_middle_tier_setting(client: &TeamsClient, key: &str, on: bool) -> Result<()> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let http = client.http();
+    let req = match key {
+        "allowAutoDnd" => http
+            .put(format!("{mt}/beta/usersettings/allowAutoDndSettings"))
+            .json(&serde_json::json!({ "isEnabled": on })),
+        "blockAnonymousCaller" => http
+            .post(format!("{mt}/beta/usersettings/blockedCallers"))
+            .json(&serde_json::json!({ "blockAnonymousCaller": on })),
+        "enableSpeakerAttribution" => {
+            let (t, o) = client.tenant_id().zip(client.object_id()).context("No tenant or user id")?;
+            http.put(format!("{mt}/beta/users/updateUserTranscriptMeetingSettings/tenant/{t}/user/{o}"))
+                .json(&serde_json::json!({ "attributionSettings": { "enableSpeakerAttribution": on } }))
+        }
+        _ => anyhow::bail!("Not a setting: {key}"),
+    };
+    let resp = req.bearer_auth(token).send().await.context("Settings request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} saving {key}", resp.status().as_u16());
+    }
+    Ok(())
+}
+
+/// Your out of office automatic replies, as Teams' Settings ▸ General ▸
+/// Out of office reads them (`GET {mt}/beta/users/automaticRepliesSetting`):
+/// {status: disabled | alwaysEnabled | scheduled, internalReplyMessage,
+/// externalReplyMessage, externalAudience: none | contactsOnly | all,
+/// scheduledStartDateTime, scheduledEndDateTime}.
+pub async fn automatic_replies(client: &TeamsClient) -> Result<serde_json::Value> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let resp = client
+        .http()
+        .get(format!("{mt}/beta/users/automaticRepliesSetting"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("Out of office request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reading out of office", resp.status().as_u16());
+    }
+    resp.json().await.context("Out of office reply")
+}
+
+/// Save them as Teams' Save does (captured on winpc 2026-11-10): `POST
+/// {mt}/beta/users/updateAutomaticRepliesSetting` with all six fields.
+pub async fn set_automatic_replies(client: &TeamsClient, setting: &serde_json::Value) -> Result<()> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let body = automatic_replies_body(setting);
+    let resp = client
+        .http()
+        .post(format!("{mt}/beta/users/updateAutomaticRepliesSetting"))
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .context("Out of office save")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} saving out of office", resp.status().as_u16());
+    }
+    Ok(())
+}
+
+/// Teams' save body, in its order, from what the page holds.
+pub fn automatic_replies_body(v: &serde_json::Value) -> serde_json::Value {
+    let s = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
+    serde_json::json!({
+        "status": s("status", "disabled"),
+        "internalReplyMessage": s("internalReplyMessage", ""),
+        "externalReplyMessage": s("externalReplyMessage", ""),
+        "externalAudience": s("externalAudience", "all"),
+        "scheduledStartDateTime": s("scheduledStartDateTime", ""),
+        "scheduledEndDateTime": s("scheduledEndDateTime", ""),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn out_of_office_bodies_are_teams() {
+        // As Teams saved "OST test 82" (2026-11-10).
+        let b = automatic_replies_body(&serde_json::json!({
+            "status": "scheduled", "internalReplyMessage": "OST test 82 out of office",
+            "scheduledStartDateTime": "2026-11-10T08:00:00.000Z", "scheduledEndDateTime": "2026-11-11T08:00:00.000Z",
+        }));
+        assert_eq!(
+            b.to_string(),
+            r#"{"externalAudience":"all","externalReplyMessage":"","internalReplyMessage":"OST test 82 out of office","scheduledEndDateTime":"2026-11-11T08:00:00.000Z","scheduledStartDateTime":"2026-11-10T08:00:00.000Z","status":"scheduled"}"#
+        );
+    }
+
+    #[test]
+    fn json_properties_are_parsed_and_plain_ones_kept() {
+        // As ost-test1's properties read on 2026-11-10.
+        let raw = serde_json::json!({
+            "messageDensity": "COMFY",
+            "readReceiptsEnabled": "true",
+            "simpleCollabUserSettings": "{\"hasUserEnabledShowTimeStamps\":false}",
+            "userPersonalSettings": "{\"chatSettings\":{\"mruChatHeaderCallOption\":\"VOICE_CALL\"}}",
+            "favorites": "{\"48:notes\":1}",
+        });
+        let p = parsed_properties(&raw);
+        assert_eq!(p["messageDensity"], "COMFY");
+        assert_eq!(p["simpleCollabUserSettings"]["hasUserEnabledShowTimeStamps"], false);
+        assert_eq!(p["userPersonalSettings"]["chatSettings"]["mruChatHeaderCallOption"], "VOICE_CALL");
+        // Not a settings object: left as the string.
+        assert!(p["favorites"].is_string());
+    }
 
     #[test]
     fn the_call_choice_merges_into_the_other_settings() {

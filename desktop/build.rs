@@ -139,6 +139,8 @@ fn main() {
         "qml/DatePickerField.qml",
         "qml/OutlineDropdown.qml",
         "qml/PauseNotificationsDialog.qml",
+        "qml/SettingsParts.qml",
+        "qml/OofPage.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
@@ -155,6 +157,7 @@ fn main() {
         "assets/lobby",
         "assets/dialogs",
         "assets/illustrations",
+        "assets/settings",
     ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();

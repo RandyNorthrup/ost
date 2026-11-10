@@ -1,390 +1,474 @@
 import QtQuick
 import QtQuick.Controls.Basic
 
-// Settings (Ctrl+,), laid out as Teams desktop's (measured at 1x): a
-// 379 px list of pages, and the chosen page as bordered cards. Only
-// settings OST actually honours are offered.
+// Settings (Ctrl+,), laid out as Teams desktop's (measured on winpc
+// 2026-11-10):
+// - the left pane: 380 wide, "Settings" (18/25.7 bold) at 32, 20; "Find in
+//   Settings (Ctrl+F)" (332 x 32) at 32, 73; the pages from 17, 120, each
+//   346 x 32 every 33 (icon 20 at 16.7, label 14 at 49.7; the open one on
+//   white with a 0.67 rgba(0,0,0,0.05) border, its icon filled in brand);
+//   About at the bottom, 17 up;
+// - the header: 61 tall, the page's title (18/25.7 bold) at 20, 17.6; a
+//   sub-page shows "Page › Sub-page";
+// - the page: cards 790 wide from 20, 12 down, 12 apart (SettingsParts).
+// Settings Teams keeps for you across devices are read and saved as Teams
+// does (user properties and the middle tier; Backend.loadSettings /
+// changeSetting); this device's own settings stay local.
 Rectangle {
     id: root
     property string page: "general"
+    /// A page's sub-page ("oof": General ▸ Out of office).
+    property string subPage: ""
     color: theme.surface
 
     readonly property var pages: [
         { key: "general", label: "General", icon: "settings-20" },
-        { key: "appearance", label: "Appearance", icon: "paint-brush-20" },
+        { key: "appearance", label: "Appearance", icon: "wand-20" },
         { key: "chats", label: "Chats and channels", icon: "chat-20" },
-        { key: "notifications", label: "Notifications and activity", icon: "alert" },
+        { key: "notifications", label: "Notifications and activity", icon: "alert-20" },
+        { key: "privacy", label: "Privacy", icon: "lock-closed-20" },
+        { key: "accessibility", label: "Accessibility", icon: "accessibility-20" },
         { key: "devices", label: "Devices", icon: "headset-20" },
     ]
     property string filter: ""
+    onPageChanged: subPage = ""
+    onVisibleChanged: if (visible) backend.loadSettings()
+
+    // Synced settings (user properties parsed; the middle tier's).
+    readonly property var synced: backend.settingsJson ? JSON.parse(backend.settingsJson) : ({ props: {}, mt: {} })
+    readonly property var props: synced.props || {}
+    readonly property var mt: synced.mt || {}
+    function prop(name, path, dflt) {
+        let v = props[name]
+        for (const k of path) { if (v === undefined || v === null) break; v = v[k] }
+        return v === undefined || v === null ? dflt : v
+    }
+    // A nested patch for an object property: patch("a.b", v) -> {a: {b: v}}.
+    function patch(path, value) { const o = {}; let c = o; const ks = path.split("."); ks.slice(0, -1).forEach(k => { c[k] = {}; c = c[k] }); c[ks[ks.length - 1]] = value; return o }
+    function setProp(name, path, value) { backend.changeSetting("prop", name, JSON.stringify(path ? patch(path, value) : value)) }
+    function setMt(name, value) { backend.changeSetting("mt", name, JSON.stringify(value)) }
+    function local(name, dflt) { const v = backend.setting(name); return v === "" ? dflt : v }
+    signal settingsChanged()
 
     // Left: title, find box, pages.
     Rectangle {
         id: nav
-        width: 379; height: parent.height
+        width: 380; height: parent.height
         color: theme.pane
-        Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.edge }
         Text {
             x: 32; y: 20
             text: "Settings"
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
+            lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
         Rectangle {
-            x: 32; y: 73; width: 332; height: 32; radius: theme.radius
-            color: theme.input
-            border.color: find.activeFocus ? theme.brand : theme.stroke
+            x: 32; y: 73; width: 332; height: 32; radius: 4
+            color: theme.surface
+            border.color: find.activeFocus ? theme.brand : "transparent"; border.width: 0.67
+            Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: find.activeFocus ? 2 : 0.67; color: find.activeFocus ? theme.brand : theme.textSecondary }
             TextInput {
                 id: find
-                x: 12; width: parent.width - 24
+                x: 12.7; width: parent.width - 25
                 anchors.verticalCenter: parent.verticalCenter
-                font.family: theme.font; font.pixelSize: theme.base
+                font.family: theme.font; font.pixelSize: 14
                 color: theme.text
                 clip: true
                 onTextChanged: root.filter = text.trim().toLowerCase()
-                Text {
-                    visible: !find.text
-                    text: "Find in Settings (Ctrl+F)"
-                    color: theme.textTertiary
-                    font: find.font
-                }
+                Text { visible: !find.text; text: "Find in Settings (Ctrl+F)"; color: theme.textSecondary; font: find.font }
                 Accessible.name: "Find in Settings"
             }
         }
+        Shortcut { sequence: "Ctrl+F"; enabled: root.visible; onActivated: find.forceActiveFocus() }
+        component NavItem: Rectangle {
+            id: ni
+            property var def
+            readonly property bool sel: root.page === def.key
+            width: 346; height: 32; radius: 4
+            color: sel ? theme.surface : nh.hovered ? theme.rowHover : "transparent"
+            border.color: sel ? Qt.rgba(0, 0, 0, 0.05) : "transparent"; border.width: 0.67
+            FluentIcon { x: 16.7; anchors.verticalCenter: parent.verticalCenter; size: 20; name: ni.sel ? ni.def.icon + "-filled" : ni.def.icon; color: ni.sel ? theme.brand : theme.textStrong }
+            Text {
+                x: 49.7; anchors.verticalCenter: parent.verticalCenter
+                text: ni.def.label
+                font.family: theme.font; font.pixelSize: 14
+                font.weight: nh.hovered && !ni.sel ? Font.DemiBold : Font.Normal
+                color: ni.sel ? theme.text : theme.textStrong
+            }
+            HoverHandler { id: nh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.page = ni.def.key; root.subPage = "" } }
+            Accessible.role: Accessible.PageTab
+            Accessible.name: def.label
+            Accessible.selected: sel
+        }
         Column {
-            x: 18.7; y: 121
-            width: 344
+            x: 17; y: 120
             spacing: 1
             Repeater {
                 model: root.pages.filter(p => !root.filter || p.label.toLowerCase().indexOf(root.filter) >= 0)
-                Rectangle {
-                    required property var modelData
-                    readonly property bool sel: root.page === modelData.key
-                    width: parent.width; height: 32; radius: theme.radius
-                    color: sel ? theme.selected : (nh.hovered ? theme.rowHover : "transparent")
-                    FluentIcon {
-                        x: 18; anchors.verticalCenter: parent.verticalCenter; size: 20
-                        name: parent.modelData.icon
-                        color: parent.sel ? theme.brand : theme.textStrong
-                    }
-                    Text {
-                        x: 48; anchors.verticalCenter: parent.verticalCenter
-                        text: parent.modelData.label
-                        font.family: theme.font; font.pixelSize: theme.base
-                        font.weight: parent.sel ? Font.DemiBold : Font.Normal
-                        color: parent.sel ? theme.text : theme.textStrong
-                    }
-                    HoverHandler { id: nh; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.page = parent.modelData.key }
-                    Accessible.role: Accessible.PageTab
-                    Accessible.name: modelData.label
-                }
+                NavItem { required property var modelData; def: modelData }
             }
         }
-        Rectangle {
-            x: 18.7; y: parent.height - 52; width: 344; height: 32; radius: theme.radius
-            readonly property bool sel: root.page === "about"
-            color: sel ? theme.selected : (ah.hovered ? theme.rowHover : "transparent")
-            FluentIcon { x: 18; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "info-16"; color: theme.textStrong }
+        NavItem { x: 17; y: parent.height - 49; def: ({ key: "about", label: "About OST", icon: "info-20" }) }
+    }
+
+
+    // Header.
+    Rectangle {
+        id: header
+        anchors { left: nav.right; right: parent.right; top: parent.top }
+        height: 61
+        color: theme.surface
+        Row {
+            x: 20; y: 17.6; spacing: 8
             Text {
-                x: 48; anchors.verticalCenter: parent.verticalCenter
-                text: "About OST"
-                font.family: theme.font; font.pixelSize: theme.base
-                font.weight: parent.sel ? Font.DemiBold : Font.Normal
-                color: parent.sel ? theme.text : theme.textStrong
+                visible: !!root.subPage
+                text: (root.pages.find(p => p.key === root.page) || {}).label || ""
+                font.family: theme.font; font.pixelSize: 18; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
+                color: crumbHover.hovered ? theme.text : theme.textStrong
+                HoverHandler { id: crumbHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.subPage = "" }
+                Accessible.role: Accessible.Link
+                Accessible.name: text
             }
-            HoverHandler { id: ah; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: root.page = "about" }
-            Accessible.role: Accessible.PageTab
-            Accessible.name: "About OST"
-        }
-    }
-
-    // A bordered settings card, as Teams draws them.
-    component Card: Rectangle {
-        id: card
-        property string title
-        property string subtitle
-        property string icon
-        default property alias content: body.data
-        width: parent ? parent.width : 0
-        height: body.y + body.implicitHeight + 24
-        radius: 8
-        color: "transparent"
-        border.color: theme.stroke
-        FluentIcon { x: 24; y: 24; name: card.icon; size: 20; color: theme.textStrong }
-        Text {
-            id: ct
-            x: 56.7; y: 26.7
-            text: card.title
-            font.family: theme.font; font.pixelSize: theme.base
-            color: theme.text
-        }
-        Text {
-            id: cs
-            visible: card.subtitle.length > 0
-            x: 56.7; y: ct.y + ct.height
-            width: card.width - 80
-            wrapMode: Text.Wrap
-            text: card.subtitle
-            font.family: theme.font; font.pixelSize: theme.small
-            color: theme.textSecondary
-        }
-        Column {
-            id: body
-            x: 56.7; y: (card.subtitle ? cs.y + cs.height : ct.y + ct.height) + 16
-            width: card.width - 80
-            spacing: 22
-        }
-    }
-
-    // Fluent checkbox: 16 px, brand fill with a white tick when on.
-    component Check: Item {
-        id: chk
-        property string label
-        property bool checked
-        property bool usable: true
-        signal toggled(bool on)
-        width: parent ? parent.width : 0; height: 20
-        Rectangle {
-            x: -28; y: 2; width: 16; height: 16; radius: 2
-            color: chk.checked ? (chk.usable ? theme.brandFill : theme.disabled) : "transparent"
-            border.color: chk.checked ? "transparent" : (chk.usable ? theme.textStrong : theme.disabled)
-            FluentIcon { visible: chk.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
-        }
-        Text {
-            text: chk.label
-            font.family: theme.font; font.pixelSize: theme.base
-            color: chk.usable ? theme.text : theme.textSecondary
-        }
-        TapHandler { enabled: chk.usable; onTapped: chk.toggled(!chk.checked) }
-        HoverHandler { cursorShape: chk.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
-        Accessible.role: Accessible.CheckBox
-        Accessible.name: label
-        Accessible.checked: checked
-    }
-
-    // Fluent switch: 40 x 20 pill with "On"/"Off" before it.
-    component Switch2: Row {
-        id: sw
-        property bool on
-        signal toggled(bool on)
-        spacing: 8
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: sw.on ? "On" : "Off"
-            font.family: theme.font; font.pixelSize: theme.base
-            color: theme.text
-        }
-        Rectangle {
-            width: 40; height: 20; radius: 10
-            color: sw.on ? theme.brandFill : "transparent"
-            border.color: sw.on ? "transparent" : theme.textStrong
-            Rectangle {
-                width: 14; height: 14; radius: 7
-                anchors.verticalCenter: parent.verticalCenter
-                x: sw.on ? parent.width - width - 3 : 3
-                color: sw.on ? "white" : theme.textStrong
-                Behavior on x { NumberAnimation { duration: 100 } }
-            }
-            TapHandler { onTapped: sw.toggled(!sw.on) }
-            HoverHandler { cursorShape: Qt.PointingHandCursor }
-        }
-        Accessible.role: Accessible.CheckBox
-        Accessible.checked: on
-    }
-
-    // Fluent dropdown: 32 px, bottom-accented.
-    component Choice: Rectangle {
-        id: ch
-        property var options: []     // [{value, label}]
-        property string value
-        signal chosen(string value)
-        width: 300; height: 32; radius: theme.radius
-        color: theme.input
-        border.color: theme.stroke
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.textStrong; radius: 1 }
-        Text {
-            x: 10; anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 40; elide: Text.ElideRight
-            text: { const o = ch.options.find(o => o.value === ch.value); return o ? o.label : ch.value }
-            font.family: theme.font; font.pixelSize: theme.base
-            color: theme.text
-        }
-        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.textStrong }
-        TapHandler { onTapped: popup.open() }
-        Popup {
-            id: popup
-            y: ch.height + 2
-            width: ch.width
-            padding: 4
-            background: Rectangle { radius: theme.radius; color: theme.menu; border.color: theme.dividerSoft }
-            contentItem: Column {
-                Repeater {
-                    model: ch.options
-                    Rectangle {
-                        required property var modelData
-                        width: popup.width - 8; height: 32; radius: theme.radius
-                        color: oh.hovered ? theme.rowHover : "transparent"
-                        FluentIcon { visible: parent.modelData.value === ch.value; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-12"; size: 12; color: theme.text }
-                        Text {
-                            x: 28; anchors.verticalCenter: parent.verticalCenter
-                            text: parent.modelData.label
-                            font.family: theme.font; font.pixelSize: theme.base
-                            color: theme.text
-                        }
-                        HoverHandler { id: oh }
-                        TapHandler { onTapped: { popup.close(); ch.chosen(parent.modelData.value) } }
-                    }
-                }
+            FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
+            Text {
+                text: root.subPage === "oof" ? "Out of office" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
             }
         }
-        Accessible.role: Accessible.ComboBox
     }
 
-    // Right: the page.
+    // The page.
     Flickable {
         id: content
-        anchors { left: nav.right; right: parent.right; top: parent.top; bottom: parent.bottom }
+        anchors { left: nav.right; right: parent.right; top: header.bottom; bottom: parent.bottom }
         contentHeight: pageCol.y + pageCol.implicitHeight + 32
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        Text {
-            x: 21; y: 18.6
-            text: root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
-            font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
-            color: theme.text
-        }
         Column {
             id: pageCol
-            x: 21; y: 73
-            width: content.width - 43
+            x: 20; y: 12
+            width: Math.min(790, content.width - 42)
             spacing: 12
 
-            // General
-            Card {
-                visible: root.page === "general"
-                title: "System"; icon: "settings-20"
-                Check {
+            // ---- General ----
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "settings-20"; title: "System"
+                SettingsParts.CheckRow {
                     label: "Auto-start OST"
-                    checked: backend.setting("autoStart") === "true"
+                    checked: root.local("autoStart", "false") === "true"
                     onToggled: on => { backend.setSetting("autoStart", on ? "true" : "false"); checked = on }
                 }
-                Check {
+                SettingsParts.CheckRow {
+                    label: "Open application in background"
+                    checked: root.local("openInBackground", "false") === "true"
+                    onToggled: on => { backend.setSetting("openInBackground", on ? "true" : "false"); checked = on }
+                }
+                SettingsParts.CheckRow {
                     label: "On close, keep the application running"
-                    checked: backend.setting("keepRunning") !== "false"
+                    checked: root.local("keepRunning", "true") !== "false"
                     onToggled: on => { backend.setSetting("keepRunning", on ? "true" : "false"); checked = on }
                 }
             }
-
-            // Appearance
-            Card {
-                visible: root.page === "appearance"
-                title: "Theme"; subtitle: "This will apply to all your OST windows."; icon: "paint-brush-20"
-                Choice {
-                    options: [
-                        { value: "system", label: "Follow operating system theme" },
-                        { value: "light", label: "Light" },
-                        { value: "dark", label: "Dark" },
-                    ]
-                    value: backend.themeMode
-                    onChosen: v => backend.setSetting("theme", v)
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "chat-multiple-20"; title: "Opening content in OST windows"
+                subtitle: "Open incoming notifications and links in the main window or a new window. This will only apply to this account."
+                Row {
+                    spacing: 12.7
+                    property string mode: root.local("openContentIn", "main")
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "main"; onPicked: { backend.setSetting("openContentIn", "main"); parent.mode = "main" } }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
                 }
             }
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "calendar-arrow-right-20"; title: "Out of office"
+                subtitle: "Schedule out of office and set automatic replies"
+                trailingY: 29
+                trailing: Component { SettingsParts.Button { label: "Schedule"; onClicked: root.subPage = "oof" } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "keyboard-20"; title: "Keyboard shortcuts"
+                subtitle: "Use OST shortcuts. <a href=\"shortcuts\">See available keyboard shortcuts</a>"
+                onLinkActivated: root.showShortcuts()
+            }
 
-            // Chats and channels
-            Card {
-                id: enterCard
-                visible: root.page === "chats"
-                title: "When writing a message, press Enter to"; icon: "keyboard-20"
-                property string enterKey: backend.setting("enterKey") || "send"
-                Repeater {
-                    model: [{ v: "send", l: "Send the message" }, { v: "newline", l: "Start a new line (to send, select Send or use Ctrl+Enter)" }]
-                    Item {
-                        required property var modelData
-                        width: parent.width; height: 20
-                        readonly property bool on: enterCard.enterKey === modelData.v
-                        Rectangle {
-                            x: -28; y: 2; width: 16; height: 16; radius: 8
-                            color: "transparent"; border.color: parent.on ? theme.brandFill : theme.textStrong
-                            Rectangle { visible: parent.parent.on; anchors.centerIn: parent; width: 8; height: 8; radius: 4; color: theme.brandFill }
+            // ---- General ▸ Out of office ----
+            OofPage {
+                id: oofPage
+                visible: root.page === "general" && root.subPage === "oof"
+                width: parent.width
+                setting: root.mt.oof || null
+                onSave: v => { root.setMt("oof", v); root.subPage = "" }
+                onCancel: root.subPage = ""
+            }
+
+            // ---- Appearance ----
+            SettingsParts.Card {
+                visible: root.page === "appearance"
+                icon: "dark-theme-20"; title: "Theme"; subtitle: "This will apply to all your OST apps."
+                OutlineDropdown {
+                    width: 249.3; height: 30
+                    readonly property var keys: ["system", "light", "dark"]
+                    options: [{ label: "Follow operating system theme" }, { label: "Light" }, { label: "Dark" }]
+                    current: Math.max(0, keys.indexOf(backend.themeMode))
+                    accessibleName: "Theme"
+                    onPicked: i => backend.setSetting("theme", keys[i])
+                }
+                SettingsParts.Gap { size: 16 }
+            }
+            SettingsParts.Card {
+                visible: root.page === "appearance"
+                icon: "emoji-hand-20"; title: "Skin tone preference"; subtitle: "Reactions and emoji will appear with this skin tone."
+                Row {
+                    spacing: 8
+                    Repeater {
+                        model: ["None", "Light", "Medium light", "Medium", "Medium dark", "Dark"]
+                        Item {
+                            required property string modelData
+                            required property int index
+                            readonly property bool on: backend.skinTone === index
+                            width: 32; height: 40
+                            Rectangle { anchors.horizontalCenter: parent.horizontalCenter; y: 2; width: 24; height: 24; radius: 12; color: ["#FFC83D", "#F7D7C4", "#D8B094", "#BB9167", "#8E562E", "#613D30"][index] }
+                            Rectangle { visible: parent.on; anchors.horizontalCenter: parent.horizontalCenter; y: 32; width: 24; height: 3; radius: 1.5; color: theme.brand }
+                            TapHandler { onTapped: { backend.changeSetting("prop", "preferredSkinToneIndex", JSON.stringify(String(index))); backend.skinTone = index } }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            Accessible.role: Accessible.RadioButton
+                            Accessible.name: modelData
+                            Accessible.checked: on
                         }
-                        Text { text: parent.modelData.l; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                        TapHandler { onTapped: { backend.setSetting("enterKey", parent.modelData.v); enterCard.enterKey = parent.modelData.v; root.settingsChanged() } }
-                        Accessible.role: Accessible.RadioButton
-                        Accessible.name: modelData.l
-                        Accessible.checked: on
+                    }
+                }
+                SettingsParts.Gap { size: 8 }
+            }
+
+            // ---- Chats and channels ----
+            SettingsParts.Card {
+                visible: root.page === "chats"
+                icon: "apps-list-20"; title: "Chats and channels list"
+                SettingsParts.SwitchRow {
+                    label: "Show message previews for chats and team names for channels"
+                    on: root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviews"], false) === true
+                    onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledMessagePreviews", v)
+                }
+                SettingsParts.SwitchRow {
+                    label: "Show time stamps"
+                    on: root.prop("simpleCollabUserSettings", ["hasUserEnabledShowTimeStamps"], false) === true
+                    onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledShowTimeStamps", v)
+                }
+                SettingsParts.SwitchRow {
+                    label: "Filters"
+                    on: root.prop("simpleCollabUserSettings", ["hasUserDisabledShowingFilterAtTop"], false) !== true
+                    onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserDisabledShowingFilterAtTop", !v)
+                }
+                SettingsParts.SwitchRow {
+                    label: "Copilot"
+                    on: root.prop("userPersonalSettings", ["messagingSettings", "shouldShowMetaOSCopilotApp"], true) !== false
+                    onToggled: v => root.setProp("userPersonalSettings", "messagingSettings.shouldShowMetaOSCopilotApp", v)
+                }
+            }
+            SettingsParts.Card {
+                visible: root.page === "chats"
+                icon: "chat-bubbles-question-20"; title: "Automatically follow threads in channels"
+                subtitle: "To choose how you get notified, go to <a href=\"followed\">Replies to followed threads and posts</a>"
+                onLinkActivated: root.page = "notifications"
+                Repeater {
+                    model: [{ key: "Authored", label: "Threads started from my messages or posts" }, { key: "Participated", label: "Threads I reply to" }, { key: "AtMentioned", label: "Threads where I'm @mentioned" }]
+                    SettingsParts.CheckRow {
+                        required property var modelData
+                        label: modelData.label
+                        checked: root.prop("userPersonalSettings", ["teamsAndChannelsSettings", "autoFollow" + modelData.key + "Threads"], true) !== false
+                        onToggled: on => {
+                            const p = {}
+                            p["autoFollow" + modelData.key + "Threads"] = on
+                            p["autoFollow" + modelData.key + "Posts"] = on
+                            backend.changeSetting("prop", "userPersonalSettings", JSON.stringify({ teamsAndChannelsSettings: p }))
+                        }
                     }
                 }
             }
-            Card {
+            SettingsParts.Card {
                 visible: root.page === "chats"
-                title: "Read receipts"; icon: "eye-16"
-                subtitle: "Let people know when you've seen their messages and know when they've seen yours."
-                Switch2 {
-                    on: backend.readReceipts
-                    onToggled: v => backend.changeReadReceipts(v)
+                icon: "chat-20"; title: "Chat"
+                SettingsParts.SubHeading { text: "Message density" }
+                SettingsParts.Gap { size: 13 }
+                Row {
+                    spacing: 12.7
+                    readonly property string mode: root.prop("messageDensity", [], "COMFY")
+                    SettingsParts.ImageRadio { label: "Comfy"; image: "../assets/settings/chat-density-comfy-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode !== "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMFY") }
+                    SettingsParts.ImageRadio { label: "Compact"; image: "../assets/settings/chat-density-compact-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMPACT") }
                 }
+                SettingsParts.SubHeading { text: "When I open a chat, take me to"; gapAbove: 15 }
+                SettingsParts.Gap { size: 13 }
+                Row {
+                    spacing: 12.7
+                    readonly property bool lastRead: root.prop("userPersonalSettings", ["messagingSettings", "navigateToLastReadMessage"], true) !== false
+                    SettingsParts.ImageRadio { label: "Last read message"; image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
+                    SettingsParts.ImageRadio { label: "Newest message"; image: "../assets/settings/chat-landing-latest-" + theme.pick("light", "dark") + ".svg"; checked: !parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", false) }
+                }
+                SettingsParts.Gap { size: 4 }
+            }
+            SettingsParts.Card {
+                id: enterCard
+                visible: root.page === "chats"
+                icon: "keyboard-20"; title: "When writing a message, press Enter to"
+                subtitle: "This setting doesn't apply when message formatting is active."
+                property string enterKey: root.local("enterKey", "send")
+                SettingsParts.RadioRow { label: "Send the message"; checked: enterCard.enterKey === "send"; onPicked: { backend.setSetting("enterKey", "send"); enterCard.enterKey = "send"; root.settingsChanged() } }
+                SettingsParts.RadioRow { label: "Start a new line (to send, select Send or use Ctrl+Enter)."; checked: enterCard.enterKey === "newline"; onPicked: { backend.setSetting("enterKey", "newline"); enterCard.enterKey = "newline"; root.settingsChanged() } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "chats"
+                icon: "eye-20"; title: "Read receipts"
+                subtitle: "Let people know when you’ve seen their messages and know when they’ve seen yours. When this is off, you won't see read receipts from others."
+                trailing: Component { SettingsParts.Toggle { on: backend.readReceipts; accessibleName: "Read receipts"; onToggled: v => backend.changeReadReceipts(v) } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "chats"
+                icon: "arrow-sort-20"; title: "In post channels, show recent activity"
+                SettingsParts.RadioRow { label: "At the top"; checked: backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-top", "", "", "") }
+                SettingsParts.RadioRow { label: "At the bottom"; checked: !backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-bottom", "", "", "") }
+            }
+            SettingsParts.Card {
+                visible: root.page === "chats"
+                icon: "chat-sparkle-20"; title: "Suggested replies"; subtitle: "Show suggested replies in chat"
+                trailing: Component { SettingsParts.Toggle { on: root.prop("suggestedRepliesSettings", ["suggestionsEnabled"], true) !== false; accessibleName: "Suggested replies"; onToggled: v => root.setProp("suggestedRepliesSettings", "suggestionsEnabled", v) } }
             }
 
-            // Notifications and activity
-            Card {
+            // ---- Notifications and activity (OST's own for now) ----
+            SettingsParts.Card {
                 visible: root.page === "notifications"
-                title: "Notifications"; icon: "alert"
+                icon: "alert-20"; title: "Notifications"
                 subtitle: "Show a desktop notification for new messages when OST isn't the window you're using."
-                Switch2 {
-                    id: notifySwitch
-                    on: backend.setting("notifications") !== "off"
-                    onToggled: v => { backend.setSetting("notifications", v ? "on" : "off"); on = v }
+                trailing: Component { SettingsParts.Toggle { on: root.local("notifications", "on") !== "off"; accessibleName: "Notifications"; onToggled: v => { backend.setSetting("notifications", v ? "on" : "off"); on = v; root.notifyOn = v } } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "notifications" && root.notifyOn
+                icon: "mention-20"; title: "Only mentions"
+                subtitle: "Notify me only when someone @mentions me. Channel posts notify only for mentions either way."
+                trailing: Component { SettingsParts.Toggle { on: root.local("notify_mentions_only", "off") === "on"; accessibleName: "Only mentions"; onToggled: v => { backend.setSetting("notify_mentions_only", v ? "on" : "off"); on = v } } }
+            }
+
+            // ---- Privacy ----
+            SettingsParts.Card {
+                visible: root.page === "privacy"
+                icon: "presence-dnd-20"; title: "Do not disturb"
+                subtitle: "You can still receive notifications from people who have priority access when your status is set to do not disturb."
+                SettingsParts.CheckRow {
+                    label: "Set my status to do not disturb when I'm sharing my screen"
+                    checked: root.mt.allowAutoDnd !== false
+                    onToggled: on => root.setMt("allowAutoDnd", on)
                 }
             }
-            Card {
-                visible: root.page === "notifications" && notifySwitch.on
-                title: "Only mentions"; icon: "mention-20"
-                subtitle: "Notify me only when someone @mentions me. Channel posts notify only for mentions either way."
-                Switch2 {
-                    on: backend.setting("notify_mentions_only") === "on"
-                    onToggled: v => { backend.setSetting("notify_mentions_only", v ? "on" : "off"); on = v }
+            SettingsParts.Card {
+                visible: root.page === "privacy"
+                icon: "person-prohibited-20"; title: "Blocked contacts"
+                subtitle: "Blocked contacts will be unable to call you, message you, or see your presence."
+                SettingsParts.CheckRow {
+                    label: "Block calls with no caller ID"
+                    checked: root.mt.blockAnonymousCaller === true
+                    onToggled: on => root.setMt("blockAnonymousCaller", on)
+                }
+            }
+            SettingsParts.Card {
+                visible: root.page === "privacy"
+                icon: "clipboard-task-list-20"; title: "Surveys"; subtitle: "Participate in surveys from OST."
+                trailing: Component { SettingsParts.Toggle { on: root.prop("userEnableSurveysNotification", [], "true") !== "false"; accessibleName: "Surveys"; onToggled: v => root.setProp("userEnableSurveysNotification", "", v ? "true" : "false") } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "privacy"
+                icon: "people-list-20"; title: "Identify me in attendance reports"; subtitle: "Let meeting or event organizer know your attendance information."
+                trailing: Component { SettingsParts.Toggle { on: root.prop("showInMeetingReport", [], "true") !== "false"; accessibleName: "Identify me in attendance reports"; onToggled: v => root.setProp("showInMeetingReport", "", v ? "true" : "false") } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "privacy"
+                icon: "mic-20"; title: "Keyboard shortcut to unmute"; subtitle: "Press and hold Ctrl + Spacebar to temporarily unmute your mic during a meeting."
+                trailing: Component { SettingsParts.Toggle { on: root.prop("enablePushToTalk", [], "true") !== "false"; accessibleName: "Keyboard shortcut to unmute"; onToggled: v => root.setProp("enablePushToTalk", "", v ? "true" : "false") } }
+            }
+
+            // ---- Accessibility ----
+            SettingsParts.Card {
+                visible: root.page === "accessibility"
+                icon: "hand-wave-20"; title: "Sign language mode"; subtitle: "Enable features that provide an enhanced experience for sign language users."
+                trailing: Component { SettingsParts.Toggle { on: root.prop("callAccessibilitySettings", ["accessibilityModeEnabledV2"], false) === true; accessibleName: "Sign language mode"; onToggled: v => root.setProp("callAccessibilitySettings", "accessibilityModeEnabledV2", v) } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "accessibility"
+                icon: "closed-caption-20"; title: "Captions and transcripts"
+                SettingsParts.SwitchRow {
+                    label: "Always show captions in my calls and meetings"
+                    on: root.prop("callAccessibilitySettings", ["startCaptionsAutomatically"], false) === true
+                    onToggled: v => root.setProp("callAccessibilitySettings", "startCaptionsAutomatically", v)
+                }
+                SettingsParts.SwitchRow {
+                    label: "Automatically identify me in live captions and live transcripts"
+                    on: root.mt.enableSpeakerAttribution !== false
+                    onToggled: v => root.setMt("enableSpeakerAttribution", v)
+                }
+                SettingsParts.SwitchRow {
+                    label: "Filter out profane words in live captions"
+                    on: root.prop("callAccessibilitySettings", ["profanityFilterEnabled"], false) === true
+                    onToggled: v => root.setProp("callAccessibilitySettings", "profanityFilterEnabled", v)
                 }
             }
 
-            // Devices
-            Card {
+            // ---- Devices (OST's own for now) ----
+            SettingsParts.Card {
                 id: devices
                 visible: root.page === "devices"
-                title: "Audio devices"; icon: "headset-20"
+                icon: "headset-20"; title: "Audio devices"
                 subtitle: "Used for calls you start or answer after changing them."
                 readonly property var list: root.page === "devices" ? JSON.parse(backend.audioDevices()) : { inputs: [], outputs: [] }
-                Text { text: "Speaker"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                Choice {
+                SettingsParts.SubHeading { text: "Speaker" }
+                SettingsParts.Gap { size: 8 }
+                OutlineDropdown {
                     width: 360
-                    options: [{ value: "default", label: "Default" }].concat(devices.list.outputs.map(n => ({ value: n, label: n })))
-                    value: backend.setting("speakerDevice") || "default"
-                    onChosen: v => { backend.setSetting("speakerDevice", v); value = v }
+                    readonly property var values: ["default"].concat(devices.list.outputs)
+                    options: values.map(v => ({ label: v === "default" ? "Default" : v }))
+                    current: Math.max(0, values.indexOf(root.local("speakerDevice", "default")))
+                    accessibleName: "Speaker"
+                    onPicked: i => backend.setSetting("speakerDevice", values[i])
                 }
-                Text { text: "Microphone"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                Choice {
+                SettingsParts.SubHeading { text: "Microphone"; gapAbove: 16 }
+                SettingsParts.Gap { size: 8 }
+                OutlineDropdown {
                     width: 360
-                    options: [{ value: "default", label: "Default" }].concat(devices.list.inputs.map(n => ({ value: n, label: n })))
-                    value: backend.setting("micDevice") || "default"
-                    onChosen: v => { backend.setSetting("micDevice", v); value = v }
+                    readonly property var values: ["default"].concat(devices.list.inputs)
+                    options: values.map(v => ({ label: v === "default" ? "Default" : v }))
+                    current: Math.max(0, values.indexOf(root.local("micDevice", "default")))
+                    accessibleName: "Microphone"
+                    onPicked: i => backend.setSetting("micDevice", values[i])
                 }
+                SettingsParts.Gap { size: 8 }
             }
 
-            // About
-            Card {
+            // ---- About ----
+            SettingsParts.Card {
                 visible: root.page === "about"
-                title: "OST"; icon: "info-16"
-                subtitle: "An open-source client for Microsoft Teams. Not affiliated with Microsoft."
-                Text {
-                    text: "Version " + Qt.application.version
-                    font.family: theme.font; font.pixelSize: theme.base
-                    color: theme.text
-                }
+                icon: "info-20"; title: "OST"
+                subtitle: "An open-source client for Microsoft Teams. Not affiliated with Microsoft. Version " + Qt.application.version
+            }
+
+            // A failed save, as Teams' Settings says it.
+            Text {
+                visible: !!backend.settingsError
+                text: "Couldn't save your setting. Try again."
+                font.family: theme.font; font.pixelSize: 12; color: theme.danger
             }
         }
     }
-    signal settingsChanged()
+    property bool notifyOn: local("notifications", "on") !== "off"
+    signal showShortcuts()
     Component.onCompleted: backend.loadReadReceipts()
+    function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
+    function oofForTest() { return oofPage }
+    function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
 }

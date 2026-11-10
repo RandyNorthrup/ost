@@ -132,6 +132,10 @@ pub mod qobject {
         /// When the status you set ends (ISO UTC), or "" (Teams' "Until …"
         /// for paused notifications).
         #[qproperty(QString, my_status_ends)]
+        /// Settings' synced values: {props, mt, loaded}.
+        #[qproperty(QString, settings_json)]
+        /// The last setting that failed to save, or "".
+        #[qproperty(QString, settings_error)]
         /// Where you work today ("Office", "Remote", or "").
         #[qproperty(QString, my_work_location)]
         /// The channel threads open in windows of their own:
@@ -1357,6 +1361,17 @@ pub mod qobject {
         #[qinvokable]
         fn mic_level(self: Pin<&mut Backend>) -> i32;
 
+        /// Load Settings' synced values (into settings_json): {props: your
+        /// user properties, JSON ones parsed; mt: the middle tier's
+        /// settings}.
+        #[qinvokable]
+        fn load_settings(self: Pin<&mut Backend>);
+        /// Change a synced setting: kind "prop" (a user property; value is
+        /// a JSON patch for object properties or a JSON string) or "mt" (a
+        /// middle-tier setting; value "true"/"false"). The outcome goes to
+        /// settings_json (and settings_error on failure).
+        #[qinvokable]
+        fn change_setting(self: Pin<&mut Backend>, kind: &QString, name: &QString, value_json: &QString);
         /// Load the read receipts setting from Teams (into read_receipts).
         #[qinvokable]
         fn load_read_receipts(self: Pin<&mut Backend>);
@@ -1436,6 +1451,8 @@ pub struct BackendRust {
     status_note_result: QString,
     my_note_json: QString,
     my_status_ends: QString,
+    settings_json: QString,
+    settings_error: QString,
     my_work_location: QString,
     thread_windows_json: QString,
     channel_action_result: QString,
@@ -11114,6 +11131,76 @@ impl qobject::Backend {
 
     pub fn mic_level(self: Pin<&mut Self>) -> i32 {
         teams_cli::calling::audio::mic_level() as i32
+    }
+
+    pub fn load_settings(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let props = api::preferences::all_properties(&client).await?;
+                let mut mt = api::preferences::middle_tier_settings(&client).await.unwrap_or_else(|_| json!({}));
+                if let Ok(oof) = api::preferences::automatic_replies(&client).await {
+                    mt["oof"] = oof;
+                }
+                anyhow::Ok(json!({ "props": props, "mt": mt, "loaded": true }))
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(v) => this.as_mut().set_settings_json(QString::from(v.to_string().as_str())),
+                Err(e) => {
+                    tracing::warn!("settings unavailable: {}", short_error(&e));
+                    this.as_mut().set_settings_error(QString::from(short_error(&e).as_str()));
+                }
+            });
+        });
+    }
+
+    pub fn change_setting(mut self: Pin<&mut Self>, kind: &QString, name: &QString, value_json: &QString) {
+        let (kind, name) = (kind.to_string(), name.to_string());
+        let value: serde_json::Value = serde_json::from_str(&value_json.to_string()).unwrap_or(serde_json::Value::Null);
+        // Shown at once; put back if the save fails.
+        let before = self.rust().settings_json.to_string();
+        let mut all: serde_json::Value = serde_json::from_str(&before).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
+        if kind == "mt" {
+            all["mt"][&name] = value.clone();
+        } else if value.is_object() {
+            let base = all["props"].get(&name).cloned().unwrap_or_else(|| json!({}));
+            all["props"][&name] = api::preferences::merged(base, &value);
+        } else {
+            all["props"][&name] = value.clone();
+        }
+        self.as_mut().set_settings_json(QString::from(all.to_string().as_str()));
+        self.as_mut().set_settings_error(QString::default());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                if kind == "mt" && name == "oof" {
+                    api::preferences::set_automatic_replies(&client, &value).await?;
+                    anyhow::Ok(None)
+                } else if kind == "mt" {
+                    api::preferences::set_middle_tier_setting(&client, &name, value.as_bool().unwrap_or(false)).await?;
+                    anyhow::Ok(None)
+                } else {
+                    Ok(Some(api::preferences::set_property(&client, &name, &value).await?))
+                }
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(Some(saved)) => {
+                    let mut all: serde_json::Value = serde_json::from_str(&this.rust().settings_json.to_string()).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
+                    all["props"][&name] = saved;
+                    this.as_mut().set_settings_json(QString::from(all.to_string().as_str()));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("setting {name} not saved: {}", short_error(&e));
+                    this.as_mut().set_settings_json(QString::from(before.as_str()));
+                    this.as_mut().set_settings_error(QString::from(name.as_str()));
+                }
+            });
+        });
     }
 
     pub fn load_read_receipts(self: Pin<&mut Self>) {

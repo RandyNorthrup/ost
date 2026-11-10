@@ -632,7 +632,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && Qt.application.arguments.indexOf("--meeting-details-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && Qt.application.arguments.indexOf("--meeting-details-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3665,6 +3665,30 @@ Window {
         }
     }
 
+    // --settings-pages-test --shots=<dir>: every Settings page (st-<page>, and
+    // st-<page>-2 scrolled down) and General ▸ Out of office (st-oof);
+    // logs what the synced settings read. Changes nothing; quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--settings-pages-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        readonly property var pages: ["general", "appearance", "chats", "notifications", "privacy", "accessibility", "devices", "about"]
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) rail.current = "settings"
+            const i = Math.floor((step - 1) / 3), k = (step - 1) % 3
+            if (step >= 1 && i < pages.length) {
+                if (k === 0) settingsView.pageForTest(pages[i])
+                else if (k === 1) shot("st-" + pages[i])
+                else { settingsView.scrollForTest(); shot("st-" + pages[i] + "-2") }
+            } else if (step === 1 + pages.length * 3) { console.warn("ST settings", backend.settingsJson.slice(0, 1500)); settingsView.pageForTest("general", "oof") }
+            else if (step === 2 + pages.length * 3) shot("st-oof")
+            else if (step === 3 + pages.length * 3) Qt.quit()
+            step++
+        }
+    }
+
     // --pause-test --shots=<dir>: Pause notifications: the flyout and its
     // menu (pz-menu), 10 minutes (paused; pz-paused with the banner, and
     // the edit menu pz-edit), Custom's dialog (pz-custom) and its calendar
@@ -3707,6 +3731,18 @@ Window {
                 else if (step === 2) titleBar.pauseForTest(mode === "note-on" ? "10 minutes" : "resume")
                 else if (step === 5) { console.warn("NB", mode, backend.myNoteJson, window.noteBanner, window.dndBanner); shot("nb-" + mode) }
                 else if (step === 6) Qt.quit()
+                step++; return
+            }
+            // =oof-on: OST's Out of office on, "OST test 83 out of office",
+            // for a period from now to tomorrow; =oof-off: off with the
+            // message cleared (as before the tests).
+            if (mode === "oof-on" || mode === "oof-off") {
+                const o = settingsView.oofForTest()
+                if (step === 1) { rail.current = "settings"; settingsView.pageForTest("general", "oof") }
+                else if (step === 3) { console.warn("OOF before", JSON.stringify(o.setting)); o.on = mode === "oof-on"; o.typeForTest(mode === "oof-on" ? "OST test 83 out of office" : ""); o.period = mode === "oof-on"; console.warn("OOF canSave", o.canSave); shot(mode) }
+                else if (step === 4) { if (o.canSave) o.save(o.value()) }
+                else if (step === 7) backend.loadSettings()
+                else if (step === 9) { console.warn("OOF after", JSON.stringify(JSON.parse(backend.settingsJson).mt.oof), backend.settingsError); Qt.quit() }
                 step++; return
             }
             if (mode === "wl-office" || mode === "wl-clear") { if (step === 1) titleBar.pauseForTest(mode === "wl-office" ? "Office" : "clear"); else if (step === 4) { console.warn("WL", mode, backend.myWorkLocation); Qt.quit() } step++; return }
@@ -4565,6 +4601,7 @@ Window {
         onSetWorkLocation: loc => backend.setWorkLocationToday(loc)
         onPauseUntil: iso => backend.setMyStatusUntil("DoNotDisturb", "Custom", iso)
         onOpenNotificationSettings: { settingsView.page = "notifications"; rail.current = "settings" }
+        onOpenOutOfOffice: { settingsView.page = "general"; settingsView.subPage = "oof"; rail.current = "settings" }
         pinned: window.pinned
         onTogglePin: window.pinned = !window.pinned
         windowButtons: !backend.systemFrame
@@ -5110,6 +5147,7 @@ Window {
     SettingsView {
         id: settingsView
         visible: rail.current === "settings"
+        onShowShortcuts: shortcutsDialog.open()
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
     }
     ActivityView {

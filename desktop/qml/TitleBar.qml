@@ -986,10 +986,9 @@ Rectangle {
             }
             Text { x: 16; y: 390; height: 20; verticalAlignment: Text.AlignVCenter; text: "Clear status message after"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
             Dropdown { id: clearPick; x: 16; y: 424; width: 288; options: notePage.clearAfter }
-            // Teams' "Schedule out of office" link (16, 478) opens its
-            // out-of-office dialog; shown once OST has that dialog (TASK-0041).
+            // Teams' "Schedule out of office" link (16, 478) opens
+            // Settings ▸ General ▸ Out of office.
             Text {
-                visible: false
                 x: 18; y: 480; height: 20; verticalAlignment: Text.AlignVCenter
                 text: "Schedule out of office"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
                 HoverHandler { cursorShape: Qt.PointingHandCursor }

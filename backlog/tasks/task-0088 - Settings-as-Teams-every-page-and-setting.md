@@ -1,9 +1,11 @@
 ---
 id: TASK-0088
 title: 'Settings as Teams: every page and setting'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-10T07:56:00Z'
+updated_date: '2026-11-10T09:07:00Z'
 labels:
   - desktop
   - settings
