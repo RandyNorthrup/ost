@@ -16,6 +16,7 @@ import QtQuick.Controls.Basic
 //   "Last active: …" and the description (10/14 #616161), Hide / Show and
 //   the channel's menu at the end.
 // - Analytics: the team's dashboard (AnalyticsView, team scope).
+// - Tags: TagsView.
 Rectangle {
     id: page
     property string teamId: ""
@@ -103,6 +104,7 @@ Rectangle {
         id: teamMenu
         team: page.team
         onManageTeam: page.tab = "channels"
+        onManageTags: page.tab = "tags"
         onChannelCreated: (id, name) => page.openChannel(id, name)
     }
     CreateChannelDialog { id: createChannel; onCreated: (id, name) => page.openChannel(id, name) }
@@ -382,8 +384,23 @@ Rectangle {
     }
     signal manageChannelAnalytics(string channelId)
 
+    // ---- Tags ----
+    property string myPresence: ""
+    signal chatWithPeople(var mris)
+    TagsView {
+        id: tagsView
+        visible: page.tab === "tags"
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        teamId: page.teamId
+        teamThread: page.tab === "tags" ? (page.team.thread_id || "") : ""
+        owner: !!page.team.owner
+        myPresence: page.myPresence
+        onChatWithGroup: people => page.chatWithPeople(people)
+    }
+
     // Test hooks.
     function analyticsForTest() { return analytics }
     function rowsForTest() { return page.rows }
     function createChannelForTest() { return createChannel }
+    function tagsForTest() { return tagsView }
 }

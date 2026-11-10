@@ -608,6 +608,50 @@ or member with the `createTopic` setting for standard channels.
   errors." / "There was an error.". Not exercised live: the test tenant
   allows no new team members.
 
+#### 5.6.2 Manage tags (Manage team ▸ Tags, measured 2026-11-09)
+
+The team menu's **Manage tags** opens Manage team on its **Tags** tab.
+
+- List (offsets from the tab area): **Search for tags** (170 × 32, search
+  glyph at its end) 72 in, 32.3 down; **Create tag** (brand, tag glyph) 52
+  from the right. Sections 80 in, 82.3 down, 44 tall headers (chevron 20 at
+  10, label 14/20 at 38): **Tags assigned to you (n)** (open; empty: "No
+  tags are currently assigned to you"), **Other tags (n)**, **Deleted
+  (n)**. Tables 12 further in: header 34 (12/16: Name, Members,
+  Description, Imported from; five equal columns), rows 44 with a #FAFAFA
+  line: round badge 32 (#C5CBFA, tag glyph #444791), name 14/20, the people
+  glyph and the count, description, source, ··· (32 × 31.3): **Chat with
+  group**, **Create a copy** | **Delete**. Deleted tags offer **Restore**.
+- A tag (click its row): **All tags** (chevron, 600) 72 in; **Add people**,
+  **Edit tag details**, **Create a copy** | **Delete tag** (32 × 31.3) 84
+  from the right; badge 42 at 96 and the name 16/22 bold at 150, 100.3
+  down; **Members (n)** (14/20 bold) 190.3 down, then Name, Title,
+  Location, Organization (rows 44: picture 32 with presence, Remove).
+- Dialogs (Northstar: 600 wide, padding 27 32 32, title 18/25.7 bold):
+  **Create a new tag** (594.7: Tag name * with n/40 while focused, filled
+  field "Letters, numbers, spaces and emojis are allowed"; Tag description
+  with n/200 while focused, "Let people know what this tag is all about";
+  "Enter name of a member" * with an underlined picker "Enter name", 43
+  tall matches with 28 px pictures, "We couldn't find any matches.", the
+  picked people below; Cancel / Create), a copy starts "{name}_copy" with
+  the tag's people; **Edit tag** (364.7; Save once changed); **Add people**
+  (594.7); **Are you sure?** (164.7: You're about to delete the "{name}"
+  tag.; Cancel / **Delete tag**). Only owners change tags when the team's
+  `onlyOwnersCanUpdate` is set.
+- Wire (CSA, chatsvcagg token; `{team}` = the team thread):
+  list `GET {csa}/api/v1/teams/{team}/tagCards?tagType=any` (+
+  `teamTagSettings`) and `…/deletedTags`; members
+  `GET …/v1/teams/{team}/tags/{tag}/members?pageSize=200`; create
+  `POST …/v1/teams/{team}/tags` `{threadId, tagName, tagDescription,
+  memberIds}`; edit `PATCH {csa}/api/v2/teams/{team}/tags/{tag}`
+  (`if-match` its version) `{tagName, tagDescription}`; delete
+  `DELETE …/v1/teams/{team}/tags/{tag}`; restore `POST …/tags/{tag}/restore`;
+  people `POST …/v1/teams/{team}/memberTags?tagType=team&action=add`
+  `{memberIds, tagNames}` / `action=delete` `{memberIds, tagIds}`. Member
+  search: the team profile search (§7.7.1). Chat with group opens New chat
+  with the tag's people. Verified both ways on "OST test tag" (description
+  set in Teams, read and cleared from OST).
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

@@ -373,6 +373,237 @@ pub async fn team_tags(client: &TeamsClient, team_thread_id: &str) -> Result<Vec
     Ok(tags)
 }
 
+/// A tag as Manage team ▸ Tags lists it (CSA `tagCards` / `deletedTags`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct TagCard {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub member_ids: Vec<String>,
+    pub count: u64,
+    /// You are in it ("Tags assigned to you").
+    pub mine: bool,
+    /// For edits (`if-match`).
+    pub version: u64,
+    /// Where it was imported from (empty for tags made in the team).
+    pub source: String,
+}
+
+/// The tags of a `tagCards` (or `deletedTags`) reply.
+pub fn tag_cards_from(v: &serde_json::Value) -> Vec<TagCard> {
+    let list = v.get("tagCards").unwrap_or(v);
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            let s = |k: &str| t.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            let member_ids: Vec<String> = t
+                .get("memberIds")
+                .and_then(|m| m.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|m| m.as_str().map(str::to_string))
+                .collect();
+            Some(TagCard {
+                id: t.get("tagId")?.as_str()?.to_string(),
+                name: s("tagName"),
+                description: s("tagDescription"),
+                count: t.get("memberCount").and_then(|c| c.as_u64()).unwrap_or(member_ids.len() as u64),
+                member_ids,
+                mine: t.get("currentMemberIsPartOfTag").and_then(|m| m.as_bool()).unwrap_or(false),
+                version: t.get("version").and_then(|n| n.as_u64()).unwrap_or(0),
+                source: s("tagSource"),
+            })
+        })
+        .collect()
+}
+
+/// A team's tags for Manage team ▸ Tags: the live ones, the deleted ones,
+/// and whether only owners may change them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct TagList {
+    pub tags: Vec<TagCard>,
+    pub deleted: Vec<TagCard>,
+    pub only_owners: bool,
+}
+
+/// Teams' CSA base for the region and its token.
+async fn csa(client: &TeamsClient) -> Result<(String, String)> {
+    let token = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default").await?;
+    let region = client
+        .chat_service_url()
+        .split("//")
+        .nth(1)
+        .and_then(|h| h.split('.').next())
+        .unwrap_or("amer")
+        .to_string();
+    Ok((format!("https://teams.microsoft.com/api/csa/{region}/api"), token))
+}
+
+/// One CSA tag request; the reply's JSON (null when empty).
+async fn csa_tag_request(
+    client: &TeamsClient,
+    method: reqwest::Method,
+    path: &str,
+    body: Option<serde_json::Value>,
+    if_match: Option<u64>,
+) -> Result<serde_json::Value> {
+    let (base, token) = csa(client).await?;
+    let mut req = client.http().request(method, format!("{base}/{path}")).bearer_auth(token);
+    if let Some(v) = if_match {
+        req = req.header("if-match", v.to_string());
+    }
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
+    let resp = req.send().await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        anyhow::bail!("Tags: {status} {}", text.chars().take(200).collect::<String>());
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
+/// `GET teams/{team}/tagCards?tagType=any` and `teams/{team}/deletedTags`.
+pub async fn tag_list(client: &TeamsClient, team_thread: &str) -> Result<TagList> {
+    let v = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/tagCards?tagType=any"), None, None).await?;
+    let deleted = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/deletedTags"), None, None)
+        .await
+        .map(|d| tag_cards_from(&d))
+        .unwrap_or_default();
+    let tags = tag_cards_from(&v);
+    note_tags(
+        &tags
+            .iter()
+            .map(|t| TeamTag { id: t.id.clone(), name: t.name.clone(), count: t.count, mine: t.mine })
+            .collect::<Vec<_>>(),
+    );
+    Ok(TagList {
+        tags,
+        deleted,
+        only_owners: v.pointer("/teamTagSettings/onlyOwnersCanUpdate").and_then(|b| b.as_bool()).unwrap_or(false),
+    })
+}
+
+/// A tag's members' MRIs (`GET teams/{team}/tags/{tag}/members?pageSize=200`).
+pub async fn tag_members(client: &TeamsClient, team_thread: &str, tag: &str) -> Result<Vec<String>> {
+    let v = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/tags/{tag}/members?pageSize=200"), None, None).await?;
+    Ok(v["members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m["memberId"].as_str().map(str::to_string))
+        .collect())
+}
+
+/// Create a tag (`POST teams/{team}/tags`).
+pub async fn create_tag(client: &TeamsClient, team_thread: &str, name: &str, description: &str, members: &[String]) -> Result<()> {
+    csa_tag_request(client, reqwest::Method::POST, &format!("v1/teams/{team_thread}/tags"), Some(create_tag_body(team_thread, name, description, members)), None).await?;
+    Ok(())
+}
+
+/// Teams' create body.
+pub fn create_tag_body(team_thread: &str, name: &str, description: &str, members: &[String]) -> serde_json::Value {
+    serde_json::json!({
+        "threadId": team_thread,
+        "tagName": name.trim(),
+        "tagDescription": description.trim(),
+        "memberIds": members,
+    })
+}
+
+/// Rename / describe a tag (`PATCH {csa}/api/v2/teams/{team}/tags/{tag}`,
+/// `if-match` its version; Teams' only v2 tag call).
+pub async fn update_tag(client: &TeamsClient, team_thread: &str, tag: &str, version: u64, name: &str, description: &str) -> Result<()> {
+    let body = serde_json::json!({ "tagName": name.trim(), "tagDescription": description.trim() });
+    csa_tag_request(client, reqwest::Method::PATCH, &format!("v2/teams/{team_thread}/tags/{tag}"), Some(body), Some(version)).await?;
+    Ok(())
+}
+
+/// Delete a tag (`DELETE teams/{team}/tags/{tag}`) or restore a deleted one
+/// (`POST teams/{team}/tags/{tag}/restore`).
+pub async fn delete_tag(client: &TeamsClient, team_thread: &str, tag: &str, restore: bool) -> Result<()> {
+    if restore {
+        csa_tag_request(client, reqwest::Method::POST, &format!("v1/teams/{team_thread}/tags/{tag}/restore"), None, None).await?;
+    } else {
+        csa_tag_request(client, reqwest::Method::DELETE, &format!("v1/teams/{team_thread}/tags/{tag}"), None, None).await?;
+    }
+    Ok(())
+}
+
+/// Add people to a tag (`…/memberTags?tagType=team&action=add`, by tag
+/// name) or take them out (`action=delete`, by tag id).
+pub async fn change_tag_members(client: &TeamsClient, team_thread: &str, tag_id: &str, tag_name: &str, members: &[String], add: bool) -> Result<()> {
+    let (action, body) = tag_members_body(tag_id, tag_name, members, add);
+    csa_tag_request(client, reqwest::Method::POST, &format!("v1/teams/{team_thread}/memberTags?tagType=team&action={action}"), Some(body), None).await?;
+    Ok(())
+}
+
+/// Teams' memberTags bodies.
+pub fn tag_members_body(tag_id: &str, tag_name: &str, members: &[String], add: bool) -> (&'static str, serde_json::Value) {
+    if add {
+        ("add", serde_json::json!({ "memberIds": members, "tagNames": [tag_name] }))
+    } else {
+        ("delete", serde_json::json!({ "memberIds": members, "tagIds": [tag_id] }))
+    }
+}
+
+/// A tag member's row (Name, Title, Location, Organization), from Graph.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct TagPerson {
+    pub mri: String,
+    pub name: String,
+    pub title: String,
+    pub location: String,
+    pub organization: String,
+    pub mail: String,
+}
+
+/// The people behind tag member MRIs.
+pub async fn tag_people(client: &TeamsClient, mris: &[String]) -> Vec<TagPerson> {
+    let mut out = Vec::new();
+    for mri in mris {
+        let mut p = TagPerson { mri: mri.clone(), ..Default::default() };
+        if let Some(oid) = mri.strip_prefix("8:orgid:")
+            && uuid::Uuid::parse_str(oid).is_ok()
+            && let Ok(resp) = client
+                .graph_get(&format!("/users/{oid}?$select=displayName,jobTitle,officeLocation,department,mail,userPrincipalName"))
+                .await
+            && let Ok(u) = resp.json::<serde_json::Value>().await
+        {
+            let s = |k: &str| u[k].as_str().unwrap_or_default().to_string();
+            p.name = s("displayName");
+            p.title = s("jobTitle");
+            p.location = s("officeLocation");
+            p.organization = s("department");
+            p.mail = u["mail"].as_str().or_else(|| u["userPrincipalName"].as_str()).unwrap_or_default().to_string();
+        }
+        out.push(p);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use super::*;
+
+    #[test]
+    fn tags_are_read_and_written_as_teams() {
+        // Teams' reply on OST Test Team's Tags tab (2026-11-09).
+        let v = serde_json::json!({"tagCards":[{"tagId":"tmu3aacUko","tagName":"OST test tag","memberIds":["8:orgid:4287e791-1b98-4963-8b94-281c50472683"],"memberCount":1,"tagType":"team","currentMemberIsPartOfTag":true,"scheduledMembers":[],"version":1}],"teamTagSettings":{"onlyOwnersCanUpdate":false,"tagCount":1,"disallowedSources":[],"enableAutomaticTags":null,"automaticTagsNeedsRefresh":true,"version":134},"continuationToken":""});
+        let t = tag_cards_from(&v);
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].id.as_str(), t[0].count, t[0].mine, t[0].version), ("tmu3aacUko", 1, true, 1));
+        assert!(tag_cards_from(&serde_json::json!([])).is_empty());
+        let (a, b) = tag_members_body("tmu3aacUko", "OST test tag", &["8:orgid:x".into()], true);
+        assert_eq!((a, b.to_string().as_str()), ("add", r#"{"memberIds":["8:orgid:x"],"tagNames":["OST test tag"]}"#));
+        let (a, b) = tag_members_body("tmu3aacUko", "OST test tag", &["8:orgid:x".into()], false);
+        assert_eq!((a, b.to_string().as_str()), ("delete", r#"{"memberIds":["8:orgid:x"],"tagIds":["tmu3aacUko"]}"#));
+        assert_eq!(create_tag_body("19:t", " A ", "", &[])["tagName"], "A");
+    }
+}
+
 #[cfg(test)]
 mod list_tests {
     use super::*;

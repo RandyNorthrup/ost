@@ -3361,6 +3361,46 @@ Window {
         }
     }
 
+    // --tags-test=<team group id> --shots=<dir> [--tags-edit]: Manage team
+    // ▸ Tags (tg-list.png, the list logged), a row's menu (tg-menu.png), the
+    // first tag (tg-tag.png, its people logged), Edit tag (tg-edit.png),
+    // Add people searching "OST" (tg-add.png), Create a copy (tg-copy.png)
+    // and Delete (tg-delete.png), all cancelled. With --tags-edit the tag's
+    // description is set to "OST tag description" (tg-edited.png, logged)
+    // and cleared again; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tags-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var tag: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--tags-test=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const edit = Qt.application.arguments.indexOf("--tags-edit") >= 0
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) { window.openManageTeam(id, "tags"); step++; return }
+            const v = manageTeam.tagsForTest(), d = v.dialogForTest()
+            if (step === 2) { console.warn("TAGS list", JSON.stringify(v.list)); tag = v.list && v.list.tags[0]; shot("tg-list") }
+            else if (step === 3) { const m = v.rowMenuForTest(); m.tag = tag; m.parent = v; m.x = v.width - 200; m.y = 160; m.open() }
+            else if (step === 4) shot("tg-menu")
+            else if (step === 5) { v.rowMenuForTest().close(); v.show(tag) }
+            else if (step === 7) { console.warn("TAGS people", JSON.stringify(v.people)); shot("tg-tag") }
+            else if (step === 8) d.startEdit(v.open)
+            else if (step === 9) shot("tg-edit")
+            else if (step === 10) { d.close(); d.startAdd(v.open, v.people); d.searchForTest("OST") }
+            else if (step === 12) { console.warn("TAGS search", JSON.stringify(d.results), d.searched); shot("tg-add") }
+            else if (step === 13) { d.close(); d.startCopy(v.open, v.people) }
+            else if (step === 14) shot("tg-copy")
+            else if (step === 15) { d.close(); d.startDelete(v.open) }
+            else if (step === 16) shot("tg-delete")
+            else if (step === 17) { d.close(); if (!edit) Qt.quit(); else { d.startEdit(v.open); d.fillForTest(v.open.name, "OST tag description"); d.submit() } }
+            else if (step === 20) { console.warn("TAGS edited", JSON.stringify(v.open)); shot("tg-edited") }
+            else if (step === 21) { d.startEdit(v.open); d.fillForTest(v.open.name, ""); d.submit() }
+            else if (step === 24) { console.warn("TAGS reverted", JSON.stringify(v.open)); Qt.quit() }
+            step++
+        }
+    }
+
     // --channel-owner-test=<team group id> --shots=<dir>: on the OST test
     // channels: the owner menu (co-menu.png) and the Archive / Delete
     // dialogs (co-archive.png, co-delete.png); then Restore "OST test
@@ -4401,6 +4441,13 @@ Window {
         onManageChannelAnalytics: id => { window.manageTeamId = ""; window.openManageChannel(id); manageChannel.tab = "analytics" }
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
+        myPresence: window.myPresence
+        // Tags ▸ Chat with group: a new chat with the tag's people.
+        onChatWithPeople: people => {
+            window.manageTeamId = ""
+            window.composing = true
+            Qt.callLater(() => { newChat.picked = people })
+        }
     }
     ManageChannel {
         id: manageChannel
@@ -4431,6 +4478,7 @@ Window {
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: (id, name) => window.openManageChannel(id)
         onManageTeam: id => window.openManageTeam(id, "channels")
+        onManageTags: id => window.openManageTeam(id, "tags")
         // An expanded tab takes the list's place (Teams' Expand tab).
         visible: rail.current === "chat" && !conversation.tabExpanded
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }

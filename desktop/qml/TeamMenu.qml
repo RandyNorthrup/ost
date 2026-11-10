@@ -11,12 +11,13 @@ import QtQuick.Controls.Basic
 // - Hide all channels asks first ("Hide all channels in {team}?", 600 wide)
 //   and then hides them through Teams' provisioning service.
 // - Copy link copies Teams' team link.
-// - Manage team opens the Manage team page.
+// - Manage team opens the Manage team page; Manage tags its Tags tab.
 Item {
     id: root
     /// The team as the team list has it ({id, thread_id, name, channels, …}).
     property var team: ({})
     signal manageTeam(string teamId)
+    signal manageTags(string teamId)
     signal channelCreated(string channelId, string name)
     readonly property alias menu: menu
     readonly property var general: (team.channels || []).find(c => c.general) || ({ id: team.thread_id, name: "General" })
@@ -35,6 +36,7 @@ Item {
         items: (root.anyShown ? [{ key: "hide-all", label: "Hide all channels", icon: "eye-off-20" }, { separator: true }] : []).concat(root.team.archived ? [] : [{ key: "add-member", label: "Add member", icon: "person-add-20" }]).concat([
             { key: "add-channel", label: "Add channel", icon: "channel-add-20" },
             { key: "manage", label: "Manage team", icon: "settings-20" },
+            { key: "tags", label: "Manage tags", icon: "tag-20" },
             { key: "link", label: "Copy link", icon: "link-20" }
         ])
         onPicked: i => {
@@ -43,6 +45,7 @@ Item {
             else if (k === "add-member") addMembers.start(root.team.id, root.team.thread_id, root.team.name)
             else if (k === "add-channel") createChannel.start(root.team.id, root.team.name)
             else if (k === "manage") root.manageTeam(root.team.id)
+            else if (k === "tags") root.manageTags(root.team.id)
             else if (k === "link") root.act("team-link")
         }
     }

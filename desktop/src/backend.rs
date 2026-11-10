@@ -9432,6 +9432,45 @@ impl qobject::Backend {
                         };
                         Ok(json!({ "settings": s, "moderators": moderators }))
                     }
+                    // Manage team ▸ Tags.
+                    "tags-load" => {
+                        let list = api::teams::tag_list(&client, &team_thread).await?;
+                        Ok(json!(list))
+                    }
+                    // arg: the tag id → its people.
+                    "tag-members" => {
+                        let mris = api::teams::tag_members(&client, &team_thread, arg.trim()).await?;
+                        let people = api::teams::tag_people(&client, &mris).await;
+                        Ok(json!({ "tag": arg, "people": people }))
+                    }
+                    "tag-member-search" => {
+                        let people = api::channels::search_team_members(&client, &team_thread, arg.trim()).await?;
+                        Ok(json!({ "query": arg, "people": people }))
+                    }
+                    // arg {name, description, members}.
+                    "tag-create" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Tag")?;
+                        let members: Vec<String> = a["members"].as_array().into_iter().flatten().filter_map(|m| m.as_str().map(str::to_string)).collect();
+                        api::teams::create_tag(&client, &team_thread, a["name"].as_str().unwrap_or_default(), a["description"].as_str().unwrap_or_default(), &members).await?;
+                        Ok(json!({ "name": a["name"] }))
+                    }
+                    // arg {id, version, name, description}.
+                    "tag-update" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Tag")?;
+                        api::teams::update_tag(&client, &team_thread, a["id"].as_str().unwrap_or_default(), a["version"].as_u64().unwrap_or(0), a["name"].as_str().unwrap_or_default(), a["description"].as_str().unwrap_or_default()).await?;
+                        Ok(json!({ "id": a["id"] }))
+                    }
+                    "tag-delete" | "tag-restore" => {
+                        api::teams::delete_tag(&client, &team_thread, arg.trim(), op == "tag-restore").await?;
+                        Ok(json!({ "id": arg }))
+                    }
+                    // arg {id, name, members}.
+                    "tag-add-members" | "tag-remove-members" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Tag")?;
+                        let members: Vec<String> = a["members"].as_array().into_iter().flatten().filter_map(|m| m.as_str().map(str::to_string)).collect();
+                        api::teams::change_tag_members(&client, &team_thread, a["id"].as_str().unwrap_or_default(), a["name"].as_str().unwrap_or_default(), &members, op == "tag-add-members").await?;
+                        Ok(json!({ "id": a["id"] }))
+                    }
                     // Add members to {team}: who is in it already.
                     "team-members-load" => {
                         let mris = api::channels::team_member_mris(&client, &team_thread).await?;
@@ -9530,7 +9569,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });

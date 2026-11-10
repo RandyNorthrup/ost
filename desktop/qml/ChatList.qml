@@ -602,9 +602,11 @@ Rectangle {
 
     // The team menu, shared by every team row.
     signal manageTeam(string teamId)
+    signal manageTags(string teamId)
     TeamMenu {
         id: teamMenu
         onManageTeam: id => root.manageTeam(id)
+        onManageTags: id => root.manageTags(id)
         // Teams opens the new channel.
         onChannelCreated: (id, name) => root.chatSelected(id, name)
     }
