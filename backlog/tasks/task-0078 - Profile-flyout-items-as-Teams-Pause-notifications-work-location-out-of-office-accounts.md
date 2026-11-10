@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T16:14:00Z'
-updated_date: '2026-11-10T09:07:00Z'
+updated_date: '2026-11-10T09:57:00Z'
 labels:
   - desktop
 dependencies: []
@@ -23,7 +23,7 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
 <!-- AC:BEGIN -->
 - [x] #1 Pause notifications works as Teams' (durations, the flyout row, banners held while paused)
 - [x] #2 Set work location shows and sets the same location Teams does, when the tenant offers it
-- [ ] #3 Schedule out of office opens Teams' out-of-office dialog and saves the same automatic replies
+- [x] #3 Schedule out of office opens Teams' out-of-office dialog and saves the same automatic replies
 - [ ] #4 Add another account behaves as Teams' (OST's sign-in, separate profiles)
 - [ ] #5 Others' status messages show in their profile cards and the 1:1 chat header as in Teams
 <!-- AC:END -->
@@ -38,4 +38,6 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
 - Own pinned status message banner (presence-statusmessage-banner) and banner queue as Teams (9da2f31); verified against Teams on winpc (same text and date format; dismissing DND revealed the note banner in both).
 
 - AC #5 (others' status message / out of office above compose, profile cards): strings found ("Status of {memberOne}: {message}", "{memberOne} is out of office and may not respond"); measuring the compose banner needs a second account's view (Randy's Teams web) and the Chrome Control extension is disconnected (native host registered to app/current, server is versions/1.11.0; needs browser_extension_install or the user to reload). Profile cards don't exist in OST yet: TASK-0089.
+
+- Schedule out of office: opens Settings > General > Out of office (Teams' page), saving Teams' automatic replies (updateAutomaticRepliesSetting); OST saved on/off, checked with the server read.
 <!-- SECTION:NOTES:END -->

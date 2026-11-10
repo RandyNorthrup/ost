@@ -183,6 +183,73 @@ struct NativeMessage {
     content: Option<String>,
     messagetype: Option<String>,
     from: Option<String>,
+    #[serde(default)]
+    properties: Option<serde_json::Value>,
+}
+
+/// A chat's last message as the chat list previews it (Teams' messaging
+/// 390776 `u`): system events and media get Teams' own words ("Bot
+/// added", "Sent an image", …, flagged `true` so they show in italics);
+/// anything else is its text.
+pub fn list_preview(content: &str, messagetype: &str, properties: Option<&serde_json::Value>) -> (String, bool) {
+    let own = |s: &str| (s.to_string(), true);
+    let forwarded = content.is_empty()
+        && properties.and_then(|p| p.get("forwardTemplateId")).is_some_and(|v| !v.is_null());
+    match messagetype {
+        "RichText/Media_Card" if content.is_empty() => return own("Sent a card"),
+        "RichText/Media_Card" => return (strip_html(content), false),
+        "RichText/Media_CallRecording" | "RichText/Media_CallLocalRecording" => {
+            let recording = content.contains("<RecordingContent") && content.contains("contentTypes=\"Recording");
+            if messagetype == "RichText/Media_CallRecording" && !recording {
+                return (String::new(), true);
+            }
+            return if content.contains("status=\"Initial\"") {
+                own("Recording has started")
+            } else if content.contains("status=\"ChunkFinished\"") {
+                own("Recording has stopped")
+            } else if content.contains("status=\"Success\"") {
+                own(if messagetype == "RichText/Media_CallRecording" { "Recording is ready" } else { "Recording has stopped" })
+            } else {
+                (String::new(), true)
+            };
+        }
+        "ThreadActivity/AddMember" => {
+            let initiator = between(content, "<initiator>", "</initiator>").unwrap_or_default();
+            let targets: Vec<&str> = content
+                .split("<target>")
+                .skip(1)
+                .filter_map(|t| t.split("</target>").next())
+                .map(str::trim)
+                .filter(|t| *t != initiator.trim())
+                .collect();
+            if !initiator.is_empty() && targets.is_empty() {
+                return own("User joined");
+            }
+            return if targets.iter().any(|t| t.starts_with("28:")) { own("Bot added") } else { own("User added") };
+        }
+        "RichText/Media_CallTranscript" => return own("Transcript is available"),
+        "RichText/Media_Collaborate" => return (String::new(), true),
+        // A Loop component with no text.
+        "RichText/Media_Embed" if content.is_empty() => return own("Loop component"),
+        _ => {}
+    }
+    let trimmed = content.trim();
+    if trimmed.starts_with("<img") && trimmed.ends_with('>') && trimmed.matches('<').count() == 1 {
+        return own("Sent an image");
+    }
+    if content.contains("<video") && content.contains("</video>") {
+        return own("🎥 Video");
+    }
+    if forwarded {
+        return own("Forwarded a message");
+    }
+    (strip_html(content), false)
+}
+
+fn between<'a>(s: &'a str, a: &str, b: &str) -> Option<&'a str> {
+    let i = s.find(a)? + a.len();
+    let j = s[i..].find(b)? + i;
+    Some(&s[i..j])
 }
 
 #[derive(Debug, Deserialize)]
@@ -674,6 +741,9 @@ pub struct ChatInfo {
     pub last_message_time: Option<String>,
     pub last_message_sender: Option<String>,
     pub last_message_preview: Option<String>,
+    /// The preview is Teams' own words for a system event or media
+    /// ("Bot added", "Sent an image"), shown in italics.
+    pub last_message_system: bool,
     /// The call going on in this chat.
     pub live_call: Option<LiveCall>,
     /// You muted it.
@@ -771,6 +841,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             name = display;
         }
 
+        let mut preview_system = false;
         let (last_time, last_sender, last_preview) = if let Some(ref msg) = conv.last_message {
             let time = msg
                 .original_arrival_time
@@ -778,8 +849,13 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .or(msg.compose_time.as_deref())
                 .map(String::from);
             let sender = msg.im_display_name.clone();
-            let preview = msg.content.as_deref().map(|c| {
-                let text = strip_html(c);
+            let (text, system) = list_preview(
+                msg.content.as_deref().unwrap_or_default(),
+                msg.messagetype.as_deref().unwrap_or_default(),
+                msg.properties.as_ref(),
+            );
+            preview_system = system;
+            let preview = Some(text).filter(|t| !t.is_empty() || system).map(|text| {
                 if text.len() > 80 {
                     let end = text
                         .char_indices()
@@ -804,6 +880,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             last_message_time: last_time,
             last_message_sender: last_sender,
             last_message_preview: last_preview,
+            last_message_system: preview_system,
             live_call: conv
                 .thread_properties
                 .as_ref()
@@ -934,6 +1011,7 @@ mod sender_name_tests {
             content: None,
             messagetype: None,
             from: from.map(String::from),
+            properties: None,
         }
     }
 
@@ -1139,5 +1217,25 @@ mod live_call_tests {
         )]
         .into();
         assert!(live_call(&ended, 1_794_070_000).is_none());
+    }
+}
+
+#[cfg(test)]
+mod list_preview_tests {
+    use super::list_preview;
+
+    #[test]
+    fn system_events_and_media_preview_as_teams() {
+        // OST group test's last message: Polls added (a bot).
+        let add_bot = "<addmember><eventtime>1</eventtime><initiator>8:orgid:a</initiator><target>28:d2d6f9b4</target></addmember>";
+        assert_eq!(list_preview(add_bot, "ThreadActivity/AddMember", None), ("Bot added".into(), true));
+        let add_user = "<addmember><initiator>8:orgid:a</initiator><target>8:orgid:b</target></addmember>";
+        assert_eq!(list_preview(add_user, "ThreadActivity/AddMember", None).0, "User added");
+        let joined = "<addmember><initiator>8:orgid:a</initiator><target>8:orgid:a</target></addmember>";
+        assert_eq!(list_preview(joined, "ThreadActivity/AddMember", None).0, "User joined");
+        assert_eq!(list_preview("<img src=\"x\">", "RichText/Html", None).0, "Sent an image");
+        assert_eq!(list_preview("<p>Hi <b>there</b></p>", "RichText/Html", None), ("Hi there".into(), false));
+        let fwd = serde_json::json!({ "forwardTemplateId": "1" });
+        assert_eq!(list_preview("", "RichText/Html", Some(&fwd)).0, "Forwarded a message");
     }
 }

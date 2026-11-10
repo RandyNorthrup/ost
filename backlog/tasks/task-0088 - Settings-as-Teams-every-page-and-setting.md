@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-10T09:07:00Z'
+updated_date: '2026-11-10T09:57:00Z'
 labels:
   - desktop
   - settings
@@ -25,3 +25,9 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - [ ] #2 Each page's settings show and save the same values Teams does, through the same services
 - [ ] #3 Links into settings from elsewhere (Do not disturb banner, Pause notifications' Notifications settings, call and chat menus) open the right page and section
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Phase 1 (d9ca83d): layout, General/Appearance/Chats/Privacy/Accessibility/Devices pages, synced storage (user properties + MT) captured per setting, Out of office page. Still: Notifications page as Teams, Accounts and orgs, Calls, Files and links, App permissions, Recognition, remaining items; OST behaviour for saved-only settings (Copilot row, compact density, auto-follow, suggested replies, chat landing, list previews/time stamps, sign language mode).
+<!-- SECTION:NOTES:END -->

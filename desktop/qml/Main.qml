@@ -3745,6 +3745,23 @@ Window {
                 else if (step === 9) { console.warn("OOF after", JSON.stringify(JSON.parse(backend.settingsJson).mt.oof), backend.settingsError); Qt.quit() }
                 step++; return
             }
+            // =list-prefs: previews and time stamps on (cl-previews), filters
+            // off (cl-nofilters), then all three back as they were.
+            if (mode === "list-prefs") {
+                const set = (k, v) => backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ [k]: v }))
+                if (step === 1) { rail.current = "chat"; set("hasUserEnabledMessagePreviews", true) }
+                else if (step === 3) set("hasUserEnabledShowTimeStamps", true)
+                else if (step === 5) shot("cl-previews")
+                else if (step === 6) set("hasUserDisabledShowingFilterAtTop", true)
+                else if (step === 8) shot("cl-nofilters")
+                else if (step === 9) set("hasUserDisabledShowingFilterAtTop", false)
+                else if (step === 11) set("hasUserEnabledShowTimeStamps", false)
+                else if (step === 13) set("hasUserEnabledMessagePreviews", false)
+                else if (step === 15) backend.loadSettings()
+                else if (step === 17) { console.warn("CL after", JSON.stringify(chatList.collab), backend.settingsError); shot("cl-back"); }
+                else if (step === 18) Qt.quit()
+                step++; return
+            }
             if (mode === "wl-office" || mode === "wl-clear") { if (step === 1) titleBar.pauseForTest(mode === "wl-office" ? "Office" : "clear"); else if (step === 4) { console.warn("WL", mode, backend.myWorkLocation); Qt.quit() } step++; return }
             if (mode === "resume") { if (step === 1) titleBar.pauseForTest("resume"); else if (step === 4) { log("resumed"); Qt.quit() } step++; return }
             if (step === 1) { log("start"); titleBar.pauseForTest("flyout") }

@@ -93,5 +93,13 @@ Middle tier (`{mt}`):
   language mode, captions settings) and Devices.
 - Still to build: Notifications and activity as Teams', Accounts and orgs, Calls, Files and
   links, App permissions, Recognition, and the remaining items on built pages.
+- Chat list (measured with the settings on):
+  - Previews: chat rows are 52 tall, with a 36 px picture at 16, 8, the name at 64 and the
+    preview (12/16 #616161) at 64, 26. It reads "You: …" for yours and "Name: …" in groups.
+    Teams' own words for system events and media ("Bot added", "User added", "Sent an
+    image", "Recording is ready", …; messaging 390776 `u`) show in italics.
+  - Time stamps: 12/16 #616161, 12 from the row's right, on chats and channels alike: the
+    time today, else M/d.
+  - Filters off: no pills, and the list starts right under the header.
 - Saved but not yet acted on by OST: Copilot row, compact density, auto-follow, suggested
-  replies, chat landing, previews and time stamps in the chat list, sign language mode.
+  replies, chat landing, sign language mode.

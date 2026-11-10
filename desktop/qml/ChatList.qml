@@ -44,7 +44,7 @@ Rectangle {
     property var notifyTagged: ({})
     readonly property bool signedIn: backend.signedIn
     onSignedInChanged: if (signedIn) backend.channelAction("notify-tagged", "", "", "")
-    Component.onCompleted: if (signedIn) backend.channelAction("notify-tagged", "", "", "")
+    Component.onCompleted: { if (signedIn) backend.channelAction("notify-tagged", "", "", ""); if (backend.signedIn) backend.loadSettings() }
     Connections {
         target: backend
         function onChannelActionResultChanged() {
@@ -290,20 +290,20 @@ Rectangle {
         Accessible.checked: pill.on
     }
     Row {
-        visible: !root.filtering
+        visible: !root.filtering && root.filtersShown
         x: 32; y: 69
         spacing: 4
         Repeater { model: root.pillRows.first; Pill { required property var modelData; def: modelData } }
     }
     Row {
-        visible: !root.filtering && root.secondRow
+        visible: !root.filtering && root.secondRow && root.filtersShown
         x: 32; y: 101
         spacing: 4
         Repeater { model: root.secondRow ? root.pillRows.second : []; Pill { required property var modelData; def: modelData } }
     }
     // More filters / Fewer filters: only when pills overflow.
     HeaderButton {
-        visible: !root.filtering && root.pillRows.second.length > 0
+        visible: !root.filtering && root.pillRows.second.length > 0 && root.filtersShown
         x: 282; y: 65; width: 24; height: 24; radius: 4
         icon: root.moreFiltersOpen ? "chevron-up-16" : "chevron-down-16"; iconSize: 16
         iconColor: root.moreFiltersOpen ? theme.brand : theme.textStrong
@@ -346,7 +346,7 @@ Rectangle {
     // ---- The list ----
     Flickable {
         id: list
-        y: root.secondRow && !root.filtering ? 138 : 106
+        y: root.filtering ? 106 : !root.filtersShown ? 66 : root.secondRow ? 138 : 106
         width: parent.width - 1
         height: parent.height - y
         clip: true
@@ -483,6 +483,32 @@ Rectangle {
     function closeRowMenuForTest() { for (const k in rowsForTest) if (rowsForTest[k] && rowsForTest[k].menuOpen) rowsForTest[k].closeMenu() }
     function sectionDialogForTest() { return sectionDialog }
 
+    // Settings ▸ Chats and channels list (synced; measured on winpc
+    // 2026-11-10): "Show message previews" makes chat rows 52 tall with a
+    // 36 px picture at 16, 8, the name at 64 and the last message (12/16
+    // #616161; "You: " for yours, "Name: " in groups) under it; "Show time
+    // stamps" puts the last activity (12/16 #616161: the time today, else
+    // M/d) 12 from the row's right, chats and channels alike; "Filters" off
+    // hides the pills and the list starts under the header.
+    readonly property var collab: { const s = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; return (s.props || {}).simpleCollabUserSettings || {} }
+    readonly property bool previews: collab.hasUserEnabledMessagePreviews === true
+    readonly property bool timestamps: collab.hasUserEnabledShowTimeStamps === true
+    readonly property bool filtersShown: collab.hasUserDisabledShowingFilterAtTop !== true
+    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) backend.loadSettings() } }
+    function stamp(t) {
+        if (!t) return ""
+        const d = new Date(t), n = new Date()
+        if (isNaN(d.getTime())) return ""
+        if (d.toDateString() === n.toDateString()) return Qt.formatTime(d, "h:mm AP")
+        return d.getFullYear() === n.getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yy")
+    }
+    function previewOf(c) {
+        if (!c.preview) return ""
+        if (c.previewSystem) return c.preview
+        const mine = !!c.sender && c.sender === backend.userName
+        return mine ? "You: " + c.preview : (c.isGroup && c.sender ? c.sender + ": " + c.preview : c.preview)
+    }
+
     // One chat in a section: picture with presence, name, unread dot.
     component ChatRow: Item {
         id: row
@@ -494,15 +520,16 @@ Rectangle {
         Component.onDestruction: if (chat && root.rowsForTest[chat.id] === row) delete root.rowsForTest[chat.id]
         readonly property bool selected: !root.draftsOpen && !root.mentionsOpen && !root.quickOpen && chat.id === root.currentId
         readonly property bool unread: chat.unread === true && !selected
-        width: list.width; height: 32
+        readonly property bool twoLine: root.previews
+        width: list.width; height: twoLine ? 52 : 32
         Rectangle {
-            x: 16; width: parent.width - 32; height: 32; radius: theme.radius
+            x: 16; width: parent.width - 32; height: parent.height; radius: theme.radius
             color: row.selected ? theme.selected : (hover.hovered ? theme.rowHover : "transparent")
         }
         Avatar {
             visible: !row.chat.muted
-            x: 32; y: 6
-            size: 20; name: row.chat.name || ""
+            x: 32; y: row.twoLine ? 8 : 6
+            size: row.twoLine ? 36 : 20; name: row.chat.name || ""
             photoId: row.chat.peerMri || ""
             group: row.chat.isGroup === true && !row.chat.peerMri
             meeting: root.isMeeting(row.chat)
@@ -512,13 +539,35 @@ Rectangle {
         // regular AlertOff icon (16, NeutralForeground3) at 2, 2.
         Rectangle {
             visible: !!row.chat.muted
-            x: 32; y: 6; width: 20; height: 20; radius: 10
+            x: 32; y: row.twoLine ? 8 : 6; width: row.twoLine ? 36 : 20; height: width; radius: width / 2
             color: theme.pick("#E6E6E6", "#3D3D3D")
-            FluentIcon { x: 2; y: 2; name: "alert-off-20"; size: 16; color: theme.textSecondary }
+            FluentIcon { anchors.centerIn: parent; name: "alert-off-20"; size: row.twoLine ? 20 : 16; color: theme.textSecondary }
+        }
+        // The last activity (Show time stamps), where ··· goes on hover.
+        Text {
+            id: rowStamp
+            visible: root.timestamps && !row.showMore && text.length > 0
+            anchors.right: parent.right; anchors.rightMargin: 28
+            y: row.twoLine ? 10 : 8
+            text: root.stamp(row.chat.time)
+            font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+            font.weight: row.unread ? Font.DemiBold : Font.Normal
+            color: row.unread ? theme.text : theme.textSecondary
+        }
+        // The last message (Show message previews).
+        Text {
+            visible: row.twoLine
+            x: 80; y: 26; width: parent.width - x - 28 - (liveIcon.visible || unreadDot.visible ? 22 : 0)
+            text: root.previewOf(row.chat)
+            elide: Text.ElideRight
+            font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+            font.italic: !!row.chat.previewSystem
+            font.weight: row.unread ? Font.DemiBold : Font.Normal
+            color: row.unread ? theme.text : theme.textSecondary
         }
         Text {
-            x: 64; y: 6
-            width: (row.showMore ? moreButton.x - 10 : liveIcon.visible ? liveIcon.x - 14 : unreadDot.visible ? unreadDot.x - 14 : parent.width - 40) - x
+            x: row.twoLine ? 80 : 64; y: row.twoLine ? 8.7 : 6
+            width: (row.showMore ? moreButton.x - 10 : rowStamp.visible ? rowStamp.x - 8 : liveIcon.visible ? liveIcon.x - 14 : unreadDot.visible ? unreadDot.x - 14 : parent.width - 40) - x
             text: row.chat.name || ""
             elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: theme.base
@@ -531,7 +580,7 @@ Rectangle {
         FluentIcon {
             id: liveIcon
             visible: !!row.chat.liveCall && !row.showMore
-            x: parent.width - 60; y: 9
+            x: parent.width - 60; y: row.twoLine ? 29 : 9
             name: "live-roster-14"; size: 14
             color: theme.textSecondary
         }
@@ -542,14 +591,14 @@ Rectangle {
             visible: row.unread && !row.chat.muted && !row.showMore
             width: 8; height: 8; radius: 4
             x: parent.width - 16 - 8 - 12
-            anchors.verticalCenter: parent.verticalCenter
+            y: row.twoLine ? 30 : (parent.height - height) / 2
             color: theme.brand
         }
         readonly property bool showMore: hover.hovered || rowMenu.opened
         Rectangle {
             id: moreButton
             visible: row.showMore
-            x: parent.width - 16 - 32; y: 4.3; width: 24; height: 23.3; radius: 4
+            x: parent.width - 16 - 32; y: row.twoLine ? 14.3 : 4.3; width: 24; height: 23.3; radius: 4
             color: moreHover.hovered ? theme.hover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: moreHover.hovered ? "more-horizontal-20-filled" : "more-horizontal-20"; size: 20; color: theme.textStrong }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
@@ -747,6 +796,14 @@ Rectangle {
             color: chRow.selected || chRow.unread ? theme.text : theme.textSecondary
         }
         NewBadge { id: newBadge; visible: !!chRow.channel.new; x: chName.x + chName.width + 8; anchors.verticalCenter: parent.verticalCenter }
+        Text {
+            visible: root.timestamps && !chHover.hovered && !chRow.menuOpen && text.length > 0
+            anchors.right: parent.right; anchors.rightMargin: 28; anchors.verticalCenter: parent.verticalCenter
+            text: root.stamp(chRow.channel.last_active)
+            font.family: theme.font; font.pixelSize: 12
+            font.weight: chRow.unread ? Font.DemiBold : Font.Normal
+            color: chRow.unread ? theme.text : theme.textSecondary
+        }
         HoverHandler { id: chHover }
         TapHandler { onTapped: root.chatSelected(chRow.channel.id, chRow.channel.name) }
         // Its menu: ··· on hover (and while open), or a right-click (Teams'

@@ -2225,11 +2225,16 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     });
     let fav_rank = |id: &str| favorites.iter().position(|f| f == id);
     // Your own chat (Teams' "notes" thread), listed as "<you> (You)".
+    let notes = chats.iter().find(|c| c.id == "48:notes");
     let mut list: Vec<serde_json::Value> = vec![json!({
         "id": "48:notes",
         "name": format!("{} (You)", me.display_name),
         "isGroup": false,
         "isSelf": true,
+        "time": notes.and_then(|c| c.last_message_time.clone()),
+        "sender": notes.and_then(|c| c.last_message_sender.clone()),
+        "preview": notes.and_then(|c| c.last_message_preview.clone()),
+        "previewSystem": notes.is_some_and(|c| c.last_message_system),
         "peerMri": format!("8:orgid:{my_oid}"),
         "favorite": fav_rank("48:notes").is_some(),
         "favoriteRank": fav_rank("48:notes"),
@@ -2250,6 +2255,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "time": c.last_message_time,
                 "sender": c.last_message_sender,
                 "preview": c.last_message_preview,
+                "previewSystem": c.last_message_system,
                 "liveCall": c.live_call,
                 "muted": c.muted,
                 "empty": c.empty,
