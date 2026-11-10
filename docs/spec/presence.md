@@ -461,6 +461,21 @@ For a forced status, Never (the 9999 date) means **no**
     day's 48 half hours, past ones greyed), starting at the next half hour.
     Picking a date keeps the time unless that is past. Save is off while
     the time is past.
+- **Set work location** (places control, `places-set-work-location-*`;
+  captured on winpc 2026-11-10):
+  - The row says "Set work location" (location-add), "In the office"
+    (building-checkmark, filled brand) or "Working remotely" (home, filled
+    brand). Its aria-label is "Your current work location: {label}".
+  - Its menu is 240 wide, centred under the row: "For today" (12/20
+    semibold #616161), Office (building) and Remote (home). Once a location
+    is set, a divider and Clear work location (delete) follow.
+  - Requests: `PUT {ups}/v1/me/workLocation/` with
+    `{"location":1,"expirationTime":"<23:59:59.999 local, UTC>"}` (Office),
+    `2` (Remote), and `{"location":0}` to clear.
+  - Read back from `getpresence` / `v1/me/presence/`: `workLocation:
+    {location: "Remote", expiry, isForced, locationSource:
+    "ForcedLocation"}`.
+  - Teams reads its own location again when the flyout reopens.
 - **Do not disturb banner** (pre-warm job `presence-donotdisturb-banner`):
   whenever your availability changes to DoNotDisturb, the app banner says
   "Your status is set to do not disturb. You'll only get notifications for

@@ -167,6 +167,42 @@ pub async fn force_availability_until(
     Ok(())
 }
 
+/// Set where you work today, as Teams' Set work location does (presence
+/// service `PUT v1/me/workLocation/`, captured on winpc 2026-11-10):
+/// Office `{"location":1,"expirationTime":<end of today>}`, Remote 2, and
+/// clearing `{"location":0}`.
+pub async fn set_work_location(http: &reqwest::Client, location: Option<&str>) -> Result<()> {
+    let body = work_location_body(location, chrono::Local::now())?;
+    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
+    let resp = http
+        .put(format!("{PRESENCE_URL}/v1/me/workLocation/"))
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .context("Work location request failed")?;
+    if !resp.status().is_success() {
+        bail!("Setting work location failed: HTTP {}", resp.status().as_u16());
+    }
+    Ok(())
+}
+
+/// Teams' work location body: the location's number (Office 1, Remote 2;
+/// none 0) and, when set, the end of today (23:59:59.999 local) in UTC.
+pub fn work_location_body(location: Option<&str>, now: chrono::DateTime<chrono::Local>) -> Result<serde_json::Value> {
+    let n = match location {
+        None => return Ok(serde_json::json!({ "location": 0 })),
+        Some("Office") => 1,
+        Some("Remote") => 2,
+        Some(other) => bail!("Unknown work location: {other}"),
+    };
+    let end = expiry_for("Today", now).context("No end of today")?;
+    Ok(serde_json::json!({
+        "location": n,
+        "expirationTime": end.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    }))
+}
+
 /// What this endpoint is doing, as Teams' calling client state reports it
 /// (apps-calling module 361789): not in a call, in a call, or presenting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -584,6 +620,19 @@ pub fn note_body(
 #[cfg(test)]
 mod expiry_tests {
     use super::*;
+
+    #[test]
+    fn work_location_bodies_are_teams() {
+        use chrono::TimeZone;
+        let now = chrono::Local.with_ymd_and_hms(2026, 11, 10, 9, 0, 0).unwrap();
+        assert_eq!(work_location_body(None, now).unwrap(), serde_json::json!({ "location": 0 }));
+        let office = work_location_body(Some("Office"), now).unwrap();
+        assert_eq!(office["location"], 1);
+        let end = chrono::DateTime::parse_from_rfc3339(office["expirationTime"].as_str().unwrap()).unwrap().with_timezone(&chrono::Local);
+        assert_eq!((end.date_naive(), end.format("%H:%M:%S%.3f").to_string()), (now.date_naive(), "23:59:59.999".to_string()));
+        assert_eq!(work_location_body(Some("Remote"), now).unwrap()["location"], 2);
+        assert!(work_location_body(Some("Moon"), now).is_err());
+    }
     use chrono::{Datelike, TimeZone, Timelike};
 
     #[test]
@@ -669,6 +718,9 @@ pub struct UserPresence {
     /// When a status you set yourself ends (`forcedAvailability.expiry`,
     /// ISO UTC; only your own), or "" when it doesn't.
     pub forced_until: String,
+    /// Where they work today (`workLocation.location`: "Office", "Remote"
+    /// or "TimeOff"), or "".
+    pub work_location: String,
 }
 
 /// Look up several users' presence by MRI (`8:orgid:<oid>`).
@@ -723,6 +775,12 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                     .pointer("/forcedAvailability/expiry")
                     .and_then(|x| x.as_str())
                     .filter(|_| p.pointer("/forcedAvailability/availability").is_some())
+                    .unwrap_or_default()
+                    .to_string(),
+                work_location: p
+                    .pointer("/workLocation/location")
+                    .and_then(|x| x.as_str())
+                    .filter(|l| *l != "Unknown")
                     .unwrap_or_default()
                     .to_string(),
             })

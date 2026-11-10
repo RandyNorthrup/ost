@@ -132,6 +132,8 @@ pub mod qobject {
         /// When the status you set ends (ISO UTC), or "" (Teams' "Until …"
         /// for paused notifications).
         #[qproperty(QString, my_status_ends)]
+        /// Where you work today ("Office", "Remote", or "").
+        #[qproperty(QString, my_work_location)]
         /// The channel threads open in windows of their own:
         /// {"<channel>;messageid=<post>": [messages, oldest first]}.
         #[qproperty(QString, thread_windows_json)]
@@ -484,6 +486,10 @@ pub mod qobject {
         /// of MRIs); the outcome comes back in report_result.
         #[qinvokable]
         fn report_meeting(self: Pin<&mut Backend>, comment: &QString, reported_json: &QString);
+        /// Set where you work today ("Office", "Remote", or "" to clear),
+        /// as Teams' Set work location.
+        #[qinvokable]
+        fn set_work_location_today(self: Pin<&mut Backend>, location: &QString);
         /// A meeting chat's Report a concern (its thread and meeting, no
         /// call).
         #[qinvokable]
@@ -1430,6 +1436,7 @@ pub struct BackendRust {
     status_note_result: QString,
     my_note_json: QString,
     my_status_ends: QString,
+    my_work_location: QString,
     thread_windows_json: QString,
     channel_action_result: QString,
     channel_posts_at_top: bool,
@@ -5570,6 +5577,9 @@ impl qobject::Backend {
                                     if this.rust().my_status_ends.to_string() != p.forced_until {
                                         this.as_mut().set_my_status_ends(QString::from(p.forced_until.as_str()));
                                     }
+                                    if this.rust().my_work_location.to_string() != p.work_location {
+                                        this.as_mut().set_my_work_location(QString::from(p.work_location.as_str()));
+                                    }
                                 }
                                 this.as_mut()
                                     .rust_mut()
@@ -7537,6 +7547,21 @@ impl qobject::Backend {
     pub fn report_meeting(self: Pin<&mut Self>, comment: &QString, reported_json: &QString) {
         let thread = self.rust().call_thread_id.to_string();
         self.send_meeting_report(thread, None, comment.to_string(), reported_json.to_string());
+    }
+
+    pub fn set_work_location_today(mut self: Pin<&mut Self>, location: &QString) {
+        let location = location.to_string();
+        let before = self.rust().my_work_location.clone();
+        self.as_mut().set_my_work_location(QString::from(location.as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let http = reqwest::Client::new();
+            let loc = (!location.is_empty()).then_some(location.as_str());
+            if let Err(e) = teams_cli::api::presence::set_work_location(&http, loc).await {
+                tracing::warn!("set work location failed: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| this.as_mut().set_my_work_location(before));
+            }
+        });
     }
 
     pub fn report_meeting_chat(

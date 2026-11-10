@@ -43,6 +43,8 @@ Rectangle {
         else if (what === "calendar") pauseDialog.datePickerForTest().openForTest()
         else if (what === "close") { pauseMenu.close(); editMenu.close(); pauseDialog.close(); menu.visible = false }
         else if (what === "resume") root.setStatusUntil("Reset", "Never")
+        else if (what === "work") workMenu.open()
+        else if (what === "Office" || what === "Remote" || what === "clear") { menu.visible = false; root.setWorkLocation(what === "clear" ? "" : what) }
         else if (what === "dbg") return [pauseMenu.implicitWidth, pauseMenu.width, pauseMenu.rowLabelX(pauseItems[6]), pauseMenu.perItemIcons].join(",")
         else { const i = pauseItems.findIndex(x => x.label === what); if (i >= 0) pickPause(i) }
     }
@@ -368,6 +370,9 @@ Rectangle {
     // 2026-11-09): Do not disturb until a time. Paused is Do not disturb
     // with an end (the presence service's forcedAvailability.expiry).
     property string statusUntil: ""
+    /// Where you work today ("Office", "Remote" or "").
+    property string workLocation: ""
+    signal setWorkLocation(string location)
     signal pauseUntil(string iso)
     signal openNotificationSettings()
     readonly property bool paused: (presence || "").toLowerCase() === "donotdisturb" && statusUntil.length > 0
@@ -410,7 +415,7 @@ Rectangle {
         radius: 8
         color: theme.menu
         border.color: theme.dividerSoft
-        onVisibleChanged: if (!visible) { statusMenu.close(); pauseMenu.close(); editMenu.close(); page = "main" }
+        onVisibleChanged: if (!visible) { statusMenu.close(); pauseMenu.close(); editMenu.close(); workMenu.close(); page = "main" }
         Column {
             id: menuCol
             visible: menu.page === "main"
@@ -497,6 +502,9 @@ Rectangle {
                 onClicked: pauseMenu.opened ? pauseMenu.close() : pauseMenu.open()
                 MenuPopup {
                     id: pauseMenu
+                    // (Not FlyoutRow's icon slot, where its default
+                    // property would put it.)
+                    parent: pauseRow
                     perItemIcons: true
                     x: -4 - implicitWidth + 3; y: 0
                     items: root.pauseItems
@@ -552,6 +560,56 @@ Rectangle {
                         ToolTip.visible: resumeHover.hovered; ToolTip.delay: 500; ToolTip.text: "Resume notifications"
                         Accessible.role: Accessible.Button
                         Accessible.name: "Resume notifications"
+                    }
+                }
+            }
+            // Set work location (Teams' places control, measured on winpc
+            // 2026-11-10): the row says "Set work location" (location-add),
+            // "In the office" (building-checkmark, filled brand) or "Working
+            // remotely" (home, filled brand). Its menu (240 wide, centred
+            // under the row): "For today" (12/20 semibold #616161, 32
+            // tall), Office (building) and Remote (home), icons 12 in and
+            // labels 38; once set, a divider and Clear work location
+            // (delete, 6 / 32 in). Picking sets it until the end of today.
+            FlyoutRow {
+                id: workRow
+                readonly property string loc: root.workLocation
+                icon: loc === "Office" ? "building-checkmark-20-filled" : loc === "Remote" ? "home-20-filled" : "location-add-20"
+                iconColor: loc === "Office" || loc === "Remote" || workMenu.opened ? theme.brand : theme.textStrong
+                label: loc === "Office" ? "In the office" : loc === "Remote" ? "Working remotely" : "Set work location"
+                active: workMenu.opened
+                onClicked: workMenu.opened ? workMenu.close() : workMenu.open()
+                Accessible.name: "Your current work location: " + label
+                Popup {
+                    id: workMenu
+                    parent: workRow
+                    x: (workRow.width - width) / 2; y: workRow.height
+                    width: 240; padding: 4
+                    background: FluentSurface { depth: 16; radius: 4; color: theme.menu }
+                    contentItem: Column {
+                        Text { width: parent.width; height: 32; leftPadding: 12; verticalAlignment: Text.AlignVCenter; text: "For today"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
+                        Repeater {
+                            model: [{ key: "Office", label: "Office", icon: "building-20" }, { key: "Remote", label: "Remote", icon: "home-20" }]
+                            WorkItem { required property var modelData; iconX: 12; labelX: 38; icon: modelData.icon; label: modelData.label; onClicked: { menu.visible = false; root.setWorkLocation(modelData.key) } }
+                        }
+                        Item { visible: !!workRow.loc; width: parent.width; height: 8.6; Rectangle { x: -4; width: 240; height: 0.67; anchors.verticalCenter: parent.verticalCenter; color: theme.divider } }
+                        WorkItem { visible: !!workRow.loc; iconX: 6; labelX: 32; icon: "delete-20"; label: "Clear work location"; onClicked: { menu.visible = false; root.setWorkLocation("") } }
+                    }
+                    component WorkItem: Rectangle {
+                        id: wi
+                        property real iconX
+                        property real labelX
+                        property string icon
+                        property string label
+                        signal clicked()
+                        width: 230.7; height: 32; radius: 4
+                        color: wiHover.hovered ? theme.menuHover : "transparent"
+                        FluentIcon { x: wi.iconX; anchors.verticalCenter: parent.verticalCenter; name: wi.icon; size: 20; color: theme.textStrong }
+                        Text { x: wi.labelX; anchors.verticalCenter: parent.verticalCenter; text: wi.label; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                        HoverHandler { id: wiHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: wi.clicked() }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: wi.label
                     }
                 }
             }

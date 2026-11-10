@@ -3681,6 +3681,26 @@ Window {
             // --pause-test=hold: pause 10 minutes and quit; =resume: resume and quit.
             const mode = (Qt.application.arguments.find(a => a.startsWith("--pause-test=")) || "").slice(13)
             if (mode === "hold") { if (step === 1) titleBar.pauseForTest("10 minutes"); else if (step === 4) { log("held"); Qt.quit() } step++; return }
+            // =work: Set work location: the menu (wl-menu), Office (wl-office
+            // and its menu wl-office-menu), Remote (wl-remote), then clear.
+            if (mode === "work") {
+                const lg = n => console.warn("WL", n, backend.myWorkLocation)
+                if (step === 1) { lg("start"); titleBar.pauseForTest("flyout") }
+                else if (step === 2) titleBar.pauseForTest("work")
+                else if (step === 3) shot("wl-menu")
+                else if (step === 4) titleBar.pauseForTest("Office")
+                else if (step === 7) { lg("office"); titleBar.pauseForTest("flyout") }
+                else if (step === 8) shot("wl-office")
+                else if (step === 9) titleBar.pauseForTest("work")
+                else if (step === 10) shot("wl-office-menu")
+                else if (step === 11) titleBar.pauseForTest("Remote")
+                else if (step === 14) { lg("remote"); titleBar.pauseForTest("flyout") }
+                else if (step === 15) shot("wl-remote")
+                else if (step === 16) titleBar.pauseForTest("clear")
+                else if (step === 19) { lg("cleared"); Qt.quit() }
+                step++; return
+            }
+            if (mode === "wl-office" || mode === "wl-clear") { if (step === 1) titleBar.pauseForTest(mode === "wl-office" ? "Office" : "clear"); else if (step === 4) { console.warn("WL", mode, backend.myWorkLocation); Qt.quit() } step++; return }
             if (mode === "resume") { if (step === 1) titleBar.pauseForTest("resume"); else if (step === 4) { log("resumed"); Qt.quit() } step++; return }
             if (step === 1) { log("start"); titleBar.pauseForTest("flyout") }
             else if (step === 2) titleBar.pauseForTest("menu")
@@ -4532,6 +4552,8 @@ Window {
         onSetStatusUntil: (st, dur) => backend.setMyStatusUntil(st, dur, "")
         onSetStatusNote: (msg, pinned, clearAfter) => backend.setStatusNote(msg, pinned, clearAfter, "")
         statusUntil: backend.myStatusEnds
+        workLocation: backend.myWorkLocation
+        onSetWorkLocation: loc => backend.setWorkLocationToday(loc)
         onPauseUntil: iso => backend.setMyStatusUntil("DoNotDisturb", "Custom", iso)
         onOpenNotificationSettings: { settingsView.page = "notifications"; rail.current = "settings" }
         pinned: window.pinned
