@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: 2026-02-05 23:23
-updated_date: '2026-11-10T15:58:00Z'
+updated_date: '2026-11-10T16:00:00Z'
 labels:
   - tui
   - ux
@@ -50,7 +50,7 @@ Renders correctly:
 - the help overlay, the toolbar and the chat list (since TASK-0012/0013/0092).
 
 Renders wrongly (one task each):
-- TASK-0093 (high): channels whose first page holds only events show "No messages yet", and history stops at one page.
+- TASK-0093: the TUI read history without Teams' parameters or older pages. (The "No messages yet" seen in OST test channel and OST test channel 2 was correct: those channels hold only 4 thread events.)
 - TASK-0094: the scroll arrows overwrite the last character of edge timestamps.
 - TASK-0095: rich formatting (headings, quotes, inline code, code blocks, bold, highlights) looks like plain text; pictures show as "Image".
 - TASK-0096: one @mention lost its name ("mention for check").

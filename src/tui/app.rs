@@ -215,7 +215,14 @@ impl App {
             }
             // Messages pane keys
             KeyCode::Up | KeyCode::Char('k') if self.active_pane == Pane::Messages => {
-                self.messages.select_previous();
+                // Past the oldest message: load older ones.
+                if let (Some(limit), Some(chat_id)) = (self.messages.wants_older(), self.current_chat_id.clone()) {
+                    self.status_message = Some("Loading older messages…".to_string());
+                    self.status_is_error = false;
+                    backend.send(BackendCommand::LoadMessages { chat_id, limit });
+                } else {
+                    self.messages.select_previous();
+                }
             }
             KeyCode::Down | KeyCode::Char('j') if self.active_pane == Pane::Messages => {
                 self.messages.select_next();
@@ -255,9 +262,10 @@ impl App {
                     self.messages.loading = true;
                     self.messages.channel_header = name;
                     self.messages.messages.clear();
+                    self.messages.reset_paging();
                     backend.send(BackendCommand::LoadMessages {
                         chat_id: id,
-                        limit: 50,
+                        limit: self.messages.limit,
                     });
                 }
             }
@@ -500,7 +508,7 @@ impl App {
                 if let Some(ref chat_id) = self.current_chat_id {
                     backend.send(BackendCommand::LoadMessages {
                         chat_id: chat_id.clone(),
-                        limit: 50,
+                        limit: self.messages.limit,
                     });
                 }
             }

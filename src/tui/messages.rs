@@ -67,7 +67,20 @@ pub struct MessagesState {
     pub expanded_threads: Vec<bool>,
     /// Whether messages are being loaded.
     pub loading: bool,
+    /// How many messages to load (grows as you scroll up for older ones).
+    pub limit: usize,
+    /// An older page was asked for: keep the selection on the message that
+    /// was at the top, and notice when nothing older came.
+    pub loading_older: bool,
+    /// Everything there is has been loaded.
+    pub all_loaded: bool,
+    /// How many messages there were before the last load.
+    pub loaded_before: usize,
 }
+
+/// Messages loaded at first, and how many more each scroll past the top
+/// asks for.
+pub const PAGE: usize = 50;
 
 impl Default for MessagesState {
     fn default() -> Self {
@@ -78,6 +91,10 @@ impl Default for MessagesState {
             scroll_offset: 0,
             selected: 0,
             loading: false,
+            limit: PAGE,
+            loading_older: false,
+            all_loaded: false,
+            loaded_before: 0,
         }
     }
 }
@@ -101,9 +118,39 @@ impl MessagesState {
         let count = self.messages.len();
         self.expanded_threads = vec![true; count];
         self.scroll_offset = 0;
-        // Select the last (newest) message so the view starts at the bottom.
-        self.selected = count.saturating_sub(1);
+        if std::mem::take(&mut self.loading_older) {
+            // Older messages came in above: stay on the one that was at the
+            // top (nothing new means there's nothing older).
+            let added = count.saturating_sub(self.loaded_before);
+            self.all_loaded = added == 0;
+            self.selected = added.saturating_sub(1).min(count.saturating_sub(1));
+        } else {
+            // Select the last (newest) message so the view starts at the bottom.
+            self.selected = count.saturating_sub(1);
+            self.all_loaded = count < self.limit;
+        }
+        self.loaded_before = count;
         self.loading = false;
+    }
+
+    /// Up on the oldest message: whether to load older ones (and the new
+    /// limit to ask for).
+    pub fn wants_older(&mut self) -> Option<usize> {
+        if self.selected > 0 || self.all_loaded || self.loading || self.messages.is_empty() {
+            return None;
+        }
+        self.limit += PAGE;
+        self.loading_older = true;
+        self.loading = true;
+        Some(self.limit)
+    }
+
+    /// A different conversation: start again from its newest page.
+    pub fn reset_paging(&mut self) {
+        self.limit = PAGE;
+        self.loading_older = false;
+        self.all_loaded = false;
+        self.loaded_before = 0;
     }
 
     /// Move selection up by one message.
@@ -687,4 +734,31 @@ fn compute_auto_scroll(
     // Clamp.
     let max_scroll = total_lines.saturating_sub(visible_height);
     scroll.min(max_scroll)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scrolling_past_the_top_asks_for_older_messages() {
+        let msg = |i: usize| api::MessageInfo { sender: "A".into(), timestamp: String::new(), content: format!("m{i}") };
+        let mut st = MessagesState::default();
+        st.update_messages("h", (0..50).map(msg).collect());
+        assert_eq!(st.selected, 49);
+        assert_eq!(st.wants_older(), None, "not at the top yet");
+        st.selected = 0;
+        assert_eq!(st.wants_older(), Some(100));
+        // Twenty older ones came in above: the old top message stays selected.
+        st.update_messages("h", (0..70).map(msg).collect());
+        assert_eq!(st.selected, 19);
+        assert!(!st.all_loaded);
+        // Nothing more: no further requests.
+        st.selected = 0;
+        assert_eq!(st.wants_older(), Some(150));
+        st.update_messages("h", (0..70).map(msg).collect());
+        assert!(st.all_loaded);
+        st.selected = 0;
+        assert_eq!(st.wants_older(), None);
+    }
 }

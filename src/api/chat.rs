@@ -1000,22 +1000,37 @@ pub async fn read_messages_data(
     chat_id: &str,
     limit: usize,
 ) -> Result<Vec<MessageInfo>> {
+    // Teams' message pages (the desktop's messages_url), following each
+    // page's backward link until there are `limit` messages to show (the
+    // TUI asks for more as you scroll up) or the history ends; a newest
+    // page can hold only events (archival, favourite updates).
     let base = client.chat_service_url();
-    let url = format!(
-        "{}/v1/users/ME/conversations/{}/messages?pageSize={}",
-        base, chat_id, limit
-    );
+    let mut raw: Vec<serde_json::Value> = Vec::new();
+    let mut sync: Option<String> = None;
+    for _ in 0..(5 + limit / 50) {
+        let url = super::messages::messages_url(&base, chat_id, limit.min(200), sync.as_deref());
+        tracing::debug!("Reading messages from {}", url);
+        let page: serde_json::Value = client
+            .chat_get(&url)
+            .await?
+            .json()
+            .await
+            .context("Failed to parse messages response")?;
+        raw.extend(page["messages"].as_array().cloned().unwrap_or_default());
+        let shown = raw
+            .iter()
+            .filter(|m| {
+                m["messagetype"].as_str().is_some_and(|t| t.starts_with("Text") || t.starts_with("RichText"))
+                    && !m["content"].as_str().unwrap_or_default().is_empty()
+            })
+            .count();
+        sync = page.get("_metadata").and_then(super::messages::backward_token);
+        if shown >= limit || sync.is_none() {
+            break;
+        }
+    }
+    let body = serde_json::json!({ "messages": raw });
 
-    tracing::debug!("Reading messages from {}", url);
-    let resp = client.chat_get(&url).await?;
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .context("Failed to parse messages response")?;
-
-    // Read each message as the desktop does (super::messages::message_view):
-    // system events become Teams' sentences, meeting and call cards their
-    // titles, and nothing shows as raw JSON or with a card's button labels.
     let me = client
         .object_id()
         .map(|o| format!("8:orgid:{o}"))
