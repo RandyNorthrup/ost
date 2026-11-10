@@ -3672,7 +3672,7 @@ Window {
         running: Qt.application.arguments.indexOf("--settings-pages-test") >= 0 && backend.signedIn
         interval: 2500; repeat: true
         property int step: 0
-        readonly property var pages: ["general", "appearance", "chats", "notifications", "privacy", "accessibility", "devices", "calls", "files", "about"]
+        readonly property var pages: ["general", "appearance", "chats", "notifications", "accounts", "privacy", "accessibility", "devices", "calls", "files", "about"]
         onTriggered: {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
@@ -5165,6 +5165,7 @@ Window {
         id: settingsView
         visible: rail.current === "settings"
         onShowShortcuts: shortcutsDialog.open()
+        myPresence: titleBar.presence
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
     }
     ActivityView {

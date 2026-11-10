@@ -130,7 +130,9 @@ Middle tier (`{mt}`):
 - Files and links: the download location (OST's downloads use it), the file-open choice and
   file previews.
   - Not built: "Always ask where to save" and the browser choice for links.
-- Still to build: Notifications and activity as Teams', Accounts and orgs, App permissions,
+- Accounts and orgs: the account card (picture, name, e-mail, Manage) and the organisation;
+  not "Refresh license and restart".
+- Still to build: Notifications and activity as Teams', App permissions,
   Recognition, and the remaining items on built pages.
 - Chat list (measured with the settings on):
   - Previews: chat rows are 52 tall, with a 36 px picture at 16, 8, the name at 64 and the

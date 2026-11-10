@@ -27,6 +27,7 @@ Rectangle {
         { key: "appearance", label: "Appearance", icon: "wand-20" },
         { key: "chats", label: "Chats and channels", icon: "chat-20" },
         { key: "notifications", label: "Notifications and activity", icon: "alert-20" },
+        { key: "accounts", label: "Accounts and orgs", icon: "contact-card-20" },
         { key: "privacy", label: "Privacy", icon: "lock-closed-20" },
         { key: "accessibility", label: "Accessibility", icon: "accessibility-20" },
         { key: "devices", label: "Devices", icon: "headset-20" },
@@ -360,6 +361,45 @@ Rectangle {
                 trailing: Component { SettingsParts.Toggle { on: root.local("notify_mentions_only", "off") === "on"; accessibleName: "Only mentions"; onToggled: v => { backend.setSetting("notify_mentions_only", v ? "on" : "off"); on = v } } }
             }
 
+            // ---- Accounts and orgs ----
+            // Teams' account card (measured 2026-11-10): your 56 px picture
+            // with presence, name (14/20 semibold) and e-mail (12/16
+            // #616161), Manage ↗ (Microsoft account) at the right; under a
+            // divider, the organisation (14 bold) on #FAFAFA with a 3 px
+            // brand bar.
+            Rectangle {
+                visible: root.page === "accounts"
+                width: parent.width; height: 120
+                radius: 4; color: "transparent"
+                border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+                Avatar { x: 11; y: 10; size: 56; name: backend.userName || "?"; photoId: "me"; presence: root.myPresence }
+                Column {
+                    x: 77; y: 24
+                    Text { text: backend.userName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Text { text: backend.userMail; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                }
+                Rectangle {
+                    anchors.right: parent.right; anchors.rightMargin: 21; y: 21
+                    width: manageRow.implicitWidth + 24; height: 31.3; radius: 4
+                    color: manageHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+                    border.color: theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
+                    Row { id: manageRow; anchors.centerIn: parent; spacing: 8
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 16; color: theme.textStrong } }
+                    HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/") }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: "Manage"
+                }
+                Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D") }
+                Rectangle {
+                    x: 0.67; y: 72.67; width: parent.width - 1.34; height: 46.7; radius: 4
+                    color: theme.pick("#FAFAFA", "#262626")
+                    Rectangle { x: 3; y: 10; width: 3; height: 26; radius: 1.5; color: theme.brand }
+                    Text { x: 15; anchors.verticalCenter: parent.verticalCenter; text: backend.orgName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
+                }
+            }
+
             // ---- Privacy ----
             SettingsParts.Card {
                 visible: root.page === "privacy"
@@ -608,6 +648,8 @@ Rectangle {
         }
     }
     property bool notifyOn: local("notifications", "on") !== "off"
+    /// Your presence, for the account card.
+    property string myPresence: ""
     signal showShortcuts()
     Component.onCompleted: backend.loadReadReceipts()
     function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
