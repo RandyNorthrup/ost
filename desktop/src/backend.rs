@@ -9415,7 +9415,7 @@ impl qobject::Backend {
                             a["recommend"].as_bool().unwrap_or(false),
                         )
                         .await?;
-                        Ok(json!({ "id": id, "name": f("name").trim() }))
+                        Ok(json!({ "id": id, "name": f("name").trim(), "type": a["type"] }))
                     }
                     // A channel's Archive / Restore / Delete / Recommend.
                     "archive" | "restore" => {
@@ -9424,7 +9424,7 @@ impl qobject::Backend {
                         Ok(serde_json::Value::Null)
                     }
                     "delete-channel" => {
-                        api::channels::delete_channel(&client, &team_thread, &channel).await?;
+                        api::channels::delete_channel(&client, &team_thread, &team, &channel).await?;
                         Ok(serde_json::Value::Null)
                     }
                     "recommend" | "unrecommend" => {
@@ -9570,6 +9570,19 @@ impl qobject::Backend {
                             code = api::channels::team_join_code(&client, &team_thread, reqwest::Method::GET).await?;
                         }
                         Ok(json!({ "code": if arg == "remove" { None } else { code } }))
+                    }
+                    // A private channel's member step: arg {channel, users: [{mri, owner}]}.
+                    "channel-add-members" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Members")?;
+                        let users: Vec<(String, bool)> = a["users"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|u| Some((u["mri"].as_str()?.to_string(), u["owner"].as_bool().unwrap_or(false))))
+                            .collect();
+                        let ch = a["channel"].as_str().unwrap_or_default().to_string();
+                        api::channels::add_private_channel_members(&client, &team_thread, &ch, &users).await?;
+                        Ok(json!({ "added": users.len() }))
                     }
                     // Manage team ▸ Apps.
                     "team-apps" => {
@@ -9752,7 +9765,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });

@@ -3319,10 +3319,13 @@ Window {
             else if (step === 1) shot("cc-empty")
             else if (step === 2) d.fillForTest(name || "OST harness channel", "", "PostReply", false)
             else if (step === 3) { d.contentItem.children[1].children[0]; shot("cc-filled-notype") }
-            else if (step === 4) d.fillForTest(name || "OST harness channel", "Standard", "PostReply", false)
+            else if (step === 4) d.fillForTest(name || "OST harness channel", (Qt.application.arguments.find(a => a.startsWith("--create-type=")) || "--create-type=Standard").slice(14), "PostReply", false)
             else if (step === 5) shot("cc-filled")
             else if (step === 6) { if (name) d.create(); else d.close() }
-            else if (step === 10) { console.warn("CREATE", backend.channelActionResult); Qt.quit() }
+            else if (step === 10) console.warn("CREATE", backend.channelActionResult)
+            else if (step === 11) shot("cc-member-step")
+            else if (step === 12) { console.warn("MEMBER STEP", d.memberStepForTest().opened); d.memberStepForTest().close() }
+            else if (step === 14) Qt.quit()
             step++
         }
     }
@@ -3508,6 +3511,24 @@ Window {
             else if (step === 18) { console.warn("TSET code", v.code); shot("ts-code") }
             else if (step === 22) backend.channelAction("team-code", team.id, team.thread_id, "remove")
             else if (step === 24) { console.warn("TSET code removed", JSON.stringify(v.code)); Qt.quit() }
+            step++
+        }
+    }
+
+    // --channel-op=<op> --channel-team=<team group id> --channel-name=<name>
+    // [--channel-arg=<arg>]: run one channel action on the named channel of
+    // that team and log the result; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--channel-op=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith("--" + k + "=")) || "").slice(k.length + 3)
+            const team = (JSON.parse(backend.teamsJson || "[]").find(t => t.id === arg("channel-team")))
+            if (!team) return
+            const ch = (team.channels || []).find(c => c.name === arg("channel-name"))
+            if (step === 0) { if (!ch) { console.warn("CHANNEL-OP no channel", arg("channel-name")); Qt.quit(); return } backend.channelAction(arg("channel-op"), team.id, ch.id, arg("channel-arg")) }
+            else if (step === 3) { console.warn("CHANNEL-OP", backend.channelActionResult); Qt.quit() }
             step++
         }
     }

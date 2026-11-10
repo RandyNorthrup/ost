@@ -30,6 +30,13 @@ Popup {
     property string teamThread: ""
     property string teamName: ""
     property var members: []
+    // The member step after creating a private channel (Teams' "Add members
+    // to the {channel} channel": the team's members only, Skip / Add, 449.3
+    // tall).
+    property string channelId: ""
+    property string channelName: ""
+    readonly property bool channelMode: channelId.length > 0
+    signal finished()
     // Picked: {key, mri, object_id, name, detail, mail, group, owner, people, guest, email}.
     property var staged: []
     property var results: []
@@ -39,7 +46,15 @@ Popup {
     readonly property string query: picker.text.trim()
     readonly property bool emailQuery: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query)
 
+    function startChannel(tid, thread, tname, chId, chName) {
+        channelId = chId; channelName = chName
+        startCommon(tid, thread, tname)
+    }
     function start(tid, thread, tname) {
+        channelId = ""; channelName = ""
+        startCommon(tid, thread, tname)
+    }
+    function startCommon(tid, thread, tname) {
         teamId = tid; teamThread = thread; teamName = tname
         staged = []; results = []; searched = ""; adding = false; outcome = null; members = []
         picker.text = ""
@@ -89,7 +104,8 @@ Popup {
         })
         const guests = staged.filter(s => s.guest).map(s => ({ email: s.email, name: s.name }))
         adding = true
-        backend.channelAction("add-members", teamId, teamThread, JSON.stringify({ users: users, guests: guests }))
+        if (channelMode) backend.channelAction("channel-add-members", teamId, teamThread, JSON.stringify({ channel: channelId, users: users }))
+        else backend.channelAction("add-members", teamId, teamThread, JSON.stringify({ users: users, guests: guests }))
     }
 
     Timer {
@@ -97,7 +113,7 @@ Popup {
         interval: 300
         onTriggered: {
             if (!dlg.query) return
-            backend.channelAction("add-member-search", dlg.teamId, dlg.teamThread, dlg.query)
+            backend.channelAction(dlg.channelMode ? "tag-member-search" : "add-member-search", dlg.teamId, dlg.teamThread, dlg.query)
         }
     }
     Connections {
@@ -107,11 +123,16 @@ Popup {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.channel !== dlg.teamThread) return
             if (r.op === "team-members-load" && r.ok) dlg.members = r.data.members || []
-            else if (r.op === "add-member-search" && r.ok && r.data.query.trim() === dlg.query) {
+            else if ((r.op === "add-member-search" || (r.op === "tag-member-search" && dlg.channelMode)) && r.ok && r.data.query.trim() === dlg.query) {
                 dlg.searched = r.data.query
-                dlg.results = (r.data.people || []).filter(c => !dlg.excluded(c))
+                // Team members (the channel step) come as {mri, name, mail, detail}.
+                dlg.results = (r.data.people || []).map(c => c.object_id !== undefined ? c : Object.assign({ object_id: c.mri.replace(/^8:orgid:/, ""), group: false }, c)).filter(c => !dlg.excluded(c))
             } else if (r.op === "group-people" && r.ok) {
                 dlg.staged = dlg.staged.map(s => s.group && s.object_id === r.data.group ? Object.assign({}, s, { people: r.data.people || [] }) : s)
+            } else if (r.op === "channel-add-members") {
+                dlg.adding = false
+                if (r.ok) { dlg.close(); return }
+                dlg.outcome = { requested: dlg.staged.length, added: 0, failed: dlg.staged.length }
             } else if (r.op === "add-members") {
                 dlg.adding = false
                 if (r.ok && r.data.failed === 0) { dlg.close(); return }
@@ -121,7 +142,8 @@ Popup {
     }
 
     anchors.centerIn: Overlay.overlay
-    modal: true; width: 600; height: 483; padding: 24
+    modal: true; width: 600; height: channelMode ? 449.3 : 483; padding: 24
+    onClosed: if (channelMode) finished()
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
     Overlay.modal: Rectangle { color: theme.pick(Qt.rgba(0, 0, 0, 0.4), Qt.rgba(0, 0, 0, 0.5)) }
@@ -131,12 +153,21 @@ Popup {
         Text {
             x: 0.7; y: 0.7; width: 550
             elide: Text.ElideRight
-            text: "Add members to " + dlg.teamName
+            text: dlg.channelMode ? "Add members to the " + dlg.channelName + " channel" : "Add members to " + dlg.teamName
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
         Text {
+            visible: dlg.channelMode
+            x: 0.7; y: 36; width: 543.5
+            text: "Start typing a name of a person you want to add to this private channel."
+            font.family: theme.font; font.pixelSize: 14
+            lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.text
+        }
+        Text {
+            visible: !dlg.channelMode
             x: 0.7; y: 37.3; width: 543.5
             wrapMode: Text.Wrap
             textFormat: Text.StyledText
@@ -152,7 +183,7 @@ Popup {
         // The picker.
         Rectangle {
             id: box
-            x: 0; y: 128.7; width: 550.7; height: 33.3; radius: 4
+            x: 0; y: dlg.channelMode ? 69.3 : 128.7; width: 550.7; height: 33.3; radius: 4
             color: theme.pick("#F0F0F0", "#141414")
             Rectangle {
                 visible: picker.activeFocus
@@ -198,7 +229,7 @@ Popup {
         // Picked people.
         Flickable {
             visible: !dlg.outcome
-            x: 2; y: 172; width: 546.7; height: 220
+            x: 2; y: box.y + 43.3; width: 546.7; height: dlg.channelMode ? 190 : 220
             contentHeight: stagedCol.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -271,9 +302,9 @@ Popup {
         }
 
         Row {
-            x: 351.3; y: 403
+            x: 351.3; y: dlg.channelMode ? 369.4 : 403
             spacing: 8
-            DialogButton { text: dlg.outcome ? "Close" : "Cancel"; onClicked: dlg.close() }
+            DialogButton { text: dlg.outcome ? "Close" : dlg.channelMode ? "Skip" : "Cancel"; onClicked: dlg.close() }
             DialogButton {
                 visible: !dlg.outcome
                 text: dlg.adding ? "Adding..." : "Add"; primary: true

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T20:42:00Z'
-updated_date: '2026-11-09T23:52:00Z'
+updated_date: '2026-11-10T03:36:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,11 +19,11 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each team row has Teams' ··· menu with Teams' items, conditions and order
-- [ ] #2 Manage team opens Teams' page in the conversation's place with its tabs, each measured against Teams
+- [x] #1 Each team row has Teams' ··· menu with Teams' items, conditions and order
+- [x] #2 Manage team opens Teams' page in the conversation's place with its tabs, each measured against Teams
 - [ ] #3 Manage team ▸ Analytics shows the team's analytics (Summary with Active guests, Engagement, charts; Analytics across teams) and Manage channel's All Channels / Analytics across channels open it
 - [ ] #4 Verified side by side with Teams on winpc in OST Test Team
-- [ ] #5 Manage channel ▸ Settings for a channel other than General shows Teams' channel moderation and settings (verified with a test channel made by Add channel in OST Test Team)
+- [x] #5 Manage channel ▸ Settings for a channel other than General shows Teams' channel moderation and settings (verified with a test channel made by Add channel in OST Test Team)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -62,4 +62,22 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
     - PUT/DELETE {mt}/beta/teams/{channel}/setDefaultChannel.
   - Fixed: Hide all channels used the middle-tier token (401). It now uses the provisioning token and was verified from OST, then everything was shown again.
   - Verified from OST (--channel-owner-test): restore, archive, restore, recommend, unrecommend, create, delete, hide all, show. Create errors map to "Channel name is already taken." when the server names a conflict (a deleted channel's name too).
+
+- 123c364: non-General Manage channel ▸ Moderation (dropdown On/Off, moderators summary + hover card, who can post, member permissions) and Add or remove moderators (team profile search, roster PUT). Verified both ways with Teams on "OST test channel" (left Off). Adding/removing an actual moderator could not be exercised: OST Test Team has no non-owner member; wire taken from Teams' bundle.
+
+- 6951ab6: team menu Add member with Teams' Add members dialog (searchV2 addToTeam, groups via Graph transitiveMembers, roles, guests). Add request (bulkUpdateRoledMembers / inviteAndAddGuest) taken from Teams' bundle, not run live (no new tenant members allowed).
+
+- 840a413: Manage tags (Tags tab, tag page, Create/Edit/Add people/Delete dialogs, CSA tag API; PATCH is v2). Verified both ways on OST test tag (description set in Teams, cleared from OST, left empty).
+
+- d960629: team Archive/Restore, Leave, Delete with Teams' dialogs. Archive+restore verified live (team back in Teams' list); last-owner Leave refused by the service as Teams expects; Delete not run.
+
+- 00b91b0: Manage team Members tab (roster, tags, role dropdown, remove); matches Teams' tab for OST Test Team. Role change / remove not run (only member is the last owner).
+
+- a3e53ab: Pending requests tab (findJoinRequests, accept/deny, empty state matches Teams). No request could be raised to test the list.
+
+- 2962d22: Manage team Settings tab (details + Edit team + Change picture, permissions, @mentions, team code, fun stuff, tags). Verified: permission toggle, description edit (Teams shows it after restart), team code shown in Teams then removed. Team picture: a Remove+Save made in Teams during research changed it to Teams' pale initials; OST then uploaded Teams' server default (solid magenta, the original look); Teams desktop still shows its cached pale one.
+
+- 2bf52c5: Manage team Apps tab (aggregated team entitlements; Copy link as Teams; Remove; Create an outgoing webhook). All seven Manage team tabs now built; AC #2 checked.
+
+- Private channels: Create a channel (Private) goes through the provisioning service (channelsWarmup + channels POST) and then shows the "Add members to the {channel} channel" step; Delete channel on a private channel uses the provisioning DELETE with OID:{substrateGroupId}@{tenant}. OST created and deleted "OST private test 2"; Teams' Manage team list confirmed both. The member step's Add isn't run (OST Test Team has no other members). Spec §5.6.8.
 <!-- SECTION:NOTES:END -->

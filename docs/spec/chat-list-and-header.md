@@ -785,6 +785,36 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 - The list was checked against Teams for OST Test Team; Remove and webhooks
   were not run.
 
+#### 5.6.8 Private channels: create and delete (measured 2026-11-09)
+
+- Create a channel with **Private** goes through Teams' provisioning service
+  (`teamsAndChannelsProvisioningService`, token for
+  `https://templates.teams.microsoft.com`): `POST …/teams/{group}/channelsWarmup`,
+  then `POST …/teams/{group}/channels?forceSync=false` with
+  `{spaceThreadId, displayName, description, channelType: "Private",
+  sharedWithParentTeam: true, sessionKey: uuid, chatModalityType}`. The reply
+  is `{groupId: "OID:{channel group}@{tenant}", …}` with no thread id, so
+  OST finds the new channel by name in the team list, then shows it for its
+  creator (`favorite`), as Teams does.
+- Then the member step, "Add members to the {channel} channel" (600 ×
+  449.3): "Start typing a name of a person you want to add to this private
+  channel." at 36; the picker (550.7 × 33.3) at 69.3; it searches the
+  team's members only; **Skip** / **Add**. Add sends
+  `PUT {mt}/beta/teams/{teamThread}/channels/{channel}/members`
+  `{"value": [{mri, role}]}` (role 0 member, 1 owner). OST Test Team has no
+  other members, so only Skip was run.
+- Delete channel on a private channel: "Delete the {channel} channel from
+  the {team} team" / "Are you sure you want to delete the {channel} channel?
+  All files and conversations will be deleted." (600 × 168.7, no files
+  link: the channel has its own site); **Cancel** / **Delete** (96 × 31.3).
+  The request is the provisioning service's
+  `DELETE …/teams/{group}/channels/OID:{substrateGroupId}@{tenantid}?forceSync=false`
+  (204), the two ids from the channel thread's properties
+  (`threadSubType: PrivateChannel`). A standard channel's
+  `DELETE {mt}/beta/teams/{team}/channels/{channel}` answers 400 for one.
+- Checked: OST created "OST private test 2" and deleted it; Teams' Manage
+  team ▸ Channels list showed it with the lock and then without it.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

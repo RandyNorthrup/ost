@@ -280,7 +280,11 @@ Item {
             width: parent.width; wrapMode: Text.Wrap
             textFormat: Text.StyledText
             readonly property string esc: (deleteDialog.channel.name || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
-            text: "Are you sure you want to delete the <b>" + esc + "</b> channel? All conversations will be deleted. "
+            // A private channel has its own site, so Teams says its files go
+            // too (measured 2026-11-09).
+            text: deleteDialog.channel.channel_type === 1
+                ? "Are you sure you want to delete the <b>" + esc + "</b> channel? All files and conversations will be deleted."
+                : "Are you sure you want to delete the <b>" + esc + "</b> channel? All conversations will be deleted. "
                 + (deleteDialog.site ? "<a href=\"" + deleteDialog.site + "/Shared%20Documents/" + encodeURI(deleteDialog.channel.name || "") + "\">Your files are still accessible here</a>." : "")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
             linkColor: theme.brandForeground1

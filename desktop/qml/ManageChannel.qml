@@ -197,7 +197,7 @@ Rectangle {
                     visible: !page.general
                     teamId: page.teamId
                     channelId: page.general ? "" : page.channelId
-                    channelType: page.channel.channel_type || "Standard"
+                    channelType: ["Standard", "Private", "Shared"][page.channel.channel_type || 0] || "Standard"
                     canChange: !!(page.team && page.team.owner)
                     myMri: backend.userMri || ""
                     myPresence: page.myPresence

@@ -22,7 +22,8 @@ import QtQuick.Controls.Basic
 // - Cancel and Create (96 x 31.3) 32.7 above the bottom; Create once the
 //   name and type are given.
 // Creating posts it as Teams does (api::channels::create_channel) and opens
-// the new channel.
+// the new channel; a private one first gets Teams' member step (Add members
+// to the {channel} channel: Skip / Add).
 Popup {
     id: dlg
     property string teamId: ""
@@ -73,7 +74,13 @@ Popup {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.op !== "create-channel" || !dlg.creating) return
             dlg.creating = false
-            if (r.ok) { dlg.close(); dlg.created(r.data.id, r.data.name) }
+            if (r.ok && r.data.type === "Private") {
+                // Teams' member step for a private channel, then the channel.
+                dlg.close()
+                const team = (JSON.parse(backend.teamsJson || "[]").find(t => t.id === dlg.teamId) || {})
+                memberStep.pendingId = r.data.id; memberStep.pendingName = r.data.name
+                memberStep.startChannel(dlg.teamId, team.thread_id || "", dlg.teamName, r.data.id, r.data.name)
+            } else if (r.ok) { dlg.close(); dlg.created(r.data.id, r.data.name) }
             else dlg.failure = /409|conflict|already/i.test(r.error || "") ? "Channel name is already taken." : "Something went wrong on our end. Please try again."
         }
     }
@@ -319,6 +326,16 @@ Popup {
         }
     }
 
+    // The private channel's member step (outside this dialog, which has closed).
+    AddMembersDialog {
+        id: memberStep
+        parent: Overlay.overlay
+        property string pendingId: ""
+        property string pendingName: ""
+        onFinished: dlg.created(pendingId, pendingName)
+    }
+
     // Test hooks.
+    function memberStepForTest() { return memberStep }
     function fillForTest(n, t, l, rec) { name = n; type = t; layout = l; recommend = !!rec }
 }

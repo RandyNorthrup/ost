@@ -241,6 +241,9 @@ pub async fn create_channel(
     if let Some(e) = name_error(name, false) {
         bail!(e);
     }
+    if channel_type != "Standard" {
+        return create_private_channel(client, team_thread, group_id, name, description, channel_type, layout).await;
+    }
     let (base, token) = middle_tier(client).await?;
     let body = serde_json::json!({
         "displayName": name.trim(),
@@ -291,6 +294,106 @@ pub async fn create_channel(
         set_property(client, &id, "lastTimeFavorited", &now).await?;
     }
     Ok(id)
+}
+
+/// Teams' body for a private or shared channel.
+pub fn private_channel_body(team_thread: &str, name: &str, description: &str, channel_type: &str, layout: &str, session: &str) -> serde_json::Value {
+    serde_json::json!({
+        "spaceThreadId": team_thread,
+        "displayName": name.trim(),
+        "description": description,
+        "channelType": channel_type,
+        "sharedWithParentTeam": true,
+        "sessionKey": session,
+        "chatModalityType": layout,
+    })
+}
+
+/// Create a private or shared channel as Teams does (captured 2026-11-09):
+/// through the provisioning service, `POST …/teams/{group}/channelsWarmup`
+/// then `POST …/teams/{group}/channels?forceSync=false` with the team thread,
+/// name, type, a session key and layout. Its reply has no thread id, so the
+/// channel is found by name in the team's list once it shows there; it is
+/// then shown for its creator (`favorite`), as Teams does.
+async fn create_private_channel(
+    client: &TeamsClient,
+    team_thread: &str,
+    group_id: &str,
+    name: &str,
+    description: &str,
+    channel_type: &str,
+    layout: &str,
+) -> Result<String> {
+    let (base, token) = provisioning(client).await?;
+    let session = uuid::Uuid::new_v4().to_string();
+    let _ = client
+        .http()
+        .post(format!("{base}/teams/{group_id}/channelsWarmup"))
+        .bearer_auth(&token)
+        .header(reqwest::header::CONTENT_LENGTH, "0")
+        .send()
+        .await;
+    let resp = client
+        .http()
+        .post(format!("{base}/teams/{group_id}/channels?forceSync=false"))
+        .bearer_auth(&token)
+        .json(&private_channel_body(team_thread, name, description, channel_type, layout, &session))
+        .send()
+        .await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        let lower = text.to_lowercase();
+        if status.as_u16() == 409 || lower.contains("already") || lower.contains("duplicate") {
+            bail!("Channel name is already taken. ({status})");
+        }
+        bail!("Create channel: {status} {}", text.chars().take(200).collect::<String>());
+    }
+    // Wait for it to show in the team's list (Teams picks it up from sync).
+    let wanted = name.trim().to_lowercase();
+    for attempt in 0..20 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+        if let Ok(teams) = super::teams::list_teams_csa(client).await
+            && let Some(ch) = teams
+                .iter()
+                .find(|t| t.thread_id == team_thread)
+                .and_then(|t| t.channels.iter().find(|c| c.name.to_lowercase() == wanted))
+        {
+            let favorite = format!(
+                "{}/properties?name=favorite&requirePermanentJoinedState=true",
+                conversation_url(client, &ch.id)
+            );
+            let _ = client.chat_request(reqwest::Method::PUT, &favorite, &serde_json::json!({ "favorite": "true" })).await;
+            return Ok(ch.id.clone());
+        }
+    }
+    bail!("The channel was made but hasn't shown up yet")
+}
+
+/// Add people to a private channel (its member step; Teams'
+/// `PUT {mt}/beta/teams/{teamThread}/channels/{channel}/members` with
+/// `{"value": [{mri, role}]}`, role 0 member, 1 owner).
+pub async fn add_private_channel_members(client: &TeamsClient, team_thread: &str, channel: &str, users: &[(String, bool)]) -> Result<()> {
+    if users.is_empty() {
+        return Ok(());
+    }
+    let (base, token) = middle_tier(client).await?;
+    let value: Vec<serde_json::Value> = users
+        .iter()
+        .map(|(mri, owner)| serde_json::json!({ "mri": mri, "role": u8::from(*owner) }))
+        .collect();
+    client
+        .http()
+        .put(format!("{base}/beta/teams/{}/channels/{}/members", enc(team_thread), enc(channel)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "value": value }))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Add channel members")?;
+    Ok(())
 }
 
 /// Teams' provisioning service and a token for it (its resource is
@@ -559,8 +662,42 @@ pub async fn delete_team(client: &TeamsClient, team_thread: &str) -> Result<()> 
     Ok(())
 }
 
-/// Delete a channel: `DELETE {mt}/beta/teams/{team}/channels/{channel}`.
-pub async fn delete_channel(client: &TeamsClient, team_thread: &str, channel: &str) -> Result<()> {
+/// A private or shared channel's own group, as the provisioning service
+/// names it: `OID:{substrateGroupId}@{tenantid}` (its thread properties).
+/// `None` for a standard channel.
+pub fn private_channel_group(properties: &serde_json::Value) -> Option<String> {
+    let sub = properties["threadSubType"].as_str().unwrap_or_default();
+    if sub != "PrivateChannel" && sub != "SharedChannel" {
+        return None;
+    }
+    let group = properties["substrateGroupId"].as_str().filter(|s| !s.is_empty())?;
+    let tenant = properties["tenantid"].as_str().filter(|s| !s.is_empty())?;
+    Some(format!("OID:{group}@{tenant}"))
+}
+
+/// Delete a channel. A standard one: `DELETE {mt}/beta/teams/{team}/
+/// channels/{channel}`. A private or shared one, as Teams does (captured
+/// 2026-11-09): `DELETE {teamsAndChannelsProvisioningService}/teams/{group}/
+/// channels/OID:{its group}@{tenant}?forceSync=false`.
+pub async fn delete_channel(client: &TeamsClient, team_thread: &str, group_id: &str, channel: &str) -> Result<()> {
+    let thread_url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        enc(channel)
+    );
+    let thread: serde_json::Value = client.chat_get(&thread_url).await?.json().await.context("Channel")?;
+    if let Some(own) = private_channel_group(&thread["properties"]) {
+        let (base, token) = provisioning(client).await?;
+        client
+            .http()
+            .delete(format!("{base}/teams/{group_id}/channels/{}?forceSync=false", enc(&own)))
+            .bearer_auth(&token)
+            .send()
+            .await?
+            .error_for_status()
+            .context("Delete channel")?;
+        return Ok(());
+    }
     let (base, token) = middle_tier(client).await?;
     client
         .http()
@@ -1604,6 +1741,31 @@ mod tests {
             r#"{"groupId":"g","users":[{"mri":"8:orgid:a","role":0},{"mri":"8:orgid:b","role":1}]}"#
         );
         assert_eq!(guest_body(" a@example.com ", "A")["emailAddress"], "a@example.com");
+    }
+
+    #[test]
+    fn private_channel_body_is_teams() {
+        // Teams' Create a channel for a private channel (2026-11-09).
+        assert_eq!(
+            private_channel_body("19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2", "OST private test", "", "Private", "Conversational", "b3aabdfd-cc3d-44fa-a183-81c1891c3847").to_string(),
+            r#"{"channelType":"Private","chatModalityType":"Conversational","description":"","displayName":"OST private test","sessionKey":"b3aabdfd-cc3d-44fa-a183-81c1891c3847","sharedWithParentTeam":true,"spaceThreadId":"19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2"}"#
+        );
+    }
+
+    #[test]
+    fn private_channel_group_from_properties() {
+        let p = serde_json::json!({
+            "threadSubType": "PrivateChannel",
+            "substrateGroupId": "a46d52cc-4d7c-4003-976b-9952e3f71ea7",
+            "tenantid": "2716d134-5614-4856-a48d-2002edd9a570",
+            "groupId": "1fac3ae3-c9c0-4ddb-90bb-58f52209c181",
+        });
+        assert_eq!(
+            private_channel_group(&p).as_deref(),
+            Some("OID:a46d52cc-4d7c-4003-976b-9952e3f71ea7@2716d134-5614-4856-a48d-2002edd9a570")
+        );
+        assert_eq!(enc("OID:a@b"), "OID%3Aa%40b");
+        assert_eq!(private_channel_group(&serde_json::json!({ "threadSubType": "Space" })), None);
     }
 
     #[test]
