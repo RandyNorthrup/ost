@@ -118,6 +118,7 @@ fn main() {
         "qml/TagsView.qml",
         "qml/TagDialog.qml",
         "qml/TeamActionDialog.qml",
+        "qml/MembersView.qml",
         "qml/AnalyticsView.qml",
         "qml/AnalyticsChart.qml",
         "qml/BannerImageDialog.qml",

@@ -681,6 +681,25 @@ text 14/20 36 down, buttons 96 × 31.3 (8 apart) at the right.
   shows Teams' dialog); Archive (Teams drops the team from its list) and
   Restore team (it returns). Delete is not run.
 
+#### 5.6.4 Manage team ▸ Members (measured 2026-11-09)
+
+- Offsets from the tab area: **Add member** (transparent, add glyph at
+  12.7, 14/20 semibold #424242; 134.8 × 31.3) at 40, 20.6 opens Add members
+  (§5.6.1); **Search members** (278.7 × 30.7, outlined) 21.3 from the right
+  filters by name.
+- Sections 42 in, 74.3 down (44 tall headers): **Owners (n)**, **Members
+  and guests (n)**. Grids 12 further in: header 48.7 (12/16 labels at +16:
+  Name, Title, Location, Tags with an outline info glyph, Team role; 146.8
+  wide columns, then Actions 60); rows 44.7 with a #EBEBEB line: picture 32
+  (presence) and name 14/20, title, location, tag chips (12 bold #4F52B2,
+  #DCE0FA border, radius 4, padding 3 8), the role as a transparent
+  dropdown (Owner / Member; guests stay Guest), Remove from team.
+- Data: `GET {chatsvc}/v1/threads/{team}/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles=Admin`
+  and `…=User%7CGuest` (bots, `28:`, left out); names from Graph; tags from
+  `POST {csa}/api/v1/teams/{team}/memberTags?tagType=any&action=get`
+  `{memberIds}`. Changes: `PUT {mt}/beta/teams/{team}/members`
+  `{userMri, updateType: Promoted | Demoted | Left, groupId}`.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

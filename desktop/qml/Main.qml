@@ -3439,6 +3439,23 @@ Window {
         }
     }
 
+    // --members-test=<team group id> --shots=<dir>: Manage team ▸ Members
+    // (mb-members.png, the roster logged), the role list (mb-role.png); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--members-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--members-test=")) || "").slice(15)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) window.openManageTeam(id, "members")
+            else if (step === 3) { console.warn("MEMBERS", JSON.stringify(manageTeam.membersForTest().members)); shot("mb-members") }
+            else if (step === 4) Qt.quit()
+            step++
+        }
+    }
+
     // --channel-owner-test=<team group id> --shots=<dir>: on the OST test
     // channels: the owner menu (co-menu.png) and the Archive / Delete
     // dialogs (co-archive.png, co-delete.png); then Restore "OST test

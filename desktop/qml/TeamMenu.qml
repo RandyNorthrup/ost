@@ -30,6 +30,7 @@ Item {
         menu.x = px; menu.y = py
         menu.open()
     }
+    function addMember() { addMembers.start(root.team.id, root.team.thread_id, root.team.name) }
     function act(op) { backend.channelAction(op, root.team.id, root.team.thread_id, "") }
 
     MenuPopup {

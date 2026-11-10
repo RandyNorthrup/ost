@@ -549,6 +549,40 @@ pub fn tag_members_body(tag_id: &str, tag_name: &str, members: &[String], add: b
     }
 }
 
+/// The tags each person has (`POST teams/{team}/memberTags?tagType=any&action=get`).
+pub async fn member_tags(client: &TeamsClient, team_thread: &str, mris: &[String]) -> Result<Vec<(String, Vec<String>)>> {
+    if mris.is_empty() {
+        return Ok(Vec::new());
+    }
+    let v = csa_tag_request(
+        client,
+        reqwest::Method::POST,
+        &format!("v1/teams/{team_thread}/memberTags?tagType=any&action=get"),
+        Some(serde_json::json!({ "memberIds": mris })),
+        None,
+    )
+    .await?;
+    Ok(member_tags_from(&v))
+}
+
+/// Each member's tag names from a memberTags reply.
+pub fn member_tags_from(v: &serde_json::Value) -> Vec<(String, Vec<String>)> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            let id = m["memberId"].as_str()?.to_string();
+            let tags = m["tags"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|t| t["tagName"].as_str().map(str::to_string))
+                .collect();
+            Some((id, tags))
+        })
+        .collect()
+}
+
 /// A tag member's row (Name, Title, Location, Organization), from Graph.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct TagPerson {
@@ -601,6 +635,9 @@ mod tag_tests {
         let (a, b) = tag_members_body("tmu3aacUko", "OST test tag", &["8:orgid:x".into()], false);
         assert_eq!((a, b.to_string().as_str()), ("delete", r#"{"memberIds":["8:orgid:x"],"tagIds":["tmu3aacUko"]}"#));
         assert_eq!(create_tag_body("19:t", " A ", "", &[])["tagName"], "A");
+        // Teams' memberTags reply on the Members tab.
+        let v = serde_json::json!([{"memberId":"8:orgid:4287e791-1b98-4963-8b94-281c50472683","tags":[{"tagName":"OST test tag","tagId":"tmu3aacUko"}],"version":0}]);
+        assert_eq!(member_tags_from(&v), vec![("8:orgid:4287e791-1b98-4963-8b94-281c50472683".to_string(), vec!["OST test tag".to_string()])]);
     }
 }
 

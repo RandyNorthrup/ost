@@ -350,25 +350,23 @@ pub async fn archive_team(client: &TeamsClient, group_id: &str, restore: bool, r
     Ok(())
 }
 
-/// Teams' body for leaving a team.
-pub fn leave_team_body(me: &str, group_id: &str) -> serde_json::Value {
-    serde_json::json!({ "userMri": me, "updateType": "DemotedAndLeft", "groupId": group_id })
+/// Teams' body for a membership change (`updateType` Promoted, Demoted,
+/// Left or DemotedAndLeft).
+pub fn membership_body(mri: &str, update_type: &str, group_id: &str) -> serde_json::Value {
+    serde_json::json!({ "userMri": mri, "updateType": update_type, "groupId": group_id })
 }
 
-/// Leave a team (`PUT {mt}/beta/teams/{teamThread}/members`, DemotedAndLeft).
-/// The service's error code when it says no (Teams'
-/// `OperationDeniedAsMemberIsLastAdminInTeam` for the last owner).
-pub async fn leave_team(client: &TeamsClient, team_thread: &str, group_id: &str) -> Result<Option<String>> {
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .context("Who you are")?;
+/// Change someone's membership of a team (`PUT {mt}/beta/teams/{teamThread}/members`):
+/// make them an owner (Promoted) or a member (Demoted), remove them (Left),
+/// or leave yourself (DemotedAndLeft). The service's error code when it
+/// says no (`OperationDeniedAsMemberIsLastAdminInTeam` for the last owner).
+pub async fn update_membership(client: &TeamsClient, team_thread: &str, group_id: &str, mri: &str, update_type: &str) -> Result<Option<String>> {
     let (base, token) = middle_tier(client).await?;
     let resp = client
         .http()
         .put(format!("{base}/beta/teams/{}/members", enc(team_thread)))
         .bearer_auth(&token)
-        .json(&leave_team_body(&me, group_id))
+        .json(&membership_body(mri, update_type, group_id))
         .send()
         .await?;
     let status = resp.status();
@@ -384,9 +382,86 @@ pub async fn leave_team(client: &TeamsClient, team_thread: &str, group_id: &str)
         return Ok(code);
     }
     if !status.is_success() {
-        bail!("Leave team: {status} {}", text.chars().take(200).collect::<String>());
+        bail!("Team membership: {status} {}", text.chars().take(200).collect::<String>());
     }
     Ok(None)
+}
+
+/// Leave a team (DemotedAndLeft for yourself).
+pub async fn leave_team(client: &TeamsClient, team_thread: &str, group_id: &str) -> Result<Option<String>> {
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .context("Who you are")?;
+    update_membership(client, team_thread, group_id, &me, "DemotedAndLeft").await
+}
+
+/// Someone on Manage team ▸ Members.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct RosterMember {
+    pub mri: String,
+    /// Admin (owner), User or Guest.
+    pub role: String,
+    pub name: String,
+    pub title: String,
+    pub location: String,
+    pub tags: Vec<String>,
+}
+
+/// The people of a roster reply (bots, `28:`, left out).
+pub fn roster_from(v: &serde_json::Value) -> Vec<RosterMember> {
+    v["members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| {
+            let mri = m["id"].as_str()?;
+            (!mri.starts_with("28:")).then(|| RosterMember {
+                mri: mri.to_string(),
+                role: m["role"].as_str().unwrap_or("User").to_string(),
+                ..Default::default()
+            })
+        })
+        .collect()
+}
+
+/// Manage team ▸ Members: owners and members and guests as Teams reads them
+/// (`…/threads/{team}/members?…&selectMemberRoles=Admin` and `User|Guest`),
+/// with names, titles and locations (Graph) and their tags (CSA memberTags).
+pub async fn team_roster(client: &TeamsClient, team_thread: &str) -> Result<Vec<RosterMember>> {
+    let mut out = Vec::new();
+    for roles in ["Admin", "User%7CGuest"] {
+        let url = format!(
+            "{}/v1/threads/{}/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles={roles}",
+            client.chat_service_url(),
+            enc(team_thread)
+        );
+        let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Members")?;
+        out.extend(roster_from(&v));
+    }
+    for m in out.iter_mut() {
+        if let Some(oid) = m.mri.strip_prefix("8:orgid:")
+            && uuid::Uuid::parse_str(oid).is_ok()
+            && let Ok(resp) = client
+                .graph_get(&format!("/users/{oid}?$select=displayName,jobTitle,officeLocation"))
+                .await
+            && let Ok(u) = resp.json::<serde_json::Value>().await
+        {
+            let s = |k: &str| u[k].as_str().unwrap_or_default().to_string();
+            m.name = s("displayName");
+            m.title = s("jobTitle");
+            m.location = s("officeLocation");
+        }
+    }
+    let ids: Vec<String> = out.iter().map(|m| m.mri.clone()).collect();
+    if let Ok(tags) = super::teams::member_tags(client, team_thread, &ids).await {
+        for m in out.iter_mut() {
+            if let Some(t) = tags.iter().find(|(id, _)| id.eq_ignore_ascii_case(&m.mri)) {
+                m.tags = t.1.clone();
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Delete a team: `DELETE {mt}/beta/teams/{teamThread}/delete`.
@@ -1257,6 +1332,21 @@ mod tests {
             r#"{"groupId":"g","users":[{"mri":"8:orgid:a","role":0},{"mri":"8:orgid:b","role":1}]}"#
         );
         assert_eq!(guest_body(" a@example.com ", "A")["emailAddress"], "a@example.com");
+    }
+
+    #[test]
+    fn roster_and_membership_are_teams() {
+        // Teams' Members tab reads (2026-11-09): bots are left out.
+        let v = serde_json::json!({"members":[
+            {"id":"28:0af95b67-5890-4306-9c1c-a8591cead09e","role":"User"},
+            {"id":"8:orgid:4287e791-1b98-4963-8b94-281c50472683","role":"Admin"}]});
+        let r = roster_from(&v);
+        assert_eq!(r.len(), 1);
+        assert_eq!((r[0].mri.as_str(), r[0].role.as_str()), ("8:orgid:4287e791-1b98-4963-8b94-281c50472683", "Admin"));
+        assert_eq!(
+            membership_body("8:orgid:a", "DemotedAndLeft", "g").to_string(),
+            r#"{"groupId":"g","updateType":"DemotedAndLeft","userMri":"8:orgid:a"}"#
+        );
     }
 
     #[test]

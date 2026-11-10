@@ -9443,6 +9443,19 @@ impl qobject::Backend {
                         let code = api::channels::leave_team(&client, &team_thread, &team).await?;
                         Ok(json!({ "code": code }))
                     }
+                    // Manage team ▸ Members.
+                    "team-roster" => {
+                        let r = api::channels::team_roster(&client, &team_thread).await?;
+                        Ok(json!({ "members": r }))
+                    }
+                    // arg {mri, update: Promoted | Demoted | Left}.
+                    "team-membership" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Member")?;
+                        let update = a["update"].as_str().unwrap_or_default();
+                        anyhow::ensure!(matches!(update, "Promoted" | "Demoted" | "Left"), "Unknown change");
+                        let code = api::channels::update_membership(&client, &team_thread, &team, a["mri"].as_str().unwrap_or_default(), update).await?;
+                        Ok(json!({ "code": code, "mri": a["mri"], "update": update }))
+                    }
                     "team-delete" => {
                         api::channels::delete_team(&client, &team_thread).await?;
                         Ok(serde_json::Value::Null)
@@ -9584,7 +9597,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });

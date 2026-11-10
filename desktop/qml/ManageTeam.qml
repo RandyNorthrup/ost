@@ -16,6 +16,7 @@ import QtQuick.Controls.Basic
 //   "Last active: …" and the description (10/14 #616161), Hide / Show and
 //   the channel's menu at the end.
 // - Analytics: the team's dashboard (AnalyticsView, team scope).
+// - Members: MembersView.
 // - Tags: TagsView.
 Rectangle {
     id: page
@@ -384,6 +385,18 @@ Rectangle {
     }
     signal manageChannelAnalytics(string channelId)
 
+    // ---- Members ----
+    MembersView {
+        id: membersView
+        visible: page.tab === "members"
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        teamId: page.teamId
+        teamThread: page.tab === "members" ? (page.team.thread_id || "") : ""
+        owner: !!page.team.owner
+        myPresence: page.myPresence
+        onAddMember: teamMenu.addMember()
+    }
+
     // ---- Tags ----
     property string myPresence: ""
     signal chatWithPeople(var mris)
@@ -403,4 +416,5 @@ Rectangle {
     function rowsForTest() { return page.rows }
     function createChannelForTest() { return createChannel }
     function tagsForTest() { return tagsView }
+    function membersForTest() { return membersView }
 }
