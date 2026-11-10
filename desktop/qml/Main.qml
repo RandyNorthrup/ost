@@ -3459,6 +3459,51 @@ Window {
         }
     }
 
+    // --team-settings-test=<team group id> --shots=<dir> [--settings-write]:
+    // Manage team ▸ Settings with every section open (ts-all.png, the
+    // settings logged), Edit team details (ts-edit.png) and Change picture
+    // (ts-picture.png), both cancelled. With --settings-write: upload custom
+    // apps off then on again (logged), the description set to "Test team for
+    // the OST desktop client (safe to delete)." (logged), a team code
+    // generated (ts-code.png, logged) and removed; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--team-settings-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--team-settings-test=")) || "").slice(21)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const write = Qt.application.arguments.indexOf("--settings-write") >= 0
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) { window.openManageTeam(id, "settings"); step++; return }
+            const v = manageTeam.settingsForTest()
+            // --team-picture-default: Remove + Save (Teams' default picture), then quit.
+            if (Qt.application.arguments.indexOf("--team-picture-default") >= 0) {
+                const t = (JSON.parse(backend.teamsJson || "[]").find(t => t.id === id) || {})
+                if (step === 2) backend.channelAction("team-picture", t.id, t.thread_id, JSON.stringify({ path: "" }))
+                else if (step === 5) { console.warn("TSET picture", backend.channelActionResult); shot("ts-picture-after") }
+                else if (step === 6) Qt.quit()
+                step++
+                return
+            }
+            const team = (JSON.parse(backend.teamsJson || "[]").find(t => t.id === id) || {})
+            if (step === 3) { console.warn("TSET", JSON.stringify(v.settings).slice(0, 400), JSON.stringify(v.tags), v.code); v.openAllForTest() }
+            else if (step === 4) shot("ts-all")
+            else if (step === 5) v.editDialogForTest().start(team)
+            else if (step === 6) shot("ts-edit")
+            else if (step === 7) { v.editDialogForTest().close(); v.pictureDialogForTest().start() }
+            else if (step === 8) shot("ts-picture")
+            else if (step === 9) { v.pictureDialogForTest().close(); if (!write) Qt.quit(); else v.change("userSettings", { uploadCustomApp: false }) }
+            else if (step === 11) { console.warn("TSET custom off", v.user.uploadCustomApp); v.change("userSettings", { uploadCustomApp: true }) }
+            else if (step === 13) { console.warn("TSET custom on", v.user.uploadCustomApp); const d = v.editDialogForTest(); d.start(team); d.setDescriptionForTest("Test team for the OST desktop client (safe to delete)."); d.done() }
+            else if (step === 16) { console.warn("TSET description", team.description); backend.channelAction("team-code", team.id, team.thread_id, "generate") }
+            else if (step === 18) { console.warn("TSET code", v.code); shot("ts-code") }
+            else if (step === 22) backend.channelAction("team-code", team.id, team.thread_id, "remove")
+            else if (step === 24) { console.warn("TSET code removed", JSON.stringify(v.code)); Qt.quit() }
+            step++
+        }
+    }
+
     // --channel-owner-test=<team group id> --shots=<dir>: on the OST test
     // channels: the owner menu (co-menu.png) and the Archive / Delete
     // dialogs (co-archive.png, co-delete.png); then Restore "OST test

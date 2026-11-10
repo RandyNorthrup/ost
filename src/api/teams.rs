@@ -172,6 +172,8 @@ pub struct ListTeam {
     pub site_url: String,
     /// You own the team (memberRoleString "admin").
     pub owner: bool,
+    /// A public team (CSA accessType 3; 1 is private).
+    pub public: bool,
 }
 
 fn read_horizon(c: &serde_json::Value) -> bool {
@@ -255,6 +257,7 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 description: s(t, "description"),
                 site_url: t.pointer("/teamSiteInformation/sharepointSiteUrl").and_then(|u| u.as_str()).unwrap_or_default().to_string(),
                 owner: s(t, "memberRoleString") == "admin",
+                public: t.get("accessType").and_then(|a| a.as_u64()) == Some(3),
             }
         })
         .collect()
@@ -581,6 +584,42 @@ pub fn member_tags_from(v: &serde_json::Value) -> Vec<(String, Vec<String>)> {
             Some((id, tags))
         })
         .collect()
+}
+
+/// A team's tag settings (`teams/{team}/tagSettings`): who may change
+/// tags, the apps whose automatic tags are switched off, and the version
+/// edits need.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct TagSettings {
+    pub only_owners: bool,
+    pub disallowed_sources: Vec<String>,
+    pub version: u64,
+}
+
+pub fn tag_settings_from(v: &serde_json::Value) -> TagSettings {
+    TagSettings {
+        only_owners: v["onlyOwnersCanUpdate"].as_bool().unwrap_or(false),
+        disallowed_sources: v["disallowedSources"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|s| s.as_str().map(str::to_string))
+            .collect(),
+        version: v["version"].as_u64().unwrap_or(0),
+    }
+}
+
+/// Read a team's tag settings.
+pub async fn tag_settings(client: &TeamsClient, team_thread: &str) -> Result<TagSettings> {
+    let v = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/tagSettings"), None, None).await?;
+    Ok(tag_settings_from(&v))
+}
+
+/// Write them (`PUT …/tagSettings`, `if-match` the version), as Teams does.
+pub async fn set_tag_settings(client: &TeamsClient, team_thread: &str, s: &TagSettings) -> Result<()> {
+    let body = serde_json::json!({ "onlyOwnersCanUpdate": s.only_owners, "disallowedSources": s.disallowed_sources });
+    csa_tag_request(client, reqwest::Method::PUT, &format!("v1/teams/{team_thread}/tagSettings"), Some(body), Some(s.version)).await?;
+    Ok(())
 }
 
 /// A tag member's row (Name, Title, Location, Organization), from Graph.

@@ -718,6 +718,49 @@ text 14/20 36 down, buttons 96 × 31.3 (8 apart) at the right.
   `{GroupId, UserMri, ActionType: Accept | Reject}` or
   `…/bulkJoinRequestAdminAction` with `UserMris`.
 
+#### 5.6.6 Manage team ▸ Settings (measured 2026-11-09)
+
+Sections 72 in, 20.3 down, 774 wide; headers 64 tall (chevron 20 at 10;
+title 14/20 semibold at 38, 12 down; what it holds 14/20 at 38, 32 down),
+a line after each open body. Bodies start 64 under the header, 39 in;
+checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
+42 apart.
+
+- **Team details** (open): name 21/30 bold, description 12/16, privacy chip
+  (32 × 24 #E6E6E6, lock or globe), **Edit** (brand), "Team picture" (14/20
+  light), the picture (64, radius 4), **Change picture**. Edit opens "Edit
+  {team} team details" (600 × 600: Team name *, Description, Privacy:
+  "Private - Only team owners can add members" / "Public - Anyone in your
+  organization can join"; Cancel / Done) → `PATCH {mt}/beta/teams/{teamThread}`
+  with the changed `displayName` / `description` / `accessType` and
+  `displayNamePrefix: "", displayNameSuffix: "", validationRequired: false`.
+  Change picture opens "Change team picture" (638 × 504: the picture 196,
+  Upload, Remove; Close / Save at the left) → `POST {mt}/beta/teams/{group}/profilepicture?threadId={teamThread}`
+  with the image; Remove sends `GET {mt}/beta/teams/defaultProfilePicture?displayName=…&highResolution=true`.
+- **Member permissions** (Allow members to create and update channels /
+  create private channels (indented 25) / delete and restore channels / add
+  and remove apps / upload custom apps / create, update, and remove tabs /
+  create, update, and remove connectors / create, edit, and delete tags;
+  Give members the option to delete / edit their messages), **Guest
+  permissions** (create and update channels; delete channels), **@mentions**
+  (@team / @channel, 62 apart): the team thread's `spaceAdminSettings`
+  (`userSettings` / `guestSettings`: createTopic+updateTopic,
+  createPrivateSpace, deleteTopic, installApp+uninstallApp, uploadCustomApp,
+  createTab+deleteTab, create/update/deleteIntegration, deleteEnabled,
+  editEnabled, teamMention, channelMention) written back whole
+  (`PUT …/threads/{team}/properties?name=spaceAdminSettings`); tags is the
+  CSA `tagSettings.onlyOwnersCanUpdate`.
+- **Team code**: Generate (brand) or the code (28/36) with Full screen,
+  Reset | Remove, Copy (transparent); "Note: guests won't be able to join
+  with a team code". `GET / PUT / DELETE {mt}/beta/teams/{teamThread}/joinCode`.
+- **Fun stuff**: Giphy (Enable Giphy for this team; "Filter out
+  inappropriate content using one of the settings below:" with G / PG
+  (`giphyRating` 0 / 1)), Stickers and memes (Enable stickers and memes; Allow
+  memes to be uploaded).
+- **Tags**: "Apps" and a Shifts switch (`tagSettings.disallowedSources`).
+- Verified from OST against Teams: upload custom apps off and on, the
+  description edit, a generated code shown in Teams and removed.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

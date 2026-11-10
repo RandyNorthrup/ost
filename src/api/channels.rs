@@ -826,6 +826,197 @@ pub fn with_general_channel_setting(settings: &str, value: u8) -> Result<String>
     Ok(v.to_string())
 }
 
+/// The settings with one key of `userSettings` or `guestSettings` set to a
+/// JSON value, everything else (order included) as it was. A missing key is
+/// added to its section.
+pub fn with_space_setting(settings: &str, section: &str, key: &str, value: &serde_json::Value) -> Result<String> {
+    let head = format!("\"{section}\":{{");
+    if let Some(start) = settings.find(&head) {
+        let body_start = start + head.len();
+        // The section's end: its matching brace.
+        let mut depth = 1;
+        let mut end = body_start;
+        for (i, c) in settings[body_start..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = body_start + i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let body = &settings[body_start..end];
+        let k = format!("\"{key}\":");
+        if let Some(at) = body.find(&k) {
+            let vstart = body_start + at + k.len();
+            let rest = &settings[vstart..end];
+            let vlen = rest.find([',', '}']).unwrap_or(rest.len());
+            return Ok(format!("{}{}{}", &settings[..vstart], value, &settings[vstart + vlen..]));
+        }
+        let sep = if body.trim().is_empty() { "" } else { "," };
+        return Ok(format!("{}{sep}\"{key}\":{value}{}", &settings[..end], &settings[end..]));
+    }
+    let mut v: serde_json::Value = if settings.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(settings).context("spaceAdminSettings")?
+    };
+    v.as_object_mut()
+        .context("spaceAdminSettings")?
+        .entry(section)
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .context(section.to_string())?
+        .insert(key.into(), value.clone());
+    Ok(v.to_string())
+}
+
+/// Change team settings (Manage team ▸ Settings): `changes` is
+/// `{"userSettings": {key: value}, "guestSettings": {…}}`; the team thread's
+/// spaceAdminSettings is read fresh, changed in place and written back whole
+/// as Teams does. Returns the new settings.
+pub async fn set_team_settings(client: &TeamsClient, team_thread: &str, changes: &serde_json::Value) -> Result<String> {
+    let mut s = space_admin_settings(client, team_thread).await?;
+    for section in ["userSettings", "guestSettings"] {
+        if let Some(map) = changes[section].as_object() {
+            for (k, v) in map {
+                s = with_space_setting(&s, section, k, v)?;
+            }
+        }
+    }
+    let url = format!(
+        "{}/v1/threads/{}/properties?name=spaceAdminSettings",
+        client.chat_service_url(),
+        enc(team_thread)
+    );
+    client
+        .chat_request(reqwest::Method::PUT, &url, &serde_json::json!({ "spaceAdminSettings": s }))
+        .await?;
+    Ok(s)
+}
+
+/// Teams' body for Edit team details: the changed fields with Teams'
+/// naming-policy fields.
+pub fn edit_team_body(name: Option<&str>, description: Option<&str>, public: Option<bool>) -> serde_json::Value {
+    let mut b = serde_json::Map::new();
+    if let Some(n) = name {
+        b.insert("displayName".into(), serde_json::json!(n.trim()));
+    }
+    if let Some(d) = description {
+        b.insert("description".into(), serde_json::json!(d));
+    }
+    if let Some(p) = public {
+        b.insert("accessType".into(), serde_json::json!(if p { "Public" } else { "Private" }));
+    }
+    b.insert("displayNamePrefix".into(), serde_json::json!(""));
+    b.insert("displayNameSuffix".into(), serde_json::json!(""));
+    b.insert("validationRequired".into(), serde_json::json!(false));
+    serde_json::Value::Object(b)
+}
+
+/// Edit a team's name, description or privacy
+/// (`PATCH {mt}/beta/teams/{teamThread}`).
+pub async fn edit_team(client: &TeamsClient, team_thread: &str, name: Option<&str>, description: Option<&str>, public: Option<bool>) -> Result<()> {
+    let (base, token) = middle_tier(client).await?;
+    client
+        .http()
+        .patch(format!("{base}/beta/teams/{team_thread}"))
+        .bearer_auth(&token)
+        .json(&edit_team_body(name, description, public))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Edit team")?;
+    Ok(())
+}
+
+/// Teams' default picture for a team name (the initials picture Remove puts
+/// back): `GET {mt}/beta/teams/defaultProfilePicture?displayName=…&highResolution=true`.
+pub async fn team_default_picture(client: &TeamsClient, name: &str) -> Result<Vec<u8>> {
+    let (base, token) = middle_tier(client).await?;
+    let bytes = client
+        .http()
+        .get(format!(
+            "{base}/beta/teams/defaultProfilePicture?displayName={}&highResolution=true",
+            url::form_urlencoded::byte_serialize(name.as_bytes()).collect::<String>()
+        ))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Default team picture")?
+        .bytes()
+        .await?;
+    // Teams' service answers with the picture's bytes or, in some regions,
+    // with them base64-encoded.
+    use base64::Engine as _;
+    if let Ok(text) = std::str::from_utf8(&bytes)
+        && let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(text.trim().trim_matches('"'))
+    {
+        return Ok(raw);
+    }
+    Ok(bytes.to_vec())
+}
+
+/// Set a team's picture (`POST {mt}/beta/teams/{group}/profilepicture?threadId={teamThread}`
+/// with the image as the body, as Teams sends it).
+pub async fn set_team_picture(client: &TeamsClient, group_id: &str, team_thread: &str, image: Vec<u8>) -> Result<()> {
+    let (base, token) = middle_tier(client).await?;
+    client
+        .http()
+        .post(format!("{base}/beta/teams/{group_id}/profilepicture?threadId={team_thread}"))
+        .bearer_auth(&token)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(image)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Team picture")?;
+    Ok(())
+}
+
+/// A team's join code: read (GET), make or reset (PUT), remove (DELETE)
+/// at `{mt}/beta/teams/{teamThread}/joinCode`. The code, when there is one.
+pub async fn team_join_code(client: &TeamsClient, team_thread: &str, method: reqwest::Method) -> Result<Option<String>> {
+    let (base, token) = middle_tier(client).await?;
+    let mut req = client
+        .http()
+        .request(method.clone(), format!("{base}/beta/teams/{team_thread}/joinCode"))
+        .bearer_auth(&token);
+    if method != reqwest::Method::GET {
+        req = req.header(reqwest::header::CONTENT_TYPE, "application/json").body("");
+    }
+    let resp = req.send().await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if status.as_u16() == 404 || status.as_u16() == 204 {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        bail!("Team code: {status} {}", text.chars().take(200).collect::<String>());
+    }
+    Ok(join_code_from(&text))
+}
+
+/// The code in a joinCode reply (a JSON string, `{value}` or `{joinCode}`).
+pub fn join_code_from(text: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(text).unwrap_or(serde_json::Value::String(text.trim().to_string()));
+    let code = v
+        .as_str()
+        .or_else(|| v["value"].as_str())
+        .or_else(|| v["joinCode"].as_str())
+        .or_else(|| v["value"]["joinCode"].as_str())
+        .unwrap_or_default()
+        .trim()
+        .trim_matches('"')
+        .to_string();
+    (!code.is_empty() && code != "null").then_some(code)
+}
+
 /// Set who may post in General: the team thread's spaceAdminSettings,
 /// read fresh and written back whole (PUT …/threads/{team}/properties).
 pub async fn set_general_channel_setting(client: &TeamsClient, team_thread: &str, value: u8) -> Result<()> {
@@ -1413,6 +1604,25 @@ mod tests {
             r#"{"groupId":"g","users":[{"mri":"8:orgid:a","role":0},{"mri":"8:orgid:b","role":1}]}"#
         );
         assert_eq!(guest_body(" a@example.com ", "A")["emailAddress"], "a@example.com");
+    }
+
+    #[test]
+    fn team_settings_change_in_place() {
+        let s = r#"{"userSettings":{"generalChannelSetting":0,"teamMention":true,"uploadCustomApp":true,"createTab":true},"guestSettings":{"createTopic":false,"deleteTopic":false}}"#;
+        let t = with_space_setting(s, "userSettings", "uploadCustomApp", &serde_json::json!(false)).unwrap();
+        assert_eq!(t, r#"{"userSettings":{"generalChannelSetting":0,"teamMention":true,"uploadCustomApp":false,"createTab":true},"guestSettings":{"createTopic":false,"deleteTopic":false}}"#);
+        let t = with_space_setting(&t, "guestSettings", "deleteTopic", &serde_json::json!(true)).unwrap();
+        assert!(t.ends_with(r#""deleteTopic":true}}"#));
+        let t = with_space_setting(&t, "userSettings", "giphyRating", &serde_json::json!(0)).unwrap();
+        assert!(t.contains(r#""createTab":true,"giphyRating":0}"#));
+        // Teams' Edit team details body (captured 2026-11-09).
+        assert_eq!(
+            edit_team_body(None, Some("Test team for the OST desktop client (safe to delete). X"), None).to_string(),
+            r#"{"description":"Test team for the OST desktop client (safe to delete). X","displayNamePrefix":"","displayNameSuffix":"","validationRequired":false}"#
+        );
+        assert_eq!(join_code_from(r#""ab12cd""#).as_deref(), Some("ab12cd"));
+        assert_eq!(join_code_from(r#"{"value":"xy"}"#).as_deref(), Some("xy"));
+        assert_eq!(join_code_from("null"), None);
     }
 
     #[test]

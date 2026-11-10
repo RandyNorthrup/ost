@@ -8115,6 +8115,32 @@ impl qobject::Backend {
         api::emoticons::asset_size(&named.to_string(), hidpi) as i32
     }
 
+    /// Forget a picture (memory and disk) so the next photo_for fetches it
+    /// again, and tell the views (a team picture changed from OST).
+    fn forget_photos(mut self: Pin<&mut Self>, id: &str) {
+        let prefix = format!("{id}\u{1f}");
+        self.as_mut().rust_mut().photos.retain(|k, _| !k.starts_with(&prefix));
+        if let Some((owner, oid)) = photo_target(id, None)
+            && let Some(dir) = photo_dir()
+            && let Ok(entries) = std::fs::read_dir(&dir)
+        {
+            let lead = format!(
+                "{}-{oid}-",
+                match owner {
+                    api::directory::PhotoOwner::Team => "team",
+                    api::directory::PhotoOwner::Named => "named",
+                    api::directory::PhotoOwner::User => "user",
+                }
+            );
+            for e in entries.flatten() {
+                if e.file_name().to_string_lossy().starts_with(&lead) {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
+        self.as_mut().photo_ready(QString::from(id));
+    }
+
     pub fn photo_for(mut self: Pin<&mut Self>, id: &QString, name: &QString) -> QString {
         let id = id.to_string();
         let name = name.to_string();
@@ -9456,6 +9482,68 @@ impl qobject::Backend {
                         let code = api::channels::update_membership(&client, &team_thread, &team, a["mri"].as_str().unwrap_or_default(), update).await?;
                         Ok(json!({ "code": code, "mri": a["mri"], "update": update }))
                     }
+                    // Manage team ▸ Settings: the team's admin settings, its
+                    // tag settings and its code.
+                    "team-settings-load" => {
+                        let s = api::channels::space_admin_settings(&client, &team_thread).await?;
+                        let settings: serde_json::Value = serde_json::from_str(&s).unwrap_or_default();
+                        let tags = api::teams::tag_settings(&client, &team_thread).await.ok();
+                        let code = api::channels::team_join_code(&client, &team_thread, reqwest::Method::GET).await.ok().flatten();
+                        Ok(json!({ "settings": settings, "tags": tags, "code": code }))
+                    }
+                    // arg {userSettings: {…}, guestSettings: {…}}.
+                    "team-settings" => {
+                        let changes: serde_json::Value = serde_json::from_str(&arg).context("Settings")?;
+                        let s = api::channels::set_team_settings(&client, &team_thread, &changes).await?;
+                        let settings: serde_json::Value = serde_json::from_str(&s).unwrap_or_default();
+                        Ok(json!({ "settings": settings }))
+                    }
+                    // arg {onlyOwners?, shifts?}.
+                    "team-tag-settings" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Tags")?;
+                        let mut t = api::teams::tag_settings(&client, &team_thread).await?;
+                        if let Some(o) = a["onlyOwners"].as_bool() {
+                            t.only_owners = o;
+                        }
+                        if let Some(on) = a["shifts"].as_bool() {
+                            t.disallowed_sources.retain(|x| x != "Shifts");
+                            if !on {
+                                t.disallowed_sources.push("Shifts".into());
+                            }
+                        }
+                        api::teams::set_tag_settings(&client, &team_thread, &t).await?;
+                        let t = api::teams::tag_settings(&client, &team_thread).await?;
+                        Ok(json!({ "tags": t }))
+                    }
+                    // arg {name?, description?, public?}.
+                    "team-edit" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Team")?;
+                        api::channels::edit_team(&client, &team_thread, a["name"].as_str(), a["description"].as_str(), a["public"].as_bool()).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    // arg {path}: a picture file, or none for Teams' default
+                    // (Remove).
+                    "team-picture" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let image = match a["path"].as_str().filter(|p| !p.is_empty()) {
+                            Some(p) => std::fs::read(p.strip_prefix("file://").unwrap_or(p)).context("Picture")?,
+                            None => {
+                                let name = team_entry["name"].as_str().unwrap_or_default().to_string();
+                                api::channels::team_default_picture(&client, &name).await?
+                            }
+                        };
+                        api::channels::set_team_picture(&client, &team, &team_thread, image).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    // arg generate | remove.
+                    "team-code" => {
+                        let method = if arg == "remove" { reqwest::Method::DELETE } else { reqwest::Method::PUT };
+                        let mut code = api::channels::team_join_code(&client, &team_thread, method).await?;
+                        if arg != "remove" && code.is_none() {
+                            code = api::channels::team_join_code(&client, &team_thread, reqwest::Method::GET).await?;
+                        }
+                        Ok(json!({ "code": if arg == "remove" { None } else { code } }))
+                    }
                     // Manage team ▸ Pending requests.
                     "join-requests" => {
                         let r = api::channels::join_requests(&client, &team).await?;
@@ -9607,10 +9695,13 @@ impl qobject::Backend {
                 };
                 this.as_mut()
                     .set_channel_action_result(QString::from(outcome.to_string().as_str()));
+                if result.is_ok() && op == "team-picture" {
+                    this.as_mut().forget_photos(&format!("team:{team}"));
+                }
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });

@@ -18,6 +18,7 @@ import QtQuick.Controls.Basic
 // - Analytics: the team's dashboard (AnalyticsView, team scope).
 // - Members: MembersView.
 // - Pending requests: PendingRequestsView.
+// - Settings: TeamSettingsView.
 // - Tags: TagsView.
 Rectangle {
     id: page
@@ -398,6 +399,16 @@ Rectangle {
         onAddMember: teamMenu.addMember()
     }
 
+    // ---- Settings ----
+    TeamSettingsView {
+        id: settingsView
+        visible: page.tab === "settings"
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        teamId: page.teamId
+        teamThread: page.tab === "settings" ? (page.team.thread_id || "") : ""
+        team: page.team
+    }
+
     // ---- Pending requests ----
     PendingRequestsView {
         id: pendingView
@@ -429,4 +440,5 @@ Rectangle {
     function tagsForTest() { return tagsView }
     function membersForTest() { return membersView }
     function pendingForTest() { return pendingView }
+    function settingsForTest() { return settingsView }
 }
