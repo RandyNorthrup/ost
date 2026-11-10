@@ -28,3 +28,4 @@
 
 OST is not affiliated with or endorsed by Microsoft. "Microsoft Teams" is a
 trademark of Microsoft; the Teams logo is not used.
+| `settings/*.svg` | The pictures on Teams' Settings choices (opening content, chat density, chat landing, combined or separate view), copied from Teams' public evergreen assets so Settings looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
