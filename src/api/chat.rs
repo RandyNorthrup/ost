@@ -734,6 +734,7 @@ pub async fn send_typing(client: &TeamsClient, chat_id: &str) -> Result<()> {
 
 /// Chat metadata for TUI display.
 #[allow(dead_code)]
+#[derive(Default)]
 pub struct ChatInfo {
     pub id: String,
     pub name: String,
@@ -756,6 +757,34 @@ pub struct ChatInfo {
     pub hidden: bool,
     /// You created it (meeting chats: the creator can't leave).
     pub is_creator: bool,
+}
+
+/// Your notes-to-self chat's name, as Teams lists it: "{you} (You)".
+pub fn notes_name(my_name: &str) -> String {
+    format!("{my_name} (You)")
+}
+
+/// The chats as Teams lists them: your notes-to-self chat (48:notes) first
+/// as "{you} (You)", then the rest. System streams (48:drafts, 48:threads,
+/// call logs, notifications, mentions…) aren't chats, channels belong under
+/// their team, and empty or hidden chats aren't listed.
+pub fn listed_chats(chats: Vec<ChatInfo>, my_name: &str) -> Vec<ChatInfo> {
+    let mut notes = None;
+    let mut rest = Vec::new();
+    for mut c in chats {
+        if c.id == "48:notes" {
+            c.name = notes_name(my_name);
+            notes = Some(c);
+        } else if !c.id.starts_with("48:")
+            && !c.id.ends_with("@thread.tacv2")
+            && !c.id.ends_with("@thread.skype")
+            && !c.empty
+            && !c.hidden
+        {
+            rest.push(c);
+        }
+    }
+    notes.into_iter().chain(rest).collect()
 }
 
 /// Whether a chat you hid stays hidden: hidden at `hidden_ms` and its last
@@ -1222,7 +1251,7 @@ mod live_call_tests {
 
 #[cfg(test)]
 mod list_preview_tests {
-    use super::list_preview;
+    use super::{ChatInfo, list_preview, listed_chats};
 
     #[test]
     fn system_events_and_media_preview_as_teams() {
@@ -1237,5 +1266,30 @@ mod list_preview_tests {
         assert_eq!(list_preview("<p>Hi <b>there</b></p>", "RichText/Html", None), ("Hi there".into(), false));
         let fwd = serde_json::json!({ "forwardTemplateId": "1" });
         assert_eq!(list_preview("", "RichText/Html", Some(&fwd)).0, "Forwarded a message");
+    }
+
+    #[test]
+    fn chats_are_listed_as_teams_lists_them() {
+        let chat = |id: &str, name: &str| ChatInfo { id: id.into(), name: name.into(), ..Default::default() };
+        let mut empty = chat("19:e@thread.v2", "19:e@thread.v2");
+        empty.empty = true;
+        let mut hidden = chat("19:h@thread.v2", "Hidden");
+        hidden.hidden = true;
+        let listed = listed_chats(
+            vec![
+                chat("48:drafts", "OST Test 1"),
+                chat("19:g@thread.v2", "OST group test"),
+                chat("48:threads", "48:threads"),
+                chat("19:c@thread.tacv2", "OST test channel"),
+                empty,
+                hidden,
+                chat("48:notes", "OST Test 1"),
+                chat("48:calllogs", "48:calllogs"),
+            ],
+            "OST Test 1",
+        );
+        let names: Vec<&str> = listed.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["OST Test 1 (You)", "OST group test"]);
+        assert_eq!(listed[0].id, "48:notes");
     }
 }

@@ -94,6 +94,13 @@ impl SidebarState {
     }
 
     /// Update chats data from API response.
+    /// Rename a listed chat (the notes chat once your name is known).
+    pub fn rename_chat(&mut self, id: &str, name: String) {
+        if let Some(c) = self.chats.iter_mut().find(|c| c.id == id) {
+            c.name = name;
+        }
+    }
+
     pub fn update_chats(&mut self, chats: Vec<api::ChatInfo>) {
         self.chats = chats
             .into_iter()

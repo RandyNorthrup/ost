@@ -467,7 +467,9 @@ impl App {
                 self.sidebar.loading = false;
             }
             BackendResponse::Chats(Ok(chats)) => {
-                self.sidebar.update_chats(chats);
+                // As Teams lists them (no system streams, channels, empty or
+                // hidden chats; your notes chat first).
+                self.sidebar.update_chats(crate::api::listed_chats(chats, &self.user_name));
                 self.sidebar.loading = false;
                 self.close_stale_search();
             }
@@ -507,6 +509,8 @@ impl App {
             }
             BackendResponse::UserInfo(Ok(info)) => {
                 self.user_name = info.display_name;
+                // The notes chat is named after you ("{you} (You)").
+                self.sidebar.rename_chat("48:notes", crate::api::notes_name(&self.user_name));
             }
             BackendResponse::UserInfo(Err(e)) => {
                 self.set_error(format!("Failed to load user info: {:#}", e));
