@@ -3775,6 +3775,15 @@ Window {
                 step++; return
             }
             // =landing: mark the 1:1 with Randy unread, open it (lr-open).
+            // =compact: Message density Compact (cp-compact), then Comfy again.
+            if (mode === "compact") {
+                const c = chatList.chats.find(c => (c.peerMri || "").indexOf("5050c9d6") >= 0)
+                if (step === 1) { if (!c) { step = 0; return } rail.current = "chat"; backend.selectChat(c.id, c.name); backend.changeSetting("prop", "messageDensity", JSON.stringify("COMPACT")) }
+                else if (step === 5) shot("cp-compact")
+                else if (step === 6) backend.changeSetting("prop", "messageDensity", JSON.stringify("COMFY"))
+                else if (step === 8) { console.warn("CP", JSON.parse(backend.settingsJson).props.messageDensity); Qt.quit() }
+                step++; return
+            }
             if (mode === "landing") {
                 const c = chatList.chats.find(c => (c.peerMri || "").indexOf("5050c9d6") >= 0)
                 if (step === 1) { if (!c) { step = 0; return } backend.setChatUnread(c.id, true) }

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T10:14:00Z'
-updated_date: '2026-11-10T11:22:00Z'
+updated_date: '2026-11-10T11:45:00Z'
 labels:
   - desktop
   - settings
@@ -24,7 +24,13 @@ Settings ▸ Chats and channels now saves these where Teams does (TASK-0088), bu
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Compact density lays out messages as Teams' compact mode
-- [ ] #2 Opening a chat lands on the last read message or the newest, as chosen, with Teams' new messages divider
+- [x] #2 Opening a chat lands on the last read message or the newest, as chosen, with Teams' new messages divider
 - [ ] #3 Threads you start, reply to or are @mentioned in are followed as the auto-follow choices say
 - [ ] #4 Suggested replies show in chats as Teams' when on
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Chat landing done: opens on the Last read line (or newest, per setting); read position honours consumptionHorizonBookmark (Mark as unread), checked against Teams' Last read line on the Randy 1:1.
+<!-- SECTION:NOTES:END -->

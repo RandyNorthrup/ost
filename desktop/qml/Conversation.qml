@@ -189,6 +189,11 @@ Rectangle {
     // or avatar sits at the row start (+6 for event icons), its content 40
     // in; on the right, 28 under 480, 32 under 720, 72 from 720. The
     // compose box keeps 14 / 32 / 72 on both sides.
+    // Settings ▸ Chats ▸ Message density: Compact (measured on winpc
+    // 2026-11-10): no bubbles, every message on the left; a group starts
+    // with the 36 px picture at 16 (yours too, with a 2 x 32 brand bar at 4)
+    // and "Name  time" (12/16) at 64; the text (14/20) 17 under it.
+    readonly property bool compact: { const s = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; return !isChannel && !pane && (s.props || {}).messageDensity === "COMPACT" }
     readonly property real gutL: width < 480 ? 14 : 32
     readonly property real gutContent: gutL + 40
     readonly property real gutR: width < 480 ? 28 : width < 720 ? 32 : 72
@@ -1382,11 +1387,11 @@ Rectangle {
             readonly property int dividerH: (modelData.dayDivider ? 30 : 0) + (modelData.lastRead ? 36 : 0)
             // Control and call rows sit flush, as in Teams (28 / 36 px rows).
             readonly property int topPad: dividerH + (isRow ? 0 : grouped ? 2 : 12)
-            readonly property int bubbleY: topPad + (!showMeta || isCall ? 0 : meta.height + 2)
+            readonly property int bubbleY: root.compact && !isRow ? topPad + (showMeta ? 26 : 2) : topPad + (!showMeta || isCall ? 0 : meta.height + 2)
             height: isRow ? topPad + (isCall ? 36 : 28)
                 : editingThis ? topPad + (editLoader.item ? editLoader.item.height : 0)
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height - 4.3 + 4 : 0)
-            readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : Math.min(640, list.width * 0.7)
+            readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : root.compact ? list.width - 64 - root.gutR : Math.min(640, list.width * 0.7)
 
             // Measured from Teams: the label's centre 22 px below the
             // previous message, 28 px above the next header's.
@@ -1479,10 +1484,15 @@ Rectangle {
                 }
             }
 
+            Rectangle {
+                visible: root.compact && msg.mine && !msg.grouped && !msg.isRow
+                x: 4; y: msg.topPad + 10; width: 2; height: 32; radius: 1
+                color: theme.brand
+            }
             Avatar {
-                visible: !msg.mine && !msg.grouped && !msg.isRow
-                x: root.gutL; y: msg.bubbleY
-                size: 32; name: msg.modelData.sender
+                visible: (!msg.mine || root.compact) && !msg.grouped && !msg.isRow
+                x: root.compact ? 16 : root.gutL; y: root.compact ? msg.topPad + 8 : msg.bubbleY
+                size: root.compact ? 36 : 32; name: msg.modelData.sender
                 photoId: msg.modelData.sender_mri || ""
                 opensProfile: true
                 // Teams shows the sender's presence on message avatars too.
@@ -1493,9 +1503,9 @@ Rectangle {
             Row {
                 id: meta
                 visible: msg.showMeta && !msg.editingThis
-                y: msg.topPad
+                y: root.compact ? msg.topPad + 9.3 : msg.topPad
                 spacing: 8
-                x: msg.mine ? msg.width - root.gutR - width : root.gutContent
+                x: root.compact ? 64 : msg.mine ? msg.width - root.gutR - width : root.gutContent
                 Text {
                     visible: msg.sendFailed
                     text: msg.modelData.send_note || ""
@@ -1506,12 +1516,16 @@ Rectangle {
                 }
                 Text {
                     id: metaText
-                    text: (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
+                    // Compact: the name semibold in NeutralForeground1, as Teams.
+                    textFormat: root.compact ? Text.StyledText : Text.PlainText
+                    text: root.compact
+                        ? "<b><font color=\"" + theme.text + "\">" + (msg.modelData.sender || "").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;Edited" : "")
+                        : (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
                         + (msg.modelData.edited && !msg.sendFailed ? "   Edited" : "")
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                     // The sender's name opens their profile card, as in Teams.
-                    readonly property bool person: !msg.mine && (msg.modelData.sender_mri || "").indexOf("8:orgid:") === 0
+                    readonly property bool person: (!msg.mine || root.compact) && (msg.modelData.sender_mri || "").indexOf("8:orgid:") === 0
                     TextMetrics { id: senderMetrics; font: metaText.font; text: msg.modelData.sender || "" }
                     HoverHandler { id: senderHover; enabled: metaText.person; cursorShape: senderHover.point.position.x <= senderMetrics.advanceWidth ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: metaText.person; onTapped: ev => { if (ev.position.x <= senderMetrics.advanceWidth) backend.requestProfile(msg.modelData.sender_mri) } }
@@ -1597,7 +1611,7 @@ Rectangle {
                 // A picture on its own, or big emoticons, show bare, without
                 // the bubble (as in Teams).
                 readonly property bool bare: (imageOnly || bigEmoticons) && !root.isChannel
-                readonly property real pad: bare ? 0 : 15.7
+                readonly property real pad: bare || root.compact ? 0 : 15.7
                 readonly property var files: msg.modelData.files || []
                 // Cards (Adaptive Cards rendered natively; Teams' frame).
                 readonly property var cards: (msg.modelData.cards || []).filter(c => root.cardKinds.indexOf(c.content_type) >= 0)
@@ -1653,6 +1667,7 @@ Rectangle {
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
+                    : root.compact ? bodyH + 2 + quoteShift
                     : bodyH + 15.3 + quoteShift
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
@@ -1664,9 +1679,9 @@ Rectangle {
                 bottomLeftRadius: !msg.mine && joinDown ? 0 : r
                 topRightRadius: msg.mine && joinUp ? 0 : r
                 bottomRightRadius: msg.mine && joinDown ? 0 : r
-                color: bare ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
+                color: bare || (root.compact && !msg.sendFailed) ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
                 border.color: msg.sendFailed ? theme.redBorder1 : root.isChannel ? theme.dividerSoft : "transparent"
-                x: msg.mine ? parent.width - root.gutR - width : root.gutContent
+                x: root.compact ? 64 : msg.mine ? parent.width - root.gutR - width : root.gutContent
                 Column {
                     id: cardCol
                     visible: bubble.cards.length > 0
@@ -1947,7 +1962,7 @@ Rectangle {
                 TextEdit {
                     id: body
                     visible: bubble.showBody
-                    x: bubble.pad; y: bubble.bare ? 0 : 6.7 + bubble.quoteShift
+                    x: bubble.pad; y: bubble.bare ? 0 : root.compact ? bubble.quoteShift : 6.7 + bubble.quoteShift
                     width: Math.min(msg.maxBubble - 2 * bubble.pad, implicitWidth)
                     readOnly: true
                     selectByMouse: true
