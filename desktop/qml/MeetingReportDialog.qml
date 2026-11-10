@@ -31,6 +31,10 @@ Popup {
     property var people: []
     /// {id, name}: Report this person (the participant menu) instead.
     property var person: null
+    /// A meeting chat's thread (the chat list's Report a concern) and its
+    /// meeting's iCalUId: the report names the chat, not a call.
+    property string chatThread: ""
+    property string chatIcal: ""
     readonly property bool personMode: !!person
     // Where the explanation starts, and what's below it (Teams' layout).
     readonly property real errorShift: failed ? 48 : 0
@@ -238,7 +242,7 @@ Popup {
             color: root.sending ? theme.bgDisabled : reportHover.hovered ? theme.brandHover : theme.brandFill
             Text { anchors.centerIn: parent; text: "Report"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.sending ? theme.disabled : "white" }
             HoverHandler { id: reportHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { enabled: !root.sending; onTapped: backend.reportMeeting(why.text, JSON.stringify(root.chosen.map(p => p.id))) }
+            TapHandler { enabled: !root.sending; onTapped: root.chatThread ? backend.reportMeetingChat(root.chatThread, root.chatIcal, why.text, JSON.stringify(root.chosen.map(p => p.id))) : backend.reportMeeting(why.text, JSON.stringify(root.chosen.map(p => p.id))) }
             Accessible.role: Accessible.Button
             Accessible.name: "Report"
         }

@@ -3535,8 +3535,9 @@ Window {
 
     // --chat-menu-test=<chat id> --shots=<dir>: the chat's menu (cm-menu),
     // Open in new window (cm-window), Manage apps (cm-apps), Set workflows
-    // (cm-workflows) and the Remove chat history question (cm-remove,
-    // cancelled); the people tagged for Notify when available are logged.
+    // (cm-workflows), the Remove chat history question (cm-remove,
+    // cancelled) and, for a meeting chat, Report a concern (cm-report,
+    // closed unsent); the people tagged for Notify when available are logged.
     // Nothing is changed; quit.
     Timer {
         running: Qt.application.arguments.some(a => a.startsWith("--chat-menu-test=")) && backend.signedIn
@@ -3559,7 +3560,9 @@ Window {
             else if (step === 13) { console.warn("CM workflows", workflowsDialog.url.replace(/userId=[^&]*/, "userId=X").replace(/tenantId=[^&]*/, "tenantId=X")); shot("cm-workflows") }
             else if (step === 14) { workflowsDialog.close(); row.removeHistoryForTest().open() }
             else if (step === 15) shot("cm-remove")
-            else if (step === 16) { row.removeHistoryForTest().close(); Qt.quit() }
+            else if (step === 16) { row.removeHistoryForTest().close(); if (chatList.isMeeting(chat)) chatList.reportMeetingChat(id); else Qt.quit() }
+            else if (step === 19) { const d = chatList.chatReportForTest(); console.warn("CM report", JSON.stringify(d.meeting), JSON.stringify(d.people), d.chatIcal ? "ical" : "no-ical"); shot("cm-report") }
+            else if (step === 20) { chatList.chatReportForTest().close(); Qt.quit() }
             step++
         }
     }

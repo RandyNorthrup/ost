@@ -962,6 +962,12 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 - Remove chat history: "Remove chat history?" / "This will remove the chat
   from your list and search. It affects you only." Cancel / Remove;
   `DELETE {chatsvc}/v1/threads/{chat}` (not tried: no disposable chat).
+- Report a concern (meeting chats): the meeting's "Report a security
+  concern" dialog (its card: the meeting's subject, start "Nov 6, 3:00
+  PM", organizer's name), the chat's members but you to name; Report sends
+  `POST {mt}/beta/reports` {reportType Meeting, category Security,
+  threadId (the chat), iCalUId, reportedUsers, comment} with no callId;
+  "Your report was sent". (Never submitted in tests.)
 
 #### 5.6.12 Quick views ▸ Followed threads and Saved; team order (measured 2026-11-09)
 

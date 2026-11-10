@@ -481,6 +481,10 @@ pub mod qobject {
         /// of MRIs); the outcome comes back in report_result.
         #[qinvokable]
         fn report_meeting(self: Pin<&mut Backend>, comment: &QString, reported_json: &QString);
+        /// A meeting chat's Report a concern (its thread and meeting, no
+        /// call).
+        #[qinvokable]
+        fn report_meeting_chat(self: Pin<&mut Backend>, thread: &QString, ical_uid: &QString, comment: &QString, reported_json: &QString);
         /// Translate a message (Teams' Translate) or show its original.
         #[qinvokable]
         fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
@@ -7523,16 +7527,39 @@ impl qobject::Backend {
         });
     }
 
-    pub fn report_meeting(mut self: Pin<&mut Self>, comment: &QString, reported_json: &QString) {
+    pub fn report_meeting(self: Pin<&mut Self>, comment: &QString, reported_json: &QString) {
         let thread = self.rust().call_thread_id.to_string();
-        let comment = comment.to_string();
-        let reported: Vec<String> = serde_json::from_str(&reported_json.to_string()).unwrap_or_default();
+        self.send_meeting_report(thread, None, comment.to_string(), reported_json.to_string());
+    }
+
+    pub fn report_meeting_chat(
+        self: Pin<&mut Self>,
+        thread: &QString,
+        ical_uid: &QString,
+        comment: &QString,
+        reported_json: &QString,
+    ) {
+        self.send_meeting_report(
+            thread.to_string(),
+            Some(ical_uid.to_string()),
+            comment.to_string(),
+            reported_json.to_string(),
+        );
+    }
+
+    /// Send a meeting's security report: the call's (its id and meeting)
+    /// when `chat_ical` is None, else a meeting chat's.
+    fn send_meeting_report(mut self: Pin<&mut Self>, thread: String, chat_ical: Option<String>, comment: String, reported_json: String) {
+        let reported: Vec<String> = serde_json::from_str(&reported_json).unwrap_or_default();
         self.as_mut().set_report_result(QString::from("sending"));
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let (call_id, ical) = match call_slot().lock().await.outgoing.as_ref() {
-                Some(c) => (c.call_id().to_string(), c.meeting_info().map(|i| i.ical_uid).unwrap_or_default()),
-                None => (String::new(), String::new()),
+            let (call_id, ical) = match chat_ical {
+                Some(ical) => (String::new(), ical),
+                None => match call_slot().lock().await.outgoing.as_ref() {
+                    Some(c) => (c.call_id().to_string(), c.meeting_info().map(|i| i.ical_uid).unwrap_or_default()),
+                    None => (String::new(), String::new()),
+                },
             };
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -9410,7 +9437,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "remove-chat-history" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "remove-chat-history" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -9747,6 +9774,32 @@ impl qobject::Backend {
                         client.chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null).await?;
                         Ok(serde_json::Value::Null)
                     }
+                    // A meeting chat's Report a concern: its meeting
+                    // {title, start, organizer, ical} and who can be
+                    // reported (its members but you).
+                    "meeting-chat-report-info" => {
+                        let m = api::chat_meeting(&client, &channel).await?.unwrap_or_default();
+                        let members = api::chat_members(&client, &channel).await.unwrap_or_default();
+                        let org_mri = format!("8:orgid:{}", m.organizer_id).to_ascii_lowercase();
+                        let mut organizer = members
+                            .iter()
+                            .find(|p| p.mri.to_ascii_lowercase() == org_mri)
+                            .map(|p| p.name.clone())
+                            .unwrap_or_default();
+                        if organizer.is_empty()
+                            && m.organizer_id.len() == 36 && m.organizer_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+                            && let Ok(resp) = client.graph_get(&format!("/users/{}?$select=displayName", m.organizer_id)).await
+                            && let Ok(v) = resp.json::<serde_json::Value>().await
+                        {
+                            organizer = v["displayName"].as_str().unwrap_or_default().to_string();
+                        }
+                        let people: Vec<_> = members
+                            .iter()
+                            .filter(|p| !p.me && !p.mri.starts_with("28:"))
+                            .map(|p| serde_json::json!({ "id": p.mri, "name": p.name }))
+                            .collect();
+                        Ok(serde_json::json!({ "title": m.subject, "start": m.start, "organizer": organizer, "ical": m.ical_uid, "people": people }))
+                    }
                     // Quick views ▸ Saved and Followed threads (Teams'
                     // 48:saved / 48:threads); unsave {thread, chain, message};
                     // unfollow {thread, chain}.
@@ -10064,7 +10117,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "meeting-chat-report-info" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
                     this.as_mut().load_teams();
                 }
                 if result.is_ok() && op == "remove-chat-history" {

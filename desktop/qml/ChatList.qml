@@ -560,9 +560,11 @@ Rectangle {
         HoverHandler { id: hover }
         TapHandler { onTapped: if (!moreHover.hovered) root.chatSelected(row.chat.id, row.chat.name) }
         TapHandler { acceptedButtons: Qt.RightButton; onTapped: ev => row.openMenu(ev.position.x, ev.position.y) }
-        // Teams' chat menu (measured on winpc 2026-11-09), the items OST
-        // has, in Teams' order: Mark as read/unread, Move to section ▸,
-        // Remove from section, Mute, Copy link | Leave, Hide.
+        // Teams' chat menu (measured on winpc 2026-11-09), in Teams' order:
+        // Open in new window | Mark as read/unread, Move to section ▸,
+        // Remove from section, Mute, Notify when available, Manage apps,
+        // Set workflows, Copy link | Remove chat history, Leave, Hide;
+        // meeting chats end Hide | Report a concern.
         readonly property string holder: row.chat.id in root.sectioned ? root.sectioned[row.chat.id] : (root.inFavorites(row.chat) && root.favoritesFolder ? (root.favoritesFolder.id || "Favorites") : "")
         readonly property var members: { const m = backend.chatMemberCountsJson ? JSON.parse(backend.chatMemberCountsJson) : ({}); return m[row.chat.id] }
         // Leave: a member of a group chat of at least 3 (not a meeting chat
@@ -597,7 +599,9 @@ Rectangle {
                 { separator: true },
                 !row.chat.isSelf && !root.isMeeting(row.chat) ? { key: "removeHistory", label: "Remove chat history", icon: "delete-20" } : null,
                 row.canLeave ? { key: "leave", label: "Leave", icon: "door-arrow-left-20" } : null,
-                { key: row.chat.hidden ? "unhide" : "hide", label: row.chat.hidden ? "Unhide" : "Hide", icon: row.chat.hidden ? "eye-20" : "eye-off-20" }
+                { key: row.chat.hidden ? "unhide" : "hide", label: row.chat.hidden ? "Unhide" : "Hide", icon: row.chat.hidden ? "eye-20" : "eye-off-20" },
+                root.isMeeting(row.chat) ? { separator: true } : null,
+                root.isMeeting(row.chat) ? { key: "report", label: "Report a concern", icon: "shield-error-20" } : null
             ].filter(i => i !== null)
             rowMenu.x = Math.min(px, row.width - rowMenu.implicitWidth - 8)
             rowMenu.y = py
@@ -618,6 +622,7 @@ Rectangle {
                 else if (k === "apps") root.manageChatApps(row.chat.id, row.chat.name)
                 else if (k === "workflows") root.chatWorkflows(row.chat.id, row.chat.name)
                 else if (k === "removeHistory") removeHistoryAsk.open()
+                else if (k === "report") root.reportMeetingChat(row.chat.id)
                 else if (k === "notifyOn") backend.channelAction("notify-on", "", "", JSON.stringify({ mri: row.chat.peerMri }))
                 else if (k === "notifyOff") { const t = root.notifyTagged[row.chat.peerMri.toLowerCase()]; backend.channelAction("notify-off", "", "", JSON.stringify({ id: t.id, mri: row.chat.peerMri, email: t.email })) }
             }
@@ -647,6 +652,35 @@ Rectangle {
         }
         Accessible.role: Accessible.Button
         Accessible.name: (row.chat.name || "") + (row.unread ? ", unread" : "") + (row.chat.muted ? ", muted" : "") + (row.chat.liveCall ? ", call in progress" : "")
+    }
+
+    // A meeting chat's Report a concern: Teams' "Report a security concern"
+    // for the chat's meeting (its title, start and organizer) with the
+    // chat's members to name; sent, "Your report was sent".
+    function reportMeetingChat(chatId) {
+        chatReport.chatThread = chatId
+        chatReport.chatIcal = ""
+        chatReport.meeting = { title: (chatById(chatId) || {}).name || "", start: "", organizer: "" }
+        chatReport.people = []
+        chatReport.open()
+        backend.channelAction("meeting-chat-report-info", "", chatId, "")
+    }
+    function chatReportForTest() { return chatReport }
+    MeetingReportDialog {
+        id: chatReport
+        person: null
+        onReported: backend.toastJson = JSON.stringify({ id: Date.now(), text: "Your report was sent", intent: "success" })
+    }
+    Connections {
+        target: backend
+        function onChannelActionResultChanged() {
+            const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.op !== "meeting-chat-report-info" || !r.ok || !r.data || !chatReport.opened) return
+            const d = r.data
+            chatReport.chatIcal = d.ical || ""
+            chatReport.meeting = { title: d.title || chatReport.meeting.title, start: d.start ? Qt.formatDateTime(new Date(d.start), "MMM d, h:mm AP") : "", organizer: d.organizer || "" }
+            chatReport.people = d.people || []
+        }
     }
 
     // The channel menu, shared by every channel row.
