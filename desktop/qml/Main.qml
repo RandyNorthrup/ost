@@ -3774,6 +3774,15 @@ Window {
                 else if (step === 9) { profileCard.close(); Qt.quit() }
                 step++; return
             }
+            // =landing: mark the 1:1 with Randy unread, open it (lr-open).
+            if (mode === "landing") {
+                const c = chatList.chats.find(c => (c.peerMri || "").indexOf("5050c9d6") >= 0)
+                if (step === 1) { if (!c) { step = 0; return } backend.setChatUnread(c.id, true) }
+                else if (step === 6) { rail.current = "chat"; backend.selectChat(c.id, c.name) }
+                else if (step === 10) { console.warn("LR", JSON.stringify(JSON.parse(backend.messagesJson || "[]").filter(m => m.first_unread).map(m => m.id))); shot("lr-open") }
+                else if (step === 16) Qt.quit()
+                step++; return
+            }
             if (mode === "wl-office" || mode === "wl-clear") { if (step === 1) titleBar.pauseForTest(mode === "wl-office" ? "Office" : "clear"); else if (step === 4) { console.warn("WL", mode, backend.myWorkLocation); Qt.quit() } step++; return }
             if (mode === "resume") { if (step === 1) titleBar.pauseForTest("resume"); else if (step === 4) { log("resumed"); Qt.quit() } step++; return }
             if (step === 1) { log("start"); titleBar.pauseForTest("flyout") }

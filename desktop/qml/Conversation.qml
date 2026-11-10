@@ -382,6 +382,7 @@ Rectangle {
     function chatAppsForTest() { return chatApps }
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
+        landing = true
         manageApps = false
         tabExpanded = false
         tabConversationTab = null
@@ -1307,9 +1308,20 @@ Rectangle {
         color: theme.channelPage
     }
 
+    // Settings ▸ Chats ▸ When I open a chat, take me to: the last read
+    // message (Teams' default; its "Last read" line at the top of the view
+    // when there's more than fits) or the newest.
+    readonly property bool landOnLastRead: { const s = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; const m = (((s.props || {}).userPersonalSettings || {}).messagingSettings || {}); return m.navigateToLastReadMessage !== false }
+    property bool landing: false
     ListView {
         id: list
         visible: root.tab === "" && !root.isChannel
+        onCountChanged: if (root.landing && count > 0) {
+            root.landing = false
+            if (!root.landOnLastRead) return
+            const i = model.findIndex(m => m.lastRead === true)
+            if (i >= 0) Qt.callLater(() => list.positionViewAtIndex(i, ListView.End))
+        }
         anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
         anchors.bottomMargin: 12
         clip: true
@@ -1393,19 +1405,22 @@ Rectangle {
                 x: root.gutContent; width: parent.width - root.gutContent - root.gutR; height: 36
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
-                    x: 0; width: lastReadText.x - 24; height: 1; color: theme.brand
+                    x: 0; width: lastReadText.x - 24; height: 0.67; color: theme.brand
                 }
+                // Teams' last-read-line: 12/16 bold brand between 0.67 px
+                // brand lines (measured 2026-11-10).
                 Text {
                     id: lastReadText
                     anchors.centerIn: parent
                     text: "Last read"
-                    font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
+                    font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold
+                    lineHeight: 16; lineHeightMode: Text.FixedHeight
                     color: theme.brand
                 }
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     x: lastReadText.x + lastReadText.width + 24
-                    width: parent.width - x; height: 1; color: theme.brand
+                    width: parent.width - x; height: 0.67; color: theme.brand
                 }
                 Accessible.role: Accessible.Separator
                 Accessible.name: "Last read"

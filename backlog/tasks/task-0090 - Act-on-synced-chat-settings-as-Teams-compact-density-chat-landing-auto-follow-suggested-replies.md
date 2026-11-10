@@ -3,9 +3,11 @@ id: TASK-0090
 title: >-
   Act on synced chat settings as Teams: compact density, chat landing,
   auto-follow, suggested replies
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-10T10:14:00Z'
+updated_date: '2026-11-10T11:22:00Z'
 labels:
   - desktop
   - settings

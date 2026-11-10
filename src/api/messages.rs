@@ -2970,10 +2970,29 @@ pub async fn my_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Opti
         .json()
         .await
         .context("Conversation reply")?;
-    Ok(v.pointer("/properties/consumptionhorizon")
-        .and_then(|h| h.as_str())
-        .and_then(|h| h.split(';').next())
-        .and_then(|h| h.parse().ok()))
+    Ok(read_position(
+        v.pointer("/properties/consumptionhorizon").and_then(|h| h.as_str()),
+        v.pointer("/properties/consumptionHorizonBookmark").and_then(|h| h.as_str()),
+    ))
+}
+
+/// Your read position: the consumption horizon, unless Mark as unread
+/// set the bookmark after it (both "{id};{time};{clientMessageId}"), as
+/// Teams reads them: then the bookmark's.
+pub fn read_position(horizon: Option<&str>, bookmark: Option<&str>) -> Option<u64> {
+    let parse = |s: &str| {
+        let mut it = s.split(';');
+        let id = it.next()?.parse::<u64>().ok()?;
+        let time = it.next().and_then(|t| t.parse::<u64>().ok()).unwrap_or(0);
+        Some((id, time))
+    };
+    let h = horizon.and_then(parse);
+    match (h, bookmark.and_then(parse)) {
+        (Some((_, ht)), Some((bid, bt))) if bt >= ht => Some(bid),
+        (None, Some((bid, _))) => Some(bid),
+        (Some((hid, _)), _) => Some(hid),
+        (None, None) => None,
+    }
 }
 
 /// Flag the first message from someone else after `horizon` (your read
@@ -4113,6 +4132,16 @@ mod tests {
         );
         assert!(super::favorites_from_properties(r#"{"locale":"en-us"}"#).is_empty());
         assert!(super::favorites_from_properties("nope").is_empty());
+    }
+
+    #[test]
+    fn mark_as_unread_moves_the_read_position_back() {
+        use super::read_position;
+        assert_eq!(read_position(Some("200;1000;x"), None), Some(200));
+        // Marked unread after the last read: the bookmark wins.
+        assert_eq!(read_position(Some("200;1000;x"), Some("149;2000;y")), Some(149));
+        // Read again since: the horizon wins.
+        assert_eq!(read_position(Some("300;3000;x"), Some("149;2000;y")), Some(300));
     }
 
     #[test]
