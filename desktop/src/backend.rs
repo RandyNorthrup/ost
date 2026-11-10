@@ -1361,6 +1361,9 @@ pub mod qobject {
         #[qinvokable]
         fn mic_level(self: Pin<&mut Backend>) -> i32;
 
+        /// Where downloads are saved now (Settings ▸ Files and links).
+        #[qinvokable]
+        fn download_location(self: Pin<&mut Backend>) -> QString;
         /// Load Settings' synced values (into settings_json): {props: your
         /// user properties, JSON ones parsed; mt: the middle tier's
         /// settings}.
@@ -2089,8 +2092,14 @@ fn health_sampler() -> &'static std::sync::Mutex<teams_cli::calling::call_health
 /// How many calls the Calls history shows.
 const CALL_HISTORY_LIMIT: usize = 100;
 
-/// Where downloads go: $XDG_DOWNLOAD_DIR, else ~/Downloads.
+/// Where downloads go: Settings ▸ Files and links' location, else
+/// $XDG_DOWNLOAD_DIR, else ~/Downloads.
 fn download_dir() -> Option<std::path::PathBuf> {
+    if let Some(dir) = load_settings().get("downloadDir").and_then(|d| d.as_str()).filter(|d| !d.is_empty())
+        && std::path::Path::new(dir).is_dir()
+    {
+        return Some(std::path::PathBuf::from(dir));
+    }
     std::env::var_os("XDG_DOWNLOAD_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Downloads")))
@@ -11137,6 +11146,10 @@ impl qobject::Backend {
 
     pub fn mic_level(self: Pin<&mut Self>) -> i32 {
         teams_cli::calling::audio::mic_level() as i32
+    }
+
+    pub fn download_location(self: Pin<&mut Self>) -> QString {
+        QString::from(download_dir().map(|d| d.display().to_string()).unwrap_or_default().as_str())
     }
 
     pub fn load_settings(self: Pin<&mut Self>) {

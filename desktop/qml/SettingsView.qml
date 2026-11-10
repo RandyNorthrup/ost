@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 
 // Settings (Ctrl+,), laid out as Teams desktop's (measured on winpc
 // 2026-11-10):
@@ -30,6 +31,7 @@ Rectangle {
         { key: "accessibility", label: "Accessibility", icon: "accessibility-20" },
         { key: "devices", label: "Devices", icon: "headset-20" },
         { key: "calls", label: "Calls", icon: "call-20" },
+        { key: "files", label: "Files and links", icon: "document-20" },
     ]
     property string filter: ""
     onPageChanged: subPage = ""
@@ -545,6 +547,49 @@ Rectangle {
                 SettingsParts.Gap { size: 6 }
                 SettingsParts.CheckRow { label: "All the time"; checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
                 SettingsParts.CheckRow { label: "When Outlook automatic replies are on"; checked: calls.vm.vmUseAutoRepliesForOof === true; onToggled: v => calls.setVm("vmUseAutoRepliesForOof", v) }
+            }
+
+            // ---- Files and links ----
+            SettingsParts.Card {
+                id: downloads
+                visible: root.page === "files"
+                icon: "arrow-download-20"; title: "Downloads"; subtitle: "Location"
+                property string where: root.page === "files" ? backend.downloadLocation() : ""
+                Item {
+                    width: parent.width; height: 47
+                    Text { y: 4; width: parent.width - 140; elide: Text.ElideMiddle; text: downloads.where; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Rectangle {
+                        anchors.right: parent.right; anchors.rightMargin: 28; y: -2
+                        width: changeRow.implicitWidth + 16; height: 31.3; radius: 4
+                        color: changeHover.hovered ? theme.menuHover : "transparent"
+                        Row { id: changeRow; anchors.centerIn: parent; spacing: 4
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "folder-20"; size: 20; color: theme.textStrong }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Change"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
+                        HoverHandler { id: changeHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: folderPick.open() }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Change download location"
+                    }
+                }
+                FolderDialog {
+                    id: folderPick
+                    title: "Choose a download location"
+                    currentFolder: "file://" + downloads.where
+                    onAccepted: { const p = decodeURIComponent(String(selectedFolder).replace(/^file:\/\//, "")); backend.setSetting("downloadDir", p); downloads.where = backend.downloadLocation() }
+                }
+            }
+            SettingsParts.Card {
+                visible: root.page === "files"
+                icon: "document-20"; title: "Always open Word, PowerPoint, and Excel files in:"
+                readonly property string pref: root.prop("userPersonalSettings", ["filesSettings", "fileOpenPreference"], "web")
+                SettingsParts.RadioRow { label: "OST"; checked: parent.parent.pref === "teamsV2"; onPicked: root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", "teamsV2") }
+                SettingsParts.RadioRow { label: "Browser"; checked: parent.parent.pref !== "teamsV2"; onPicked: root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", "web") }
+            }
+            SettingsParts.Card {
+                visible: root.page === "files"
+                icon: "image-20"; title: "File previews"
+                subtitle: "Show preview cards for files shared in chats, channels, and groups, including files you share."
+                trailing: Component { SettingsParts.Toggle { on: root.prop("userPersonalSettings", ["filesSettings", "enableThumbnailPreview"], true) !== false; accessibleName: "File previews"; onToggled: v => root.setProp("userPersonalSettings", "filesSettings.enableThumbnailPreview", v) } }
             }
 
             // ---- About ----

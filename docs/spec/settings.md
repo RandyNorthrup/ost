@@ -108,6 +108,14 @@ Middle tier (`{mt}`):
     High Score, Next Level, Plink, Remix, Ring Ring, Ripple, Spacetime, Wish Granted, Wobble.
   - The sounds are MP3s in Teams' package (Audio/*.mp3).
 
+## Files and links (captured 2026-11-10)
+
+- Downloads location (Change) and "Always ask where to save downloaded file": local.
+- "Always open Word, PowerPoint, and Excel files in": Teams / Browser, kept in
+  userPersonalSettings.filesSettings.fileOpenPreference ("teamsV2" / "web").
+- "Always open web links in": a local browser choice.
+- File previews: userPersonalSettings.filesSettings.enableThumbnailPreview.
+
 ## OST status
 
 - Built: the left pane and header, General (System, opening content, Out of office, keyboard
@@ -119,8 +127,11 @@ Middle tier (`{mt}`):
   - Not built: the ringtone choice (OST synthesises its ring and doesn't ship Microsoft's
     audio; whether to ship Teams' MP3s is the project's call), recorded and text-to-speech
     greetings, the greeting language, and the transfer rules (they need the people picker).
-- Still to build: Notifications and activity as Teams', Accounts and orgs, Files and links,
-  App permissions, Recognition, and the remaining items on built pages.
+- Files and links: the download location (OST's downloads use it), the file-open choice and
+  file previews.
+  - Not built: "Always ask where to save" and the browser choice for links.
+- Still to build: Notifications and activity as Teams', Accounts and orgs, App permissions,
+  Recognition, and the remaining items on built pages.
 - Chat list (measured with the settings on):
   - Previews: chat rows are 52 tall, with a 36 px picture at 16, 8, the name at 64 and the
     preview (12/16 #616161) at 64, 26. It reads "You: …" for yours and "Name: …" in groups.
