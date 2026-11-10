@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 
 // Manage team ▸ Settings (Teams' tab, measured on winpc 2026-11-09;
-// docs/spec/chat-list-and-header.md §5.6.6). Sections 72 in, 20.3 down,
+// docs/spec/chat-list-and-header.md §5.6.6). Sections 52 in, 20.3 down,
 // 774 wide; each header 64 tall (a 20 px chevron at 10, the title 14/20
 // semibold and what it holds 14/20 under it at 38) with a line after the
 // open body. Bodies start 64 under the header's top, 39 in:
@@ -80,7 +80,7 @@ Item {
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         Column {
             id: col
-            x: 72; y: 20.3; width: Math.min(774, view.width - 144)
+            x: 52; y: 20.3; width: Math.min(774, view.width - 118)
 
             Section {
                 key: "details"; title: "Team details"; hint: "Edit team name, description, privacy, and picture"

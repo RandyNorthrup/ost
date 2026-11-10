@@ -74,7 +74,7 @@ Item {
         visible: view.requests.length > 0
         anchors.fill: parent
         Rectangle {
-            x: 40; y: 20.6; width: 278.7; height: 32; radius: 4
+            x: 20; y: 20.6; width: 278.7; height: 32; radius: 4
             color: theme.inputFilled
             Rectangle { visible: search.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
             TextInput {
@@ -91,13 +91,13 @@ Item {
             FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
         }
         Row {
-            x: 40 + 278.7 + 16; y: 20.6
+            x: 20 + 278.7 + 16; y: 20.6
             spacing: 8
             Btn { text: "Accept all"; primary: true; enabled: !view.allAnswered; onClicked: view.answer(view.requests.filter(r => view.answered[r.mri] === undefined).map(r => r.mri), true) }
             Btn { text: "Deny all"; enabled: !view.allAnswered; onClicked: denyAll.start("denyAll", view.teamName) }
         }
         Flickable {
-            x: 40; y: 72; width: parent.width - 80; height: parent.height - y
+            x: 20; y: 72; width: parent.width - 60; height: parent.height - y
             contentHeight: 40.7 + view.shown.length * 44.7
             clip: true
             boundsBehavior: Flickable.StopAtBounds

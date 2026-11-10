@@ -613,8 +613,8 @@ or member with the `createTopic` setting for standard channels.
 The team menu's **Manage tags** opens Manage team on its **Tags** tab.
 
 - List (offsets from the tab area): **Search for tags** (170 × 32, search
-  glyph at its end) 72 in, 32.3 down; **Create tag** (brand, tag glyph) 52
-  from the right. Sections 80 in, 82.3 down, 44 tall headers (chevron 20 at
+  glyph at its end) 52 in, 32.3 down; **Create tag** (brand, tag glyph) 52
+  from the right. Sections 60 in, 82.3 down, 44 tall headers (chevron 20 at
   10, label 14/20 at 38): **Tags assigned to you (n)** (open; empty: "No
   tags are currently assigned to you"), **Other tags (n)**, **Deleted
   (n)**. Tables 12 further in: header 34 (12/16: Name, Members,
@@ -622,7 +622,7 @@ The team menu's **Manage tags** opens Manage team on its **Tags** tab.
   line: round badge 32 (#C5CBFA, tag glyph #444791), name 14/20, the people
   glyph and the count, description, source, ··· (32 × 31.3): **Chat with
   group**, **Create a copy** | **Delete**. Deleted tags offer **Restore**.
-- A tag (click its row): **All tags** (chevron, 600) 72 in; **Add people**,
+- A tag (click its row): **All tags** (chevron, 600) 52 in; **Add people**,
   **Edit tag details**, **Create a copy** | **Delete tag** (32 × 31.3) 84
   from the right; badge 42 at 96 and the name 16/22 bold at 150, 100.3
   down; **Members (n)** (14/20 bold) 190.3 down, then Name, Title,
@@ -684,10 +684,10 @@ text 14/20 36 down, buttons 96 × 31.3 (8 apart) at the right.
 #### 5.6.4 Manage team ▸ Members (measured 2026-11-09)
 
 - Offsets from the tab area: **Add member** (transparent, add glyph at
-  12.7, 14/20 semibold #424242; 134.8 × 31.3) at 40, 20.6 opens Add members
+  12.7, 14/20 semibold #424242; 134.8 × 31.3) at 20, 20.6 opens Add members
   (§5.6.1); **Search members** (278.7 × 30.7, outlined) 21.3 from the right
   filters by name.
-- Sections 42 in, 74.3 down (44 tall headers): **Owners (n)**, **Members
+- Sections 22 in, 74.3 down (44 tall headers): **Owners (n)**, **Members
   and guests (n)**. Grids 12 further in: header 48.7 (12/16 labels at +16:
   Name, Title, Location, Tags with an outline info glyph, Team role; 146.8
   wide columns, then Actions 60); rows 44.7 with a #EBEBEB line: picture 32
@@ -720,7 +720,7 @@ text 14/20 36 down, buttons 96 × 31.3 (8 apart) at the right.
 
 #### 5.6.6 Manage team ▸ Settings (measured 2026-11-09)
 
-Sections 72 in, 20.3 down, 774 wide; headers 64 tall (chevron 20 at 10;
+Sections 52 in, 20.3 down, 774 wide; headers 64 tall (chevron 20 at 10;
 title 14/20 semibold at 38, 12 down; what it holds 14/20 at 38, 32 down),
 a line after each open body. Bodies start 64 under the header, 39 in;
 checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
@@ -764,11 +764,11 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 #### 5.6.7 Manage team ▸ Apps (measured 2026-11-09)
 
 - Offsets from the tab area: **Get more apps** (outlined white, add glyph,
-  140.8 × 31.3) at 64, 28.6 opens the Store; **Create an outgoing webhook**
-  (transparent, Teams' webhook glyph) at 219.8; **Sort** (transparent, a
-  toggle: A-Z / Z-A, brand once used) at 551; **Find by name** (filled,
+  140.8 × 31.3) at 44, 28.6 opens the Store; **Create an outgoing webhook**
+  (transparent, Teams' webhook glyph) at 199.8; **Sort** (transparent, a
+  toggle: A-Z / Z-A, brand once used) at 531; **Find by name** (filled,
   search glyph) at the right.
-- Apps from 68.3 down, 41 in, 836 wide: rows 65 tall with lines: icon 36
+- Apps from 68.3 down, 21 in, 836 wide: rows 65 tall with lines: icon 36
   (squircle) at 89, name 14/20 bold and publisher 14/16 #616161 at 132, ···
   (**Copy link** → `https://teams.microsoft.com/l/app/{appId}?source=manage-apps-copy-link`
   | **Remove**).
@@ -814,6 +814,10 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
   `DELETE {mt}/beta/teams/{team}/channels/{channel}` answers 400 for one.
 - Checked: OST created "OST private test 2" and deleted it; Teams' Manage
   team ▸ Channels list showed it with the lock and then without it.
+
+- Manage team's Members, Pending requests, Settings, Apps and Tags tabs
+  were re-measured from Teams' DOM on 2026-11-09: their left offsets are 20
+  less than first written (the right edges were right).
 
 #### 5.6.9 Your teams and channels (See all your teams, measured 2026-11-09)
 

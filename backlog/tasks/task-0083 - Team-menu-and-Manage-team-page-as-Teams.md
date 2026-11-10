@@ -1,11 +1,11 @@
 ---
 id: TASK-0083
 title: Team menu and Manage team page as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T20:42:00Z'
-updated_date: '2026-11-10T04:28:00Z'
+updated_date: '2026-11-10T05:27:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,7 +22,7 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
 - [x] #1 Each team row has Teams' ··· menu with Teams' items, conditions and order
 - [x] #2 Manage team opens Teams' page in the conversation's place with its tabs, each measured against Teams
 - [x] #3 Manage team ▸ Analytics shows the team's analytics (Summary with Active guests, Engagement, charts; Analytics across teams) and Manage channel's All Channels / Analytics across channels open it
-- [ ] #4 Verified side by side with Teams on winpc in OST Test Team
+- [x] #4 Verified side by side with Teams on winpc in OST Test Team
 - [x] #5 Manage channel ▸ Settings for a channel other than General shows Teams' channel moderation and settings (verified with a test channel made by Add channel in OST Test Team)
 <!-- AC:END -->
 
@@ -82,4 +82,22 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
 - Private channels: Create a channel (Private) goes through the provisioning service (channelsWarmup + channels POST) and then shows the "Add members to the {channel} channel" step; Delete channel on a private channel uses the provisioning DELETE with OID:{substrateGroupId}@{tenant}. OST created and deleted "OST private test 2"; Teams' Manage team list confirmed both. The member step's Add isn't run (OST Test Team has no other members). Spec §5.6.8.
 
 - AC #3: Analytics across teams now opens Your teams and channels ▸ Analytics (TASK-0084).
+
+- Final side-by-side pass (2026-11-09) against Teams' DOM: Members, Pending requests, Settings, Apps and Tags sat 20 px too far right on their left side (right edges were right); corrected and re-checked (Members, Apps shots match). Channels and Analytics were already right.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Brings Teams' team ··· menu and Manage team page to OST.
+
+Changes:
+- TeamMenu.qml: Hide all channels, Add member, Add channel, Manage team, Manage tags, Copy link, Archive/Restore, Leave, Delete with Teams' dialogs and requests.
+- ManageTeam.qml with Teams' seven tabs: Channels (filters, sort, search, rows, row menu), Members, Pending requests, Settings (team details, picture, member/guest permissions, @mentions, team code, fun stuff, tags), Analytics (team dashboard; Analytics across teams opens Your teams and channels), Apps (list, copy link, remove, outgoing webhook) and Tags.
+- Channel owner actions (archive/restore, delete, recommend), moderation and moderators for any channel, private channels (create with the member step, delete through the provisioning service).
+
+Tests:
+- Unit tests for each request body and reply (cargo test, 372 lib tests pass); harnesses --members-test, --team-settings-test, --channel-owner-test, --create-channel-test on linuxlt, each compared with Teams on winpc; a final DOM-measured pass corrected five tabs' left offsets.
+
+Limits: adding people and deleting the team can't be run in the test tenant; private-channel member adds are TASK-0087.
+<!-- SECTION:FINAL_SUMMARY:END -->

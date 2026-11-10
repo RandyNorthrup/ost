@@ -4,11 +4,11 @@ import QtQuick.Dialogs
 
 // Manage team ▸ Apps (Teams' tab, measured on winpc 2026-11-09;
 // docs/spec/chat-list-and-header.md §5.6.7). Offsets from the tab area:
-// - Get more apps (outlined, the add glyph, 140.8 x 31.3) at 64, 28.6;
-//   Create an outgoing webhook (transparent, the webhook glyph) at 219.8;
-//   Sort (transparent, A-Z / Z-A) at 551; Find by name (filled, a search
-//   glyph) at the right.
-// - The apps from 68.3 down, 41 in, 836 wide: 65 tall rows with a line
+// - Get more apps (outlined, the add glyph, 140.8 x 31.3) at 44, 28.6;
+//   Create an outgoing webhook (transparent, the webhook glyph) at 199.8;
+//   Sort (transparent, A-Z / Z-A) at 531; Find by name (filled, 210 x 32, a
+//   search glyph) 40 from the right (re-measured from Teams' DOM).
+// - The apps from 68.3 down, 21 in, 836 wide: 65 tall rows with a line
 //   between them: the icon (36) at 89, the name (14/20 bold) and publisher
 //   (14/16 #616161) at 132, ··· (Copy link | Remove) at the right.
 // - Create an outgoing webhook: Teams' dialog (Name *, Callback URL *,
@@ -46,7 +46,7 @@ Item {
     }
 
     Rectangle {
-        x: 64; y: 28.6; width: 140.8; height: 31.3; radius: 4
+        x: 44; y: 28.6; width: 140.8; height: 31.3; radius: 4
         color: moreHover.hovered ? theme.menuHover : theme.surface
         border.color: theme.stroke; border.width: 0.67
         Row {
@@ -62,18 +62,18 @@ Item {
     }
     Plain {
         visible: view.owner
-        x: 219.8; y: 28.6
+        x: 199.8; y: 28.6
         icon: "webhook-20"; text: "Create an outgoing webhook"
         onClicked: webhook.start()
     }
     Plain {
-        x: 551; y: 28.3
+        x: 531; y: 28.3
         icon: "arrow-sort-20"; text: "Sort"
         active: view.sorted
         onClicked: { if (view.sorted) view.descending = !view.descending; view.sorted = true }
     }
     Rectangle {
-        x: parent.width - 21.3 - width; y: 28.6; width: 200; height: 31.3; radius: 4
+        x: parent.width - 40 - width; y: 28.3; width: 210; height: 32; radius: 4
         color: theme.inputFilled
         Rectangle { visible: find.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
         TextInput {
@@ -91,7 +91,7 @@ Item {
     }
 
     Flickable {
-        x: 41; y: 68.3; width: Math.min(836, parent.width - 76); height: parent.height - y
+        x: 21; y: 68.3; width: Math.min(836, parent.width - 56); height: parent.height - y
         contentHeight: list.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds

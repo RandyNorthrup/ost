@@ -4,9 +4,9 @@ import QtQuick.Controls.Basic
 // Manage team ▸ Tags (a team's menu ▸ Manage tags; Teams' tab, measured on
 // winpc 2026-11-09; docs/spec/chat-list-and-header.md §5.6.2). Offsets are
 // from the tab area's top left.
-// - List: "Search for tags" (170 x 32, a search glyph at its end) 72 in,
+// - List: "Search for tags" (170 x 32, a search glyph at its end) 52 in,
 //   32.3 down; Create tag (brand, the tag glyph) 52 from the right. Then
-//   three sections 80 in, 82.3 down (44 tall headers: chevron 20 at 10, the
+//   three sections 60 in, 82.3 down (44 tall headers: chevron 20 at 10, the
 //   name 14/20 at 38): Tags assigned to you (n), Other tags (n), Deleted (n).
 //   Each holds a table 12 further in (header 34: Name, Members,
 //   Description, Imported from, 12/16 in 149.6 wide columns; rows 44 with a
@@ -14,7 +14,7 @@ import QtQuick.Controls.Basic
 //   its name 14/20; the people glyph and the count; the description; ···
 //   at the end with Chat with group, Create a copy | Delete). A deleted
 //   tag's row offers Restore.
-// - A tag: All tags (back, 600) 72 in; Add people, Edit tag details, Create
+// - A tag: All tags (back, 600) 52 in; Add people, Edit tag details, Create
 //   a copy | Delete tag (32 x 31.3 icon buttons) at the right; the badge (42)
 //   and name (16/22 bold) 100.3 down; "Members (n)" (14/20 bold) 190.3 down
 //   and its table (Name, Title, Location, Organization, 154.4 wide; rows 44
@@ -88,7 +88,7 @@ Item {
         anchors.fill: parent
         Item {
             id: searchBox
-            x: 72; y: 32.3; width: 170; height: 32
+            x: 52; y: 32.3; width: 170; height: 32
             TextInput {
                 id: search
                 x: 12; width: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
@@ -128,7 +128,7 @@ Item {
         }
 
         Flickable {
-            x: 80; y: 82.3; width: parent.width - 140; height: parent.height - y
+            x: 60; y: 82.3; width: parent.width - 120; height: parent.height - y
             contentHeight: sections.implicitHeight + 24
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -160,7 +160,7 @@ Item {
         visible: !!view.open
         anchors.fill: parent
         Rectangle {
-            x: 72; y: 32.6; width: 96; height: 31.3; radius: 4
+            x: 52; y: 32.6; width: 96; height: 31.3; radius: 4
             color: backHover.hovered ? theme.menuHover : "transparent"
             Row {
                 x: 9.3; anchors.verticalCenter: parent.verticalCenter
@@ -183,9 +183,9 @@ Item {
             Rectangle { width: 0.67; height: 32; color: theme.divider }
             IconButton { icon: "delete-20"; label: "Delete tag"; onClicked: dialog.startDelete(view.open) }
         }
-        Badge { x: 96; y: 100.3; size: 42 }
+        Badge { x: 76; y: 100.3; size: 42 }
         Text {
-            x: 150; y: 110.3
+            x: 130; y: 110.3
             text: view.open ? view.open.name : ""
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             lineHeight: 22; lineHeightMode: Text.FixedHeight
@@ -193,14 +193,14 @@ Item {
         }
         Text {
             visible: !!view.open && !!view.open.description
-            x: 150; y: 134
-            width: parent.width - 220; elide: Text.ElideRight
+            x: 130; y: 134
+            width: parent.width - 200; elide: Text.ElideRight
             text: view.open ? view.open.description : ""
             font.family: theme.font; font.pixelSize: 14
             color: theme.textSecondary
         }
         Text {
-            x: 72; y: 190.3
+            x: 52; y: 190.3
             text: "Members (" + (view.peopleLoaded ? view.people.length : (view.open ? view.open.count : 0)) + ")"
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
             lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -208,7 +208,7 @@ Item {
         }
         Item {
             id: memberTable
-            x: 72; y: 210.3; width: parent.width - 140; height: parent.height - y
+            x: 52; y: 210.3; width: parent.width - 120; height: parent.height - y
             readonly property real col: width / 5
             Repeater {
                 model: ["Name", "Title", "Location", "Organization"]

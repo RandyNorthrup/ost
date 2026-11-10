@@ -3,9 +3,11 @@ import QtQuick.Controls.Basic
 
 // Manage team ▸ Members (Teams' tab, measured on winpc 2026-11-09;
 // docs/spec/chat-list-and-header.md §5.6.4). Offsets from the tab area:
-// - Add member (transparent, the add glyph, 14/20 semibold #424242) at 40,
-//   20.6; Search members (278.7 x 30.7, outlined) 21.3 from the right.
-// - Sections (44 tall headers, chevron at 10, label 14/20 at 38) 42 in,
+// - Add member (transparent, the add glyph, 14/20 semibold #424242) at 20,
+//   20.6; Search members (280 x 32, outlined) 20 from the right (re-measured
+//   2026-11-09 from Teams' DOM: the first pass put the left side 20 too far
+//   in).
+// - Sections (44 tall headers, chevron at 10, label 14/20 at 38) 22 in,
 //   74.3 down: Owners (n) and Members and guests (n).
 // - Their grids 12 further in: a 48.7 header (12/16: Name, Title, Location,
 //   Tags with an info glyph, Team role; 146.8 wide columns, padding 0 8),
@@ -48,7 +50,7 @@ Item {
     }
 
     Rectangle {
-        x: 40; y: 20.6; width: 134.8; height: 31.3; radius: 4
+        x: 20; y: 20.6; width: 134.8; height: 31.3; radius: 4
         color: addHover.hovered ? theme.menuHover : "transparent"
         FluentIcon { x: 12.7; anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: theme.textStrong }
         Text { x: 38.7; anchors.verticalCenter: parent.verticalCenter; text: "Add member"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
@@ -58,7 +60,7 @@ Item {
         Accessible.name: "Add member"
     }
     Rectangle {
-        x: parent.width - 21.3 - width; y: 21; width: 278.7; height: 30.7; radius: 4
+        x: parent.width - 20 - width; y: 20.6; width: 280; height: 32; radius: 4
         color: theme.surface
         border.color: theme.stroke; border.width: 0.67
         Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: search.activeFocus ? 2 : 0.67; color: search.activeFocus ? theme.brand : theme.textSecondary }
@@ -76,7 +78,7 @@ Item {
     }
 
     Flickable {
-        x: 42; y: 74.3; width: parent.width - 64; height: parent.height - y
+        x: 22; y: 74.3; width: parent.width - 44; height: parent.height - y
         contentHeight: sections.implicitHeight + 24
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -135,7 +137,7 @@ Item {
             }
         }
         Column {
-            y: 52.7; x: 4; width: parent.width - 8
+            y: 52.7; x: 4; width: parent.width - 22
             Repeater {
                 model: grid.people
                 Rectangle {

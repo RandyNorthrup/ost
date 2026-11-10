@@ -3505,7 +3505,7 @@ Window {
             else if (step === 2) shot("ct-scratch")
             else if (step === 3) { d.setNameForTest("OST draft"); d.setFirstChannelForTest("") ; d.openNamingForTest() }
             else if (step === 4) shot("ct-naming")
-            else if (step === 5) { d.setFirstChannelForTest("General"); console.warn("CT scratch", JSON.stringify(d.bodyForTest()), d.canCreate) ; shot("ct-scratch2") }
+            else if (step === 5) { d.setFirstChannelForTest("General"); console.warn("CT scratch", JSON.stringify(d.bodyForTest()), d.canCreate) ; d.setNameForTest(""); d.nameTouched = true; shot("ct-scratch2") }
             else if (step === 6) d.page = "type"
             else if (step === 7) shot("ct-type")
             else if (step === 8) { d.page = "form"; d.close(); window.openTeamPage("create") }

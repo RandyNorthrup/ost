@@ -122,7 +122,7 @@ Rectangle {
                 x: 31 + (index % 2) * 274; y: 98 + Math.floor(index / 2) * 134
                 width: 260; height: 120
                 Accessible.name: modelData.name
-                onClicked: modelData.id ? templateDialog.start(modelData) : createDialog.startScratch()
+                onClicked: modelData.id ? templateDialog.start(modelData) : createDialog.startScratch(true)
                 Image {
                     x: 12.7; y: 12.7; width: 48; height: 48
                     source: tcard.modelData.icon || "../assets/illustrations/team-from-scratch.svg"

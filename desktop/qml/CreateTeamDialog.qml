@@ -37,6 +37,12 @@ Popup {
     property string page: "form"
     property bool isPublic: false
     property bool creating: false
+    /// Opened from the Create team page (Teams adds Close there and asks
+    /// before discarding, as for templates).
+    property bool fromPage: false
+    /// The name was left empty after being visited: Teams' "Required".
+    property bool nameTouched: false
+    readonly property bool nameError: nameTouched && nameField.text.trim().length === 0
     // template: {id, name, locale, channels: [{id, displayName}], appIds}
     property var template: null
     property var channelNames: []
@@ -52,11 +58,11 @@ Popup {
     readonly property bool canCreate: nameOk && !creating && (kind !== "scratch" || firstField.text.trim().length > 0)
 
     function reset() {
-        page = "form"; isPublic = false; creating = false
+        page = "form"; isPublic = false; creating = false; nameTouched = false
         nameField.text = ""; descField.text = ""; firstField.text = ""
         pickTabs = true; pickSettings = true; pickMembers = false
     }
-    function startScratch() { kind = "scratch"; template = null; source = null; reset(); open(); nameField.forceActiveFocus() }
+    function startScratch(fromPage) { kind = "scratch"; fromPage = !!fromPage; template = null; source = null; reset(); open(); nameField.forceActiveFocus() }
     function startTemplate(t) {
         kind = "template"; source = null; reset()
         template = t
@@ -72,7 +78,7 @@ Popup {
         open(); nameField.forceActiveFocus()
     }
     function tryClose() {
-        if (kind === "scratch") close()
+        if (kind === "scratch" && !fromPage) close()
         else discard.open()
     }
     function create() {
@@ -172,10 +178,10 @@ Popup {
             elide: Text.ElideRight
             text: dlg.kind === "clone" ? "You are using \"" + (dlg.source ? dlg.source.name : "") + "\" as a template for a new team" : "Create a team"
         }
-        CloseButton { visible: !form.scratch; onClicked: dlg.tryClose() }
+        CloseButton { visible: !form.scratch || dlg.fromPage; onClicked: dlg.tryClose() }
         Row {
             visible: form.scratch
-            y: 37.3
+            y: dlg.fromPage ? 40 : 37.3
             Text { text: "You're creating a team from scratch. "; font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Text {
                 text: "More create team options"
@@ -190,7 +196,7 @@ Popup {
         // Scrolls in the clone kind (its checkboxes run past the bottom).
         Flickable {
             id: fields
-            y: form.scratch ? 71.7 : 40
+            y: form.scratch ? (dlg.fromPage ? 75 : 71.7) : 40
             width: form.clone ? 536.7 : 550.7
             height: form.clone ? 520 - 8 - y : 480 - y
             contentHeight: fieldCol.height
@@ -200,14 +206,23 @@ Popup {
             ScrollBar.vertical: ScrollBar { policy: form.clone ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff; x: 540 }
             Item {
                 id: fieldCol
+                // Below the name, everything moves down while "Required" shows.
+                readonly property real shift: dlg.nameError ? 18 : 0
                 width: fields.width
                 height: form.clone ? 500 : 420
                 Label { text: "Team name"; required: true }
                 Rectangle {
                     y: 20; width: parent.width; height: 32; radius: 4
                     color: theme.inputFilled
+                    // Teams' Required: a #D13438 outline, its error glyph and
+                    // the message (12/16 #BC2F32) 2 under the field; what
+                    // follows moves down 18.
+                    border.color: dlg.nameError ? theme.pick("#D13438", "#DC626D") : "transparent"; border.width: 0.67
+                    FluentIcon { visible: dlg.nameError; x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#D13438", "#DC626D") }
+                    Text { visible: dlg.nameError; y: 34; text: "Required"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.pick("#BC2F32", "#DC626D") }
                     TextInput {
                         id: nameField
+                        onActiveFocusChanged: if (!activeFocus) dlg.nameTouched = true
                         x: 12; width: parent.width - 52; anchors.verticalCenter: parent.verticalCenter
                         maximumLength: 256
                         font.family: theme.font; font.pixelSize: 14; color: theme.text
@@ -216,12 +231,12 @@ Popup {
                         Accessible.role: Accessible.EditableText
                         Accessible.name: "Team name"
                     }
-                    FluentIcon { visible: dlg.nameOk; x: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-circle-20"; size: 20; color: theme.textSecondary }
+                    FluentIcon { visible: dlg.nameOk && !dlg.nameError; x: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-circle-20"; size: 20; color: theme.textSecondary }
                     Rectangle { visible: nameField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
                 }
-                Label { y: form.scratch ? 71 : form.clone ? 66 : 71; text: "Description" }
+                Label { y: (form.scratch ? 71 : form.clone ? 66 : 71) + fieldCol.shift; text: "Description" }
                 Rectangle {
-                    y: (form.scratch ? 71 : form.clone ? 66 : 71) + 20
+                    y: (form.scratch ? 71 : form.clone ? 66 : 71) + 20 + fieldCol.shift
                     width: parent.width; height: 78; radius: 4
                     color: theme.inputFilled
                     TextEdit {
@@ -237,11 +252,11 @@ Popup {
                     Rectangle { visible: descField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
                 }
                 // Team type (scratch, template): a button to the type page.
-                Label { visible: !form.clone; y: 188; text: "Team type" }
+                Label { visible: !form.clone; y: 188 + fieldCol.shift; text: "Team type" }
                 Rectangle {
                     id: typeButton
                     visible: !form.clone
-                    y: 216; width: 102.9; height: 31.3; radius: 4
+                    y: 216 + fieldCol.shift; width: 102.9; height: 31.3; radius: 4
                     color: typeHover.hovered ? theme.menuHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
                     Row {
@@ -260,7 +275,7 @@ Popup {
                 // First channel name (scratch).
                 Row {
                     visible: form.scratch
-                    y: 262.3; spacing: 0
+                    y: 262.3 + fieldCol.shift; spacing: 0
                     Label { anchors.verticalCenter: parent.verticalCenter; text: "First channel name"; required: true }
                     Rectangle {
                         width: 20; height: 20; radius: 4
@@ -275,7 +290,7 @@ Popup {
                 }
                 Rectangle {
                     visible: form.scratch
-                    y: 286.3; width: parent.width; height: 32; radius: 4
+                    y: 286.3 + fieldCol.shift; width: parent.width; height: 32; radius: 4
                     color: theme.inputFilled
                     TextInput {
                         id: firstField
@@ -307,7 +322,7 @@ Popup {
                 // Customize channels > (template).
                 Rectangle {
                     visible: dlg.kind === "template"
-                    y: 262.3; width: 170.9; height: 31.3; radius: 4
+                    y: 262.3 + fieldCol.shift; width: 170.9; height: 31.3; radius: 4
                     color: customHover.hovered ? theme.menuHover : "transparent"
                     Row {
                         anchors.centerIn: parent; spacing: 6
@@ -320,10 +335,10 @@ Popup {
                     Accessible.name: "Customize channels"
                 }
                 // Clone: privacy and what to copy.
-                Text { visible: form.clone; y: 178; text: "Privacy"; font.family: theme.font; font.pixelSize: 14; lineHeight: 24; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { visible: form.clone; y: 178 + fieldCol.shift; text: "Privacy"; font.family: theme.font; font.pixelSize: 14; lineHeight: 24; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Dropdown {
                     visible: form.clone
-                    y: 204.7; width: 536.7; height: 30
+                    y: 204.7 + fieldCol.shift; width: 536.7; height: 30
                     options: [["private", "Private - People need permission to join"], ["public", "Public - Anyone in your org can join"]]
                     label: dlg.isPublic ? "Public - Anyone in your org can join" : "Private - People need permission to join"
                     accessibleName: "Privacy"
@@ -331,7 +346,7 @@ Popup {
                 }
                 Text {
                     visible: form.clone
-                    y: 262.8; width: parent.width; wrapMode: Text.Wrap
+                    y: 262.8 + fieldCol.shift; width: parent.width; wrapMode: Text.Wrap
                     text: "Choose what you'd like to include from the original team"
                     font.family: theme.font; font.pixelSize: 21; font.weight: Font.Bold
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -339,7 +354,7 @@ Popup {
                 }
                 Text {
                     visible: form.clone
-                    y: 330.2; width: parent.width; wrapMode: Text.Wrap
+                    y: 330.2 + fieldCol.shift; width: parent.width; wrapMode: Text.Wrap
                     text: "Copy apps, settings, and channels over to your new team. Your existing team won't be changed."
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.text
@@ -356,7 +371,7 @@ Popup {
                         id: cb
                         required property var modelData
                         readonly property bool on: modelData.fixed || (modelData.key === "tabs" ? dlg.pickTabs : modelData.key === "settings" ? dlg.pickSettings : dlg.pickMembers)
-                        x: modelData.x; y: modelData.y; width: 32 + cbText.implicitWidth + 12; height: 36
+                        x: modelData.x; y: modelData.y + fieldCol.shift; width: 32 + cbText.implicitWidth + 12; height: 36
                         Rectangle {
                             x: 8; y: 10; width: 16; height: 16; radius: 2
                             color: cb.on && !cb.modelData.fixed ? theme.brand : "transparent"
