@@ -3784,6 +3784,12 @@ Window {
                 else if (step === 8) { console.warn("CP", JSON.parse(backend.settingsJson).props.messageDensity); Qt.quit() }
                 step++; return
             }
+            // =followed: log Quick views ▸ Followed threads' rows.
+            if (mode === "followed") {
+                if (step === 1) backend.channelAction("quick-followed", "", "", "")
+                else if (step === 4) { const r = JSON.parse(backend.channelActionResult || "{}"); console.warn("FT", JSON.stringify((r.data || []).map(i => [i.parent_preview, i.thread_id.slice(0, 12)]).slice(0, 6))); Qt.quit() }
+                step++; return
+            }
             if (mode === "landing") {
                 const c = chatList.chats.find(c => (c.peerMri || "").indexOf("5050c9d6") >= 0)
                 if (step === 1) { if (!c) { step = 0; return } backend.setChatUnread(c.id, true) }
