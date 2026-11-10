@@ -65,6 +65,31 @@ pub async fn schedule(client: &TeamsClient, o: &Outgoing, send_at_ms: i64) -> Re
         .unwrap_or_default())
 }
 
+/// Teams' PUT body for an edited scheduled message (measured, "OST TEST
+/// 93"): the same envelope, the message carrying the draft's id (as its id
+/// and draftId), the edit time and a new version.
+pub fn edit_body(id: &str, o: &Outgoing, send_at_ms: i64, now_ms: i64) -> serde_json::Value {
+    let mut b = schedule_body(o, send_at_ms);
+    let m = &mut b["message"];
+    m["id"] = id.into();
+    m["properties"]["draftId"] = id.into();
+    m["properties"]["edittime"] = now_ms.into();
+    m["version"] = chrono::DateTime::from_timestamp_millis(now_ms)
+        .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .unwrap_or_default()
+        .into();
+    b
+}
+
+/// Change a scheduled message (its text or its time).
+pub async fn edit(client: &TeamsClient, id: &str, o: &Outgoing, send_at_ms: i64) -> Result<()> {
+    anyhow::ensure!(!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()), "Not a draft: {id}");
+    let url = format!("{}/v1/users/ME/drafts/{id}", client.chat_service_url());
+    let body = edit_body(id, o, send_at_ms, chrono::Utc::now().timestamp_millis());
+    client.chat_request(reqwest::Method::PUT, &url, &body).await?;
+    Ok(())
+}
+
 /// Cancel a scheduled message.
 pub async fn cancel(client: &TeamsClient, id: &str) -> Result<()> {
     anyhow::ensure!(!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()), "Not a draft: {id}");
@@ -201,6 +226,17 @@ mod tests {
         assert_eq!(m["clientmessageid"], "1604876585425334945");
         assert_eq!(m["content"], "<p>OST TEST 90 scheduled</p>");
         assert_eq!(m["crossPostChannels"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn an_edit_is_teams_put() {
+        let b = edit_body("1794323757462", &outgoing(), 1_794_326_400_000, 1_794_323_778_362);
+        assert_eq!(b["draftType"], "ScheduledDraft");
+        assert_eq!(b["message"]["id"], "1794323757462");
+        assert_eq!(b["message"]["properties"]["draftId"], "1794323757462");
+        assert_eq!(b["message"]["properties"]["edittime"], 1_794_323_778_362_i64);
+        assert_eq!(b["message"]["version"], "2026-11-10T15:16:18.362Z");
+        assert_eq!(b["message"]["draftDetails"]["sendAt"], "2026-11-10T16:00:00.000Z");
     }
 
     #[test]

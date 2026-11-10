@@ -912,7 +912,10 @@ Groups are separated by dividers; empty groups are skipped.
     - hover: Edit and More, with no reactions; More holds Delete (Del) and Translation.
   - Delete cancels it: `DELETE {chatsvc}/v1/users/ME/drafts/{id}`.
   - Errors: "Failed to schedule.", "Failed to schedule. Message too large.", "This message was scheduled for a time in the past."
-  - Not built yet: editing a scheduled message (`PUT …/drafts/{id}`), its Translation item, and Record video clip.
+  - Edit ("OST TEST 93"/"94"): inline, with "Select **Done** to deliver on …" above the box (its chevron changes the time).
+    - Saving sends `PUT {chatsvc}/v1/users/ME/drafts/{id}` with the same envelope. The message carries the draft's id as `id` and `properties.draftId`, plus `properties.edittime` (ms) and an ISO `version`.
+    - The clock hides while editing. Teams' edit toolbar here also has Attach and "+" (OST shows Format and Emoji).
+  - Not built yet: the scheduled message's Translation item, and Record video clip.
 
 ## 17. "+" Actions and apps, Attach, fun picker
 - **"+" flyout** (930874; native apps first in list view, `simplifiedComposeViewType` live "list"):

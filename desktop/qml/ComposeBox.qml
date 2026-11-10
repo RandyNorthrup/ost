@@ -563,12 +563,12 @@ Item {
                 id: scheduleLabel
                 anchors.verticalCenter: parent.verticalCenter
                 textFormat: Text.StyledText
-                text: "Select <b>" + (root.post ? "Post" : "Send") + "</b> to deliver on " + root.scheduleText(root.scheduleAt)
+                text: "Select <b>" + (root.editing ? "Done" : root.post ? "Post" : "Send") + "</b> to deliver on " + root.scheduleText(root.scheduleAt)
                 font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
             }
             FluentIcon { x: scheduleLabel.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.brandForeground1 }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: schedulePopup.openFor(scheduleRow, true) }
+            TapHandler { onTapped: schedulePopup.openFor(scheduleRow, !root.editing) }
             Accessible.role: Accessible.ButtonMenu
             Accessible.name: scheduleLabel.text.replace(/<[^>]+>/g, "")
         }

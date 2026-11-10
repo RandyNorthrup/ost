@@ -409,6 +409,16 @@ pub mod qobject {
         /// Cancel a scheduled message (Teams' Delete on it).
         #[qinvokable]
         fn cancel_scheduled(self: Pin<&mut Backend>, id: &QString);
+        /// Save an edited scheduled message (its text, media and time).
+        #[qinvokable]
+        fn edit_scheduled(
+            self: Pin<&mut Backend>,
+            id: &QString,
+            client_message_id: &QString,
+            editor_html: &QString,
+            media_json: &QString,
+            send_at_ms: &QString,
+        );
         /// Copy a message's link as Teams does (text: the URL; HTML: Teams'
         /// copy-link anchor). `message_json`: {id, sender, text, root_id};
         /// `place_json`: {team_id, team_name, channel_name} for a channel.
@@ -6686,6 +6696,45 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => this.as_mut().load_scheduled(),
                 Err(e) => this.as_mut().set_status_text(QString::from(short_error(&e).as_str())),
+            });
+        });
+    }
+
+    pub fn edit_scheduled(
+        self: Pin<&mut Self>,
+        id: &QString,
+        client_message_id: &QString,
+        editor_html: &QString,
+        media_json: &QString,
+        send_at_ms: &QString,
+    ) {
+        let Ok(at_ms) = send_at_ms.to_string().parse::<i64>() else { return };
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (html, mentions) = api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() || html.trim().is_empty() {
+            return;
+        }
+        let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
+        let mut o = self.outgoing(&chat_id, chat_id.clone(), html, mentions, None, String::new());
+        if !client_message_id.is_empty() {
+            o.client_message_id = client_message_id.to_string();
+        }
+        let id = id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::scheduled::edit(&client, &id, &o, at_ms).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().load_scheduled(),
+                Err(e) => {
+                    tracing::warn!("scheduled edit failed: {}", short_error(&e));
+                    this.as_mut().set_status_text(QString::from("Failed to edit scheduled message"))
+                }
             });
         });
     }

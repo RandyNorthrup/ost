@@ -1675,11 +1675,15 @@ Rectangle {
                     width: editLoader.width
                     editing: true
                     quote: msg.modelData.quote || null
+                    // A scheduled message keeps its time ("Select Done to
+                    // deliver on …"), which can be changed here.
+                    scheduleAt: msg.modelData.scheduled_at || 0
                     onQuoteDismissed: quote = null
                     onEmojiRequested: a => root.openEmojiFor(editBox)
                     onSettingsRequested: root.openChatSettings()
                     onSubmit: {
-                        backend.editMessageRich(msg.modelData.id, editBox.formattedText(), editBox.quote ? JSON.stringify(editBox.quote) : "", JSON.stringify(editBox.mediaInUse()))
+                        if (msg.scheduledMsg) backend.editScheduled(msg.modelData.draft_id, msg.modelData.client_message_id || "", editBox.formattedText(), JSON.stringify(editBox.mediaInUse()), String(Math.round(editBox.scheduleAt)))
+                        else backend.editMessageRich(msg.modelData.id, editBox.formattedText(), editBox.quote ? JSON.stringify(editBox.quote) : "", JSON.stringify(editBox.mediaInUse()))
                         root.editingId = ""
                     }
                     onCancelled: root.editingId = ""
@@ -2295,7 +2299,7 @@ Rectangle {
                 message: msg.modelData
                 // A reply also sent to the channel: Reply in thread (its
                 // thread), no Edit (Teams).
-                acts: msg.scheduledMsg ? [] : (root.threadsLayout ? [{ key: "thread", icon: "chat-multiple-20", tip: "Reply in thread" }] : []).concat(msg.sharedHead === "thread" ? [] : msg.mine
+                acts: msg.scheduledMsg ? [{ key: "edit", icon: "edit-20", tip: "Edit" }] : (root.threadsLayout ? [{ key: "thread", icon: "chat-multiple-20", tip: "Reply in thread" }] : []).concat(msg.sharedHead === "thread" ? [] : msg.mine
                     ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
                     : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }])
                 onThreadRequested: m => root.openThread(m.root_id || m.id)
@@ -2325,7 +2329,7 @@ Rectangle {
                 readonly property string tip: msg.scheduledMsg ? "Scheduled" : msg.sendPending ? (msg.modelData.send_note || "")
                     : msg.sendFailed ? "Failed"
                     : seen ? (root.isGroup ? "Seen by everyone" : "Seen") : "Sent"
-                visible: msg.mine && !msg.isRow && (msg.scheduledMsg || msg.sendPending || msg.sendFailed || seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
+                visible: msg.mine && !msg.isRow && !msg.editingThis && (msg.scheduledMsg || msg.sendPending || msg.sendFailed || seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
                 name: msg.scheduledMsg ? "clock-12" : msg.sendPending ? "circle-12" : msg.sendFailed ? "warning-12-filled" : seen ? "seen-12" : "sent-12"
                 size: 12; color: msg.sendFailed ? theme.redForeground1 : theme.brand
                 x: bubble.x + bubble.width + 8

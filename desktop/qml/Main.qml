@@ -3827,16 +3827,21 @@ Window {
             // schedule "OST TEST 91" for tomorrow 8:00 AM (sc-compose,
             // sc-pending), then --schedule-cancel cancels it (sc-cancelled).
             if (mode === "schedule") {
-                const c = conversation.composeBox
+                const c = conversation.composeBox, has = f => Qt.application.arguments.indexOf(f) >= 0
+                const mine = () => JSON.parse(backend.scheduledJson || "[]").filter(x => /OST TEST 9[0-9]/.test(x.message.text || ""))
                 if (step === 1) { const ch = JSON.parse(backend.chatsJson || "[]").find(x => x.name === "OST group test"); if (!ch) { step = 0; return } rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
-                else if (step === 5) { console.warn("SC pending before", backend.scheduledJson); c.scheduleAt = c.nextEight() + (c.nextEight() - Date.now() < 3600000 ? 86400000 : 0); conversation.input.text = "OST TEST 92 scheduled from OST"; shot("sc-compose") }
-                else if (step === 6 && Qt.application.arguments.indexOf("--schedule-send") >= 0) conversation.sendCompose()
-                else if (step === 6 && Qt.application.arguments.indexOf("--schedule-popup") >= 0) c.openScheduleForTest(c)
-                else if (step === 8 && Qt.application.arguments.indexOf("--schedule-popup") >= 0) shot("sc-popup")
+                else if (step === 5) { console.warn("SC pending before", backend.scheduledJson); c.scheduleAt = c.nextEight() + (c.nextEight() - Date.now() < 3600000 ? 86400000 : 0); conversation.input.text = "OST TEST 94 scheduled from OST"; shot("sc-compose") }
+                else if (step === 6 && has("--schedule-send")) conversation.sendCompose()
+                else if (step === 6 && has("--schedule-popup")) c.openScheduleForTest(c)
+                else if (step === 8 && has("--schedule-popup")) shot("sc-popup")
                 else if (step === 12) { console.warn("SC pending", backend.scheduledJson); shot("sc-pending") }
-                else if (step === 13 && Qt.application.arguments.indexOf("--schedule-cancel") >= 0) { const l = JSON.parse(backend.scheduledJson || "[]"); for (const x of l) if ((x.message.text || "").indexOf("OST TEST 92") >= 0) backend.cancelScheduled(x.id) }
-                else if (step === 18) { console.warn("SC after", backend.scheduledJson); shot("sc-cancelled") }
-                else if (step === 19) { c.scheduleAt = 0; c.clear(); backend.setDraft(backend.currentChatId, ""); Qt.quit() }
+                else if (step === 13 && has("--schedule-edit")) { const it = conversation.scheduledItems[0]; if (it) conversation.startEdit(it) }
+                else if (step === 15 && has("--schedule-edit")) shot("sc-edit")
+                else if (step === 16 && has("--schedule-edit")) { const x = mine()[0]; if (x) backend.editScheduled(x.id, x.message.client_message_id || "", "<p>OST TEST 94 scheduled from OST, edited</p>", "[]", String(x.send_at_ms + 1800000)); conversation.editingId = "" }
+                else if (step === 21) { console.warn("SC edited", JSON.stringify(mine().map(x => [x.message.text, new Date(x.send_at_ms).toString()]))); shot("sc-edited") }
+                else if (step === 22 && has("--schedule-cancel")) { for (const x of mine()) backend.cancelScheduled(x.id) }
+                else if (step === 27) { console.warn("SC after", backend.scheduledJson); shot("sc-cancelled") }
+                else if (step === 28) { c.scheduleAt = 0; c.clear(); backend.setDraft(backend.currentChatId, ""); Qt.quit() }
                 step++; return
             }
             // =layouts: log every channel's layout.
