@@ -28,6 +28,14 @@ cards.
 - The ··· menu for a Threads channel has no posts order, Manage channel,
   Recommend or Archive. Owners get only Delete channel, after a divider.
 
+- Formatting in the channel's compose adds an "Add a subject" row under the
+  formatting bar: 55.7 px tall, 10.7 px in, the subject 18/600 at 12 in and
+  15 down, and a 0.67 px line (2 px brand when focused).
+  - A message with a subject sends it as `properties.subject`
+    ("OST TEST 88" / "89").
+  - The subject shows as an h2 (18/600, 25.7 px line, 8 px under it) above
+    the text in the bubble.
+
 ## The threads pane (360 px, right)
 
 The pane has a 0.67 px line on its left and a 61 px header.

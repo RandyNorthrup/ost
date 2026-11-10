@@ -847,6 +847,7 @@ Groups are separated by dividers; empty groups are skipped.
 
 ### Measured (winpc, 2026-11-07)
 - **Bar.** `simplified-formatting-toolbar` is 43 tall. Buttons are 32 px from x 6, y 9. Groups are 8.7 apart with a divider. At 746.7 wide it shows Bold … Code block, then More options at 416 (no divider), with Discard at the end.
+  - The width tiers (490 / 385 / 280) follow the conversation's width, not the box's. A 468 px box in a 532 px conversation (1280 with the threads pane open) shows B I U S | lists | Highlight, Font color, Font size | ···.
   - The bar is a flex row with `column-gap: calc(100% − 49rem)` (rem = 10 px; 38.5rem from 480 wide, 28rem from 240). So the buttons' toolbar is 490 − 32 = 458 wide from 640 up (measured 458 at 746.7); items that don't fit, with More options, go to the menu.
   - Every button's icon was copied from Teams' DOM into `fmt-*.svg` (Teams draws Fluent 20 px icons in a "2 2 16 16" viewBox).
 - **More options menu.** 247 wide, max 306 tall (it scrolls), padding 8/0, radius 4, shadow 16.

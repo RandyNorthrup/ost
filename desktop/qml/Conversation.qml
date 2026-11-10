@@ -110,6 +110,7 @@ Rectangle {
     // Keyboard shortcuts (Ctrl+R, Ctrl+F, Ctrl+J, Alt+P, Alt+1-9, Alt+Shift+O).
     // The chat's compose editor.
     readonly property Item input: compose.editor
+    readonly property Item composeBox: compose
     function focusCompose() { if (compose.visible) input.forceActiveFocus() }
     function openFind() { finding = true; tab = ""; findField.forceActiveFocus() }
     function jumpToNewest() { tab = ""; list.positionViewAtBeginning(); channelPosts.toEnd() }
@@ -1722,13 +1723,16 @@ Rectangle {
                 readonly property real bodyH: !showBody ? 0 : bigEmoticons ? Math.max(1, body.lineCount) * 50 : richBody ? body.contentHeight : Math.max(1, body.lineCount) * 20
                 // A quoted reply's card sits at the top (Teams: 10.7 down, the
                 // text 4 under it).
-                readonly property real quoteShift: msg.modelData.quote ? 60.3
+                // A Threads-layout message's subject (Teams: an h2, 18/600 on
+                // a 25.7 line, 8 under it; measured "OST TEST 88").
+                readonly property real subjectH: !root.postsLayout && (msg.modelData.subject || "").length > 0 ? 33.7 : 0
+                readonly property real quoteShift: subjectH + (msg.modelData.quote ? 60.3
                     // A forward card sits 14.7 down; a note 4 under it, else
                     // the bubble ends 9 under it (Teams).
                     : msg.modelData.forward ? fwdCard.height + (showBody ? 12 : 8.4)
                     // The shared-reply line: 16 tall, 3.3 down, the text 8
                     // under it (Teams).
-                    : msg.sharedHead ? 28 : 0
+                    : msg.sharedHead ? 28 : 0)
                 // In a flow the text's own blank line sets the gap (Teams).
                 readonly property real picsTop: showBody ? body.y + bodyH + (inFlow ? 0 : 8) : (bare ? 0 : 8)
                 readonly property bool hasPics: imgs.length > 0 || inFlow
@@ -1742,7 +1746,7 @@ Rectangle {
                 width: root.postsLayout ? msg.maxBubble
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
                     : hasCode ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(msg.sharedHead ? sharedRow.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(msg.sharedHead ? sharedRow.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
@@ -1764,10 +1768,23 @@ Rectangle {
                 border.color: msg.sendFailed ? theme.redBorder1 : root.postsLayout ? theme.dividerSoft
                     : root.threadsLayout && root.openThreadRoot === msg.modelData.id ? theme.brand : "transparent"
                 x: root.compact ? 64 : msg.mine ? parent.width - root.gutR - width : root.gutContent
+                Text {
+                    id: subjectLine
+                    visible: bubble.subjectH > 0
+                    x: bubble.pad; y: root.compact ? 0 : 6.7
+                    width: Math.min(implicitWidth, msg.maxBubble - 2 * bubble.pad)
+                    height: 25.7; verticalAlignment: Text.AlignVCenter
+                    text: msg.modelData.subject || ""
+                    textFormat: Text.PlainText
+                    wrapMode: Text.NoWrap; elide: Text.ElideRight
+                    font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
+                    color: theme.text
+                    Accessible.role: Accessible.Heading
+                }
                 Row {
                     id: sharedRow
                     visible: !!msg.sharedHead
-                    x: bubble.pad; y: 10
+                    x: bubble.pad; y: 10 + bubble.subjectH
                     spacing: 4
                     FluentIcon { name: msg.sharedHead === "thread" ? "chat-multiple-20" : "channel-arrow-left-20"; size: 16; color: theme.textSecondary }
                     Text {
@@ -2039,7 +2056,7 @@ Rectangle {
                 ForwardCard {
                     id: fwdCard
                     visible: !!msg.modelData.forward
-                    x: bubble.pad; y: 14.7
+                    x: bubble.pad; y: 14.7 + bubble.subjectH
                     forward: msg.modelData.forward || null
                     maxWidth: msg.maxBubble - 2 * bubble.pad
                     onOpenOriginal: {
@@ -2051,7 +2068,7 @@ Rectangle {
                 QuoteCard {
                     id: quoteCard
                     visible: !!msg.modelData.quote
-                    x: bubble.pad; y: 10.7
+                    x: bubble.pad; y: 10.7 + bubble.subjectH
                     quote: msg.modelData.quote || null
                     maxWidth: msg.maxBubble - 2 * bubble.pad
                     onActivated: root.jumpToMessage(msg.modelData.quote.message_id)
@@ -3166,7 +3183,7 @@ Rectangle {
         backend.setNextImportance(compose.importance)
         // A new channel post: Teams' subject, headline and banner colour.
         backend.setNextPost(compose.post && root.pendingFiles.length === 0
-            ? compose.postFields() : root.threadsLayout ? JSON.stringify({ threads: true }) : "")
+            ? compose.postFields() : root.threadsLayout ? JSON.stringify({ threads: true, subject: compose.formatting ? compose.subject : "" }) : "")
         if (root.pendingFiles.length > 0) {
             backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []
@@ -3282,6 +3299,8 @@ Rectangle {
         // Under 480 px Teams' compose is compact: its tools on their own row.
         compact: !root.pane && root.width < 480
         sendTo: root.threadPane ? "thread" : ""
+        threadSubject: root.threadsLayout
+        tierWidth: root.width
         placeholder: root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
         quote: root.quoting
         files: root.pendingFiles

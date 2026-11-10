@@ -50,7 +50,11 @@ Item {
     // calc(100% − 49rem) from 640 wide (38.5rem from 480, 28rem from 240;
     // rem = 10 px), so the buttons get 490 − 32 (Discard) = 458 at 640 and
     // up (measured on winpc: 458 at 746.7).
-    readonly property real slot: Math.min(width >= 640 ? 490 : width >= 480 ? 385 : 280, width) - (post ? 0 : 32)
+    // The tiers follow the conversation's width, not the box's (at 1280
+    // with the threads pane open Teams' 468 px box in a 532 px
+    // conversation keeps Highlight, Font color and Font size).
+    property real tierWidth: width
+    readonly property real slot: Math.min(tierWidth >= 640 ? 490 : tierWidth >= 480 ? 385 : 280, width) - (post ? 0 : 32)
     // [{item, group, x}] shown, and the groups (lists of items) that go to
     // More options.
     readonly property var layout: {

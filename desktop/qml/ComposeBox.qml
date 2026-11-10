@@ -48,6 +48,14 @@ Item {
     /// A Threads-layout thread's reply target (Teams' "Send to:"): "" (none
     /// shown), "thread" (thread only) or "channel" (thread and channel).
     property string sendTo: ""
+    /// A Threads-layout channel's new message: formatting adds Teams' "Add
+    /// a subject" row (measured on winpc 2026-11-10: 55.7 tall under the
+    /// formatting bar, 10.7 in; the subject 18/600, 12 in and 15 down).
+    property bool threadSubject: false
+    /// The width Teams' formatting bar picks its tier from (the
+    /// conversation's).
+    property real tierWidth: width
+    readonly property real subjectRowH: threadSubject && formatting && !post ? 55.7 : 0
     property bool deliveryOptions: true
     property bool urgentAllowed: true
     signal scheduleMeetingRequested()
@@ -127,7 +135,7 @@ Item {
     readonly property real headerH: post ? 57.3 + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : sendTo ? 25 : 0
     readonly property real boxHeight: post ? headerH + 43 + editorArea.height + 16 + 31.3 + 17.4
         : headerH + (multiline
-        ? (formatting ? 43 : 0) + editorArea.height + 44.7
+        ? (formatting ? 43 : 0) + subjectRowH + editorArea.height + 44.7
         : Math.max(45.3, input.contentHeight + 18 + 7.3))
     signal submit()
     signal cancelled()
@@ -460,9 +468,42 @@ Item {
                 onPicked: i => { root.sendTo = i === 1 ? "channel" : "thread"; input.forceActiveFocus() }
             }
         }
+        Item {
+            visible: root.subjectRowH > 0
+            x: 10.7; y: root.headerH + 43
+            width: parent.width - 21.3; height: 55.7
+            TextInput {
+                id: threadSubjectField
+                x: 12; y: 15; width: parent.width - 24; height: 24
+                verticalAlignment: TextInput.AlignVCenter
+                maximumLength: 250
+                text: root.subject
+                onTextEdited: root.subject = text
+                font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
+                color: theme.text
+                selectionColor: theme.selectionFill
+                selectByMouse: true
+                clip: true
+                Keys.onReturnPressed: event => { if (event.modifiers & Qt.ControlModifier) root.trySubmit(); else input.forceActiveFocus() }
+                Keys.onTabPressed: input.forceActiveFocus()
+                Text {
+                    visible: !threadSubjectField.text && !threadSubjectField.preeditText
+                    text: "Add a subject"
+                    font: threadSubjectField.font; color: theme.pick("#707070", "#ADADAD")
+                }
+                Accessible.role: Accessible.EditableText
+                Accessible.name: "Add a subject"
+            }
+            Rectangle {
+                anchors.bottom: parent.bottom; width: parent.width
+                height: threadSubjectField.activeFocus ? 2 : 0.67
+                color: threadSubjectField.activeFocus ? theme.brand : theme.pick("#4D4D4D", "#ADADAD")
+            }
+        }
         // The formatting bar (Teams' simplified-formatting-toolbar).
         FormatBar {
             id: formatBar
+            tierWidth: root.tierWidth
             visible: root.fmtOn
             post: root.post
             onAnnouncementToggled: { root.announcement = !root.announcement; if (root.announcement) headlineEdit.forceActiveFocus() }
@@ -480,7 +521,7 @@ Item {
         Item {
             id: editorArea
             x: root.post ? 11.3 : 0.67
-            y: root.headerH + (root.fmtOn ? 43 : 0.67)
+            y: root.headerH + (root.fmtOn ? 43 : 0.67) + root.subjectRowH
             width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
             height: Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
             // Teams' quote box and code card behind the text's quote and
