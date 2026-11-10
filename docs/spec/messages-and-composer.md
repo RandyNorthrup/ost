@@ -864,13 +864,30 @@ Groups are separated by dividers; empty groups are skipped.
 - **Insert link.** A 303.3 × 262.7 popover over the button: "Insert link", "Text to display" and "Address" inputs (270 × 32, #F5F5F5, radius 4, placeholders "Text to display" / "Link to an existing file or web page"), then Cancel and Insert (96 × 31.3) at 208.7. Insert is disabled until there is an address.
   - Links go out as `<a href rel="noreferrer noopener" target="_blank" title>`.
 - **Code block.** An embedded editor with a "Plain Text ⌄" language menu (Teams' 44 languages), line numbers and a ··· menu. It sends the CodeBlockEditor paragraph plus `<pre class="language-…" itemid>`.
+  - Header (measured 2026-11-10): the icon, language and chevron in #424242, and More options (32 × 31.3, 3.7 px from the right).
+  - The menu is 195 px wide:
+    - "Make this collaborative" (converts the block to a Loop component), then a divider;
+    - a "Display option" header (#616161);
+    - the "Auto-detect language" check item, on for new blocks.
+  - With auto-detect on, the block takes the language its words point to as you type (highlight.js `highlightAuto`): a few lines of Rust become Rust, while "let x = 1; // hi" stays Plain Text. Picking a language turns auto-detect off.
+  - Syntax colours exist only in the compose box; sent messages show plain code. highlight.js classes fold into five colours:
+
+    | Colour | Classes |
+    |---|---|
+    | #237B4B | strings and numbers |
+    | #4F52B2 | keywords, types, meta, tag names |
+    | #C4314B | function and class titles, built-ins, attributes, and calls in Rust/JS/TS/C++ |
+    | #707070 | comments |
+    | #242424 | everything else |
+
+  - The received card has the header (language and Copy), line numbers, and a horizontal scrollbar for long lines.
 - **Headings and inline code as received** ("OST TEST 70"):
   - h1 is 18/300 on a 25.7 line, h2 14/700 on 20, h3 12/700 on 17.1, each with margin 3/0;
   - `code` is Cascadia Mono 14, white, 0.67 #D1D1D1, radius 4, padding 4, margin 0/2.
 - **OST.** `RichText` (src/richtext.cpp) edits the compose box's QTextDocument and exports clean HTML, which `teams_html_with_media` turns into Teams' HTML.
   - Quotes and code blocks are marked paragraphs. QML draws the quote box and code card behind them, because QQuickTextEdit crashes on frames added while it shows the document.
   - "OST TEST 69", sent from OST with every format, matched Teams' wire format, and Teams web drew it exactly as its own messages.
-- **Not done yet.** Tables (Insert table, rows and columns), the code card's ··· menu, syntax colours, and the inline-code hairline box when receiving (Qt rich text can't draw one).
+- **Not done yet.** Tables (Insert table, rows and columns), the code card's "Make this collaborative" (needs Loop), and the inline-code hairline box when receiving (Qt rich text can't draw one).
 
 ## 17. "+" Actions and apps, Attach, fun picker
 - **"+" flyout** (930874; native apps first in list view, `simplifiedComposeViewType` live "list"):

@@ -6,6 +6,11 @@
 // The helper item (RichText, src/rich_text.rs) sits inside the TextEdit;
 // every call finds the document through its parent.
 #include <QtCore/QUuid>
+#include <QtCore/QHash>
+#include <QtCore/QPointer>
+#include <QtCore/QSet>
+#include <QtGui/QColor>
+#include <QtGui/QSyntaxHighlighter>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextCursor>
 #include <QtGui/QTextDocument>
@@ -29,6 +34,7 @@ enum : int {
     CodeBlockP = QTextFormat::UserProperty + 7, // block: a code block line
     BlockLang = QTextFormat::UserProperty + 8,  // block: its code language
     HeadingWeight = QTextFormat::UserProperty + 9, // char: a heading's weight
+    CodeAuto = QTextFormat::UserProperty + 10,  // block: its language auto-detected
 };
 
 // Quotes and code blocks are marked paragraphs (QQuickTextEdit can't take
@@ -78,6 +84,358 @@ void normalize(QTextDocument *doc)
 
 const char *Mono = "Cascadia Mono";
 
+// Teams' compose colours code blocks with highlight.js, folded into five
+// classes (measured on winpc 2026-11-10, CKEditor's code block): strings
+// and numbers #237B4B; keywords, types, meta and tag names #4F52B2;
+// functions being defined, class names, built-ins and attributes #C4314B;
+// comments #707070; the rest #242424. (Dark colours: Fluent's dark
+// foregrounds for the same roles; not measured.)
+struct CodeLang {
+    QSet<QString> keywords;  // hljs keyword, type, meta, name
+    QSet<QString> builtins;  // hljs built_in
+    QSet<QString> defs;      // the next word is a title (function or class)
+    QStringList line;        // line comment openers
+    QString open, close;     // block comment
+    QString quotes = QStringLiteral("\"'");
+    bool noCase = false;     // SQL, VB, DOS, KQL…
+    bool markup = false;     // XML, HTML, JSX tags
+    bool css = false;        // property: value
+    bool jsonKeys = false;   // "key": → attr
+    bool calls = false;      // name( is a function (hljs' title.function.invoke)
+};
+
+QSet<QString> words(const char *list)
+{
+    QSet<QString> out;
+    for (const QString &w : QString::fromLatin1(list).split(QLatin1Char(' '), Qt::SkipEmptyParts))
+        out.insert(w);
+    return out;
+}
+
+const CodeLang *codeLang(const QString &id)
+{
+    static QHash<QString, CodeLang> langs;
+    if (langs.isEmpty()) {
+        const QStringList slash{QStringLiteral("//")}, hash{QStringLiteral("#")};
+        const QString cOpen = QStringLiteral("/*"), cClose = QStringLiteral("*/");
+        auto c_like = [&](const char *kw, const char *bi, const char *defs) {
+            CodeLang l; l.keywords = words(kw); l.builtins = words(bi); l.defs = words(defs);
+            l.line = slash; l.open = cOpen; l.close = cClose; return l;
+        };
+        const char *cKw = "auto break case char const continue default do double else enum extern float for goto if inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while bool _Bool true false NULL #include #define #ifdef #ifndef #endif #if #else #pragma";
+        langs[QStringLiteral("c")] = c_like(cKw, "printf malloc free memcpy strlen sizeof fprintf scanf puts", "struct enum union");
+        langs[QStringLiteral("cpp")] = c_like((QByteArray(cKw) + " class namespace template typename public private protected virtual override final new delete this using try catch throw nullptr constexpr noexcept operator friend explicit mutable static_cast dynamic_cast reinterpret_cast const_cast decltype concept requires co_await co_return co_yield").constData(), "std cout cin endl string vector map set make_unique make_shared move printf", "class struct enum union namespace");
+        langs[QStringLiteral("cpp")].calls = true;
+        langs[QStringLiteral("objectivec")] = c_like((QByteArray(cKw) + " @interface @implementation @end @property @protocol @class self super nil YES NO id instancetype nonatomic strong weak readonly").constData(), "NSLog NSString NSArray NSDictionary NSObject alloc init", "@interface @implementation @protocol");
+        langs[QStringLiteral("csharp")] = c_like("abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using var virtual void volatile while async await get set value yield record init", "Console WriteLine ToString Task List Dictionary Math String", "class struct interface enum record namespace void");
+        langs[QStringLiteral("java")] = c_like("abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for goto if implements import instanceof int interface long native new package private protected public return short static strictfp super switch synchronized this throw throws transient try void volatile while var record true false null", "System String Math Integer List ArrayList Map HashMap println", "class interface enum record");
+        langs[QStringLiteral("jsp")] = langs[QStringLiteral("java")];
+        const char *jsKw = "as async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch this throw try typeof var void while with yield true false null undefined";
+        langs[QStringLiteral("javascript")] = c_like(jsKw, "console window document Math JSON Object Array Promise String Number require module exports parseInt setTimeout", "function class");
+        langs[QStringLiteral("javascript")].quotes = QStringLiteral("\"'`");
+        langs[QStringLiteral("javascript")].calls = true;
+        langs[QStringLiteral("jsx")] = langs[QStringLiteral("javascript")];
+        langs[QStringLiteral("jsx")].markup = true;
+        langs[QStringLiteral("typescript")] = c_like((QByteArray(jsKw) + " type interface enum implements declare namespace abstract private public protected readonly keyof infer is any string number boolean unknown never void").constData(), "console window document Math JSON Object Array Promise String Number", "function class interface type enum");
+        langs[QStringLiteral("typescript")].quotes = QStringLiteral("\"'`");
+        langs[QStringLiteral("typescript")].calls = true;
+        langs[QStringLiteral("go")] = c_like("break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr true false iota nil", "append cap close complex copy delete imag len make new panic print println real recover fmt", "func type");
+        langs[QStringLiteral("go")].quotes = QStringLiteral("\"'`");
+        langs[QStringLiteral("rust")] = c_like("as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize f32 f64 bool char str String Option Result Some None Ok Err Vec Box", "println! print! eprintln! format! vec! panic! assert! assert_eq! write! writeln! todo! unimplemented! matches!", "fn struct enum trait impl type mod union");
+        langs[QStringLiteral("rust")].calls = true;
+        langs[QStringLiteral("kotlin")] = c_like("abstract annotation as break by catch class companion const constructor continue crossinline data do else enum external false final finally for fun get if import in infix init inline inner interface internal is lateinit noinline null object open operator out override package private protected public reified return sealed set super suspend this throw true try typealias val var vararg when where while Int Long String Boolean Unit Any", "println print listOf mapOf setOf arrayOf require check", "fun class interface object");
+        langs[QStringLiteral("scala")] = c_like("abstract case catch class def do else extends false final finally for forSome if implicit import lazy match new null object override package private protected return sealed super this throw trait try true type val var while with yield Int String Unit Boolean", "println print List Map Seq Option Some None", "def class trait object");
+        langs[QStringLiteral("swift")] = c_like("associatedtype class deinit enum extension fileprivate func import init inout internal let open operator private protocol public rethrows static struct subscript typealias var break case continue default defer do else fallthrough for guard if in repeat return switch where while as catch false is nil super self Self throw throws true try Int String Bool Double Float Any", "print min max abs", "func class struct enum protocol extension");
+        langs[QStringLiteral("dart")] = c_like("abstract as assert async await break case catch class const continue covariant default deferred do dynamic else enum export extends extension external factory false final finally for get if implements import in is late library mixin new null on operator part required rethrow return set show static super switch sync this throw true try typedef var void while with yield int double String bool List Map", "print", "class enum mixin extension typedef");
+        langs[QStringLiteral("php")] = c_like("abstract and array as break callable case catch class clone const continue declare default do echo else elseif empty enddeclare endfor endforeach endif endswitch endwhile extends final finally fn for foreach function global goto if implements include include_once instanceof insteadof interface isset list match namespace new or print private protected public readonly require require_once return static switch throw trait try unset use var while xor yield true false null", "strlen count array_map json_encode explode implode", "function class interface trait");
+        langs[QStringLiteral("php")].line = QStringList{QStringLiteral("//"), QStringLiteral("#")};
+        CodeLang py; py.keywords = words("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield True False None");
+        py.builtins = words("print len range int str float list dict set tuple open enumerate zip map filter sorted isinstance super type abs min max sum any all input");
+        py.defs = words("def class"); py.line = hash;
+        langs[QStringLiteral("python")] = py;
+        CodeLang rb; rb.keywords = words("alias and begin break case class def defined? do else elsif end ensure false for if in module next nil not or redo rescue retry return self super then true undef unless until when while yield require attr_accessor");
+        rb.builtins = words("puts print p raise lambda proc"); rb.defs = words("def class module"); rb.line = hash;
+        langs[QStringLiteral("ruby")] = rb;
+        CodeLang pl; pl.keywords = words("my our local sub if elsif else unless while until for foreach last next redo return use require package and or not eq ne lt gt le ge"); pl.builtins = words("print printf say push pop shift unshift split join keys values defined"); pl.defs = words("sub package"); pl.line = hash;
+        langs[QStringLiteral("perl")] = pl;
+        CodeLang sh; sh.keywords = words("if then else elif fi case esac for while until do done in function select time return exit export local readonly declare unset shift break continue");
+        sh.builtins = words("echo printf cd pwd ls cat grep sed awk read source eval exec test set trap kill wait mkdir rm cp mv chmod sudo"); sh.defs = words("function"); sh.line = hash;
+        langs[QStringLiteral("bash")] = sh; langs[QStringLiteral("shell")] = sh;
+        CodeLang ps; ps.keywords = words("begin break catch class continue data define do dynamicparam else elseif end exit filter finally for foreach from function if in param process return switch throw trap try until using var while -eq -ne -gt -lt -ge -le -like -match -and -or -not $true $false $null");
+        ps.builtins = words("Write-Host Write-Output Get-Item Get-ChildItem Set-Item New-Object Get-Content Set-Content Where-Object ForEach-Object Select-Object"); ps.defs = words("function class filter"); ps.line = hash; ps.open = QStringLiteral("<#"); ps.close = QStringLiteral("#>"); ps.noCase = true;
+        langs[QStringLiteral("powershell")] = ps;
+        CodeLang dos; dos.keywords = words("if else goto for in do call exit not exist errorlevel defined equ neq lss leq gtr geq set setlocal endlocal shift"); dos.builtins = words("echo cd dir copy del md rd ren type cls pause start"); dos.line = QStringList{QStringLiteral("rem "), QStringLiteral("::")}; dos.noCase = true; dos.quotes = QStringLiteral("\"");
+        langs[QStringLiteral("dos")] = dos;
+        CodeLang sql; sql.keywords = words("select from where and or not insert into values update set delete create table alter drop index view join inner left right outer full on as group by order having limit offset union all distinct case when then else end is null like in between exists primary key foreign references default int integer varchar char text date datetime boolean decimal float begin commit rollback transaction with top asc desc");
+        sql.builtins = words("count sum avg min max coalesce cast convert now getdate upper lower substring len length round"); sql.line = QStringList{QStringLiteral("--")}; sql.open = cOpen; sql.close = cClose; sql.noCase = true; sql.quotes = QStringLiteral("'\"");
+        langs[QStringLiteral("sql")] = sql;
+        CodeLang kql = sql; kql.keywords = words("let where project extend summarize by take top order sort asc desc join union on kind count distinct render as and or not in has contains startswith endswith between ago now datetime timespan bin"); kql.line = slash; kql.open.clear(); kql.close.clear(); kql.noCase = false;
+        langs[QStringLiteral("kql")] = kql;
+        CodeLang r; r.keywords = words("if else repeat while function for in next break TRUE FALSE NULL Inf NaN NA return"); r.builtins = words("print c list library require paste cat length data.frame matrix apply sapply lapply"); r.defs = words("function"); r.line = hash;
+        langs[QStringLiteral("r")] = r;
+        CodeLang oct; oct.keywords = words("break case catch continue do else elseif end end_try_catch endfor endfunction endif endwhile for function global if otherwise persistent return switch try until while"); oct.builtins = words("disp printf zeros ones size length plot sum max min abs"); oct.defs = words("function"); oct.line = QStringList{QStringLiteral("%"), QStringLiteral("#")}; oct.open = QStringLiteral("%{"); oct.close = QStringLiteral("%}");
+        langs[QStringLiteral("octave")] = oct;
+        CodeLang lisp; lisp.keywords = words("defun defmacro defvar defparameter let let* lambda if cond when unless progn setq setf loop do dolist quote and or not t nil"); lisp.builtins = words("car cdr cons list format print funcall apply mapcar"); lisp.defs = words("defun defmacro"); lisp.line = QStringList{QStringLiteral(";")}; lisp.open = QStringLiteral("#|"); lisp.close = QStringLiteral("|#"); lisp.quotes = QStringLiteral("\"");
+        langs[QStringLiteral("lisp")] = lisp;
+        CodeLang vb; vb.keywords = words("addhandler addressof alias and andalso as boolean byref byte byval call case catch cbool cbyte cchar cdate cdbl cdec char cint class clng cobj const continue csbyte cshort csng cstr ctype cuint culng cushort date decimal declare default delegate dim directcast do double each else elseif end endif enum erase error event exit false finally for friend function get gettype global gosub goto handles if implements imports in inherits integer interface is isnot let lib like long loop me mod module mustinherit mustoverride mybase myclass namespace narrowing new next not nothing notinheritable notoverridable object of on operator option optional or orelse overloads overridable overrides paramarray partial private property protected public raiseevent readonly redim rem removehandler resume return sbyte select set shadows shared short single static step stop string structure sub synclock then throw to true try trycast typeof uinteger ulong ushort using variant wend when while widening with withevents writeonly xor");
+        vb.builtins = words("console writeline msgbox"); vb.defs = words("sub function class module structure"); vb.line = QStringList{QStringLiteral("'"), QStringLiteral("rem ")}; vb.noCase = true; vb.quotes = QStringLiteral("\"");
+        langs[QStringLiteral("vbnet")] = vb; langs[QStringLiteral("vbscript")] = vb;
+        CodeLang vlog; vlog.keywords = words("module endmodule input output inout wire reg logic always always_ff always_comb assign begin end if else case endcase for parameter localparam posedge negedge initial integer function endfunction task endtask generate endgenerate"); vlog.line = slash; vlog.open = cOpen; vlog.close = cClose; vlog.defs = words("module function task");
+        langs[QStringLiteral("verilog")] = vlog;
+        CodeLang vhdl; vhdl.keywords = words("library use entity is port in out inout end architecture of begin signal variable constant process if then else elsif case when others loop for generate component map std_logic std_logic_vector integer boolean downto to and or not xor"); vhdl.line = QStringList{QStringLiteral("--")}; vhdl.noCase = true; vhdl.quotes = QStringLiteral("\""); vhdl.defs = words("entity architecture process component function procedure");
+        langs[QStringLiteral("vhdl")] = vhdl;
+        CodeLang gql; gql.keywords = words("query mutation subscription fragment on type input enum interface union scalar schema extend implements directive true false null"); gql.line = hash; gql.defs = words("query mutation subscription fragment type input enum interface union scalar"); gql.quotes = QStringLiteral("\"");
+        langs[QStringLiteral("graphql")] = gql;
+        CodeLang docker; docker.keywords = words("FROM RUN CMD LABEL MAINTAINER EXPOSE ENV ADD COPY ENTRYPOINT VOLUME USER WORKDIR ARG ONBUILD STOPSIGNAL HEALTHCHECK SHELL AS"); docker.line = hash; docker.noCase = true;
+        langs[QStringLiteral("dockerfile")] = docker;
+        CodeLang http; http.keywords = words("GET POST PUT PATCH DELETE HEAD OPTIONS HTTP/1.1 HTTP/2"); http.quotes.clear();
+        langs[QStringLiteral("http")] = http;
+        CodeLang yaml; yaml.keywords = words("true false null yes no on off"); yaml.line = hash; yaml.jsonKeys = true;
+        langs[QStringLiteral("yaml")] = yaml;
+        CodeLang json; json.jsonKeys = true; json.quotes = QStringLiteral("\"");
+        langs[QStringLiteral("json")] = json;
+        CodeLang xml; xml.markup = true; xml.open = QStringLiteral("<!--"); xml.close = QStringLiteral("-->"); xml.quotes = QStringLiteral("\"'");
+        langs[QStringLiteral("xml")] = xml; langs[QStringLiteral("html")] = xml;
+        CodeLang css; css.css = true; css.open = cOpen; css.close = cClose; css.keywords = words("@media @import @font-face @keyframes @supports @charset !important");
+        langs[QStringLiteral("css")] = css;
+        CodeLang scss = css; scss.line = slash; scss.keywords.unite(words("@mixin @include @extend @use @forward @if @else @each @for @function @return"));
+        langs[QStringLiteral("scss")] = scss;
+        CodeLang tex; tex.line = QStringList{QStringLiteral("%")}; tex.quotes.clear();
+        langs[QStringLiteral("latex")] = tex;
+        CodeLang md; md.quotes = QStringLiteral("`");
+        langs[QStringLiteral("markdown")] = md;
+    }
+    auto it = langs.constFind(id);
+    return it == langs.constEnd() ? nullptr : &*it;
+}
+
+// Teams' "Auto-detect language" (on for a new code block): the language
+// the block's words point to most, as highlight.js' highlightAuto picks one
+// ("let x = 1; // hi" stays Plain Text; a few lines of Rust become Rust;
+// seen on winpc 2026-11-10). Each keyword or built-in scores by how few
+// languages share it, so words only one language uses decide; nothing
+// changes until one language clearly leads.
+QString detectLanguage(const QString &code)
+{
+    static const QStringList ids = {
+        QStringLiteral("bash"), QStringLiteral("c"), QStringLiteral("cpp"), QStringLiteral("csharp"), QStringLiteral("css"),
+        QStringLiteral("dart"), QStringLiteral("dockerfile"), QStringLiteral("dos"), QStringLiteral("go"), QStringLiteral("graphql"),
+        QStringLiteral("java"), QStringLiteral("javascript"), QStringLiteral("json"), QStringLiteral("kotlin"),
+        QStringLiteral("lisp"), QStringLiteral("objectivec"), QStringLiteral("octave"), QStringLiteral("perl"), QStringLiteral("php"),
+        QStringLiteral("powershell"), QStringLiteral("python"), QStringLiteral("r"), QStringLiteral("ruby"), QStringLiteral("rust"),
+        QStringLiteral("scala"), QStringLiteral("scss"), QStringLiteral("sql"), QStringLiteral("swift"), QStringLiteral("typescript"),
+        QStringLiteral("vbnet"), QStringLiteral("verilog"), QStringLiteral("vhdl"), QStringLiteral("xml"), QStringLiteral("yaml")};
+    QHash<QString, int> shared; // word -> how many languages know it
+    for (const QString &id : ids) {
+        const CodeLang *l = codeLang(id);
+        for (const QString &w : l->keywords)
+            ++shared[l->noCase ? w.toLower() : w];
+        for (const QString &w : l->builtins)
+            ++shared[l->noCase ? w.toLower() : w];
+    }
+    QStringList tokens;
+    QString cur;
+    for (const QChar ch : code + QLatin1Char(' ')) {
+        if (ch.isLetterOrNumber() || ch == QLatin1Char('_') || ch == QLatin1Char('!') || ch == QLatin1Char('@') || ch == QLatin1Char('#') || ch == QLatin1Char('$')) {
+            cur += ch;
+        } else {
+            if (!cur.isEmpty())
+                tokens << cur;
+            cur.clear();
+        }
+    }
+    QString best, second;
+    double bestScore = 0, secondScore = 0;
+    for (const QString &id : ids) {
+        const CodeLang *l = codeLang(id);
+        double score = 0;
+        for (const QString &t : tokens) {
+            const QString k = l->noCase ? t.toLower() : t;
+            const bool hit = l->keywords.contains(k) || l->builtins.contains(k) || (l->noCase && (l->keywords.contains(t.toUpper()) || l->keywords.contains(t)));
+            if (hit)
+                score += 1.0 / qMax(1, shared.value(k, 1));
+        }
+        // Markup and data formats show by their shape.
+        if (l->markup && code.contains(QLatin1String("</")))
+            score += 2;
+        if (id == u"json" && code.trimmed().startsWith(QLatin1Char('{')) && code.contains(QLatin1String("\":")))
+            score += 2;
+        if (l->css && code.contains(QLatin1Char('{')) && code.contains(QLatin1Char(':')) && code.contains(QLatin1Char(';')) && !code.contains(QLatin1Char('(')))
+            score += 1;
+        if (score > bestScore) {
+            second = best; secondScore = bestScore;
+            best = id; bestScore = score;
+        } else if (score > secondScore) {
+            second = id; secondScore = score;
+        }
+    }
+    return bestScore >= 2.0 && bestScore >= secondScore * 1.5 ? best : QString();
+}
+
+class CodeHighlighter : public QSyntaxHighlighter
+{
+public:
+    CodeHighlighter(QTextDocument *doc, QQuickItem *edit) : QSyntaxHighlighter(doc), m_edit(edit) {}
+
+protected:
+    void highlightBlock(const QString &text) override
+    {
+        setCurrentBlockState(0);
+        const QTextBlockFormat bf = currentBlock().blockFormat();
+        if (!bf.boolProperty(CodeBlockP))
+            return;
+        const CodeLang *lang = codeLang(bf.stringProperty(BlockLang));
+        if (!lang)
+            return;
+        const bool dark = m_edit && m_edit->property("color").value<QColor>().lightness() > 128;
+        const QColor str(dark ? "#54B054" : "#237B4B"), kw(dark ? "#7F85F5" : "#4F52B2"),
+            fn(dark ? "#E37D80" : "#C4314B"), cm(dark ? "#ADADAD" : "#707070");
+        auto paint = [&](int from, int len, const QColor &c) {
+            QTextCharFormat f = format(from);
+            f.setForeground(c);
+            setFormat(from, len, f);
+        };
+        const int n = text.size();
+        int i = 0;
+        // Inside a block comment carried over from the line above.
+        if (previousBlockState() == 1 && !lang->close.isEmpty()) {
+            const int end = text.indexOf(lang->close);
+            if (end < 0) {
+                paint(0, n, cm);
+                setCurrentBlockState(1);
+                return;
+            }
+            paint(0, end + lang->close.size(), cm);
+            i = end + lang->close.size();
+        }
+        bool nextIsTitle = false;
+        bool inTag = false;
+        while (i < n) {
+            const QChar ch = text.at(i);
+            const QStringView rest = QStringView(text).mid(i);
+            if (!lang->open.isEmpty() && rest.startsWith(lang->open)) {
+                const int end = text.indexOf(lang->close, i + lang->open.size());
+                if (end < 0) {
+                    paint(i, n - i, cm);
+                    setCurrentBlockState(1);
+                    return;
+                }
+                paint(i, end + lang->close.size() - i, cm);
+                i = end + lang->close.size();
+                continue;
+            }
+            bool lineComment = false;
+            for (const QString &l : lang->line) {
+                // "#" opens a comment only at a word boundary ("a#b" isn't).
+                if (rest.startsWith(l, lang->noCase ? Qt::CaseInsensitive : Qt::CaseSensitive)
+                    && (l.size() > 1 || i == 0 || !text.at(i - 1).isLetterOrNumber())) {
+                    lineComment = true;
+                    break;
+                }
+            }
+            if (lineComment && !inTag) {
+                paint(i, n - i, cm);
+                return;
+            }
+            if (lang->quotes.contains(ch)) {
+                int j = i + 1;
+                while (j < n && text.at(j) != ch) {
+                    if (text.at(j) == QLatin1Char('\\'))
+                        ++j;
+                    ++j;
+                }
+                const int end = qMin(j + 1, n);
+                // A JSON / YAML key ("key":) is an attribute.
+                int k = end;
+                while (k < n && text.at(k).isSpace())
+                    ++k;
+                const bool key = lang->jsonKeys && k < n && text.at(k) == QLatin1Char(':');
+                paint(i, end - i, key ? fn : str);
+                i = end;
+                continue;
+            }
+            if (lang->markup && ch == QLatin1Char('<')) {
+                int j = i + 1;
+                if (j < n && (text.at(j) == QLatin1Char('/') || text.at(j) == QLatin1Char('?') || text.at(j) == QLatin1Char('!')))
+                    ++j;
+                const int start = j;
+                while (j < n && (text.at(j).isLetterOrNumber() || text.at(j) == QLatin1Char('-') || text.at(j) == QLatin1Char(':') || text.at(j) == QLatin1Char('.')))
+                    ++j;
+                if (j > start) {
+                    paint(start, j - start, kw);
+                    inTag = true;
+                    i = j;
+                    continue;
+                }
+            }
+            if (inTag && ch == QLatin1Char('>')) {
+                inTag = false;
+                ++i;
+                continue;
+            }
+            if (ch.isDigit() && (i == 0 || !(text.at(i - 1).isLetterOrNumber() || text.at(i - 1) == QLatin1Char('_')))) {
+                int j = i + 1;
+                while (j < n && (text.at(j).isLetterOrNumber() || text.at(j) == QLatin1Char('.') || text.at(j) == QLatin1Char('_')))
+                    ++j;
+                paint(i, j - i, str);
+                i = j;
+                continue;
+            }
+            const bool wordStart = ch.isLetter() || ch == QLatin1Char('_') || ch == QLatin1Char('$') || ch == QLatin1Char('@') || ch == QLatin1Char('#') || ch == QLatin1Char('-');
+            if (wordStart && (ch != QLatin1Char('-') || lang->noCase)) {
+                int j = i + 1;
+                // Hyphens join words in CSS, markup and case-blind languages
+                // (font-size, data-id, Write-Host, -eq).
+                while (j < n && (text.at(j).isLetterOrNumber() || text.at(j) == QLatin1Char('_')
+                                 || (text.at(j) == QLatin1Char('-') && (lang->css || lang->markup || lang->noCase))))
+                    ++j;
+                // Rust's macros and Ruby's predicates end in "!" / "?".
+                if (j < n && (text.at(j) == QLatin1Char('!') || text.at(j) == QLatin1Char('?'))
+                    && (lang->builtins.contains(text.mid(i, j - i + 1)) || lang->keywords.contains(text.mid(i, j - i + 1))))
+                    ++j;
+                const QString w = text.mid(i, j - i);
+                const QString key = lang->noCase ? w.toLower() : w;
+                auto has = [&](const QSet<QString> &set) {
+                    return set.contains(key) || (lang->noCase && set.contains(w.toUpper())) || set.contains(w);
+                };
+                if (inTag) {
+                    paint(i, j - i, fn); // an attribute
+                } else if (lang->css) {
+                    int k = j;
+                    while (k < n && text.at(k).isSpace())
+                        ++k;
+                    if (has(lang->keywords))
+                        paint(i, j - i, kw);
+                    else if (k < n && text.at(k) == QLatin1Char(':') && text.indexOf(QLatin1Char('{')) < 0)
+                        paint(i, j - i, fn); // a property
+                } else if (nextIsTitle) {
+                    paint(i, j - i, fn);
+                    nextIsTitle = false;
+                } else if (has(lang->keywords)) {
+                    paint(i, j - i, kw);
+                    nextIsTitle = has(lang->defs);
+                } else if (has(lang->builtins)) {
+                    paint(i, j - i, fn);
+                } else if (lang->calls && j < n && text.at(j) == QLatin1Char('(')) {
+                    paint(i, j - i, fn);
+                } else if (lang->jsonKeys) {
+                    int k = j;
+                    while (k < n && text.at(k).isSpace())
+                        ++k;
+                    if (k < n && text.at(k) == QLatin1Char(':'))
+                        paint(i, j - i, fn);
+                }
+                i = j;
+                continue;
+            }
+            ++i;
+        }
+    }
+
+private:
+    QPointer<QQuickItem> m_edit;
+};
+
 QTextDocument *documentOf(void *helper)
 {
     auto *item = static_cast<QQuickItem *>(helper);
@@ -85,7 +443,11 @@ QTextDocument *documentOf(void *helper)
     if (!edit)
         return nullptr;
     auto *qdoc = edit->property("textDocument").value<QQuickTextDocument *>();
-    return qdoc ? qdoc->textDocument() : nullptr;
+    QTextDocument *doc = qdoc ? qdoc->textDocument() : nullptr;
+    // Code blocks are coloured as Teams' compose colours them.
+    if (doc && !doc->findChild<QSyntaxHighlighter *>(QString(), Qt::FindDirectChildrenOnly))
+        new CodeHighlighter(doc, edit);
+    return doc;
 }
 
 QString escaped(const QString &s)
@@ -428,6 +790,7 @@ extern "C" void ost_rich_apply(void *helper, int a, int b, const char *op_utf8, 
         QTextBlockFormat bf;
         bf.setProperty(CodeBlockP, true);
         bf.setProperty(BlockLang, QStringLiteral("plaintext"));
+        bf.setProperty(CodeAuto, true);
         QTextCharFormat mono;
         mono.setFontFamilies({QString::fromLatin1(Mono)});
         mono.setProperty(QTextFormat::FontPixelSize, 14);
@@ -489,14 +852,20 @@ extern "C" void ost_rich_apply(void *helper, int a, int b, const char *op_utf8, 
         QTextCursor at(doc);
         at.movePosition(QTextCursor::End);
         at.insertBlock(QTextBlockFormat(), QTextCharFormat());
-    } else if (op == u"lang") {
-        // The whole code block takes the language.
+    } else if (op == u"lang" || op == u"autolang") {
+        // The whole code block takes the language (picking one ends
+        // auto-detection), or turns Auto-detect language on or off.
         QTextBlock blk = doc->findBlock(blocks.selectionStart());
         while (blk.previous().isValid() && blk.previous().blockFormat().boolProperty(CodeBlockP))
             blk = blk.previous();
         for (; blk.isValid() && blk.blockFormat().boolProperty(CodeBlockP); blk = blk.next()) {
             QTextBlockFormat bf = blk.blockFormat();
-            bf.setProperty(BlockLang, arg);
+            if (op == u"lang") {
+                bf.setProperty(BlockLang, arg);
+                bf.setProperty(CodeAuto, false);
+            } else {
+                bf.setProperty(CodeAuto, arg == u"1");
+            }
             QTextCursor(blk).setBlockFormat(bf);
         }
     }
@@ -564,13 +933,28 @@ extern "C" char *ost_rich_regions(void *helper)
         const int mark = q ? QuoteBlock : CodeBlockP;
         const int start = b.position();
         int end = start, lines = 0;
-        const QString lang = f.stringProperty(BlockLang);
+        QString lang = f.stringProperty(BlockLang);
+        const bool autoLang = code && f.boolProperty(CodeAuto);
+        const QTextBlock first = b;
+        QStringList text;
         for (; b.isValid() && b.blockFormat().boolProperty(mark); b = b.next()) {
             end = b.position() + qMax(0, b.length() - 1);
+            text << b.text();
             ++lines;
         }
-        parts << QStringLiteral("{\"kind\":\"%1\",\"start\":%2,\"end\":%3,\"lang\":\"%4\",\"lines\":%5}")
-                     .arg(q ? "quote" : "code").arg(start).arg(end).arg(lang).arg(lines);
+        if (autoLang) {
+            const QString found = detectLanguage(text.join(QLatin1Char('\n')));
+            if (!found.isEmpty() && found != lang) {
+                lang = found;
+                for (QTextBlock l = first; l.isValid() && l.blockFormat().boolProperty(CodeBlockP); l = l.next()) {
+                    QTextBlockFormat lf = l.blockFormat();
+                    lf.setProperty(BlockLang, found);
+                    QTextCursor(l).setBlockFormat(lf);
+                }
+            }
+        }
+        parts << QStringLiteral("{\"kind\":\"%1\",\"start\":%2,\"end\":%3,\"lang\":\"%4\",\"lines\":%5,\"auto\":%6}")
+                     .arg(q ? "quote" : "code").arg(start).arg(end).arg(lang).arg(lines).arg(autoLang ? "true" : "false");
     }
     return dup(QStringLiteral("[") + parts.join(QLatin1Char(',')) + QStringLiteral("]"));
 }

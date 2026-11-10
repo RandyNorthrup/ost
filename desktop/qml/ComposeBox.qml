@@ -159,6 +159,41 @@ Item {
         try { richState = JSON.parse(rich.state(input.cursorPosition)) } catch (e) { richState = ({}) }
         try { richRegions = JSON.parse(rich.regions()) } catch (e) { richRegions = [] }
     }
+    // The code card's More options (Teams' code block menu, measured on
+    // winpc 2026-11-10: 195 wide; "Display option" 32 tall in #616161, then
+    // the "Auto-detect language" check item, its check 6 in and the label
+    // at 50). Teams also offers "Make this collaborative" (a Loop
+    // component; OST has no Loop yet).
+    Popup {
+        id: codeMenu
+        property var region: null
+        parent: Overlay.overlay
+        width: 195; padding: 4
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        contentItem: Column {
+            Item {
+                width: parent.width; height: 32
+                Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: "Display option"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            }
+            Rectangle {
+                width: parent.width; height: 32; radius: 4
+                color: autoHover.hovered ? theme.menuHover : "transparent"
+                FluentIcon { visible: !!codeMenu.region && codeMenu.region.auto === true; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.textStrong }
+                Text { x: 50; anchors.verticalCenter: parent.verticalCenter; text: "Auto-detect language"; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                HoverHandler { id: autoHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    onTapped: {
+                        const r = codeMenu.region
+                        codeMenu.close()
+                        if (r) { rich.apply(r.start, r.start, "autolang", r.auto ? "0" : "1"); root.refreshRichState() }
+                    }
+                }
+                Accessible.role: Accessible.CheckBox
+                Accessible.checked: !!codeMenu.region && codeMenu.region.auto === true
+                Accessible.name: "Auto-detect language"
+            }
+        }
+    }
     // Teams' code block languages (id, name), as its editor lists them.
     readonly property var codeLanguages: [["plaintext", "Plain Text"], ["bash", "Bash"], ["c", "C"], ["cpp", "C++"], ["csharp", "C#"], ["css", "CSS"],
         ["dart", "Dart"], ["dockerfile", "DockerFile"], ["dos", "DOS"], ["go", "Go"], ["graphql", "GraphQL"], ["html", "HTML"], ["http", "HTTP"],
@@ -550,18 +585,29 @@ Item {
                     Item {
                         visible: region.code
                         width: parent.width; height: 32
-                        FluentIcon { x: 10.7; anchors.verticalCenter: parent.verticalCenter; name: "code-block-20"; size: 20; color: theme.textSecondary }
+                        // Teams: the icon, language and chevron #424242
+                        // (measured 2026-11-10), More options at the end.
+                        FluentIcon { x: 10.7; anchors.verticalCenter: parent.verticalCenter; name: "code-block-20"; size: 20; color: theme.textStrong }
                         Row {
                             x: 36.7; anchors.verticalCenter: parent.verticalCenter; spacing: 4
                             Text {
                                 text: region.modelData.lang ? root.codeLanguageName(region.modelData.lang) : "Plain Text"
-                                font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                                font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
                             }
-                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textSecondary }
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { langMenu.region = region.modelData; const p = region.mapToItem(Overlay.overlay, 36.7, 32); langMenu.x = p.x; langMenu.y = p.y; langMenu.open() } }
                         }
                         Rectangle { y: 31.3; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#666666") }
+                        Rectangle {
+                            x: parent.width - 3.7 - 32; y: 0; width: 32; height: 31.3; radius: 4
+                            color: codeMoreHover.hovered ? theme.menuHover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: codeMenu.opened && codeMenu.region === region.modelData ? theme.brand : theme.textStrong }
+                            HoverHandler { id: codeMoreHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { codeMenu.region = region.modelData; const p = parent.mapToItem(Overlay.overlay, parent.width - codeMenu.width, parent.height + 4); codeMenu.x = p.x; codeMenu.y = p.y; codeMenu.open() } }
+                            Accessible.role: Accessible.ButtonMenu
+                            Accessible.name: "More options"
+                        }
                     }
                     Repeater {
                         model: region.code ? region.modelData.lines : 0

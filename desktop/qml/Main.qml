@@ -3796,7 +3796,23 @@ Window {
                 else if (step === 13 && Qt.application.arguments.indexOf("--threads-send") >= 0) backend.sendThreadReply(threadsPane.channelId, threadsPane.rootId, "<p>" + Qt.application.arguments.find(a => a.startsWith("--threads-text=")).slice(15) + "</p>", "[]", "", Qt.application.arguments.indexOf("--threads-channel") >= 0)
                 else if (step === 14 && Qt.application.arguments.some(a => a.startsWith("--threads-html="))) { backend.setNextPost(JSON.stringify({ threads: true })); backend.sendRich(decodeURIComponent(Qt.application.arguments.find(a => a.startsWith("--threads-html=")).slice(15))) }
                 else if (step === 14 && Qt.application.arguments.some(a => a.startsWith("--threads-subject="))) { conversation.composeBox.formatting = true; conversation.composeBox.subject = Qt.application.arguments.find(a => a.startsWith("--threads-subject=")).slice(18); const body = Qt.application.arguments.find(a => a.startsWith("--threads-root=")); conversation.input.text = body ? body.slice(15) : "" }
+                else if (step === 15 && Qt.application.arguments.some(a => a.startsWith("--threads-code"))) {
+                    const mode = (Qt.application.arguments.find(a => a.startsWith("--threads-code=")) || "=rust").split("=")[1]
+                    const c = conversation.composeBox, ed = conversation.input; c.formatting = true
+                    const lines = mode === "short" ? ["let x = 1; // hi"] : ["use std::io;", "fn main() {", "    let mut s = String::new();", "    io::stdin().read_line(&mut s).unwrap();", "}"]
+                    // (insert() of HTML into an empty code line resets its
+                    // format, which typing doesn't: start under a plain line.)
+                    ed.insert(0, "Code:")
+                    for (const l of lines) { ed.cursorPosition = ed.length; c.format("codeblock", ""); ed.cursorPosition = ed.length; ed.insert(ed.length, c.escapeHtml(l).replace(/ /g, "&nbsp;")) }
+                    if (mode === "rust") c.format("lang", "rust")
+                    c.refreshRichState()
+                    console.warn("TH code", mode, JSON.stringify(c.richRegions))
+                }
+                
+                // Leave no draft behind.
+                else if (step === 19 && (Qt.application.arguments.some(a => a.startsWith("--threads-code")) || Qt.application.arguments.indexOf("--threads-clear") >= 0)) { conversation.composeBox.clear(); conversation.composeBox.resetPost(); conversation.composeBox.formatting = false; backend.setDraft(backend.currentChatId, "") }
                 else if (step === 16 && Qt.application.arguments.some(a => a.startsWith("--threads-subject="))) shot("th-subject")
+                else if (step === 16 && Qt.application.arguments.some(a => a.startsWith("--threads-code"))) shot("th-code")
                 else if (step === 18 && Qt.application.arguments.some(a => a.startsWith("--threads-subject=")) && Qt.application.arguments.some(a => a.startsWith("--threads-root="))) conversation.sendCompose()
                 else if (step === 14 && Qt.application.arguments.some(a => a.startsWith("--threads-root="))) { conversation.input.text = Qt.application.arguments.find(a => a.startsWith("--threads-root=")).slice(15); conversation.sendCompose() }
                 else if (step === 15 && Qt.application.arguments.indexOf("--threads-unread") >= 0) { const t = threadsPane.threads.find(t => t.id === threadsPane.rootId); backend.setThreadRead(t.id, "unread", t.thread_last_id) }
