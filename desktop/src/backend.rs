@@ -132,6 +132,10 @@ pub mod qobject {
         /// When the status you set ends (ISO UTC), or "" (Teams' "Until …"
         /// for paused notifications).
         #[qproperty(QString, my_status_ends)]
+        /// The open profile card: Graph's profile with manager, reports,
+        /// schedule, and presence {availability, activity, lastActive,
+        /// note, outOfOffice, workLocation}; {loading} while it loads.
+        #[qproperty(QString, profile_card_json)]
         /// Settings' synced values: {props, mt, loaded}.
         #[qproperty(QString, settings_json)]
         /// The last setting that failed to save, or "".
@@ -1361,6 +1365,15 @@ pub mod qobject {
         #[qinvokable]
         fn mic_level(self: Pin<&mut Backend>) -> i32;
 
+        /// Ask for someone's profile card to open (a picture was clicked).
+        #[qinvokable]
+        fn request_profile(self: Pin<&mut Backend>, mri: &QString);
+        #[qsignal]
+        fn profile_requested(self: Pin<&mut Backend>, mri: QString);
+        /// Load someone's profile card (an MRI "8:orgid:…" or object id)
+        /// into profile_card_json.
+        #[qinvokable]
+        fn load_profile_card(self: Pin<&mut Backend>, who: &QString);
         /// Settings ▸ Notifications ▸ Test notification: Teams' sample.
         #[qinvokable]
         fn test_notification(self: Pin<&mut Backend>);
@@ -1461,6 +1474,7 @@ pub struct BackendRust {
     my_note_json: QString,
     my_status_ends: QString,
     settings_json: QString,
+    profile_card_json: QString,
     settings_error: QString,
     my_work_location: QString,
     thread_windows_json: QString,
@@ -11207,6 +11221,46 @@ impl qobject::Backend {
 
     pub fn mic_level(self: Pin<&mut Self>) -> i32 {
         teams_cli::calling::audio::mic_level() as i32
+    }
+
+    pub fn request_profile(self: Pin<&mut Self>, mri: &QString) {
+        self.profile_requested(mri.clone());
+    }
+
+    pub fn load_profile_card(mut self: Pin<&mut Self>, who: &QString) {
+        let who = who.to_string();
+        let oid = who.trim_start_matches("8:orgid:").to_string();
+        self.as_mut().set_profile_card_json(QString::from(json!({ "id": oid, "loading": true }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let mut card = api::profile::profile_card(&client, &oid).await?;
+                let http = reqwest::Client::new();
+                if let Ok(list) = teams_cli::api::presence::get_presences(&http, &[format!("8:orgid:{oid}")]).await
+                    && let Some(p) = list.into_iter().next()
+                {
+                    card["presence"] = json!({
+                        "availability": p.availability, "activity": p.activity, "lastActive": p.last_active,
+                        "note": p.note_text, "noteHtml": p.note_html, "outOfOffice": p.out_of_office, "workLocation": p.work_location,
+                    });
+                }
+                if let Some(start) = card["schedule"]["start"].as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    && let Some(view) = card["schedule"]["view"].as_str()
+                {
+                    card["schedule"]["nextFree"] = json!(api::profile::next_free(view, start.with_timezone(&chrono::Utc)).map(|t| t.to_rfc3339()));
+                }
+                anyhow::Ok(card)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(c) => c,
+                    Err(e) => json!({ "id": oid, "error": short_error(&e) }),
+                };
+                this.as_mut().set_profile_card_json(QString::from(v.to_string().as_str()));
+            });
+        });
     }
 
     pub fn test_notification(self: Pin<&mut Self>) {

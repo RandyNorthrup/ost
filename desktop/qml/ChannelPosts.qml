@@ -138,6 +138,7 @@ Item {
                         x: 18; y: 16; size: 32
                         name: card.post ? card.post.sender : ""
                         photoId: card.post ? card.post.sender_mri : ""
+                        opensProfile: true
                     }
                     Text {
                         visible: !postEdit.active
@@ -328,6 +329,7 @@ Item {
                                     visible: !rep.editing
                                     x: 18; y: 0; size: 20
                                     name: rep.modelData.sender; photoId: rep.modelData.sender_mri
+                                    opensProfile: true
                                 }
                                 Text {
                                     visible: !rep.editing

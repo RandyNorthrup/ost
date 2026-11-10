@@ -1,9 +1,11 @@
 ---
 id: TASK-0089
 title: Profile cards as Teams (live persona card)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-10T09:07:00Z'
+updated_date: '2026-11-10T11:00:00Z'
 labels:
   - desktop
   - parity

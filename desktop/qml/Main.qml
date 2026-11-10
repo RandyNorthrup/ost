@@ -3762,6 +3762,18 @@ Window {
                 else if (step === 18) Qt.quit()
                 step++; return
             }
+            // =profile:<mri>: open that person's profile card (pc-overview),
+            // its Profile (pc-profile) and Organization (pc-org) tabs.
+            if (mode.indexOf("profile:") === 0) {
+                if (step === 1) backend.requestProfile(mode.slice(8))
+                else if (step === 4) { console.warn("PC", backend.profileCardJson.slice(0, 600)); shot("pc-overview") }
+                else if (step === 5) profileCard.tab = "profile"
+                else if (step === 6) shot("pc-profile")
+                else if (step === 7) profileCard.tab = "organization"
+                else if (step === 8) shot("pc-org")
+                else if (step === 9) { profileCard.close(); Qt.quit() }
+                step++; return
+            }
             if (mode === "wl-office" || mode === "wl-clear") { if (step === 1) titleBar.pauseForTest(mode === "wl-office" ? "Office" : "clear"); else if (step === 4) { console.warn("WL", mode, backend.myWorkLocation); Qt.quit() } step++; return }
             if (mode === "resume") { if (step === 1) titleBar.pauseForTest("resume"); else if (step === 4) { log("resumed"); Qt.quit() } step++; return }
             if (step === 1) { log("start"); titleBar.pauseForTest("flyout") }
@@ -4633,6 +4645,25 @@ Window {
     // away when it changes again; Change settings opens Privacy's priority
     // access.
     property string bannerAvailability: ""
+    // A person's profile card, from their picture anywhere it opens one.
+    ProfileCard {
+        id: profileCard
+        onStartChat: (mri, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(mri.replace("8:orgid:", ""), name) }
+        onStartCall: (mri, name, video) => { rail.current = "chat"; window.composing = false; window.pendingCall = video ? "video" : "audio"; backend.openChatWith(mri.replace("8:orgid:", ""), name) }
+        onQuickMessage: (mri, name, text) => { window.pendingQuickMessage = text; backend.openChatWith(mri.replace("8:orgid:", ""), name) }
+    }
+    Connections { target: backend; function onProfileRequested(mri) { profileCard.show(mri) } }
+    // Started from a profile card: call or send once the 1:1 chat is open.
+    property string pendingCall: ""
+    property string pendingQuickMessage: ""
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() {
+            if (!backend.currentChatId) return
+            if (window.pendingCall) { const v = window.pendingCall === "video"; window.pendingCall = ""; Qt.callLater(() => v ? backend.startVideoCall() : backend.startCall()) }
+            if (window.pendingQuickMessage) { const t = window.pendingQuickMessage; window.pendingQuickMessage = ""; Qt.callLater(() => backend.sendMessage(t)) }
+        }
+    }
     // Settings ▸ Notifications ▸ Flash taskbar when notifications are received.
     Connections { target: backend; function onFlashRequested() { if (!window.active) window.alert(0) } }
     property bool dndBanner: false

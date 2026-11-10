@@ -724,6 +724,10 @@ pub struct UserPresence {
     /// Where they work today (`workLocation.location`: "Office", "Remote"
     /// or "TimeOff"), or "".
     pub work_location: String,
+    /// When they were last active (`lastActiveTime`, ISO), or "".
+    pub last_active: String,
+    /// Out of office (`calendarData.isOutOfOffice`).
+    pub out_of_office: bool,
 }
 
 /// Look up several users' presence by MRI (`8:orgid:<oid>`).
@@ -781,6 +785,8 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                     .filter(|_| p.pointer("/forcedAvailability/availability").is_some())
                     .unwrap_or_default()
                     .to_string(),
+                last_active: p.get("lastActiveTime").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                out_of_office: p.pointer("/calendarData/isOutOfOffice").and_then(|x| x.as_bool()).unwrap_or(false),
                 work_location: p
                     .pointer("/workLocation/location")
                     .and_then(|x| x.as_str())

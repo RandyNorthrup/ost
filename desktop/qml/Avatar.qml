@@ -39,6 +39,14 @@ Rectangle {
     /// Presence availability (Available, Busy, DoNotDisturb, Away,
     /// BeRightBack, Offline…); empty hides the badge.
     property string presence: ""
+    /// Clicking opens the person's profile card (Teams does this for
+    /// people's pictures in messages, the people pane and 1:1 headers).
+    property bool opensProfile: false
+    HoverHandler { enabled: root.opensProfile && root.photoId.indexOf("8:orgid:") === 0; cursorShape: Qt.PointingHandCursor }
+    TapHandler {
+        enabled: root.opensProfile && root.photoId.indexOf("8:orgid:") === 0
+        onTapped: backend.requestProfile(root.photoId)
+    }
     width: size
     height: size
     radius: square ? squareRadius : size / 2

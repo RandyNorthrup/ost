@@ -22,6 +22,7 @@ pub mod outbox;
 pub mod planner;
 pub mod preferences;
 pub mod presence;
+pub mod profile;
 pub mod store;
 pub mod store_content;
 pub mod channels;

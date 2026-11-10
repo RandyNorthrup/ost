@@ -552,6 +552,7 @@ Rectangle {
             x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32
             name: root.chatName; presence: root.chatPresence
             photoId: root.chatPhotoId
+            opensProfile: !root.isGroup
             group: root.isGroup && !root.chatPhotoId
             // Teams: the calendar glyph filling a 32 px #C5CBFA circle.
             meeting: root.isMeetingChat
@@ -1468,6 +1469,7 @@ Rectangle {
                 x: root.gutL; y: msg.bubbleY
                 size: 32; name: msg.modelData.sender
                 photoId: msg.modelData.sender_mri || ""
+                opensProfile: true
                 // Teams shows the sender's presence on message avatars too.
                 presence: msg.modelData.sender_mri && msg.modelData.sender_mri === root.chatPhotoId ? root.chatPresence : ""
             }
@@ -2807,6 +2809,7 @@ Rectangle {
                         x: 12; y: 7; size: 32
                         name: prow.modelData.name
                         photoId: prow.modelData.mri
+                        opensProfile: !prow.modelData.me
                         presence: prow.modelData.me ? root.myPresence : prow.modelData.presence || (prow.modelData.mri === root.chatPhotoId ? root.chatPresence : "")
                     }
                     Text {

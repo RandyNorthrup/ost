@@ -141,6 +141,7 @@ fn main() {
         "qml/PauseNotificationsDialog.qml",
         "qml/SettingsParts.qml",
         "qml/OofPage.qml",
+        "qml/ProfileCard.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
