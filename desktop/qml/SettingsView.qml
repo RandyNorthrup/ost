@@ -347,57 +347,155 @@ Rectangle {
                 trailing: Component { SettingsParts.Toggle { on: root.prop("suggestedRepliesSettings", ["suggestionsEnabled"], true) !== false; accessibleName: "Suggested replies"; onToggled: v => root.setProp("suggestedRepliesSettings", "suggestionsEnabled", v) } }
             }
 
-            // ---- Notifications and activity (OST's own for now) ----
+            // ---- Notifications and activity ----
+            // Teams' page (measured and captured on winpc 2026-11-10):
+            // synced settings in userPersonalSettings' toastSettings,
+            // soundsSettings, emailSettings and activityGenerationSettings;
+            // the dismiss time and taskbar flash stay on this device.
+            Item {
+                id: notif
+                visible: false
+                function ts(k, d) { return root.prop("userPersonalSettings", ["toastSettings", k], d) }
+                function setTs(k, v) { root.setProp("userPersonalSettings", "toastSettings." + k, v) }
+                function setMany(o) { backend.changeSetting("prop", "userPersonalSettings", JSON.stringify(o)) }
+                // A notification kind's dropdown: 0 Activity and banner, 1 Activity only, 2 Off.
+                function level(keys, dflt) {
+                    const t = ts(keys[0], undefined), a = root.prop("userPersonalSettings", ["activityGenerationSettings", keys[0]], undefined)
+                    if (t === undefined && a === undefined) return dflt
+                    return t === true ? 0 : a === false ? 2 : 1
+                }
+                function setLevel(keys, i) {
+                    const toast = {}, act = {}, mail = {}
+                    for (const k of keys) { toast[k] = i === 0; act[k] = i !== 2; mail[k] = i === 0 }
+                    setMany({ toastSettings: toast, activityGenerationSettings: act, emailSettings: mail })
+                }
+                readonly property var levels: [{ label: "Show in Activity and banner" }, { label: "Show in Activity" }, { label: "Off" }]
+            }
+            SectionTitle { visible: root.page === "notifications"; text: "General" }
             SettingsParts.Card {
                 visible: root.page === "notifications"
-                icon: "alert-20"; title: "Notifications"
-                subtitle: "Show a desktop notification for new messages when OST isn't the window you're using."
-                trailing: Component { SettingsParts.Toggle { on: root.local("notifications", "on") !== "off"; accessibleName: "Notifications"; onToggled: v => { backend.setSetting("notifications", v ? "on" : "off"); on = v; root.notifyOn = v } } }
+                icon: "alert-off-20"; title: "Mute all notifications (except for calls and meetings)"
+                readonly property bool muted: notif.ts("muteGenericNotifications", "Off") === "On"
+                trailing: Component { SettingsParts.Toggle { on: notif.ts("muteGenericNotifications", "Off") === "On"; accessibleName: "Mute all notifications (except for calls and meetings)"; onToggled: v => notif.setTs("muteGenericNotifications", v ? "On" : "Off") } }
+                SettingsParts.CheckRow {
+                    label: "Always allow urgent and priority contact notifications"
+                    usable: parent.parent.muted
+                    checked: root.local("allowUrgentWhenMuted", "false") === "true"
+                    onToggled: v => { backend.setSetting("allowUrgentWhenMuted", v ? "true" : "false"); checked = v }
+                }
             }
             SettingsParts.Card {
-                visible: root.page === "notifications" && root.notifyOn
-                icon: "mention-20"; title: "Only mentions"
-                subtitle: "Notify me only when someone @mentions me. Channel posts notify only for mentions either way."
-                trailing: Component { SettingsParts.Toggle { on: root.local("notify_mentions_only", "off") === "on"; accessibleName: "Only mentions"; onToggled: v => { backend.setSetting("notify_mentions_only", v ? "on" : "off"); on = v } } }
+                visible: root.page === "notifications"
+                icon: "speaker-2-20"; title: "Sound"
+                SettingsParts.CheckRow { label: "Play sounds with notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "alertSound"], "All") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.alertSound", v ? "All" : "Off") }
+                SettingsParts.CheckRow { label: "Play sounds with urgent and priority contact notifications"; checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
+                SettingsParts.CheckRow { label: "Play sounds with incoming calls, requests to join, and meeting start notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "incomingCallsAndMeetingStartSound"], "On") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.incomingCallsAndMeetingStartSound", v ? "On" : "Off") }
+                SettingsParts.CheckRow { label: "Play sounds when I'm busy or in a meeting"; checked: notif.ts("PlayNotificationSoundsWhenBusyOrInMeetings", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsWhenBusyOrInMeetings", v ? "On" : "Off") }
             }
-
-            // ---- Accounts and orgs ----
-            // Teams' account card (measured 2026-11-10): your 56 px picture
-            // with presence, name (14/20 semibold) and e-mail (12/16
-            // #616161), Manage ↗ (Microsoft account) at the right; under a
-            // divider, the organisation (14 bold) on #FAFAFA with a 3 px
-            // brand bar.
-            Rectangle {
-                visible: root.page === "accounts"
-                width: parent.width; height: 120
-                radius: 4; color: "transparent"
-                border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
-                Avatar { x: 11; y: 10; size: 56; name: backend.userName || "?"; photoId: "me"; presence: root.myPresence }
-                Column {
-                    x: 77; y: 24
-                    Text { text: backend.userName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                    Text { text: backend.userMail; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            SettingsParts.Card {
+                visible: root.page === "notifications"
+                icon: "eye-20"; title: "Display"
+                trailingY: 29
+                trailing: Component { SettingsParts.Button { label: "Test notification"; onClicked: backend.testNotification() } }
+                SettingsParts.CheckRow { label: "Show message and content previews in notifications"; checked: notif.ts("ShowPreviewInToasts", "On") !== "Off"; onToggled: v => notif.setTs("ShowPreviewInToasts", v ? "On" : "Off") }
+                SettingsParts.CheckRow { label: "Show notifications during calls and meetings"; checked: notif.ts("MuteNotificationsDuringMeetings", "Off") !== "On"; onToggled: v => notif.setTs("MuteNotificationsDuringMeetings", v ? "Off" : "On") }
+                SettingsParts.CheckRow { label: "Flash taskbar when notifications are received"; checked: root.local("flashTaskbar", "true") !== "false"; onToggled: v => { backend.setSetting("flashTaskbar", v ? "true" : "false"); checked = v } }
+                SettingsParts.SubHeading { text: "Dismiss notifications after this amount of time"; gapAbove: 4 }
+                SettingsParts.Gap { size: 10 }
+                OutlineDropdown {
+                    width: 293.3; height: 30
+                    readonly property var secs: [5, 7, 15, 30, 60, 300]
+                    options: [{ label: "5 seconds (Default)" }, { label: "7 seconds" }, { label: "15 seconds" }, { label: "30 seconds" }, { label: "1 minute" }, { label: "5 minutes" }]
+                    current: Math.max(0, secs.indexOf(parseInt(root.local("toastSeconds", "5"))))
+                    accessibleName: "Dismiss notifications after this amount of time"
+                    onPicked: i => backend.setSetting("toastSeconds", String(secs[i]))
                 }
-                Rectangle {
-                    anchors.right: parent.right; anchors.rightMargin: 21; y: 21
-                    width: manageRow.implicitWidth + 24; height: 31.3; radius: 4
-                    color: manageHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
-                    border.color: theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
-                    Row { id: manageRow; anchors.centerIn: parent; spacing: 8
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 16; color: theme.textStrong } }
-                    HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/") }
-                    Accessible.role: Accessible.Link
-                    Accessible.name: "Manage"
+                SettingsParts.Gap { size: 20 }
+            }
+            SettingsParts.Card {
+                visible: root.page === "notifications"
+                icon: "mail-20"; title: "Missed activity emails"
+                trailingY: 22
+                trailing: Component {
+                    OutlineDropdown {
+                        width: 249.3; height: 30
+                        readonly property var keys: ["Immediately", "Every10Mins", "Hourly", "EveryEightHours", "Daily", "Never"]
+                        options: [{ label: "As soon as possible" }, { label: "Once every 10 mins" }, { label: "Once every hour" }, { label: "Once every 8 hours" }, { label: "Daily" }, { label: "Off" }]
+                        current: Math.max(0, keys.indexOf(root.prop("userPersonalSettings", ["emailSettings", "EmailNotificationDelay"], "Hourly")))
+                        accessibleName: "Missed activity emails"
+                        onPicked: i => root.setProp("userPersonalSettings", "emailSettings.EmailNotificationDelay", keys[i])
+                    }
                 }
-                Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D") }
-                Rectangle {
-                    x: 0.67; y: 72.67; width: parent.width - 1.34; height: 46.7; radius: 4
-                    color: theme.pick("#FAFAFA", "#262626")
-                    Rectangle { x: 3; y: 10; width: 3; height: 26; radius: 1.5; color: theme.brand }
-                    Text { x: 15; anchors.verticalCenter: parent.verticalCenter; text: backend.orgName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
+            }
+            SectionTitle { visible: root.page === "notifications"; text: "Chats and channels" }
+            SettingsParts.Card {
+                visible: root.page === "notifications"
+                icon: "chat-20"; title: "Chat message notifications"
+                trailingY: 22
+                trailing: Component {
+                    OutlineDropdown {
+                        width: 249.3; height: 30
+                        options: [{ label: "Off" }, { label: "Show in banner" }]
+                        current: notif.ts("Chat", true) === false ? 0 : 1
+                        accessibleName: "Chat message notifications"
+                        onPicked: i => notif.setMany({ toastSettings: { Chat: i === 1 }, activityGenerationSettings: { Chat: i === 1 } })
+                    }
                 }
+            }
+            SettingsParts.Card {
+                visible: root.page === "notifications"
+                icon: "mention-20"; title: "@Mentions"
+                Repeater {
+                    model: [
+                        { label: "Channel and team @mentions", keys: ["Mention_Team", "Visible_ChannelMention_v2"], dflt: 0, off: true },
+                        { label: "Tag @mentions", keys: ["Mention_Tag"], dflt: 0, off: true },
+                        { label: "Everyone in chat @mentions", keys: ["MentionInChat_Everyone"], dflt: 0, off: true },
+                        { label: "Personal @mentions", keys: ["Mention_Person", "MentionInChat_Person_v2"], dflt: 0, off: false }
+                    ]
+                    Item {
+                        required property var modelData
+                        width: parent.width; height: 68
+                        Text { y: 12; text: modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        OutlineDropdown {
+                            anchors.right: parent.right; anchors.rightMargin: 28; y: 8
+                            width: 249.3; height: 30
+                            options: modelData.off ? notif.levels : notif.levels.slice(0, 2)
+                            current: notif.level(modelData.keys, modelData.dflt)
+                            accessibleName: modelData.label
+                            onPicked: i => notif.setLevel(modelData.keys, i)
+                        }
+                    }
+                }
+            }
+            Repeater {
+                model: [
+                    { icon: "arrow-reply-20", title: "Replies to followed threads and posts", keys: ["Reply", "ReplyToReply"] },
+                    { icon: "heart-20", title: "Likes and reactions", keys: ["Like", "LikeInChat_v2"] }
+                ]
+                SettingsParts.Card {
+                    required property var modelData
+                    visible: root.page === "notifications"
+                    icon: modelData.icon; title: modelData.title
+                    trailingY: 22
+                    trailing: Component {
+                        OutlineDropdown {
+                            width: 249.3; height: 30
+                            options: notif.levels
+                            current: notif.level(modelData.keys, 0)
+                            accessibleName: modelData.title
+                            onPicked: i => notif.setLevel(modelData.keys, i)
+                        }
+                    }
+                }
+            }
+            SectionTitle { visible: root.page === "notifications"; text: "Meetings" }
+            SettingsParts.Card {
+                visible: root.page === "notifications"
+                icon: "calendar-20"; title: "Meetings"
+                SettingsParts.SwitchRow { label: "Meeting start notifications"; on: notif.ts("MeetingWentLiveNotification", true) !== false
+                    onToggled: v => notif.setMany(v ? { toastSettings: { MeetingWentLiveNotification: true }, activityGenerationSettings: { MeetingWentLiveNotification: true }, emailSettings: { MeetingWentLiveNotification: true } } : { toastSettings: { MeetingWentLiveNotification: false } }) }
+                SettingsParts.SwitchRow { label: "Show meeting join bar"; on: notif.ts("liveMeetingStatusBanner", true) !== false; onToggled: v => notif.setTs("liveMeetingStatusBanner", v) }
+                SettingsParts.SwitchRow { label: "Meet now start notifications"; on: notif.ts("HuddleStartedNotification", false) === true; onToggled: v => notif.setTs("HuddleStartedNotification", v) }
             }
 
             // ---- Privacy ----
@@ -647,10 +745,18 @@ Rectangle {
             }
         }
     }
-    property bool notifyOn: local("notifications", "on") !== "off"
     /// Your presence, for the account card.
     property string myPresence: ""
     signal showShortcuts()
+    // Teams' section headings on long pages (16/22 semibold, 20 in).
+    component SectionTitle: Text {
+        width: parent ? parent.width : 0
+        topPadding: 8
+        font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+        color: theme.text
+        Accessible.role: Accessible.Heading
+        Accessible.name: text
+    }
     Component.onCompleted: backend.loadReadReceipts()
     function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
     function oofForTest() { return oofPage }

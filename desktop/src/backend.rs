@@ -1361,6 +1361,12 @@ pub mod qobject {
         #[qinvokable]
         fn mic_level(self: Pin<&mut Backend>) -> i32;
 
+        /// Settings ▸ Notifications ▸ Test notification: Teams' sample.
+        #[qinvokable]
+        fn test_notification(self: Pin<&mut Backend>);
+        /// A notification went out: flash the taskbar (if that's on).
+        #[qsignal]
+        fn flash_requested(self: Pin<&mut Backend>);
         /// Where downloads are saved now (Settings ▸ Files and links).
         #[qinvokable]
         fn download_location(self: Pin<&mut Backend>) -> QString;
@@ -2131,6 +2137,46 @@ fn should_notify(
         return false;
     }
     mentioned || !(mentions_needed || mentions_only)
+}
+
+/// Settings ▸ Notifications and activity as OST honours them: the synced
+/// ones from userPersonalSettings (toastSettings / soundsSettings, Teams'
+/// defaults where unsaved) and this device's own.
+#[derive(Debug, Clone, PartialEq)]
+struct NotifyPrefs {
+    mute_all: bool,
+    allow_urgent_when_muted: bool,
+    chat_banners: bool,
+    personal_mention_banners: bool,
+    previews: bool,
+    during_calls: bool,
+    sound: bool,
+    sound_when_busy: bool,
+    meet_now: bool,
+    seconds: u32,
+    flash: bool,
+}
+
+fn notify_prefs(settings_json: &str, local: &serde_json::Map<String, serde_json::Value>) -> NotifyPrefs {
+    let all: serde_json::Value = serde_json::from_str(settings_json).unwrap_or_default();
+    let ups = &all["props"]["userPersonalSettings"];
+    let t = |k: &str| &ups["toastSettings"][k];
+    let on_off = |v: &serde_json::Value, dflt: bool| v.as_str().map(|s| s == "On").unwrap_or(dflt);
+    let flag = |v: &serde_json::Value, dflt: bool| v.as_bool().unwrap_or(dflt);
+    let l = |k: &str| local.get(k).and_then(|v| v.as_str()).map(str::to_string);
+    NotifyPrefs {
+        mute_all: on_off(t("muteGenericNotifications"), false),
+        allow_urgent_when_muted: l("allowUrgentWhenMuted").as_deref() == Some("true"),
+        chat_banners: flag(t("Chat"), true),
+        personal_mention_banners: flag(t("Mention_Person"), true) && flag(t("MentionInChat_Person_v2"), true),
+        previews: on_off(t("ShowPreviewInToasts"), true),
+        during_calls: !on_off(t("MuteNotificationsDuringMeetings"), false),
+        sound: ups["soundsSettings"]["alertSound"].as_str() != Some("Off"),
+        sound_when_busy: on_off(t("PlayNotificationSoundsWhenBusyOrInMeetings"), true),
+        meet_now: flag(t("HuddleStartedNotification"), false),
+        seconds: l("toastSeconds").and_then(|s| s.parse().ok()).unwrap_or(5),
+        flash: l("flashTaskbar").as_deref() != Some("false"),
+    }
 }
 
 /// Whether you muted the chat (the chat list's `muted`).
@@ -5653,7 +5699,7 @@ impl qobject::Backend {
     /// Show a desktop notification for someone else's message, unless its
     /// chat is open in the focused window.
     fn maybe_notify(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         m: teams_cli::event_hub::PushedMessage,
         qt: cxx_qt::CxxQtThread<qobject::Backend>,
     ) {
@@ -5666,15 +5712,13 @@ impl qobject::Backend {
                 .is_some_and(|me| me.eq_ignore_ascii_case(&m.sender_mri));
         let open = self.rust().window_active
             && m.conversation_id == self.rust().current_chat_id.to_string();
-        // Settings > Notifications and activity can turn banners off, or
-        // keep only mentions.
-        let settings = load_settings();
-        let setting = |k: &str| settings.get(k).and_then(|v| v.as_str()).map(str::to_string);
-        // Muted for this call (More ▸ Settings ▸ Mute notifications).
+        // Settings ▸ Notifications and activity, as Teams applies it.
+        let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
+        // Muted for this call (More ▸ Settings ▸ Mute notifications), or
+        // notifications off during calls and meetings.
         let in_call = ["connected", "connecting", "calling"].contains(&self.rust().call_state.to_string().as_str());
-        let banners_on = setting("notifications").as_deref() != Some("off")
-            && !(in_call && self.rust().call_notifications_muted);
-        let mentions_only = setting("notify_mentions_only").as_deref() == Some("on");
+        let banners_on = (!prefs.mute_all || (m.urgent && prefs.allow_urgent_when_muted))
+            && !(in_call && (self.rust().call_notifications_muted || !prefs.during_calls));
         let mentioned = self
             .rust()
             .my_mri
@@ -5682,14 +5726,18 @@ impl qobject::Backend {
             .is_some_and(|me| m.mentions.iter().any(|x| x.eq_ignore_ascii_case(me)));
         let channel = m.conversation_id.ends_with("@thread.tacv2");
         let muted = chat_muted(&self.rust().chats, &m.conversation_id);
+        // A personal @mention banners unless that's off; a chat message
+        // banners when chat banners are on; channel posts and muted chats
+        // only for mentions.
+        let mention_banner = mentioned && prefs.personal_mention_banners;
         if !should_notify(
             mine,
             open,
             m.text.is_empty(),
             banners_on,
-            mentions_only,
+            !prefs.chat_banners,
             channel || muted,
-            mentioned,
+            mention_banner,
         ) {
             return;
         }
@@ -5722,7 +5770,12 @@ impl qobject::Backend {
             (false, false) => m.sender_name.clone(),
             (true, _) => chat_name.clone(),
         };
-        let text: String = m.text.chars().take(NOTIFICATION_BODY_CHARS).collect();
+        // Previews off: Teams' "Message preview hidden".
+        let text: String = if prefs.previews {
+            m.text.chars().take(NOTIFICATION_BODY_CHARS).collect()
+        } else {
+            "Message preview hidden".to_string()
+        };
         // Where it was said, for channels and named chats.
         let body = if channel && !chat_name.is_empty() {
             format!("{chat_name}\n{text}")
@@ -5735,6 +5788,12 @@ impl qobject::Backend {
             (title, body)
         };
         let chat_id = m.conversation_id.clone();
+        let busy = matches!(availability.as_str(), "Busy" | "DoNotDisturb" | "InACall" | "InAMeeting") || in_call;
+        let silent = !prefs.sound || (busy && !prefs.sound_when_busy);
+        let timeout = prefs.seconds * 1000;
+        if prefs.flash {
+            self.as_mut().flash_requested();
+        }
         std::thread::spawn(move || {
             let shown = notify_rust::Notification::new()
                 .appname("OST")
@@ -5743,6 +5802,8 @@ impl qobject::Backend {
                 .icon("ost-desktop")
                 .action("default", "Open")
                 .hint(notify_rust::Hint::Category("im.received".into()))
+                .hint(notify_rust::Hint::SuppressSound(silent))
+                .timeout(notify_rust::Timeout::Milliseconds(timeout))
                 .show();
             match shown {
                 Ok(handle) => handle.wait_for_action(|action| {
@@ -5787,10 +5848,10 @@ impl qobject::Backend {
             .is_some_and(|me| me.eq_ignore_ascii_case(&start.initiator));
         let in_it = !self.rust().call_state.is_empty()
             && self.rust().call_thread_id.to_string() == start.thread_id;
-        let banners_on = load_settings()
-            .get("notifications")
-            .and_then(|v| v.as_str())
-            != Some("off");
+        // Settings ▸ Notifications ▸ Meet now start notifications (off by
+        // default, as in Teams), unless everything is muted.
+        let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
+        let banners_on = prefs.meet_now && !prefs.mute_all;
         let muted = chat_muted(&self.rust().chats, &start.thread_id);
         if !first || mine || in_it || !banners_on || muted {
             return;
@@ -11148,6 +11209,24 @@ impl qobject::Backend {
         teams_cli::calling::audio::mic_level() as i32
     }
 
+    pub fn test_notification(self: Pin<&mut Self>) {
+        let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
+        let body = if prefs.previews { "Message preview." } else { "Message preview hidden" };
+        let timeout = prefs.seconds * 1000;
+        let silent = !prefs.sound;
+        std::thread::spawn(move || {
+            let _ = notify_rust::Notification::new()
+                .appname("OST")
+                .summary("This is a test notification")
+                .body(body)
+                .icon("ost-desktop")
+                .hint(notify_rust::Hint::Category("im.received".into()))
+                .hint(notify_rust::Hint::SuppressSound(silent))
+                .timeout(notify_rust::Timeout::Milliseconds(timeout))
+                .show();
+        });
+    }
+
     pub fn download_location(self: Pin<&mut Self>) -> QString {
         QString::from(download_dir().map(|d| d.display().to_string()).unwrap_or_default().as_str())
     }
@@ -11483,6 +11562,13 @@ mod toast_tests {
 
     #[test]
     fn toasts_follow_teams_presence_rule() {
+        let none = serde_json::Map::new();
+        let d = notify_prefs("{}", &none);
+        assert!(!d.mute_all && d.chat_banners && d.previews && d.during_calls && d.sound && !d.meet_now && d.flash);
+        assert_eq!(d.seconds, 5);
+        let saved = r#"{"props":{"userPersonalSettings":{"toastSettings":{"muteGenericNotifications":"On","Chat":false,"ShowPreviewInToasts":"Off","MuteNotificationsDuringMeetings":"On","HuddleStartedNotification":true},"soundsSettings":{"alertSound":"Off"}}}}"#;
+        let p = notify_prefs(saved, &none);
+        assert!(p.mute_all && !p.chat_banners && !p.previews && !p.during_calls && !p.sound && p.meet_now);
         assert_eq!(toast_decision("Available", false, false), Toast::Show);
         assert_eq!(toast_decision("Busy", false, false), Toast::Show);
         assert_eq!(toast_decision("DoNotDisturb", false, false), Toast::Drop);

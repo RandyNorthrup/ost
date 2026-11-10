@@ -116,6 +116,43 @@ Middle tier (`{mt}`):
 - "Always open web links in": a local browser choice.
 - File previews: userPersonalSettings.filesSettings.enableThumbnailPreview.
 
+## Notifications and activity (captured 2026-11-10)
+
+Everything below is in userPersonalSettings unless marked local.
+
+- **Mute all (except calls and meetings):** toastSettings.muteGenericNotifications On/Off.
+  "Always allow urgent and priority contact notifications" is enabled only while muted.
+- **Sounds:**
+  - Play sounds with notifications: soundsSettings.alertSound All/Off.
+  - Urgent and priority: toastSettings.PlayNotificationSoundsForUrgentAndPriority.
+  - Calls and meeting start: soundsSettings.incomingCallsAndMeetingStartSound.
+  - When busy: toastSettings.PlayNotificationSoundsWhenBusyOrInMeetings.
+- **Display:**
+  - Previews: toastSettings.ShowPreviewInToasts. With it off, the body is "Message preview
+    hidden".
+  - During calls and meetings: toastSettings.MuteNotificationsDuringMeetings (On = hide).
+  - Flash taskbar, dismiss time (5 s default, 7 s, 15 s, 30 s, 1 min, 5 min), position and
+    size: local.
+  - Test notification: "This is a test notification" / "Message preview.".
+- **Missed activity emails:** emailSettings.EmailNotificationDelay, one of Immediately,
+  Every10Mins, Hourly, EveryEightHours, Daily or Never.
+- **Chat messages:** toastSettings.Chat with activityGenerationSettings.Chat (Off / Show in
+  banner).
+- **Mentions:** Show in Activity and banner / Show in Activity / Off set toastSettings,
+  activityGenerationSettings and emailSettings for each key:
+  - Channel and team: Mention_Team and Visible_ChannelMention_v2.
+  - Tag: Mention_Tag.
+  - Everyone in chat: MentionInChat_Everyone.
+  - Personal (no Off): Mention_Person and MentionInChat_Person_v2.
+  - Replies: Reply and ReplyToReply. Likes: Like and LikeInChat_v2.
+  - The @Mentions master switch didn't restore its sub-settings on a round trip in Teams.
+- **Meetings:**
+  - Meeting start: toastSettings.MeetingWentLiveNotification.
+  - Join bar: toastSettings.liveMeetingStatusBanner.
+  - Meet now start: toastSettings.HuddleStartedNotification (off by default).
+  - Meeting chat: chatSettings.meetingChatNotificationFor{Accepted,Tentative}Meetings.
+- **Calendar:** userGraphSettings.{app id}.{toastSettings,activityGenerationSettings}.privateMeeting….
+
 ## OST status
 
 - Built: the left pane and header, General (System, opening content, Out of office, keyboard
@@ -132,7 +169,13 @@ Middle tier (`{mt}`):
   - Not built: "Always ask where to save" and the browser choice for links.
 - Accounts and orgs: the account card (picture, name, e-mail, Manage) and the organisation;
   not "Refresh license and restart".
-- Still to build: Notifications and activity as Teams', App permissions,
+- Notifications and activity: OST's desktop notifications follow mute all (with urgent
+  allowed), chat and personal-mention banners, previews, calls and meetings, sounds, the
+  dismiss time, taskbar flash and Meet now start notifications.
+  - Not built: the sound choices, position and size (OST uses the desktop's notifications,
+    not Teams' toast windows), posts in shown channels, meeting chat, Presence ▸ Manage
+    notifications and Calendar.
+- Still to build: App permissions,
   Recognition, and the remaining items on built pages.
 - Chat list (measured with the settings on):
   - Previews: chat rows are 52 tall, with a 36 px picture at 16, 8, the name at 64 and the

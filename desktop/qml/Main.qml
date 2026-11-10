@@ -4633,6 +4633,8 @@ Window {
     // away when it changes again; Change settings opens Privacy's priority
     // access.
     property string bannerAvailability: ""
+    // Settings ▸ Notifications ▸ Flash taskbar when notifications are received.
+    Connections { target: backend; function onFlashRequested() { if (!window.active) window.alert(0) } }
     property bool dndBanner: false
     // Which of the two banners came last.
     property string bannerOrder: ""
