@@ -863,6 +863,16 @@ Sent from Teams web into "OST group test" and read back raw. Both are plain `Ric
 - **Hidden** (434910 `wt`): in group/meeting chats with the native recap chiclet (`enableTeamsNativeRecapChiclet` and (`hasRecap`, or VNext for ad-hoc/group)), a recording message is added to the call's `recapData` and dropped when it is a successful save or a paired transcript start/stop. It then appears inside the recap chiclet on the "Call ended" row. A transcript-only start/stop paired with a recording is also dropped.
 - 1:1 with native recap + VNext and a recap-worthy item → the whole item renders as the recap chiclet (`pp`, aria "This meeting contains recordings").
 
+### As seen in a meeting chat (OST calendar test, winpc 2026-11-10)
+- Teams shows only the recording's rows, all as control rows: the time, then the text, with a 20 px icon.
+  - Start: "{initiator} started recording.", Record icon in brand.
+  - Stop: "{terminator} stopped recording.", RecordStop icon.
+  - Saved: "Recording has been saved to {owner}'s OneDrive and will expire in {N} days." with a brand "Remove expiration" link and the CloudArrowUp icon.
+- Transcript-only start, stop and saved messages, and the transcript half of a Recording+Transcript pair, show nothing.
+- N counts up from the recording's `RecordingContent timestamp` + 120 days: a recording from Sunday 4 PM showed 119 on Tuesday morning.
+- That chat's calls read "Meeting ended: **{duration}**" with the video icon.
+- OST does the same (messages::recording_event). Its "Remove expiration" opens the recording in the browser; in Teams it opens the Stream player's About panel, which is web content (TASK-0038).
+
 ### Card (307208 `Ha`; data 397395 → 420044 `LE`)
 - Shown only if allowed (886048 `pe`): `enforceShowingRecordingChiclet`, or 1:1 → `enableOneToOneRecording`, group → `enableGroupRecording`, meeting → `enableCallRecordingPrivate`, channel → `enableCallRecordingChannel`. Hidden when `enforceHidingMeetingRecapChiclets`.
 - `contentTypes=Transcript` → transcript card instead (§19). `Recording+Transcript` → recording card followed by a transcript card.

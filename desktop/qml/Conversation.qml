@@ -1441,6 +1441,8 @@ Rectangle {
             // Teams' control messages (someone added, renamed, left…).
             readonly property bool isEvent: modelData.kind === "event"
             readonly property bool appAdded: isEvent && !!modelData.event && modelData.event.kind === "AddCustomApp"
+            // Meeting recording rows (Teams: the time first, like call rows).
+            readonly property bool recordingRow: isEvent && !!modelData.event && modelData.event.kind.indexOf("Recording") === 0
             readonly property bool isRow: isCall || isEvent
             readonly property var reactions: modelData.reactions || []
             // Being edited in place (Teams: the compose replaces the bubble,
@@ -1525,11 +1527,15 @@ Rectangle {
                 visible: msg.isRow
                 x: root.gutL + 6; y: msg.topPad + 8
                 size: 20
-                name: msg.isCall ? (msg.modelData.call_huddle ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
+                // A meeting chat's calls are meetings (Teams: the video icon).
+                name: msg.isCall ? (msg.modelData.call_huddle || root.isMeetingChat ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
                     : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20",
                          PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
-                         MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", DeleteCustomApp: "apps-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
-                color: theme.textSecondary
+                         MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", DeleteCustomApp: "apps-20",
+                         RecordingStarted: "record-20", RecordingStopped: "record-stop-20", RecordingSaved: "cloud-arrow-up-20",
+                         Transcript: "slide-text-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
+                // Recording started is brand (Teams).
+                color: msg.recordingRow && msg.modelData.event.kind === "RecordingStarted" ? theme.brand : theme.textSecondary
             }
             Row {
                 id: callRow
@@ -1537,7 +1543,7 @@ Rectangle {
                 x: root.gutContent; y: msg.topPad + 10
                 spacing: 12
                 Text {
-                    visible: msg.isCall
+                    visible: msg.isCall || msg.recordingRow
                     text: root.stamp(msg.modelData.time)
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
@@ -1545,8 +1551,18 @@ Rectangle {
                 Text {
                     width: Math.min(implicitWidth, msg.width - root.gutContent - root.gutR)
                     wrapMode: Text.Wrap
-                    textFormat: msg.isCall || msg.appAdded ? Text.StyledText : Text.PlainText
+                    textFormat: msg.recordingRow ? Text.RichText : msg.isCall || msg.appAdded ? Text.StyledText : Text.PlainText
+                    linkColor: theme.brandForeground1
+                    // A saved recording's "Remove expiration" opens it (Teams
+                    // opens its player's About panel, which is web content).
+                    onLinkActivated: link => Qt.openUrlExternally(link)
+                    HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     text: {
+                        if (msg.recordingRow) {
+                            const e = msg.modelData.event
+                            const t = root.escapeHtml(msg.modelData.text)
+                            return e.kind === "RecordingSaved" && e.value && e.link ? t + " <a href=\"" + e.link.replace(/"/g, "&quot;") + "\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">Remove expiration</a>" : t
+                        }
                         // "{name} added <b>{app}</b> here." (Teams bolds the app).
                         if (msg.appAdded) {
                             const t = msg.modelData.text, v = msg.modelData.event.value, i = t.lastIndexOf(v)
@@ -1562,6 +1578,9 @@ Rectangle {
                         const s = msg.modelData.call_seconds
                         const parts = [[Math.floor(s / 3600), "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
                             .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
+                        // A meeting chat says "Meeting ended: {duration}" (seen in OST
+                        // calendar test on winpc, 2026-11-10).
+                        if (root.isMeetingChat) return "Meeting ended:&nbsp;<b>" + parts + "</b>"
                         return (msg.modelData.call_huddle ? "Meeting ended" : "Call ended") + "&nbsp;<b>" + parts + "</b>"
                     }
                     font.family: theme.font; font.pixelSize: theme.small

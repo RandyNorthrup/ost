@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-07T13:57:00Z'
+updated_date: '2026-11-10T17:18:00Z'
 labels:
   - desktop
   - messages
@@ -53,4 +53,6 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 - Still to do: the "Report a problem" link that Teams adds to the 404 text.
 
 - AC2 (cards): card messages parse (Media_Card SWIFT b64 / JSON fallback, properties.cards) and Adaptive Cards render natively with Teams' host config and frame (measured against the desktop client). Left: hero / thumbnail / list / O365 connector cards, Action.Submit / Execute bot invokes and the result footer, carousels, AMS-authenticated images.
+
+- 2026-11-10: meeting recordings render as Teams' control rows (started, stopped, saved with "Remove expiration"). Transcript-only rows and legacy Media_CallTranscript are hidden outside 1:1, and Media_MeetingObjects is never shown (this was the raw {"scopeId"…} JSON). Meeting chats' call rows read "Meeting ended: {duration}" with the video icon. Verified side by side in OST calendar test.
 <!-- SECTION:NOTES:END -->

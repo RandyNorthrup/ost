@@ -216,6 +216,7 @@ Window {
         running: Qt.application.arguments.indexOf("--nav-test") >= 0 && backend.signedIn
         interval: 1500
         property int step: 0
+        property int chatTries: 0
         repeat: true
         onTriggered: {
             const steps = [
@@ -3842,6 +3843,22 @@ Window {
                 else if (step === 22 && has("--schedule-cancel")) { for (const x of mine()) backend.cancelScheduled(x.id) }
                 else if (step === 27) { console.warn("SC after", backend.scheduledJson); shot("sc-cancelled") }
                 else if (step === 28) { c.scheduleAt = 0; c.clear(); backend.setDraft(backend.currentChatId, ""); Qt.quit() }
+                step++; return
+            }
+            // =chat:<name>[|<text>]: open that chat, jump to the first message
+            // containing <text>, and shot it (chat-open).
+            if (mode.startsWith("chat:")) {
+                const [name, text] = mode.slice(5).split("|")
+                if (step === 1) { const c = JSON.parse(backend.chatsJson || "[]").find(c => c.name === name); if (!c) { if (++chatTries > 60) Qt.quit(); step = 0; return } console.warn("CHAT id", c.id); rail.current = "chat"; backend.selectChat(c.id, c.name) }
+                else if (step === 7 && text) { const m = conversation.messages.find(m => (m.text || "").indexOf(text) >= 0 || (m.html || "").indexOf(text) >= 0); console.warn("CHAT jump", m ? m.id : "none"); if (m) conversation.jumpToMessage(m.id) }
+                else if (step === 9) { console.warn("CHAT kinds", JSON.stringify(conversation.messages.filter(m => (m.text || m.html || "").indexOf(text || "~") >= 0).slice(0, 6).map(m => [m.kind, (m.text || "").slice(0, 80)]))); shot("chat-open") }
+                else if (step === 10) Qt.quit()
+                step++; return
+            }
+            // =livecall: log the chats' live calls.
+            if (mode === "livecall") {
+                if (step === 10) { console.warn("LIVE chats", JSON.parse(backend.chatsJson || "[]").length); for (const c of JSON.parse(backend.chatsJson || "[]")) if (c.liveCall) console.warn("LIVE", c.name, JSON.stringify(c.liveCall)) }
+                else if (step === 11) Qt.quit()
                 step++; return
             }
             // =layouts: log every channel's layout.

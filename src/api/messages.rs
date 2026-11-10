@@ -750,6 +750,67 @@ pub struct ChatEvent {
     /// Names given in the event itself (`friendlyName`), by MRI.
     #[serde(skip)]
     pub names: std::collections::HashMap<String, String>,
+    /// A link the row offers (a saved recording's "Remove expiration").
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub link: String,
+}
+
+/// A meeting recording message (`RichText/Media_CallRecording`) as Teams'
+/// control rows show it (seen in OST calendar test on winpc, 2026-11-10;
+/// docs/spec/message-types.md §17):
+/// - RecordingStarted: "{initiator} started recording." (Record icon);
+/// - RecordingStopped: "{terminator} stopped recording." (RecordStop);
+/// - RecordingSaved: "Recording has been saved to {owner}'s OneDrive and
+///   will expire in {N} days." with "Remove expiration" (CloudArrowUp).
+/// Transcript-only messages, and a recording's paired transcript start and
+/// stop, show nothing (Teams keeps them in the meeting's recap).
+pub fn recording_event(content: &str, now: chrono::DateTime<chrono::Utc>) -> Option<ChatEvent> {
+    let attr = |tag: &str, name: &str| -> Option<String> {
+        let start = content.find(&format!("<{tag} "))?;
+        let head = &content[start..start + content[start..].find('>')?];
+        let key = format!("{name}=\"");
+        let i = head.find(&key)? + key.len();
+        Some(head[i..i + head[i..].find('"')?].to_string())
+    };
+    let types = attr("RecordingContent", "contentTypes")?;
+    if !types.contains("Recording") {
+        return None;
+    }
+    let status = attr("RecordingStatus", "status").unwrap_or_default();
+    let mri = |v: Option<String>| v.map(|v| if v.starts_with("8:") { v } else { format!("8:orgid:{v}") }).unwrap_or_default();
+    let event = |kind: &str, actor: String| ChatEvent { kind: kind.into(), actor, ..ChatEvent::default() };
+    match status.as_str() {
+        "Initial" => {
+            let auto = attr("RecordingInitiatorId", "isAutoRecording").as_deref() == Some("True");
+            let mut e = event("RecordingStarted", if auto { String::new() } else { mri(attr("RecordingInitiatorId", "value")) });
+            if auto {
+                e.value = "auto".into();
+            }
+            Some(e)
+        }
+        "ChunkFinished" => Some(event("RecordingStopped", mri(attr("RecordingTerminatorId", "value")))),
+        "Success" => {
+            let mut e = event("RecordingSaved", mri(attr("RecordingStorage", "userId")));
+            // Recordings expire 120 days after they start (Teams' default
+            // policy); Teams counts the days left up.
+            if attr("RecordingContent", "canVideoExpire").as_deref() == Some("True")
+                && let Some(start) = attr("RecordingContent", "timestamp")
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
+            {
+                let left = (start.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now).num_seconds();
+                e.value = ((left + 86_399) / 86_400).max(0).to_string();
+            }
+            e.link = content
+                .split("type=\"onedriveForBusinessVideo\" uri=\"")
+                .nth(1)
+                .and_then(|r| r.split('"').next())
+                .or_else(|| content.split("<a href=\"").nth(1).and_then(|r| r.split('"').next()))
+                .unwrap_or_default()
+                .replace("&amp;", "&");
+            Some(e)
+        }
+        _ => None,
+    }
 }
 
 /// Every `<tag>…</tag>` value of `tag` in a control message, in order.
@@ -808,6 +869,7 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
         value,
         history_days,
         names: names.clone(),
+        link: String::new(),
     };
     match kind {
         "AddMember" => {
@@ -911,6 +973,20 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
         "MemberRenamed" => format!("{actor} changed their display name to {}.", e.value),
         "AddCustomApp" => format!("{actor} added {} here.", e.value),
         "DeleteCustomApp" => format!("{actor} removed {} from the chat.", e.value),
+        "Transcript" => "Transcript".into(),
+        "RecordingStarted" if e.value == "auto" => "Recording started automatically per the organizer's setting.".into(),
+        "RecordingStarted" if e.actor.is_empty() => "Recording has started".into(),
+        "RecordingStarted" => format!("{actor} started recording."),
+        "RecordingStopped" if e.actor.is_empty() => "Recording stopped.".into(),
+        "RecordingStopped" => format!("{actor} stopped recording."),
+        "RecordingSaved" => {
+            let to = if e.actor.is_empty() { "OneDrive".to_string() } else { format!("{actor}'s OneDrive") };
+            match e.value.as_str() {
+                "" => format!("Recording has been saved to {to}."),
+                "1" => format!("Recording has been saved to {to} and will expire in 1 day."),
+                d => format!("Recording has been saved to {to} and will expire in {d} days."),
+            }
+        }
         _ => String::new(),
     }
 }
@@ -1264,6 +1340,32 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         event: None,
         ..Default::default()
     };
+    // Teams shows a legacy transcript message only in a 1:1 chat (as its
+    // "Transcript" card); in group and meeting chats it goes with the
+    // call's ended row. Meeting objects have no row at all
+    // (docs/spec/message-types.md §19, §20).
+    if kind == "RichText/Media_MeetingObjects" {
+        return None;
+    }
+    if kind == "RichText/Media_CallTranscript" {
+        let conv = s("/conversationid");
+        if !conv.ends_with("@unq.gbl.spaces") {
+            return None;
+        }
+        return Some(MessageView {
+            kind: "event".into(),
+            event: Some(ChatEvent { kind: "Transcript".into(), ..ChatEvent::default() }),
+            ..base
+        });
+    }
+    if kind == "RichText/Media_CallRecording" {
+        let event = recording_event(&s("/content"), chrono::Utc::now())?;
+        return Some(MessageView {
+            kind: "event".into(),
+            event: Some(event),
+            ..base
+        });
+    }
     if kind.starts_with("ThreadActivity/") {
         let event = chat_event(&kind, &s("/content"))?;
         return Some(MessageView {
@@ -4767,5 +4869,29 @@ mod paging_and_event_tests {
         assert_eq!(HorizonChange::UnreadFrom(1794313462720).body(), serde_json::json!({"chb": 1794313462719_i64}));
         assert_eq!(HorizonChange::ClearBookmark.body(), serde_json::json!({"chb": 0}));
         assert_eq!(HorizonChange::ReadTo(9).body(), serde_json::json!({"ch": 9}));
+    }
+
+    #[test]
+    fn recordings_are_teams_control_rows() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-10T16:40:00Z").unwrap().with_timezone(&chrono::Utc);
+        let rec = |status: &str, types: &str, extra: &str| format!(
+            "<URIObject type=\"Video.2/CallRecording.1\"><RecordingStatus status=\"{status}\" code=\"0\"></RecordingStatus><RecordingContent contentTypes=\"{types}\" timestamp=\"2026-11-08T23:57:07.8493222Z\" duration=\"0:07:23.8\" canVideoExpire=\"True\"><item type=\"onedriveForBusinessVideo\" uri=\"https://x-my.sharepoint.com/rec.mp4\" /></RecordingContent><RecordingInitiatorId value=\"8:orgid:me\" isAutoRecording=\"False\" /><RecordingTerminatorId value=\"8:orgid:me\" /><RecordingStorage type=\"MeetingOrganizerOneDrive\" userId=\"me\" />{extra}</URIObject>");
+        let names = |_: &str| "OST Test 1".to_string();
+        let started = recording_event(&rec("Initial", "Recording", ""), now).unwrap();
+        assert_eq!(event_text(&started, &names, true), "OST Test 1 started recording.");
+        let stopped = recording_event(&rec("ChunkFinished", "Recording", ""), now).unwrap();
+        assert_eq!(event_text(&stopped, &names, true), "OST Test 1 stopped recording.");
+        // As Teams showed Sunday 4:07 PM's on Tuesday morning.
+        let saved = recording_event(&rec("Success", "Recording+Transcript", ""), now).unwrap();
+        assert_eq!(saved.actor, "8:orgid:me");
+        assert_eq!(event_text(&saved, &names, true), "Recording has been saved to OST Test 1's OneDrive and will expire in 119 days.");
+        assert_eq!(saved.link, "https://x-my.sharepoint.com/rec.mp4");
+        // Legacy transcript messages: nothing in a meeting chat.
+        let legacy = serde_json::json!({"id": "1", "messagetype": "RichText/Media_CallTranscript", "conversationid": "19:meeting_x@thread.v2",
+            "content": "{\\\"scopeId\\\":\\\"f74ff03b\\\"}", "from": "https://x/contacts/8:orgid:me"});
+        assert!(view_of(&legacy, "8:orgid:me", "Me").is_none());
+        // Transcript-only messages show nothing.
+        assert!(recording_event(&rec("Success", "Transcript", ""), now).is_none());
+        assert!(recording_event(&rec("Initial", "Transcript", ""), now).is_none());
     }
 }
