@@ -325,6 +325,7 @@ fn tui_message(view: super::messages::MessageView, own_name: Option<&str>) -> Op
         sender,
         timestamp: view.time.clone(),
         content: text.to_string(),
+        subject: view.subject.trim().to_string(),
     })
 }
 
@@ -847,10 +848,13 @@ pub fn hidden_until_newer(hidden_ms: Option<i64>, last_ms: Option<i64>) -> bool 
 }
 
 /// A single message for TUI display.
+#[derive(Default)]
 pub struct MessageInfo {
     pub sender: String,
     pub timestamp: String,
     pub content: String,
+    /// A channel post's subject (Teams' "Add a subject"), or "".
+    pub subject: String,
 }
 
 /// List recent chats and return structured data.

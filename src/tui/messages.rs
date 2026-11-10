@@ -43,6 +43,8 @@ pub struct Message {
     pub timestamp: String,
     /// Message body lines.
     pub content: String,
+    /// A channel post's subject, shown bold above the text ("" for none).
+    pub subject: String,
     /// Reactions below the message.
     pub reactions: Vec<Reaction>,
     /// Number of thread replies (0 = no thread).
@@ -109,6 +111,7 @@ impl MessagesState {
                 sender: m.sender,
                 timestamp: m.timestamp,
                 content: m.content,
+                subject: m.subject,
                 reactions: Vec::new(),
                 reply_count: 0,
                 replies: Vec::new(),
@@ -496,6 +499,20 @@ fn render_message_card(lines: &mut Vec<Line<'static>>, msg: &Message, layout: &C
             "    " // align with sender name after selection indicator "  "
         }
     );
+    // A post's subject, bold, above its text (Teams' heading).
+    for sl in wrap_text(&msg.subject, wrap_width) {
+        if sl.trim().is_empty() {
+            continue;
+        }
+        let used = content_prefix.len() + sl.len();
+        lines.push(make_bg_line(
+            vec![
+                Span::styled(content_prefix.clone(), bg_style),
+                Span::styled(sl.clone(), text_style.add_modifier(Modifier::BOLD)),
+            ],
+            used,
+        ));
+    }
     for cl in &content_lines {
         let used = content_prefix.len() + cl.len();
         lines.push(make_bg_line(
@@ -745,7 +762,7 @@ mod tests {
 
     #[test]
     fn scrolling_past_the_top_asks_for_older_messages() {
-        let msg = |i: usize| api::MessageInfo { sender: "A".into(), timestamp: String::new(), content: format!("m{i}") };
+        let msg = |i: usize| api::MessageInfo { sender: "A".into(), timestamp: String::new(), content: format!("m{i}"), ..Default::default() };
         let mut st = MessagesState::default();
         st.update_messages("h", (0..50).map(msg).collect());
         assert_eq!(st.selected, 49);
@@ -767,7 +784,7 @@ mod tests {
 
     #[test]
     fn scroll_arrows_never_cover_timestamps() {
-        let msg = |i: usize| api::MessageInfo { sender: "Someone".into(), timestamp: "2026-11-10T12:24:00Z".into(), content: format!("message {i}") };
+        let msg = |i: usize| api::MessageInfo { sender: "Someone".into(), timestamp: "2026-11-10T12:24:00Z".into(), content: format!("message {i}"), ..Default::default() };
         let mut st = MessagesState::default();
         st.update_messages("h", (0..30).map(msg).collect());
         st.selected = 15; // arrows at both ends
@@ -778,5 +795,17 @@ mod tests {
         let gutter: String = (2..19).map(|y| buf[(58, y)].symbol().to_string()).collect();
         assert!(gutter.chars().all(|c| c == ' ' || c == '^' || c == 'v'), "text in the gutter: {gutter:?}");
         assert!(gutter.contains('^') && gutter.contains('v'));
+    }
+
+    #[test]
+    fn subjects_show_bold_above_the_text() {
+        let mut st = MessagesState::default();
+        st.update_messages("h", vec![api::MessageInfo { sender: "A".into(), content: "OST TEST 88 body".into(), subject: "OST TEST 88 subject".into(), ..Default::default() }]);
+        let (lines, _) = build_message_lines(&st, 60, "Me");
+        let text: Vec<String> = lines.iter().map(|l| l.spans.iter().map(|s| s.content.to_string()).collect::<String>()).collect();
+        let s = text.iter().position(|l| l.contains("OST TEST 88 subject")).expect("subject shown");
+        let b = text.iter().position(|l| l.contains("OST TEST 88 body")).unwrap();
+        assert!(s < b);
+        assert!(lines[s].spans.iter().any(|sp| sp.content.contains("subject") && sp.style.add_modifier.contains(Modifier::BOLD)));
     }
 }
