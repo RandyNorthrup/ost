@@ -1677,6 +1677,163 @@ pub async fn analytics(client: &TeamsClient, team_id: &str, channel: Option<&str
     analytics_from(&v)
 }
 
+/// One team's row on Your teams and channels ▸ Analytics.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct TeamAnalyticsRow {
+    /// The team's group id.
+    pub id: String,
+    pub name: String,
+    /// Teams' privacy: "PUBLIC", "PRIVATE", "ORGWIDE" (else "UNKNOWN").
+    pub privacy: String,
+    pub active_users: Metric,
+    pub guests: Option<f64>,
+    pub posts: Option<f64>,
+    pub replies: Option<f64>,
+}
+
+/// A page of analytics across your teams.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct CrossTeamAnalytics {
+    pub start: String,
+    pub end: String,
+    pub teams: Vec<TeamAnalyticsRow>,
+    /// The next page's cursor (Teams loads it when the list is scrolled to
+    /// its end).
+    pub next: String,
+}
+
+/// Teams' cross-team summary-timeseries answer ({teams: [{id, displayName,
+/// privacy 0 public / 1 private / 2 org-wide, metrics}], paging:
+/// {nextCursor}, startDate, endDate, errorCode}).
+pub fn cross_team_analytics_from(v: &serde_json::Value) -> Result<CrossTeamAnalytics> {
+    if let Some(code) = v.get("errorCode").filter(|c| !c.is_null())
+        && code.as_str() != Some("")
+        && !matches!(code.as_i64(), Some(0) | Some(2))
+    {
+        bail!("Analytics error {code}");
+    }
+    let total = |m: &serde_json::Value, k: &str| m[k]["value"].as_f64();
+    let teams = v["teams"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| {
+            let m = &t["metrics"];
+            TeamAnalyticsRow {
+                id: t["id"].as_str().unwrap_or_default().to_string(),
+                name: t["displayName"].as_str().unwrap_or_default().to_string(),
+                privacy: match t["privacy"].as_i64() {
+                    Some(0) => "PUBLIC",
+                    Some(1) => "PRIVATE",
+                    Some(2) => "ORGWIDE",
+                    _ => "UNKNOWN",
+                }
+                .to_string(),
+                active_users: Metric {
+                    value: total(m, "activeUsers"),
+                    series: m["activeUsers"]["timeSeries"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|p| (p["date"].as_str().unwrap_or_default().to_string(), p["value"].as_f64().unwrap_or(0.0)))
+                        .collect(),
+                },
+                guests: total(m, "guests"),
+                posts: total(m, "postMessages"),
+                replies: total(m, "replyMessages"),
+            }
+        })
+        .collect();
+    Ok(CrossTeamAnalytics {
+        start: v["startDate"].as_str().unwrap_or_default().to_string(),
+        end: v["endDate"].as_str().unwrap_or_default().to_string(),
+        teams,
+        next: v.pointer("/paging/nextCursor").and_then(|c| c.as_str()).unwrap_or_default().to_string(),
+    })
+}
+
+/// Analytics across the teams you own (Your teams and channels ▸
+/// Analytics): `GET {mt}/beta/analytics/me/teams/summary-timeseries?
+/// metric=all&timeperiod=…&includeTimeseries=activeUsers&pagesize=40&
+/// nextCursor=…` with Teams' caller `tca-ct`.
+pub async fn cross_team_analytics(client: &TeamsClient, period: &str, cursor: &str) -> Result<CrossTeamAnalytics> {
+    let (base, token) = middle_tier(client).await?;
+    let v: serde_json::Value = client
+        .http()
+        .get(format!(
+            "{base}/beta/analytics/me/teams/summary-timeseries?metric=all&timeperiod={}&includeTimeseries=activeUsers&pagesize=40&nextCursor={}",
+            analytics_period(period),
+            enc(cursor)
+        ))
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", "tca-ct")
+        .send()
+        .await?
+        .error_for_status()
+        .context("Analytics")?
+        .json()
+        .await
+        .context("Analytics")?;
+    cross_team_analytics_from(&v)
+}
+
+/// A shared-channel invitation to one of your teams (Your teams and
+/// channels ▸ Pending invites).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct ChannelInvitation {
+    pub id: String,
+    /// Teams' state: Validating, Sent, Revoked (needs action) or Pending,
+    /// Declined (waiting for the channel owner).
+    pub state: String,
+    pub channel: String,
+    pub organization: String,
+    pub channel_tenant: String,
+    pub inviter: String,
+    pub expires: String,
+}
+
+/// Read `{provisioning}/users/me/invitations` ({invitations: […]}).
+pub fn invitations_from(v: &serde_json::Value) -> Vec<ChannelInvitation> {
+    let s = |x: &serde_json::Value, p: &str| x.pointer(p).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    v["invitations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|i| {
+            let prefixed = s(i, "/channelInvitation/channelPrefixedId");
+            ChannelInvitation {
+                id: s(i, "/id"),
+                state: s(i, "/state"),
+                channel: s(i, "/channelInvitation/channelDisplayName"),
+                organization: s(i, "/channelInvitation/channelOrganizationName"),
+                // OID:{group}@{tenant}
+                channel_tenant: prefixed.rsplit_once('@').map(|(_, t)| t.to_string()).unwrap_or_default(),
+                inviter: Some(s(i, "/inviter/displayName")).filter(|n| !n.is_empty()).unwrap_or_else(|| s(i, "/inviter/decoratedDisplayName")),
+                expires: s(i, "/systemExpirationDateTime"),
+            }
+        })
+        .collect()
+}
+
+/// Shared-channel invitations to your teams, as Teams reads them:
+/// `GET {teamsAndChannelsProvisioningService}/users/me/invitations`.
+pub async fn invitations(client: &TeamsClient) -> Result<Vec<ChannelInvitation>> {
+    let (base, token) = provisioning(client).await?;
+    let v: serde_json::Value = client
+        .http()
+        .get(format!("{base}/users/me/invitations"))
+        .bearer_auth(&token)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .send()
+        .await?
+        .error_for_status()
+        .context("Pending invites")?
+        .json()
+        .await
+        .context("Pending invites")?;
+    Ok(invitations_from(&v))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1750,6 +1907,32 @@ mod tests {
             private_channel_body("19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2", "OST private test", "", "Private", "Conversational", "b3aabdfd-cc3d-44fa-a183-81c1891c3847").to_string(),
             r#"{"channelType":"Private","chatModalityType":"Conversational","description":"","displayName":"OST private test","sessionKey":"b3aabdfd-cc3d-44fa-a183-81c1891c3847","sharedWithParentTeam":true,"spaceThreadId":"19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2"}"#
         );
+    }
+
+    #[test]
+    fn cross_team_analytics_read_as_teams() {
+        let v = serde_json::json!({"teams": [{"id": "1fac3ae3-c9c0-4ddb-90bb-58f52209c181", "displayName": "OST Test Team", "privacy": 1,
+            "metrics": {"activeUsers": {"value": 1, "timeSeries": [{"date": "2026-10-30T00:00:00", "value": 0}, {"date": "2026-11-05T00:00:00", "value": 1}]},
+                        "guests": {"value": 0}, "postMessages": {"value": 0}, "replyMessages": {"value": 0}}}],
+            "paging": {"nextCursor": "abc"}, "startDate": "2026-10-30T00:00:00", "endDate": "2026-11-05T00:00:00", "totalCount": 1});
+        let a = cross_team_analytics_from(&v).unwrap();
+        assert_eq!((a.start.as_str(), a.end.as_str(), a.next.as_str()), ("2026-10-30T00:00:00", "2026-11-05T00:00:00", "abc"));
+        let t = &a.teams[0];
+        assert_eq!((t.name.as_str(), t.privacy.as_str(), t.active_users.value, t.posts), ("OST Test Team", "PRIVATE", Some(1.0), Some(0.0)));
+        assert_eq!(t.active_users.series.len(), 2);
+        assert!(cross_team_analytics_from(&serde_json::json!({"errorCode": 5})).is_err());
+        assert_eq!(cross_team_analytics_from(&serde_json::json!({"errorCode": 2})).unwrap().teams.len(), 0);
+    }
+
+    #[test]
+    fn invitations_read_as_teams() {
+        // Teams' answer for OST Test 1 (2026-11-09).
+        assert!(invitations_from(&serde_json::json!({"invitations": []})).is_empty());
+        let v = serde_json::json!({"invitations": [{"id": "i1", "state": "Sent", "systemExpirationDateTime": "2026-11-20T00:00:00Z",
+            "inviter": {"displayName": "Someone"},
+            "channelInvitation": {"channelDisplayName": "Design", "channelOrganizationName": "Contoso", "channelPrefixedId": "OID:g@t2"}}]});
+        let i = &invitations_from(&v)[0];
+        assert_eq!((i.state.as_str(), i.channel.as_str(), i.inviter.as_str(), i.channel_tenant.as_str()), ("Sent", "Design", "Someone", "t2"));
     }
 
     #[test]

@@ -815,6 +815,66 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 - Checked: OST created "OST private test 2" and deleted it; Teams' Manage
   team ▸ Channels list showed it with the lock and then without it.
 
+#### 5.6.9 Your teams and channels (See all your teams, measured 2026-11-09)
+
+- In the conversation's place; the chat list's "See all your teams" row
+  shows as chosen while it's open. Header 61 tall, no line under it:
+  "Your teams and channels" (20/28 bold) at 20, 15.5 down; tabs Teams,
+  Pending invites, Analytics (14/20, 8 each side, the chosen one 600 with a
+  3 px brand pill); the Create team split button (128.2 + 24 x 31.3,
+  people-team-add 20, 14 semibold #424242, chevron 12) 7 from the right,
+  its menu Create team / Join Team (128.7 wide, 4.3 in from its right).
+- Teams tab: pills All / Teams you own / 3 more 48 in, 24.3 under the
+  header, 12 apart (the chosen one white, #D1D1D1 hairline, brand text,
+  31.3 tall; others #F5F5F5, 30 tall; 96 wide at least). The second pill is
+  Teams you own until another filter is chosen, then that filter; 3 more
+  lists Teams you own, Teams with channels hidden, Teams with channels
+  shown and Archived Teams, without the chosen one. Archived teams show
+  under every filter, with an archive icon (16) 4 after the name. Sort:
+  A-Z, Z-A, Team type, Membership Type (by the role's word), Visibility
+  Type (Private before Public), ties by name. Search teams (280 x 32,
+  outlined) 48 from the right; Teams waits 250 ms.
+- Rows from 146 down, 45 in, 39 from the right, 60.7 tall with a #F0F0F0
+  line: picture 28 (round) at 8,16; name 14/20 semibold at 46,10;
+  10/14 "Private | N people | N channels | description" at 46,30 with 20
+  tall #E0E0E0 dividers 8 each side (people: owners + members + guests
+  less bots from membershipSummary); a team with no shown channel has a 20
+  px eye-off, 8, a 20 tall #E0E0E0 line, 8, before the role; the role
+  (Owner / Member / Guest, 14/20) 8 from the right. Hover: #F5F5F5 and
+  the team's ··· (32 x 31.3; the team menu) instead of the mark and role.
+  A row opens Manage team. No match: Teams' tag_not_found illustration
+  (245, 140.2 under the header) and "We didn't find any matches" (18/25.7
+  semibold) 430.1 under it.
+- Teams' channel count is the channels its client has cached for the team
+  (it showed 3 and later 5 for the same team); OST counts the team's
+  channels.
+- Pending invites: `GET {teamsAndChannelsProvisioningService}/users/me/
+  invitations` ({invitations: []} here). None: Teams' No_request
+  illustration (245 x 230.7, 70 under the header) and "When people invite
+  your team to a shared channel, the invite will show up here." (18/25.7
+  semibold). With invitations: Needs action (Validating, Sent, Revoked)
+  and Pending owner approval sections with Shared channel, Sent by,
+  Organization, Expires in; another org's channel gets " (External)".
+  Shared channels are off in this tenant, so that list is unverified.
+- Analytics: across the teams you own, `GET {mt}/beta/analytics/me/teams/
+  summary-timeseries?metric=all&timeperiod=…&includeTimeseries=activeUsers
+  &pagesize=40&nextCursor=…` (caller tca-ct; privacy 0 public, 1 private,
+  2 org-wide). "Time period" 20 in, 20 down; its dropdown (250 x 31.3)
+  under it; the dates (14 semibold, "-" between, 10 apart) at 280. A white
+  card (radius 4, padding 12, shadow) 91.3 down: header row 32.7, rows
+  44.7, #E0E0E0 lines; columns Name 150, People 100, Active users 150,
+  Active guests 100, Posts 100, Replies 100, Type 200, text 8 in; picture
+  28 (radius 4); Active users' number then an 80 x 20 area sparkline
+  (#5B5FC7, 30% fill, y to Highcharts' soft max 10); Type a 14 px lock /
+  globe / building and Private / Public / Org-wide.
+- Manage team ▸ Analytics ▸ Analytics across teams opens this page's
+  Analytics tab. (Teams opens a bare panel titled "Your teams and channels"
+  over the last chat's header there, overlapping it.)
+- Checked side by side with Teams for OST Test Team and Secure Coast:
+  rows, facts, filters (hidden all channels, archived the team, then
+  restored both), sorts, menus, no match, the Pending invites empty state
+  and the analytics numbers and dates.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

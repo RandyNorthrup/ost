@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T20:42:00Z'
-updated_date: '2026-11-10T03:36:00Z'
+updated_date: '2026-11-10T04:28:00Z'
 labels:
   - desktop
 dependencies: []
@@ -21,7 +21,7 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
 <!-- AC:BEGIN -->
 - [x] #1 Each team row has Teams' ··· menu with Teams' items, conditions and order
 - [x] #2 Manage team opens Teams' page in the conversation's place with its tabs, each measured against Teams
-- [ ] #3 Manage team ▸ Analytics shows the team's analytics (Summary with Active guests, Engagement, charts; Analytics across teams) and Manage channel's All Channels / Analytics across channels open it
+- [x] #3 Manage team ▸ Analytics shows the team's analytics (Summary with Active guests, Engagement, charts; Analytics across teams) and Manage channel's All Channels / Analytics across channels open it
 - [ ] #4 Verified side by side with Teams on winpc in OST Test Team
 - [x] #5 Manage channel ▸ Settings for a channel other than General shows Teams' channel moderation and settings (verified with a test channel made by Add channel in OST Test Team)
 <!-- AC:END -->
@@ -80,4 +80,6 @@ Teams has a ··· menu on each team row (Hide all channels, Add member, Add cha
 - 2bf52c5: Manage team Apps tab (aggregated team entitlements; Copy link as Teams; Remove; Create an outgoing webhook). All seven Manage team tabs now built; AC #2 checked.
 
 - Private channels: Create a channel (Private) goes through the provisioning service (channelsWarmup + channels POST) and then shows the "Add members to the {channel} channel" step; Delete channel on a private channel uses the provisioning DELETE with OID:{substrateGroupId}@{tenant}. OST created and deleted "OST private test 2"; Teams' Manage team list confirmed both. The member step's Add isn't run (OST Test Team has no other members). Spec §5.6.8.
+
+- AC #3: Analytics across teams now opens Your teams and channels ▸ Analytics (TASK-0084).
 <!-- SECTION:NOTES:END -->

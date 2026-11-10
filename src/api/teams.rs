@@ -174,12 +174,28 @@ pub struct ListTeam {
     pub owner: bool,
     /// A public team (CSA accessType 3; 1 is private).
     pub public: bool,
+    /// Your role: "admin" (Owner), "user" (Member) or "guest" (Guest).
+    pub role: String,
+    /// Its people as Teams counts them on Your teams and channels:
+    /// owners + members + guests, less bots (membershipSummary).
+    pub people: u64,
+    /// Teams' teamType (0 a team; class, PLC, staff… for education).
+    pub team_type: u64,
+    /// The team picture's ETag (it changes with the picture).
+    pub picture_etag: String,
 }
 
 fn read_horizon(c: &serde_json::Value) -> bool {
     c.pointer("/consumptionHorizon/originalArrivalTime")
         .and_then(|t| t.as_i64())
         .is_some_and(|t| t > 0)
+}
+
+/// A team's people as Teams counts them (owners + members + guests, less
+/// bots, from its membershipSummary).
+pub fn people_count(summary: &serde_json::Value) -> u64 {
+    let n = |k: &str| summary.get(k).and_then(|v| v.as_i64()).unwrap_or(0);
+    (n("adminRoleCount") + n("userRoleCount") + n("guestRoleCount") - n("botCount")).max(0) as u64
 }
 
 /// Read Teams' team list (`{csa}/api/v1/teams/users/me/teams`).
@@ -258,6 +274,10 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 site_url: t.pointer("/teamSiteInformation/sharepointSiteUrl").and_then(|u| u.as_str()).unwrap_or_default().to_string(),
                 owner: s(t, "memberRoleString") == "admin",
                 public: t.get("accessType").and_then(|a| a.as_u64()) == Some(3),
+                role: Some(s(t, "memberRoleString").to_lowercase()).filter(|r| !r.is_empty()).unwrap_or_else(|| "user".into()),
+                people: people_count(t.get("membershipSummary").unwrap_or(&serde_json::Value::Null)),
+                team_type: t.get("teamType").and_then(|v| v.as_u64()).unwrap_or(0),
+                picture_etag: s(t, "pictureETag"),
             }
         })
         .collect()
@@ -729,5 +749,20 @@ mod list_tests {
         let hidden = serde_json::json!([{"id": "t1", "displayName": "T", "isGeneralChannelFavorite": false, "channels": [
             {"id": "c1", "displayName": "General", "isFavorite": true, "isGeneral": true}]}]);
         assert!(!list_teams_from(&hidden)[0].channels[0].shown);
+    }
+
+    #[test]
+    fn people_role_and_type_as_your_teams_page_shows_them() {
+        // OST Test Team's membershipSummary as CSA gave it: one owner, three
+        // bots (counted as users); Teams shows "1 people".
+        let v = serde_json::json!([{"id": "t1", "displayName": "OST Test Team", "memberRoleString": "admin", "teamType": 0,
+            "membershipSummary": {"botCount": 3, "mutedMembersCount": 0, "totalMemberCount": 4, "adminRoleCount": 1, "userRoleCount": 3},
+            "channels": []},
+            {"id": "t2", "displayName": "Secure Coast", "memberRoleString": "User", "accessType": 3,
+            "membershipSummary": {"botCount": 0, "adminRoleCount": 2, "userRoleCount": 2, "guestRoleCount": 1}, "channels": []}]);
+        let t = list_teams_from(&v);
+        assert_eq!((t[0].people, t[0].role.as_str(), t[0].team_type), (1, "admin", 0));
+        assert_eq!((t[1].people, t[1].role.as_str(), t[1].public), (5, "user", true));
+        assert_eq!(people_count(&serde_json::json!({"botCount": 5, "adminRoleCount": 1})), 0);
     }
 }

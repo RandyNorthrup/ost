@@ -3434,6 +3434,36 @@ fn photo_dir() -> Option<std::path::PathBuf> {
         .map(|b| b.join("ost").join("photos"))
 }
 
+/// Note a team picture's ETag; true when it differs from the one noted
+/// before (or none was, while a picture is cached), so the cached picture
+/// is stale.
+fn team_picture_changed(group: &str, etag: &str) -> bool {
+    let (Some(dir), false) = (photo_dir(), etag.is_empty()) else {
+        return false;
+    };
+    let oid = group.to_ascii_lowercase();
+    if oid.len() != 36 || !oid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return false;
+    }
+    let file = dir.join(format!("team-{oid}.etag"));
+    let before = std::fs::read_to_string(&file).ok();
+    if before.as_deref() == Some(etag) {
+        return false;
+    }
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(&file, etag);
+    match before {
+        Some(_) => true,
+        // First sight: stale only if a picture is already cached.
+        None => std::fs::read_dir(&dir)
+            .map(|d| d.flatten().any(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n.starts_with(&format!("team-{oid}-")) && !n.ends_with(".etag")
+            }))
+            .unwrap_or(false),
+    }
+}
+
 /// The owner and object id behind a photo_for id.
 fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::PhotoOwner, String)> {
     use api::directory::PhotoOwner;
@@ -7705,7 +7735,19 @@ impl qobject::Backend {
             match result {
                 Ok((client, teams)) => {
                     let text = serde_json::to_string(&teams).unwrap_or_else(|_| "[]".into());
-                    let _ = qt.queue(move |mut this| this.as_mut().set_teams_json(QString::from(text.as_str())));
+                    // A team picture whose ETag changed is fetched again (as
+                    // Teams asks for it by ETag).
+                    let changed: Vec<String> = teams
+                        .iter()
+                        .filter(|t| team_picture_changed(&t.id, &t.picture_etag))
+                        .map(|t| format!("team:{}", t.id))
+                        .collect();
+                    let _ = qt.queue(move |mut this| {
+                        for id in &changed {
+                            this.as_mut().forget_photos(id);
+                        }
+                        this.as_mut().set_teams_json(QString::from(text.as_str()))
+                    });
                     // Every team's tags: the @ picker offers them, and a
                     // mention of a tag you are in mentions you (as Teams'
                     // currentUserTagIds).
@@ -9285,7 +9327,8 @@ impl qobject::Backend {
             channel_id.to_string(),
             arg.to_string(),
         );
-        if !channel.ends_with("@thread.tacv2") {
+        // Your teams and channels' ops are about all your teams.
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "cross-team-analytics" | "invitations") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -9745,6 +9788,16 @@ impl qobject::Backend {
                         let r = api::channels::analytics(&client, &team, scope, period).await?;
                         Ok(json!({ "period": api::channels::analytics_period(period), "team": scope.is_none(), "analytics": r }))
                     }
+                    // Your teams and channels ▸ Analytics: arg {period, cursor}.
+                    "cross-team-analytics" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let period = a["period"].as_str().unwrap_or("last-seven-days");
+                        let cursor = a["cursor"].as_str().unwrap_or_default();
+                        let r = api::channels::cross_team_analytics(&client, period, cursor).await?;
+                        Ok(json!({ "period": api::channels::analytics_period(period), "cursor": cursor, "analytics": r }))
+                    }
+                    // Your teams and channels ▸ Pending invites.
+                    "invitations" => Ok(serde_json::to_value(api::channels::invitations(&client).await?)?),
                     _ => anyhow::bail!("Unknown channel action"),
                 }
             }
@@ -9765,7 +9818,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations") {
                     this.as_mut().load_teams();
                 }
             });

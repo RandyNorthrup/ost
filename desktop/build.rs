@@ -129,6 +129,8 @@ fn main() {
         "qml/BannerImageDialog.qml",
         "qml/TeamMenu.qml",
         "qml/ManageTeam.qml",
+        "qml/YourTeams.qml",
+        "qml/TeamsAnalyticsTable.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",

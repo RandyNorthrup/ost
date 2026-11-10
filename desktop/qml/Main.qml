@@ -3442,6 +3442,47 @@ Window {
         }
     }
 
+    // --your-teams-test=<team group id> --shots=<dir>: See all your teams ▸
+    // Your teams and channels: Teams (yt-teams, the 3 more and Sort menus,
+    // no matches, Z-A), Pending invites (yt-pending), Analytics (yt-analytics,
+    // Last Thirty Days), then Manage team ▸ Analytics ▸ Analytics across
+    // teams (yt-across); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--your-teams-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--your-teams-test=")) || "").slice(18)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const rows = () => JSON.stringify(yourTeams.rowsForTest().map(t => [t.name, t.role, t.people, (t.channels || []).length, t["public"], t.team_type]))
+            if (step === 0) chatList.openYourTeams()
+            else if (step === 2) { console.warn("YT rows", rows()); shot("yt-teams") }
+            else if (step === 3) yourTeams.openMoreForTest()
+            else if (step === 4) shot("yt-more")
+            else if (step === 5) { yourTeams.closeMenusForTest(); yourTeams.openSortForTest() }
+            else if (step === 6) shot("yt-sort")
+            else if (step === 7) { yourTeams.closeMenusForTest(); yourTeams.openCreateMenuForTest() }
+            else if (step === 8) shot("yt-create")
+            else if (step === 9) { yourTeams.closeMenusForTest(); yourTeams.setQueryForTest("zzqq") }
+            else if (step === 10) shot("yt-nomatch")
+            else if (step === 11) { yourTeams.setQueryForTest(""); for (const k of ["za", "type", "membership", "visibility", "az"]) { yourTeams.sort = k; console.warn("YT sort", k, rows()) } }
+            else if (step === 12) { yourTeams.filter = "OWNED"; console.warn("YT owned", rows()); shot("yt-owned") }
+            else if (step === 13) { yourTeams.filter = "HIDDEN"; console.warn("YT hidden", rows()); yourTeams.filter = "SHOWN"; console.warn("YT shown", rows()); yourTeams.filter = "ARCHIVED"; console.warn("YT archived", rows()); yourTeams.filter = "" }
+            else if (step === 14) yourTeams.tab = "pending"
+            else if (step === 16) { console.warn("YT invitations", JSON.stringify(yourTeams.invitations)); shot("yt-pending") }
+            else if (step === 17) yourTeams.tab = "analytics"
+            else if (step === 20) { const a = yourTeams.analyticsForTest(); console.warn("YT analytics", a.failed, a.start, a.end, JSON.stringify(a.rows).slice(0, 600)); shot("yt-analytics") }
+            else if (step === 21) yourTeams.analyticsForTest().period = "last-thirty-days"
+            else if (step === 24) { const a = yourTeams.analyticsForTest(); console.warn("YT analytics30", a.start, a.end); shot("yt-analytics30") }
+            else if (step === 25) window.openManageTeam(id, "analytics")
+            else if (step === 28) manageTeam.acrossTeams()
+            else if (step === 31) { console.warn("YT across", yourTeams.visible, yourTeams.tab, chatList.yourTeamsOpen); shot("yt-across") }
+            else if (step === 32) Qt.quit()
+            step++
+        }
+    }
+
     // --members-test=<team group id> --shots=<dir>: Manage team ▸ Members
     // (mb-members.png, the roster logged), then Pending requests
     // (mb-pending.png, logged); quit.
@@ -4541,7 +4582,7 @@ Window {
         rail.current = "chat"
         window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
         if (backend.currentChatId !== channelId) backend.selectChat(channelId, ch.name)
-        window.manageTeamId = ""
+        window.manageTeamId = ""; chatList.yourTeamsOpen = false
         window.manage = { teamId: team.id, teamName: team.name, channelId: channelId }
         window.raise(); window.requestActivate()
     }
@@ -4555,13 +4596,31 @@ Window {
         rail.current = "chat"
         window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
         window.manage = null
+        chatList.yourTeamsOpen = false
         window.manageTeamId = teamId
         manageTeam.tab = tab || "channels"
         window.raise(); window.requestActivate()
     }
     Connections {
         target: backend
-        function onCurrentChatIdChanged() { window.manageTeamId = "" }
+        function onCurrentChatIdChanged() { window.manageTeamId = ""; chatList.yourTeamsOpen = false }
+    }
+    // Your teams and channels (See all your teams).
+    function openYourTeams(tab) {
+        rail.current = "chat"
+        window.composing = false; chatList.draftsOpen = false; chatList.mentionsOpen = false
+        window.manage = null; window.manageTeamId = ""
+        chatList.yourTeamsOpen = true
+        yourTeams.tab = tab || "teams"
+        window.raise(); window.requestActivate()
+    }
+    YourTeams {
+        id: yourTeams
+        visible: chatList.yourTeamsOpen && !window.manageTeamId && !window.manage && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        onManageTeam: id => window.openManageTeam(id, "channels")
+        onManageTags: id => window.openManageTeam(id, "tags")
+        onOpenChannel: (id, name) => { chatList.yourTeamsOpen = false; backend.selectChat(id, name) }
     }
     ManageTeam {
         id: manageTeam
@@ -4574,6 +4633,8 @@ Window {
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
         onGetMoreApps: { window.manageTeamId = ""; rail.current = "add" }
+        // Analytics ▸ Analytics across teams: Your teams and channels' Analytics.
+        onAcrossTeams: window.openYourTeams("analytics")
         myPresence: window.myPresence
         // Tags ▸ Chat with group: a new chat with the tag's people.
         onChatWithPeople: people => {
@@ -4618,13 +4679,14 @@ Window {
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; backend.selectChat(id, name) }
-        onNewChat: { draftsOpen = false; mentionsOpen = false; window.composing = true }
+        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
+        onNewChat: { draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.composing = true }
+        onOpenYourTeams: window.openYourTeams("teams")
         onMarkAllRead: backend.markAllRead()
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
-        onOpenDrafts: { window.composing = false; mentionsOpen = false; draftsOpen = true }
+        onOpenDrafts: { window.composing = false; mentionsOpen = false; yourTeamsOpen = false; draftsOpen = true }
         hasMentions: mentionsView.mentions.length > 0
-        onOpenMentions: { window.composing = false; draftsOpen = false; mentionsOpen = true; mentionsView.selectedId = "" }
+        onOpenMentions: { window.composing = false; draftsOpen = false; yourTeamsOpen = false; mentionsOpen = true; mentionsView.selectedId = "" }
         onOpenCommunities: rail.openApp("communities")
     }
     MentionsView {
@@ -4754,7 +4816,7 @@ Window {
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible && !manageTeam.visible)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: titleBar.bottom; bottom: statusBar.top; right: tabConversation.left

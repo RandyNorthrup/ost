@@ -32,6 +32,9 @@ Rectangle {
     signal markAllRead()
     /// Communities ▸ Join communities.
     signal openCommunities()
+    /// See all your teams.
+    property bool yourTeamsOpen: false
+    signal openYourTeams()
     color: theme.pane
     width: theme.listWidth
 
@@ -396,11 +399,22 @@ Rectangle {
             onClicked: parent.row.key === "mentions" ? root.openMentions() : root.openDrafts()
         }
     }
+    // See all your teams: Teams' Your teams and channels page (the row
+    // shows as chosen while it's open).
     Component {
         id: seeAllComp
         Item {
             width: list.width; height: 28
-            Text { x: 31; y: 4; text: "See all your teams"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand }
+            Rectangle {
+                x: 16; width: parent.width - 32; height: 28; radius: theme.radius
+                color: root.yourTeamsOpen ? theme.selected : "transparent"
+            }
+            Text {
+                x: 31; y: 4; text: "See all your teams"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.openYourTeams() }
+                Accessible.role: Accessible.Link; Accessible.name: "See all your teams"
+            }
         }
     }
     Component {
