@@ -9432,6 +9432,51 @@ impl qobject::Backend {
                         };
                         Ok(json!({ "settings": s, "moderators": moderators }))
                     }
+                    // Add members to {team}: who is in it already.
+                    "team-members-load" => {
+                        let mris = api::channels::team_member_mris(&client, &team_thread).await?;
+                        Ok(json!({ "members": mris }))
+                    }
+                    // Its search (people, groups, lists).
+                    "add-member-search" => {
+                        let found = api::channels::search_add_candidates(&client, arg.trim()).await?;
+                        Ok(json!({ "query": arg, "people": found }))
+                    }
+                    // A picked group's people (arg: its object id).
+                    "group-people" => {
+                        let people = api::channels::group_people(&client, arg.trim()).await?;
+                        Ok(json!({ "group": arg, "people": people }))
+                    }
+                    // arg {users: [{mri, owner}], guests: [{email, name}]}.
+                    "add-members" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Members")?;
+                        let group_id = team.clone();
+                        let users: Vec<(String, bool)> = a["users"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|u| Some((u["mri"].as_str()?.to_string(), u["owner"].as_bool().unwrap_or(false))))
+                            .collect();
+                        let requested = users.len() + a["guests"].as_array().map(|g| g.len()).unwrap_or(0);
+                        let mut outcome = match api::channels::add_team_members(&client, &team_thread, &group_id, &users).await {
+                            Ok(o) => o,
+                            Err(e) => {
+                                tracing::warn!("add members failed: {e:#}");
+                                api::channels::AddOutcome { added: 0, failed: users.len() }
+                            }
+                        };
+                        for g in a["guests"].as_array().into_iter().flatten() {
+                            let email = g["email"].as_str().unwrap_or_default();
+                            match api::channels::invite_guest(&client, &team_thread, &group_id, email, g["name"].as_str().unwrap_or_default()).await {
+                                Ok(()) => outcome.added += 1,
+                                Err(e) => {
+                                    tracing::warn!("guest invite failed: {e:#}");
+                                    outcome.failed += 1;
+                                }
+                            }
+                        }
+                        Ok(json!({ "requested": requested, "added": outcome.added, "failed": outcome.failed }))
+                    }
                     // Add or remove moderators: search the team's members.
                     "moderator-search" => {
                         let people = api::channels::search_team_members(&client, &team_thread, arg.trim()).await?;
@@ -9485,7 +9530,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });

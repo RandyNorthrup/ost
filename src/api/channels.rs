@@ -839,6 +839,192 @@ pub async fn set_moderators(client: &TeamsClient, channel: &str, add: &[String],
     Ok(())
 }
 
+/// Someone (or a group) offered by Add members to {team}.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct AddCandidate {
+    /// `8:orgid:{objectId}` (empty for a group).
+    pub mri: String,
+    pub object_id: String,
+    pub name: String,
+    pub mail: String,
+    /// The second line: a person's alias in capitals (Teams' "RANDY"), a
+    /// group's e-mail address.
+    pub detail: String,
+    pub group: bool,
+}
+
+/// A searchV2 result as Add members shows it.
+pub fn add_candidate_from(v: &serde_json::Value) -> Option<AddCandidate> {
+    let s = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+    let object_id = s("objectId");
+    if object_id.is_empty() {
+        return None;
+    }
+    let group = v["objectType"].as_str() == Some("Group") || v["type"].as_str() == Some("Group");
+    let mail = [s("email"), s("mail"), s("userPrincipalName")]
+        .into_iter()
+        .find(|m| !m.is_empty())
+        .unwrap_or_default();
+    let detail = if group {
+        mail.clone()
+    } else {
+        s("userPrincipalName").split('@').next().unwrap_or_default().to_uppercase()
+    };
+    Some(AddCandidate {
+        mri: if group {
+            String::new()
+        } else {
+            v["mri"].as_str().map(str::to_string).unwrap_or_else(|| format!("8:orgid:{object_id}"))
+        },
+        object_id,
+        name: s("displayName"),
+        mail,
+        detail,
+        group,
+    })
+}
+
+/// People, groups and distribution lists for Add members, as Teams
+/// searches (`POST {mt}/beta/users/searchV2?…&source=addToTeam`, the query
+/// as the body).
+pub async fn search_add_candidates(client: &TeamsClient, query: &str) -> Result<Vec<AddCandidate>> {
+    let (base, token) = middle_tier(client).await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!(
+            "{base}/beta/users/searchV2?includeDLs=true&enableGuest=true&includeBots=true&skypeTeamsInfo=true&source=addToTeam"
+        ))
+        .bearer_auth(&token)
+        .header("content-type", "text/plain")
+        .body(query.to_string())
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await
+        .context("Search")?;
+    Ok(v["value"].as_array().into_iter().flatten().filter_map(add_candidate_from).collect())
+}
+
+/// A group's people (the members a group brings to the team).
+pub async fn group_people(client: &TeamsClient, group_id: &str) -> Result<Vec<AddCandidate>> {
+    if uuid::Uuid::parse_str(group_id).is_err() {
+        bail!("Not a group");
+    }
+    let v: serde_json::Value = client
+        .graph_get(&format!(
+            "/groups/{group_id}/transitiveMembers/microsoft.graph.user?$select=id,displayName,mail,userPrincipalName&$top=999"
+        ))
+        .await?
+        .json()
+        .await
+        .context("Group members")?;
+    Ok(v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|u| {
+            let id = u["id"].as_str()?.to_string();
+            let upn = u["userPrincipalName"].as_str().unwrap_or_default();
+            Some(AddCandidate {
+                mri: format!("8:orgid:{id}"),
+                object_id: id,
+                name: u["displayName"].as_str().unwrap_or_default().to_string(),
+                mail: u["mail"].as_str().unwrap_or(upn).to_string(),
+                detail: upn.split('@').next().unwrap_or_default().to_uppercase(),
+                group: false,
+            })
+        })
+        .collect())
+}
+
+/// The members of a team (its thread's roster, MRIs in lower case).
+pub async fn team_member_mris(client: &TeamsClient, team_thread: &str) -> Result<Vec<String>> {
+    let url = format!(
+        "{}/v1/threads/{}/members?view=msnp24Equivalent&pageSize=100",
+        client.chat_service_url(),
+        enc(team_thread)
+    );
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Members")?;
+    Ok(v["members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m["id"].as_str().map(|s| s.to_ascii_lowercase()))
+        .collect())
+}
+
+/// Teams' body for adding people with their roles (the middle tier's
+/// numbering: 0 member, 1 owner): `{"users": [{mri, role}], "groupId"}`.
+pub fn add_members_body(group_id: &str, users: &[(String, bool)]) -> serde_json::Value {
+    serde_json::json!({
+        "users": users
+            .iter()
+            .map(|(mri, owner)| serde_json::json!({ "mri": mri, "role": u8::from(*owner) }))
+            .collect::<Vec<_>>(),
+        "groupId": group_id,
+    })
+}
+
+/// What adding people did: who joined and who couldn't be added.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct AddOutcome {
+    pub added: usize,
+    pub failed: usize,
+}
+
+/// Add people to a team (`PUT {mt}/beta/teams/{teamThread}/bulkUpdateRoledMembers?allowAsyncAddition=true`).
+pub async fn add_team_members(client: &TeamsClient, team_thread: &str, group_id: &str, users: &[(String, bool)]) -> Result<AddOutcome> {
+    if users.is_empty() {
+        return Ok(AddOutcome::default());
+    }
+    let (base, token) = middle_tier(client).await?;
+    let resp = client
+        .http()
+        .put(format!("{base}/beta/teams/{}/bulkUpdateRoledMembers?allowAsyncAddition=true", enc(team_thread)))
+        .bearer_auth(&token)
+        .json(&add_members_body(group_id, users))
+        .send()
+        .await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        bail!("Add members: {status} {}", text.chars().take(200).collect::<String>());
+    }
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let count = |k: &str| v["value"][k].as_array().or_else(|| v[k].as_array()).map(|a| a.len());
+    let failed = count("erroredMembers").unwrap_or(0);
+    Ok(AddOutcome { added: users.len().saturating_sub(failed), failed })
+}
+
+/// Invite someone outside the organisation as a guest of the team
+/// (`PUT {mt}/beta/teams/{teamThread}/{groupId}/inviteAndAddGuest`).
+pub async fn invite_guest(client: &TeamsClient, team_thread: &str, group_id: &str, email: &str, name: &str) -> Result<()> {
+    let (base, token) = middle_tier(client).await?;
+    let resp = client
+        .http()
+        .put(format!("{base}/beta/teams/{}/{}/inviteAndAddGuest", enc(team_thread), enc(group_id)))
+        .bearer_auth(&token)
+        .json(&guest_body(email, name))
+        .send()
+        .await?;
+    let status = resp.status();
+    if !status.is_success() {
+        bail!("Invite guest: {status}");
+    }
+    Ok(())
+}
+
+/// Teams' guest invitation: the address and name, with Teams' notice.
+pub fn guest_body(email: &str, name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "emailAddress": email.trim(),
+        "displayName": name.trim(),
+        "enableInviteTeamsNotification": true,
+        "userType": "Guest",
+    })
+}
+
 /// One analytics metric: its total and its days.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Metric {
@@ -978,6 +1164,24 @@ mod tests {
         assert_eq!(channel_settings_from(""), ChannelSettings::default());
         let s = channel_settings_from(r#"{"allowReplies":1,"allowPinPosts":1,"allowBotsPost":0,"allowConnectorsPost":0,"postPermissions":2}"#);
         assert_eq!(s, ChannelSettings { post: 2, replies: false, pins: false, bots: false, connectors: false });
+    }
+
+    #[test]
+    fn add_members_are_teams() {
+        // searchV2 results captured from Teams' Add members (2026-11-09).
+        let group: serde_json::Value = serde_json::from_str(r#"{"isUnified":true,"alias":"OSTTestTeam","mail":"OSTTestTeam@scnetsolutions.com","objectType":"Group","id":"1fac3ae3-c9c0-4ddb-90bb-58f52209c181@2716d134-5614-4856-a48d-2002edd9a570","peopleType":"Group","text":"OST Test Team","userPrincipalName":"OSTTestTeam@scnetsolutions.com","email":"OSTTestTeam@scnetsolutions.com","displayName":"OST Test Team","type":"Group","objectId":"1fac3ae3-c9c0-4ddb-90bb-58f52209c181"}"#).unwrap();
+        let g = add_candidate_from(&group).unwrap();
+        assert!(g.group && g.mri.is_empty());
+        assert_eq!(g.detail, "OSTTestTeam@scnetsolutions.com");
+        let person: serde_json::Value = serde_json::from_str(r#"{"alias":"RandyNorthrup","mail":"Randy@scnetsolutions.com","objectType":"User","userPrincipalName":"Randy@scnetsolutions.com","email":"Randy@scnetsolutions.com","displayName":"Randy Northrup","type":"ADUser","mri":"8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3","objectId":"5050c9d6-b8a7-41f2-830a-0c51777b7dc3"}"#).unwrap();
+        let p = add_candidate_from(&person).unwrap();
+        assert_eq!((p.mri.as_str(), p.detail.as_str(), p.group), ("8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3", "RANDY", false));
+        // The roles in the middle tier's numbering.
+        assert_eq!(
+            add_members_body("g", &[("8:orgid:a".into(), false), ("8:orgid:b".into(), true)]).to_string(),
+            r#"{"groupId":"g","users":[{"mri":"8:orgid:a","role":0},{"mri":"8:orgid:b","role":1}]}"#
+        );
+        assert_eq!(guest_body(" a@example.com ", "A")["emailAddress"], "a@example.com");
     }
 
     #[test]

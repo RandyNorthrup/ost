@@ -3327,6 +3327,40 @@ Window {
         }
     }
 
+    // --add-members-test=<team group id> --shots=<dir>: Add members to the
+    // team (am-empty.png); search "ran" (am-search.png, logged), pick the
+    // first; search "ost" and pick the group (am-picked.png, its people
+    // logged), its role menu (am-role.png); a guest address and its name
+    // editor (am-guest.png); Cancel (nothing is added); quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--add-members-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--add-members-test=")) || "").slice(19)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => t.id === id)
+            if (!team) return
+            const d = chatList.teamMenuForTest().addMembersForTest()
+            if (step === 0) d.start(team.id, team.thread_id, team.name)
+            else if (step === 1) { console.warn("AM members", JSON.stringify(d.members)); shot("am-empty") }
+            else if (step === 2) d.searchForTest("ran")
+            else if (step === 4) { console.warn("AM search", JSON.stringify(d.results)); shot("am-search") }
+            else if (step === 5) d.pickFirstForTest()
+            else if (step === 6) d.searchForTest("ost")
+            else if (step === 8) { console.warn("AM search2", JSON.stringify(d.results)); d.pickFirstForTest() }
+            else if (step === 10) { console.warn("AM staged", JSON.stringify(d.staged)); shot("am-picked") }
+            else if (step === 11) d.searchForTest("guest@example.com")
+            else if (step === 13) shot("am-guest-option")
+            else if (step === 14) { d.pickFirstForTest(); }
+            else if (step === 15) shot("am-guest")
+            else if (step === 16) { d.close(); console.warn("AM closed", d.opened) }
+            else if (step === 17) Qt.quit()
+            step++
+        }
+    }
+
     // --channel-owner-test=<team group id> --shots=<dir>: on the OST test
     // channels: the owner menu (co-menu.png) and the Archive / Delete
     // dialogs (co-archive.png, co-delete.png); then Restore "OST test

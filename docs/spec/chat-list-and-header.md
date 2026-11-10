@@ -566,6 +566,48 @@ or member with the `createTopic` setting for standard channels.
 | 10 | **Delete** | `canDelete` = team owner and not archived |
 | — | divider, **Copy Team ID** | developer mode |
 
+#### 5.6.1 Add members to {team} (measured 2026-11-09)
+
+- 600 × 483, padding 24, radius 8. **Add members to {team}** (20/28
+  semibold); the guidance (14/20, 543.5 wide): "Start typing a name,
+  distribution list, or security group to add to your team. You can also add
+  people outside your organization as guests by typing their email
+  addresses. People outside your org will get an email letting them know
+  they've been added." and **Learn about adding guests** (#4F52B2,
+  underlined) →
+  `https://support.microsoft.com/office/add-guests-to-a-team-in-teams-fccb4fa6-f864-4508-bdde-256e7384a14f`.
+- Picker (Fluent TagPicker) 128.7 down: 550.7 × 33.3, #F0F0F0, radius 4,
+  padding 0 12, "Type a name or email" (#424242); focused: 2 px brand
+  underline and a chevron. Search:
+  `POST {mt}/beta/users/searchV2?includeDLs=true&enableGuest=true&includeBots=true&skypeTeamsInfo=true&source=addToTeam`
+  with the query as the body. Matches under the picker (padding 4; options
+  50 tall, padding 6 8: picture 32 at 12, the name 14/20 #424242 and its
+  second line 12/16 #616161 at 60, the typed part bold); people show their
+  UPN alias in capitals ("RANDY"), groups their address. Team members are
+  left out. An address matching nobody: **Add {email} as a guest?** (bold
+  address, grey person picture).
+- Picked rows from 172 down (546.7 wide, 44.7 tall, #E0E0E0 line): picture
+  32 at 8, name 14/20 and e-mail 12/16 #616161 at 56; a group's name is
+  followed by an expand button ("Expand the list with 1 person" / "…{n}
+  people") that replaces it by its people; role dropdown (transparent,
+  112.3 × 30 at 384.3; **Member/Owner**, for a group **Members/Owners**;
+  list 127.6 wide with a check on the chosen one); Remove (32 × 31.3) at
+  501.6. Guests: **Add name** (brand semibold; opens "Enter a name for
+  {email}" with Cancel / Save in place), the address, a **Guest** tag (12
+  semibold #616161 on #EBEBEB, radius 4).
+- **Cancel** / **Add** (96 × 31.3) 403 down; Add is disabled until someone
+  is picked.
+- Adding: `PUT {mt}/beta/teams/{teamThread}/bulkUpdateRoledMembers?allowAsyncAddition=true`
+  `{"users": [{"mri", "role": 0 member | 1 owner}], "groupId"}` (the
+  middle tier's role numbering, from Teams' bundle); a group adds its
+  people (OST reads them from Graph `transitiveMembers`); guests:
+  `PUT {mt}/beta/teams/{teamThread}/{groupId}/inviteAndAddGuest`
+  `{emailAddress, displayName, enableInviteTeamsNotification, userType:
+  "Guest"}`. When some fail: "{n} of {m} members were added", "{k} people
+  couldn't be added" / "1 person couldn't be added", "There were some
+  errors." / "There was an error.". Not exercised live: the test tenant
+  allows no new team members.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

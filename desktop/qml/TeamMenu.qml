@@ -6,6 +6,7 @@ import QtQuick.Controls.Basic
 // Hide all channels | Add member, Add channel, Manage team, Manage tags,
 // Copy link, Archive | Leave, Delete. It opens above the button, its left
 // edge on the button's.
+// - Add member opens Add members to {team}.
 // - Add channel opens Create a channel.
 // - Hide all channels asks first ("Hide all channels in {team}?", 600 wide)
 //   and then hides them through Teams' provisioning service.
@@ -31,7 +32,7 @@ Item {
     MenuPopup {
         id: menu
         margins: 8
-        items: (root.anyShown ? [{ key: "hide-all", label: "Hide all channels", icon: "eye-off-20" }, { separator: true }] : []).concat([
+        items: (root.anyShown ? [{ key: "hide-all", label: "Hide all channels", icon: "eye-off-20" }, { separator: true }] : []).concat(root.team.archived ? [] : [{ key: "add-member", label: "Add member", icon: "person-add-20" }]).concat([
             { key: "add-channel", label: "Add channel", icon: "channel-add-20" },
             { key: "manage", label: "Manage team", icon: "settings-20" },
             { key: "link", label: "Copy link", icon: "link-20" }
@@ -39,6 +40,7 @@ Item {
         onPicked: i => {
             const k = items[i].key
             if (k === "hide-all") hideAll.open()
+            else if (k === "add-member") addMembers.start(root.team.id, root.team.thread_id, root.team.name)
             else if (k === "add-channel") createChannel.start(root.team.id, root.team.name)
             else if (k === "manage") root.manageTeam(root.team.id)
             else if (k === "link") root.act("team-link")
@@ -55,10 +57,12 @@ Item {
         onConfirmed: root.act("hide-all")
     }
 
+    AddMembersDialog { id: addMembers }
     CreateChannelDialog { id: createChannel; onCreated: (id, name) => root.channelCreated(id, name) }
 
     // Test hooks.
     function createChannelForTest() { return createChannel }
+    function addMembersForTest() { return addMembers }
     function hideAllForTest() { hideAll.open() }
     function closeAllForTest() { hideAll.close(); menu.close() }
 }

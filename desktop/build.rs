@@ -114,6 +114,7 @@ fn main() {
         "qml/ManageChannel.qml",
         "qml/ChannelModeration.qml",
         "qml/ModeratorsDialog.qml",
+        "qml/AddMembersDialog.qml",
         "qml/AnalyticsView.qml",
         "qml/AnalyticsChart.qml",
         "qml/BannerImageDialog.qml",
