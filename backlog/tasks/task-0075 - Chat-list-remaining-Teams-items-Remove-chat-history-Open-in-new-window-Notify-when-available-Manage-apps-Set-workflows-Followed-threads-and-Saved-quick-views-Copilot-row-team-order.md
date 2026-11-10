@@ -8,7 +8,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T12:32:00Z'
-updated_date: '2026-11-10T07:13:00Z'
+updated_date: '2026-11-10T07:26:00Z'
 labels:
   - desktop
   - chatlist
@@ -54,4 +54,6 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 
 - Quick views: Followed threads (48:threads) and Saved (48:saved) as Teams lays them out, compared on winpc; team order from the teamsOrder preference then the service order (Secure Coast before OST Test Team, as Teams).
 - Left for AC #1: Remove chat history can't be verified without a disposable chat with other members; meeting chats' Report a concern item.
+
+- Meeting chats' Report a concern done (a763659): Hide | Report a concern, the meeting's "Report a security concern" filled from the chat (subject, Nov 6, 3:00 PM, OST Test 1), members to name; dialog checked, never sent.
 <!-- SECTION:NOTES:END -->

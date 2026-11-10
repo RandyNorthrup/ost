@@ -969,6 +969,16 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
   threadId (the chat), iCalUId, reportedUsers, comment} with no callId;
   "Your report was sent". (Never submitted in tests.)
 
+- The chat header's More chat options (measured 2026-11-09): group and
+  1:1 chats: Open in new window (Ctrl+O) | Schedule meeting, Share screen
+  (Ctrl+Shift+E) | Mark as unread, Move to section ▸, Remove from section
+  (in a section), Mute, Copy link | Remove chat history. Meeting chats:
+  Open in new window | Mark as unread, Move to section, Mute, Copy link |
+  Report a concern. Your own chat: Open in new window | Mark as unread,
+  Move to section, Remove from section, Copy link. Share screen calls the
+  chat and opens the share picker once the call connects (not tried: it
+  would ring a real member).
+
 #### 5.6.12 Quick views ▸ Followed threads and Saved; team order (measured 2026-11-09)
 
 - Quick views: Mentions (when there are any), Followed threads, Drafts

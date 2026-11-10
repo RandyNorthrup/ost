@@ -3536,7 +3536,8 @@ Window {
     // --chat-menu-test=<chat id> --shots=<dir>: the chat's menu (cm-menu),
     // Open in new window (cm-window), Manage apps (cm-apps), Set workflows
     // (cm-workflows), the Remove chat history question (cm-remove,
-    // cancelled) and, for a meeting chat, Report a concern (cm-report,
+    // cancelled), the chat's header menu (cm-header, its items logged) and,
+    // for a meeting chat, Report a concern (cm-report,
     // closed unsent); the people tagged for Notify when available are logged.
     // Nothing is changed; quit.
     Timer {
@@ -3560,9 +3561,12 @@ Window {
             else if (step === 13) { console.warn("CM workflows", workflowsDialog.url.replace(/userId=[^&]*/, "userId=X").replace(/tenantId=[^&]*/, "tenantId=X")); shot("cm-workflows") }
             else if (step === 14) { workflowsDialog.close(); row.removeHistoryForTest().open() }
             else if (step === 15) shot("cm-remove")
-            else if (step === 16) { row.removeHistoryForTest().close(); if (chatList.isMeeting(chat)) chatList.reportMeetingChat(id); else Qt.quit() }
-            else if (step === 19) { const d = chatList.chatReportForTest(); console.warn("CM report", JSON.stringify(d.meeting), JSON.stringify(d.people), d.chatIcal ? "ical" : "no-ical"); shot("cm-report") }
-            else if (step === 20) { chatList.chatReportForTest().close(); Qt.quit() }
+            else if (step === 16) { row.removeHistoryForTest().close(); backend.selectChat(id, chat.name) }
+            else if (step === 19) conversation.chatMenuForTest().open()
+            else if (step === 20) { console.warn("CM header", JSON.stringify(conversation.chatMenuForTest().items.map(i => i.separator ? "|" : i.label + (i.keys ? " " + i.keys : "")))); shot("cm-header") }
+            else if (step === 21) { conversation.chatMenuForTest().close(); if (chatList.isMeeting(chat)) chatList.reportMeetingChat(id); else Qt.quit() }
+            else if (step === 24) { const d = chatList.chatReportForTest(); console.warn("CM report", JSON.stringify(d.meeting), JSON.stringify(d.people), d.chatIcal ? "ical" : "no-ical"); shot("cm-report") }
+            else if (step === 25) { chatList.chatReportForTest().close(); Qt.quit() }
             step++
         }
     }
@@ -4681,6 +4685,19 @@ Window {
     // chat: opening it again brings it forward.
     Component { id: chatWindowComponent; ChatWindow {} }
     property var chatWindows: ({})
+    // A chat's Share screen (Ctrl+Shift+E): call the chat, and share once
+    // the call connects (Teams' share picker).
+    property bool shareWhenConnected: false
+    function callAndShare() { shareWhenConnected = true; backend.startCall() }
+    Connections {
+        target: backend
+        function onCallStateChanged() {
+            if (backend.callState === "connected" && window.shareWhenConnected) {
+                window.shareWhenConnected = false
+                if (backend.callCanShare && !backend.callSharing) backend.toggleShare()
+            } else if (backend.callState === "ended" || backend.callState === "") window.shareWhenConnected = false
+        }
+    }
     function openChatWindow(chatId, name, photoId, presence) {
         const open = window.chatWindows[chatId]
         if (open) { open.raise(); open.requestActivate(); return open }
@@ -4688,6 +4705,8 @@ Window {
         const all = Object.assign({}, window.chatWindows); all[chatId] = w; window.chatWindows = all
         w.startCall.connect(id => { backend.selectChat(id, name); backend.startCall() })
         w.startVideoCall.connect(id => { backend.selectChat(id, name); backend.startVideoCall() })
+        w.shareScreen.connect(id => { backend.selectChat(id, name); window.callAndShare() })
+        w.reportConcern.connect(id => chatList.reportMeetingChat(id))
         w.closing.connect(() => { const rest = Object.assign({}, window.chatWindows); delete rest[chatId]; window.chatWindows = rest; w.destroy() })
         w.show()
         return w
@@ -5040,6 +5059,12 @@ Window {
         onEditMessage: (id, text) => backend.editMessage(id, text)
         onOpenChatSettings: { settingsView.page = "chats"; rail.current = "settings" }
         onScheduleMeeting: { rail.current = "calendar"; calendarView.newMeeting() }
+        onOpenInNewWindow: {
+            const c = chatList.chats.find(c => c.id === backend.currentChatId) || {}
+            window.openChatWindow(backend.currentChatId, backend.currentChatName, c.peerMri || "", c.presence || "")
+        }
+        onShareScreen: window.callAndShare()
+        onReportConcern: chatList.reportMeetingChat(backend.currentChatId)
         onDeleteMessage: id => backend.deleteMessage(id)
         onSendReply: (id, text) => backend.sendReply(id, text)
         onGetMoreApps: rail.current = "add"

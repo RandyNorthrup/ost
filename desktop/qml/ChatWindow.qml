@@ -20,6 +20,8 @@ Window {
     property bool pinned: false
     signal startCall(string chatId)
     signal startVideoCall(string chatId)
+    signal shareScreen(string chatId)
+    signal reportConcern(string chatId)
     readonly property string key: "win:" + chatId
     readonly property var messages: {
         const all = backend.threadWindowsJson ? JSON.parse(backend.threadWindowsJson) : {}
@@ -52,6 +54,8 @@ Window {
         messages: win.messages
         onCall: win.startCall(win.chatId)
         onVideoCall: win.startVideoCall(win.chatId)
+        onShareScreen: win.shareScreen(win.chatId)
+        onReportConcern: win.reportConcern(win.chatId)
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onEditMessage: (id, text) => backend.editMessage(id, text)
         onDeleteMessage: id => backend.deleteMessage(id)

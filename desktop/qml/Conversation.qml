@@ -190,6 +190,26 @@ Rectangle {
         else Qt.openUrlExternally(link)
     }
     signal scheduleMeeting()
+    /// The header's More chat options: Open in new window (Ctrl+O), Share
+    /// screen (Ctrl+Shift+E: a call to the chat, sharing once it connects)
+    /// and a meeting chat's Report a concern.
+    signal openInNewWindow()
+    signal shareScreen()
+    signal reportConcern()
+    readonly property bool chatShortcuts: visible && !isChannel && !pane && !popout && chatName.length > 0
+    Shortcut { sequence: "Ctrl+O"; enabled: root.chatShortcuts; onActivated: root.openInNewWindow() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: root.chatShortcuts && !root.isSelf && !root.isMeetingChat; onActivated: root.shareScreen() }
+    function chatMenuForTest() { return chatMenu }
+    function removeHistoryForTest() { return removeHistoryAsk }
+    // Teams' "Remove chat history?" (as the chat list's).
+    ConfirmDialog {
+        id: removeHistoryAsk
+        width: 600
+        title: "Remove chat history?"
+        body: "This will remove the chat from your list and search. It affects you only."
+        confirmText: "Remove"
+        onConfirmed: backend.channelAction("remove-chat-history", "", root.chatId, "")
+    }
     // Go to a message (a quote card's target), if it is loaded.
     // The chat's call: one going on (a start with no end), whether we're in
     // it, and Teams' 20-member limit for calls in group chats.
@@ -1049,9 +1069,13 @@ Rectangle {
             Accessible.name: "More channel options"
             onClicked: channelMenu.show(channelMore, channelMore.width + 6.3 - channelMenu.menu.implicitWidth, channelMore.height + 4.9)
         }
-        // More chat options (chat-header-more-menu-trigger). Items Teams has
-        // that are not built yet: Open in new window, Share screen, Move to
-        // section, Remove chat history.
+        // More chat options (chat-header-more-menu-trigger), as Teams
+        // (measured on winpc 2026-11-09): Open in new window (Ctrl+O) |
+        // Schedule meeting, Share screen (Ctrl+Shift+E) | Mark as unread,
+        // Move to section ▸, Remove from section, Mute, Copy link | Remove
+        // chat history. Meeting chats: no Schedule meeting or Share screen,
+        // and Report a concern in Remove chat history's place; your own
+        // chat: no Schedule meeting, Share screen, Mute or last group.
         HeaderAction {
             id: chatMore
             visible: !root.isChannel && !root.pane
@@ -1071,13 +1095,20 @@ Rectangle {
                     root.rosterInMenu ? { key: "participants", label: "Participants", icon: "people-add-20" } : null,
                     root.meetingDetailsShown && !root.meetingDetailsInline ? { key: "meetingDetails", label: "Meeting details", icon: "text-bullet-list-20" } : null
                 ].filter(i => i !== null)
+                readonly property bool calls: !root.isSelf && !root.isMeetingChat
                 items: (moved.length ? moved.concat([{ separator: true }]) : []).concat([
-                    { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" },
-                    { separator: true },
+                    root.popout ? null : { key: "window", label: "Open in new window", icon: "open-window-20", keys: "Ctrl+O" },
+                    root.popout ? null : { separator: true },
+                    calls ? { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" } : null,
+                    calls ? { key: "share", label: "Share screen", icon: "share-screen-start-20", keys: "Ctrl+Shift+E" } : null,
+                    calls ? { separator: true } : null,
                     { key: "unread", label: "Mark as unread", icon: "glasses-off-20" },
                     { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
+                    root.sectionHolder ? { key: "removeFrom", label: "Remove from section", icon: "star-off-20" } : null,
                     root.isSelf ? null : { key: "mute", label: root.chatMuted ? "Unmute" : "Mute", icon: root.chatMuted ? "alert-20" : "alert-off-20" },
-                    { key: "link", label: "Copy link", icon: "link-20" }
+                    { key: "link", label: "Copy link", icon: "link-20" },
+                    root.isSelf ? null : { separator: true },
+                    root.isSelf ? null : root.isMeetingChat ? { key: "report", label: "Report a concern", icon: "shield-error-20" } : { key: "removeHistory", label: "Remove chat history", icon: "delete-20" }
                 ]).filter(i => i !== null)
                 onPicked: i => {
                     const k = items[i].key
@@ -1088,6 +1119,11 @@ Rectangle {
                     else if (k === "meeting") root.scheduleMeeting()
                     else if (k === "link") backend.copyChatLink()
                     else if (k === "unread") { const m = root.messages.filter(m => m.kind === "message").pop(); if (m) backend.markMessageUnread(m.id, m.client_message_id || "") }
+                    else if (k === "window") root.openInNewWindow()
+                    else if (k === "share") root.shareScreen()
+                    else if (k === "removeFrom") backend.folderAction("remove", JSON.stringify({ item: root.chatId, from: root.sectionHolder }))
+                    else if (k === "report") root.reportConcern()
+                    else if (k === "removeHistory") removeHistoryAsk.open()
                 }
                 onSubPicked: (i, j) => {
                     const t = items[i].submenu[j]
