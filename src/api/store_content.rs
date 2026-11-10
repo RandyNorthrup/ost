@@ -1141,6 +1141,189 @@ pub async fn channel_apps(client: &TeamsClient, thread_id: &str) -> Result<Vec<(
     Ok(entitlements_from(&v))
 }
 
+/// An app in a team (Manage team ▸ Apps).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct TeamApp {
+    pub id: String,
+    pub name: String,
+    pub publisher: String,
+    pub icon: String,
+    pub state: String,
+}
+
+/// The apps in a team's app-definitions reply (each entry either carries
+/// its definition under `appDefinition` or is the definition itself).
+pub fn team_apps_from(v: &serde_json::Value) -> Vec<TeamApp> {
+    let list = v
+        .pointer("/value/entitlements")
+        .or_else(|| v.get("value").filter(|x| x.is_array()))
+        .or_else(|| v.get("entitlements"))
+        .or(Some(v).filter(|x| x.is_array()))
+        .and_then(|l| l.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut out: Vec<TeamApp> = list
+        .iter()
+        .filter_map(|e| {
+            let d = e.get("appDefinition").unwrap_or(e);
+            let s = |x: &serde_json::Value, k: &str| x.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let id = [s(e, "id"), s(d, "id"), s(e, "appId")].into_iter().find(|x| !x.is_empty())?;
+            Some(TeamApp {
+                id,
+                name: s(d, "name"),
+                publisher: s(d, "developerName"),
+                icon: [s(d, "largeImageUrl"), s(d, "smallImageUrl"), s(d, "colorIcon")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
+                state: [s(e, "state"), s(e, "appState")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
+            })
+        })
+        .collect();
+    out.sort_by_key(|a| a.name.to_lowercase());
+    out
+}
+
+/// A team's apps (Teams' Manage apps), as Teams syncs them:
+/// `POST {mt}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned`
+/// with the team thread ids → `value.teamsEntitlements[team]` (id, state)
+/// and `value.definitions` (id → definition); the installed ones.
+pub async fn team_apps(client: &TeamsClient, team_thread: &str) -> Result<Vec<TeamApp>> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned"))
+        .bearer_auth(token)
+        .json(&serde_json::json!([team_thread]))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Team apps")?
+        .json()
+        .await
+        .context("Team apps")?;
+    let mut apps = team_apps_from_aggregated(&v, team_thread);
+    // Built-in apps carry Teams-relative icons; the catalog has the
+    // pictures Teams shows.
+    for a in apps.iter_mut().filter(|a| a.name.is_empty() || !a.icon.starts_with("https://")) {
+        if let Ok(d) = app_details::definition(client, &a.id).await {
+            let s = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            if a.name.is_empty() {
+                a.name = s("name");
+                a.publisher = s("developerName");
+            }
+            let icon = s("largeImageUrl");
+            if icon.starts_with("https://") {
+                a.icon = icon;
+            }
+        }
+    }
+    apps.sort_by_key(|a| a.name.to_lowercase());
+    Ok(apps)
+}
+
+/// The installed apps of one team in an aggregatedEntitlements reply.
+pub fn team_apps_from_aggregated(v: &serde_json::Value, team_thread: &str) -> Vec<TeamApp> {
+    let val = &v["value"];
+    let ents = val["teamsEntitlements"]
+        .as_object()
+        .and_then(|m| m.iter().find(|(k, _)| k.eq_ignore_ascii_case(team_thread)).map(|(_, e)| e.clone()))
+        .unwrap_or_default();
+    let defs = &val["definitions"];
+    let installed = ["Installed", "AdminPreInstalled", "InstalledAndFavorited"];
+    let mut out: Vec<TeamApp> = ents
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| installed.contains(&e["state"].as_str().unwrap_or_default()))
+        .filter_map(|e| {
+            let id = e["id"].as_str()?.to_string();
+            let d = defs.get(&id).or_else(|| {
+                defs.as_object().and_then(|m| m.iter().find(|(k, _)| k.starts_with(&id)).map(|(_, d)| d))
+            });
+            let s = |k: &str| d.and_then(|d| d[k].as_str()).unwrap_or_default().to_string();
+            Some(TeamApp {
+                name: s("name"),
+                publisher: s("developerName"),
+                icon: [s("largeImageUrl"), s("smallImageUrl")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
+                state: e["state"].as_str().unwrap_or_default().to_string(),
+                id,
+            })
+        })
+        .collect();
+    out.sort_by_key(|a| a.name.to_lowercase());
+    out
+}
+
+/// Remove an app from a team (`DELETE {mt}/beta/teams/{teamThread}/apps/entitlements/{appId}`,
+/// as Remove does for a chat).
+pub async fn remove_from_team(client: &TeamsClient, team_thread: &str, app_id: &str) -> Result<()> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    client
+        .http()
+        .delete(format!("{base}/beta/teams/{team_thread}/apps/entitlements/{app_id}"))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Remove the app")?;
+    Ok(())
+}
+
+/// Teams' manifest for an outgoing webhook (installed into the team as an
+/// app with a custom bot).
+pub fn outgoing_webhook_definition(id: &str, name: &str, description: &str, url: &str, icon_url: &str) -> serde_json::Value {
+    serde_json::json!({
+        "manifestVersion": "0.4",
+        "id": id,
+        "accentColor": "#ffffff",
+        "version": "1",
+        "developerName": "Microsoft",
+        "developerUrl": "https://microsoft.com",
+        "privacyUrl": "https://microsoft.com",
+        "termsOfUseUrl": "https://microsoft.com",
+        "name": name,
+        "shortDescription": description,
+        "longDescription": description,
+        "smallImageUrl": icon_url,
+        "largeImageUrl": icon_url,
+        "customBots": [{ "endpointUrl": url, "secret": "" }],
+    })
+}
+
+/// Create an outgoing webhook in a team: its manifest installed as the
+/// team's app (`POST {mt}/beta/teams/{teamThread}/apps/entitlements`).
+/// `icon` is a PNG file (Teams takes 30 KB at most), sent as a data URL.
+pub async fn create_outgoing_webhook(client: &TeamsClient, team_thread: &str, name: &str, description: &str, url: &str, icon: Option<&str>) -> Result<()> {
+    let icon_url = match icon {
+        Some(path) => {
+            use base64::Engine as _;
+            let bytes = std::fs::read(path).context("Picture")?;
+            anyhow::ensure!(bytes.len() <= 30 * 1024, "The picture is over 30 KB");
+            format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
+        }
+        None => String::new(),
+    };
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let def = outgoing_webhook_definition(&uuid::Uuid::new_v4().to_string(), name, description, url, &icon_url);
+    client
+        .http()
+        .post(format!("{base}/beta/teams/{team_thread}/apps/entitlements"))
+        .bearer_auth(token)
+        .header("x-client-ui-language", "en-us")
+        .json(&def)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Create the webhook")?;
+    Ok(())
+}
+
+/// The link Manage apps' Copy link copies.
+pub fn manage_apps_link(app_id: &str) -> String {
+    format!("https://teams.microsoft.com/l/app/{app_id}?source=manage-apps-copy-link")
+}
+
 /// (app id, state) pairs from a chat entitlements reply.
 pub fn entitlements_from(v: &serde_json::Value) -> Vec<(String, String)> {
     v.pointer("/value/entitlements")
@@ -1165,6 +1348,23 @@ pub fn entitlements_from(v: &serde_json::Value) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn team_apps_are_teams() {
+        // Manage apps' Copy link, as Teams copied it (winpc clipboard).
+        assert_eq!(manage_apps_link("81fef3a6-72aa-4648-a763-de824aeafb7d"), "https://teams.microsoft.com/l/app/81fef3a6-72aa-4648-a763-de824aeafb7d?source=manage-apps-copy-link");
+        let v = serde_json::json!({"value":[{"id":"b","state":"Installed","appDefinition":{"id":"b","name":"Lists","developerName":"Microsoft Corporation","largeImageUrl":"https://x/l.png"}},{"id":"a","state":"Installed","name":"Forms","developerName":"Microsoft Corporation"}]});
+        let apps = team_apps_from(&v);
+        assert_eq!(apps.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), vec!["Forms", "Lists"]);
+        assert_eq!(apps[1].icon, "https://x/l.png");
+        let agg = serde_json::json!({"value":{"teamsEntitlements":{"19:t@thread.tacv2":[{"id":"a","state":"Installed"},{"id":"b","state":"NotInstalled"}]},"definitions":{"a":{"id":"a","name":"Forms","developerName":"Microsoft Corporation"},"b":{"id":"b","name":"X"}}}});
+        let t = team_apps_from_aggregated(&agg, "19:t@thread.tacv2");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].name.as_str(), t[0].state.as_str()), ("Forms", "Installed"));
+        let d = outgoing_webhook_definition("id", "Hook", "Desc", "https://example.com/h", "");
+        assert_eq!(d["manifestVersion"], "0.4");
+        assert_eq!(d["customBots"][0]["endpointUrl"], "https://example.com/h");
+    }
 
     #[test]
     fn content_path_as_teams() {

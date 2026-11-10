@@ -121,6 +121,7 @@ fn main() {
         "qml/MembersView.qml",
         "qml/PendingRequestsView.qml",
         "qml/TeamSettingsView.qml",
+        "qml/TeamAppsView.qml",
         "qml/EditTeamDialog.qml",
         "qml/TeamPictureDialog.qml",
         "qml/AnalyticsView.qml",

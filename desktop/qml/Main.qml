@@ -2088,7 +2088,7 @@ Window {
             else if (step === 8) { console.warn("ORDER compose media", JSON.stringify(conversation.composeMediaForTest())); cap("compose") }
             else if (step === 9) conversation.sendForTest()
             else if (step === 14) { const m = JSON.parse(backend.messagesJson || "[]").filter(m => m.mine).pop(); console.warn("ORDER sent", JSON.stringify({ html: m.html, after: m.html_after, media: m.media, edit_media: m.edit_media })); cap("sent") }
-            else if (step === 15) Qt.quit()
+            else if (step === 16) Qt.quit()
             step++
         }
     }
@@ -3453,8 +3453,14 @@ Window {
             if (step === 0) window.openManageTeam(id, "members")
             else if (step === 3) { console.warn("MEMBERS", JSON.stringify(manageTeam.membersForTest().members)); shot("mb-members") }
             else if (step === 4) manageTeam.tab = "pending"
-            else if (step === 6) { console.warn("PENDING", manageTeam.pendingForTest().loaded, JSON.stringify(manageTeam.pendingForTest().requests)); shot("mb-pending") }
-            else if (step === 7) Qt.quit()
+            else if (step === 5) manageTeam.tab = "apps"
+            else if (step === 9) { console.warn("APPS", JSON.stringify(manageTeam.appsForTest().apps).slice(0, 600)); shot("mb-apps") }
+            else if (step === 10) { manageTeam.appsForTest().webhookForTest().start() }
+            else if (step === 11) shot("mb-webhook")
+            else if (step === 12) { manageTeam.appsForTest().webhookForTest().close(); shot("mb-apps2") }
+            else if (step === 13) manageTeam.tab = "pending"
+            else if (step === 15) { console.warn("PENDING", manageTeam.pendingForTest().loaded, JSON.stringify(manageTeam.pendingForTest().requests)); shot("mb-pending") }
+            else if (step === 16) Qt.quit()
             step++
         }
     }
@@ -3478,9 +3484,11 @@ Window {
             if (step === 0) { window.openManageTeam(id, "settings"); step++; return }
             const v = manageTeam.settingsForTest()
             // --team-picture-default: Remove + Save (Teams' default picture), then quit.
-            if (Qt.application.arguments.indexOf("--team-picture-default") >= 0) {
+            // --team-picture-file=<png>: upload that picture instead.
+            const picFile = (Qt.application.arguments.find(a => a.startsWith("--team-picture-file=")) || "").slice(20)
+            if (Qt.application.arguments.indexOf("--team-picture-default") >= 0 || picFile) {
                 const t = (JSON.parse(backend.teamsJson || "[]").find(t => t.id === id) || {})
-                if (step === 2) backend.channelAction("team-picture", t.id, t.thread_id, JSON.stringify({ path: "" }))
+                if (step === 2) backend.channelAction("team-picture", t.id, t.thread_id, JSON.stringify({ path: picFile }))
                 else if (step === 5) { console.warn("TSET picture", backend.channelActionResult); shot("ts-picture-after") }
                 else if (step === 6) Qt.quit()
                 step++
@@ -4544,6 +4552,7 @@ Window {
         onManageChannelAnalytics: id => { window.manageTeamId = ""; window.openManageChannel(id); manageChannel.tab = "analytics" }
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
+        onGetMoreApps: { window.manageTeamId = ""; rail.current = "add" }
         myPresence: window.myPresence
         // Tags ▸ Chat with group: a new chat with the tag's people.
         onChatWithPeople: people => {

@@ -19,6 +19,7 @@ import QtQuick.Controls.Basic
 // - Members: MembersView.
 // - Pending requests: PendingRequestsView.
 // - Settings: TeamSettingsView.
+// - Apps: TeamAppsView.
 // - Tags: TagsView.
 Rectangle {
     id: page
@@ -409,6 +410,18 @@ Rectangle {
         team: page.team
     }
 
+    // ---- Apps ----
+    signal getMoreApps()
+    TeamAppsView {
+        id: appsView
+        visible: page.tab === "apps"
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        teamId: page.teamId
+        teamThread: page.tab === "apps" ? (page.team.thread_id || "") : ""
+        owner: !!page.team.owner
+        onGetMoreApps: page.getMoreApps()
+    }
+
     // ---- Pending requests ----
     PendingRequestsView {
         id: pendingView
@@ -441,4 +454,5 @@ Rectangle {
     function membersForTest() { return membersView }
     function pendingForTest() { return pendingView }
     function settingsForTest() { return settingsView }
+    function appsForTest() { return appsView }
 }

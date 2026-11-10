@@ -761,6 +761,30 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 - Verified from OST against Teams: upload custom apps off and on, the
   description edit, a generated code shown in Teams and removed.
 
+#### 5.6.7 Manage team ▸ Apps (measured 2026-11-09)
+
+- Offsets from the tab area: **Get more apps** (outlined white, add glyph,
+  140.8 × 31.3) at 64, 28.6 opens the Store; **Create an outgoing webhook**
+  (transparent, Teams' webhook glyph) at 219.8; **Sort** (transparent, a
+  toggle: A-Z / Z-A, brand once used) at 551; **Find by name** (filled,
+  search glyph) at the right.
+- Apps from 68.3 down, 41 in, 836 wide: rows 65 tall with lines: icon 36
+  (squircle) at 89, name 14/20 bold and publisher 14/16 #616161 at 132, ···
+  (**Copy link** → `https://teams.microsoft.com/l/app/{appId}?source=manage-apps-copy-link`
+  | **Remove**).
+- Data: `POST {mt}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned`
+  `[teamThread]` → `value.teamsEntitlements[team]` (Installed,
+  AdminPreInstalled, InstalledAndFavorited) with `value.definitions`; built-in
+  apps' icons from the catalog (the CDN serves them as octet-stream, so OST
+  caches them as files). Remove: `DELETE {mt}/beta/teams/{teamThread}/apps/entitlements/{appId}`.
+- Create an outgoing webhook (600 × 561.8): Teams' text and link, Name *,
+  Callback URL *, Description*, "Profile picture (optional) - 30kb max, png
+  only" with Choose File; Cancel / Create. Teams installs it as a sideloaded
+  app: manifest 0.4 with `customBots: [{endpointUrl, secret}]` →
+  `POST {mt}/beta/teams/{teamThread}/apps/entitlements`.
+- The list was checked against Teams for OST Test Team; Remove and webhooks
+  were not run.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

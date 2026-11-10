@@ -3244,6 +3244,33 @@ async fn localize_custom_emoji(client: &TeamsClient, m: &mut api::messages::Mess
     }
 }
 
+/// A public picture (an app icon on Teams' CDN) kept in the private image
+/// cache, named by its URL's hash.
+async fn public_image_file(client: &TeamsClient, url: &str) -> anyhow::Result<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .ok_or_else(|| anyhow::anyhow!("No cache directory"))?;
+    let dir = base.join("ost").join("images");
+    let hash = url.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+    let path = dir.join(format!("app-{hash:016x}"));
+    if path.exists() {
+        return Ok(path);
+    }
+    let bytes = client.http().get(url).send().await?.error_for_status()?.bytes().await?;
+    std::fs::create_dir_all(&dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        std::fs::set_permissions(base.join("ost"), std::fs::Permissions::from_mode(0o700))?;
+        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&path)?;
+        std::io::Write::write_all(&mut f, &bytes)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(&path, &bytes)?;
+    Ok(path)
+}
+
 /// Keep inline images in a private cache (~/.cache/ost/images, 0700/0600)
 /// so they are fetched once.
 async fn cached_image(
@@ -9544,6 +9571,30 @@ impl qobject::Backend {
                         }
                         Ok(json!({ "code": if arg == "remove" { None } else { code } }))
                     }
+                    // Manage team ▸ Apps.
+                    "team-apps" => {
+                        let mut apps = api::store_content::team_apps(&client, &team_thread).await?;
+                        // The app CDN sends icons as application/octet-stream,
+                        // which Qt's network image loader won't decode: keep
+                        // them in the private image cache and show the files.
+                        for a in apps.iter_mut().filter(|a| a.icon.starts_with("https://")) {
+                            if let Ok(path) = public_image_file(&client, &a.icon).await {
+                                a.icon = format!("file://{}", path.display());
+                            }
+                        }
+                        Ok(json!({ "apps": apps }))
+                    }
+                    "team-app-remove" => {
+                        api::store_content::remove_from_team(&client, &team_thread, arg.trim()).await?;
+                        Ok(json!({ "id": arg }))
+                    }
+                    // arg {name, description, url, icon}: icon a PNG file path.
+                    "team-webhook" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Webhook")?;
+                        let icon = a["icon"].as_str().filter(|p| !p.is_empty()).map(|p| p.strip_prefix("file://").unwrap_or(p).to_string());
+                        api::store_content::create_outgoing_webhook(&client, &team_thread, a["name"].as_str().unwrap_or_default(), a["description"].as_str().unwrap_or_default(), a["url"].as_str().unwrap_or_default(), icon.as_deref()).await?;
+                        Ok(serde_json::Value::Null)
+                    }
                     // Manage team ▸ Pending requests.
                     "join-requests" => {
                         let r = api::channels::join_requests(&client, &team).await?;
@@ -9701,7 +9752,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "analytics") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "analytics") {
                     this.as_mut().load_teams();
                 }
             });
