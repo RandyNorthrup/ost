@@ -875,6 +875,66 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
   restored both), sorts, menus, no match, the Pending invites empty state
   and the analytics numbers and dates.
 
+#### 5.6.10 Create team and Join a team (measured 2026-11-09)
+
+- Create a team (Create team): 600 x 600 dialog — "Create a team",
+  "You're creating a team from scratch." + More create team options; Team
+  name *, Description, Team type (a button to "What kind of team will this
+  be?": Private / Public cards with Teams' 48 px tiles, Back), First
+  channel name * with Teams' info tooltip and More naming options ▸ Set
+  name to General; What's a team?; Cancel / Create (needs a name and a
+  first channel name). Create: `POST {mt}/beta/teams/create` {displayName,
+  description, accessType Private/Public, isTenantWide false,
+  sensitivityLabelId null, validationRequired false, topicThreadTopic unless
+  the first channel is General} (Teams' provisioning v2 route is off for
+  this tenant). Opening it reads `beta/users/sensitivityLabels` (none here,
+  so no sensitivity choice).
+- More create team options: a page in the list's and conversation's place
+  (left 380, #EBEBEB: Back, "Create team", From template / From another
+  team / From group, What's a team?; the rail shows no app as chosen).
+  - From template: `GET {provisioning}/teamtemplates/v1.0/en-us`; 260 x 120
+    cards (From scratch first). A card opens the template's details (`GET
+    {provisioning}/{@odata.id less /api/}`): description, "N channels"
+    (General, then by name), "N apps" with names and pictures from
+    `beta/users/apps/batchedDefinitions` and SharePoint lists/pages under
+    their app (foldable); Use this template opens Create a team with
+    Customize channels (rename all but General; Cancel customizing / Done).
+    Create: `POST {provisioning}/team` {templateId, displayName,
+    description, visibility, channels [{id, displayName}], apps [{id}],
+    isTenantWide, sensitivityLabelId, locale}.
+  - From another team: the teams you own as 280 x 300 cards; one opens
+    'You are using "{team}" as a template for a new team' (name "{team}
+    [copy]", Privacy dropdown, Channels and Apps always, Tabs and Team
+    settings on, Members off). Create: `POST {provisioning}/groups/{group}/
+    clone/v2` {displayName, description, ownerObjectId, teamGroupId,
+    visibility, sensitivityLabelId "", includeRoster, includeChannels,
+    includeAppEntitlements, includeSettings, includeTabs}.
+  - From group: `GET {mt}/beta/teams/usergroups?teamType=undefined`; none
+    here, so Teams' cactus and "You need to own a group with fewer than
+    10000 people…" / "Please create a group first.". Create: `PUT {mt}/beta/
+    teams/migrateGroup/{group}` {groupId, teamType 0, displayName,
+    description, smtpAddress}. The list with groups is unverified.
+- Leaving a template or copy dialog asks "Do you want to stop creating this
+  team and discard it?" (400 wide; No, go back / Yes, discard).
+- Join a team (Join Team): left 380 (#F5F5F5) with Back, "Join a team", +
+  (Create a new team), Type to search, Search results / Teams for you;
+  `GET {mt}/beta/teams/suggested?accessType=All&enableFallback=true` (none
+  here: "You don't have any teams discoverable…" and the Join a team with
+  a code and Create a new team cards, 238 x 268); search `GET {mt}/beta/
+  teams/find?keywords=…&accessType=All&enableKeywordSearch=false&top=100`
+  on Enter (none: "We didn't find any matches", Create a new team); join
+  `POST {mt}/beta/teams/joinRequest/{group}`; join with a code `POST {mt}/
+  beta/teams/joinByCode?restrictJoinToPublicTeam=false` with the code as a
+  JSON string (error: "Couldn't join this team with that code. Double-check
+  the code or try another one."). Team cards (picture, name, Private /
+  Public, people, description, Join team on hover) are from Teams' code; no
+  joinable team exists here.
+- Teams' template icons clip shapes with `<clipPath><use/></clipPath>`;
+  OST rewrites such cached SVGs (the shape inlined, the clip path in
+  `<defs>`) because Qt otherwise draws the shape black.
+- Checked side by side with Teams; nothing was created or joined (the
+  tenant rule), the bodies are from Teams' code and unit-tested.
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**

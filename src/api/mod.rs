@@ -27,6 +27,7 @@ pub mod store_content;
 pub mod channels;
 pub mod tabs;
 pub mod teams;
+pub mod team_create;
 
 use anyhow::Result;
 

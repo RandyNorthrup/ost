@@ -198,7 +198,7 @@ pub fn channel_link(channel: &str, name: &str, group_id: &str, tenant: &str) -> 
     (url, html)
 }
 
-async fn middle_tier(client: &TeamsClient) -> Result<(String, String)> {
+pub(crate) async fn middle_tier(client: &TeamsClient) -> Result<(String, String)> {
     super::tabs::middle_tier(client).await
 }
 
@@ -399,7 +399,7 @@ pub async fn add_private_channel_members(client: &TeamsClient, team_thread: &str
 /// Teams' provisioning service and a token for it (its resource is
 /// teamsAndChannelsProvisioningServiceConstants.resource, prod
 /// https://templates.teams.microsoft.com).
-async fn provisioning(client: &TeamsClient) -> Result<(String, String)> {
+pub(crate) async fn provisioning(client: &TeamsClient) -> Result<(String, String)> {
     let base = client
         .region_endpoint("teamsAndChannelsProvisioningService")
         .context("No Teams provisioning endpoint")?;

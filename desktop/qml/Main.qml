@@ -3483,6 +3483,56 @@ Window {
         }
     }
 
+    // --create-team-test=<team group id> --shots=<dir>: Create team and
+    // Join a team, every view, nothing submitted: the scratch dialog
+    // (ct-scratch, ct-scratch2 with a name, ct-naming, ct-type), the Create
+    // team page (ct-templates), a template's details (ct-tpl), its create
+    // form (ct-tplform), Customize channels (ct-custom), the discard question
+    // (ct-discard), From another team (ct-another) and its form (ct-clone),
+    // From group (ct-group), Join a team (jt-empty) and a search (jt-search);
+    // the bodies Create would send are logged; quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--create-team-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--create-team-test=")) || "").slice(19)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const d = createTeamDialog
+            if (step === 0) chatList.openYourTeams()
+            else if (step === 1) yourTeams.createTeam()
+            else if (step === 2) shot("ct-scratch")
+            else if (step === 3) { d.setNameForTest("OST draft"); d.setFirstChannelForTest("") ; d.openNamingForTest() }
+            else if (step === 4) shot("ct-naming")
+            else if (step === 5) { d.setFirstChannelForTest("General"); console.warn("CT scratch", JSON.stringify(d.bodyForTest()), d.canCreate) ; shot("ct-scratch2") }
+            else if (step === 6) d.page = "type"
+            else if (step === 7) shot("ct-type")
+            else if (step === 8) { d.page = "form"; d.close(); window.openTeamPage("create") }
+            else if (step === 11) { console.warn("CT templates", createTeamPage.templates.length, JSON.stringify(createTeamPage.templates.slice(0, 2))); shot("ct-templates") }
+            else if (step === 12) createTeamPage.templateDialogForTest().start(createTeamPage.templates[0])
+            else if (step === 15) { console.warn("CT template", JSON.stringify(createTeamPage.templateDialogForTest().details).slice(0, 800)); shot("ct-tpl") }
+            else if (step === 16) { const t = createTeamPage.templateDialogForTest().details; createTeamPage.templateDialogForTest().close(); d.startTemplate({ id: t.id, name: t.name, locale: t.locale, visibility: t.visibility, channels: t.channels, app_ids: t.app_ids }) }
+            else if (step === 17) { d.setNameForTest("OST draft"); shot("ct-tplform") }
+            else if (step === 18) d.customizeForTest()
+            else if (step === 19) shot("ct-custom")
+            else if (step === 20) { d.page = "form"; console.warn("CT template body", JSON.stringify(d.bodyForTest())); d.discardForTest() }
+            else if (step === 21) shot("ct-discard")
+            else if (step === 22) { d.close(); createTeamPage.view = "another" }
+            else if (step === 23) shot("ct-another")
+            else if (step === 24) d.startClone(createTeamPage.ownedTeams.find(t => t.id === id) || createTeamPage.ownedTeams[0])
+            else if (step === 25) { console.warn("CT clone body", JSON.stringify(d.bodyForTest())); shot("ct-clone") }
+            else if (step === 26) { d.close(); createTeamPage.view = "group" }
+            else if (step === 27) shot("ct-group")
+            else if (step === 28) window.openTeamPage("join")
+            else if (step === 30) shot("jt-empty")
+            else if (step === 31) joinTeamPage.searchForTest("Secure")
+            else if (step === 33) shot("jt-search")
+            else if (step === 34) { window.teamPage = ""; Qt.quit() }
+            step++
+        }
+    }
+
     // --members-test=<team group id> --shots=<dir>: Manage team ▸ Members
     // (mb-members.png, the roster logged), then Pending requests
     // (mb-pending.png, logged); quit.
@@ -4381,6 +4431,7 @@ Window {
         id: rail
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: parent.left }
         // Muted chats don't count toward the badge (Teams' doesContributeToBadgeCount).
+        noneChosen: !!window.teamPage && rail.current === "chat"
         unreadChats: chatList.chats.filter(c => c.unread && !c.muted).length
         unreadActivity: backend.activityUnread
         // --view=<app> opens that rail app (for captures).
@@ -4616,11 +4667,59 @@ Window {
     }
     YourTeams {
         id: yourTeams
-        visible: chatList.yourTeamsOpen && !window.manageTeamId && !window.manage && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen
+        visible: chatList.yourTeamsOpen && !window.manageTeamId && !window.manage && rail.current === "chat" && !chatList.draftsOpen && !chatList.mentionsOpen && !window.teamPage
         anchors { top: titleBar.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         onManageTeam: id => window.openManageTeam(id, "channels")
         onManageTags: id => window.openManageTeam(id, "tags")
         onOpenChannel: (id, name) => { chatList.yourTeamsOpen = false; backend.selectChat(id, name) }
+        onCreateTeam: createTeamDialog.startScratch()
+        onJoinTeam: window.openTeamPage("join")
+    }
+    // Create team / Join a team: Teams' pages in the list's and the
+    // conversation's place, and its Create a team dialog.
+    property string teamPage: ""
+    function openTeamPage(which) {
+        rail.current = "chat"
+        window.teamPage = which
+        if (which === "create") createTeamPage.load()
+        else joinTeamPage.load()
+    }
+    // A new or joined team: back to the chat with its General open once the
+    // team list has it.
+    property string pendingTeamThread: ""
+    function teamReady(groupId, threadId) {
+        window.teamPage = ""
+        chatList.yourTeamsOpen = false
+        window.pendingTeamThread = threadId || ""
+        backend.reloadTeams()
+    }
+    Connections {
+        target: backend
+        function onTeamsJsonChanged() {
+            if (!window.pendingTeamThread) return
+            const t = JSON.parse(backend.teamsJson || "[]").find(t => t.thread_id === window.pendingTeamThread)
+            if (t) { window.pendingTeamThread = ""; backend.selectChat(t.thread_id, "General") }
+        }
+    }
+    CreateTeamDialog {
+        id: createTeamDialog
+        onMoreOptions: window.openTeamPage("create")
+        onCreated: (g, t) => window.teamReady(g, t)
+    }
+    CreateTeamPage {
+        id: createTeamPage
+        visible: window.teamPage === "create" && rail.current === "chat"
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        onBack: window.teamPage = ""
+        onTeamCreated: (g, t) => window.teamReady(g, t)
+    }
+    JoinTeamPage {
+        id: joinTeamPage
+        visible: window.teamPage === "join" && rail.current === "chat"
+        anchors { top: titleBar.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        onBack: window.teamPage = ""
+        onCreateTeam: createTeamDialog.startScratch()
+        onJoined: (g, t) => window.teamReady(g, t)
     }
     ManageTeam {
         id: manageTeam
@@ -4674,7 +4773,7 @@ Window {
         onManageTeam: id => window.openManageTeam(id, "channels")
         onManageTags: id => window.openManageTeam(id, "tags")
         // An expanded tab takes the list's place (Teams' Expand tab).
-        visible: rail.current === "chat" && !conversation.tabExpanded
+        visible: rail.current === "chat" && !conversation.tabExpanded && !window.teamPage
         anchors { top: titleBar.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
@@ -4816,7 +4915,7 @@ Window {
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: titleBar.bottom; bottom: statusBar.top; right: tabConversation.left

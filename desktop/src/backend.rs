@@ -1292,6 +1292,10 @@ pub mod qobject {
         #[qinvokable]
         fn mark_all_read(self: Pin<&mut Backend>);
 
+        /// Load the team list again (after creating or joining a team).
+        #[qinvokable]
+        fn reload_teams(self: Pin<&mut Backend>);
+
         /// Set your status ("Available", "Busy", "DoNotDisturb",
         /// "BeRightBack", "Away", "Offline"), or "Reset".
         #[qinvokable]
@@ -3255,9 +3259,16 @@ async fn public_image_file(client: &TeamsClient, url: &str) -> anyhow::Result<st
     let hash = url.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
     let path = dir.join(format!("app-{hash:016x}"));
     if path.exists() {
+        // Pictures cached before SVGs were fixed for Qt.
+        if let Ok(old) = std::fs::read(&path)
+            && let Some(fixed) = teams_cli::svg::for_qt(&old)
+        {
+            let _ = std::fs::write(&path, fixed);
+        }
         return Ok(path);
     }
-    let bytes = client.http().get(url).send().await?.error_for_status()?.bytes().await?;
+    let fetched = client.http().get(url).send().await?.error_for_status()?.bytes().await?;
+    let bytes: Vec<u8> = teams_cli::svg::for_qt(&fetched).unwrap_or_else(|| fetched.to_vec());
     std::fs::create_dir_all(&dir)?;
     #[cfg(unix)]
     {
@@ -9328,7 +9339,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "cross-team-analytics" | "invitations") {
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -9798,6 +9809,101 @@ impl qobject::Backend {
                     }
                     // Your teams and channels ▸ Pending invites.
                     "invitations" => Ok(serde_json::to_value(api::channels::invitations(&client).await?)?),
+                    // Create team: arg {mode: scratch | template | clone |
+                    // group, name, description, public, firstChannel,
+                    // template: {id, locale, channels, appIds}, groupId,
+                    // pick: {tabs, settings, members}, group: {…}}.
+                    "create-team" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Create team")?;
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        let public = a["public"].as_bool().unwrap_or(false);
+                        let created = match a["mode"].as_str().unwrap_or("scratch") {
+                            "template" => {
+                                let t = &a["template"];
+                                let channels: Vec<serde_json::Value> = t["channels"].as_array().cloned().unwrap_or_default();
+                                let apps: Vec<String> = t["appIds"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect();
+                                let body = api::team_create::template_body(
+                                    t["id"].as_str().unwrap_or_default(),
+                                    t["locale"].as_str().unwrap_or("en-US"),
+                                    &f("name"),
+                                    &f("description"),
+                                    public,
+                                    &channels,
+                                    &apps,
+                                );
+                                api::team_create::create_from_template(&client, &body).await?
+                            }
+                            "clone" => {
+                                let pick = api::team_create::ClonePick {
+                                    tabs: a["pick"]["tabs"].as_bool().unwrap_or(true),
+                                    settings: a["pick"]["settings"].as_bool().unwrap_or(true),
+                                    members: a["pick"]["members"].as_bool().unwrap_or(false),
+                                };
+                                let owner = client.object_id().unwrap_or_default();
+                                let body = api::team_create::clone_body(&f("groupId"), &owner, &f("name"), &f("description"), public, pick);
+                                api::team_create::clone_team(&client, &f("groupId"), &body).await?
+                            }
+                            "group" => {
+                                let g = &a["group"];
+                                let group = api::team_create::Group {
+                                    id: g["id"].as_str().unwrap_or_default().to_string(),
+                                    name: g["name"].as_str().unwrap_or_default().to_string(),
+                                    description: g["description"].as_str().unwrap_or_default().to_string(),
+                                    mail: g["mail"].as_str().unwrap_or_default().to_string(),
+                                    members: g["members"].as_u64().unwrap_or(0),
+                                };
+                                api::team_create::create_from_group(&client, &group).await?
+                            }
+                            _ => {
+                                let body = api::team_create::scratch_body(&f("name"), &f("description"), public, &f("firstChannel"));
+                                api::team_create::create_from_scratch(&client, &body).await?
+                            }
+                        };
+                        Ok(serde_json::to_value(created)?)
+                    }
+                    // Template and app pictures go through the private image
+                    // cache (the CDN's content types don't suit Qt's loader).
+                    "team-templates" => {
+                        let mut list = api::team_create::templates(&client, "en-us").await?;
+                        for t in list.iter_mut().filter(|t| t.icon.starts_with("https://")) {
+                            if let Ok(path) = public_image_file(&client, &t.icon).await {
+                                t.icon = format!("file://{}", path.display());
+                            }
+                        }
+                        Ok(serde_json::to_value(list)?)
+                    }
+                    "team-template" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let mut d = api::team_create::template_details(&client, a["path"].as_str().unwrap_or_default(), "en-US").await?;
+                        for app in d.apps.iter_mut() {
+                            if let Some(url) = app["icon"].as_str().filter(|u| u.starts_with("https://")).map(str::to_string)
+                                && let Ok(path) = public_image_file(&client, &url).await
+                            {
+                                app["icon"] = json!(format!("file://{}", path.display()));
+                            }
+                        }
+                        Ok(serde_json::to_value(d)?)
+                    }
+                    "my-groups" => Ok(serde_json::to_value(api::team_create::my_groups(&client).await?)?),
+                    // Join a team: suggestions, search {q, skip}, join
+                    // {groupId}, join with a code {code}.
+                    "teams-suggested" => Ok(serde_json::to_value(api::team_create::suggested(&client).await?)?),
+                    "teams-find" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let q = a["q"].as_str().unwrap_or_default();
+                        let (teams, skip) = api::team_create::find(&client, q, a["skip"].as_str().unwrap_or_default()).await?;
+                        Ok(json!({ "q": q, "teams": teams, "skip": skip }))
+                    }
+                    "team-join" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let g = a["groupId"].as_str().unwrap_or_default();
+                        let r = api::team_create::join(&client, g).await?;
+                        Ok(json!({ "groupId": g, "reply": r }))
+                    }
+                    "team-join-code" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        Ok(api::team_create::join_by_code(&client, a["code"].as_str().unwrap_or_default()).await?)
+                    }
                     _ => anyhow::bail!("Unknown channel action"),
                 }
             }
@@ -9818,7 +9924,7 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
                     this.as_mut().load_teams();
                 }
             });
@@ -10586,6 +10692,10 @@ impl qobject::Backend {
                     .set_status_text(QString::from(short_error(&e).as_str())),
             });
         });
+    }
+
+    pub fn reload_teams(self: Pin<&mut Self>) {
+        self.load_teams();
     }
 
     pub fn mark_all_read(mut self: Pin<&mut Self>) {

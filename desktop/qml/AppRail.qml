@@ -7,6 +7,8 @@ import QtQuick.Window
 Rectangle {
     id: root
     property string current: "chat"
+    /// No app shown as chosen (Teams' Create team and Join a team pages).
+    property bool noneChosen: false
     /// "Collapse app bar": the rail folds away, as in Teams.
     property bool collapsed: false
     property int unreadChats: 0
@@ -54,7 +56,7 @@ Rectangle {
             model: root.apps
             delegate: Item {
                 required property var modelData
-                readonly property bool selected: root.current === modelData.key
+                readonly property bool selected: root.current === modelData.key && !root.noneChosen
                 width: root.width; height: 40
                 Rectangle {
                     visible: parent.selected
