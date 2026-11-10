@@ -45,6 +45,9 @@ pub struct Message {
     pub content: String,
     /// A channel post's subject, shown bold above the text ("" for none).
     pub subject: String,
+    /// Its formatted lines (headings, quotes, code, styles); empty for plain
+    /// text rows, which show `content`.
+    pub rich: Vec<super::rich::RichLine>,
     /// Reactions below the message.
     pub reactions: Vec<Reaction>,
     /// Number of thread replies (0 = no thread).
@@ -110,6 +113,7 @@ impl MessagesState {
             .map(|m| Message {
                 sender: m.sender,
                 timestamp: m.timestamp,
+                rich: super::rich::message_lines(&m.html, &m.flow, &m.files),
                 content: m.content,
                 subject: m.subject,
                 reactions: Vec::new(),
@@ -513,15 +517,47 @@ fn render_message_card(lines: &mut Vec<Line<'static>>, msg: &Message, layout: &C
             used,
         ));
     }
-    for cl in &content_lines {
-        let used = content_prefix.len() + cl.len();
-        lines.push(make_bg_line(
-            vec![
-                Span::styled(content_prefix.clone(), bg_style),
-                Span::styled(cl.clone(), text_style),
-            ],
-            used,
-        ));
+    if msg.rich.is_empty() {
+        for cl in &content_lines {
+            let used = content_prefix.len() + cl.len();
+            lines.push(make_bg_line(
+                vec![
+                    Span::styled(content_prefix.clone(), bg_style),
+                    Span::styled(cl.clone(), text_style),
+                ],
+                used,
+            ));
+        }
+    } else {
+        // The message's formatting (headings, quotes, code, styles).
+        for rl in &msg.rich {
+            let (mark, mark_style) = match &rl.kind {
+                super::rich::Kind::Quote => ("│ ".to_string(), Style::default().fg(Color::DarkGray).bg(bg)),
+                super::rich::Kind::Code => ("▏ ".to_string(), Style::default().fg(Color::DarkGray).bg(bg)),
+                super::rich::Kind::Item(b) => (b.clone(), text_style),
+                _ => (String::new(), text_style),
+            };
+            let mark_w = unicode_width::UnicodeWidthStr::width(mark.as_str());
+            let base = match rl.kind {
+                super::rich::Kind::Heading(1) => text_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                super::rich::Kind::Heading(_) => text_style.add_modifier(Modifier::BOLD),
+                super::rich::Kind::Quote => Style::default().fg(Color::Gray).bg(bg),
+                super::rich::Kind::Code => Style::default().fg(Color::LightCyan).bg(bg),
+                _ => text_style,
+            };
+            for (n, row) in wrap_spans(&rl.spans, wrap_width.saturating_sub(mark_w), rl.kind == super::rich::Kind::Code).into_iter().enumerate() {
+                let mut spans = vec![Span::styled(content_prefix.clone(), bg_style)];
+                // List bullets on the first row only; bars on every row.
+                let lead = if matches!(rl.kind, super::rich::Kind::Item(_)) && n > 0 { " ".repeat(mark_w) } else { mark.clone() };
+                spans.push(Span::styled(lead, mark_style));
+                let mut used = content_prefix.len() + mark_w;
+                for (t, f) in row {
+                    used += unicode_width::UnicodeWidthStr::width(t.as_str());
+                    spans.push(Span::styled(t, span_style(base, f)));
+                }
+                lines.push(make_bg_line(spans, used));
+            }
+        }
     }
 
     // Attachments.
@@ -648,6 +684,83 @@ fn format_timestamp(raw: &str, today: NaiveDate) -> String {
 }
 
 /// Simple word-wrapping: split content by newlines first, then wrap long lines.
+/// A span's terminal style on top of its line's.
+fn span_style(base: Style, f: super::rich::Fmt) -> Style {
+    let mut st = base;
+    if f.code {
+        st = st.fg(Color::LightYellow);
+    }
+    if f.media {
+        st = st.fg(Color::Magenta).add_modifier(Modifier::ITALIC);
+    }
+    if f.bold {
+        st = st.add_modifier(Modifier::BOLD);
+    }
+    if f.italic {
+        st = st.add_modifier(Modifier::ITALIC);
+    }
+    if f.underline {
+        st = st.add_modifier(Modifier::UNDERLINED);
+    }
+    if f.strike {
+        st = st.add_modifier(Modifier::CROSSED_OUT);
+    }
+    st
+}
+
+/// Wrap styled spans to `width` columns, keeping each piece's style:
+/// at spaces (long words are cut), or anywhere for `hard` (code).
+fn wrap_spans(spans: &[(String, super::rich::Fmt)], width: usize, hard: bool) -> Vec<Vec<(String, super::rich::Fmt)>> {
+    use unicode_width::UnicodeWidthChar;
+    let width = width.max(1);
+    let mut rows: Vec<Vec<(String, super::rich::Fmt)>> = vec![Vec::new()];
+    let mut col = 0usize;
+    let push = |rows: &mut Vec<Vec<(String, super::rich::Fmt)>>, c: char, f: super::rich::Fmt| {
+        let row = rows.last_mut().expect("a row");
+        match row.last_mut() {
+            Some((t, lf)) if *lf == f => t.push(c),
+            _ => row.push((c.to_string(), f)),
+        }
+    };
+    // Words with their style, spaces kept with the word before them.
+    let mut words: Vec<Vec<(char, super::rich::Fmt)>> = Vec::new();
+    let mut word: Vec<(char, super::rich::Fmt)> = Vec::new();
+    for (text, f) in spans {
+        for c in text.chars() {
+            word.push((c, *f));
+            if c == ' ' && !hard {
+                words.push(std::mem::take(&mut word));
+            }
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    for w in words {
+        let w_width: usize = w.iter().filter(|(c, _)| *c != ' ').map(|(c, _)| c.width().unwrap_or(0)).sum();
+        if !hard && col > 0 && col + w_width > width {
+            rows.push(Vec::new());
+            col = 0;
+        }
+        for (c, f) in w {
+            let cw = c.width().unwrap_or(0);
+            if col + cw > width {
+                if c == ' ' {
+                    continue;
+                }
+                rows.push(Vec::new());
+                col = 0;
+            }
+            if col == 0 && c == ' ' && !hard {
+                continue;
+            }
+            push(&mut rows, c, f);
+            col += cw;
+        }
+    }
+    rows
+}
+
 fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {
         return vec![];
@@ -807,5 +920,33 @@ mod tests {
         let b = text.iter().position(|l| l.contains("OST TEST 88 body")).unwrap();
         assert!(s < b);
         assert!(lines[s].spans.iter().any(|sp| sp.content.contains("subject") && sp.style.add_modifier.contains(Modifier::BOLD)));
+    }
+
+    #[test]
+    fn formatting_shows_in_the_terminal() {
+        let mut st = MessagesState::default();
+        st.update_messages("h", vec![api::MessageInfo {
+            sender: "A".into(),
+            content: "plain".into(),
+            html: "<h1>Title</h1><p>a <b>bold</b> word and <code>x</code></p><blockquote><p>quoted</p></blockquote>".into(),
+            ..Default::default()
+        }]);
+        let (lines, _) = build_message_lines(&st, 60, "Me");
+        let find = |t: &str| lines.iter().find(|l| l.spans.iter().any(|s| s.content.contains(t))).expect(t);
+        let span = |t: &str| find(t).spans.iter().find(|s| s.content.contains(t)).unwrap().style;
+        assert!(span("Title").add_modifier.contains(Modifier::BOLD | Modifier::UNDERLINED));
+        assert!(span("bold").add_modifier.contains(Modifier::BOLD));
+        assert_eq!(span("x").fg, Some(Color::LightYellow));
+        assert!(find("quoted").spans.iter().any(|s| s.content.contains('│')));
+    }
+
+    #[test]
+    fn styled_text_wraps_at_spaces() {
+        let f = super::super::rich::Fmt::default();
+        let b = super::super::rich::Fmt { bold: true, ..f };
+        let rows = wrap_spans(&[("one two ".into(), f), ("three".into(), b), (" four".into(), f)], 9, false);
+        let text: Vec<String> = rows.iter().map(|r| r.iter().map(|(t, _)| t.as_str()).collect()).collect();
+        assert_eq!(text, ["one two ", "three ", "four"]);
+        assert!(rows[1].iter().any(|(t, f)| t == "three" && f.bold));
     }
 }

@@ -326,6 +326,10 @@ fn tui_message(view: super::messages::MessageView, own_name: Option<&str>) -> Op
         timestamp: view.time.clone(),
         content: text.to_string(),
         subject: view.subject.trim().to_string(),
+        // Only messages carry formatting; events and calls are their text.
+        html: if view.kind == "message" { view.html.clone() } else { String::new() },
+        flow: if view.kind == "message" { view.flow.clone() } else { Vec::new() },
+        files: view.files.iter().map(|f| f.name.clone()).collect(),
     })
 }
 
@@ -855,6 +859,12 @@ pub struct MessageInfo {
     pub content: String,
     /// A channel post's subject (Teams' "Add a subject"), or "".
     pub subject: String,
+    /// Its formatting: the sanitized HTML and flow parts (quotes, code
+    /// blocks, pictures), and its files' names; empty for text-only rows
+    /// (events, recordings).
+    pub html: String,
+    pub flow: Vec<super::messages::FlowPart>,
+    pub files: Vec<String>,
 }
 
 /// List recent chats and return structured data.
@@ -1058,6 +1068,9 @@ pub async fn read_messages_data(
             };
             let Some(text) = recording_summary(content, organizer.as_deref()) else { continue };
             view.text = text;
+            // Teams' words, not the recording card's markup.
+            view.html.clear();
+            view.flow.clear();
         }
         if let Some(info) = tui_message(view, own_name.as_deref()) {
             result.push(info);
