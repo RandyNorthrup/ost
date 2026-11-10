@@ -704,10 +704,11 @@ pub mod qobject {
         /// Follow or unfollow a channel thread (Teams' Follow thread).
         #[qinvokable]
         fn set_thread_following(self: Pin<&mut Backend>, root_id: &QString, follow: bool);
-        /// A Threads-layout thread in the open channel read to its newest
-        /// reply, or (`unread`) marked unread from it.
+        /// A Threads-layout thread's read state in the open channel, as
+        /// Teams changes it: `change` "read" (to `newest_reply`), "clear"
+        /// (the Mark as unread bookmark) or "unread" (from `newest_reply`).
         #[qinvokable]
-        fn set_thread_read(self: Pin<&mut Backend>, root_id: &QString, newest_reply: &QString, unread: bool);
+        fn set_thread_read(self: Pin<&mut Backend>, root_id: &QString, change: &QString, newest_reply: &QString);
 
         /// Edit one of our messages in place, as Teams does: the editor's
         /// rich text (formatting kept) and the quote it keeps (JSON, or
@@ -2537,9 +2538,10 @@ async fn load_thread(thread: &str) -> anyhow::Result<()> {
         api::msgactions::rc_metadata(&client, &channel),
         api::msgactions::pinned_ids(&client, &channel),
     );
-    let (saved, follow) = rc.unwrap_or_default();
+    let (saved, follow, horizons) = rc.unwrap_or_default();
     let pinned = pinned.unwrap_or_default();
     api::messages::apply_following(&mut timeline, &follow);
+    api::messages::apply_thread_horizons(&mut timeline, &horizons);
     for m in timeline.iter_mut() {
         m.saved = saved.contains(&m.id);
         m.pinned = pinned.contains(&m.id);
@@ -2614,13 +2616,14 @@ async fn load_messages(
         api::msgactions::rc_metadata(&client, &chat_id),
         api::msgactions::pinned_ids(&client, &chat_id),
     );
-    let (saved, follow) = rc.unwrap_or_default();
+    let (saved, follow, horizons) = rc.unwrap_or_default();
     match horizon {
         Ok(h) => api::messages::apply_seen(&mut timeline, h),
         Err(e) => tracing::debug!("read horizons unavailable: {}", short_error(&e)),
     }
     let pinned = pinned.unwrap_or_default();
     api::messages::apply_following(&mut timeline, &follow);
+    api::messages::apply_thread_horizons(&mut timeline, &horizons);
     for m in timeline.iter_mut() {
         m.saved = saved.contains(&m.id);
         m.pinned = pinned.contains(&m.id);
@@ -6242,14 +6245,19 @@ impl qobject::Backend {
         });
     }
 
-    pub fn set_thread_read(self: Pin<&mut Self>, root_id: &QString, newest_reply: &QString, unread: bool) {
+    pub fn set_thread_read(self: Pin<&mut Self>, root_id: &QString, change: &QString, newest_reply: &QString) {
+        use api::msgactions::HorizonChange;
         let id = root_id.to_string();
-        let Ok(newest) = newest_reply.to_string().parse::<i64>() else { return };
+        let newest = newest_reply.to_string().parse::<i64>().unwrap_or(0);
+        let change = match (change.to_string().as_str(), newest) {
+            ("clear", _) => HorizonChange::ClearBookmark,
+            ("read", n) if n > 0 => HorizonChange::ReadTo(n),
+            ("unread", n) if n > 0 => HorizonChange::UnreadFrom(n),
+            _ => return,
+        };
         let at = id.clone();
         self.message_action(&at, move |client, chat| {
-            Box::pin(async move {
-                api::msgactions::set_thread_horizon(&client, &chat, &id, newest, unread).await
-            })
+            Box::pin(async move { api::msgactions::set_thread_horizon(&client, &chat, &id, change).await })
         });
     }
 

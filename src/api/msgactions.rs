@@ -174,12 +174,55 @@ pub fn follow_from(v: &serde_json::Value) -> std::collections::HashMap<String, i
     out
 }
 
-/// A conversation's saved messages and thread follow states, from one
-/// rcmetadata read.
-pub async fn rc_metadata(
-    client: &TeamsClient,
-    conv: &str,
-) -> Result<(HashSet<String>, std::collections::HashMap<String, i64>)> {
+/// A thread's read state from its rcmetadata (measured on winpc
+/// 2026-11-10): `ch`, read to; `chb`, Mark as unread's bookmark (0 once
+/// cleared).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ThreadHorizon {
+    pub read_to: i64,
+    pub bookmark: i64,
+}
+
+impl ThreadHorizon {
+    /// Replies after this are unread: the bookmark while set, else `ch`.
+    pub fn unread_after(&self) -> i64 {
+        if self.bookmark > 0 { self.bookmark } else { self.read_to }
+    }
+}
+
+/// Each thread's read state, by root message id.
+pub fn horizons_from(v: &serde_json::Value) -> std::collections::HashMap<String, ThreadHorizon> {
+    let mut out = std::collections::HashMap::new();
+    for item in v
+        .get("rcMetadataList")
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let root = item
+            .get("rootMessageId")
+            .map(|r| r.to_string().trim_matches('"').to_string())
+            .unwrap_or_default();
+        let n = |k: &str| item.pointer(&format!("/rcMetadata/{k}")).and_then(|x| x.as_i64()).unwrap_or(0);
+        let h = ThreadHorizon { read_to: n("ch"), bookmark: n("chb") };
+        if h.unread_after() > 0 {
+            out.insert(root, h);
+        }
+    }
+    out
+}
+
+/// The rcmetadata of a conversation: saved messages, thread follow states
+/// and thread read states.
+pub type RcMetadata = (
+    HashSet<String>,
+    std::collections::HashMap<String, i64>,
+    std::collections::HashMap<String, ThreadHorizon>,
+);
+
+/// A conversation's saved messages, thread follow states and thread read
+/// states, from one rcmetadata read.
+pub async fn rc_metadata(client: &TeamsClient, conv: &str) -> Result<RcMetadata> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}/rcmetadata?startTime=0&pageSize=200",
         client.chat_service_url(),
@@ -191,25 +234,40 @@ pub async fn rc_metadata(
         Err(e) => return Err(e),
     };
     let v: serde_json::Value = resp.json().await?;
-    Ok((saved_from(&v), follow_from(&v)))
+    Ok((saved_from(&v), follow_from(&v), horizons_from(&v)))
 }
 
-/// Where you've read a Threads-layout thread to, as Teams sets it
-/// (measured on winpc 2026-11-10): opening the thread puts its rcmetadata
-/// `ch` at the newest reply; Mark as unread puts `chb` just before it.
+/// A change to a Threads-layout thread's read state, as Teams sends it
+/// (measured on winpc 2026-11-10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HorizonChange {
+    /// Opening the thread reads it to its newest reply (`ch`).
+    ReadTo(i64),
+    /// Opening a thread marked unread clears the bookmark (`chb: 0`).
+    ClearBookmark,
+    /// Mark as unread: the bookmark just before the newest reply.
+    UnreadFrom(i64),
+}
+
+impl HorizonChange {
+    pub fn body(self) -> serde_json::Value {
+        match self {
+            HorizonChange::ReadTo(id) => serde_json::json!({ "ch": id }),
+            HorizonChange::ClearBookmark => serde_json::json!({ "chb": 0 }),
+            HorizonChange::UnreadFrom(id) => serde_json::json!({ "chb": id - 1 }),
+        }
+    }
+}
+
+/// Change where you've read a Threads-layout thread to (its rcmetadata).
 pub async fn set_thread_horizon(
     client: &TeamsClient,
     conv: &str,
     root_id: &str,
-    newest_reply: i64,
-    unread: bool,
+    change: HorizonChange,
 ) -> Result<()> {
     anyhow::ensure!(root_id.bytes().all(|b| b.is_ascii_digit()) && !root_id.is_empty(), "Not a thread: {root_id}");
-    let body = if unread {
-        serde_json::json!({ "chb": newest_reply - 1 })
-    } else {
-        serde_json::json!({ "ch": newest_reply })
-    };
+    let body = change.body();
     client
         .chat_request(
             reqwest::Method::PUT,

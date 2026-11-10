@@ -57,11 +57,19 @@ Rectangle {
     onThreadKeyChanged: {
         if (openedRoot) backend.closeThreadWindow(openedChannel, openedRoot)
         openedChannel = channelId; openedRoot = rootId
+        thread.threadLastReadAfter = 0
         if (rootId) {
             backend.openThreadWindow(channelId, rootId)
-            // Teams reads the thread to its newest reply on opening it.
+            // Opening it, Teams keeps "Last read" where it was, clears a
+            // Mark as unread bookmark (chb 0) and reads to the newest
+            // reply (ch) if it wasn't already.
             const t = threads.find(t => t.id === rootId)
-            if (t && t.thread_last_id) backend.setThreadRead(rootId, t.thread_last_id, false)
+            if (t) {
+                const after = t.thread_bookmark > 0 ? t.thread_bookmark : (t.thread_read_to || 0)
+                if (t.thread_unread > 0) thread.threadLastReadAfter = after
+                if (t.thread_bookmark > 0) backend.setThreadRead(rootId, "clear", "")
+                if (t.thread_last_id && Number(t.thread_last_id) > (t.thread_read_to || 0)) backend.setThreadRead(rootId, "read", t.thread_last_id)
+            }
         }
     }
     Component.onDestruction: if (openedRoot) backend.closeThreadWindow(openedChannel, openedRoot)
@@ -166,7 +174,7 @@ Rectangle {
                     onPicked: i => {
                         const k = items[i].key, m = pane.rootMessage
                         const t = pane.threads.find(t => t.id === pane.rootId)
-                        if (k === "unread") { if (t && t.thread_last_id) backend.setThreadRead(pane.rootId, t.thread_last_id, true) }
+                        if (k === "unread") { if (t && t.thread_last_id) backend.setThreadRead(pane.rootId, "unread", t.thread_last_id) }
                         else if (k === "link" && m) backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.id }), JSON.stringify({ team_id: pane.teamId, team_name: pane.teamName, channel_name: pane.host ? pane.host.chatName : "" }))
                         else if (k === "jump") pane.jumpTo(pane.rootId)
                         else if (k === "window") pane.popOut(pane.rootId)

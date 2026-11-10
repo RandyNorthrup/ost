@@ -3795,8 +3795,12 @@ Window {
                 else if (step === 12) { console.warn("TH pane", threadsPane.rootId, threadsPane.shown, conversation.openThreadRoot); shot("th-pane") }
                 else if (step === 13 && Qt.application.arguments.indexOf("--threads-send") >= 0) backend.sendThreadReply(threadsPane.channelId, threadsPane.rootId, "<p>" + Qt.application.arguments.find(a => a.startsWith("--threads-text=")).slice(15) + "</p>", "[]", "", Qt.application.arguments.indexOf("--threads-channel") >= 0)
                 else if (step === 14 && Qt.application.arguments.some(a => a.startsWith("--threads-root="))) { conversation.input.text = Qt.application.arguments.find(a => a.startsWith("--threads-root=")).slice(15); conversation.sendCompose() }
-                else if (step === 20) { console.warn("TH sent", JSON.stringify(conversation.threadStarters(conversation.messages).map(m => [m.text, m.thread_replies, !!m.shared_in_main]))); shot("th-sent") }
-                else if (step === 21) Qt.quit()
+                else if (step === 15 && Qt.application.arguments.indexOf("--threads-unread") >= 0) { const t = threadsPane.threads.find(t => t.id === threadsPane.rootId); backend.setThreadRead(t.id, "unread", t.thread_last_id) }
+                else if (step === 17) threadsPane.closed()
+                else if (step === 20) { console.warn("TH sent", JSON.stringify(conversation.threadStarters(conversation.messages).map(m => [m.text, m.thread_replies, !!m.shared_in_main, m.thread_read_to, m.thread_bookmark, m.thread_unread]))); shot("th-sent") }
+                else if (step === 21 && Qt.application.arguments.indexOf("--threads-unread") >= 0) { const s = threadsPane.threads[0]; threadsPane.channelId = backend.currentChatId; threadsPane.openThread(s.id) }
+                else if (step === 24) { console.warn("TH reopened", threadsPane.rootId); shot("th-reopen") }
+                else if (step === 25) Qt.quit()
                 step++; return
             }
             // =layouts: log every channel's layout.

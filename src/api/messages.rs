@@ -677,6 +677,12 @@ pub struct MessageView {
     /// thread", the thread with "Also sent to channel".
     #[serde(default)]
     pub shared_in_main: bool,
+    /// A Threads-layout thread's first message: its read state (rcmetadata
+    /// `ch`, and `chb` while Mark as unread's bookmark is set; 0 if none).
+    #[serde(default)]
+    pub thread_read_to: i64,
+    #[serde(default)]
+    pub thread_bookmark: i64,
     /// For system events (kind "event"): what happened, as Teams' control
     /// message renderer reads it; `text` then holds Teams' sentence.
     #[serde(default)]
@@ -1485,6 +1491,19 @@ pub fn apply_following(
                 .follow_explicit
                 .unwrap_or(m.mine || participated.contains(&m.id)),
         };
+    }
+}
+
+/// Put each thread's read state on its first message.
+pub fn apply_thread_horizons(
+    timeline: &mut [MessageView],
+    horizons: &std::collections::HashMap<String, super::msgactions::ThreadHorizon>,
+) {
+    for m in timeline.iter_mut() {
+        if let Some(h) = horizons.get(&m.id) {
+            m.thread_read_to = h.read_to;
+            m.thread_bookmark = h.bookmark;
+        }
     }
 }
 
@@ -4723,5 +4742,24 @@ mod paging_and_event_tests {
         let mut thread_only = m.clone();
         thread_only["properties"] = serde_json::json!({});
         assert!(!view_of(&thread_only, "8:orgid:me", "Me").unwrap().shared_in_main);
+    }
+
+    #[test]
+    fn thread_read_state_from_rcmetadata() {
+        // As the service returned it for "OST threads test" after Teams'
+        // Mark as unread and OST reading the thread.
+        let v = serde_json::json!({"rcMetadataList": [{"rcMetadata": {"ch": 1794315486744_i64, "chb": 1794313462719_i64, "chbv": 1794313949207_i64, "f": 2, "sl2": []}, "rootMessageId": 1794312901896_i64}]});
+        let h = super::super::msgactions::horizons_from(&v);
+        let t = h["1794312901896"];
+        assert_eq!(t.unread_after(), 1794313462719, "the bookmark wins while set");
+        let mut tl = vec![MessageView { id: "1794312901896".into(), ..Default::default() }];
+        apply_thread_horizons(&mut tl, &h);
+        assert_eq!((tl[0].thread_read_to, tl[0].thread_bookmark), (1794315486744, 1794313462719));
+        let cleared = serde_json::json!({"rcMetadataList": [{"rcMetadata": {"ch": 7, "chb": 0}, "rootMessageId": 5}]});
+        assert_eq!(super::super::msgactions::horizons_from(&cleared)["5"].unread_after(), 7);
+        use super::super::msgactions::HorizonChange;
+        assert_eq!(HorizonChange::UnreadFrom(1794313462720).body(), serde_json::json!({"chb": 1794313462719_i64}));
+        assert_eq!(HorizonChange::ClearBookmark.body(), serde_json::json!({"chb": 0}));
+        assert_eq!(HorizonChange::ReadTo(9).body(), serde_json::json!({"ch": 9}));
     }
 }

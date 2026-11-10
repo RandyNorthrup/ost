@@ -78,16 +78,22 @@ The pane has a 0.67 px line on its left and a 61 px header.
   - On read, `properties.isSharedInMain` marks the reply.
 - Pushes for thread replies name `{channel};messageid={root}`. The open channel
   reloads for them, so counts and shared replies update live.
-- Read state:
+- Read state: `GET …/rcmetadata?startTime=0&pageSize=200` gives each thread's
+  `ch` (read to), `chb` (Mark as unread's bookmark, 0 once cleared), `chbv`,
+  `f` and `lu`.
+  - Replies after `chb` while it is set, else after `ch`, are unread, your own
+    included.
+  - An unread thread's "{N} replies" is bold. When the pane opens, a "Last
+    read" line sits before its first unread reply and stays while the pane is
+    open.
   - Opening a thread: `PUT …/conversations/{channel}/rcmetadata/{root}` with
-    `{"ch": newestReplyId}`.
+    `{"chb": 0}` when a bookmark is set, and `{"ch": newestReplyId}` when it
+    wasn't read that far.
   - Mark as unread: the same PUT with `{"chb": newestReplyId - 1}`.
 - Follow / Unfollow thread: rcmetadata `f`, as for Posts threads.
 
 ## Not yet
 
-- Teams bolds an unread thread's "{N} replies" and draws a "Last read" line in
-  the pane, from rcmetadata `ch`/`chb`.
 - Banner: "A channel owner set this channel to a threads layout. Learn how
   threads work". It shows only in channels converted from Posts.
 - At narrow widths, Teams folds the tabs into a "Conversation ⌄" menu under

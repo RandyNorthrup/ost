@@ -57,6 +57,10 @@ Rectangle {
     /// A Threads-layout channel's thread pane: "{N} replies" under the
     /// first message, and the compose's "Send to:".
     property bool threadPane: false
+    /// The thread pane's "Last read" line: before the first reply after
+    /// this id (where the thread was read to when it
+    /// opened; 0 for none).
+    property real threadLastReadAfter: 0
     property string threadChannel: ""
     /// The channel's layout: "PostReply" (Posts) or "Conversational"
     /// (Threads: a chat of thread starters, each thread in the side pane).
@@ -83,7 +87,12 @@ Rectangle {
             const g = byRoot[r]
             if (m.id === r) {
                 const last = g.replies.length ? g.replies[g.replies.length - 1] : null
-                out.push(Object.assign({}, m, { thread_replies: g.replies.length, thread_last: last ? last.time : "", thread_last_sender: last ? last.sender : "", thread_last_mri: last ? last.sender_mri : "", thread_last_text: last ? last.text : "", thread_last_id: last ? last.id : "", thread_last_mine: last ? !!last.mine : false, thread_repliers: g.replies.map(x => ({ name: x.sender, mri: x.sender_mri })) }))
+                // Unread: replies after the bookmark (Mark as unread) or,
+                // without one, after where you read to (yours count too, as
+                // in Teams).
+                const after = m.thread_bookmark > 0 ? m.thread_bookmark : (m.thread_read_to || 0)
+                const unread = after > 0 ? g.replies.filter(x => Number(x.id) > after).length : 0
+                out.push(Object.assign({}, m, { thread_unread: unread, thread_replies: g.replies.length, thread_last: last ? last.time : "", thread_last_sender: last ? last.sender : "", thread_last_mri: last ? last.sender_mri : "", thread_last_text: last ? last.text : "", thread_last_id: last ? last.id : "", thread_last_mine: last ? !!last.mine : false, thread_repliers: g.replies.map(x => ({ name: x.sender, mri: x.sender_mri })) }))
             } else if (m.shared_in_main) {
                 out.push(Object.assign({}, m, { thread_title: g.root ? (g.root.text || "").split("\n")[0] : "" }))
             }
@@ -516,14 +525,17 @@ Rectangle {
     function annotate(msgs) {
         // A call's start shows only for Meet now ("… started a meeting.").
         const out = msgs.filter(m => !(m.kind === "call" && m.call_state === "started" && !m.call_huddle)).map(m => Object.assign({}, m))
-        let unreadSeen = false
+        let unreadSeen = false, lastReadPlaced = false
         for (let i = 0; i < out.length; i++) {
             const prev = i > 0 ? out[i - 1] : null, cur = out[i]
             // A day divider where the day changes (not above the very first
             // message shown), and the "Last read" line where unread begins.
             const day = new Date(cur.time).toDateString()
             cur.dayDivider = prev && new Date(prev.time).toDateString() !== day ? root.dayLabel(cur.time) : ""
-            cur.lastRead = cur.first_unread === true && i > 0
+            cur.lastRead = root.threadPane
+                ? root.threadLastReadAfter > 0 && !lastReadPlaced && cur.id !== root.threadRoot && Number(cur.id) > root.threadLastReadAfter
+                : cur.first_unread === true && i > 0
+            lastReadPlaced = lastReadPlaced || cur.lastRead
             // Unread when the chat opened, or arrived since (Teams autoplays
             // GIFs only in those; the rest show still with a play button).
             unreadSeen = unreadSeen || cur.first_unread === true
@@ -2231,7 +2243,9 @@ Rectangle {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: msg.modelData.thread_replies + (msg.modelData.thread_replies === 1 ? " reply" : " replies")
+                    // Bold while the thread has unread replies (Teams).
                     font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
+                    font.weight: (msg.modelData.thread_unread || 0) > 0 ? Font.Bold : Font.Normal
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.openThread(msg.modelData.id) }
                     Accessible.role: Accessible.Button

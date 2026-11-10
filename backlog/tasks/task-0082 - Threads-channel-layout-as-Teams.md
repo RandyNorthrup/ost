@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T18:48:00Z'
-updated_date: '2026-11-10T13:12:00Z'
+updated_date: '2026-11-10T13:23:00Z'
 labels:
   - desktop
 dependencies: []
@@ -23,7 +23,7 @@ Channels can use Teams' Threads layout (chatModalityType Conversational): the ch
 - [x] #2 Verified side by side with Teams on winpc
 - [x] #3 A Threads-layout channel shows as Teams shows it (Conversation tab, chat bubbles, reply counts, Reply in thread, replies also sent to the channel, Open threads, the 'Message in <channel>' compose)
 - [ ] #4 A channel converted from Posts shows Teams' 'A channel owner set this channel to a threads layout' banner
-- [ ] #5 Unread threads show as Teams shows them (bold reply count, the pane's Last read line, from rcmetadata ch/chb)
+- [x] #5 Unread threads show as Teams shows them (bold reply count, the pane's Last read line, from rcmetadata ch/chb)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -42,4 +42,6 @@ Channels can use Teams' Threads layout (chatModalityType Conversational): the ch
 - 2026-11-10: built the Conversation view, threads pane (list + thread), Send to (thread only / thread and channel), Replied in thread / Also sent to channel, Open threads toggle, ··· menu for Threads channels, rcmetadata ch/chb, push reload for thread replies. Verified against Teams with OST TEST 81-86 in "OST threads test".
 - Teams' hover label is "Reply in thread" on every message (no "Start a thread" seen).
 - Left: converted-channel banner (needs a channel converted from Posts), unread thread state, the narrow-header "Conversation ⌄" tab menu.
+
+- Unread threads: rcmetadata ch/chb read per thread; bold reply count, Last read line in the pane, chb:0 on opening (captured from Teams). Verified Mark as unread from OST and reopening.
 <!-- SECTION:NOTES:END -->
