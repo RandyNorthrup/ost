@@ -277,6 +277,11 @@ Rectangle {
     readonly property int threadsButton: threadsLayout && !pane && tab === "" ? 1 : 0
     /// Whether this channel's threads pane is open (Main), and its toggle.
     property bool threadsOpen: false
+    /// The chat's scheduled messages (backend.scheduledJson), shown after
+    /// the rest as Teams shows them: a grey bubble, "Sending on {day} at
+    /// {time}", the clock (Scheduled).
+    property var scheduled: []
+    readonly property var scheduledItems: root.pane ? [] : root.scheduled.map(s => Object.assign({}, s.message, { id: "scheduled:" + s.id, draft_id: s.id, scheduled_at: s.send_at_ms, mine: true, kind: "message", reactions: [] }))
     /// The thread the threads pane shows (its first message is outlined).
     property string openThreadRoot: ""
     signal toggleThreads()
@@ -547,7 +552,7 @@ Rectangle {
             // also starts a new group.
             const row = k => k === "call" || k === "event"
             cur.grouped = !root.isChannel && !row(cur.kind) && !row(prev.kind)
-                && !cur.dayDivider && !cur.lastRead
+                && !cur.dayDivider && !cur.lastRead && !cur.scheduled_at && !prev.scheduled_at
                 && cur.sender === prev.sender && cur.mine === prev.mine && gap >= 0 && gap < 5 * 60 * 1000
         }
         // Whether the next message continues this one's group (Teams squares
@@ -556,7 +561,7 @@ Rectangle {
         // Teams' receipts: your newest message carries the sent tick until
         // it is read; the newest one the other person has read gets the eye.
         for (let i = out.length - 1; i >= 0; i--) {
-            if (out[i].mine && out[i].kind === "message" && !out[i].send_state) { out[i].latestMine = true; break }
+            if (out[i].mine && out[i].kind === "message" && !out[i].send_state && !out[i].scheduled_at) { out[i].latestMine = true; break }
         }
         for (let i = out.length - 1; i >= 0; i--) {
             if (out[i].mine && out[i].kind === "message" && out[i].seen) { out[i].latestSeen = true; break }
@@ -1401,7 +1406,7 @@ Rectangle {
         clip: true
         spacing: 0
         verticalLayoutDirection: ListView.BottomToTop
-        model: root.annotate(root.threadsLayout ? root.threadStarters(root.messages) : root.messages)
+        model: root.annotate((root.threadsLayout ? root.threadStarters(root.messages) : root.messages).concat(root.scheduledItems))
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         // Scrolling up to the oldest messages loads the page before them (as
@@ -1451,7 +1456,7 @@ Rectangle {
             readonly property bool sendPending: modelData.send_state === "sending" || modelData.send_state === "retrying"
             readonly property bool sendFailed: modelData.send_state === "failed"
             // The name line shows for a failed message even within a group.
-            readonly property bool showMeta: (!grouped || sendFailed) && !isRow
+            readonly property bool showMeta: (!grouped || sendFailed) && !isRow && !scheduledMsg
             // Day divider and "Last read" line sit above the message.
             readonly property int dividerH: (modelData.dayDivider ? 30 : 0) + (modelData.lastRead ? 36 : 0)
             // Control and call rows sit flush, as in Teams (28 / 36 px rows).
@@ -1465,6 +1470,7 @@ Rectangle {
             readonly property int repliesCount: root.threadPane ? root.messages.filter(m => m.id !== root.threadRoot && m.kind === "message").length : 0
             // A reply also sent to the channel: "Replied in thread: {first
             // message}" in the channel, "Also sent to channel" in the thread.
+            readonly property bool scheduledMsg: !!modelData.scheduled_at
             readonly property string sharedHead: !modelData.shared_in_main || modelData.id === modelData.root_id ? ""
                 : root.threadsLayout ? "thread" : root.threadPane ? "channel" : ""
             height: isRow ? topPad + (isCall ? 36 : 28)
@@ -1732,7 +1738,10 @@ Rectangle {
                     : msg.modelData.forward ? fwdCard.height + (showBody ? 12 : 8.4)
                     // The shared-reply line: 16 tall, 3.3 down, the text 8
                     // under it (Teams).
-                    : msg.sharedHead ? 28 : 0)
+                    : msg.sharedHead ? 28
+                    // "Sending on …": 12 px on a 17.1 line 6.6 down, the
+                    // text 21.1 lower than usual (Teams).
+                    : msg.scheduledMsg ? 21.1 : 0)
                 // In a flow the text's own blank line sets the gap (Teams).
                 readonly property real picsTop: showBody ? body.y + bodyH + (inFlow ? 0 : 8) : (bare ? 0 : 8)
                 readonly property bool hasPics: imgs.length > 0 || inFlow
@@ -1746,7 +1755,7 @@ Rectangle {
                 width: root.postsLayout ? msg.maxBubble
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
                     : hasCode ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(msg.sharedHead ? sharedRow.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
@@ -1764,10 +1773,19 @@ Rectangle {
                 bottomLeftRadius: !msg.mine && joinDown ? 0 : r
                 topRightRadius: msg.mine && joinUp ? 0 : r
                 bottomRightRadius: msg.mine && joinDown ? 0 : r
-                color: bare || (root.compact && !msg.sendFailed) ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.postsLayout ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
-                border.color: msg.sendFailed ? theme.redBorder1 : root.postsLayout ? theme.dividerSoft
+                // A scheduled message: #FAFAFA with a #D1D1D1 hairline (Teams).
+                color: msg.scheduledMsg ? theme.pick("#FAFAFA", "#1F1F1F") : bare || (root.compact && !msg.sendFailed) ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.postsLayout ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
+                border.color: msg.scheduledMsg ? theme.pick("#D1D1D1", "#666666") : msg.sendFailed ? theme.redBorder1 : root.postsLayout ? theme.dividerSoft
                     : root.threadsLayout && root.openThreadRoot === msg.modelData.id ? theme.brand : "transparent"
                 x: root.compact ? 64 : msg.mine ? parent.width - root.gutR - width : root.gutContent
+                Text {
+                    id: scheduleLine
+                    visible: msg.scheduledMsg
+                    x: bubble.pad; y: 6.6 + bubble.subjectH; height: 17.1
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Sending on " + (msg.scheduledMsg ? Qt.formatDate(new Date(msg.modelData.scheduled_at), "dddd, MMM d") + " at " + Qt.formatTime(new Date(msg.modelData.scheduled_at), "h:mm AP") : "")
+                    font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                }
                 Text {
                     id: subjectLine
                     visible: bubble.subjectH > 0
@@ -2277,7 +2295,7 @@ Rectangle {
                 message: msg.modelData
                 // A reply also sent to the channel: Reply in thread (its
                 // thread), no Edit (Teams).
-                acts: (root.threadsLayout ? [{ key: "thread", icon: "chat-multiple-20", tip: "Reply in thread" }] : []).concat(msg.sharedHead === "thread" ? [] : msg.mine
+                acts: msg.scheduledMsg ? [] : (root.threadsLayout ? [{ key: "thread", icon: "chat-multiple-20", tip: "Reply in thread" }] : []).concat(msg.sharedHead === "thread" ? [] : msg.mine
                     ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
                     : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }])
                 onThreadRequested: m => root.openThread(m.root_id || m.id)
@@ -2304,11 +2322,11 @@ Rectangle {
             FluentIcon {
                 id: statusIcon
                 readonly property bool seen: msg.modelData.latestSeen === true
-                readonly property string tip: msg.sendPending ? (msg.modelData.send_note || "")
+                readonly property string tip: msg.scheduledMsg ? "Scheduled" : msg.sendPending ? (msg.modelData.send_note || "")
                     : msg.sendFailed ? "Failed"
                     : seen ? (root.isGroup ? "Seen by everyone" : "Seen") : "Sent"
-                visible: msg.mine && !msg.isRow && (msg.sendPending || msg.sendFailed || seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
-                name: msg.sendPending ? "circle-12" : msg.sendFailed ? "warning-12-filled" : seen ? "seen-12" : "sent-12"
+                visible: msg.mine && !msg.isRow && (msg.scheduledMsg || msg.sendPending || msg.sendFailed || seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
+                name: msg.scheduledMsg ? "clock-12" : msg.sendPending ? "circle-12" : msg.sendFailed ? "warning-12-filled" : seen ? "seen-12" : "sent-12"
                 size: 12; color: msg.sendFailed ? theme.redForeground1 : theme.brand
                 x: bubble.x + bubble.width + 8
                 y: bubble.y + bubble.height - 14
@@ -3181,6 +3199,9 @@ Rectangle {
         }
         backend.setReplyQuote(root.quoting ? JSON.stringify(root.quoting) : "")
         backend.setNextImportance(compose.importance)
+        // A scheduled message goes to Teams' drafts instead (not with files).
+        backend.setNextSchedule(compose.scheduleAt > 0 && root.pendingFiles.length === 0 ? String(Math.round(compose.scheduleAt)) : "")
+        compose.scheduleAt = 0
         // A new channel post: Teams' subject, headline and banner colour.
         backend.setNextPost(compose.post && root.pendingFiles.length === 0
             ? compose.postFields() : root.threadsLayout ? JSON.stringify({ threads: true, subject: compose.formatting ? compose.subject : "" }) : "")
@@ -3301,6 +3322,9 @@ Rectangle {
         sendTo: root.threadPane ? "thread" : ""
         threadSubject: root.threadsLayout
         tierWidth: root.width
+        // Teams offers it in chats and channels, not in your own chat or a
+        // thread's reply box.
+        scheduleAllowed: !root.isSelf && !root.threadRoot && !root.pane
         placeholder: root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
         quote: root.quoting
         files: root.pendingFiles

@@ -3823,6 +3823,22 @@ Window {
                 else if (step === 25) Qt.quit()
                 step++; return
             }
+            // =schedule: in "OST group test", open Schedule message (sc-popup),
+            // schedule "OST TEST 91" for tomorrow 8:00 AM (sc-compose,
+            // sc-pending), then --schedule-cancel cancels it (sc-cancelled).
+            if (mode === "schedule") {
+                const c = conversation.composeBox
+                if (step === 1) { const ch = JSON.parse(backend.chatsJson || "[]").find(x => x.name === "OST group test"); if (!ch) { step = 0; return } rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
+                else if (step === 5) { console.warn("SC pending before", backend.scheduledJson); c.scheduleAt = c.nextEight() + (c.nextEight() - Date.now() < 3600000 ? 86400000 : 0); conversation.input.text = "OST TEST 92 scheduled from OST"; shot("sc-compose") }
+                else if (step === 6 && Qt.application.arguments.indexOf("--schedule-send") >= 0) conversation.sendCompose()
+                else if (step === 6 && Qt.application.arguments.indexOf("--schedule-popup") >= 0) c.openScheduleForTest(c)
+                else if (step === 8 && Qt.application.arguments.indexOf("--schedule-popup") >= 0) shot("sc-popup")
+                else if (step === 12) { console.warn("SC pending", backend.scheduledJson); shot("sc-pending") }
+                else if (step === 13 && Qt.application.arguments.indexOf("--schedule-cancel") >= 0) { const l = JSON.parse(backend.scheduledJson || "[]"); for (const x of l) if ((x.message.text || "").indexOf("OST TEST 92") >= 0) backend.cancelScheduled(x.id) }
+                else if (step === 18) { console.warn("SC after", backend.scheduledJson); shot("sc-cancelled") }
+                else if (step === 19) { c.scheduleAt = 0; c.clear(); backend.setDraft(backend.currentChatId, ""); Qt.quit() }
+                step++; return
+            }
             // =layouts: log every channel's layout.
             if (mode === "layouts") {
                 if (step === 3) { console.warn("LAY", JSON.stringify(JSON.parse(backend.teamsJson || "[]").map(t => [t.name, (t.channels || []).map(c => [c.name, c.layout, c.id.slice(0, 16)])]))); Qt.quit() }
@@ -5377,6 +5393,7 @@ Window {
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
             return t ? t.id : ""
         }
+        scheduled: { try { return JSON.parse(backend.scheduledJson || "[]") } catch (e) { return [] } }
         channelLayout: {
             const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
             for (const t of teams) { const c = (t.channels || []).find(c => c.id === backend.currentChatId); if (c) return c.layout || "" }

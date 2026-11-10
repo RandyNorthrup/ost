@@ -29,6 +29,7 @@ pub mod channels;
 pub mod tabs;
 pub mod teams;
 pub mod quick_views;
+pub mod scheduled;
 pub mod team_create;
 
 use anyhow::Result;

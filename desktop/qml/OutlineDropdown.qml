@@ -16,13 +16,15 @@ Item {
     /// Shown (#616161) while nothing is chosen.
     property string placeholder: ""
     signal picked(int index)
+    /// Fluent's filled-darker look (#F5F5F5, no outline or underline).
+    property bool filled: false
     implicitWidth: 277.3; implicitHeight: 32
 
     Rectangle {
         anchors.fill: parent; radius: 4
-        color: theme.surface
-        border.color: hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
-        Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened ? 2 : 0.67; color: list.opened ? theme.brand : theme.textSecondary }
+        color: root.filled ? theme.pick("#F5F5F5", "#141414") : theme.surface
+        border.color: root.filled ? "transparent" : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+        Rectangle { visible: !root.filled || list.opened; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened ? 2 : 0.67; color: list.opened ? theme.brand : theme.textSecondary }
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 52; elide: Text.ElideRight

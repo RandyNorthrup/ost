@@ -136,6 +136,9 @@ pub mod qobject {
         /// schedule, and presence {availability, activity, lastActive,
         /// note, outOfOffice, workLocation}; {loading} while it loads.
         #[qproperty(QString, profile_card_json)]
+        /// The open chat's scheduled messages, soonest first:
+        /// [{id, conversation, send_at_ms, message}].
+        #[qproperty(QString, scheduled_json)]
         /// Settings' synced values: {props, mt, loaded}.
         #[qproperty(QString, settings_json)]
         /// The last setting that failed to save, or "".
@@ -399,6 +402,13 @@ pub mod qobject {
         /// announcement, "" otherwise); "" clears them.
         #[qinvokable]
         fn set_next_post(self: Pin<&mut Backend>, post_json: &QString);
+        /// The next message sent from the compose is scheduled for `ms`
+        /// (epoch ms; "" for none), as Teams' Schedule message.
+        #[qinvokable]
+        fn set_next_schedule(self: Pin<&mut Backend>, ms: &QString);
+        /// Cancel a scheduled message (Teams' Delete on it).
+        #[qinvokable]
+        fn cancel_scheduled(self: Pin<&mut Backend>, id: &QString);
         /// Copy a message's link as Teams does (text: the URL; HTML: Teams'
         /// copy-link anchor). `message_json`: {id, sender, text, root_id};
         /// `place_json`: {team_id, team_name, channel_name} for a channel.
@@ -1481,6 +1491,10 @@ pub struct BackendRust {
     my_status_ends: QString,
     settings_json: QString,
     profile_card_json: QString,
+    scheduled_json: QString,
+    /// The next message from the compose goes at this time (Schedule
+    /// message), epoch ms.
+    next_schedule_ms: Option<i64>,
     settings_error: QString,
     my_work_location: QString,
     thread_windows_json: QString,
@@ -6608,6 +6622,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().reply_quote = None;
         self.as_mut().rust_mut().next_importance.clear();
         self.as_mut().rust_mut().next_post = None;
+        self.as_mut().rust_mut().next_schedule_ms = None;
         self.as_mut().rust_mut().typing_generation += 1;
         self.as_mut().set_typing_text(QString::default());
         self.as_mut().set_typing_avatar(QString::default());
@@ -6620,6 +6635,78 @@ impl qobject::Backend {
         self.as_mut().reload_messages();
         self.as_mut().load_chat_members();
         self.as_mut().load_chat_meeting();
+        self.as_mut().load_scheduled();
+    }
+
+    /// The open chat's scheduled messages (from your 48:drafts stream).
+    fn load_scheduled(mut self: Pin<&mut Self>) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        self.as_mut().set_scheduled_json(QString::from("[]"));
+        if chat_id.is_empty() || chat_id.starts_with("48:") {
+            return;
+        }
+        let me = self.rust().my_mri.clone().unwrap_or_default();
+        let name = self.rust().user_name.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::scheduled::list(&client, &me, &name).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().current_chat_id.to_string() != chat_id {
+                    return;
+                }
+                match result {
+                    Ok(list) => {
+                        let mine: Vec<_> = list.into_iter().filter(|s| s.conversation == chat_id).collect();
+                        let json = serde_json::to_string(&mine).unwrap_or_else(|_| "[]".into());
+                        this.as_mut().set_scheduled_json(QString::from(json.as_str()));
+                    }
+                    Err(e) => tracing::debug!("scheduled messages unavailable: {}", short_error(&e)),
+                }
+            });
+        });
+    }
+
+    pub fn set_next_schedule(mut self: Pin<&mut Self>, ms: &QString) {
+        self.as_mut().rust_mut().next_schedule_ms = ms.to_string().parse::<i64>().ok().filter(|m| *m > 0);
+    }
+
+    pub fn cancel_scheduled(self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::scheduled::cancel(&client, &id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().load_scheduled(),
+                Err(e) => this.as_mut().set_status_text(QString::from(short_error(&e).as_str())),
+            });
+        });
+    }
+
+    /// Schedule `o` (Teams' Schedule message), then show it waiting.
+    fn schedule_outgoing(self: Pin<&mut Self>, o: api::outbox::Outgoing, at_ms: i64) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::scheduled::schedule(&client, &o, at_ms).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(_) => this.as_mut().load_scheduled(),
+                Err(e) => {
+                    tracing::warn!("schedule failed: {}", short_error(&e));
+                    this.as_mut().set_status_text(QString::from("Failed to schedule."))
+                }
+            });
+        });
     }
 
     /// Fetch the open chat's members (names and e-mail from Graph).
@@ -6997,9 +7084,16 @@ impl qobject::Backend {
         content: String,
         mentions: String,
     ) {
+        let schedule = self.as_mut().rust_mut().next_schedule_ms.take();
         if content.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
+            // Teams' words for each.
+            let text = if schedule.is_some() { "Failed to schedule. Message too large." } else { api::outbox::TOO_LARGE_TO_SEND };
+            self.as_mut().set_status_text(QString::from(text));
+            return;
+        }
+        if schedule.is_some_and(|ms| ms <= chrono::Utc::now().timestamp_millis()) {
             self.as_mut()
-                .set_status_text(QString::from(api::outbox::TOO_LARGE_TO_SEND));
+                .set_status_text(QString::from("This message was scheduled for a time in the past."));
             return;
         }
         let chat_id = self.rust().current_chat_id.to_string();
@@ -7010,7 +7104,10 @@ impl qobject::Backend {
         // Sent: the draft for this chat is done.
         self.as_mut()
             .set_draft(&QString::from(chat_id.as_str()), &QString::default());
-        self.submit_outgoing(o);
+        match schedule {
+            Some(ms) => self.schedule_outgoing(o, ms),
+            None => self.submit_outgoing(o),
+        }
     }
 
     /// A message to send: its arrival placed after the newest message of

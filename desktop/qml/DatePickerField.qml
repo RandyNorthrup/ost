@@ -22,6 +22,10 @@ Item {
     property date minDate: new Date(1900, 0, 1)
     property date maxDate: new Date(2999, 11, 31)
     signal picked(date date)
+    /// How the field writes the date, and Fluent's filled-darker look
+    /// (Schedule message: #F5F5F5, the underline only).
+    property string format: "M/d/yy"
+    property bool filled: false
     implicitWidth: 277.3; implicitHeight: 32
 
     function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
@@ -33,19 +37,19 @@ Item {
     Rectangle {
         id: field
         anchors.fill: parent; radius: 4
-        color: theme.surface
-        border.color: fieldHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+        color: root.filled ? theme.pick("#F5F5F5", "#141414") : theme.surface
+        border.color: root.filled ? "transparent" : fieldHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
         Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: popup.opened ? 2 : 0.67; color: popup.opened ? theme.brand : theme.textSecondary }
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
-            text: Qt.formatDate(root.date, "M/d/yy")
+            text: Qt.formatDate(root.date, root.format)
             font.family: theme.font; font.pixelSize: 14; color: theme.text
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "calendar-ltr-20"; size: 20; color: theme.textSecondary }
         HoverHandler { id: fieldHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: popup.opened ? popup.close() : popup.open() }
         Accessible.role: Accessible.ComboBox
-        Accessible.name: "Date, " + Qt.formatDate(root.date, "M/d/yy")
+        Accessible.name: "Date, " + Qt.formatDate(root.date, root.format)
     }
 
     Popup {

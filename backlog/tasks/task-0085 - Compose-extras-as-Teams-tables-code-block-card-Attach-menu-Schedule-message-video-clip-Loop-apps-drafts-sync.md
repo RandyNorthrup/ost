@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-10T14:29:00Z'
+updated_date: '2026-11-10T15:15:00Z'
 labels:
   - desktop
   - messages
@@ -34,4 +34,9 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 
 <!-- SECTION:NOTES:BEGIN -->
 - 2026-11-10: code blocks as Teams' compose: highlight.js-style colours in Teams' 5 classes (measured), Auto-detect language (on by default; Rust snippet detected, short line stays Plain Text, as Teams), the ··· menu (Display option ▸ Auto-detect language), header colours. Received cards already matched (Teams shows no colours there). "Make this collaborative" needs Loop (AC4).
+
+- Drafts (AC5): Teams' roaming API is chatsvc v1/users/ME/drafts (POST, PUT {id}, DELETE), behind enableRoamMessageDraft. On this tenant Teams made no drafts calls while a draft was typed and the channel left, so drafts stay local there, as OST's do. The roaming body is still to be captured where the flag is on.
+- Pre-send checks: Enter on spaces does nothing (as OST); too-large is done; the rest belong to unbuilt features (Loop, video, schedule).
+
+- Schedule message: built and verified against Teams. Covers the + item, popover, compose header with Cancel scheduled time, POST/GET/DELETE v1/users/ME/drafts, and the pending bubble with Delete. OST TEST 91/92 were scheduled from OST and cancelled; OST TEST 90 was scheduled from Teams and cancelled. Left: editing a scheduled message (PUT drafts/{id}, not captured yet), Record video clip, Loop, and the installed apps in +.
 <!-- SECTION:NOTES:END -->

@@ -889,6 +889,31 @@ Groups are separated by dividers; empty groups are skipped.
   - "OST TEST 69", sent from OST with every format, matched Teams' wire format, and Teams web drew it exactly as its own messages.
 - **Not done yet.** Tables (Insert table, rows and columns), the code card's "Make this collaborative" (needs Loop), and the inline-code hairline box when receiving (Qt rich text can't draw one).
 
+- **Schedule message** (measured on winpc 2026-11-10, "OST TEST 90"–"92"):
+  - Where it's offered: "+" ▸ Schedule message (SendClock icon), first in the list, in chats and channels. It isn't offered in your own chat.
+  - The popover:
+    - 245.3 px wide, radius 4, shadow16, padding 16 / 12; it opens above the "+", its end 8 px past it.
+    - "Send this message on" (14 px, #616161).
+    - The date: filled #F5F5F5, "Tuesday, November 10", a calendar icon.
+    - The time: filled, 48 half-hour slots; earlier slots are greyed for today.
+    - Both fields are 220 px wide and 8 px apart; then Continue (brand, 31.3 px).
+    - The default is the next 8:00 AM (seen as today 8:00 AM at 6:40 AM; the rule wasn't found in Teams' code).
+  - The compose then shows "Select **Send** to deliver on {Tuesday, Nov 10} at {8:00 AM} ⌄".
+    - It is 12 px brand in a 25 px row, 12 px in. Channel posts say **Post** instead of Send, and editing says **Done**.
+    - The chevron reopens the popover with "Cancel scheduled time" under Continue.
+  - Sending: `POST {chatsvc}/v1/users/ME/drafts` with:
+    - `draftType: "ScheduledDraft"`, `draftDetails.sendAt` (epoch ms, as a string), and `innerThreadId` (the chat);
+    - `message`: the usual message body plus `properties.draftId` (its clientmessageid), `draftDetails.sendAt` (ISO), `threadtype: "streamofdrafts"` and `innerThreadId`.
+  - Listing: `GET {chatsvc}/v1/users/ME/drafts` returns `{"drafts": [...]}`, with each draft's type, chat and send time at its top level. The `48:drafts` stream can't be read as a conversation.
+  - A scheduled message shows after the chat's messages:
+    - a #FAFAFA bubble with a 0.67 px #D1D1D1 border, radius 6, and no time line;
+    - "Sending on {day} at {time}" (12 px, #616161, 17.1 px line), with the text 21.1 px lower than usual;
+    - a brand Clock 12 icon ("Scheduled");
+    - hover: Edit and More, with no reactions; More holds Delete (Del) and Translation.
+  - Delete cancels it: `DELETE {chatsvc}/v1/users/ME/drafts/{id}`.
+  - Errors: "Failed to schedule.", "Failed to schedule. Message too large.", "This message was scheduled for a time in the past."
+  - Not built yet: editing a scheduled message (`PUT …/drafts/{id}`), its Translation item, and Record video clip.
+
 ## 17. "+" Actions and apps, Attach, fun picker
 - **"+" flyout** (930874; native apps first in list view, `simplifiedComposeViewType` live "list"):
 

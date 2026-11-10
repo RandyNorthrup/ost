@@ -1207,6 +1207,12 @@ pub fn merge_pages(older: &[MessageView], newest: Vec<MessageView>) -> Vec<Messa
     all
 }
 
+/// A message from the chat service as OST shows it (for streams outside a
+/// chat's timeline, such as scheduled drafts).
+pub fn message_view(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageView> {
+    view_of(m, me, own_name)
+}
+
 fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageView> {
     let s = |p: &str| {
         m.pointer(p)

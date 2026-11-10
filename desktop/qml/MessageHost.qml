@@ -112,6 +112,9 @@ Item {
     // The message ··· menu (Teams' registry order; the hover bar's own
     // actions are left out when it opens from there, kept on right-click).
     function messageMenuItems(m, rightClick, context) {
+        // A scheduled message (Teams: Delete, which cancels it, and
+        // Translation; translating it before it's sent isn't built).
+        if (m.scheduled_at) return [{ key: "delete-scheduled", label: "Delete", icon: "delete-menu-20", keys: "Del" }]
         const own = m.mine === true
         const out = []
         const save = m.saved
@@ -214,6 +217,7 @@ Item {
             if (it.key === "reply") root.replyWithQuote(m)
             else if (it.key === "edit") root.startEdit(m)
             else if (it.key === "delete") root.deleteRequested(m.id)
+            else if (it.key === "delete-scheduled") backend.cancelScheduled(m.draft_id)
             else if (it.key === "forward") { forwardDialog.message = m; forwardDialog.open() }
             else if (it.key === "report") { backend.reportResult = ""; reportDialog.message = m; reportDialog.open() }
             else if (it.key === "copy-link") backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.root_id || "" }), JSON.stringify({ team_id: root.teamId, team_name: root.teamName, channel_name: root.isChannel ? root.chatName : "" }))

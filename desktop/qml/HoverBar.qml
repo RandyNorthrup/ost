@@ -14,6 +14,8 @@ Item {
     readonly property var reactions: message && message.reactions ? message.reactions : []
     // Contextual actions: [{key: "edit"|"reply", icon, tip}].
     property var acts: []
+    /// A scheduled message has no reactions (Teams: Edit and More only).
+    readonly property bool reactionsShown: !(message && message.scheduled_at)
     /// "thread": Reply in thread (a Threads-layout channel).
     signal threadRequested(var message)
     // Which menu ··· opens: "chat", "post" or "reply" (Teams' ChatMessage,
@@ -22,7 +24,7 @@ Item {
     readonly property bool hovered: barHover.hovered
     readonly property var quick: host.quickReactions
     height: 32
-    width: 7 + (quick.length + 1) * 32 + 8 + acts.length * 32 + 32 + 6
+    width: 7 + (reactionsShown ? (quick.length + 1) * 32 + 8 : 0) + acts.length * 32 + 32 + 6
     FluentSurface { anchors.fill: parent; depth: 16; radius: 4 }
     HoverHandler { id: barHover }
     Accessible.role: Accessible.ToolBar
@@ -30,7 +32,7 @@ Item {
     Row {
         x: 7
         Repeater {
-            model: bar.quick
+            model: bar.reactionsShown ? bar.quick : []
             Item {
                 id: quickBtn
                 required property string modelData
@@ -62,6 +64,7 @@ Item {
             }
         }
         BarButton {
+            visible: bar.reactionsShown
             icon: "emoji-add-20"; tip: "More reactions"
             // Pressed when we reacted with something not offered
             // above.
@@ -69,6 +72,7 @@ Item {
             onClicked: host.openReactionPicker(bar.message.id, bar)
         }
         Item {
+            visible: bar.reactionsShown
             width: 8; height: 32
             Rectangle { x: 4; y: 5; width: 1; height: 21; color: theme.divider }
         }

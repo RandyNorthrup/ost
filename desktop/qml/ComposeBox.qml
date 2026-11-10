@@ -52,6 +52,21 @@ Item {
     /// a subject" row (measured on winpc 2026-11-10: 55.7 tall under the
     /// formatting bar, 10.7 in; the subject 18/600, 12 in and 15 down).
     property bool threadSubject: false
+    /// Schedule message (Teams' "+" ▸ Schedule message, measured on winpc
+    /// 2026-11-10): when the message goes (epoch ms; 0 sends now), and
+    /// whether this compose offers it.
+    property real scheduleAt: 0
+    property bool scheduleAllowed: false
+    function scheduleText(ms) {
+        const d = new Date(ms)
+        return Qt.formatDate(d, "dddd, MMM d") + " at " + Qt.formatTime(d, "h:mm AP")
+    }
+    /// Teams' default: the next 8:00 AM.
+    function nextEight() {
+        const d = new Date(); d.setHours(8, 0, 0, 0)
+        if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1)
+        return d.getTime()
+    }
     /// The width Teams' formatting bar picks its tier from (the
     /// conversation's).
     property real tierWidth: width
@@ -114,7 +129,7 @@ Item {
     /// Teams' compact compose (pane under 480 px): the editor across the
     /// box and the tools in the bottom row.
     property bool compact: false
-    readonly property bool multiline: !!sendTo || post || editing || compact || formatting || files.length > 0 || !!quote || grown
+    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || !!quote || grown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -132,7 +147,7 @@ Item {
     readonly property bool fmtOn: formatting || post
     // The delivery header ("IMPORTANT!") is 26 tall above the editor; the
     // post composer's author row and subject (and banner) are above it.
-    readonly property real headerH: post ? 57.3 + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : sendTo ? 25 : 0
+    readonly property real headerH: post ? 57.3 + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : sendTo || scheduleAt > 0 ? 25 : 0
     readonly property real boxHeight: post ? headerH + 43 + editorArea.height + 16 + 31.3 + 17.4
         : headerH + (multiline
         ? (formatting ? 43 : 0) + subjectRowH + editorArea.height + 44.7
@@ -535,6 +550,28 @@ Item {
                 color: threadSubjectField.activeFocus ? theme.brand : theme.pick("#4D4D4D", "#ADADAD")
             }
         }
+        // "Select Send to deliver on {day} at {time} ⌄" while the message
+        // is scheduled (12 px brand, "Send" — "Post" in a channel's post
+        // composer — bold; 12 in, 5 down); it reopens the schedule with
+        // "Cancel scheduled time".
+        Item {
+            id: scheduleRow
+            visible: root.scheduleAt > 0 && !root.sendTo
+            x: 12; y: 5; height: 20
+            width: scheduleLabel.implicitWidth + 4 + 12
+            Text {
+                id: scheduleLabel
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.StyledText
+                text: "Select <b>" + (root.post ? "Post" : "Send") + "</b> to deliver on " + root.scheduleText(root.scheduleAt)
+                font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
+            }
+            FluentIcon { x: scheduleLabel.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.brandForeground1 }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: schedulePopup.openFor(scheduleRow, true) }
+            Accessible.role: Accessible.ButtonMenu
+            Accessible.name: scheduleLabel.text.replace(/<[^>]+>/g, "")
+        }
         // The formatting bar (Teams' simplified-formatting-toolbar).
         FormatBar {
             id: formatBar
@@ -906,6 +943,7 @@ Item {
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         onOpened: { search.text = ""; search.forceActiveFocus() }
         readonly property var items: [
+            { key: "schedule", label: "Schedule message", icon: "send-clock-20", hidden: !root.scheduleAllowed },
             { key: "delivery", label: "Set delivery options", icon: "important-20", hidden: !root.deliveryOptions },
             { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" }
         ].filter(i => !i.hidden && i.label.toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
@@ -940,6 +978,7 @@ Item {
                         onTapped: {
                             plusFlyout.close()
                             if (parent.modelData.key === "delivery") { deliveryPopup.anchorItem = plusFlyout.anchorItem; deliveryPopup.open() }
+                            else if (parent.modelData.key === "schedule") schedulePopup.openFor(plusFlyout.anchorItem, false)
                             else root.scheduleMeetingRequested()
                         }
                     }
@@ -949,6 +988,82 @@ Item {
             }
         }
     }
+    // Schedule message (measured on winpc 2026-11-10): 245.3 wide, radius
+    // 4, shadow16, padding 16 / 12; "Send this message on" (14 #616161),
+    // the date (filled, "Tuesday, November 10") and the time (filled, 48
+    // half hours, earlier ones greyed today), 220 wide and 8 apart, then
+    // Continue (brand, 31.3) and, for a scheduled message, "Cancel
+    // scheduled time". It opens above what opened it, its end 8 past.
+    Popup {
+        id: schedulePopup
+        property bool changing: false
+        property date day: new Date()
+        property int slot: 16
+        parent: Overlay.overlay
+        width: 245.3; padding: 0
+        height: 186.7 + (changing ? 40.7 : 0)
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        function openFor(anchor, changing) {
+            const at = new Date(root.scheduleAt > 0 ? root.scheduleAt : root.nextEight())
+            day = new Date(at.getFullYear(), at.getMonth(), at.getDate())
+            slot = at.getHours() * 2 + (at.getMinutes() >= 30 ? 1 : 0)
+            schedulePopup.changing = changing
+            const p = anchor.mapToItem(Overlay.overlay, anchor.width, 0)
+            x = Math.min(Overlay.overlay.width - width - 8, p.x + 8 - width)
+            y = Math.max(8, p.y - height - 4)
+            open()
+        }
+        readonly property bool today: { const n = new Date(); return day.getFullYear() === n.getFullYear() && day.getMonth() === n.getMonth() && day.getDate() === n.getDate() }
+        readonly property var slots: {
+            const out = [], now = Date.now()
+            for (let i = 0; i < 48; i++) {
+                const t = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(i / 2), (i % 2) * 30)
+                out.push({ label: Qt.formatTime(t, "h:mm AP"), disabled: t.getTime() <= now })
+            }
+            return out
+        }
+        readonly property real chosen: new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(slot / 2), (slot % 2) * 30).getTime()
+        Text { x: 12; y: 16.7; text: "Send this message on"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+        DatePickerField {
+            x: 12; y: 52; width: 220; height: 31.3
+            filled: true; format: "dddd, MMMM d"
+            date: schedulePopup.day
+            minDate: new Date()
+            onPicked: d => schedulePopup.day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+        }
+        OutlineDropdown {
+            x: 12; y: 91.3; width: 220; height: 32
+            filled: true
+            options: schedulePopup.slots
+            current: schedulePopup.slot
+            accessibleName: "Select time"
+            onPicked: i => schedulePopup.slot = i
+        }
+        Rectangle {
+            id: scheduleGo
+            readonly property bool usable: schedulePopup.chosen > Date.now()
+            x: 12; y: 139.3; width: 220; height: 31.3; radius: 4
+            color: !usable ? theme.bgDisabled : goHover.hovered ? theme.brandHover : theme.brand
+            Text { anchors.centerIn: parent; text: "Continue"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: scheduleGo.usable ? "white" : theme.disabled }
+            HoverHandler { id: goHover; cursorShape: scheduleGo.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: scheduleGo.usable; onTapped: { root.scheduleAt = schedulePopup.chosen; schedulePopup.close(); input.forceActiveFocus() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Continue"
+        }
+        Rectangle {
+            visible: schedulePopup.changing
+            x: 12; y: 178.7; width: 220; height: 31.3; radius: 4
+            color: cancelHover.hovered ? theme.menuHover : theme.surface
+            border.color: theme.stroke; border.width: 0.67
+            Text { anchors.centerIn: parent; text: "Cancel scheduled time"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.scheduleAt = 0; schedulePopup.close(); input.forceActiveFocus() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Cancel scheduled time"
+        }
+    }
+    function openScheduleForTest(anchor) { schedulePopup.openFor(anchor, root.scheduleAt > 0) }
     // Delivery options (measured): 317.3 x 161.3; 48 px options with a 16 px
     // icon at (16, 18.3), the title 14/18.7 and description 12/16 at 40.7,
     // the selected one NeutralBackground1Hover with a checkmark at 284.
