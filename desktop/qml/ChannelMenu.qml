@@ -66,7 +66,14 @@ Item {
         { key: "restore", label: "Restore channel", icon: "arrow-clockwise-20" },
         { key: "delete", label: "Delete channel", icon: "delete-20" }
     ]
-    readonly property var ownerItems: ownedChannel ? [
+    // A Threads-layout channel (measured on winpc 2026-11-10): no posts
+    // order, Manage channel, Recommend or Archive; owners get Delete only.
+    readonly property bool threads: root.channel.layout === "Conversational"
+    /// Header items that didn't fit (Teams' "Sidepane Features"), first,
+    /// straight before Open in new window.
+    property var movedItems: []
+    signal openDetails()
+    readonly property var ownerItems: ownedChannel && threads ? [{ separator: true }, { key: "delete", label: "Delete channel", icon: "delete-20" }] : ownedChannel ? [
         root.channel.recommended
             ? { key: "unrecommend", label: "Stop recommending for everyone", icon: "sparkle-20" }
             : { key: "recommend", label: "Recommend for everyone", icon: "sparkle-20" },
@@ -81,7 +88,7 @@ Item {
             ? [{ key: "go", label: "Go to channel", icon: "channel-20" },
                { key: "window", label: "Open in new window", icon: "open-window-20" },
                { separator: true }]
-            : (root.postsOrder ? [root.postsAtBottom
+            : root.movedItems.concat(root.postsOrder && !root.threads ? [root.postsAtBottom
                 ? { key: "top", label: "See new posts at top", icon: "channel-posts-top-20" }
                 : { key: "bottom", label: "See new posts at bottom", icon: "channel-posts-top-20" },
                { separator: true }] : []).concat([
@@ -94,7 +101,7 @@ Item {
                 : { key: "hide", label: "Hide", icon: "eye-off-20" },
             { separator: true },
             { key: "edit", label: "Edit channel", icon: "edit-20" },
-            { key: "manage", label: "Manage channel", icon: "settings-20" },
+            root.threads ? null : { key: "manage", label: "Manage channel", icon: "settings-20" },
             { key: "link", label: "Copy link", icon: "link-20" },
             { key: "email", label: "Get email address", icon: "mail-20" }
         ], root.manageMode ? [] : [{ key: "workflows", label: "Workflows", icon: "workflows-20" }], root.ownerItems).filter(i => i !== null)
@@ -111,6 +118,7 @@ Item {
             const k = items[i].key
             if (k === "top" || k === "bottom") root.act(k === "top" ? "posts-at-top" : "posts-at-bottom")
             else if (k === "go") root.goToChannel()
+            else if (k === "details") root.openDetails()
             else if (k === "window") root.openInNewWindow()
             else if (k === "hide" || k === "show") root.act(k)
             else if (k === "edit") editDialog.start(root.channel)

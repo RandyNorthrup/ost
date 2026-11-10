@@ -672,6 +672,11 @@ pub struct MessageView {
     /// post, the post's id for a reply. Empty in chats.
     #[serde(default)]
     pub root_id: String,
+    /// A Threads-layout reply also sent to the channel (Teams'
+    /// `isSharedInMain`): the conversation shows it with "Replied in
+    /// thread", the thread with "Also sent to channel".
+    #[serde(default)]
+    pub shared_in_main: bool,
     /// For system events (kind "event"): what happened, as Teams' control
     /// message renderer reads it; `text` then holds Teams' sentence.
     #[serde(default)]
@@ -1241,6 +1246,8 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         first_unread: false,
         files: Vec::new(),
         root_id: s("/rootMessageId"),
+        shared_in_main: matches!(m.pointer("/properties/isSharedInMain"), Some(serde_json::Value::Bool(true)))
+            || m.pointer("/properties/isSharedInMain").and_then(|v| v.as_str()) == Some("true"),
         mentions_me: false,
         event: None,
         ..Default::default()
@@ -4704,5 +4711,17 @@ mod paging_and_event_tests {
             !messages_url("https://cs", "19:c@thread.tacv2", 200, None)
                 .contains("supportsMessageProperties")
         );
+    }
+
+    #[test]
+    fn threads_layout_replies_also_sent_to_the_channel() {
+        // As Teams sent "OST TEST 82" (Send to: thread and channel).
+        let m = serde_json::json!({"id": "1794313462721", "messagetype": "RichText/Html", "content": "<p>OST TEST 82 thread and channel</p>", "from": "https://x/contacts/8:orgid:me", "imdisplayname": "Me", "rootMessageId": "1794312901896", "properties": {"isSharedInMain": true}});
+        let v = view_of(&m, "8:orgid:me", "Me").unwrap();
+        assert!(v.shared_in_main);
+        assert_eq!(v.root_id, "1794312901896");
+        let mut thread_only = m.clone();
+        thread_only["properties"] = serde_json::json!({});
+        assert!(!view_of(&thread_only, "8:orgid:me", "Me").unwrap().shared_in_main);
     }
 }

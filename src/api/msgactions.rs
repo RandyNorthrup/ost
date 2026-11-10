@@ -194,6 +194,36 @@ pub async fn rc_metadata(
     Ok((saved_from(&v), follow_from(&v)))
 }
 
+/// Where you've read a Threads-layout thread to, as Teams sets it
+/// (measured on winpc 2026-11-10): opening the thread puts its rcmetadata
+/// `ch` at the newest reply; Mark as unread puts `chb` just before it.
+pub async fn set_thread_horizon(
+    client: &TeamsClient,
+    conv: &str,
+    root_id: &str,
+    newest_reply: i64,
+    unread: bool,
+) -> Result<()> {
+    anyhow::ensure!(root_id.bytes().all(|b| b.is_ascii_digit()) && !root_id.is_empty(), "Not a thread: {root_id}");
+    let body = if unread {
+        serde_json::json!({ "chb": newest_reply - 1 })
+    } else {
+        serde_json::json!({ "ch": newest_reply })
+    };
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &format!(
+                "{}/v1/users/ME/conversations/{}/rcmetadata/{root_id}",
+                client.chat_service_url(),
+                conv
+            ),
+            &body,
+        )
+        .await?;
+    Ok(())
+}
+
 /// Follow or unfollow a channel thread, as Teams does: the thread's
 /// rcmetadata `f` (1 / 3) and the post's `follow` emotion (1 / 0).
 pub async fn set_following(

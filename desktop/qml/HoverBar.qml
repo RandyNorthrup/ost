@@ -14,6 +14,8 @@ Item {
     readonly property var reactions: message && message.reactions ? message.reactions : []
     // Contextual actions: [{key: "edit"|"reply", icon, tip}].
     property var acts: []
+    /// "thread": Reply in thread (a Threads-layout channel).
+    signal threadRequested(var message)
     // Which menu ··· opens: "chat", "post" or "reply" (Teams' ChatMessage,
     // ChannelPost and ChannelReply).
     property string context: "chat"
@@ -75,7 +77,7 @@ Item {
             BarButton {
                 required property var modelData
                 icon: modelData.icon; tip: modelData.tip
-                onClicked: modelData.key === "edit" ? host.startEdit(bar.message) : host.replyWithQuote(bar.message)
+                onClicked: modelData.key === "edit" ? host.startEdit(bar.message) : modelData.key === "thread" ? bar.threadRequested(bar.message) : host.replyWithQuote(bar.message)
             }
         }
         BarButton { id: moreButton; icon: "more-horizontal-20"; tip: "More options"; height: 32; onClicked: host.openMessageMenu(bar.message, moreButton, false, 0, moreButton.height, bar.context) }

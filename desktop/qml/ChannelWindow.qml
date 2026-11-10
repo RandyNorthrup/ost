@@ -206,7 +206,7 @@ Window {
         myName: backend.userName
         busy: win.messages.length === 0
         host: host
-        onReply: (rootId, text) => backend.sendThreadReply(win.channelId, rootId, text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>"), "[]", "")
+        onReply: (rootId, text) => backend.sendThreadReply(win.channelId, rootId, text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>"), "[]", "", false)
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         posting: win.posting
         onStartPost: { win.posting = true; compose.focusSubject() }

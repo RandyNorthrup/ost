@@ -142,6 +142,7 @@ fn main() {
         "qml/SettingsParts.qml",
         "qml/OofPage.qml",
         "qml/ProfileCard.qml",
+        "qml/ThreadsPane.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",

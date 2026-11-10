@@ -45,6 +45,9 @@ Item {
     // Teams' delivery option for the next message: "", "high" or "urgent";
     // offered outside channels, Urgent only up to 20 members.
     property string importance: ""
+    /// A Threads-layout thread's reply target (Teams' "Send to:"): "" (none
+    /// shown), "thread" (thread only) or "channel" (thread and channel).
+    property string sendTo: ""
     property bool deliveryOptions: true
     property bool urgentAllowed: true
     signal scheduleMeetingRequested()
@@ -103,7 +106,7 @@ Item {
     /// Teams' compact compose (pane under 480 px): the editor across the
     /// box and the tools in the bottom row.
     property bool compact: false
-    readonly property bool multiline: post || editing || compact || formatting || files.length > 0 || !!quote || grown
+    readonly property bool multiline: !!sendTo || post || editing || compact || formatting || files.length > 0 || !!quote || grown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -121,7 +124,7 @@ Item {
     readonly property bool fmtOn: formatting || post
     // The delivery header ("IMPORTANT!") is 26 tall above the editor; the
     // post composer's author row and subject (and banner) are above it.
-    readonly property real headerH: post ? 57.3 + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : 0
+    readonly property real headerH: post ? 57.3 + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : sendTo ? 25 : 0
     readonly property real boxHeight: post ? headerH + 43 + editorArea.height + 16 + 31.3 + 17.4
         : headerH + (multiline
         ? (formatting ? 43 : 0) + editorArea.height + 44.7
@@ -429,6 +432,33 @@ Item {
             text: root.importance === "urgent" ? "URGENT!" : "IMPORTANT!"
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
             color: root.importance === "urgent" ? theme.redForeground3 : theme.pick("#DA3B01", "#E9835E")
+        }
+        // "Send to: thread only ⌄" (measured on winpc 2026-11-10): 12 px
+        // brand, "Send to:" bold, a 12 px chevron 4 after; 12 in, 5 down. Its
+        // menu (Thread only / Thread and channel) opens above it.
+        Item {
+            id: sendToRow
+            visible: !!root.sendTo
+            x: 12; y: 5; height: 20
+            width: sendToLabel.implicitWidth + 4 + 12
+            Text {
+                id: sendToLabel
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.StyledText
+                text: "<b>Send to:</b> " + (root.sendTo === "channel" ? "thread and channel" : "thread only")
+                font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
+            }
+            FluentIcon { x: sendToLabel.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.brandForeground1 }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: sendToMenu.open() }
+            Accessible.role: Accessible.ButtonMenu
+            Accessible.name: sendToLabel.text.replace(/<[^>]+>/g, "")
+            MenuPopup {
+                id: sendToMenu
+                y: -height - 4; x: -35
+                items: [{ label: "Thread only", checked: root.sendTo !== "channel" }, { label: "Thread and channel", checked: root.sendTo === "channel" }]
+                onPicked: i => { root.sendTo = i === 1 ? "channel" : "thread"; input.forceActiveFocus() }
+            }
         }
         // The formatting bar (Teams' simplified-formatting-toolbar).
         FormatBar {

@@ -498,7 +498,7 @@ Window {
             backend.sendThreadFiles(channelId, rootId, win.pendingFiles.join("\n"), compose.plainText())
             win.pendingFiles = []
         } else {
-            backend.sendThreadReply(channelId, rootId, compose.formattedText(), JSON.stringify(compose.mediaInUse()), compose.quote ? JSON.stringify(compose.quote) : "")
+            backend.sendThreadReply(channelId, rootId, compose.formattedText(), JSON.stringify(compose.mediaInUse()), compose.quote ? JSON.stringify(compose.quote) : "", false)
         }
         compose.quote = null
         compose.clear()

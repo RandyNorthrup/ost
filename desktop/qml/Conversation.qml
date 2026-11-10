@@ -54,7 +54,42 @@ Rectangle {
     /// A channel post's thread shown as a chat (a tab's conversation): its
     /// root post. Sends reply in that thread; no draft or typing is kept.
     property string threadRoot: ""
+    /// A Threads-layout channel's thread pane: "{N} replies" under the
+    /// first message, and the compose's "Send to:".
+    property bool threadPane: false
     property string threadChannel: ""
+    /// The channel's layout: "PostReply" (Posts) or "Conversational"
+    /// (Threads: a chat of thread starters, each thread in the side pane).
+    property string channelLayout: ""
+    readonly property bool threadsLayout: isChannel && channelLayout === "Conversational" && !threadRoot
+    readonly property bool postsLayout: isChannel && !threadsLayout
+    signal openThread(string rootId)
+    // Threads layout (measured on winpc 2026-11-10): the conversation shows
+    // each thread's first message as a chat bubble; under one with replies
+    // "{N} reply/replies  Last reply {time}" with the last replier's 20 px
+    // picture, opening the thread beside it.
+    // A reply also sent to the channel shows there too, in its place, with
+    // "Replied in thread: {first message}".
+    function threadStarters(all) {
+        const byRoot = {}
+        for (const m of all) {
+            const r = m.root_id || m.id
+            if (!byRoot[r]) byRoot[r] = { root: null, replies: [] }
+            if (m.id === r) byRoot[r].root = m; else byRoot[r].replies.push(m)
+        }
+        const out = []
+        for (const m of all) {
+            const r = m.root_id || m.id
+            const g = byRoot[r]
+            if (m.id === r) {
+                const last = g.replies.length ? g.replies[g.replies.length - 1] : null
+                out.push(Object.assign({}, m, { thread_replies: g.replies.length, thread_last: last ? last.time : "", thread_last_sender: last ? last.sender : "", thread_last_mri: last ? last.sender_mri : "", thread_last_text: last ? last.text : "", thread_last_id: last ? last.id : "", thread_last_mine: last ? !!last.mine : false, thread_repliers: g.replies.map(x => ({ name: x.sender, mri: x.sender_mri })) }))
+            } else if (m.shared_in_main) {
+                out.push(Object.assign({}, m, { thread_title: g.root ? (g.root.text || "").split("\n")[0] : "" }))
+            }
+        }
+        return out
+    }
     /// Channel tabs a message may link (a tab conversation's first post
     /// links its tab): [{id, name, icon}].
     property var linkedTabs: []
@@ -178,7 +213,7 @@ Rectangle {
         tabAnnounce("Cancelled")
     }
     Shortcut { sequence: "Escape"; enabled: root.tabDragFrom >= 0; onActivated: root.tabDragCancel() }
-    readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map(t => t.name) : ["Posts", "Shared"])
+    readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map((t, i) => i === 0 && threadsLayout ? "Conversation" : t.name) : [threadsLayout ? "Conversation" : "Posts", "Shared"])
         // Teams (worker Ct): Storyline only in 1:1 chats.
         // Meeting chats: Chat, Shared, Recap (Teams lists Attendance, Breakout
         // Rooms, Q&A and Meeting Whiteboard after them, under "+4").
@@ -226,10 +261,18 @@ Rectangle {
     function toggleFind() { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
     readonly property bool headerNarrow: width < 640
     readonly property bool rosterInMenu: width < 720 && isGroup && !isChannel && !isSelf
-    readonly property int contextInline: isChannel || pane ? 2 : width >= 640 ? 2 : width >= 480 ? 1 : 0
+    // A Threads-layout channel's Open threads button sits before Find; under
+    // 640 its channel details move to the ··· menu (Teams, measured).
+    readonly property int contextInline: pane ? 2 : threadsLayout ? (width >= 640 ? 2 : 1) : isChannel ? 2 : width >= 640 ? 2 : width >= 480 ? 1 : 0
+    readonly property int threadsButton: threadsLayout && !pane && tab === "" ? 1 : 0
+    /// Whether this channel's threads pane is open (Main), and its toggle.
+    property bool threadsOpen: false
+    /// The thread the threads pane shows (its first message is outlined).
+    property string openThreadRoot: ""
+    signal toggleThreads()
     // Right to left from ···: the inline context buttons (32 each), a
     // 16 px divider, then the action items.
-    readonly property real contextLeft: width - 43 - 32 * contextInline
+    readonly property real contextLeft: width - 43 - 32 * (contextInline + threadsButton)
     // A meeting chat's Meeting details (inline from 640 wide, else in ···).
     readonly property bool meetingDetailsShown: isMeetingChat && !!meeting && !!meeting.ical_uid && !meeting.cancelled
     readonly property bool meetingDetailsInline: meetingDetailsShown && width >= 640
@@ -1189,15 +1232,28 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             color: theme.divider
         }
+        // Open / Close threads (thread-list-pane-toggle-button): ChatMultiple,
+        // filled brand while the pane shows.
+        HeaderAction {
+            visible: root.threadsButton > 0
+            x: root.contextLeft
+            icon: root.threadsOpen ? "chat-multiple-20-filled" : "chat-multiple-20"
+            iconColor: root.threadsOpen ? theme.brand : root.hdrStrong
+            onClicked: root.toggleThreads()
+            ToolTip.visible: threadsHover.hovered; ToolTip.delay: 500
+            ToolTip.text: root.threadsOpen ? "Close threads" : "Open threads"
+            HoverHandler { id: threadsHover }
+            Accessible.name: root.threadsOpen ? "Close threads" : "Open threads"
+        }
         // In a channel, Find and Channel details show only on Posts (Teams).
         HeaderAction {
             visible: root.contextInline >= 1 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft; icon: "search-20"; Accessible.name: root.isChannel ? "Find in channel" : "Find in chat"
+            x: root.contextLeft + 32 * root.threadsButton; icon: "search-20"; Accessible.name: root.isChannel ? "Find in channel" : "Find in chat"
             onClicked: root.toggleFind()
         }
         HeaderAction {
             visible: root.contextInline >= 2 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft + 32; icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? "Open channel details" : "Open chat details"
+            x: root.contextLeft + 32 * (1 + root.threadsButton); icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? "Open channel details" : "Open chat details"
             onClicked: participants.visible = !participants.visible
         }
         // More channel options (more-apps-button-tid, 32 x 31.3, ··· at the
@@ -1289,7 +1345,7 @@ Rectangle {
 
     ChannelPosts {
         id: channelPosts
-        visible: root.isChannel && root.tab === ""
+        visible: root.postsLayout && root.tab === ""
         anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: root.posting && !newestAtTop ? compose.top : parent.bottom; left: parent.left; right: parent.right }
         anchors.bottomMargin: root.posting && !newestAtTop ? 12 : 0
         // See new posts at top: the composer opens in the list's top card.
@@ -1320,7 +1376,7 @@ Rectangle {
     property bool landing: false
     ListView {
         id: list
-        visible: root.tab === "" && !root.isChannel
+        visible: root.tab === "" && (!root.isChannel || root.threadsLayout)
         onCountChanged: if (root.landing && count > 0) {
             root.landing = false
             if (!root.landOnLastRead) return
@@ -1332,7 +1388,7 @@ Rectangle {
         clip: true
         spacing: 0
         verticalLayoutDirection: ListView.BottomToTop
-        model: root.annotate(root.messages)
+        model: root.annotate(root.threadsLayout ? root.threadStarters(root.messages) : root.messages)
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         // Scrolling up to the oldest messages loads the page before them (as
@@ -1362,7 +1418,7 @@ Rectangle {
             id: msg
             required property var modelData
             // In channels every post is a left-aligned card, yours included.
-            readonly property bool mine: modelData.mine && !root.isChannel
+            readonly property bool mine: modelData.mine && !root.postsLayout
             readonly property bool isCall: modelData.kind === "call"
             // Teams' control messages (someone added, renamed, left…).
             readonly property bool isEvent: modelData.kind === "event"
@@ -1388,10 +1444,20 @@ Rectangle {
             // Control and call rows sit flush, as in Teams (28 / 36 px rows).
             readonly property int topPad: dividerH + (isRow ? 0 : grouped ? 2 : 12)
             readonly property int bubbleY: root.compact && !isRow ? topPad + (showMeta ? 26 : 2) : topPad + (!showMeta || isCall ? 0 : meta.height + 2)
+            // A thread starter's replies line (Threads layout), 28 tall.
+            readonly property real threadLineH: root.threadsLayout && (modelData.thread_replies || 0) > 0 ? 30 : 0
+            // A thread pane's "{N} replies" divider under its first message
+            // (Teams: a 28 tall item, the 12 px label 12 down).
+            readonly property real repliesDivH: root.threadPane && modelData.id === root.threadRoot && repliesCount > 0 ? 28 : 0
+            readonly property int repliesCount: root.threadPane ? root.messages.filter(m => m.id !== root.threadRoot && m.kind === "message").length : 0
+            // A reply also sent to the channel: "Replied in thread: {first
+            // message}" in the channel, "Also sent to channel" in the thread.
+            readonly property string sharedHead: !modelData.shared_in_main || modelData.id === modelData.root_id ? ""
+                : root.threadsLayout ? "thread" : root.threadPane ? "channel" : ""
             height: isRow ? topPad + (isCall ? 36 : 28)
                 : editingThis ? topPad + (editLoader.item ? editLoader.item.height : 0)
-                : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height - 4.3 + 4 : 0)
-            readonly property int maxBubble: root.isChannel ? Math.min(900, list.width - 144) : root.compact ? list.width - 64 - root.gutR : Math.min(640, list.width * 0.7)
+                : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height - 4.3 + 4 : 0) + threadLineH + repliesDivH
+            readonly property int maxBubble: root.postsLayout ? Math.min(900, list.width - 144) : root.compact ? list.width - 64 - root.gutR : Math.min(640, list.width * 0.7)
 
             // Measured from Teams: the label's centre 22 px below the
             // previous message, 28 px above the next header's.
@@ -1610,7 +1676,7 @@ Rectangle {
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
                 // A picture on its own, or big emoticons, show bare, without
                 // the bubble (as in Teams).
-                readonly property bool bare: (imageOnly || bigEmoticons) && !root.isChannel
+                readonly property bool bare: (imageOnly || bigEmoticons) && !root.postsLayout
                 readonly property real pad: bare || root.compact ? 0 : 15.7
                 readonly property var files: msg.modelData.files || []
                 // Cards (Adaptive Cards rendered natively; Teams' frame).
@@ -1647,7 +1713,10 @@ Rectangle {
                 readonly property real quoteShift: msg.modelData.quote ? 60.3
                     // A forward card sits 14.7 down; a note 4 under it, else
                     // the bubble ends 9 under it (Teams).
-                    : msg.modelData.forward ? fwdCard.height + (showBody ? 12 : 8.4) : 0
+                    : msg.modelData.forward ? fwdCard.height + (showBody ? 12 : 8.4)
+                    // The shared-reply line: 16 tall, 3.3 down, the text 8
+                    // under it (Teams).
+                    : msg.sharedHead ? 28 : 0
                 // In a flow the text's own blank line sets the gap (Teams).
                 readonly property real picsTop: showBody ? body.y + bodyH + (inFlow ? 0 : 8) : (bare ? 0 : 8)
                 readonly property bool hasPics: imgs.length > 0 || inFlow
@@ -1658,10 +1727,10 @@ Rectangle {
                 // Measured: a card sits 8 under the bubble's top (or the text),
                 // 17.3 in, and the bubble ends 10.7 under it.
                 readonly property real cardsTop: showBody ? body.y + bodyH + 8 : 8
-                width: root.isChannel ? msg.maxBubble
+                width: root.postsLayout ? msg.maxBubble
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
                     : hasCode ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(msg.sharedHead ? sharedRow.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
@@ -1671,17 +1740,35 @@ Rectangle {
                     : bodyH + 15.3 + quoteShift
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
-                readonly property real r: root.isChannel ? theme.radius : 6
-                readonly property bool joinUp: !root.isChannel && msg.grouped
-                readonly property bool joinDown: !root.isChannel && msg.modelData.groupNext === true
+                readonly property real r: root.postsLayout ? theme.radius : 6
+                readonly property bool joinUp: !root.postsLayout && msg.grouped
+                readonly property bool joinDown: !root.postsLayout && msg.modelData.groupNext === true
                 radius: r
                 topLeftRadius: !msg.mine && joinUp ? 0 : r
                 bottomLeftRadius: !msg.mine && joinDown ? 0 : r
                 topRightRadius: msg.mine && joinUp ? 0 : r
                 bottomRightRadius: msg.mine && joinDown ? 0 : r
-                color: bare || (root.compact && !msg.sendFailed) ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.isChannel ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
-                border.color: msg.sendFailed ? theme.redBorder1 : root.isChannel ? theme.dividerSoft : "transparent"
+                color: bare || (root.compact && !msg.sendFailed) ? "transparent" : msg.sendFailed ? theme.redBackground1 : root.postsLayout ? theme.surface : (msg.mine ? theme.brandTint : theme.bubble)
+                border.color: msg.sendFailed ? theme.redBorder1 : root.postsLayout ? theme.dividerSoft
+                    : root.threadsLayout && root.openThreadRoot === msg.modelData.id ? theme.brand : "transparent"
                 x: root.compact ? 64 : msg.mine ? parent.width - root.gutR - width : root.gutContent
+                Row {
+                    id: sharedRow
+                    visible: !!msg.sharedHead
+                    x: bubble.pad; y: 10
+                    spacing: 4
+                    FluentIcon { name: msg.sharedHead === "thread" ? "chat-multiple-20" : "channel-arrow-left-20"; size: 16; color: theme.textSecondary }
+                    Text {
+                        height: 16; verticalAlignment: Text.AlignVCenter
+                        textFormat: Text.RichText
+                        text: msg.sharedHead === "thread"
+                            ? "Replied in thread: <a href=\"thread\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">" + root.escapeHtml(msg.modelData.thread_title || "") + "</a>"
+                            : "Also sent to channel"
+                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                        onLinkActivated: root.openThread(msg.modelData.root_id)
+                        HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    }
+                }
                 Column {
                     id: cardCol
                     visible: bubble.cards.length > 0
@@ -2117,14 +2204,52 @@ Rectangle {
             }
             HoverHandler { id: msgHover }
             // Teams' hover bar, end-aligned on the bubble's top edge.
+            Item {
+                visible: msg.repliesDivH > 0
+                y: msg.height - 16; height: 16
+                // Across the pane, 14 in from each side.
+                x: 14; width: parent.width - 28
+                // Fluent's Divider: 0.67 NeutralStroke2 lines 20 from the label.
+                Rectangle { anchors.verticalCenter: parent.verticalCenter; x: 0; width: Math.max(8, (parent.width - divLabel.implicitWidth) / 2 - 20); height: 1; color: theme.divider }
+                Rectangle { anchors.verticalCenter: parent.verticalCenter; anchors.right: parent.right; width: Math.max(8, (parent.width - divLabel.implicitWidth) / 2 - 20); height: 1; color: theme.divider }
+                Text {
+                    id: divLabel
+                    anchors.centerIn: parent
+                    text: msg.repliesCount + (msg.repliesCount === 1 ? " reply" : " replies")
+                    font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                    Accessible.role: Accessible.Separator
+                }
+            }
+            // "{N} reply/replies  Last reply {time}" under a thread starter,
+            // with the last replier's picture; opens the thread.
+            Row {
+                visible: msg.threadLineH > 0
+                y: msg.height - 26
+                x: msg.mine ? bubble.x + bubble.width - width : bubble.x
+                spacing: 8
+                Avatar { anchors.verticalCenter: parent.verticalCenter; size: 20; name: msg.modelData.thread_last_sender || ""; photoId: msg.modelData.thread_last_mri || "" }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: msg.modelData.thread_replies + (msg.modelData.thread_replies === 1 ? " reply" : " replies")
+                    font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.openThread(msg.modelData.id) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: text + ", open thread"
+                }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Last reply " + root.stamp(msg.modelData.thread_last); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            }
             HoverBar {
                 id: actions
                 readonly property bool can: !msg.isRow && !msg.modelData.deleted && !msg.sendPending && !msg.sendFailed && !msg.editingThis
                 host: msgHost
                 message: msg.modelData
-                acts: msg.mine
+                // A reply also sent to the channel: Reply in thread (its
+                // thread), no Edit (Teams).
+                acts: (root.threadsLayout ? [{ key: "thread", icon: "chat-multiple-20", tip: "Reply in thread" }] : []).concat(msg.sharedHead === "thread" ? [] : msg.mine
                     ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
-                    : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }]
+                    : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }])
+                onThreadRequested: m => root.openThread(m.root_id || m.id)
                 visible: can && (msgHover.hovered || actions.hovered || (msgHost.messageMenu.opened && !msgHost.messageMenu.rightClick && msgHost.messageMenu.message && msgHost.messageMenu.message.id === msg.modelData.id) || root.forceBarId === msg.modelData.id)
                 z: 5
                 y: bubble.y - height
@@ -2372,6 +2497,8 @@ Rectangle {
         teamId: root.teamId; teamName: root.teamName
         newestPost: { const posts = root.messages.filter(m => m.kind === "message" && (!m.root_id || m.root_id === m.id)); return posts.length ? posts[posts.length - 1].id : "" }
         postsAtBottom: !backend.channelPostsAtTop
+        movedItems: root.contextInline < 2 && root.threadsButton ? [{ key: "details", label: "Open channel details", icon: "panel-right-expand-20", keys: "Alt+P" }] : []
+        onOpenDetails: participants.visible = !participants.visible
         onOpenInNewWindow: root.openChannelWindow(root.chatId)
         onManageChannel: root.manageChannel(root.chatId)
         onWorkflows: root.channelWorkflows(root.chatId)
@@ -3012,8 +3139,10 @@ Rectangle {
                 backend.sendThreadFiles(root.threadChannel, root.threadRoot, root.pendingFiles.join("\n"), root.plainText())
                 root.pendingFiles = []
             } else if (root.plainText().trim().length > 0 || compose.mediaInUse().length > 0) {
-                backend.sendThreadReply(root.threadChannel, root.threadRoot, compose.formattedText(), JSON.stringify(compose.mediaInUse()), root.quoting ? JSON.stringify(root.quoting) : "")
+                backend.sendThreadReply(root.threadChannel, root.threadRoot, compose.formattedText(), JSON.stringify(compose.mediaInUse()), root.quoting ? JSON.stringify(root.quoting) : "", compose.sendTo === "channel")
             }
+            // Teams goes back to "thread only" after each reply.
+            if (root.threadPane) compose.sendTo = "thread"
             compose.clear()
             root.quoting = null
             compose.formatting = false
@@ -3023,7 +3152,7 @@ Rectangle {
         backend.setNextImportance(compose.importance)
         // A new channel post: Teams' subject, headline and banner colour.
         backend.setNextPost(compose.post && root.pendingFiles.length === 0
-            ? compose.postFields() : "")
+            ? compose.postFields() : root.threadsLayout ? JSON.stringify({ threads: true }) : "")
         if (root.pendingFiles.length > 0) {
             backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
             root.pendingFiles = []
@@ -3120,7 +3249,7 @@ Rectangle {
     // 72 in on each side, 6 above the bottom, its hint row included.
     ComposeBox {
         id: compose
-        visible: root.chatName.length > 0 && (!root.isChannel || root.posting)
+        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout)
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }
@@ -3130,7 +3259,7 @@ Rectangle {
         readonly property real bottomGap: post ? 27.7 : 6
         // Teams' post composer (a new channel post) lines up with the post
         // cards, 27.7 above the bottom.
-        post: root.isChannel && !root.threadRoot && !root.pane
+        post: root.postsLayout && !root.threadRoot && !root.pane
         readonly property real postGut: (root.width - Math.min(1100, root.width - 2 * (root.width > 480 ? 88 : 16))) / 2
         anchors.leftMargin: post ? postGut : root.pane ? 12 : root.composeGut
         anchors.rightMargin: post ? postGut : root.pane ? 12 : root.composeGut
@@ -3138,7 +3267,8 @@ Rectangle {
         onCloseRequested: { compose.resetPost(); compose.clear(); root.posting = false }
         // Under 480 px Teams' compose is compact: its tools on their own row.
         compact: !root.pane && root.width < 480
-        placeholder: root.threadRoot ? "Reply in thread" : "Type a message"
+        sendTo: root.threadPane ? "thread" : ""
+        placeholder: root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
         quote: root.quoting
         files: root.pendingFiles
         onQuoteDismissed: root.quoting = null

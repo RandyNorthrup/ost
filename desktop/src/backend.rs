@@ -704,6 +704,10 @@ pub mod qobject {
         /// Follow or unfollow a channel thread (Teams' Follow thread).
         #[qinvokable]
         fn set_thread_following(self: Pin<&mut Backend>, root_id: &QString, follow: bool);
+        /// A Threads-layout thread in the open channel read to its newest
+        /// reply, or (`unread`) marked unread from it.
+        #[qinvokable]
+        fn set_thread_read(self: Pin<&mut Backend>, root_id: &QString, newest_reply: &QString, unread: bool);
 
         /// Edit one of our messages in place, as Teams does: the editor's
         /// rich text (formatting kept) and the quote it keeps (JSON, or
@@ -996,6 +1000,7 @@ pub mod qobject {
             editor_html: &QString,
             media_json: &QString,
             quote_json: &QString,
+            also_channel: bool,
         );
 
         /// Start a group chat with these people (comma-separated object
@@ -2477,6 +2482,8 @@ struct NextPost {
     image: String,
     image_w: u32,
     image_h: u32,
+    /// A message in a Threads-layout channel (no post type).
+    threads: bool,
 }
 
 impl NextPost {
@@ -2491,6 +2498,7 @@ impl NextPost {
             image: f("image"),
             image_w: n("imageWidth"),
             image_h: n("imageHeight"),
+            threads: v.get("threads").and_then(|x| x.as_bool()).unwrap_or(false),
         })
     }
 }
@@ -6234,6 +6242,17 @@ impl qobject::Backend {
         });
     }
 
+    pub fn set_thread_read(self: Pin<&mut Self>, root_id: &QString, newest_reply: &QString, unread: bool) {
+        let id = root_id.to_string();
+        let Ok(newest) = newest_reply.to_string().parse::<i64>() else { return };
+        let at = id.clone();
+        self.message_action(&at, move |client, chat| {
+            Box::pin(async move {
+                api::msgactions::set_thread_horizon(&client, &chat, &id, newest, unread).await
+            })
+        });
+    }
+
     pub fn set_thread_following(self: Pin<&mut Self>, root_id: &QString, follow: bool) {
         let id = root_id.to_string();
         let at = id.clone();
@@ -6466,12 +6485,19 @@ impl qobject::Backend {
                 self.as_mut().reload_thread_window(t);
             }
         }
+        let mut reload = false;
         for id in ids.into_iter().filter(|i| !i.starts_with("48:")) {
-            if id == current {
-                self.as_mut().reload_messages();
+            // A thread's push names "<channel>;messageid=<post>": the open
+            // channel shows its replies (and, in the Threads layout, their
+            // counts and replies also sent to the channel).
+            if id == current || id.split(';').next() == Some(current.as_str()) {
+                reload = true;
             } else {
                 list_changed |= self.as_mut().rust_mut().unread.insert(id);
             }
+        }
+        if reload {
+            self.as_mut().reload_messages();
         }
         if list_changed {
             self.as_mut().publish_chats();
@@ -6901,6 +6927,7 @@ impl qobject::Backend {
         editor_html: &QString,
         media_json: &QString,
         quote_json: &QString,
+        also_channel: bool,
     ) {
         let (channel, root) = (channel_id.to_string(), root_id.to_string());
         if !channel.ends_with("@thread.tacv2") || root.is_empty() || !root.bytes().all(|b| b.is_ascii_digit()) {
@@ -6926,7 +6953,8 @@ impl qobject::Backend {
         let quote: Option<api::messages::Quote> =
             serde_json::from_str(&quote_json.to_string()).ok();
         let thread = format!("{channel};messageid={root}");
-        let o = self.outgoing(&thread, thread.clone(), html, mentions, quote, String::new());
+        let mut o = self.outgoing(&thread, thread.clone(), html, mentions, quote, String::new());
+        o.shared_in_main = also_channel;
         let _rt = runtime().enter();
         outbox().submit(o);
     }
@@ -7027,6 +7055,8 @@ impl qobject::Backend {
             title: String::new(),
             banner_theme: None,
             banner_image: None,
+            shared_in_main: false,
+            threads_layout: false,
         }
     }
 
@@ -7789,7 +7819,8 @@ impl qobject::Backend {
             return;
         }
         o.subject = p.subject.trim().chars().take(250).collect();
-        if !p.theme.is_empty() && p.theme.parse::<u8>().is_ok_and(|t| t < 12) {
+        o.threads_layout = p.threads;
+        if !p.threads && !p.theme.is_empty() && p.theme.parse::<u8>().is_ok_and(|t| t < 12) {
             o.title = p.title.trim().chars().take(44).collect();
             o.banner_theme = Some(p.theme);
             if !p.image.is_empty() {

@@ -3784,6 +3784,26 @@ Window {
                 else if (step === 8) { console.warn("CP", JSON.parse(backend.settingsJson).props.messageDensity); Qt.quit() }
                 step++; return
             }
+            // =threads: open "OST threads test" (th-channel), its first thread
+            // with a reply (th-pane).
+            if (mode === "threads") {
+                if (step === 1) { const t = JSON.parse(backend.teamsJson || "[]").find(t => t.name === "OST Test Team"); const c = t && t.channels.find(c => c.name === "OST threads test"); if (!c) { step = 0; return } rail.current = "chat"; backend.selectChat(c.id, c.name) }
+                else if (step === 5) { console.warn("TH layout", conversation.channelLayout, conversation.threadsLayout, JSON.stringify(conversation.threadStarters(conversation.messages).map(m => [m.text, m.thread_replies, !!m.shared_in_main, m.thread_title || ""]))); shot("th-channel") }
+                else if (step === 6) conversation.toggleThreads()
+                else if (step === 8) { console.warn("TH list", threadsPane.shown, JSON.stringify(threadsPane.threads.map(t => [t.text, t.thread_replies, t.following, t.thread_last_text]))); shot("th-list") }
+                else if (step === 9) { const s = threadsPane.threads[0]; if (s) threadsPane.openThread(s.id) }
+                else if (step === 12) { console.warn("TH pane", threadsPane.rootId, threadsPane.shown, conversation.openThreadRoot); shot("th-pane") }
+                else if (step === 13 && Qt.application.arguments.indexOf("--threads-send") >= 0) backend.sendThreadReply(threadsPane.channelId, threadsPane.rootId, "<p>" + Qt.application.arguments.find(a => a.startsWith("--threads-text=")).slice(15) + "</p>", "[]", "", Qt.application.arguments.indexOf("--threads-channel") >= 0)
+                else if (step === 14 && Qt.application.arguments.some(a => a.startsWith("--threads-root="))) { conversation.input.text = Qt.application.arguments.find(a => a.startsWith("--threads-root=")).slice(15); conversation.sendCompose() }
+                else if (step === 20) { console.warn("TH sent", JSON.stringify(conversation.threadStarters(conversation.messages).map(m => [m.text, m.thread_replies, !!m.shared_in_main]))); shot("th-sent") }
+                else if (step === 21) Qt.quit()
+                step++; return
+            }
+            // =layouts: log every channel's layout.
+            if (mode === "layouts") {
+                if (step === 3) { console.warn("LAY", JSON.stringify(JSON.parse(backend.teamsJson || "[]").map(t => [t.name, (t.channels || []).map(c => [c.name, c.layout, c.id.slice(0, 16)])]))); Qt.quit() }
+                step++; return
+            }
             // =followed: log Quick views ▸ Followed threads' rows.
             if (mode === "followed") {
                 if (step === 1) backend.channelAction("quick-followed", "", "", "")
@@ -5333,6 +5353,23 @@ Window {
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
             return t ? t.id : ""
         }
+        channelLayout: {
+            const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+            for (const t of teams) { const c = (t.channels || []).find(c => c.id === backend.currentChatId); if (c) return c.layout || "" }
+            return ""
+        }
+        onOpenThread: rootId => {
+            threadsPane.channelId = backend.currentChatId
+            threadsPane.openThread(rootId)
+        }
+        threadsOpen: threadsPane.shown
+        openThreadRoot: threadsPane.shown ? threadsPane.rootId : ""
+        onToggleThreads: {
+            if (threadsPane.shown) { threadsPane.listOpen = false; threadsPane.rootId = ""; return }
+            threadsPane.channelId = backend.currentChatId
+            threadsPane.rootId = ""
+            threadsPane.listOpen = true
+        }
         chatPhotoId: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId)
             return c && c.peerMri ? c.peerMri : ""
@@ -5367,11 +5404,27 @@ Window {
     }
 
     // A channel tab's conversation, beside the channel (Teams' end slot).
+    // A Threads-layout channel's open thread, beside it.
+    ThreadsPane {
+        id: threadsPane
+        // Open on its list (Open threads) or a thread.
+        property bool listOpen: false
+        readonly property bool shown: conversation.visible && conversation.threadsLayout && (!!rootId || listOpen) && channelId === backend.currentChatId
+        visible: shown
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: parent.right }
+        width: shown ? 360 : 0
+        host: conversation
+        teamId: conversation.teamId; teamName: conversation.teamName
+        myName: backend.userName
+        onClosed: { rootId = ""; listOpen = false }
+        onJumpTo: id => conversation.jumpToMessage(id)
+        onPopOut: id => conversation.openThreadWindow({ id: id, root_id: id })
+    }
     TabConversationPane {
         id: tabConversation
         readonly property bool shown: conversation.visible && !!conversation.tabConversationTab
         visible: shown
-        anchors { top: appBanner.bottom; bottom: statusBar.top; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: threadsPane.left }
         width: shown ? 360 : 0
         // The tab as now listed (its conversation appears once started).
         tab: conversation.tabConversationTab ? (conversation.channelTabs.find(t => t.id === conversation.tabConversationTab.id) || conversation.tabConversationTab) : null

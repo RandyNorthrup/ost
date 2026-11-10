@@ -68,6 +68,14 @@ pub struct Outgoing {
     /// object.
     #[serde(default)]
     pub banner_image: Option<BannerImage>,
+    /// A Threads-layout reply sent to "Thread and channel": it also shows
+    /// in the channel's conversation (Teams' `isSharedInMain`).
+    #[serde(default)]
+    pub shared_in_main: bool,
+    /// A new message in a Threads-layout channel: the post fields without
+    /// a post type (measured on winpc 2026-11-10, "OST TEST 85").
+    #[serde(default)]
+    pub threads_layout: bool,
 }
 
 /// An announcement banner's picture.
@@ -398,7 +406,20 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         if let Some(i) = o.banner_image.as_ref().filter(|i| !i.id.is_empty()) {
             body["amsreferences"] = serde_json::json!([i.id]);
         }
-        body["postType"] = if o.banner_theme.is_some() { "Announcement" } else { "Standard" }.into();
+        if !o.threads_layout {
+            body["postType"] = if o.banner_theme.is_some() { "Announcement" } else { "Standard" }.into();
+        }
+        body["crossPostChannels"] = serde_json::json!([]);
+    }
+    // A Threads-layout reply also sent to the channel (measured on winpc
+    // 2026-11-10): the post fields, isSharedInMain, and the thread it's in.
+    if o.shared_in_main && let Some((_, root)) = o.conversation_id.split_once(";messageid=") {
+        let p = &mut body["properties"];
+        p["subject"] = "".into();
+        p["title"] = "".into();
+        p["policyViolation"] = serde_json::Value::Null;
+        p["isSharedInMain"] = true.into();
+        body["replyChainId"] = root.into();
         body["crossPostChannels"] = serde_json::json!([]);
     }
     body
@@ -964,6 +985,8 @@ mod tests {
             title: String::new(),
             banner_theme: None,
             banner_image: None,
+            shared_in_main: false,
+            threads_layout: false,
         };
         let b = post_body(&o);
         assert!(b.get("postType").is_none(), "chats have no post type");
@@ -974,7 +997,32 @@ mod tests {
         assert_eq!(b["conversationLink"], "blah/19:a_b@unq.gbl.spaces");
         assert_eq!(b["originalarrivaltime"], "2026-01-01T00:00:00.000Z");
         assert_eq!(b["properties"]["formatVariant"], "TEAMS");
+        assert!(b["properties"].get("isSharedInMain").is_none());
         assert!(b["properties"].get("qtdMsgs").is_none());
+        // A Threads-layout reply sent to "Thread and channel".
+        let shared = Outgoing {
+            conversation_id: "19:c@thread.tacv2;messageid=1794312901896".into(),
+            shared_in_main: true,
+            ..o.clone()
+        };
+        let b = post_body(&shared);
+        assert_eq!(b["properties"]["isSharedInMain"], true);
+        assert_eq!(b["replyChainId"], "1794312901896");
+        assert_eq!(b["crossPostChannels"], serde_json::json!([]));
+        assert_eq!(b["properties"]["subject"], "");
+        assert!(b.get("postType").is_none(), "a reply is not a post");
+        // A new message in a Threads-layout channel ("OST TEST 85").
+        let root = Outgoing {
+            conversation_id: "19:c@thread.tacv2".into(),
+            threads_layout: true,
+            ..o.clone()
+        };
+        let b = post_body(&root);
+        assert!(b.get("postType").is_none(), "Threads-layout messages have no post type");
+        assert_eq!(b["properties"]["subject"], "");
+        assert_eq!(b["properties"]["title"], "");
+        assert_eq!(b["properties"]["policyViolation"], serde_json::Value::Null);
+        assert_eq!(b["crossPostChannels"], serde_json::json!([]));
         assert_eq!(
             encode_uri_component("19:a@thread.v2;messageid=1"),
             "19%3Aa%40thread.v2%3Bmessageid%3D1"
@@ -1022,6 +1070,8 @@ mod tests {
             title: String::new(),
             banner_theme: None,
             banner_image: None,
+            shared_in_main: false,
+            threads_layout: false,
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");
