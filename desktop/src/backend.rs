@@ -11149,6 +11149,9 @@ impl qobject::Backend {
                 if let Ok(oof) = api::preferences::automatic_replies(&client).await {
                     mt["oof"] = oof;
                 }
+                if let Ok(voice) = api::preferences::voice_settings(&client).await {
+                    mt["voice"] = voice;
+                }
                 anyhow::Ok(json!({ "props": props, "mt": mt, "loaded": true }))
             }
             .await;
@@ -11184,6 +11187,17 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 if kind == "mt" && name == "oof" {
                     api::preferences::set_automatic_replies(&client, &value).await?;
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "redirection" {
+                    let b = api::preferences::call_redirection_body(
+                        value["forwardAll"].as_bool().unwrap_or(false),
+                        value["unansweredToVoicemail"].as_bool().unwrap_or(true),
+                        value["delay"].as_u64().unwrap_or(20) as u32,
+                    );
+                    api::preferences::set_voice_setting(&client, "redirection", &b).await?;
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "voicemail" {
+                    api::preferences::set_voice_setting(&client, "voicemail", &value).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" {
                     api::preferences::set_middle_tier_setting(&client, &name, value.as_bool().unwrap_or(false)).await?;

@@ -85,14 +85,42 @@ Middle tier (`{mt}`):
   - Teams' page keeps its first read and doesn't re-read on reopen.
 - Turning "New meeting controls" off opens "Submit feedback to Microsoft"; never submit it.
 
+## Calls (captured 2026-11-10)
+
+- **Call handling and forwarding:** read from `GET {mt}/beta/usersettings/{mri}/voicesettings`
+  (callRedirectionSettings) and saved with `POST …/callredirectionsettings`, the whole object:
+  - Forward all: callForwardingSettings {isEnabled true, Immediate, Voicemail}, with
+    unanswered off.
+  - Otherwise: {isEnabled false, Simultaneous}, with unansweredCallSettings {isEnabled,
+    targetType Voicemail, delaySeconds 5–60 (20 default), safeForward false},
+    callGroupDetails {simultaneous, 0, []} and favoriteTargets {[]}.
+  - "When you can't answer a call" offers "Do not redirect calls" and "Redirect to
+    voicemail".
+- **Voicemail:** `POST …/voicemailsettings` with nine keys, only the changed one set and the
+  rest null (vmUseOof, vmUseAutoRepliesForOof, vmCallAnswerRule, …). There is no GET for it.
+  - vmCallAnswerRule values: RegularVoicemail (record a message), VoicemailWithTransferOption
+    (record, or be transferred), PromptOnly (greeting, then end), PromptOnlyWithTransfer
+    (greeting, then transfer), DeclineCall (end without the greeting).
+  - The two transfer rules first ask for a transfer target in a people picker.
+- **Ringtone:** `POST …/ringtonesettings {"assignments":{"ringToneAssignments":[{type
+  Regular, value "Beep", associatedEntityId ""}]}}`, with [] for Default.
+  - Choices: Default, Beep, Bop, Bounce, Bubbles, Bubbles (Loud), Drip Drop, Eureka, Flutter,
+    High Score, Next Level, Plink, Remix, Ring Ring, Ripple, Spacetime, Wish Granted, Wobble.
+  - The sounds are MP3s in Teams' package (Audio/*.mp3).
+
 ## OST status
 
 - Built: the left pane and header, General (System, opening content, Out of office, keyboard
   shortcuts), Appearance (theme, skin tone), Chats and channels, Privacy (auto DND, block
   anonymous calls, surveys, attendance reports, unmute shortcut), Accessibility (sign
   language mode, captions settings) and Devices.
-- Still to build: Notifications and activity as Teams', Accounts and orgs, Calls, Files and
-  links, App permissions, Recognition, and the remaining items on built pages.
+- Calls: forwarding, unanswered calls, ring delay, the voicemail answer rule (no transfer
+  rules) and out-of-office voicemail.
+  - Not built: the ringtone choice (OST synthesises its ring and doesn't ship Microsoft's
+    audio; whether to ship Teams' MP3s is the project's call), recorded and text-to-speech
+    greetings, the greeting language, and the transfer rules (they need the people picker).
+- Still to build: Notifications and activity as Teams', Accounts and orgs, Files and links,
+  App permissions, Recognition, and the remaining items on built pages.
 - Chat list (measured with the settings on):
   - Previews: chat rows are 52 tall, with a 36 px picture at 16, 8, the name at 64 and the
     preview (12/16 #616161) at 64, 26. It reads "You: …" for yours and "Name: …" in groups.

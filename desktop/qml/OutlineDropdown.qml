@@ -13,6 +13,8 @@ Item {
     property var options: []
     property int current: 0
     property string accessibleName: ""
+    /// Shown (#616161) while nothing is chosen.
+    property string placeholder: ""
     signal picked(int index)
     implicitWidth: 277.3; implicitHeight: 32
 
@@ -24,8 +26,8 @@ Item {
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 52; elide: Text.ElideRight
-            text: root.options.length && root.current >= 0 ? root.options[root.current].label : ""
-            font.family: theme.font; font.pixelSize: 14; color: theme.text
+            text: root.options.length && root.current >= 0 ? root.options[root.current].label : root.placeholder
+            font.family: theme.font; font.pixelSize: 14; color: root.current >= 0 ? theme.text : theme.textSecondary
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
         HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }

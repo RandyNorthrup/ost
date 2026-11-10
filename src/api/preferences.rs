@@ -248,6 +248,78 @@ pub async fn middle_tier_settings(client: &TeamsClient) -> Result<serde_json::Va
     }))
 }
 
+/// Your calling settings, as Settings ▸ Calls reads them (`GET {mt}/beta/
+/// usersettings/{mri}/voicesettings`): {callRedirectionSettings, …}.
+pub async fn voice_settings(client: &TeamsClient) -> Result<serde_json::Value> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let oid = client.object_id().context("No user id")?;
+    let resp = client
+        .http()
+        .get(format!("{mt}/beta/usersettings/8:orgid:{oid}/voicesettings"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("Voice settings request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reading voice settings", resp.status().as_u16());
+    }
+    resp.json().await.context("Voice settings reply")
+}
+
+/// Teams' call redirection body (captured 2026-11-10) from the page's
+/// choices: forward everything to voicemail, or ring and then redirect
+/// unanswered calls to voicemail (or not) after `delay` seconds.
+pub fn call_redirection_body(forward_all: bool, unanswered_to_voicemail: bool, delay: u32) -> serde_json::Value {
+    let forwarding = if forward_all {
+        serde_json::json!({ "isEnabled": true, "forwardingType": "Immediate", "targetType": "Voicemail", "target": null, "delaySeconds": 0 })
+    } else {
+        serde_json::json!({ "isEnabled": false, "forwardingType": "Simultaneous", "target": null, "delaySeconds": 0 })
+    };
+    serde_json::json!({
+        "callForwardingSettings": forwarding,
+        "callGroupDetails": { "callOrder": "simultaneous", "delaySeconds": 0, "targets": [] },
+        "unansweredCallSettings": { "isEnabled": !forward_all && unanswered_to_voicemail, "targetType": "Voicemail", "target": null, "delaySeconds": delay, "safeForward": false },
+        "favoriteTargets": { "targets": [] },
+    })
+}
+
+/// Save a Settings ▸ Calls change: "redirection" (a call_redirection_body)
+/// or "voicemail" (Teams' voicemail settings with only the changed keys
+/// set, the rest null).
+pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_json::Value) -> Result<()> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let oid = client.object_id().context("No user id")?;
+    let (path, body) = match which {
+        "redirection" => ("callredirectionsettings", body.clone()),
+        "voicemail" => {
+            let mut all = serde_json::json!({
+                "vmEnabled": null, "vmUseOof": null, "vmUseAutoRepliesForOof": null, "vmUseCalForOof": null,
+                "vmCallAnswerRule": null, "vmAudioLang": null, "vmTransferTarget": null,
+                "vmDefaultGreetingPromptOverwrite": null, "vmDefaultOofGreetingPromptOverwrite": null,
+            });
+            for (k, v) in body.as_object().into_iter().flatten() {
+                all[k] = v.clone();
+            }
+            ("voicemailsettings", all)
+        }
+        _ => anyhow::bail!("Not a calls setting: {which}"),
+    };
+    let resp = client
+        .http()
+        .post(format!("{mt}/beta/usersettings/8:orgid:{oid}/{path}"))
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .context("Calls setting save")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} saving {which}", resp.status().as_u16());
+    }
+    Ok(())
+}
+
 /// Change one of the middle tier's settings: "allowAutoDnd",
 /// "blockAnonymousCaller" or "enableSpeakerAttribution".
 pub async fn set_middle_tier_setting(client: &TeamsClient, key: &str, on: bool) -> Result<()> {
@@ -332,6 +404,19 @@ pub fn automatic_replies_body(v: &serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn call_redirection_bodies_are_teams() {
+        // As Teams sent them on winpc (2026-11-10).
+        assert_eq!(
+            call_redirection_body(true, true, 20).to_string(),
+            r#"{"callForwardingSettings":{"delaySeconds":0,"forwardingType":"Immediate","isEnabled":true,"target":null,"targetType":"Voicemail"},"callGroupDetails":{"callOrder":"simultaneous","delaySeconds":0,"targets":[]},"favoriteTargets":{"targets":[]},"unansweredCallSettings":{"delaySeconds":20,"isEnabled":false,"safeForward":false,"target":null,"targetType":"Voicemail"}}"#
+        );
+        let off = call_redirection_body(false, true, 5);
+        assert_eq!(off["callForwardingSettings"]["forwardingType"], "Simultaneous");
+        assert_eq!(off["unansweredCallSettings"]["isEnabled"], true);
+        assert_eq!(off["unansweredCallSettings"]["delaySeconds"], 5);
+    }
 
     #[test]
     fn out_of_office_bodies_are_teams() {

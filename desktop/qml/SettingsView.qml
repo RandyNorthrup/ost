@@ -29,6 +29,7 @@ Rectangle {
         { key: "privacy", label: "Privacy", icon: "lock-closed-20" },
         { key: "accessibility", label: "Accessibility", icon: "accessibility-20" },
         { key: "devices", label: "Devices", icon: "headset-20" },
+        { key: "calls", label: "Calls", icon: "call-20" },
     ]
     property string filter: ""
     onPageChanged: subPage = ""
@@ -448,6 +449,102 @@ Rectangle {
                     onPicked: i => backend.setSetting("micDevice", values[i])
                 }
                 SettingsParts.Gap { size: 8 }
+            }
+
+            // ---- Calls ----
+            // Teams' call handling (voicesettings' callRedirectionSettings)
+            // and voicemail settings (measured and captured on winpc
+            // 2026-11-10).
+            Item {
+                id: calls
+                visible: false
+                readonly property var redir: (root.mt.voice || {}).callRedirectionSettings || {}
+                readonly property var pending: root.mt.redirection || null
+                readonly property bool forwardAll: pending ? pending.forwardAll : (redir.callForwardingSettings || {}).isEnabled === true
+                readonly property bool toVoicemail: pending ? pending.unansweredToVoicemail : (redir.unansweredCallSettings || {}).isEnabled !== false
+                readonly property int delay: pending ? pending.delay : ((redir.unansweredCallSettings || {}).delaySeconds || 20)
+                function save(fa, vm, d) { root.setMt("redirection", { forwardAll: fa, unansweredToVoicemail: vm, delay: d }) }
+                property var vm: ({ vmUseOof: false, vmUseAutoRepliesForOof: false, vmCallAnswerRule: "" })
+                function setVm(k, v) { const o = Object.assign({}, vm); o[k] = v; vm = o; const b = {}; b[k] = v; root.setMt("voicemail", b) }
+            }
+            Text {
+                visible: root.page === "calls"
+                text: "Call handling and forwarding"
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            SettingsParts.Card {
+                visible: root.page === "calls"
+                icon: "call-forward-20"; title: "Call handling and forwarding"
+                SettingsParts.SwitchRow {
+                    label: "Forward all calls to voicemail"
+                    on: calls.forwardAll
+                    onToggled: v => calls.save(v, calls.toVoicemail, calls.delay)
+                }
+                SettingsParts.SubHeading { visible: !calls.forwardAll; text: "When you can't answer a call"; gapAbove: 7 }
+                SettingsParts.Gap { visible: !calls.forwardAll; size: 10 }
+                OutlineDropdown {
+                    visible: !calls.forwardAll
+                    width: 293.3; height: 30
+                    options: [{ label: "Do not redirect calls" }, { label: "Redirect to voicemail" }]
+                    current: calls.toVoicemail ? 1 : 0
+                    accessibleName: "When you can't answer a call"
+                    onPicked: i => calls.save(false, i === 1, calls.delay)
+                }
+                SettingsParts.SubHeading { visible: !calls.forwardAll && calls.toVoicemail; text: "Ring for this many seconds before redirecting"; gapAbove: 16 }
+                SettingsParts.Gap { visible: !calls.forwardAll && calls.toVoicemail; size: 10 }
+                OutlineDropdown {
+                    visible: !calls.forwardAll && calls.toVoicemail
+                    width: 293.3; height: 30
+                    readonly property var secs: [5, 10, 15, 20, 30, 40, 50, 60]
+                    options: secs.map(n => ({ label: n + " seconds" + (n === 20 ? " (default)" : "") }))
+                    current: Math.max(0, secs.indexOf(calls.delay))
+                    accessibleName: "Ring for this many seconds before redirecting"
+                    onPicked: i => calls.save(false, true, secs[i])
+                }
+                SettingsParts.Gap { size: 20 }
+            }
+            Text {
+                visible: root.page === "calls"
+                text: "Voicemail"
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            SettingsParts.Card {
+                visible: root.page === "calls"
+                icon: "voicemail-20"; title: "Voicemail"
+                SettingsParts.SubHeading { text: "Choose what happens when the call is redirected to voicemail" }
+                SettingsParts.Gap { size: 10 }
+                OutlineDropdown {
+                    width: 293.3; height: 30
+                    readonly property var rules: ["RegularVoicemail", "PromptOnly", "DeclineCall"]
+                    options: [{ label: "Let the caller record a message" }, { label: "Play your greeting and end the call" }, { label: "End the call without playing your greeting" }]
+                    current: rules.indexOf(calls.vm.vmCallAnswerRule)
+                    placeholder: "Choose what happens when the call is redirected to voicemail"
+                    accessibleName: "Choose what happens when the call is redirected to voicemail"
+                    onPicked: i => calls.setVm("vmCallAnswerRule", rules[i])
+                }
+                SettingsParts.Gap { size: 20 }
+            }
+            Text {
+                visible: root.page === "calls"
+                text: "Out-of-office voicemail"
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            SettingsParts.Card {
+                visible: root.page === "calls"
+                icon: "voicemail-arrow-back-20"; title: "Out-of-office voicemail"
+                SettingsParts.SubHeading { text: "When should your greeting play" }
+                SettingsParts.Gap { size: 6 }
+                SettingsParts.CheckRow { label: "All the time"; checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
+                SettingsParts.CheckRow { label: "When Outlook automatic replies are on"; checked: calls.vm.vmUseAutoRepliesForOof === true; onToggled: v => calls.setVm("vmUseAutoRepliesForOof", v) }
             }
 
             // ---- About ----
