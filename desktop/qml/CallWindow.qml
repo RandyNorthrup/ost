@@ -12,6 +12,9 @@ Window {
     property string peer
     property string selfName
     property string state       // "calling" | "connecting" | "connected" | "ended"
+    /// Removed from the meeting: Teams' retry screen fills the window.
+    property string retryReason: ""
+    signal rejoin()
     property bool muted
     property bool hasAudio: true
     property real connectedAt: 0
@@ -2458,5 +2461,13 @@ Window {
         }
         Accessible.role: Accessible.Button
         Accessible.name: bb.label
+    }
+    RetryScreen {
+        anchors.fill: parent
+        z: 100
+        visible: win.retryReason !== ""
+        reason: win.retryReason
+        onRetry: { win.retryReason = ""; win.rejoin() }
+        onDismiss: win.retryReason = ""
     }
 }

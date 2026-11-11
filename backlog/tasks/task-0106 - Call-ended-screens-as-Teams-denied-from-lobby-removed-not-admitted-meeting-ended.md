@@ -3,9 +3,11 @@ id: TASK-0106
 title: >-
   Call-ended screens as Teams (denied from lobby, removed, not admitted, meeting
   ended)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11T04:48:00Z'
+updated_date: '2026-11-11T04:50:00Z'
 labels:
   - calls
   - meetings

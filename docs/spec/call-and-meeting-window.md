@@ -1227,6 +1227,15 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
   - "Call was answered elsewhere" (729518).
   - Follow-up card "Pick up where you left off" / "Join again" / "Schedule meeting" (611318; conditions unverified).
   - A normal leave closes the call window (plus the survey when sampled).
+- **The retry screen** (`calling-retry-screen`, bundle components-calling-retry-screen; states in 527114 `pRe.props`), measured live on winpc 2026-11-10 with the second test account denying and removing Teams (CSS px, window 1266 × 673):
+  - Why: the service ends the call with `callEnd {code: 0, subCode}`: 5854 DeniedInLobby → `DeniedFromLobby`, 5855 TimedOutInLobby → `NotAdmittedForLongTime`, 5000 RemovedFromConversation / 5300 RemovedFromCall → `KickedFromMeeting` (in a call, `KickedFromCall`). Confirmed for 5854 and the removals from OST's own log.
+  - Where: denied or timed out, the "Meeting join | …" (pre-join) window turns into it; removed, the meeting window does, toolbar and all.
+  - Layout: #F5F5F5; one column centred under the title bar (20 px side padding): the alert (title, then the description 15 under it), 30 px, the buttons.
+  - Title: 18/600 #252423, line 25.7; with an icon, the icon is 24 px (Fluent regular) and 15 px before the text.
+  - Description: 14/400, line 20.
+  - Buttons 8 apart: Dismiss (`calling-retry-cancelbutton`, 96 min × 31.3, padding 5/12, 14/600 #242424, 0.67 px #D1D1D1 border, radius 4, transparent), then the retry button (`calling-retry-rejoinbutton`, same size, #5B5FC7, white).
+  - Texts: denied — prohibited icon, "Sorry, but you were denied access to the meeting.", Dismiss only. Not admitted — "Sorry, no one has responded to your request to join. Please try again.", Rejoin (`calling_rejoin_call`; Teams rejoins straight into the lobby, `isRejoiningLobby`). Removed — "Removed from the meeting" / "Someone just removed you from the meeting. You can try to rejoin.", Rejoin (`calling_callFailed_rejoin_meeting`).
+  - Rejoin joins the same meeting again without the pre-join screen (`retryCall`); for a lobbied meeting that is the lobby again.
 
 ## 13. Keyboard shortcuts in calls (Windows key map: class `P` in 504800; names in 790959)
 

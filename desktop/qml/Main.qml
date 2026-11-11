@@ -906,6 +906,21 @@ Window {
         // Ignore: stop ringing here; the call isn't declined.
         onIgnore: backend.setRinger(false)
     }
+    // Teams' Rejoin: back into the meeting last joined.
+    function rejoinMeeting() { backend.rejoinMeeting() }
+    // The service ended the call for a reason Teams shows a screen for:
+    // in the lobby the pre-join window turns into it, in the meeting the
+    // meeting window does.
+    Connections {
+        target: backend
+        function onCallEndReasonChanged() {
+            const r = backend.callEndReason
+            if (!r) return
+            console.info("call ended:", r)
+            if (preJoin.lobby || (preJoin.visible && r !== "removed")) preJoin.retryReason = r
+            else callWindow.retryReason = r
+        }
+    }
     // In the lobby, the meeting's own times fill the pre-join date line.
     Connections {
         target: backend
@@ -921,7 +936,9 @@ Window {
         lobby: backend.callState === "lobby"
         presenterConnected: backend.callLobbyPresenter
         userName: backend.userName
-        onLobbyChanged: if (lobby) { show(); raise(); if (!timesKnown) backend.loadMeetingInfo() } else if (visible) close()
+        onLobbyChanged: if (lobby) { show(); raise(); if (!timesKnown) backend.loadMeetingInfo() } else if (visible && !retryReason) close()
+        // Rejoin (nobody let us in): straight back into the lobby, as Teams.
+        onRejoin: window.rejoinMeeting()
         onJoin: (micOn, withAudio, cameraOn) => {
             window.muteOnJoin = !micOn
             window.noAudioOnJoin = !withAudio
@@ -997,7 +1014,8 @@ Window {
     Timer { id: reactionShot; interval: 400; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-their-reaction.png"))) }
     CallWindow {
         id: callWindow
-        visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0
+        visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0 || retryReason !== ""
+        onRejoin: window.rejoinMeeting()
         peer: backend.callPeer
         selfName: backend.userName
         state: backend.callState
@@ -1560,6 +1578,10 @@ Window {
     }
     readonly property bool joinRaise: Qt.application.arguments.indexOf("--join-raise") >= 0
     property bool speechShot: false
+    property bool deniedOne: false
+    property var admitted: null
+    property int retryShotAt: 0
+    property bool rejoined: false
     property int admittedAt: 0
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     // --join-url=<link>: the test meeting's link when it isn't in the
@@ -2098,6 +2120,40 @@ Window {
             } else if (step === 11 && Qt.application.arguments.indexOf("--join-mute-all") >= 0) {
                 console.warn("JOIN after mute all", backend.callRosterJson, "can", callWindow.canMuteAll)
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-muteall-after.png")))
+            } else if (step >= 7 && step <= 7 + window.joinStay && Qt.application.arguments.indexOf("--join-deny-wait") >= 0) {
+                // --join-deny-wait (with --join-stay): deny the first person
+                // who waits in the lobby, then stay until the time is up.
+                const lobby = JSON.parse(backend.callLobbyJson || "[]")
+                if (lobby.length && !window.deniedOne) { window.deniedOne = true; console.warn("JOIN deny-wait denying", JSON.stringify(lobby[0])); backend.denyFromLobby(lobby[0].id, lobby[0].name) }
+                else if (step === 7 + window.joinStay) { console.warn("JOIN deny-wait leaving"); backend.hangUp() }
+            } else if (step >= 3 && step <= 3 + window.joinStay && Qt.application.arguments.indexOf("--join-retry-watch") >= 0) {
+                // --join-retry-watch (with --join-stay): wait while someone
+                // in Teams admits, denies or removes us; capture Teams'
+                // retry screen when the service ends the call for a reason,
+                // then (--join-retry-rejoin) press Rejoin once.
+                const reason = backend.callEndReason
+                if (step % 5 === 3) console.warn("JOIN retry-watch", backend.callState, reason)
+                if (reason && !window.retryShotAt) { window.retryShotAt = step; console.warn("JOIN retry-watch reason", reason, "prejoin", preJoin.retryReason, "call", callWindow.retryReason) }
+                else if (window.retryShotAt && step === window.retryShotAt + 2) {
+                    const w = preJoin.retryReason ? preJoin : callWindow
+                    w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-retry-" + reason + ".png")))
+                } else if (window.retryShotAt && step === window.retryShotAt + 4 && Qt.application.arguments.indexOf("--join-retry-rejoin") >= 0 && !window.rejoined) {
+                    window.rejoined = true; window.retryShotAt = 0
+                    console.warn("JOIN retry-watch rejoining")
+                    if (preJoin.retryReason) { preJoin.retryReason = ""; preJoin.rejoin() } else { callWindow.retryReason = ""; callWindow.rejoin() }
+                } else if (step === 3 + window.joinStay) { console.warn("JOIN retry-watch leaving"); backend.hangUp(); Qt.callLater(Qt.quit) }
+            } else if (step >= 7 && step <= 7 + window.joinStay && Qt.application.arguments.indexOf("--join-admit-remove") >= 0) {
+                // --join-admit-remove (with --join-stay): admit the first
+                // person who waits in the lobby, remove them from the
+                // meeting 16 s later, then stay until the time is up.
+                const lobby = JSON.parse(backend.callLobbyJson || "[]")
+                if (lobby.length && !window.admitted) { window.admitted = { id: lobby[0].id, name: lobby[0].name, at: step }; console.warn("JOIN admit-remove admitting", lobby[0].name); backend.admitFromLobby(lobby[0].id, lobby[0].name, false) }
+                else if (window.admitted && step === window.admitted.at + 8) { console.warn("JOIN admit-remove removing", window.admitted.name); backend.denyFromLobby(window.admitted.id, window.admitted.name) }
+                else if (step === 7 + window.joinStay) { console.warn("JOIN admit-remove leaving"); backend.hangUp() }
+            } else if (step === 8 + window.joinStay && (Qt.application.arguments.indexOf("--join-admit-remove") >= 0 || Qt.application.arguments.indexOf("--join-deny-wait") >= 0)) {
+                Qt.quit()
+            } else if (step === 8 + window.joinStay && Qt.application.arguments.indexOf("--join-deny-wait") >= 0) {
+                Qt.quit()
             } else if (step === 7 && Qt.application.arguments.indexOf("--join-deny") >= 0) {
                 // --join-deny: deny the last person waiting in the lobby.
                 const lobby = JSON.parse(backend.callLobbyJson || "[]")
@@ -3282,10 +3338,12 @@ Window {
             else if (step === 1) { console.warn("CHMEET prejoin", preJoin.visible, preJoin.meetNow, preJoin.subject); preJoin.contentItem.grabToImage(r => r.saveToFile(dir + "prejoin.png")) }
             else if (step === 2) { preJoin.audio = "none"; preJoin.close(); preJoin.join(false, false, false) }
             else if (step >= 3 && step <= 9) console.warn("CHMEET state", backend.callState, backend.callThreadId, backend.callPeer)
-            else if (step === 10) { console.warn("CHMEET in call", backend.callState); window.contentItem.grabToImage(r => r.saveToFile(dir + "meet.png")) }
-            else if (step === 11) backend.hangUp()
-            else if (step >= 12 && backend.callState !== "" && backend.callState !== "ended") { console.warn("CHMEET leaving", backend.callState); return }
-            else if (step >= 12) { console.warn("CHMEET left", backend.callState); Qt.quit() }
+            else if (step === 10) { console.warn("CHMEET in call", backend.callState, "link", backend.callInviteUrl); window.contentItem.grabToImage(r => r.saveToFile(dir + "meet.png")) }
+            // --join-stay=<s>: stay that long before leaving.
+            else if (step < 11 + Math.round(window.joinStay * 2 / 3)) { if (step % 10 === 0) console.warn("CHMEET staying", backend.callState) }
+            else if (step === 11 + Math.round(window.joinStay * 2 / 3)) backend.hangUp()
+            else if (backend.callState !== "" && backend.callState !== "ended") { console.warn("CHMEET leaving", backend.callState); return }
+            else { console.warn("CHMEET left", backend.callState); Qt.quit() }
             step++
         }
     }

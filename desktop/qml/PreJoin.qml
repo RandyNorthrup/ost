@@ -45,6 +45,10 @@ Window {
     signal cancelled()
     /// Leave the lobby (Cancel, Escape).
     signal leaveLobby()
+    /// The service ended the join (denied from the lobby, or nobody let us
+    /// in): Teams turns this window into its retry screen.
+    property string retryReason: ""
+    signal rejoin()
 
     width: 1280; height: 680
     minimumWidth: 1000; minimumHeight: 640
@@ -64,6 +68,7 @@ Window {
         endTime = end ? new Date(end) : new Date()
         timesKnown = !!start && !!end
         micOn = true; audio = "computer"; cameraOn = false
+        retryReason = ""
         show(); raise(); requestActivate()
     }
     readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : "Default microphone" }
@@ -298,5 +303,13 @@ Window {
         Accessible.role: Accessible.RadioButton
         Accessible.name: label
         Accessible.checked: on
+    }
+    RetryScreen {
+        anchors.fill: parent
+        z: 10
+        visible: win.retryReason !== ""
+        reason: win.retryReason
+        onRetry: { win.retryReason = ""; win.rejoin() }
+        onDismiss: { win.retryReason = ""; win.close() }
     }
 }

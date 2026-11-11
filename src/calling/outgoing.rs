@@ -1624,11 +1624,13 @@ impl MeetingLink {
         let (thread, message) = path.split_once('/')?;
         let thread = percent_decode(thread)?;
         let message = percent_decode(message.trim_end_matches('/'))?;
-        let valid_thread = thread.starts_with("19:")
-            && thread.ends_with("@thread.v2")
-            && thread[3..thread.len() - 10]
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "_-=".contains(c));
+        // A scheduled meeting's chat (`@thread.v2`), or the channel a
+        // channel meeting was started in (`@thread.tacv2`, the meeting
+        // keyed by its post's message id).
+        let body = thread
+            .strip_prefix("19:")
+            .and_then(|t| t.strip_suffix("@thread.v2").or_else(|| t.strip_suffix("@thread.tacv2")));
+        let valid_thread = body.is_some_and(|b| !b.is_empty() && b.chars().all(|c| c.is_ascii_alphanumeric() || "_-=".contains(c)));
         if !valid_thread || message.is_empty() || !message.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
@@ -2275,6 +2277,11 @@ mod tests {
             .is_none()
         );
         assert!(MeetingLink::parse("https://teams.microsoft.com/meet/299487569045?p=x").is_none());
+        // A channel meeting: the channel's thread and the meeting post.
+        let c = MeetingLink::parse("https://teams.microsoft.com/l/meetup-join/19%3aekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1%40thread.tacv2/1794372973956?context=%7b%22Tid%22%3a%222716d134-5614-4856-a48d-2002edd9a570%22%2c%22Oid%22%3a%224287e791-1b98-4963-8b94-281c50472683%22%7d").unwrap();
+        assert_eq!(c.thread_id, "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2");
+        assert_eq!(c.message_id, "1794372973956");
+        assert!(MeetingLink::parse("https://teams.microsoft.com/l/meetup-join/19%3a%40thread.tacv2/1").is_none());
     }
 
     #[test]

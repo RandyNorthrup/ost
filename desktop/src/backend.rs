@@ -241,6 +241,10 @@ pub mod qobject {
         /// Teams' Meeting info pane: {title, hours, schedule, location,
         /// body (HTML), canCopy}, or "" before it's loaded.
         #[qproperty(QString, call_meeting_info_json)]
+        /// Why the service ended the last call when Teams shows a screen
+        /// for it: "deniedFromLobby", "notAdmittedForLongTime", "removed"
+        /// or "".
+        #[qproperty(QString, call_end_reason)]
         /// Teams' Transcript pane: [{id, kind (speech, started,
         /// stopped), userId, name, text, atMs}], oldest first.
         #[qproperty(QString, call_transcript_json)]
@@ -641,6 +645,10 @@ pub mod qobject {
         /// the call window.
         #[qinvokable]
         fn join_meeting(self: Pin<&mut Backend>, join_url: &QString, title: &QString);
+        /// Teams' Rejoin on its retry screen: join the meeting last joined
+        /// again.
+        #[qinvokable]
+        fn rejoin_meeting(self: Pin<&mut Backend>);
 
         /// End the current call.
         #[qinvokable]
@@ -1631,6 +1639,7 @@ pub struct BackendRust {
     call_recording_state: QString,
     call_recording_tip: QString,
     call_meeting_info_json: QString,
+    call_end_reason: QString,
     call_transcript_json: QString,
     call_captions_json: QString,
     call_captions_on: bool,
@@ -1661,6 +1670,8 @@ pub struct BackendRust {
     transcript: Vec<teams_cli::calling::transcript::Entry>,
     /// What Copy join info copies (HTML, text).
     meeting_join_info: (String, String),
+    /// The meeting last joined (link, title), for Rejoin.
+    last_join: (QString, QString),
     /// What the meeting's call recorder does (for the recording
     /// indicator's names as the roster changes).
     processing: teams_cli::calling::roster::Processing,
@@ -3244,6 +3255,13 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     }
     if teams_cli::calling::incoming::is_call_end_event(json) {
         tracing::debug!(payload = %json, "call end payload");
+        // Denied, not let in, or removed: Teams keeps the window on its
+        // retry screen saying so.
+        let reason = teams_cli::calling::incoming::end_reason(json);
+        if let Some(r) = reason {
+            tracing::info!(reason = r.key(), "call ended for a reason");
+            let _ = qt.queue(move |mut this| this.as_mut().set_call_end_reason(QString::from(r.key())));
+        }
         let mut slot = call_slot().lock().await;
         let was_ringing = slot.ringing.take().is_some();
         // The other side ended it: drop media without signalling an end.
@@ -4360,6 +4378,17 @@ impl qobject::Backend {
         });
     }
 
+    pub fn rejoin_meeting(mut self: Pin<&mut Self>) {
+        let (url, title) = self.rust().last_join.clone();
+        if url.is_empty() {
+            return;
+        }
+        if self.rust().call_state.to_string() == "ended" {
+            self.as_mut().set_call_state(QString::default());
+        }
+        self.as_mut().join_meeting(&url, &title);
+    }
+
     pub fn join_meeting(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
         if !self.rust().call_state.is_empty() {
             return;
@@ -4375,6 +4404,8 @@ impl qobject::Backend {
         } else {
             title.clone()
         };
+        self.as_mut().rust_mut().last_join = (join_url.clone(), title.clone());
+        self.as_mut().set_call_end_reason(QString::default());
         self.as_mut().set_call_peer(title);
         self.as_mut().set_call_peer_id(QString::default());
         self.as_mut().rust_mut().roster.clear();

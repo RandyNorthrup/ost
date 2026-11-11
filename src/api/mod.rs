@@ -17,6 +17,7 @@ pub mod search;
 pub mod folders;
 pub mod funstuff;
 mod me;
+pub mod meeting_options;
 pub mod messages;
 pub mod msgactions;
 pub mod onenote;

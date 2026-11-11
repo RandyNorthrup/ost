@@ -70,6 +70,7 @@ fn main() {
         "qml/GuestAvatar.qml",
         "qml/LobbyToast.qml",
         "qml/MeetingTile.qml",
+        "qml/RetryScreen.qml",
         "qml/GalleryGrid.qml",
         "qml/SharedDisplayWindow.qml",
         "qml/RoomNotice.qml",

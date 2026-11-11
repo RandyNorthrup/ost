@@ -1481,6 +1481,50 @@ pub fn is_call_end_event(json: &str) -> bool {
         || v.pointer("/body/callEnd").is_some()
 }
 
+/// Why the service ended a call, when it says (Teams' calling stack maps
+/// callEnd `code` 0 with these `subCode`s to its retry screens:
+/// DeniedInLobby 5854, TimedOutInLobby 5855, RemovedFromConversation 5000
+/// and RemovedFromCall 5300).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndReason {
+    /// Someone denied us from the lobby.
+    DeniedInLobby,
+    /// Nobody let us in from the lobby in time.
+    TimedOutInLobby,
+    /// Someone removed us from the call or meeting.
+    Removed,
+}
+
+impl EndReason {
+    /// The name the UI keys its screen on.
+    pub fn key(self) -> &'static str {
+        match self {
+            EndReason::DeniedInLobby => "deniedFromLobby",
+            EndReason::TimedOutInLobby => "notAdmittedForLongTime",
+            EndReason::Removed => "removed",
+        }
+    }
+}
+
+/// The reason in a call end event (`call/end` or `conversationEnd`), if
+/// it's one Teams shows a screen for.
+pub fn end_reason(json: &str) -> Option<EndReason> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let body = v.get("body").filter(|b| !b.is_null()).unwrap_or(&v);
+    let end = body.get("callEnd").unwrap_or(body);
+    let code = end.get("code").and_then(|c| c.as_u64())?;
+    let sub = end.get("subCode").and_then(|c| c.as_u64())?;
+    if code != 0 {
+        return None;
+    }
+    match sub {
+        5854 => Some(EndReason::DeniedInLobby),
+        5855 => Some(EndReason::TimedOutInLobby),
+        5000 | 5300 => Some(EndReason::Removed),
+        _ => None,
+    }
+}
+
 /// The HTTP client and Skype token call signalling needs, loaded (and
 /// renewed when expired) from the stored sign-in.
 pub struct CallAuth {
@@ -1663,6 +1707,17 @@ mod tests {
             r#"{"callAgentPath":"conversation/conversationEnd/","body":null}"#
         ));
         assert!(is_call_end_event(r#"{"callEnd":{"code":487}}"#));
+        assert_eq!(
+            end_reason(r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":0,"subCode":5854,"phrase":"DeniedInLobby"}}}"#),
+            Some(EndReason::DeniedInLobby)
+        );
+        assert_eq!(end_reason(r#"{"callEnd":{"code":0,"subCode":5855}}"#), Some(EndReason::TimedOutInLobby));
+        assert_eq!(
+            end_reason(r#"{"callAgentPath":"conversation/conversationEnd/","body":{"code":0,"subCode":5300}}"#),
+            Some(EndReason::Removed)
+        );
+        assert_eq!(end_reason(r#"{"callEnd":{"code":0,"subCode":0}}"#), None);
+        assert_eq!(end_reason(r#"{"callEnd":{"code":480,"subCode":5854}}"#), None);
         assert!(is_renegotiation_event(
             r#"{"callAgentPath":"call/mediaRenegotiation/","body":{}}"#
         ));
