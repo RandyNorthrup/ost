@@ -406,7 +406,7 @@ Rectangle {
         title: "Remove chat history?"
         body: "This will remove the chat from your list and search. It affects you only."
         confirmText: "Remove"
-        onConfirmed: backend.channelAction("remove-chat-history", "", root.chatId, "")
+        onConfirmed: backend.removeChatHistory(root.chatId)
     }
     // Go to a message (a quote card's target), if it is loaded.
     // The chat's call: one going on (a start with no end), whether we're in

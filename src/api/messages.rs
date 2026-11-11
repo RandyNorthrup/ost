@@ -3205,6 +3205,20 @@ pub fn peer_horizon(json: &str, me: &str) -> Option<SeenRule> {
 }
 
 /// How far you had read a chat: the message id in your consumption horizon.
+/// When you removed the chat's history (Teams' `clearHistoryTime`, ms),
+/// if you did: messages up to then aren't shown.
+pub async fn cleared_history_time(client: &TeamsClient, chat_id: &str) -> Result<Option<u64>> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        chat_id
+    );
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Conversation reply")?;
+    Ok(v.pointer("/properties/clearHistoryTime")
+        .and_then(|h| h.as_str().and_then(|s| s.parse().ok()).or_else(|| h.as_u64()))
+        .filter(|t| *t > 0))
+}
+
 pub async fn my_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Option<u64>> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}?view=msnp24Equivalent",

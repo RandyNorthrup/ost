@@ -931,6 +931,23 @@ pub async fn set_chat_hidden(client: &TeamsClient, chat_id: &str, hidden: bool) 
     Ok(())
 }
 
+/// Remove a chat's history for you, as Teams' Remove chat history does
+/// (captured from Teams desktop 2026-11-11): the conversation property
+/// `clearHistoryTime` (ms) set to now. The chat leaves your list and its
+/// messages up to then are no longer shown; others keep theirs.
+pub async fn clear_chat_history(client: &TeamsClient, chat_id: &str) -> Result<i64> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/properties?name=clearHistoryTime",
+        client.chat_service_url(),
+        chat_id
+    );
+    client
+        .chat_request(reqwest::Method::PUT, &url, &serde_json::json!({ "clearHistoryTime": now }))
+        .await?;
+    Ok(now)
+}
+
 /// Leave a group chat (Teams' chat service `DELETE v1/threads/{id}/members/{mri}`).
 pub async fn leave_chat(client: &TeamsClient, chat_id: &str, my_mri: &str) -> Result<()> {
     let url = format!(

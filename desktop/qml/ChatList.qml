@@ -55,7 +55,7 @@ Rectangle {
                 root.notifyTagged = m
             } else if ((r.op === "notify-on" || r.op === "notify-off") && r.ok) {
                 backend.channelAction("notify-tagged", "", "", "")
-            } else if ((r.op === "notify-on" || r.op === "notify-off" || r.op === "remove-chat-history") && !r.ok) {
+            } else if ((r.op === "notify-on" || r.op === "notify-off") && !r.ok) {
                 backend.toast("Something went wrong on our end. Please try again.", "error")
             }
         }
@@ -690,7 +690,7 @@ Rectangle {
             title: "Remove chat history?"
             body: "This will remove the chat from your list and search. It affects you only."
             confirmText: "Remove"
-            onConfirmed: backend.channelAction("remove-chat-history", "", row.chat.id, "")
+            onConfirmed: backend.removeChatHistory(row.chat.id)
         }
         ConfirmDialog {
             id: leaveAsk

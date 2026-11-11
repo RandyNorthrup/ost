@@ -1277,6 +1277,11 @@ pub mod qobject {
         /// it again (Teams' Hide / Unhide).
         #[qinvokable]
         fn set_chat_hidden(self: Pin<&mut Backend>, chat_id: &QString, hidden: bool);
+        /// Teams' Remove chat history: the chat leaves your list and its
+        /// messages so far are gone for you only; an open one moves to the
+        /// next chat.
+        #[qinvokable]
+        fn remove_chat_history(self: Pin<&mut Backend>, chat_id: &QString);
         /// Leave a group chat (Teams' Leave).
         #[qinvokable]
         fn leave_chat(self: Pin<&mut Backend>, chat_id: &QString);
@@ -3027,8 +3032,15 @@ async fn load_messages(
             h
         }
     };
-    let page = api::messages::read_timeline_page(&client, &chat_id, api::messages::PAGE_SIZE, None)
-        .await?;
+    let (page, cleared) = tokio::join!(
+        api::messages::read_timeline_page(&client, &chat_id, api::messages::PAGE_SIZE, None),
+        api::messages::cleared_history_time(&client, &chat_id),
+    );
+    let page = page?;
+    let cleared = cleared.unwrap_or_else(|e| {
+        tracing::debug!("cleared history time unavailable: {}", short_error(&e));
+        None
+    });
     let (mut timeline, has_older) = {
         let mut map = older_pages().lock().unwrap();
         let entry = map
@@ -3043,6 +3055,11 @@ async fn load_messages(
     {
         let here = deleted_here().lock().unwrap();
         timeline.retain(|m| !m.deleted || here.contains(&m.id));
+    }
+    // Remove chat history: what came before isn't shown (Teams'
+    // MessageIdLessThanClearHistoryTime).
+    if let Some(t) = cleared {
+        timeline.retain(|m| m.id.parse::<u64>().map_or(true, |id| id > t));
     }
     // Read horizons, saved messages and pins, as Teams loads them.
     let (horizon, rc, pinned) = tokio::join!(
@@ -10658,6 +10675,44 @@ impl qobject::Backend {
         });
     }
 
+    pub fn remove_chat_history(mut self: Pin<&mut Self>, chat_id: &QString) {
+        let id = chat_id.to_string();
+        if let Some(c) = self.as_mut().rust_mut().chats.iter_mut().find(|c| c["id"].as_str() == Some(id.as_str())) {
+            c["hidden"] = json!(true);
+        }
+        self.as_mut().publish_chats();
+        // Teams opens the next chat in the list.
+        if self.rust().current_chat_id.to_string() == id {
+            let next = self
+                .rust()
+                .chats
+                .iter()
+                .find(|c| {
+                    let cid = c["id"].as_str().unwrap_or_default();
+                    cid != id && !cid.starts_with("48:") && !c["hidden"].as_bool().unwrap_or(false) && !c["empty"].as_bool().unwrap_or(false)
+                })
+                .map(|c| (c["id"].as_str().unwrap_or_default().to_string(), c["name"].as_str().unwrap_or_default().to_string()));
+            if let Some((nid, name)) = next {
+                self.as_mut().select_chat(&QString::from(nid.as_str()), &QString::from(name.as_str()));
+            }
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::clear_chat_history(&client, &id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if let Err(e) = &result {
+                    tracing::warn!("remove chat history failed: {}", short_error(e));
+                    this.as_mut().toast("Something went wrong on our end. Please try again.", "error");
+                }
+                this.as_mut().reload_chats();
+            });
+        });
+    }
+
     pub fn leave_chat(self: Pin<&mut Self>, chat_id: &QString) {
         let id = chat_id.to_string();
         let qt = self.qt_thread();
@@ -11090,7 +11145,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "remove-chat-history" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -11422,11 +11477,6 @@ impl qobject::Backend {
                     }
                     // Remove chat history (Teams' chat menu; it affects you
                     // only): `DELETE {chatsvc}/v1/threads/{chat}`.
-                    "remove-chat-history" => {
-                        let url = format!("{}/v1/threads/{}", client.chat_service_url(), channel.replace(':', "%3A").replace('@', "%40"));
-                        client.chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null).await?;
-                        Ok(serde_json::Value::Null)
-                    }
                     // A meeting chat's Report a concern: its meeting
                     // {title, start, organizer, ical} and who can be
                     // reported (its members but you).
@@ -11772,9 +11822,6 @@ impl qobject::Backend {
                 }
                 if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "meeting-chat-report-info" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
                     this.as_mut().load_teams();
-                }
-                if result.is_ok() && op == "remove-chat-history" {
-                    this.as_mut().reload_chats();
                 }
             });
         });

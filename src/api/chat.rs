@@ -995,11 +995,18 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .and_then(|p| p.get("isemptyconversation"))
                 .and_then(|e| e.as_str())
                 .is_some_and(|e| e.eq_ignore_ascii_case("true")),
+            // Hidden (Hide) or its history removed (Remove chat history):
+            // listed again once something newer is said.
             hidden: hidden_until_newer(
-                conv.properties
-                    .as_ref()
-                    .and_then(|p| p.get("historyHiddenTime"))
-                    .and_then(|h| h.as_str().and_then(|s| s.parse().ok()).or_else(|| h.as_i64())),
+                ["historyHiddenTime", "clearHistoryTime"]
+                    .iter()
+                    .filter_map(|k| {
+                        conv.properties
+                            .as_ref()
+                            .and_then(|p| p.get(*k))
+                            .and_then(|h| h.as_str().and_then(|s| s.parse().ok()).or_else(|| h.as_i64()))
+                    })
+                    .max(),
                 conv.last_message
                     .as_ref()
                     .and_then(|m| m.original_arrival_time.as_deref())
