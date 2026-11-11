@@ -73,10 +73,8 @@ pub fn message_query(keywords: &str, f: &Filters, my_oid: &str, all_tab: bool) -
             terms.push(format!("clientthreadid:{}", f.in_thread));
             terms.push(format!("NOT ({THREAD_TYPE})"));
         }
-        ("channel", _) if !f.in_thread.is_empty() => {
-            terms.push(format!("clientthreadid:{}", f.in_thread));
-            terms.push(format!("({THREAD_TYPE})"));
-        }
+        // (A channel: its thread only; the team goes in a filter term.)
+        ("channel", _) if !f.in_thread.is_empty() => terms.push(format!("clientthreadid:{}", f.in_thread)),
         ("team", _) => terms.push(format!("({THREAD_TYPE})")),
         (_, "chat") => terms.push(format!("NOT ({THREAD_TYPE})")),
         (_, "channel") => terms.push(format!("({THREAD_TYPE})")),
@@ -201,13 +199,12 @@ pub fn bodies(tab: &str, keywords: &str, f: &Filters, from: usize, timezone: &st
                     }
                 }
                 if kind == "Message" && name != "images-messages" {
-                    if f.in_kind == "team" && !f.in_group.is_empty() {
-                        r["Filter"] = serde_json::json!({ "Term": { "groupId": f.in_group } });
+                    if matches!(f.in_kind.as_str(), "team" | "channel") && !f.in_group.is_empty() {
+                        r["Filter"] = serde_json::json!({ "Term": { "GroupId": f.in_group } });
                     } else if f.in_thread.is_empty() && f.kind == "chat" {
                         r["Filter"] = serde_json::json!({ "Term": { "ConversationType": "OneToOne" } });
-                    } else if f.in_thread.is_empty() && f.kind == "channel" {
-                        r["Filter"] = serde_json::json!({ "Term": { "ConversationType": "Channel" } });
                     }
+                    // (Type ▸ Channel sends no filter term, as Teams.)
                 }
                 if from > 0 {
                     let key = if r.get("From").is_some() { "From" } else { "from" };
@@ -527,6 +524,13 @@ mod tests {
         );
         let b = bodies("messages", "OST test", &chat, 0, "UTC", "", "");
         assert_eq!(b[0]["entityRequests"][0]["Filter"], serde_json::json!({"Term": {"ConversationType": "OneToOne"}}));
+        // Type ▸ Channel: the thread-type clause only, no filter term.
+        let chan = Filters { kind: "channel".into(), ..Default::default() };
+        assert_eq!(
+            message_query("OST test", &chan, "", false),
+            "(Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String:(topic OR space)) AND NOT (isClientSoftDeleted:TRUE) OST test"
+        );
+        assert!(bodies("messages", "OST test", &chan, 0, "UTC", "", "")[0]["entityRequests"][0].get("Filter").is_none());
         let mention = Filters { mentions: true, ..Default::default() };
         assert_eq!(message_query("OST test", &mention, "4287e791-1b98-4963-8b94-281c50472683", false), "mentions:4287e7911b9849638b94281c50472683 AND NOT (isClientSoftDeleted:TRUE) OST test");
         let att = Filters { attachment: true, ..Default::default() };
@@ -536,6 +540,10 @@ mod tests {
             message_query("OST test", &inchat, "", false),
             "clientthreadid:19:ef2@thread.v2 AND NOT (Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String:(topic OR space)) AND NOT (isClientSoftDeleted:TRUE) OST test"
         );
+        // In ▸ a channel (as Teams sent it).
+        let inchan = Filters { in_kind: "channel".into(), in_thread: "19:7826@thread.tacv2".into(), in_group: "1fac3ae3".into(), ..Default::default() };
+        assert_eq!(message_query("OST test", &inchan, "", false), "clientthreadid:19:7826@thread.tacv2 AND NOT (isClientSoftDeleted:TRUE) OST test");
+        assert_eq!(bodies("messages", "OST test", &inchan, 0, "UTC", "", "")[0]["entityRequests"][0]["Filter"], serde_json::json!({"Term": {"GroupId": "1fac3ae3"}}));
         let from = Filters { person_mail: "a@b.c".into(), person_oid: "o1".into(), person_from: true, ..Default::default() };
         assert_eq!(message_query("OST test", &from, "", false), "NOT (isClientSoftDeleted:TRUE) a@b.c OST test");
         let b = bodies("messages", "OST test", &from, 0, "UTC", "", "t1");

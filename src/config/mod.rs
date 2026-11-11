@@ -50,12 +50,30 @@ struct Secrets {
 const KEYRING_SERVICE: &str = "ost";
 const KEYRING_ACCOUNT: &str = "teams-tokens";
 
+/// A second account's profile (`OST_PROFILE=name`): its own config folder
+/// and keyring entry, so two accounts can be signed in side by side.
+pub fn profile() -> Option<String> {
+    std::env::var("OST_PROFILE")
+        .ok()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+}
+
+/// The keyring account the tokens live under ("teams-tokens", or
+/// "teams-tokens:{profile}").
+fn keyring_account() -> String {
+    match profile() {
+        Some(p) => format!("{KEYRING_ACCOUNT}:{p}"),
+        None => KEYRING_ACCOUNT.to_string(),
+    }
+}
+
 /// The keyring is skipped when OST_NO_KEYRING is set (CI, headless use).
 fn keyring_entry() -> Option<keyring::Entry> {
     if std::env::var_os("OST_NO_KEYRING").is_some() {
         return None;
     }
-    keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT).ok()
+    keyring::Entry::new(KEYRING_SERVICE, &keyring_account()).ok()
 }
 
 impl Config {
@@ -93,7 +111,11 @@ impl Config {
     fn config_dir() -> Result<PathBuf> {
         let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli")
             .context("Could not determine config directory")?;
-        Ok(proj_dirs.config_dir().to_path_buf())
+        let base = proj_dirs.config_dir().to_path_buf();
+        Ok(match profile() {
+            Some(p) => base.join("profiles").join(p),
+            None => base,
+        })
     }
 
     /// Get config file path

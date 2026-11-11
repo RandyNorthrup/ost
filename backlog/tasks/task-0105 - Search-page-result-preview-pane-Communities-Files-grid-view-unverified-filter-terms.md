@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T03:01:00Z'
-updated_date: '2026-11-11T03:17:00Z'
+updated_date: '2026-11-11T03:33:00Z'
 labels:
   - search
 dependencies: []
@@ -31,4 +31,7 @@ Teams' search results page (TASK-0051) leaves these to do: clicking a message re
 
 <!-- SECTION:NOTES:BEGIN -->
 - Preview pane done: SearchPreview.qml (measured: 40% of the page, 61 px header; chat: picture, name 18/700, ··· Go to chat / Open in new window / Mark as unread / Copy link, Close; channel post: team picture, channel 14/600 + subject 12, Go to channel, Open in new window, ···, Close). The chat or thread loads as a live window conversation with the found message brought into view and its terms marked; selected cards turn #FAFAFA. Your notes chat (48:notes) can now open in windows and previews.
+
+- Captured from Teams: Type ▸ Channel sends "(…ThreadType_String:(topic OR space)) AND NOT (isClientSoftDeleted:TRUE) {kw}" with no filter term. In ▸ channel sends "clientthreadid:{channel} AND NOT (isClientSoftDeleted:TRUE) {kw}" with Filter {"Term":{"GroupId": team}}. Both applied.
+- In ▸ team: not captured yet (the pick missed); OST sends the thread-type clause with the GroupId term.
 <!-- SECTION:NOTES:END -->

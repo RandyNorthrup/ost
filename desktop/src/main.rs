@@ -26,14 +26,21 @@ pub fn log_path() -> std::path::PathBuf {
             std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
         })
         .unwrap_or_else(std::env::temp_dir);
-    base.join("ost").join("ost-desktop.log")
+    // (A second account's profile, OST_PROFILE, logs on its own.)
+    match teams_cli::config::profile() {
+        Some(p) => base.join("ost").join(format!("ost-desktop-{p}.log")),
+        None => base.join("ost").join("ost-desktop.log"),
+    }
 }
 
 /// The socket a running OST listens on, so launching it again brings that
 /// window back (Teams keeps a single instance).
 fn instance_socket() -> Option<std::path::PathBuf> {
     std::env::var_os("XDG_RUNTIME_DIR")
-        .map(|d| std::path::PathBuf::from(d).join("ost-desktop.sock"))
+        .map(|d| match teams_cli::config::profile() {
+            Some(p) => std::path::PathBuf::from(d).join(format!("ost-desktop-{p}.sock")),
+            None => std::path::PathBuf::from(d).join("ost-desktop.sock"),
+        })
 }
 
 /// When OST is already running: ask it to show its window, and return true.
