@@ -144,6 +144,7 @@ fn main() {
         "qml/ProfileCard.qml",
         "qml/ThreadsPane.qml",
         "qml/FindPane.qml",
+        "qml/FeedbackWindow.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",

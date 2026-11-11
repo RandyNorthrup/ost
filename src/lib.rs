@@ -8,6 +8,7 @@ pub mod auth;
 pub mod calling;
 pub mod config;
 pub mod event_hub;
+pub mod feedback;
 pub mod models;
 pub mod svg;
 pub mod trouter;

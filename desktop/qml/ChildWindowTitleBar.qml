@@ -7,7 +7,7 @@ import QtQuick
 // the right "Settings and more" (24 x 23.33, 4.42 down, radius 4) whose
 // menu offers "Pin window on top" / "Unpin window" (Ctrl+Shift+T). Teams'
 // menu also has Zoom (tracked with the main window's, docs/parity) and
-// "Report a problem" (feedback to Microsoft, which OST doesn't send).
+// "Report a problem", which here opens OST's feedback form (to its GitHub).
 // `leading` holds buttons before the title (the captions' Pop in);
 // `trailing` buttons go before Settings and more (the captions' pin).
 Rectangle {
@@ -52,9 +52,11 @@ Rectangle {
     }
     MenuPopup {
         id: menu
-        items: [{ label: root.pinned ? "Unpin window" : "Pin window on top", icon: "pin-20", keys: "Ctrl+Shift+T" }]
-        onPicked: root.togglePin()
+        items: [{ label: root.pinned ? "Unpin window" : "Pin window on top", icon: "pin-20", keys: "Ctrl+Shift+T" },
+                { label: "Report a problem", icon: "bug-20", keys: "Ctrl+Alt+Shift+R" }]
+        onPicked: i => i === 0 ? root.togglePin() : backend.requestFeedback("problem", root.title, "")
     }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: root.togglePin() }
+    Shortcut { sequence: "Ctrl+Alt+Shift+R"; onActivated: backend.requestFeedback("problem", root.title, "") }
     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: Qt.rgba(0, 0, 0, 0.06) }
 }

@@ -14,6 +14,27 @@ extern "C" void ost_set_clipboard(const char *text, const char *html)
     QGuiApplication::clipboard()->setMimeData(mime);
 }
 
+#include <QtGui/QImage>
+
+// Put the picture in `path` on the clipboard (Report a problem's
+// screenshot, to paste into the GitHub issue). Whether it could be read.
+extern "C" bool ost_set_clipboard_image(const char *path)
+{
+    QImage image(QString::fromUtf8(path));
+    if (image.isNull())
+        return false;
+    QGuiApplication::clipboard()->setImage(image);
+    return true;
+}
+
+// Save the clipboard's picture as a PNG at `path` (pasting a screenshot
+// into Report a problem). Whether there was one.
+extern "C" bool ost_save_clipboard_image(const char *path)
+{
+    const QImage image = QGuiApplication::clipboard()->image();
+    return !image.isNull() && image.save(QString::fromUtf8(path), "PNG");
+}
+
 #include <QtGui/QFont>
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QPixmap>

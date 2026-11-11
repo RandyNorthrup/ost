@@ -66,6 +66,11 @@ Teams' find pane, as measured on winpc against Teams desktop on 2026-11-10
     older pages until it's there, and marks the terms in it. In a pop-out
     window the thread shows the message, and Escape returns to the
     results.
+- **Footer:** "Send feedback 👍 👎" (36 px, #FAFAFA; "Send feedback" 12 px
+  #616161, then This was helpful and Didn't help at 16 px, 8 px apart, 12 px
+  from the right). The thumbs open OST's feedback form (Give a compliment /
+  Report a problem) with the search filled in; see
+  docs/spec/feedback-and-help.md.
 - **Empty states**
   - Before a search: the search-keywords picture (220 px), then "Search in
     this chat" (18/700) and "Find messages, files, and URLs shared in this
@@ -117,8 +122,6 @@ other things, scope Files to the chat), `x-anchormailbox` /
 
 ## Not yet
 
-- Teams' "Send feedback 👍 👎" footer sends to Microsoft. OST has nowhere to
-  send it, so it doesn't show it.
 - A Loop file's ··· has Share in Teams (SharePoint's share dialog).
 - A channel's Files results in Teams also listed a "Notes" item from a
   source that wasn't captured.

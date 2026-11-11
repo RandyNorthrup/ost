@@ -28,6 +28,11 @@ Rectangle {
     signal toggleRail()
     signal openSettings()
     signal openShortcuts()
+    /// Settings and more ▸ Help (F1), and Feedback ▸ (Report a problem,
+    /// Give a compliment: "problem" / "compliment"; Suggest a feature).
+    signal openHelp()
+    signal openFeedback(string kind)
+    signal suggestFeature()
     /// Pin window on top (Ctrl+Shift+T).
     property bool pinned: false
     signal togglePin()
@@ -237,14 +242,17 @@ Rectangle {
             property string label
             property string keys
             property bool checked: false
+            /// Opens a submenu (Feedback ▸) instead of picking.
+            property bool submenu: false
             signal picked()
             width: moreCol.width; height: 36; radius: theme.radius
-            color: mrh.hovered ? theme.rowHover : "transparent"
+            color: mrh.hovered || (submenu && feedbackMenu.visible) ? theme.rowHover : "transparent"
             FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: mr.icon; size: 20; color: mr.checked ? theme.brand : theme.textStrong }
             Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: mr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Text { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: mr.keys; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
-            HoverHandler { id: mrh; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: { moreMenu.visible = false; mr.picked() } }
+            FluentIcon { visible: mr.submenu; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 12; color: theme.textStrong }
+            HoverHandler { id: mrh; cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) feedbackMenu.showFor(mr.submenu ? mr : null) }
+            TapHandler { onTapped: { if (mr.submenu) { feedbackMenu.showFor(mr); return } moreMenu.visible = false; mr.picked() } }
             Accessible.role: Accessible.MenuItem
             Accessible.name: mr.label
         }
@@ -253,9 +261,58 @@ Rectangle {
             x: 4; y: 4; width: parent.width - 8
             MenuRow { icon: "pin-20"; label: root.pinned ? "Unpin window" : "Pin window on top"; keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
             MenuRow { icon: "settings-20"; label: "Settings"; keys: "Ctrl+,"; onPicked: root.openSettings() }
+            MenuRow { icon: "question-circle-20"; label: "Help"; keys: "F1"; onPicked: root.openHelp() }
+            MenuRow { id: feedbackRow; icon: "person-feedback-20"; label: "Feedback"; submenu: true }
             MenuRow { icon: "keyboard-20"; label: "Keyboard shortcuts"; keys: "Ctrl+."; onPicked: root.openShortcuts() }
         }
+        onVisibleChanged: if (!visible) feedbackMenu.visible = false
     }
+    // Feedback ▸ (Teams' submenu, 245.4 wide, opening to the left with its
+    // first row level with Feedback): Report a problem (Ctrl+Alt+Shift+R),
+    // Give a compliment, Suggest a feature.
+    Rectangle {
+        id: feedbackMenu
+        visible: false
+        z: 101
+        width: 245.4; height: feedbackCol.implicitHeight + 8
+        radius: 8
+        color: theme.menu
+        border.color: theme.dividerSoft
+        function showFor(row) {
+            if (!row) { visible = false; return }
+            const p = row.mapToItem(root, 0, 0)
+            x = moreMenu.x - width + 4; y = p.y - 4
+            visible = true
+        }
+        Column {
+            id: feedbackCol
+            x: 4; y: 4; width: parent.width - 8
+            Repeater {
+                model: [{ key: "problem", icon: "bug-20", label: "Report a problem", keys: "Ctrl+Alt+Shift+R" },
+                        { key: "compliment", icon: "heart-20", label: "Give a compliment", keys: "" },
+                        { key: "suggest", icon: "microscope-20", label: "Suggest a feature", keys: "" }]
+                Rectangle {
+                    required property var modelData
+                    width: feedbackCol.width; height: 36; radius: theme.radius
+                    color: fbh.hovered ? theme.rowHover : "transparent"
+                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: parent.modelData.icon; size: 20; color: theme.textStrong }
+                    Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    Text { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.keys; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                    HoverHandler { id: fbh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            moreMenu.visible = false
+                            if (parent.modelData.key === "suggest") root.suggestFeature()
+                            else root.openFeedback(parent.modelData.key)
+                        }
+                    }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: modelData.label
+                }
+            }
+        }
+    }
+    function feedbackMenuForTest() { moreMenu.visible = true; feedbackMenu.showFor(feedbackRow) }
     // Profile: a 40 px round button around the 28 px avatar.
     Rectangle {
         id: profile

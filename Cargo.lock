@@ -4135,6 +4135,7 @@ dependencies = [
  "pipewire",
  "pkg-config",
  "ratatui",
+ "regex",
  "reqwest",
  "sctp-proto",
  "sdl2",

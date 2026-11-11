@@ -70,6 +70,31 @@ Window {
     Shortcut { sequence: "Ctrl+Shift+F"; onActivated: { rail.current = "chat"; chatList.openFilter() } }
     Shortcut { sequence: "Ctrl+R"; onActivated: { rail.current = "chat"; conversation.focusCompose() } }
     Shortcut { sequence: "Ctrl+F"; onActivated: if (conversation.visible) conversation.openFind() }
+    // Help (F1) and Feedback ▸ Report a problem (Ctrl+Alt+Shift+R), as Teams.
+    Shortcut { sequence: "F1"; onActivated: window.openHelp() }
+    Shortcut { sequence: "Ctrl+Alt+Shift+R"; onActivated: window.openFeedback("problem", window.feedbackArea(), "") }
+    function openHelp() { rail.openApp("help") }
+    // Where Report a problem was sent from (the view in front).
+    function feedbackArea() {
+        const names = { chat: "Chat", activity: "Activity", calendar: "Calendar", calls: "Calls", onedrive: "OneDrive", settings: "Settings", people: "People", planner: "Planner", onenote: "OneNote", add: "Apps" }
+        return names[rail.current] || rail.current || "OST"
+    }
+    // Feedback ▸ Report a problem / Give a compliment: Teams' feedback
+    // window, sent to OST's GitHub (FeedbackWindow.qml).
+    property var feedbackWindow: null
+    function openFeedback(kind, area, context) {
+        if (feedbackWindow) feedbackWindow.close()
+        const c = Qt.createComponent("FeedbackWindow.qml")
+        feedbackWindow = c.createObject(null, { kind: kind, area: area, context: context, captureTarget: window.contentItem })
+        feedbackWindow.closing.connect(() => { const w = feedbackWindow; feedbackWindow = null; if (w) w.destroy() })
+        feedbackWindow.show()
+        feedbackWindow.requestActivate()
+        return feedbackWindow
+    }
+    Connections {
+        target: backend
+        function onFeedbackRequested(kind, area, context) { window.openFeedback(kind, area, context) }
+    }
     Shortcut { sequence: "Ctrl+J"; onActivated: if (conversation.visible) conversation.jumpToNewest() }
     Shortcut { sequence: "Alt+P"; onActivated: if (conversation.visible) conversation.toggleDetails() }
     Shortcut { sequence: "Alt+Shift+O"; onActivated: if (conversation.visible) conversation.attachFile() }
@@ -474,6 +499,35 @@ Window {
         }
     }
 
+    // --feedback-test: Settings and more with Feedback ▸, then Report a
+    // problem filled in with a screenshot (captures each; logs the issue
+    // address Submit would open), then Give a compliment.
+    Timer {
+        running: Qt.application.arguments.indexOf("--feedback-test") >= 0 && chatList.chats.length > 1
+        interval: 2000
+        property int step: 0
+        property var fw: null
+        repeat: true
+        onTriggered: {
+            const cap = (item, tag) => item.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            if (step === 0) titleBar.feedbackMenuForTest()
+            else if (step === 1) cap(window.contentItem, "fb-menu")
+            else if (step === 2) { titleBar.feedbackMenuForTest(); fw = window.openFeedback("problem", "Settings and more", "") }
+            else if (step === 3) cap(fw.contentItem, "fb-empty")
+            else if (step === 4) { fw.fillForTest("Search shows nothing for OST test\nSecond line", 0, 0); fw.captureForTest() }
+            else if (step === 5) {
+                cap(fw.contentItem, "fb-filled")
+                console.warn("FEEDBACK files", JSON.stringify(fw.files), "ready", fw.ready)
+                const url = backend.feedbackIssueUrl(JSON.stringify({ kind: "problem", text: "Search shows nothing for OST test", area: "Settings and more", share_logs: true, contact: true, files: fw.files }))
+                console.warn("FEEDBACK url", url.length, url.slice(0, 400))
+                console.warn("FEEDBACK logs", decodeURIComponent((url.split("&logs=")[1] || "").replace(/\+/g, " ")).slice(-600))
+            }
+            else if (step === 6) { fw.close(); fw = window.openFeedback("compliment", "Settings and more", "") }
+            else if (step === 7) { cap(fw.contentItem, "fb-compliment"); console.warn("FEEDBACK ideas", backend.feedbackLink("ideas")) }
+            else if (step === 8) { fw.close(); Qt.quit() }
+            step++
+        }
+    }
     property var findTestWindow: null
     // --find-test[=files] (with --open-chat=<id>, --find=<keywords>): Find in
     // chat: before a search, the results, the first one opened, the Date
@@ -4785,6 +4839,9 @@ Window {
         onToggleRail: rail.collapsed = !rail.collapsed
         onOpenSettings: rail.current = "settings"
         onOpenShortcuts: shortcutsDialog.open()
+        onOpenHelp: window.openHelp()
+        onOpenFeedback: kind => window.openFeedback(kind, "Settings and more", "")
+        onSuggestFeature: Qt.openUrlExternally(backend.feedbackLink("ideas"))
         userMail: backend.userMail
         orgName: backend.orgName
         onSetStatus: st => backend.setMyStatus(st)

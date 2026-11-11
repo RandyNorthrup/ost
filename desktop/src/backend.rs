@@ -41,6 +41,10 @@ pub fn request_activate() {
 unsafe extern "C" {
     /// Put text (and its HTML form) on the clipboard (src/native.cpp).
     fn ost_set_clipboard(text: *const core::ffi::c_char, html: *const core::ffi::c_char);
+    /// Put the picture in a file on the clipboard (src/native.cpp).
+    fn ost_set_clipboard_image(path: *const core::ffi::c_char) -> bool;
+    /// Save the clipboard's picture as a PNG (src/native.cpp).
+    fn ost_save_clipboard_image(path: *const core::ffi::c_char) -> bool;
     /// Teams' taskbar badge on the window icon (src/native.cpp): the
     /// unread count, or with none, the presence glyph of `kind`.
     fn ost_set_taskbar_badge(count: i32, kind: *const core::ffi::c_char);
@@ -430,6 +434,25 @@ pub mod qobject {
         /// `keyword`, into find_people_json ([{mri, name, mail}]).
         #[qinvokable]
         fn find_people(self: Pin<&mut Backend>, channel: &QString, keyword: &QString);
+        /// Feedback (Report a problem / Give a compliment): the repo's new
+        /// issue form filled in from `report_json` ({kind, text, area,
+        /// context, share_logs, contact, files}); the first picture goes on
+        /// the clipboard to paste into it.
+        #[qinvokable]
+        fn feedback_issue_url(self: Pin<&mut Backend>, report_json: &QString) -> QString;
+        /// The feedback repo's pages: "ideas" (Suggest a feature), "privacy",
+        /// "privacy-feedback", "repo".
+        #[qinvokable]
+        fn feedback_link(self: &Backend, which: &QString) -> QString;
+        /// A folder for a feedback report's screenshots and files (created).
+        #[qinvokable]
+        fn feedback_dir(self: &Backend) -> QString;
+        /// Open the feedback form from any window (feedback_requested).
+        #[qinvokable]
+        fn request_feedback(self: Pin<&mut Backend>, kind: &QString, area: &QString, context: &QString);
+        /// Paste the clipboard's picture into `dir`; its path, or "".
+        #[qinvokable]
+        fn paste_clipboard_image(self: &Backend, dir: &QString) -> QString;
         /// Save an edited scheduled message (its text, media and time).
         #[qinvokable]
         fn edit_scheduled(
@@ -838,6 +861,11 @@ pub mod qobject {
         /// A notification was clicked: bring the window forward.
         #[qsignal]
         fn activate_requested(self: Pin<&mut Backend>);
+
+        /// Some window asked for Feedback (Report a problem / Give a
+        /// compliment): the main window opens the form.
+        #[qsignal]
+        fn feedback_requested(self: Pin<&mut Backend>, kind: QString, area: QString, context: QString);
 
         /// A profile or team picture asked for with photo_for is ready.
         #[qsignal]
@@ -6773,6 +6801,66 @@ impl qobject::Backend {
                 this.as_mut().set_find_json(QString::from(shown.to_string().as_str()));
             });
         });
+    }
+
+    pub fn feedback_issue_url(self: Pin<&mut Self>, report_json: &QString) -> QString {
+        let report: teams_cli::feedback::Report = serde_json::from_str(&report_json.to_string()).unwrap_or_default();
+        let logs = if report.share_logs {
+            std::fs::read_to_string(crate::log_path())
+                .map(|l| teams_cli::feedback::masked_tail(&l, 400))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
+        let url = teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), &logs);
+        // GitHub takes pictures by paste: the first one goes on the clipboard.
+        let picture = report.files.iter().find(|f| {
+            let f = f.to_ascii_lowercase();
+            [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"].iter().any(|e| f.ends_with(e))
+        });
+        if let Some(Ok(p)) = picture.map(|p| std::ffi::CString::new(p.as_str())) {
+            // SAFETY: a NUL-terminated path, read by Qt before returning.
+            unsafe { ost_set_clipboard_image(p.as_ptr()) };
+        }
+        QString::from(url.as_str())
+    }
+
+    pub fn feedback_link(&self, which: &QString) -> QString {
+        let url = match which.to_string().as_str() {
+            "ideas" => teams_cli::feedback::ideas_url(),
+            "privacy" => teams_cli::feedback::privacy_url(""),
+            "privacy-feedback" => teams_cli::feedback::privacy_url("feedback"),
+            _ => teams_cli::feedback::repo_url(),
+        };
+        QString::from(url.as_str())
+    }
+
+    pub fn request_feedback(self: Pin<&mut Self>, kind: &QString, area: &QString, context: &QString) {
+        self.feedback_requested(kind.clone(), area.clone(), context.clone());
+    }
+
+    pub fn feedback_dir(&self) -> QString {
+        let base = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .unwrap_or_else(std::env::temp_dir);
+        let dir = base.join("ost").join("feedback").join(chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string());
+        let _ = std::fs::create_dir_all(&dir);
+        QString::from(dir.display().to_string().as_str())
+    }
+
+    pub fn paste_clipboard_image(&self, dir: &QString) -> QString {
+        let dir = std::path::PathBuf::from(dir.to_string());
+        let n = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0) + 1;
+        let path = dir.join(format!("Pasted image {n}.png"));
+        let Ok(c) = std::ffi::CString::new(path.display().to_string()) else { return QString::default() };
+        // SAFETY: a NUL-terminated path, written by Qt before returning.
+        if unsafe { ost_save_clipboard_image(c.as_ptr()) } {
+            QString::from(path.display().to_string().as_str())
+        } else {
+            QString::default()
+        }
     }
 
     pub fn find_people(self: Pin<&mut Self>, channel: &QString, keyword: &QString) {

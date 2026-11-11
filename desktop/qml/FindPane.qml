@@ -607,7 +607,7 @@ Rectangle {
     // Results.
     ListView {
         id: list
-        x: 0.67; y: pane.listY; width: parent.width - 0.67; height: parent.height - y
+        x: 0.67; y: pane.listY; width: parent.width - 0.67; height: parent.height - y - feedbackBar.height
         clip: true
         visible: !pane.idle && pane.hits.length > 0
         model: pane.rows
@@ -770,7 +770,7 @@ Rectangle {
         id: emptyState
         readonly property bool none: !pane.idle && !!pane.result && !pane.result.loading && !pane.hits.length
         visible: pane.idle || none
-        x: 0.67; width: parent.width - 0.67; y: pane.listY; height: parent.height - y
+        x: 0.67; width: parent.width - 0.67; y: pane.listY; height: parent.height - y - feedbackBar.height
         Image {
             id: art
             anchors.horizontalCenter: parent.horizontalCenter; y: 12.3; width: 220; height: 220
@@ -792,6 +792,45 @@ Rectangle {
             text: emptyState.none ? (pane.result && pane.result.error ? pane.result.error : "Check for spelling, try another search keyword, or search in another " + pane.place + ".")
                                   : "Find messages, files, and URLs shared in this " + pane.place + "."
             font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+        }
+    }
+
+    // Teams' "Send feedback 👍 👎" footer (36 tall, #FAFAFA, padding 8 12
+    // 8 0, at the right: "Send feedback" 12 #616161, then This was helpful
+    // and Didn't help, 16 px, 8 apart). They open OST's feedback form
+    // (Give a compliment / Report a problem) with the search filled in.
+    Rectangle {
+        id: feedbackBar
+        x: 0.67; width: parent.width - 0.67; height: 36
+        anchors.bottom: parent.bottom
+        color: theme.pick("#FAFAFA", "#1A1A1A")
+        function context() {
+            const bits = [pane.files ? "Files" : "Messages"]
+            if (pane.dateKey) bits.push(pane.dateLabel())
+            if (pane.person) bits.push("From " + pane.person.name)
+            if (pane.attachment) bits.push("Attachment")
+            if (pane.mentions) bits.push("Mentions")
+            if (pane.fileType) bits.push(pane.typeNames[pane.fileType])
+            const n = pane.result ? pane.result.total : 0
+            return "Find in " + pane.place + (pane.query ? ": \u201c" + pane.query + "\u201d" : "") + " (" + bits.join(", ") + "), " + n + (n === 1 ? " result" : " results")
+        }
+        Row {
+            anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+            Text { height: 20; verticalAlignment: Text.AlignVCenter; text: "Send feedback"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            Repeater {
+                model: [{ icon: "thumb-like-20", name: "This was helpful", kind: "compliment", ink: theme.pick("#BDBDBD", "#5C5C5C") },
+                        { icon: "thumb-dislike-20", name: "Didn't help", kind: "problem", ink: theme.textStrong }]
+                Item {
+                    required property var modelData
+                    width: 16; height: 20
+                    FluentIcon { y: 2; size: 16; name: parent.modelData.icon; color: thh.hovered ? theme.brand : parent.modelData.ink }
+                    HoverHandler { id: thh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: backend.requestFeedback(parent.modelData.kind, "Find in " + pane.place, feedbackBar.context()) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.name
+                }
+            }
         }
     }
 

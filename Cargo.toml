@@ -68,6 +68,7 @@ tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 iana-time-zone = "0.1"
+regex = "1"
 unicode-width = "0.2"
 
 # Audio I/O (optional — requires ALSA headers on Linux)
