@@ -1,0 +1,110 @@
+{
+ "entityRequests": [
+  {
+   "entityType": "File",
+   "contentSources": [
+    "OneDriveBusiness",
+    "SharePoint",
+    "Exchange"
+   ],
+   "fields": [
+    "DefaultEncodingUrl",
+    "FileName",
+    "FileType",
+    "HitHighlightedSummary",
+    "LastModifiedTime",
+    "LinkingUrl",
+    "ModifiedBy",
+    "OriginalPath",
+    "Path",
+    "Title",
+    "ServerRedirectedPreviewUrl",
+    "SpWebUrl",
+    "ChannelGroupId",
+    "FileExtension",
+    "VisualizationAccessURL",
+    "LastSharedWithMailboxOwnerByDisplayName",
+    "LastSharedWithMailboxOwnerDateTime",
+    "FileContextType",
+    "ClassicAttachmentVisualizationUrl",
+    "UniqueId",
+    "SiteName",
+    "Size",
+    "Annotations",
+    "ListId",
+    "SiteId",
+    "WebId",
+    "ParentLink",
+    "ContentClass"
+   ],
+   "query": {
+    "queryString": "{QUERY}",
+    "displayQueryString": "{QUERY}"
+   },
+   "size": 25,
+   "EnableQueryUnderstanding": false,
+   "EnableSpeller": false,
+   "HitHighlight": {
+    "HitHighlightedProperties": [
+     "HitHighlightedSummary"
+    ],
+    "SummaryLength": 200
+   },
+   "IdFormat": "EwsId",
+   "ParserType": "None",
+   "propertySet": "Optimized",
+   "ResultsMerge": {
+    "Type": "Interleaved"
+   },
+   "Sort": [
+    {
+     "Field": "PersonalScore",
+     "SortDirection": "Desc"
+    }
+   ],
+   "extendedQueries": [
+    {
+     "SearchProvider": "SharePoint",
+     "Query": {
+      "SourceId": "8413CD39-2156-4E00-B54D-11EFD9ABDB89",
+      "EnableQueryRules": false,
+      "TrimDuplicates": false,
+      "BypassResultTypes": true,
+      "ProcessBestBets": false,
+      "ProcessPersonalFavorites": false,
+      "EnableInterleaving": false,
+      "EnableMultiGeo": true,
+      "RankingModelId": "ABBAABBA-AAAA-AAAA-CCCC-000000000426",
+      "Culture": 1033
+     }
+    }
+   ],
+   "RefiningQueries": [
+    {
+     "RefinerString": "or(andnot(IsDocument:true,Title:or(OneNote_DeletedPages,OneNote_RecycleBin),SecondaryFileExtension:onetoc2,FileExtension:vtt,ContentClass:ExternalLink,and(ContentClass:STS_List_DocumentLibrary,SiteTemplateId:21),FileType:or(aspx,htm,html,mhtml),and(ContentTypeId:0x0101009D1CB255DA76424F860D91F20E6C4118*,PromotedState:2)),ContentTypeId:or(0x010100F3754F12A9B6490D9622A01FE9D8F012,0x0120D520A808*),SecondaryFileExtension:or(wmv,avi,mpg,asf,mp4,ogg,ogv,webm,mov),FileType:or(ai,bmp,dib,dst,emb,eps,gif,ico,jpeg,jpg,odg,png,rle,svg,tiff,webp,wmf,wpd))"
+    }
+   ],
+   "EnableResultAnnotations": true,
+   "AnnotationsCount": 1,
+   "MaxOverallAggregationBucketCount": 5,
+   "from": 0
+  }
+ ],
+ "QueryAlterationOptions": {
+  "EnableSuggestion": true
+ },
+ "scenario": {
+  "Dimensions": [
+   {
+    "DimensionName": "QueryType",
+    "DimensionValue": "Files"
+   },
+   {
+    "DimensionName": "FormFactor",
+    "DimensionValue": "general.cdlworker.reactSearch"
+   }
+  ],
+  "Name": "powerbar"
+ },
+ "textDecorations": "Off"
+}

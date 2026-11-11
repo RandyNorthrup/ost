@@ -564,6 +564,34 @@ Window {
         }
     }
 
+    // --search-page-test[=<words>]: Teams' results page: All, each tab,
+    // a Type filter, then the first message opened; captures each.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--search-page-test")) && chatList.chats.length > 1
+        interval: 3500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const arg = (Qt.application.arguments.find(a => a.startsWith("--search-page-test=")) || "").slice(19) || "OST test"
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const log = tag => { const p = searchView.page; console.warn("SEARCH", tag, JSON.stringify({ rows: searchView.rowsForTest().map(r => r.t), loading: searchView.result ? searchView.result.loading : null, error: searchView.result ? searchView.result.error : null,
+                                   order: p ? p.order : null, n: p ? { m: p.messages.hits.length, mt: p.messages.total, f: p.files.hits.length, c: p.chats.length, ch: p.channels.length, e: p.events.length, i: p.images.hits.length, pe: p.people.length } : null })) }
+            const tabs = ["messages", "files", "people", "channels", "groupchats", "meetings", "images"]
+            if (step === 0) window.openSearch(arg)
+            else if (step === 2) { log("all"); cap("sp-all") }
+            else if (step >= 3 && step < 3 + tabs.length * 2) {
+                const i = Math.floor((step - 3) / 2), t = tabs[i]
+                if ((step - 3) % 2 === 0) searchView.setTab(t)
+                else { log(t); cap("sp-" + t) }
+            }
+            else if (step === 17) { searchView.setTab("messages"); searchView.kind = "chat"; searchView.run() }
+            else if (step === 18) { log("type-chat"); cap("sp-type-chat") }
+            else if (step === 19) { const r = searchView.rowsForTest().find(r => r.t === "message"); if (r) searchView.openHit(r.h) }
+            else if (step === 21) { cap("sp-open"); console.warn("SEARCH open", backend.currentChatName, JSON.stringify(conversation.findMark)) }
+            else if (step === 22) Qt.quit()
+            step++
+        }
+    }
     property var findTestWindow: null
     // --find-test[=files] (with --open-chat=<id>, --find=<keywords>): Find in
     // chat: before a search, the results, the first one opened, the Date
@@ -4868,6 +4896,7 @@ Window {
         onSearchPeople: q => backend.searchPeople(q)
         onOpenChat: (id, name) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, name) }
         onOpenPerson: (oid, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(oid, name) }
+        onSearchSubmitted: text => window.openSearch(text)
         canGoBack: window.navIndex > 0
         canGoForward: window.navIndex < window.navStack.length - 1
         onGoBack: window.goBack()
@@ -5095,7 +5124,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "help", "communities"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "help", "communities", "search"].indexOf(rail.current) < 0
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -5122,6 +5151,50 @@ Window {
             active: opened
             anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
             sourceComponent: WebApp { appName: modelData.name; appIcon: modelData.icon; appColor: modelData.color; home: modelData.url }
+        }
+    }
+    // Teams' search results page (Enter in the title bar's search).
+    readonly property var searchTabWords: ({ messages: "Messages", files: "Files", people: "People", channels: "Channels", groupchats: "Group chats", meetings: "Meetings", images: "Images" })
+    function openSearch(text) {
+        // "is:Messages" picks the tab, as in Teams.
+        let tab = "all", q = String(text)
+        const m = q.match(/\bis:(messages|files|people|channels|groupchats|group chats|meetings|images)\b/i)
+        if (m) { tab = m[1].toLowerCase().replace(" ", ""); q = q.replace(m[0], "") }
+        q = q.trim()
+        if (!q) return
+        rail.current = "search"
+        searchView.search(q, tab)
+    }
+    function chatsJsonList() { try { return JSON.parse(backend.chatsJson || "[]") } catch (e) { return [] } }
+    SearchView {
+        id: searchView
+        visible: rail.current === "search"
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        chats: chatList.chats
+        teams: { try { return JSON.parse(backend.teamsJson || "[]") } catch (e) { return [] } }
+        members: { try { return JSON.parse(backend.chatMembersJson || "[]") } catch (e) { return [] } }
+        onTabChanged2: t => titleBar.setSearchText(query + (t === "all" ? "" : " is:" + window.searchTabWords[t]))
+        onOpenChat: (id, name, messageId, terms) => {
+            rail.current = "chat"; window.composing = false
+            backend.selectChat(id, name)
+            if (messageId) conversation.showFound(messageId, terms, "")
+        }
+        onOpenChannel: (id, name, messageId, postId, terms) => {
+            rail.current = "chat"; window.composing = false
+            backend.selectChat(id, name)
+            if (messageId) conversation.showFound(messageId, terms, postId && postId !== messageId ? postId : "")
+        }
+        onOpenPerson: (mri, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(String(mri).split(":").pop(), name) }
+        onOpenChatWindow: (id, name) => {
+            if (String(id).endsWith("@thread.tacv2")) window.openChannelWindow(id)
+            else window.openChatWindow(id, name, "", "")
+        }
+        onOpenMeeting: e => {
+            // Chat: the meeting's chat (its thread is in the join link);
+            // Edit: the calendar.
+            const t = decodeURIComponent(String(e.join_url || "")).match(/19:meeting_[^/@]+@thread\.v2/)
+            if (t && (!e.is_organizer || new Date(e.end) < new Date())) { rail.current = "chat"; backend.selectChat(t[0], e.subject) }
+            else rail.current = "calendar"
         }
     }
     // The Help app: OST's help, in place (as Teams shows its Help app).

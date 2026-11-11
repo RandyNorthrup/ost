@@ -147,6 +147,13 @@ pub mod qobject {
         /// terms, hits: [{id, parent_id, sender_mri, sender_name,
         /// sender_mail, time, text, file_name, file_type, url}]}.
         #[qproperty(QString, find_json)]
+        /// The search results page: {key, tab, loading, error, page:
+        /// {order, terms, messages, files, images, chats, channels, people,
+        /// events, …}} (api::search::Page).
+        #[qproperty(QString, search_page_json)]
+        /// The search page's In ▾ suggestions: {keyword, groups: [{type,
+        /// items: [{name, thread, group, team, kind}]}]}.
+        #[qproperty(QString, search_in_json)]
         /// Find in channel's From filter matches: {keyword, people: [{mri,
         /// name, mail}]}.
         #[qproperty(QString, find_people_json)]
@@ -430,6 +437,14 @@ pub mod qobject {
         /// "favorite" (Teams' Download and Favorite), by its address.
         #[qinvokable]
         fn find_file_action(self: Pin<&mut Backend>, op: &QString, url: &QString);
+        /// Search as Teams' results page: `tab` (api::search::TABS),
+        /// `filters_json` (api::search::Filters); `from` pages Messages and
+        /// Files (appended). Results land in search_page_json under `key`.
+        #[qinvokable]
+        fn search_page(self: Pin<&mut Backend>, key: &QString, tab: &QString, keywords: &QString, filters_json: &QString, from: i32);
+        /// In ▾'s suggestions (chats, channels, teams) for `keyword`.
+        #[qinvokable]
+        fn search_in_suggest(self: Pin<&mut Backend>, keyword: &QString);
         /// Find in channel's From filter: the channel's people matching
         /// `keyword`, into find_people_json ([{mri, name, mail}]).
         #[qinvokable]
@@ -1560,6 +1575,9 @@ pub struct BackendRust {
     profile_card_json: QString,
     scheduled_json: QString,
     find_json: QString,
+    search_page_json: QString,
+    search_in_json: QString,
+    search_page_key: String,
     find_people_json: QString,
     /// The search Find in chat shows (newer searches drop older replies).
     find_key: String,
@@ -6881,6 +6899,97 @@ impl qobject::Backend {
         } else {
             QString::default()
         }
+    }
+
+    pub fn search_page(mut self: Pin<&mut Self>, key: &QString, tab: &QString, keywords: &QString, filters_json: &QString, from: i32) {
+        let key = key.to_string();
+        let tab = tab.to_string();
+        let keywords = keywords.to_string().trim().to_string();
+        let filters: api::search::Filters = serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
+        let from = from.max(0) as usize;
+        let mut shown: serde_json::Value = serde_json::from_str(&self.rust().search_page_json.to_string()).unwrap_or_default();
+        if from == 0 || shown["key"] != key.as_str() {
+            shown = json!({ "key": key, "tab": tab, "page": null });
+        }
+        shown["loading"] = true.into();
+        shown["error"] = "".into();
+        self.as_mut().rust_mut().search_page_key = key.clone();
+        self.as_mut().set_search_page_json(QString::from(shown.to_string().as_str()));
+        if keywords.is_empty() {
+            shown["loading"] = false.into();
+            self.as_mut().set_search_page_json(QString::from(shown.to_string().as_str()));
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let oid = client.object_id().unwrap_or_default();
+                let tenant = client.tenant_id().unwrap_or_default();
+                let mut page = api::search::search(&client, &tab, &keywords, &filters, from, &api::find::local_timezone(), &oid, &tenant).await?;
+                // Images: the pictures, cached as the chat caches them.
+                for h in page.images.hits.iter_mut().filter(|h| !h.image_ams.is_empty()) {
+                    let img = api::messages::InlineImage { id: h.image_id.clone(), url: h.image_ams.clone(), width: 0, height: 0, local_path: String::new() };
+                    if let Ok(path) = cached_image(&client, &img).await {
+                        h.image_url = format!("file://{}", path.display());
+                    }
+                }
+                anyhow::Ok(page)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().search_page_key != key {
+                    return;
+                }
+                let mut shown = shown;
+                shown["loading"] = false.into();
+                match result {
+                    Ok(page) => {
+                        let mut p = json!(page);
+                        // More results: the earlier pages stay, the next appended.
+                        if from > 0 {
+                            for k in ["messages", "files", "images"] {
+                                let mut hits = shown["page"][k]["hits"].as_array().cloned().unwrap_or_default();
+                                hits.extend(p[k]["hits"].as_array().cloned().unwrap_or_default());
+                                p[k]["hits"] = hits.into();
+                            }
+                        }
+                        shown["page"] = p;
+                    }
+                    Err(e) => {
+                        tracing::warn!("search failed: {}", short_error(&e));
+                        shown["error"] = short_error(&e).into();
+                    }
+                }
+                this.as_mut().set_search_page_json(QString::from(shown.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn search_in_suggest(self: Pin<&mut Self>, keyword: &QString) {
+        let keyword = keyword.to_string().trim().to_string();
+        if keyword.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = api::search::in_suggestions(&keyword).await;
+            let groups: Vec<serde_json::Value> = match result {
+                Ok(v) => v["Groups"].as_array().into_iter().flatten().map(|g| {
+                    let items: Vec<serde_json::Value> = g["Suggestions"].as_array().into_iter().flatten().map(|x| json!({
+                        "name": x["Name"], "thread": x["ThreadId"], "group": x["GroupId"], "team": x["TeamName"],
+                        "kind": match x["EntityType"].as_str().unwrap_or_default() { "TeamSuggestion" => "team", "ChannelSuggestion" => "channel", _ => "chat" },
+                    })).collect();
+                    json!({ "type": g["Type"], "items": items })
+                }).collect(),
+                Err(e) => {
+                    tracing::warn!("search In suggestions: {}", short_error(&e));
+                    Vec::new()
+                }
+            };
+            let v = json!({ "keyword": keyword, "groups": groups });
+            let _ = qt.queue(move |mut this| this.as_mut().set_search_in_json(QString::from(v.to_string().as_str())));
+        });
     }
 
     pub fn find_people(self: Pin<&mut Self>, channel: &QString, keyword: &QString) {

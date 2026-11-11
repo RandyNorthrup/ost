@@ -1,0 +1,50 @@
+{
+ "entityRequests": [
+  {
+   "entityType": "Message",
+   "contentSources": [
+    "Teams"
+   ],
+   "fields": [
+    "Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_FileData_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String",
+    "GroupId",
+    "Extension_SkypeSpaces_ConversationPost_Extension_SenderTenantId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ImageSrc_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_MessageSubType_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ParentMessageId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_AmsReferences_StringArray"
+   ],
+   "query": {
+    "queryString": "NOT (isClientSoftDeleted:TRUE) AND (Extension_SkypeSpaces_ConversationPost_Extension_FileData_String:tiff OR Extension_SkypeSpaces_ConversationPost_Extension_FileData_String:jpg OR Extension_SkypeSpaces_ConversationPost_Extension_FileData_String:gif OR Extension_SkypeSpaces_ConversationPost_Extension_FileData_String:tif OR Extension_SkypeSpaces_ConversationPost_Extension_FileData_String:jpeg OR Extension_SkypeSpaces_ConversationPost_Extension_FileData_String:png OR Extension_SkypeSpaces_ConversationPost_Extension_FileData_String:tga OR Extension_SkypeSpaces_ConversationPost_Extension_ImageSrc_String:https*im*) {QUERY}",
+    "displayQueryString": "{QUERY}"
+   },
+   "propertySet": "Optimized",
+   "topResultsCount": 8,
+   "from": 0,
+   "size": 12
+  }
+ ],
+ "QueryAlterationOptions": {
+  "EnableAlteration": true,
+  "EnableSuggestion": true,
+  "SupportedRecourseDisplayTypes": [
+   "Suggestion"
+  ]
+ },
+ "scenario": {
+  "Dimensions": [
+   {
+    "DimensionName": "QueryType",
+    "DimensionValue": "Images"
+   },
+   {
+    "DimensionName": "FormFactor",
+    "DimensionValue": "general.cdlworker.reactSearch"
+   }
+  ],
+  "Name": "powerbar"
+ },
+ "timezone": "{TZ}"
+}

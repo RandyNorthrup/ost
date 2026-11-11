@@ -1,0 +1,48 @@
+{
+ "AnswerEntityRequests": [
+  {
+   "EntityTypes": [
+    "Event"
+   ],
+   "fields": [],
+   "query": {
+    "queryString": "{QUERY}",
+    "displayQueryString": "{QUERY}"
+   },
+   "size": 25,
+   "from": 0
+  }
+ ],
+ "QueryAlterationOptions": {
+  "EnableAlteration": false
+ },
+ "WholePageRankingOptions": {
+  "EnableEnrichedRanking": true,
+  "EnableLayoutHints": true,
+  "EntityResultTypeRankingOptions": [
+   {
+    "MaxEntitySetCount": 1,
+    "ResultType": "Answer"
+   }
+  ],
+  "SupportedSerpRegions": [
+   "MainLine"
+  ],
+  "SupportedRankingVersion": "V3"
+ },
+ "scenario": {
+  "Dimensions": [
+   {
+    "DimensionName": "QueryType",
+    "DimensionValue": "Meetings"
+   },
+   {
+    "DimensionName": "FormFactor",
+    "DimensionValue": "general.cdlworker.reactSearch"
+   }
+  ],
+  "Name": "powerbar"
+ },
+ "timezone": "{WINTZ}",
+ "textDecorations": 0
+}

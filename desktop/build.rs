@@ -147,6 +147,7 @@ fn main() {
         "qml/FeedbackWindow.qml",
         "qml/HelpView.qml",
         "qml/HelpWindow.qml",
+        "qml/SearchView.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",

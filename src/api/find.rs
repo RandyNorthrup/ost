@@ -332,6 +332,20 @@ pub struct Hit {
     pub text: String,
     /// A channel post's subject.
     pub subject: String,
+    /// Where it was said: the thread ("19:…"), its conversation (a
+    /// channel post's "{channel};messageid={post}"), its type ("chat",
+    /// "topic" / "space" for channels, "streamofnotes", "meeting"…), and a
+    /// channel's team (name and thread).
+    pub thread: String,
+    pub conversation: String,
+    pub thread_type: String,
+    pub team: String,
+    pub team_thread: String,
+    /// The message's first picture (Images): its AMS id and address, and
+    /// the cached copy once downloaded.
+    pub image_id: String,
+    pub image_ams: String,
+    pub image_url: String,
     /// A file's name, type and link (`url` to open; `file_url` its
     /// address for Graph).
     pub file_name: String,
@@ -423,8 +437,17 @@ pub fn found_from(reply: &serde_json::Value) -> Found {
             let id = s(&src["InternetMessageId"]);
             let parent = s(&ext["SkypeSpaces_ConversationPost_Extension_ParentMessageId"]);
             let summary = r["HitHighlightedSummary"].as_str().or_else(|| src["Preview"].as_str()).unwrap_or_default();
+            let thread_type = s(&ext["SkypeSpaces_ConversationPost_Extension_ThreadType"]);
+            let channel = thread_type == "topic" || thread_type == "space";
             Hit {
                 parent_id: if parent == id { String::new() } else { parent },
+                thread: s(&src["ClientThreadId"]),
+                conversation: s(&src["ClientConversationId"]),
+                team: if channel { s(&src["DisplayTo"]) } else { String::new() },
+                team_thread: s(&ext["SkypeSpaces_ConversationPost_Extension_SkypeGroupId"]),
+                // (A chat's ConversationTopic is the chat's name, not a subject.)
+                subject: if channel { s(&src["Subject"]) } else { String::new() },
+                thread_type,
                 id,
                 sender_mri: s(&ext["SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId"]),
                 sender_name: s(&src["From"]["EmailAddress"]["Name"]),

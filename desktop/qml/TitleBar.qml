@@ -21,6 +21,11 @@ Rectangle {
     property bool windowButtons: true
     signal signOut()
     signal searchPeople(string query)
+    /// Enter in search: Teams' results page for the text (with any
+    /// "is:Messages" style tab in it).
+    signal searchSubmitted(string text)
+    /// Put text in the search box (the results page's tab adds "is:…").
+    function setSearchText(t) { field.text = t }
     signal openChat(string id, string name)
     signal openPerson(string oid, string name)
     signal goBack()
@@ -148,8 +153,10 @@ Rectangle {
             Keys.onEscapePressed: { text = ""; focus = false; root.searchOpen = false }
             onActiveFocusChanged: if (!activeFocus && text.length === 0) root.searchOpen = false
             Keys.onReturnPressed: {
-                const first = suggestions.items[0]
-                if (first) suggestions.choose(first)
+                if (!field.text.trim()) return
+                root.keepSuggestionsOpen = false
+                field.focus = false
+                root.searchSubmitted(field.text)
             }
             Text {
                 visible: !field.text

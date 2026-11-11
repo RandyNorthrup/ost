@@ -1,0 +1,50 @@
+{
+ "entityRequests": [
+  {
+   "entityType": "Message",
+   "contentSources": [
+    "Teams"
+   ],
+   "fields": [
+    "Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_FileData_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_SenderTenantId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ImageSrc_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ParentMessageId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ImageSrc_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_AmsReferences_StringArray"
+   ],
+   "propertySet": "Optimized",
+   "query": {
+    "queryString": "NOT (isClientSoftDeleted:TRUE) {QUERY}",
+    "displayQueryString": "{QUERY}"
+   },
+   "from": 0,
+   "size": 25,
+   "topResultsCount": 5
+  }
+ ],
+ "QueryAlterationOptions": {
+  "EnableAlteration": true,
+  "EnableSuggestion": true,
+  "SupportedRecourseDisplayTypes": [
+   "Suggestion"
+  ]
+ },
+ "scenario": {
+  "Dimensions": [
+   {
+    "DimensionName": "QueryType",
+    "DimensionValue": "Messages"
+   },
+   {
+    "DimensionName": "FormFactor",
+    "DimensionValue": "general.maglev.reactSearch"
+   }
+  ],
+  "Name": "powerbar"
+ },
+ "timezone": "{TZ}"
+}

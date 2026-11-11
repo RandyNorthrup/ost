@@ -1,0 +1,1041 @@
+import QtQuick
+import QtQuick.Controls.Basic
+
+// Teams' search results page (Enter in the title bar's search; measured on
+// winpc 2026-11-10), right of the app bar on white:
+// - tab pills 16 down from 12 in on the 692 column (32 tall, radius 16,
+//   padding 0 12, 12 apart; #F5F5F5, the chosen one #E8EBFA with a brand
+//   0.67 border): All, Messages, Files, People, Channels, Group chats, +3
+//   (Meetings, Images); a #EBEBEB line under them;
+// - the tab's filters (24 tall, 14 px #616161 with a 10 px chevron, 8
+//   apart, 12 in): All In, Person, Date; Messages Type, In, Person, Date,
+//   More; Files File Type, In, Person, Date; Group chats Person; Meetings
+//   Person, Date; Images In, Person, Date; a line under them;
+// - results on the 692 column (Files 760): section headings 14/700 with
+//   "Send feedback 👍 👎" (14 #616161) on the right; cards white, radius
+//   8, Fluent shadow 2, 16 apart:
+//   - a message: its place (a 20 px picture, the chat's name or "team ›
+//     channel", 12 #616161) over a line, then the sender's 28 px picture
+//     with presence, name (14, the terms bold) and time (12), and the text
+//     (14, the terms on #F9E2AE);
+//   - a group chat (70.6): its 32 px picture, name (14, terms bold), the
+//     last message's date (12 #424242) and its people (12);
+//   - a channel (64): the team's 32 px square picture, the channel (14)
+//     and team (12), Copy link;
+//   - a file (Files, 760 wide): its type icon, name (terms bold), place,
+//     who and when, and the summary;
+//   - a meeting (75.3): a 40 px date box (day 14/600, month 10), subject
+//     (terms bold), times (12), Chat (Teams meetings) or Edit (yours);
+//   - an image (242.3 x 216.3): the picture over its sender, date and chat.
+// Messages open where they were said; the terms are marked there.
+Rectangle {
+    id: root
+    color: theme.surface
+    property string query: ""
+    property string tab: "all"
+    /// Chats and teams (to name a result's place).
+    property var chats: []
+    property var teams: []
+    property var members: []
+    signal openChat(string id, string name, string messageId, var terms)
+    signal openChannel(string id, string name, string messageId, string postId, var terms)
+    signal openPerson(string mri, string name)
+    signal openMeeting(var event)
+    signal joinMeeting(string url)
+    signal openChatWindow(string id, string name)
+    signal tabChanged2(string tab)
+
+    // The filters.
+    property string kind: ""           // Type ▾ (Messages): chat / channel
+    property var inPlace: null         // In ▾: {kind, thread, group, name}
+    property var person: null          // Person ▾: {name, mail, mri, from}
+    property string dateKey: ""
+    property date customFrom: new Date()
+    property date customTo: new Date()
+    property bool mentions: false
+    property bool attachment: false
+    property bool hideBots: false
+    property string fileType: ""
+    property int generation: 0
+    readonly property string key: tab + "#" + query + "#" + generation
+    readonly property var result: { try { const r = JSON.parse(backend.searchPageJson || "{}"); return r.key === key ? r : null } catch (e) { return null } }
+    readonly property var page: result && result.page ? result.page : null
+    readonly property var terms: page && page.terms && page.terms.length ? page.terms : query.split(/\s+/).filter(t => !!t)
+    readonly property bool hasFilters: !!kind || !!inPlace || !!person || !!dateKey || mentions || attachment || hideBots || !!fileType
+
+    readonly property var tabNames: ({ all: "All", messages: "Messages", files: "Files", people: "People", channels: "Channels", groupchats: "Group chats", meetings: "Meetings", images: "Images" })
+    readonly property var mainTabs: ["all", "messages", "files", "people", "channels", "groupchats"]
+    readonly property var moreTabs: ["meetings", "images"]
+    // An overflow tab picked takes the last slot before +3, as in Teams.
+    readonly property var shownTabs: moreTabs.indexOf(tab) >= 0 ? mainTabs.slice(0, 5).concat([tab]) : mainTabs
+    readonly property var hiddenTabs: mainTabs.concat(moreTabs).filter(t => shownTabs.indexOf(t) < 0)
+    readonly property var filterKeys: ({ all: ["in", "person", "date"], messages: ["type", "in", "person", "date", "more"], files: ["filetype", "in", "person", "date"],
+                                         people: [], channels: [], groupchats: ["person"], meetings: ["person", "date"], images: ["in", "person", "date"] })[tab] || []
+
+    function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
+    function range() {
+        const t = dayStart(new Date())
+        const add = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+        switch (dateKey) {
+        case "today": return [t, add(t, 1)]
+        case "yesterday": return [add(t, -1), t]
+        case "week": { const s = add(t, -t.getDay()); return [s, add(s, 7)] }
+        case "month": return [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 1)]
+        case "custom": return [dayStart(customFrom), add(dayStart(customTo), 1)]
+        }
+        return null
+    }
+    function filters() {
+        const r = range()
+        return {
+            kind: kind,
+            in_kind: inPlace ? inPlace.kind : "", in_thread: inPlace ? inPlace.thread || "" : "", in_group: inPlace ? inPlace.group || "" : "",
+            person_mail: person ? person.mail : "", person_oid: person ? String(person.mri || "").split(":").pop() : "", person_from: !!(person && person.from),
+            start: r ? r[0].toISOString() : "", end: r ? r[1].toISOString() : "",
+            mentions: mentions, attachment: attachment, file_type: fileType,
+        }
+    }
+    function run() {
+        generation++
+        if (query) backend.searchPage(key, tab, query, JSON.stringify(filters()), 0)
+        list.contentY = 0
+    }
+    function more() {
+        if (!page || !result || result.loading) return
+        const set = tab === "files" ? page.files : tab === "images" ? page.images : page.messages
+        if (set && set.more) backend.searchPage(key, tab, query, JSON.stringify(filters()), set.hits.length)
+    }
+    function search(q, t) {
+        query = q
+        if (t && t !== tab) { tab = t; clearFilters(false) }
+        run()
+    }
+    function setTab(t) { if (t === tab) return; tab = t; clearFilters(false); tabChanged2(t); run() }
+    function clearFilters(rerun) {
+        kind = ""; inPlace = null; person = null; dateKey = ""; mentions = false; attachment = false; hideBots = false; fileType = ""
+        if (rerun) run()
+    }
+
+    // Names and places.
+    function chatName(id) { const c = chats.find(c => c.id === id); return c ? c.name : "" }
+    function channelOf(thread) {
+        for (const t of teams) { const c = (t.channels || []).find(c => c.id === thread); if (c) return { team: t, channel: c } }
+        return null
+    }
+    function when(iso) {
+        const d = new Date(iso)
+        if (isNaN(d)) return ""
+        const days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
+        const time = Qt.formatTime(d, "h:mm AP")
+        if (days === 0) return time
+        if (days === 1) return "Yesterday " + time
+        if (days > 1 && days < 7) return Qt.formatDate(d, "dddd") + " " + time
+        return d.getFullYear() === new Date().getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yyyy")
+    }
+    function shortDate(iso) {
+        const d = new Date(iso)
+        if (isNaN(d)) return ""
+        const days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
+        return days === 0 ? Qt.formatTime(d, "h:mm AP") : d.getFullYear() === new Date().getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yyyy")
+    }
+    function escaped(t) { return String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+    function bold(t) { const re = theme.termPattern(terms); const e = escaped(t); return re ? e.replace(re, "$1<b>$2</b>") : e }
+    function marked(t) { return theme.markTerms(escaped(t), terms) }
+    function isMe(mri) { return (mri || "").toLowerCase() === (backend.userMri || "").toLowerCase() }
+    function presenceOf(mri) { const m = members.find(m => (m.mri || "").toLowerCase() === (mri || "").toLowerCase()); return m ? m.presence || "" : "" }
+    function feedback(kind) {
+        backend.requestFeedback(kind, "Search", "Search: “" + query + "” (" + tabNames[tab] + (hasFilters ? ", filtered" : "") + ")")
+    }
+    function openHit(h) {
+        const ch = channelOf(h.thread)
+        if (ch) root.openChannel(h.thread, ch.channel.name, h.id, h.parent_id || "", terms)
+        else root.openChat(h.thread, chatName(h.thread) || h.subject || "", h.id, terms)
+    }
+    FontMetrics { id: fm14; font.family: theme.font; font.pixelSize: 14 }
+
+    // Tabs.
+    Row {
+        id: tabRow
+        x: column.x; y: 16.2; spacing: 12
+        Repeater {
+            model: root.shownTabs.concat(root.hiddenTabs.length ? ["+"] : [])
+            Rectangle {
+                id: pill
+                required property string modelData
+                readonly property bool chosen: modelData === root.tab
+                height: 32; radius: 16
+                width: label.implicitWidth + 24
+                color: chosen ? theme.brandTint : ph.hovered ? theme.pick("#EBEBEB", "#3D3D3D") : theme.pick("#F5F5F5", "#2E2E2E")
+                border.width: 0.67; border.color: chosen ? theme.brand : color
+                Text {
+                    id: label
+                    anchors.centerIn: parent
+                    text: pill.modelData === "+" ? "+" + root.hiddenTabs.length : root.tabNames[pill.modelData]
+                    font.family: theme.font; font.pixelSize: 14; font.weight: pill.chosen ? Font.DemiBold : Font.Normal; color: theme.text
+                }
+                HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: pill.modelData === "+" ? overflow.open() : root.setTab(pill.modelData) }
+                Accessible.role: Accessible.PageTab
+                Accessible.name: label.text
+                Accessible.selected: chosen
+                MenuPopup {
+                    id: overflow
+                    y: parent.height + 4
+                    items: root.hiddenTabs.map(t => ({ label: root.tabNames[t] }))
+                    onPicked: i => { close(); root.setTab(root.hiddenTabs[i]) }
+                }
+            }
+        }
+    }
+    Rectangle { y: 60.7; width: parent.width; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
+
+    // Filters.
+    Item {
+        id: filterRow
+        visible: root.filterKeys.length > 0
+        x: column.x; y: 61; width: column.width; height: visible ? 40 : 0
+        component FilterButton: Rectangle {
+            id: fb
+            property string label
+            property bool on: false
+            signal clicked()
+            signal cleared()
+            height: 24; radius: 4
+            width: fbText.implicitWidth + 12 + 4 + 10 + 12 + (on ? 20 : 0)
+            color: fbh.hovered ? theme.hover : "transparent"
+            Text { id: fbText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: fb.label; font.family: theme.font; font.pixelSize: 14; color: fb.on ? theme.text : theme.textSecondary; font.weight: fb.on ? Font.DemiBold : Font.Normal }
+            FluentIcon { visible: !fb.on; x: fbText.x + fbText.implicitWidth + 9; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 10; color: theme.textSecondary }
+            HoverHandler { id: fbh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: fb.clicked() }
+            Rectangle {
+                visible: fb.on
+                x: fbText.x + fbText.implicitWidth + 6; anchors.verticalCenter: parent.verticalCenter
+                width: 20; height: 20; radius: 4
+                color: fxh.hovered ? theme.hover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 12; color: theme.textSecondary }
+                HoverHandler { id: fxh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: fb.cleared() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Clear selection"
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: fb.label + " filter"
+        }
+        Row {
+            x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+            Repeater {
+                model: root.filterKeys
+                FilterButton {
+                    id: fbtn
+                    required property string modelData
+                    on: modelData === "type" ? !!root.kind : modelData === "in" ? !!root.inPlace : modelData === "person" ? !!root.person
+                      : modelData === "date" ? !!root.dateKey : modelData === "filetype" ? !!root.fileType : (root.mentions || root.attachment || root.hideBots)
+                    label: modelData === "type" ? (root.kind ? (root.kind === "chat" ? "Chat" : "Channel") : "Type")
+                         : modelData === "in" ? (root.inPlace ? root.inPlace.name : "In")
+                         : modelData === "person" ? (root.person ? (root.person.from ? "From " : "With ") + root.person.name : "Person")
+                         : modelData === "date" ? (root.dateKey ? root.dateLabel() : "Date")
+                         : modelData === "filetype" ? (root.fileType ? root.fileTypeNames[root.fileType] : "File Type")
+                         : ((root.mentions || root.attachment || root.hideBots) ? "More (" + [root.mentions, root.attachment, root.hideBots].filter(x => x).length + ")" : "More")
+                    onClicked: {
+                        const p = fbtn.mapToItem(root, 0, fbtn.height + 4)
+                        if (modelData === "type") { typeMenu.x = p.x; typeMenu.y = p.y; typeMenu.open() }
+                        else if (modelData === "filetype") { fileTypeMenu.x = p.x; fileTypeMenu.y = p.y; fileTypeMenu.open() }
+                        else if (modelData === "in") { inPop.x = p.x; inPop.y = p.y; inPop.open() }
+                        else if (modelData === "person") { personPop.x = p.x; personPop.y = p.y; personPop.open() }
+                        else if (modelData === "date") { datePop.x = p.x; datePop.y = p.y; datePop.open() }
+                        else { morePop.x = p.x; morePop.y = p.y; morePop.open() }
+                    }
+                    onCleared: {
+                        if (modelData === "type") root.kind = ""
+                        else if (modelData === "in") root.inPlace = null
+                        else if (modelData === "person") root.person = null
+                        else if (modelData === "date") root.dateKey = ""
+                        else if (modelData === "filetype") root.fileType = ""
+                        else { root.mentions = false; root.attachment = false; root.hideBots = false }
+                        root.run()
+                    }
+                }
+            }
+            Text {
+                visible: root.hasFilters
+                height: 24; verticalAlignment: Text.AlignVCenter
+                text: "Clear all"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                font.underline: cah.hovered
+                HoverHandler { id: cah; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.clearFilters(true) }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Clear all"
+            }
+        }
+        Rectangle { y: 40.7; x: -column.x; width: root.width; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
+    }
+    readonly property var fileTypeKeys: ["excel", "images", "loop", "onenote", "pdf", "powerpoint", "text", "word"]
+    readonly property var fileTypeNames: ({ excel: "Excel", images: "Images", loop: "Loop", onenote: "OneNote", pdf: "PDF", powerpoint: "PowerPoint", text: "Text file", word: "Word" })
+    function dateLabel() {
+        switch (dateKey) {
+        case "today": return "Today"
+        case "yesterday": return "Yesterday"
+        case "week": return "This week"
+        case "month": return "This month"
+        case "custom": return Qt.formatDate(customFrom, "M/d/yyyy") + " - " + Qt.formatDate(customTo, "M/d/yyyy")
+        }
+        return ""
+    }
+    RadioMenu {
+        id: typeMenu
+        items: [{ label: "Chat", checked: root.kind === "chat" }, { label: "Channel", checked: root.kind === "channel" }]
+        onPicked: i => { close(); root.kind = i === 0 ? "chat" : "channel"; root.run() }
+    }
+    MenuPopup {
+        id: fileTypeMenu
+        perItemIcons: true
+        items: root.fileTypeKeys.map(k => ({ label: root.fileTypeNames[k], icon: ({ excel: "ft-xlsx-20", images: "ft-photo-20", loop: "ft-loop-20", onenote: "ft-one-20", pdf: "ft-pdf-20", powerpoint: "ft-pptx-20", text: "ft-txt-20", word: "ft-docx-20" })[k] }))
+        onPicked: i => { close(); root.fileType = root.fileTypeKeys[i]; root.run() }
+    }
+    // In ▾ (350 wide): "Filter by Group chats, Teams and Channels" and the
+    // matches, grouped.
+    Popup {
+        id: inPop
+        width: 350; padding: 0
+        height: 67 + Math.min(320, inList.contentHeight + (inList.count ? 8 : 0))
+        onOpened: { inField.text = ""; inField.forceActiveFocus() }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        readonly property var items: {
+            try {
+                const r = JSON.parse(backend.searchInJson || "{}")
+                if (!inField.text.trim() || r.keyword !== inField.text.trim()) return []
+                return (r.groups || []).reduce((a, g) => a.concat(g.items || []), [])
+            } catch (e) { return [] }
+        }
+        Rectangle {
+            x: 12.7; y: 16.7; width: parent.width - 25.4; height: 33.3; radius: 4
+            color: theme.pick("#F5F5F5", "#141414")
+            Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: inField.activeFocus ? 2 : 0.67; color: inField.activeFocus ? theme.brand : theme.textSecondary }
+            TextInput {
+                id: inField
+                x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
+                font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                onTextChanged: inTimer.restart()
+                Keys.onEscapePressed: inPop.close()
+                Text { visible: !inField.text; text: "Filter by Group chats, Teams and Channels"; font: inField.font; color: theme.textSecondary }
+                Accessible.role: Accessible.EditableText
+                Accessible.name: "Filter by Group chats, Teams and Channels"
+            }
+            Timer { id: inTimer; interval: 250; onTriggered: backend.searchInSuggest(inField.text) }
+        }
+        ListView {
+            id: inList
+            x: 4; y: 58; width: parent.width - 8; height: parent.height - y - 4
+            clip: true
+            model: inPop.items
+            delegate: Rectangle {
+                required property var modelData
+                width: inList.width; height: 48; radius: 4
+                color: ih.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                Avatar {
+                    x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32
+                    name: parent.modelData.kind === "chat" ? parent.modelData.name : parent.modelData.team || parent.modelData.name
+                    square: parent.modelData.kind !== "chat"; squareRadius: 4
+                    group: parent.modelData.kind === "chat"
+                    photoId: parent.modelData.kind === "chat" ? "" : (parent.modelData.group ? "team:" + parent.modelData.group : "")
+                }
+                Column {
+                    x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 64
+                    Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { visible: !!parent.parent.modelData.team && parent.parent.modelData.kind === "channel"; width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.team || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                }
+                HoverHandler { id: ih; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { root.inPlace = { kind: parent.modelData.kind, thread: parent.modelData.thread, group: parent.modelData.group, name: parent.modelData.name }; inPop.close(); root.run() } }
+                Accessible.role: Accessible.ListItem
+                Accessible.name: modelData.name
+            }
+        }
+    }
+    // Person ▾ (350 wide): "Filter by person", With / From, Apply.
+    Popup {
+        id: personPop
+        width: 350; padding: 0
+        height: 219 + (picked ? 0 : Math.min(240, people.length * 50))
+        property var picked: null
+        property bool from: false
+        onOpened: { picked = root.person; from = !!(root.person && root.person.from); pField.text = ""; pField.forceActiveFocus() }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        readonly property var people: { try { return pField.text.trim().length >= 2 ? JSON.parse(backend.peopleJson || "[]") : [] } catch (e) { return [] } }
+        Rectangle {
+            x: 12.7; y: 16.7; width: parent.width - 25.4; height: 33.3; radius: 4
+            color: theme.pick("#F5F5F5", "#141414")
+            Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: pField.activeFocus ? 2 : 0.67; color: pField.activeFocus ? theme.brand : theme.textSecondary }
+            Rectangle {
+                id: pickedChip
+                visible: !!personPop.picked
+                x: 6; anchors.verticalCenter: parent.verticalCenter
+                height: 24; radius: 4; width: pcText.implicitWidth + 36
+                color: theme.pick("#EBEBEB", "#3D3D3D")
+                Text { id: pcText; x: 8; anchors.verticalCenter: parent.verticalCenter; text: personPop.picked ? personPop.picked.name : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                FluentIcon { anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 12; color: theme.textSecondary
+                    TapHandler { onTapped: personPop.picked = null } }
+            }
+            TextInput {
+                id: pField
+                x: pickedChip.visible ? pickedChip.x + pickedChip.width + 6 : 12; width: parent.width - x - 12; anchors.verticalCenter: parent.verticalCenter
+                font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                onTextChanged: backend.searchPeopleWithMe(text)
+                Keys.onEscapePressed: personPop.close()
+                Text { visible: !pField.text && !personPop.picked; text: "Filter by person"; font: pField.font; color: theme.textSecondary }
+                Accessible.role: Accessible.EditableText
+                Accessible.name: "Filter by person"
+            }
+        }
+        Column {
+            visible: !personPop.picked && personPop.people.length > 0
+            x: 4; y: 54; width: parent.width - 8
+            Repeater {
+                model: personPop.people.slice(0, 5)
+                Rectangle {
+                    required property var modelData
+                    width: parent.width; height: 50; radius: 4
+                    color: pph.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: parent.modelData.name || ""; photoId: parent.modelData.mri || "" }
+                    Column {
+                        x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 64
+                        Text { width: parent.width; elide: Text.ElideRight; text: (parent.parent.modelData.name || "") + (root.isMe(parent.parent.modelData.mri) ? " (You)" : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.mail || parent.parent.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    }
+                    HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { personPop.picked = { name: parent.modelData.name, mail: parent.modelData.mail || parent.modelData.upn || "", mri: parent.modelData.mri || ("8:orgid:" + (parent.modelData.id || "")) }; pField.text = "" } }
+                }
+            }
+        }
+        Column {
+            y: personPop.picked || !personPop.people.length ? 62 : 62 + Math.min(240, personPop.people.length * 50)
+            x: 12.7; spacing: 6
+            Repeater {
+                model: [{ label: "With", hint: "Shows all results related to a person", from: false }, { label: "From", hint: "Shows results sent by a person", from: true }]
+                Item {
+                    required property var modelData
+                    width: 320; height: 40
+                    Rectangle {
+                        y: 4; width: 16; height: 16; radius: 8; color: "transparent"; border.width: 1
+                        border.color: personPop.from === parent.modelData.from ? theme.brand : theme.textSecondary
+                        Rectangle { anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand; visible: personPop.from === parent.parent.modelData.from }
+                    }
+                    Text { x: 26; y: 0; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { x: 26; y: 20; text: parent.modelData.hint; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    TapHandler { onTapped: personPop.from = parent.modelData.from }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: modelData.label
+                    Accessible.checked: personPop.from === modelData.from
+                }
+            }
+        }
+        Rectangle {
+            anchors.right: parent.right; anchors.rightMargin: 12.7; anchors.bottom: parent.bottom; anchors.bottomMargin: 12.7
+            width: 96; height: 32; radius: 4
+            readonly property bool usable: !!personPop.picked
+            color: usable ? (aph.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E")
+            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C") }
+            HoverHandler { id: aph; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: parent.usable; onTapped: { root.person = Object.assign({}, personPop.picked, { from: personPop.from }); personPop.close(); root.run() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Apply"
+        }
+    }
+    // Date ▾ (302 wide): "Date", the four ranges, From / To, Clear and Apply.
+    Popup {
+        id: datePop
+        width: 302; padding: 0; height: 372
+        property bool fromSet: false
+        property date fromDate: new Date()
+        property date toDate: new Date()
+        onAboutToShow: { fromSet = root.dateKey === "custom"; fromDate = fromSet ? root.customFrom : new Date(); toDate = fromSet ? root.customTo : new Date() }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        Text { x: 16; y: 14; text: "Date"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        Column {
+            x: 1; y: 40; width: parent.width - 2
+            Repeater {
+                model: [{ k: "today", l: "Today" }, { k: "yesterday", l: "Yesterday" }, { k: "week", l: "This week" }, { k: "month", l: "This month" }]
+                Rectangle {
+                    required property var modelData
+                    width: parent.width; height: 32
+                    color: dh.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : root.dateKey === modelData.k ? theme.pick("#EBEBEB", "#383838") : "transparent"
+                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.l; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    HoverHandler { id: dh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { root.dateKey = parent.modelData.k; datePop.close(); root.run() } }
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: modelData.l
+                }
+            }
+        }
+        Rectangle { x: 1; y: 176; width: parent.width - 2; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        Text { x: 16; y: 190; text: "From"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        DatePickerField {
+            x: 16; y: 210; width: parent.width - 32
+            filled: true; format: "dddd, MMMM d, yyyy"; iconSize: 16; iconRight: 6
+            empty: !datePop.fromSet; placeholder: "Select a date"
+            date: datePop.fromDate; maxDate: datePop.toDate
+            onPicked: d => { datePop.fromDate = d; datePop.fromSet = true }
+        }
+        Text { x: 16; y: 254; text: "To"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        DatePickerField {
+            x: 16; y: 274; width: parent.width - 32
+            filled: true; format: "dddd, MMMM d, yyyy"; iconSize: 16; iconRight: 6
+            date: datePop.toDate; minDate: datePop.fromSet ? datePop.fromDate : new Date(1900, 0, 1); maxDate: new Date()
+            onPicked: d => datePop.toDate = d
+        }
+        Rectangle {
+            x: parent.width - 16 - 96 - 8 - 54.7; y: 324; width: 54.7; height: 32; radius: 4
+            readonly property bool usable: datePop.fromSet || !!root.dateKey
+            color: usable && dch.hovered ? theme.hover : "transparent"
+            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: parent.usable ? theme.text : theme.pick("#BDBDBD", "#5C5C5C") }
+            HoverHandler { id: dch; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: parent.usable; onTapped: { datePop.fromSet = false; if (root.dateKey) { root.dateKey = ""; datePop.close(); root.run() } } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Clear"
+        }
+        Rectangle {
+            x: parent.width - 16 - 96; y: 324; width: 96; height: 32; radius: 4
+            readonly property bool usable: datePop.fromSet
+            color: usable ? (dah.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E")
+            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C") }
+            HoverHandler { id: dah; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: parent.usable; onTapped: { root.customFrom = datePop.fromDate; root.customTo = datePop.toDate; root.dateKey = "custom"; datePop.close(); root.run() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Apply"
+        }
+    }
+    // More ▾ (398 x 202): "More filters": @mentions me, Has attachment, Hide
+    // apps & bots; Clear and Apply.
+    Popup {
+        id: morePop
+        width: 398; height: 202; padding: 0
+        property bool m: false
+        property bool a: false
+        property bool b: false
+        onAboutToShow: { m = root.mentions; a = root.attachment; b = root.hideBots }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        Text { x: 20; y: 18; text: "More filters"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        component Check: Item {
+            id: ck
+            property string label
+            property bool checked
+            signal toggled()
+            width: 170; height: 32
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 16; height: 16; radius: 2
+                color: ck.checked ? theme.brand : "transparent"; border.width: 1; border.color: ck.checked ? theme.brand : theme.textSecondary
+                FluentIcon { anchors.centerIn: parent; visible: ck.checked; name: "checkmark-12"; size: 12; color: "#FFFFFF" }
+            }
+            Text { x: 26; anchors.verticalCenter: parent.verticalCenter; text: ck.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            TapHandler { onTapped: ck.toggled() }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: ck.label
+            Accessible.checked: ck.checked
+        }
+        Grid {
+            x: 20; y: 54; columns: 2; columnSpacing: 20; rowSpacing: 0
+            Check { label: "@mentions me"; checked: morePop.m; onToggled: morePop.m = !morePop.m }
+            Check { label: "Has attachment"; checked: morePop.a; onToggled: morePop.a = !morePop.a }
+            Check { label: "Hide apps & bots"; checked: morePop.b; onToggled: morePop.b = !morePop.b }
+        }
+        Rectangle {
+            x: parent.width - 20 - 96 - 8 - 60; y: 150; width: 60; height: 32; radius: 4
+            color: mch.hovered ? theme.hover : "transparent"
+            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            HoverHandler { id: mch; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { morePop.m = false; morePop.a = false; morePop.b = false } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Clear"
+        }
+        Rectangle {
+            x: parent.width - 20 - 96; y: 150; width: 96; height: 32; radius: 4
+            color: mah.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
+            HoverHandler { id: mah; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.mentions = morePop.m; root.attachment = morePop.a; root.hideBots = morePop.b; morePop.close(); root.run() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Apply"
+        }
+    }
+
+    // The results.
+    readonly property real columnWidth: tab === "files" ? 760 : 692
+    Item {
+        id: column
+        x: Math.max(16, (root.width - root.columnWidth) / 2); width: Math.min(root.columnWidth, root.width - 32)
+        y: filterRow.visible ? 101.7 : 61.4; height: root.height - y
+    }
+    // Messages without apps' and bots' (Hide apps & bots, the page's own).
+    function visibleMessages(hits) { return hideBots ? (hits || []).filter(h => !String(h.sender_mri || "").startsWith("28:")) : (hits || []) }
+    // What the list shows: [{t: "heading"|"message"|"chat"|"channel"|"file"|"person"|"event"|"image-row"|"more"|"none"|"chatrow"|"channelrow", …}].
+    readonly property var rows: {
+        const out = []
+        if (!page) return out
+        const msgs = visibleMessages(page.messages ? page.messages.hits : [])
+        const heading = (title, feedbackToo) => out.push({ t: "heading", title: title, feedback: feedbackToo })
+        if (tab === "all") {
+            let first = true
+            for (const s of (page.order && page.order.length ? page.order : ["messages", "groupchats", "channels", "files", "meetings", "people"])) {
+                if (s === "messages" && msgs.length) { heading("Messages", first); for (const h of msgs.slice(0, 8)) out.push({ t: "message", h: h }); out.push({ t: "more", label: "More messages", tab: "messages" }); first = false }
+                else if (s === "groupchats" && page.chats.length) { heading("Group chats", first); out.push({ t: "chatrow", items: page.chats.slice(0, 2) }); out.push({ t: "more", label: "More group chats", tab: "groupchats" }); first = false }
+                else if (s === "channels" && page.channels.length) { heading("Channels", first); out.push({ t: "channelrow", items: page.channels.slice(0, 3) }); out.push({ t: "more", label: "More channels", tab: "channels" }); first = false }
+                else if (s === "files" && page.files && page.files.hits.length) { heading("Files", first); for (const f of page.files.hits.slice(0, 3)) out.push({ t: "file", h: f }); out.push({ t: "more", label: "More files", tab: "files" }); first = false }
+                else if (s === "meetings" && page.events.length) { heading("Meetings", first); for (const e of page.events.slice(0, 3)) out.push({ t: "event", e: e }); out.push({ t: "more", label: "More meetings", tab: "meetings" }); first = false }
+                else if (s === "people" && page.people.length) { heading("People", first); for (const p of page.people.slice(0, 3)) out.push({ t: "person", p: p }); out.push({ t: "more", label: "More people", tab: "people" }); first = false }
+            }
+        } else if (tab === "messages") {
+            if (msgs.length) heading("Top results", true)
+            for (const h of msgs) out.push({ t: "message", h: h })
+        } else if (tab === "files") {
+            if (page.files && page.files.hits.length) heading("", true)
+            for (const f of page.files ? page.files.hits : []) out.push({ t: "file", h: f })
+        } else if (tab === "people") {
+            if (page.people.length) heading("", true)
+            for (const p of page.people) out.push({ t: "person", p: p })
+        } else if (tab === "channels") {
+            if (page.channels.length) heading("", true)
+            for (const c of page.channels) out.push({ t: "channel", c: c })
+        } else if (tab === "groupchats") {
+            if (page.chats.length) heading("", true)
+            for (const c of page.chats) out.push({ t: "chat", c: c })
+        } else if (tab === "meetings") {
+            if (page.events.length) heading("", true)
+            for (const e of page.events) out.push({ t: "event", e: e })
+        } else if (tab === "images") {
+            const imgs = page.images ? page.images.hits : []
+            if (imgs.length) heading("", true)
+            for (let i = 0; i < imgs.length; i += 4) out.push({ t: "image-row", items: imgs.slice(i, i + 4) })
+        }
+        if (!out.length && result && !result.loading) out.push({ t: "none" })
+        return out
+    }
+
+    ListView {
+        id: list
+        x: column.x - 16; width: column.width + 32
+        y: column.y; height: column.height
+        clip: true
+        spacing: 0
+        model: root.rows
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        onContentYChanged: if (contentY + height > contentHeight - 300) root.more()
+        header: Item { width: 1; height: 20 }
+        footer: Item {
+            width: list.width; height: root.result && root.result.loading ? 60 : 24
+            BusyIndicator { anchors.centerIn: parent; width: 28; height: 28; running: !!root.result && root.result.loading; visible: running }
+        }
+        delegate: Loader {
+            id: rowLoader
+            required property var modelData
+            width: list.width
+            sourceComponent: ({ heading: headingRow, message: messageCard, chat: chatCard, channel: channelCard, file: fileCard, person: personCard,
+                                event: eventCard, more: moreLink, none: noneRow, chatrow: chatRowCards, channelrow: channelRowCards, "image-row": imageRow })[modelData.t]
+            property var row: modelData
+        }
+    }
+
+    // Send feedback 👍 👎 (14 px #616161; the thumbs 16, 8 apart).
+    component FeedbackThumbs: Row {
+        property int textSize: 14
+        spacing: 8
+        Text { height: 20; verticalAlignment: Text.AlignVCenter; text: "Send feedback"; font.family: theme.font; font.pixelSize: parent.textSize; color: theme.textSecondary }
+        Repeater {
+            model: [{ icon: "thumb-like-20", name: "This was helpful", kind: "compliment" }, { icon: "thumb-dislike-20", name: "Didn't help", kind: "problem" }]
+            Item {
+                required property var modelData
+                width: 16; height: 20
+                FluentIcon { y: 2; size: 16; name: parent.modelData.icon; color: tth.hovered ? theme.brand : theme.textStrong }
+                HoverHandler { id: tth; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.feedback(parent.modelData.kind) }
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData.name
+            }
+        }
+    }
+    // A white card (radius 8, Fluent shadow 2).
+    component Card: FluentSurface {
+        x: 16; width: list.width - 32
+        depth: 2; radius: 8; color: theme.surface
+    }
+    // A 32 px icon button (Copy link, Open chat in new window, Reply).
+    component CardAction: Rectangle {
+        id: ca
+        property string icon
+        property string label
+        signal clicked()
+        width: 32; height: 31.3; radius: 4
+        color: cah2.hovered ? theme.hover : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: ca.icon; size: 18; color: theme.textStrong }
+        HoverHandler { id: cah2; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: ca.clicked() }
+        ToolTip.visible: cah2.hovered; ToolTip.delay: 500; ToolTip.text: ca.label
+        Accessible.role: Accessible.Button
+        Accessible.name: ca.label
+    }
+
+    Component {
+        id: headingRow
+        Item {
+            height: 48
+            Text {
+                visible: !!row.title
+                x: 16; y: 0; height: 20
+                text: row.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text
+                Accessible.role: Accessible.Heading
+            }
+            FeedbackThumbs { visible: row.feedback; anchors.right: parent.right; anchors.rightMargin: 16 }
+        }
+    }
+    Component {
+        id: moreLink
+        Item {
+            height: 56
+            Text {
+                x: 16; y: 4
+                text: row.label; font.family: theme.font; font.pixelSize: 14; color: theme.brandLink
+                font.underline: mlh.hovered
+                HoverHandler { id: mlh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.setTab(row.tab) }
+                Accessible.role: Accessible.Link
+                Accessible.name: row.label
+            }
+        }
+    }
+    Component {
+        id: noneRow
+        Item {
+            height: 420
+            Image { anchors.horizontalCenter: parent.horizontalCenter; y: 40; width: 220; height: 220; sourceSize: Qt.size(440, 440); source: "../assets/illustrations/search-exclamation-l-standard.svg" }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter; y: 270; width: 300
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                text: root.result && root.result.error ? "Something went wrong" : "We couldn't find any results for '" + root.query + "'"
+                font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter; y: 340; width: 360
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                text: root.result && root.result.error ? root.result.error : "Check for spelling or try searching for another term"
+                font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+            }
+        }
+    }
+    // A message (Teams' search card, 116 tall for a line of text).
+    Component {
+        id: messageCard
+        Item {
+            id: mc
+            readonly property var h: row.h
+            readonly property var place: root.channelOf(h.thread)
+            readonly property bool notes: String(h.thread).startsWith("48:")
+            readonly property bool posted: !!place && (!h.parent_id || h.parent_id === h.id)
+            height: card.height + 16
+            HoverHandler { id: mch2 }
+            Card {
+                id: card
+                height: 80 + mtext.height
+                // Its place.
+                Avatar {
+                    x: 20; y: 16; size: 20
+                    name: mc.place ? mc.place.team.name : mc.notes ? backend.userName : (root.chatName(mc.h.thread) || mc.h.sender_name || "")
+                    square: !!mc.place; squareRadius: 4
+                    photoId: mc.place ? "team:" + mc.place.team.id : mc.notes ? (backend.userMri || "") : ""
+                    group: !mc.place && !mc.notes && String(mc.h.thread).indexOf("@thread") > 0
+                }
+                Text {
+                    x: 52; y: 17; width: parent.width - 52 - 16 - (mch2.hovered ? 220 : 0); height: 17.1
+                    textFormat: Text.StyledText; elide: Text.ElideRight
+                    text: mc.place ? root.bold(mc.place.team.name) + " &nbsp;›&nbsp; " + root.bold(mc.place.channel.name)
+                        : mc.notes ? root.escaped(backend.userName) + " (You)" : root.bold(root.chatName(mc.h.thread) || mc.h.sender_name || "")
+                    font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                }
+                Row {
+                    visible: mch2.hovered
+                    anchors.right: parent.right; anchors.rightMargin: 16; y: 10
+                    spacing: 6
+                    FeedbackThumbs { textSize: 12; anchors.verticalCenter: parent.verticalCenter }
+                    Rectangle { width: 1; height: 14; anchors.verticalCenter: parent.verticalCenter; color: theme.stroke }
+                    CardAction { icon: mc.place ? "chat-20" : "arrow-reply-20"; label: mc.place ? "Reply in thread" : "Reply to this message"; onClicked: root.openHit(mc.h) }
+                    CardAction {
+                        icon: "open-window-20"; label: "Open chat in new window"
+                        onClicked: root.openChatWindow(mc.h.thread, mc.place ? mc.place.channel.name : root.chatName(mc.h.thread))
+                    }
+                }
+                Rectangle { x: 16; y: 52; width: parent.width - 32; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                Avatar {
+                    x: 16; y: 56
+                    size: 28
+                    name: mc.h.sender_name || ""
+                    photoId: mc.h.sender_mri || ""
+                    presence: root.presenceOf(mc.h.sender_mri)
+                }
+                Text {
+                    id: who
+                    x: 52; y: 56; height: 20
+                    textFormat: Text.StyledText
+                    text: root.bold(mc.h.sender_name || "") + (root.isMe(mc.h.sender_mri) ? " (You)" : "")
+                    font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                }
+                Text { x: who.x + who.implicitWidth + 12; y: 57.4; text: root.when(mc.h.time); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                Text {
+                    id: mtext
+                    x: 52; y: 80; width: parent.width - 52 - 16
+                    textFormat: Text.RichText; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight
+                    text: root.marked(mc.h.text || "")
+                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                }
+                TapHandler { onTapped: root.openHit(mc.h) }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: "Message from " + (h.sender_name || "") + ". " + (h.text || "")
+        }
+    }
+    // A group chat row (Group chats tab: 70.6 tall).
+    Component {
+        id: chatCard
+        Item {
+            readonly property var c: row.c
+            height: 70.6 + 16
+            Card {
+                height: 70.6
+                Avatar { x: 16; y: 16; size: 32; name: parent.parent.c.name; group: true; meeting: String(parent.parent.c.thread).indexOf("meeting_") >= 0 }
+                Text { x: 60; y: 15; width: parent.width - 60 - 120; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.c.name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 60; y: 38.3; width: parent.width - 60 - 120; elide: Text.ElideRight; text: root.membersLine(parent.parent.c); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                Text { anchors.right: parent.right; anchors.rightMargin: 17; y: 16; text: root.shortDate(parent.parent.c.last_message); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                TapHandler { onTapped: root.openChat(parent.parent.c.thread, parent.parent.c.name, "", []) }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: "Group chat " + c.name
+        }
+    }
+    function teamGroupOf(thread) {
+        const t = teams.find(t => t.id === thread || (t.channels || []).some(c => c.id === thread))
+        return t && t.group_id ? "team:" + t.group_id : t ? "team:" + t.id : ""
+    }
+    function membersLine(c) {
+        const others = (c.members || []).filter(n => n !== backend.userName)
+        if (!others.length) return "You"
+        const first = others.map(n => n.split(" ")[0])
+        return first.length === 1 ? "You and " + first[0] : "You, " + first.slice(0, -1).join(", ") + " and " + first[first.length - 1]
+    }
+    // A channel row (Channels tab: 64 tall).
+    Component {
+        id: channelCard
+        Item {
+            readonly property var c: row.c
+            height: 64 + 16
+            HoverHandler { id: chh }
+            Card {
+                height: 64
+                Avatar { x: 16; y: 16; size: 32; square: true; squareRadius: 4; name: parent.parent.c.team || parent.parent.c.name; photoId: parent.parent.c.group ? "team:" + parent.parent.c.group : root.teamGroupOf(parent.parent.c.thread) }
+                Text { x: 60; y: 11.3; width: parent.width - 60 - 90; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.c.name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 60; y: 32; width: parent.width - 60 - 90; elide: Text.ElideRight; text: parent.parent.c.team; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                Row {
+                    visible: chh.hovered
+                    anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                    CardAction { icon: "link-20"; label: "Copy link"; onClicked: backend.copyText("https://teams.microsoft.com/l/channel/" + encodeURIComponent(parent.parent.parent.parent.c.thread) + "/" + encodeURIComponent(parent.parent.parent.parent.c.name) + "?groupId=" + parent.parent.parent.parent.c.group) }
+                    CardAction { icon: "open-window-20"; label: "Open chat in new window"; onClicked: root.openChatWindow(parent.parent.parent.parent.c.thread, parent.parent.parent.parent.c.name) }
+                }
+                TapHandler { onTapped: root.openChannel(parent.parent.c.thread, parent.parent.c.name, "", "", []) }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: c.name + " channel in " + c.team + " team"
+        }
+    }
+    // All: group chats and channels side by side (294 x 82, 8 apart).
+    Component {
+        id: chatRowCards
+        Item {
+            height: 82 + 14
+            Row {
+                x: 16; spacing: 8
+                Repeater {
+                    model: row.items
+                    FluentSurface {
+                        required property var modelData
+                        width: 294; height: 82; depth: 2; radius: 8; color: theme.surface
+                        Avatar { x: 16; y: 16; size: 32; name: parent.modelData.name; group: true; meeting: String(parent.modelData.thread).indexOf("meeting_") >= 0 }
+                        Text { x: 60; y: 16; width: parent.width - 60 - 50; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { x: 60; y: 40; width: parent.width - 60 - 50; elide: Text.ElideRight; text: root.membersLine(parent.modelData); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                        Text { anchors.right: parent.right; anchors.rightMargin: 16; y: 42; text: root.shortDate(parent.modelData.last_message); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                        TapHandler { onTapped: root.openChat(parent.modelData.thread, parent.modelData.name, "", []) }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: "Group chat " + modelData.name
+                    }
+                }
+            }
+        }
+    }
+    Component {
+        id: channelRowCards
+        Item {
+            height: 82 + 14
+            Row {
+                x: 16; spacing: 8
+                Repeater {
+                    model: row.items
+                    FluentSurface {
+                        required property var modelData
+                        width: (list.width - 32 - 16) / 3; height: 82; depth: 2; radius: 8; color: theme.surface
+                        Avatar { x: 16; y: 16; size: 32; square: true; squareRadius: 4; name: parent.modelData.team; photoId: parent.modelData.group ? "team:" + parent.modelData.group : "" }
+                        Text { x: 60; y: 16; width: parent.width - 76; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { x: 60; y: 40; width: parent.width - 76; elide: Text.ElideRight; text: parent.modelData.team; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                        TapHandler { onTapped: root.openChannel(parent.modelData.thread, parent.modelData.name, "", "", []) }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: modelData.name + " channel in " + modelData.team + " team"
+                    }
+                }
+            }
+        }
+    }
+    // A file (Files tab: 760 wide, 84–140 tall).
+    Component {
+        id: fileCard
+        Item {
+            readonly property var f: row.h
+            height: card2.height + 16
+            HoverHandler { id: fh2 }
+            Card {
+                id: card2
+                height: fcol.height + 32
+                FluentIcon { x: 16; y: 16; size: 32; name: root.fileIcon(parent.parent.f.file_type, parent.parent.f.file_name) }
+                Column {
+                    id: fcol
+                    x: 60; y: 16; width: parent.width - 60 - 56; spacing: 4
+                    Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.parent.f.file_name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { visible: !!root.filePlace(parent.parent.parent.f); width: parent.width; elide: Text.ElideRight; text: root.filePlace(parent.parent.parent.f); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Text { visible: !!parent.parent.parent.f.sender_name; width: parent.width; elide: Text.ElideRight; text: "Modified by " + parent.parent.parent.f.sender_name + (parent.parent.parent.f.time ? " " + root.ago(parent.parent.parent.f.time) : ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Text { visible: !!parent.parent.parent.f.text; width: parent.width; height: 20; clip: true; maximumLineCount: 1; textFormat: Text.RichText; text: root.marked(parent.parent.parent.f.text); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                }
+                CardAction {
+                    visible: fh2.hovered
+                    anchors.right: parent.right; anchors.rightMargin: 16; y: 12
+                    icon: "link-20"; label: "Copy link"
+                    onClicked: backend.copyText(parent.parent.f.url)
+                }
+                TapHandler { onTapped: Qt.openUrlExternally(parent.parent.f.url) }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: f.file_name
+        }
+    }
+    function filePlace(f) {
+        const u = String(f.url || f.file_url || "")
+        const m = u.match(/sharepoint\.com\/(?:sites|personal)\/([^/]+)\/(?:Shared Documents|Shared%20Documents|Documents)\/(.*)\/[^/]*$/)
+        return m ? decodeURIComponent(m[1]) + "  ›  " + decodeURIComponent(m[2]).split("/").join("  ›  ") : ""
+    }
+    function ago(iso) {
+        const d = new Date(iso), days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
+        return days <= 0 ? "today" : days === 1 ? "yesterday" : days < 30 ? days + " days ago" : Qt.formatDate(d, "M/d/yyyy")
+    }
+    function fileIcon(type, name) {
+        const t = String(type || String(name || "").split(".").pop()).toLowerCase()
+        const kind = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
+                   : t === "pdf" ? "pdf" : t === "one" || t === "onepart" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
+                   : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp"].indexOf(t) >= 0 ? "photo" : "genericfile"
+        return "ft-" + kind + "-32"
+    }
+    // A person.
+    Component {
+        id: personCard
+        Item {
+            readonly property var p: row.p
+            height: 64 + 16
+            Card {
+                height: 64
+                Avatar { x: 16; y: 16; size: 32; name: parent.parent.p.name; photoId: parent.parent.p.mri; presence: root.presenceOf(parent.parent.p.mri) }
+                Text { x: 60; y: 11.3; width: parent.width - 76; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.p.name) + (root.isMe(parent.parent.p.mri) ? " (You)" : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 60; y: 32; width: parent.width - 76; elide: Text.ElideRight; text: [parent.parent.p.title, parent.parent.p.department, parent.parent.p.mail].filter(x => !!x).join(" · "); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                TapHandler { onTapped: root.openPerson(parent.parent.p.mri, parent.parent.p.name) }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: p.name
+        }
+    }
+    // A meeting (75.3 tall): the date box, subject, times, Chat or Edit.
+    Component {
+        id: eventCard
+        Item {
+            readonly property var e: row.e
+            readonly property date start: new Date(e.start)
+            height: 75.3 + 16
+            Card {
+                height: 75.3
+                Rectangle {
+                    x: 16.7; y: 18.6; width: 40; height: 40; radius: 4
+                    color: "transparent"; border.color: theme.stroke; border.width: 0.67
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; y: 0.7; text: parent.parent.parent.start.getDate(); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; y: 22.7; text: Qt.formatDate(parent.parent.parent.start, "MMM").toUpperCase(); font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary }
+                }
+                Text { x: 72.7; y: 17.3; width: parent.width - 72.7 - 130; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.e.subject); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 72.7; y: 38.6; text: Qt.formatDate(parent.parent.start, "dddd") + " " + Qt.formatTime(parent.parent.start, "h:mm AP") + " - " + Qt.formatTime(new Date(parent.parent.e.end), "h:mm AP") + (parent.parent.e.location ? "  |  " + parent.parent.e.location : ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: 16; y: 17
+                    spacing: 0
+                    Rectangle {
+                        readonly property bool chat: !!parent.parent.parent.e.join_url && !parent.parent.parent.e.is_organizer || (!!parent.parent.parent.e.join_url && new Date(parent.parent.parent.e.end) < new Date())
+                        width: ebText.implicitWidth + 16 + 6 + 20; height: 23.3; radius: 4
+                        color: ebh.hovered ? theme.hover : theme.surface; border.color: theme.stroke; border.width: 0.67
+                        FluentIcon { x: 10.6; anchors.verticalCenter: parent.verticalCenter; name: parent.chat ? "chat-20" : "edit-20"; size: 16; color: theme.text }
+                        Text { id: ebText; x: 32.6; anchors.verticalCenter: parent.verticalCenter; text: parent.chat ? "Chat" : "Edit"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                        HoverHandler { id: ebh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.openMeeting(parent.parent.parent.parent.e) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: (parent.chat ? "Chat with participants" : "Edit ") + parent.parent.parent.e.subject
+                    }
+                }
+                TapHandler { onTapped: root.openMeeting(parent.parent.e) }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: e.subject
+        }
+    }
+    // Images: cards of 242.3 x 216.3 (the picture 136.3 over an 80 footer).
+    Component {
+        id: imageRow
+        Item {
+            height: 216.3 + 16
+            Row {
+                x: 16; spacing: 16
+                Repeater {
+                    model: row.items
+                    FluentSurface {
+                        required property var modelData
+                        width: 242.3; height: 216.3; depth: 2; radius: 6; color: theme.surface
+                        Rectangle {
+                            width: parent.width; height: 136.3; radius: 6; color: theme.pick("#F5F5F5", "#2E2E2E"); clip: true
+                            Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true; source: root.imageOf(parent.parent.modelData) }
+                        }
+                        Rectangle { y: 136.3; width: parent.width; height: 80; color: theme.pick("#FAFAFA", "#1A1A1A"); radius: 6 }
+                        Avatar { x: 12.7; y: 142.9; size: 20; name: parent.modelData.sender_name || ""; photoId: parent.modelData.sender_mri || "" }
+                        Text { x: 40.7; y: 144.9; text: root.shortName(parent.modelData.sender_name) + "   "; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                        Text { x: 82.6; y: 144.9; text: root.shortDate(parent.modelData.time); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        Text { x: 12.7; y: 165.9; width: parent.width - 25; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(root.chatName(parent.modelData.thread) || parent.modelData.file_name || ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        Text { x: 12.7; y: 191.2; width: parent.width - 25; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.text || ""); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                        TapHandler { onTapped: parent.modelData.file_name ? Qt.openUrlExternally(parent.modelData.url) : root.openHit(parent.modelData) }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: "image shared by " + (modelData.sender_name || "")
+                    }
+                }
+            }
+        }
+    }
+    function shortName(n) { const p = String(n || "").split(" "); return p.length > 1 ? p[0] + " " + p[p.length - 1][0] + "." : String(n || "") }
+    function imageOf(h) { return h.image_url || (h.file_name ? "" : "") }
+
+    // Test hooks.
+    function rowsForTest() { return rows }
+}
