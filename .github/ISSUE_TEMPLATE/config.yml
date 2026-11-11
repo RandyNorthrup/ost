@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Suggest a feature
+    url: https://github.com/RandyNorthrup/ost/discussions/categories/ideas
+    about: Share ideas for OST and vote on others' (OST's Feedback ▸ Suggest a feature).
+  - name: Get help
+    url: https://github.com/RandyNorthrup/ost/discussions/categories/q-a
+    about: Ask how to do something in OST.
+  - name: Help for OST
+    url: https://github.com/RandyNorthrup/ost/blob/main/SUPPORT.md
+    about: How to get help with OST, and what feedback shares.

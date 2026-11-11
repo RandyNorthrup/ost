@@ -1,0 +1,46 @@
+# OST's Feedback ▸ Give a compliment (Teams' "Submit feedback to Microsoft"
+# form, sent here instead). OST opens this form with the fields filled in;
+# the field ids are what it fills (docs/spec/feedback-and-help.md).
+name: Give a compliment
+description: Something in OST you like.
+title: "Compliment: "
+labels: [feedback, compliment]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include any private or sensitive information. This issue is public."
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you like?
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Add more details
+      description: Drag and drop files here or paste an image from your clipboard.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant content samples and additional log files
+      description: Filled in by OST when you choose "Yes, share". Names and addresses are masked.
+      render: text
+  - type: input
+    id: contact
+    attributes:
+      label: May we contact you about your feedback?
+      placeholder: Yes, you may contact me / No, don't contact me
+  - type: input
+    id: area
+    attributes:
+      label: Where in OST
+      placeholder: e.g. Find in chat
+  - type: input
+    id: version
+    attributes:
+      label: OST version
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
