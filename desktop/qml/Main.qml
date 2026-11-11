@@ -73,7 +73,16 @@ Window {
     // Help (F1) and Feedback ▸ Report a problem (Ctrl+Alt+Shift+R), as Teams.
     Shortcut { sequence: "F1"; onActivated: window.openHelp() }
     Shortcut { sequence: "Ctrl+Alt+Shift+R"; onActivated: window.openFeedback("problem", window.feedbackArea(), "") }
-    function openHelp() { rail.openApp("help") }
+    // Help (F1): Teams' Help window, one at a time.
+    property var helpWindow: null
+    function openHelp() {
+        if (helpWindow) { helpWindow.raise(); helpWindow.requestActivate(); return helpWindow }
+        helpWindow = Qt.createComponent("HelpWindow.qml").createObject(null)
+        helpWindow.closing.connect(() => { const w = helpWindow; helpWindow = null; if (w) w.destroy() })
+        helpWindow.show()
+        helpWindow.requestActivate()
+        return helpWindow
+    }
     // Where Report a problem was sent from (the view in front).
     function feedbackArea() {
         const names = { chat: "Chat", activity: "Activity", calendar: "Calendar", calls: "Calls", onedrive: "OneDrive", settings: "Settings", people: "People", planner: "Planner", onenote: "OneNote", add: "Apps" }
@@ -528,6 +537,33 @@ Window {
             step++
         }
     }
+    // --help-test: Help (F1): home, its lower half, a category, an article,
+    // a search, and the Help app in place; captures each.
+    Timer {
+        running: Qt.application.arguments.indexOf("--help-test") >= 0 && chatList.chats.length > 1
+        interval: 1500
+        property int step: 0
+        property var hw: null
+        repeat: true
+        onTriggered: {
+            const cap = (item, tag) => item.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            if (step === 0) hw = window.openHelp()
+            else if (step === 2) { cap(hw.contentItem, "help-home"); console.warn("HELP library", JSON.stringify(hw.viewForTest().library.map(c => [c.title, c.articles.length]))) }
+            else if (step === 3) { const f = hw.viewForTest().children.find(c => c.contentY !== undefined); if (f) f.contentY = 620 }
+            else if (step === 4) cap(hw.contentItem, "help-home2")
+            else if (step === 5) hw.viewForTest().openForTest({ page: "category", id: "chat" })
+            else if (step === 6) cap(hw.contentItem, "help-category")
+            else if (step === 7) hw.viewForTest().openForTest({ page: "article", id: "chat/find-in-a-chat" })
+            else if (step === 8) cap(hw.contentItem, "help-article")
+            else if (step === 9) hw.viewForTest().openForTest({ page: "search", q: "share screen" })
+            else if (step === 10) { cap(hw.contentItem, "help-search"); console.warn("HELP search", JSON.stringify(hw.viewForTest().results.map(a => a.title))) }
+            else if (step === 11) { hw.close(); rail.openApp("help") }
+            else if (step === 13) cap(window.contentItem, "help-app")
+            else if (step === 14) Qt.quit()
+            step++
+        }
+    }
+
     property var findTestWindow: null
     // --find-test[=files] (with --open-chat=<id>, --find=<keywords>): Find in
     // chat: before a search, the results, the first one opened, the Date
@@ -5075,7 +5111,6 @@ Window {
         model: [
             { key: "whiteboard", name: "Whiteboard", icon: "board-20", color: "#0F6CBD", url: "https://whiteboard.cloud.microsoft/" },
             { key: "clipchamp", name: "Clipchamp", icon: "video", color: "#8764B8", url: "https://app.clipchamp.com/" },
-            { key: "help", name: "Help", icon: "question-circle-20", color: theme.textStrong, url: "https://support.microsoft.com/teams" },
             // Communities (Viva Engage), as Teams embeds it.
             { key: "communities", name: "Communities", icon: "people-community-20", color: "#0F6CBD", url: "https://engage.cloud.microsoft/main/discover" }
         ]
@@ -5088,6 +5123,16 @@ Window {
             anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
             sourceComponent: WebApp { appName: modelData.name; appIcon: modelData.icon; appColor: modelData.color; home: modelData.url }
         }
+    }
+    // The Help app: OST's help, in place (as Teams shows its Help app).
+    Loader {
+        id: helpApp
+        property bool opened: false
+        visible: rail.current === "help"
+        onVisibleChanged: if (visible) opened = true
+        active: opened
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        sourceComponent: HelpView {}
     }
     StoreView {
         id: store

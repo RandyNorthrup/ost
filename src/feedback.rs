@@ -22,6 +22,16 @@ pub fn ideas_url() -> String {
     format!("{}/discussions/categories/ideas", repo_url())
 }
 
+/// Help's articles on GitHub (docs/help on the branch that has them; a
+/// build can set `OST_DOCS_BRANCH`).
+pub fn docs_url() -> String {
+    let branch = match option_env!("OST_DOCS_BRANCH") {
+        Some(b) if !b.is_empty() => b,
+        _ => "desktop/foundation",
+    };
+    format!("{}/blob/{branch}/docs/help", repo_url())
+}
+
 /// The privacy statement, and its section on what feedback shares.
 pub fn privacy_url(section: &str) -> String {
     let anchor = if section.is_empty() { String::new() } else { format!("#{section}") };

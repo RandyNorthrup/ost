@@ -1,6 +1,7 @@
 //! OST desktop: a native Qt 6 / QML client on the OST engine.
 
 mod backend;
+mod help_bundle;
 mod key_typer;
 mod launcher_badge;
 mod lock_watch;

@@ -145,6 +145,8 @@ fn main() {
         "qml/ThreadsPane.qml",
         "qml/FindPane.qml",
         "qml/FeedbackWindow.qml",
+        "qml/HelpView.qml",
+        "qml/HelpWindow.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
@@ -162,6 +164,7 @@ fn main() {
         "assets/dialogs",
         "assets/illustrations",
         "assets/settings",
+        "assets/help",
     ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();
@@ -174,6 +177,35 @@ fn main() {
         }
     }
     resources.push("assets/logo.png".into());
+    // Help (F1): the articles in docs/help, compiled in (Help works
+    // offline); OUT_DIR/help_files.rs lists them for src/help_bundle.rs.
+    {
+        let root = std::path::Path::new("../docs/help");
+        println!("cargo:rerun-if-changed=../docs/help");
+        let mut files: Vec<(String, std::path::PathBuf)> = Vec::new();
+        if let Ok(cats) = std::fs::read_dir(root) {
+            for cat in cats.flatten() {
+                if !cat.path().is_dir() {
+                    continue;
+                }
+                println!("cargo:rerun-if-changed={}", cat.path().display());
+                for f in std::fs::read_dir(cat.path()).into_iter().flatten().flatten() {
+                    let p = f.path();
+                    if p.extension().and_then(|e| e.to_str()) == Some("md") {
+                        let rel = format!("{}/{}", cat.file_name().to_string_lossy(), f.file_name().to_string_lossy());
+                        files.push((rel, std::fs::canonicalize(&p).expect("help article")));
+                    }
+                }
+            }
+        }
+        files.sort();
+        let list: String = files
+            .iter()
+            .map(|(rel, abs)| format!("    ({rel:?}, include_str!({:?})),\n", abs.display().to_string()))
+            .collect();
+        let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("help_files.rs");
+        std::fs::write(out, format!("pub static FILES: &[(&str, &str)] = &[\n{list}];\n")).expect("help_files.rs");
+    }
     resources.sort();
     let module = QmlModule::new("com.ost.desktop")
         .qml_files(qml)

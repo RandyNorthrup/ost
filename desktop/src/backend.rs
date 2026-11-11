@@ -447,6 +447,14 @@ pub mod qobject {
         /// A folder for a feedback report's screenshots and files (created).
         #[qinvokable]
         fn feedback_dir(self: &Backend) -> QString;
+        /// Help (F1): the categories with their articles (docs/help):
+        /// [{id, title, description, articles: [{id, category, title,
+        /// description, featured, body}]}].
+        #[qinvokable]
+        fn help_library(self: &Backend) -> QString;
+        /// Help's search: the matching articles, best first.
+        #[qinvokable]
+        fn help_search(self: &Backend, query: &QString) -> QString;
         /// Open the feedback form from any window (feedback_requested).
         #[qinvokable]
         fn request_feedback(self: Pin<&mut Backend>, kind: &QString, area: &QString, context: &QString);
@@ -6831,6 +6839,7 @@ impl qobject::Backend {
             "ideas" => teams_cli::feedback::ideas_url(),
             "privacy" => teams_cli::feedback::privacy_url(""),
             "privacy-feedback" => teams_cli::feedback::privacy_url("feedback"),
+            "docs" => teams_cli::feedback::docs_url(),
             _ => teams_cli::feedback::repo_url(),
         };
         QString::from(url.as_str())
@@ -6838,6 +6847,17 @@ impl qobject::Backend {
 
     pub fn request_feedback(self: Pin<&mut Self>, kind: &QString, area: &QString, context: &QString) {
         self.feedback_requested(kind.clone(), area.clone(), context.clone());
+    }
+
+    pub fn help_library(&self) -> QString {
+        let lib = teams_cli::help::library(crate::help_bundle::FILES);
+        QString::from(serde_json::to_string(&lib).unwrap_or_else(|_| "[]".into()).as_str())
+    }
+
+    pub fn help_search(&self, query: &QString) -> QString {
+        let lib = teams_cli::help::library(crate::help_bundle::FILES);
+        let found = teams_cli::help::search(&lib, &query.to_string());
+        QString::from(serde_json::to_string(&found).unwrap_or_else(|_| "[]".into()).as_str())
     }
 
     pub fn feedback_dir(&self) -> QString {

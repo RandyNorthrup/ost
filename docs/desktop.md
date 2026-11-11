@@ -118,6 +118,12 @@ Microsoft branding.
   Enter to send or to start a new line, notifications, audio devices,
   start with the computer.
 - **Search**: people, chats and channels from the title bar.
+- **Help and feedback**: Help (F1) is Teams' Help window with OST's own
+  articles (docs/help, built in, searchable). Settings and more ▸ Feedback
+  ▸ Report a problem / Give a compliment open Teams' feedback form and send
+  it as an issue on OST's GitHub. You submit it there yourself; nothing is
+  posted for you. Suggest a feature opens the repo's Ideas discussions (see
+  docs/spec/feedback-and-help.md).
 
 Not yet: video in meetings and in calls you place, screen sharing, raising hands and reactions in
 meetings, transfer, hold and the dial pad. Their buttons are shown disabled rather than hidden or faked.
