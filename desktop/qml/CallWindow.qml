@@ -389,7 +389,9 @@ Window {
     property string side: ""
     // Teams' lobby chat (organizers of a meeting with a lobby): the toast's
     // chat button opens the chat pane on its Lobby tab.
-    readonly property bool lobbyChatAvailable: meeting && myRole === "organizer"
+    // Only scheduled meetings have one (a channel meeting's lobby chat
+    // request answers 404).
+    readonly property bool lobbyChatAvailable: meeting && myRole === "organizer" && backend.callThreadId.indexOf("19:meeting_") === 0
     readonly property bool lobbyTabShown: lobbyChatAvailable && backend.callLobbyThread !== ""
     property string chatTab: "everyone"
     readonly property var chatTabs: [

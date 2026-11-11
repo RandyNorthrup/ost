@@ -33,6 +33,8 @@ Window {
     /// starts").
     property bool presenterConnected: true
     property string userName: ""
+    // Teams greets you by your first name ("Hi, OST." for OST Test 1).
+    readonly property string firstName: userName.trim().split(/\s+/)[0] || userName
     /// Starting a meeting now (a channel's Meet now, measured on winpc
     /// 2026-11-09): Teams heads it "Microsoft Teams meeting" (here, OST's
     /// name) with the title in a field under it (prejoin-title-input:
@@ -49,6 +51,38 @@ Window {
     /// in): Teams turns this window into its retry screen.
     property string retryReason: ""
     signal rejoin()
+
+    // Teams' lobby chat for people waiting (measured on winpc 2026-11-11):
+    // once an organizer has written, "Lobby chat" (a secondary button with
+    // the chat glyph) follows Join now, and the Lobby pane opens at the
+    // right (360 wide: "Lobby" 18/700 in a 58 header with Close, a #F0F0F0
+    // banner "Only organizers and people in the lobby can view these
+    // messages." 12/17 between 0.67 #E0E0E0 lines, padding 5 16, then the
+    // messages from "Meeting Organizer"); the rest centres in what's left.
+    readonly property var lobbyMessages: {
+        if (!lobby || !backend.callLobbyThread) return []
+        const all = backend.threadWindowsJson ? JSON.parse(backend.threadWindowsJson) : {}
+        return (all["win:" + backend.callLobbyThread] || []).filter(m => m.kind === "message" && !m.mine)
+            .map(m => Object.assign({}, m, { sender: "Meeting Organizer", sender_mri: "" }))
+    }
+    property bool lobbyPaneOpen: false
+    readonly property real lobbyPaneW: lobbyPaneOpen && lobby ? 360 : 0
+    // Teams opens the pane when the first message arrives.
+    onLobbyMessagesChanged: if (lobbyMessages.length > 0 && !lobbySeen) { lobbySeen = true; lobbyPaneOpen = true }
+    property bool lobbySeen: false
+    onLobbyChanged: if (!lobby) { lobbyPaneOpen = false; lobbySeen = false }
+    property string lobbyChatOpen: ""
+    Connections {
+        target: backend
+        function onCallLobbyThreadChanged() {
+            if (!win.lobby) return
+            if (win.lobbyChatOpen) backend.closeChatWindow(win.lobbyChatOpen)
+            win.lobbyChatOpen = backend.callLobbyThread
+            if (win.lobbyChatOpen) backend.openChatWindow(win.lobbyChatOpen)
+        }
+    }
+    // The pre-join content shrinks to fit beside the pane, as Teams' does.
+    readonly property real fit: Math.min(1, (width - lobbyPaneW - 48) / (508 + 16 + 449))
 
     width: 1280; height: 680
     minimumWidth: 1000; minimumHeight: 640
@@ -86,6 +120,7 @@ Window {
 
     Column {
         anchors.horizontalCenter: parent.horizontalCenter
+        anchors.horizontalCenterOffset: -win.lobbyPaneW / 2
         y: 73
         spacing: 6
         Image {
@@ -98,8 +133,8 @@ Window {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: win.meetNow ? Qt.application.name + " meeting" : !win.lobby ? win.subject
-                : win.presenterConnected ? "Hi, " + win.userName + ". Someone will let you in shortly."
-                : "Hi, " + win.userName + ". Someone will let you in when the meeting starts."
+                : win.presenterConnected ? "Hi, " + win.firstName + ". Someone will let you in shortly."
+                : "Hi, " + win.firstName + ". Someone will let you in when the meeting starts."
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             color: theme.text
         }
@@ -138,6 +173,9 @@ Window {
     Row {
         id: panels
         anchors.horizontalCenter: parent.horizontalCenter
+        anchors.horizontalCenterOffset: -win.lobbyPaneW / 2
+        scale: win.fit
+        transformOrigin: Item.Top
         y: 211
         spacing: 16
         // Camera: off, or your live preview (Teams' prejoin-v2-video-
@@ -243,7 +281,8 @@ Window {
     }
 
     Row {
-        anchors.right: panels.right; y: panels.y + Math.max(329, panels.height) + 24
+        x: panels.x + panels.width / 2 + panels.width * win.fit / 2 - width
+        y: panels.y + Math.max(329, panels.height) * win.fit + 24
         spacing: 8
         Rectangle {
             width: 96; height: 32; radius: theme.radius
@@ -265,6 +304,22 @@ Window {
             TapHandler { enabled: !win.lobby; onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none", win.cameraOn) } }
             Accessible.role: Accessible.Button
             Accessible.name: "Join now"
+        }
+        Rectangle {
+            visible: win.lobby && win.lobbyMessages.length > 0
+            width: lcRow.implicitWidth + 24; height: 32; radius: theme.radius
+            color: lch.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
+            Row {
+                id: lcRow
+                anchors.centerIn: parent
+                spacing: 8
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: lch.hovered ? "chat-20-filled" : "chat-20"; size: 20; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Lobby chat"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            }
+            HoverHandler { id: lch; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: win.lobbyPaneOpen = !win.lobbyPaneOpen }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Lobby chat"
         }
     }
 
@@ -303,6 +358,61 @@ Window {
         Accessible.role: Accessible.RadioButton
         Accessible.name: label
         Accessible.checked: on
+    }
+    // The Lobby pane.
+    Rectangle {
+        visible: win.lobbyPaneW > 0
+        anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+        width: 360
+        color: theme.surface
+        Item {
+            width: parent.width; height: 58
+            Text {
+                x: 20; anchors.verticalCenter: parent.verticalCenter
+                text: "Lobby"
+                font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            Rectangle {
+                x: parent.width - 16 - 32; anchors.verticalCenter: parent.verticalCenter
+                width: 32; height: 30; radius: 4
+                color: lpClose.hovered ? theme.hover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                HoverHandler { id: lpClose; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: win.lobbyPaneOpen = false }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Close chat pane"
+            }
+        }
+        Rectangle {
+            id: lpBanner
+            y: 61; width: parent.width; height: lpBannerText.implicitHeight + 10 + 1.33
+            color: theme.pick("#F0F0F0", "#2E2E2E")
+            Rectangle { width: parent.width; height: 0.67; color: theme.divider }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+            Text {
+                id: lpBannerText
+                x: 16.7; y: 5.67; width: parent.width - 33.3
+                wrapMode: Text.Wrap
+                text: "Only organizers and people in the lobby can view these messages."
+                font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
+                color: theme.textStrong
+            }
+        }
+        Conversation {
+            anchors { top: lpBanner.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+            pane: true; popout: true
+            readOnly: true
+            noAvatars: true
+            chatId: backend.callLobbyThread
+            chatName: "Lobby"
+            isGroup: true
+            messages: win.lobbyMessages
+            paneTitle: ""
+            hideHeader: true
+        }
     }
     RetryScreen {
         anchors.fill: parent

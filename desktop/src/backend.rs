@@ -3038,6 +3038,21 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let qt2 = qt.clone();
         runtime().spawn(async move { refresh_lobby(qt2).await });
     }
+    // Waiting in a lobby: once an organizer writes, the lobby chat thread
+    // arrives (activeModalities.groupChat.lobbyThreadId) and Teams offers
+    // its Lobby chat.
+    if json.contains("lobbyThreadId")
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
+        && let Some(id) = v.pointer("/body/activeModalities/groupChat/lobbyThreadId").and_then(|t| t.as_str()).filter(|t| t.starts_with("19:"))
+    {
+        let id = id.to_string();
+        tracing::info!("lobby chat thread from the call");
+        let _ = qt.queue(move |mut this| {
+            if this.rust().call_lobby_thread.to_string() != id {
+                this.as_mut().set_call_lobby_thread(QString::from(id.as_str()));
+            }
+        });
+    }
     // Admitted from the lobby: the call modality arrives with the
     // conversation's links; Teams then shows the meeting.
     if let Some(update) = teams_cli::calling::outgoing::lobby_admission(json) {
@@ -6953,6 +6968,34 @@ impl qobject::Backend {
     }
 
     fn on_chat_push(mut self: Pin<&mut Self>, ids: Vec<String>) {
+        // Waiting in a lobby whose chat already exists: the first push of
+        // the lobby chat thread is how its messages reach us (no
+        // conversationUpdate then); a meeting thread that is the lobby's
+        // chat (meetingChatType "lobby") becomes the call's lobby chat.
+        if self.rust().call_state.to_string() == "lobby" && self.rust().call_lobby_thread.is_empty() {
+            let main = self.rust().call_thread_id.to_string();
+            let candidates: Vec<String> = ids.iter().filter(|i| i.starts_with("19:meeting_") && **i != main).cloned().collect();
+            if !candidates.is_empty() {
+                let qt = self.qt_thread();
+                runtime().spawn(async move {
+                    let Ok(client) = TeamsClient::new().await else { return };
+                    for id in candidates {
+                        let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), id);
+                        let Ok(resp) = client.chat_get(&url).await else { continue };
+                        let Ok(v) = resp.json::<serde_json::Value>().await else { continue };
+                        if v.pointer("/properties/meetingChatType").and_then(|t| t.as_str()) == Some("lobby") {
+                            tracing::info!("lobby chat thread from a chat push");
+                            let _ = qt.queue(move |mut this| {
+                                if this.rust().call_lobby_thread.is_empty() {
+                                    this.as_mut().set_call_lobby_thread(QString::from(id.as_str()));
+                                }
+                            });
+                            break;
+                        }
+                    }
+                });
+            }
+        }
         let current = self.rust().current_chat_id.to_string();
         let mut list_changed = false;
         // New notifications: refresh Activity (and its badge).

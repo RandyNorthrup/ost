@@ -116,6 +116,12 @@ Rectangle {
     property bool composeDisabled: false
     /// Only Format and Send in the compose (Teams' lobby chat).
     property bool composeTextOnly: false
+    /// No compose at all (people waiting read the lobby chat only).
+    property bool readOnly: false
+    /// No pictures beside others' messages.
+    property bool noAvatars: false
+    /// No header (the host draws its own).
+    property bool hideHeader: false
     /// Teams' empty chat header (chat-pencil illustration and a title),
     /// shown while there are no messages; "" for none.
     property string emptyTitle: ""
@@ -257,7 +263,9 @@ Rectangle {
     // and "Name  time" (12/16) at 64; the text (14/20) 17 under it.
     readonly property bool compact: { const s = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; return !isChannel && !pane && (s.props || {}).messageDensity === "COMPACT" }
     readonly property real gutL: width < 480 ? 14 : 32
-    readonly property real gutContent: gutL + 40
+    // Without pictures (a lobby's view of the organizers' messages) the
+    // bubbles start 16.7 in from the row (Teams' waiting-side Lobby pane).
+    readonly property real gutContent: noAvatars ? gutL + 16.7 : gutL + 40
     readonly property real gutR: width < 480 ? 28 : width < 720 ? 32 : 72
     readonly property real composeGut: width < 480 ? 14 : width < 720 ? 32 : 72
     // While a meeting is live, Teams draws its chat's header in the dark
@@ -629,8 +637,8 @@ Rectangle {
     // Header
     Item {
         id: header
-        width: parent.width; height: theme.headerHeight + (root.pane && root.paneTabs.length ? 47.2 : 0)
-        visible: root.chatName.length > 0 && !root.tabExpanded
+        width: parent.width; height: root.hideHeader ? 0 : theme.headerHeight + (root.pane && root.paneTabs.length ? 47.2 : 0)
+        visible: root.chatName.length > 0 && !root.tabExpanded && !root.hideHeader
         Rectangle {
             visible: root.liveBand
             anchors.fill: parent
@@ -1515,7 +1523,10 @@ Rectangle {
             const i = model.findIndex(m => m.lastRead === true)
             if (i >= 0) Qt.callLater(() => list.positionViewAtIndex(i, ListView.End))
         }
-        anchors { top: header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
+        // Read-only (a lobby's view): the messages start at the top, as
+        // Teams' waiting-side Lobby pane lists them.
+        anchors { top: header.bottom; bottom: root.readOnly ? undefined : compose.top; left: parent.left; right: parent.right }
+        height: Math.min(contentHeight + 12, root.height - header.height - 12)
         anchors.bottomMargin: 12
         clip: true
         spacing: 0
@@ -1726,7 +1737,7 @@ Rectangle {
                 color: theme.brand
             }
             Avatar {
-                visible: (!msg.mine || root.compact) && !msg.grouped && !msg.isRow
+                visible: (!msg.mine || root.compact) && !msg.grouped && !msg.isRow && !root.noAvatars
                 x: root.compact ? 16 : root.gutL; y: root.compact ? msg.topPad + 8 : msg.bubbleY
                 size: root.compact ? 36 : 32; name: msg.modelData.sender
                 photoId: msg.modelData.sender_mri || ""
@@ -3458,7 +3469,7 @@ Rectangle {
     // 72 in on each side, 6 above the bottom, its hint row included.
     ComposeBox {
         id: compose
-        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && root.tab !== "Attendance"
+        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && root.tab !== "Attendance" && !root.readOnly
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }
