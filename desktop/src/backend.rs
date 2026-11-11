@@ -249,6 +249,9 @@ pub mod qobject {
         /// {options: [...] (name, type, values, currentValue, isDisabled),
         /// error} or "" before they load.
         #[qproperty(QString, call_controls_json)]
+        /// Names of people known only by MRI ({mri: name}), resolved on
+        /// request (resolve_names), as Teams resolves a call event's author.
+        #[qproperty(QString, people_names_json)]
         /// Teams' Transcript pane: [{id, kind (speech, started,
         /// stopped), userId, name, text, atMs}], oldest first.
         #[qproperty(QString, call_transcript_json)]
@@ -662,6 +665,9 @@ pub mod qobject {
         /// ({name: value}) at once.
         #[qinvokable]
         fn set_meeting_options(self: Pin<&mut Backend>, changes_json: &QString);
+        /// Resolve these MRIs' names (a JSON list) into people_names_json.
+        #[qinvokable]
+        fn resolve_names(self: Pin<&mut Backend>, mris_json: &QString);
         /// Teams' Rejoin on its retry screen: join the meeting last joined
         /// again.
         #[qinvokable]
@@ -1658,6 +1664,7 @@ pub struct BackendRust {
     call_meeting_info_json: QString,
     call_end_reason: QString,
     call_controls_json: QString,
+    people_names_json: QString,
     call_transcript_json: QString,
     call_captions_json: QString,
     call_captions_on: bool,
@@ -4466,6 +4473,42 @@ impl qobject::Backend {
         }
         let qt = self.qt_thread();
         runtime().spawn(async move { load_controls(qt, link, changes).await });
+    }
+
+    pub fn resolve_names(self: Pin<&mut Self>, mris_json: &QString) {
+        let known: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&self.rust().people_names_json.to_string()).unwrap_or_default();
+        let mris: Vec<String> = serde_json::from_str::<Vec<String>>(&mris_json.to_string())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| !known.contains_key(m))
+            .collect();
+        if mris.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let found = async {
+                let client = TeamsClient::new().await?;
+                api::directory::short_profiles(&client, &mris).await
+            }
+            .await;
+            match found {
+                Ok(found) if !found.is_empty() => {
+                    let _ = qt.queue(move |mut this| {
+                        let mut map: serde_json::Map<String, serde_json::Value> =
+                            serde_json::from_str(&this.rust().people_names_json.to_string()).unwrap_or_default();
+                        for (mri, name) in found {
+                            map.insert(mri, json!(name));
+                        }
+                        let text = serde_json::Value::Object(map).to_string();
+                        this.as_mut().set_people_names_json(QString::from(text.as_str()));
+                    });
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!("names: {}", short_error(&e)),
+            }
+        });
     }
 
     pub fn rejoin_meeting(mut self: Pin<&mut Self>) {

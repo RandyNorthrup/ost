@@ -54,6 +54,17 @@ Item {
         root.reply(root.posts[root.posts.length - 1].id, text)
         return true
     }
+    // A second's tick for live meetings' times.
+    property int clock: 0
+    Timer { running: root.visible && root.posts.some(p => p.post && p.post.kind === "call"); interval: 1000; repeat: true; onTriggered: root.clock++ }
+    /// Time since a meeting started, as Teams shows it: mm:ss, h:mm:ss.
+    function elapsedText(iso) {
+        if (!iso) return ""
+        const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+        const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60
+        const two = n => (n < 10 ? "0" : "") + n
+        return (h > 0 ? h + ":" + two(m) : two(m)) + ":" + two(sec)
+    }
     /// Posts whose earlier replies are shown.
     property var expanded: ({})
     /// A narrow window (Teams' channel and thread windows, measured on
@@ -61,14 +72,50 @@ Item {
     /// (the post's time 20 under its name, a reply's 17.1 under).
     property bool compact: false
 
+    /// The channel's name (a Meet now's post reads `Meeting in "<name>"`).
+    property string channelName: ""
+    /// Who is in the live channel meeting (watched by the Conversation).
+    property var liveRoster: []
+    /// The channel's members ({mri, name}): call events carry no name, so
+    /// a meeting's post shows its author's member name, as Teams does.
+    property var members: []
+    // Test hook: Join the newest live meeting's post.
+    function joinLiveForTest() {
+        const p = root.posts.filter(g => g.post && g.post.kind === "call" && [g.post].concat(g.events).some(e => e.call_state === "started" && e.call_active)).pop()
+        if (!p) return false
+        root.joinMeeting(p.post.meeting_join_url, p.post.meeting_title || "Meeting in \"" + root.channelName + "\"")
+        return true
+    }
+    readonly property var peopleNames: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
+    function senderOf(m) {
+        if (!m) return ""
+        if (m.sender) return m.sender
+        const p = root.members.find(x => (x.mri || "").toLowerCase() === String(m.sender_mri || "").toLowerCase())
+        return p ? p.name : (root.peopleNames[m.sender_mri] || "")
+    }
+    // Meeting posts name their author only by MRI: resolve those names.
+    onPostsChanged: {
+        const want = root.posts.filter(g => g.post && g.post.kind === "call" && !g.post.sender && g.post.sender_mri && !root.peopleNames[g.post.sender_mri]).map(g => g.post.sender_mri)
+        if (want.length) backend.resolveNames(JSON.stringify(Array.from(new Set(want))))
+    }
+    /// Join a channel meeting (Teams opens its pre-join screen).
+    signal joinMeeting(string url, string title)
+    /// "See details" under an ended meeting's post: its thread.
+    signal seeDetails(string rootId)
+    // Teams' channel meetings (measured on winpc 2026-11-10): the meeting's
+    // callStarted event is the post; a rejoin's start, posted as a root
+    // linked to it (linked_root), and the thread's call events fold into
+    // it instead of showing as replies.
     readonly property var posts: {
         const byRoot = {}, order = []
         for (const m of root.messages) {
-            if (m.kind === "call") continue
-            const r = m.root_id || m.id
-            if (!byRoot[r]) { byRoot[r] = { id: r, post: null, replies: [], last: 0 }; order.push(r) }
+            const r = m.kind === "call" && m.linked_root ? m.linked_root : (m.root_id || m.id)
+            const meetingPost = m.kind === "call" && m.id === r && !!m.meeting_join_url
+            if (m.kind === "call" && !meetingPost && !byRoot[r]) continue
+            if (!byRoot[r]) { byRoot[r] = { id: r, post: null, replies: [], events: [], last: 0 }; order.push(r) }
             const g = byRoot[r]
-            if (m.id === r) g.post = m; else g.replies.push(m)
+            if (m.kind === "call") { if (meetingPost) g.post = m; else g.events.push(m) }
+            else if (m.id === r) g.post = m; else g.replies.push(m)
             g.last = Math.max(g.last, parseInt(m.id) || 0)
         }
         // Replies whose post is older than the loaded page still show,
@@ -108,6 +155,13 @@ Item {
             readonly property bool open: root.replying === modelData.id
             readonly property bool showAll: root.expanded[modelData.id] === true
             readonly property var shown: showAll || replies.length <= 3 ? replies : replies.slice(replies.length - 3)
+            // A channel meeting's post: live while a start (its own or a
+            // rejoin's) has no end; then its subject says "ended".
+            readonly property bool meeting: !!post && post.kind === "call"
+            readonly property var liveStart: !meeting ? null : [post].concat(modelData.events).filter(e => e.call_state === "started" && e.call_active).pop() || null
+            readonly property bool live: !!liveStart
+            readonly property string meetingTitle: !meeting ? "" : (post.meeting_title || "Meeting in \"" + root.channelName + "\"")
+            readonly property string subjectText: meeting ? meetingTitle + (live ? "" : " ended") : (post && post.subject ? post.subject : "")
             x: root.compact ? 30 : (list.width - width) / 2
             width: list.cardW
             height: col.height
@@ -145,14 +199,14 @@ Item {
                         id: av
                         visible: !!card.post && !postEdit.active
                         x: 18; y: 16; size: 32
-                        name: card.post ? card.post.sender : ""
+                        name: card.post ? root.senderOf(card.post) : ""
                         photoId: card.post ? card.post.sender_mri : ""
                         opensProfile: true
                     }
                     Text {
                         visible: !postEdit.active
                         x: card.post ? 60 : 18; y: !card.post ? 14 : root.compact ? 13.4 : 22
-                        text: card.post ? card.post.sender : "Earlier post"
+                        text: card.post ? root.senderOf(card.post) : "Earlier post"
                         font.family: theme.font; font.pixelSize: theme.base
                         lineHeight: root.compact ? 20 : 1; lineHeightMode: root.compact ? Text.FixedHeight : Text.ProportionalHeight
                         color: card.post ? theme.text : theme.textSecondary
@@ -226,11 +280,11 @@ Item {
                             }
                         }
                         Text {
-                            visible: !!card.post && !!card.post.subject
+                            visible: !!card.post && !!card.subjectText
                             width: parent.width; wrapMode: Text.Wrap
                             bottomPadding: 16
                             textFormat: Text.RichText
-                            text: card.post && card.post.subject ? theme.markTerms(card.post.subject.replace(/&/g, "&amp;").replace(/</g, "&lt;"), root.markFor(card.post.id)) : ""
+                            text: card.subjectText ? theme.markTerms(card.subjectText.replace(/&/g, "&amp;").replace(/</g, "&lt;"), root.markFor(card.post.id)) : ""
                             font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
                             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                             color: theme.text
@@ -239,7 +293,8 @@ Item {
                     }
                     MessageText {
                         id: postBody
-                        visible: !!card.post && !postEdit.active
+                        visible: !!card.post && !postEdit.active && !card.meeting
+                        height: card.meeting ? 0 : implicitHeight
                         x: 18; y: 64 + postHead.height; width: card.width - 36
                         message: card.post
                         mark: root.markFor(card.post ? card.post.id : "")
@@ -280,6 +335,81 @@ Item {
                         acceptedButtons: Qt.RightButton
                         enabled: !!card.post && !!root.host
                         onTapped: point => root.host.openMessageMenu(card.post, card, true, point.position.x, point.position.y, "post")
+                    }
+                }
+                // A live channel meeting's banner (channel-ongoing-meeting-
+                // banner): the card's width, 70 tall, #333357, radius 4, 2
+                // under the reactions; a 32 px #5B5FC7 tile with the video
+                // glyph 20 in, the title (14/600) 10 after it, then from the
+                // right: Join (96 x 32), the people in it (28 px, 18 apart)
+                // 15 before it, the time since it started 15 before them.
+                Item {
+                    visible: card.live
+                    width: card.width; height: visible ? 68 : 0
+                    Rectangle {
+                        y: -6; width: parent.width; height: 70; radius: 4
+                        color: "#333357"
+                        Rectangle {
+                            x: 20; y: 19; width: 32; height: 32; radius: 4
+                            color: "#5B5FC7"
+                            FluentIcon { anchors.centerIn: parent; name: "video-20-filled"; size: 20; color: "white" }
+                        }
+                        Text {
+                            x: 62; anchors.verticalCenter: parent.verticalCenter
+                            width: Math.max(0, elapsed.x - 15 - x); elide: Text.ElideRight
+                            text: card.meetingTitle
+                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                            color: "white"
+                        }
+                        Text {
+                            id: elapsed
+                            x: people.x - 15 - width; anchors.verticalCenter: parent.verticalCenter
+                            text: { root.clock; return card.liveStart ? root.elapsedText(card.liveStart.call_started_at) : "" }
+                            font.family: theme.font; font.pixelSize: 14
+                            color: "white"
+                            Accessible.role: Accessible.StaticText
+                            Accessible.name: "Meeting duration " + text
+                        }
+                        Row {
+                            id: people
+                            readonly property var shownPeople: root.liveRoster.slice(0, 5)
+                            x: joinButton.x - 15 - width; anchors.verticalCenter: parent.verticalCenter
+                            width: shownPeople.length ? (shownPeople.length - 1) * 18 + 28 : 0
+                            spacing: -10
+                            Repeater {
+                                model: people.shownPeople
+                                Avatar { required property var modelData; size: 28; name: modelData.name || "?"; photoId: modelData.id }
+                            }
+                        }
+                        Rectangle {
+                            id: joinButton
+                            readonly property bool can: backend.callState === ""
+                            x: parent.width - 20 - width; anchors.verticalCenter: parent.verticalCenter
+                            width: 96; height: 32; radius: 4
+                            color: !can ? theme.bgDisabled : jh.hovered ? theme.brandHover : "#5B5FC7"
+                            Text { anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: joinButton.can ? "white" : theme.disabled }
+                            HoverHandler { id: jh; enabled: joinButton.can; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { enabled: joinButton.can; onTapped: root.joinMeeting(card.post.meeting_join_url, card.meetingTitle) }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Join " + card.meetingTitle
+                        }
+                    }
+                }
+                // An ended meeting's "See details" (response-summary-button,
+                // 12 px brand, 18 in and 12 down in a 40.7 row): its thread.
+                Item {
+                    visible: card.meeting && !card.live && card.modelData.events.length > 0 && card.replies.length === 0
+                    width: card.width; height: visible ? 40.7 : 0
+                    Rectangle { width: parent.width; height: 0.67; color: theme.quoteBorder }
+                    Text {
+                        x: 21.7; y: 12.7
+                        text: "See details"
+                        font.family: theme.font; font.pixelSize: 12
+                        color: theme.brand
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.seeDetails(card.modelData.id) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: text
                     }
                 }
                 // Earlier replies, collapsed.

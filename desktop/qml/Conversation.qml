@@ -382,16 +382,29 @@ Rectangle {
     // Watching the chat's call while we aren't in it (Teams subscribes to
     // its conversation without joining): who is in it, for the header.
     readonly property var liveRosterPeople: JSON.parse(backend.chatLiveRosterJson || "[]")
-    readonly property string watchKey: root.liveCall && !root.inThisCall && !root.pane && root.liveCall.conversation_url
-        ? root.chatId + "|" + root.liveCall.conversation_url : ""
+    // A channel's live meeting (its newest start with no end): watched the
+    // same way, for its post's banner.
+    readonly property var channelLiveMeeting: !root.isChannel ? null
+        : root.messages.filter(m => m.kind === "call" && m.call_state === "started" && m.call_active && m.call_conversation_url).pop() || null
+    readonly property var watchTarget: root.liveCall && root.liveCall.conversation_url
+        ? { url: root.liveCall.conversation_url, id: root.liveCall.call_id || "" }
+        : root.channelLiveMeeting ? { url: root.channelLiveMeeting.call_conversation_url, id: root.channelLiveMeeting.call_id || "" } : null
+    readonly property string watchKey: root.watchTarget && !root.inThisCall && !root.pane
+        ? root.chatId + "|" + root.watchTarget.url : ""
     onWatchKeyChanged: watchTimer.restart()
     Component.onCompleted: if (!root.pane) watchTimer.restart()
     Timer {
         id: watchTimer; interval: 300
         onTriggered: if (!root.pane) root.watchKey
-            ? backend.watchChatCall(root.chatId, root.liveCall.conversation_url, root.liveCall.call_id || "")
+            ? backend.watchChatCall(root.chatId, root.watchTarget.url, root.watchTarget.id)
             : backend.watchChatCall("", "", "")
     }
+    /// Join a meeting through Teams' pre-join screen.
+    signal joinMeetingRequested(string url, string title)
+    /// Teams' post view (a channel post's thread): opened from "See
+    /// details" under an ended meeting's post.
+    function openPostView(rootId) { openThreadWindow({ id: rootId, root_id: rootId }) }
+    function joinLiveMeetingForTest() { return channelPosts.joinLiveForTest() }
     readonly property bool callGoing: !!root.liveCall || root.messages.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
     readonly property bool inThisCall: backend.callState !== "" && backend.callThreadId === root.chatId
     readonly property bool callsDisabled: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) > 20
@@ -1374,6 +1387,11 @@ Rectangle {
         onStartAnnouncement: { root.posting = true; compose.announcement = true; compose.focusSubject() }
         messages: root.isChannel ? root.messages : []
         myName: root.myName
+        channelName: root.chatName
+        liveRoster: root.liveRosterPeople
+        members: backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+        onJoinMeeting: (url, title) => root.joinMeetingRequested(url, title)
+        onSeeDetails: rootId => root.openPostView(rootId)
         busy: root.busy
         onReply: (id, text) => root.sendReply(id, text)
         onReact: (id, key, on) => root.react(id, key, on)

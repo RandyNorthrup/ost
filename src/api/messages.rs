@@ -650,6 +650,22 @@ pub struct MessageView {
     /// A started call with no end in the loaded timeline (Teams' Join).
     #[serde(default)]
     pub call_active: bool,
+    /// A channel meeting's post (its callStarted root): the join link,
+    /// title (empty for Meet now: Teams shows `Meeting in "<channel>"`),
+    /// when this conversation started (RFC 3339) and its conversation (to
+    /// watch who's in it).
+    #[serde(default)]
+    pub meeting_join_url: String,
+    #[serde(default)]
+    pub meeting_title: String,
+    #[serde(default)]
+    pub call_started_at: String,
+    #[serde(default)]
+    pub call_conversation_url: String,
+    /// A rejoin's start posted as a new root that Teams folds into the
+    /// meeting's post (`properties.linkedRootMessageId`).
+    #[serde(default)]
+    pub linked_root: String,
     /// Your message, and the other person has read up to it (Teams' "Seen").
     pub seen: bool,
     /// The first message that arrived after you last read the chat (Teams
@@ -1284,6 +1300,49 @@ pub fn sort_by_arrival(out: &mut [MessageView]) {
     link_calls(out);
 }
 
+/// What a call start says about a channel meeting.
+#[derive(Default, Debug, PartialEq)]
+struct ChannelMeeting {
+    join_url: String,
+    title: String,
+    started_at: String,
+    conversation_url: String,
+    linked_root: String,
+}
+
+/// A call start's meeting details: `properties.meeting` (a JSON string:
+/// `meetingJoinUrl`, `meetingtitle`), `properties.linkedRootMessageId`, and
+/// the content's `<conversationStartTime>` (UTC, "MM/DD/YYYY HH:MM:SS") and
+/// `<conversationUrl>`.
+fn channel_meeting(m: &serde_json::Value, content: &str) -> ChannelMeeting {
+    let props = m.get("properties");
+    let meeting: serde_json::Value = props
+        .and_then(|p| p.get("meeting"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    let tag = |t: &str| {
+        content
+            .split(&format!("<{t}>"))
+            .nth(1)
+            .and_then(|r| r.split('<').next())
+            .unwrap_or_default()
+            .trim()
+            .replace("&amp;", "&")
+    };
+    let started_at = chrono::NaiveDateTime::parse_from_str(&tag("conversationStartTime"), "%m/%d/%Y %H:%M:%S")
+        .map(|t| t.and_utc().to_rfc3339())
+        .unwrap_or_default();
+    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    ChannelMeeting {
+        join_url: s(&meeting, "meetingJoinUrl"),
+        title: s(&meeting, "meetingtitle"),
+        started_at,
+        conversation_url: tag("conversationUrl"),
+        linked_root: props.map(|p| s(p, "linkedRootMessageId")).unwrap_or_default(),
+    }
+}
+
 /// Pair calls' started and ended events by call id: an end of a Meet now
 /// call is a meeting end, and a start with no end is still going on.
 pub fn link_calls(out: &mut [MessageView]) {
@@ -1432,12 +1491,18 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
                 .unwrap_or_default()
                 .trim()
                 .to_string();
+            let meeting = channel_meeting(m, &content);
             return Some(MessageView {
                 kind: "call".into(),
                 call_state: "started".into(),
                 call_huddle: content.contains("\"huddleGroupCall\""),
                 call_initiator: initiator,
                 call_id,
+                meeting_join_url: meeting.join_url,
+                meeting_title: meeting.title,
+                call_started_at: meeting.started_at,
+                call_conversation_url: meeting.conversation_url,
+                linked_root: meeting.linked_root,
                 ..base
             });
         }
@@ -4942,5 +5007,24 @@ mod paging_and_event_tests {
         assert_eq!(left.names.get("8:teamsvisitor:dfeeb0b8").map(String::as_str), Some("OST Guest 1"));
         let joined = chat_event("ThreadActivity/MemberJoined", r#"{"initiator":"8:orgid:me","members":[{"id":"8:teamsvisitor:dfeeb0b8","friendlyname":"OST Guest 1"}]}"#).unwrap();
         assert_eq!(event_text(&joined, &names, true), "OST Guest 1 was invited to the meeting.");
+    }
+}
+
+#[cfg(test)]
+mod channel_meeting_tests {
+    use super::channel_meeting;
+
+    #[test]
+    fn reads_a_channel_meetings_start() {
+        let m = serde_json::json!({"properties": {"meeting": "{\"meetingtitle\":null,\"organizerId\":\"o\",\"meetingJoinUrl\":\"https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.tacv2/179?context=x\"}"}});
+        let content = "<partlist alt =\"\"></partlist><callEventType>callStarted</callEventType>\n<conversationStartTime>11/11/2026 06:38:08</conversationStartTime>\n<conversationUrl>https://api.example/conv/d?i=1&amp;e=2</conversationUrl>\n<callId>bc</callId>";
+        let c = channel_meeting(&m, content);
+        assert_eq!(c.join_url, "https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.tacv2/179?context=x");
+        assert_eq!(c.title, "");
+        assert_eq!(c.started_at, "2026-11-11T06:38:08+00:00");
+        assert_eq!(c.conversation_url, "https://api.example/conv/d?i=1&e=2");
+        assert_eq!(c.linked_root, "");
+        let linked = serde_json::json!({"properties": {"linkedRootMessageId": "1794373384701"}});
+        assert_eq!(channel_meeting(&linked, "").linked_root, "1794373384701");
     }
 }

@@ -223,3 +223,35 @@ pub async fn photo(
     let bytes = resp.bytes().await.context("Picture download")?;
     Ok((!bytes.is_empty()).then(|| bytes.to_vec()))
 }
+
+/// People's display names by MRI, as Teams resolves people it only knows by
+/// MRI (`POST {mt}/beta/users/fetchShortProfile` with the MRIs; the reply's
+/// `value` lists `{mri, displayName, ...}`). Unknown MRIs are left out.
+pub async fn short_profiles(client: &TeamsClient, mris: &[String]) -> Result<Vec<(String, String)>> {
+    let mris: Vec<&String> = mris.iter().filter(|m| m.starts_with("8:")).collect();
+    if mris.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/users/fetchShortProfile?isMailAddress=false&enableGuest=true&skypeTeamsInfo=true"))
+        .bearer_auth(&token)
+        .json(&mris)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Short profiles")?
+        .json()
+        .await?;
+    Ok(v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let mri = p["mri"].as_str()?.to_string();
+            let name = p["displayName"].as_str().filter(|n| !n.is_empty())?.to_string();
+            Some((mri, name))
+        })
+        .collect())
+}

@@ -1559,6 +1559,33 @@ Window {
         }
     }
     Timer { id: quitLater; interval: 2000; onTriggered: Qt.quit() }
+    // --open-channel=<id>: open that channel, capture the window after 10 s
+    // and 20 s (its live roster logged), then quit.
+    Timer {
+        readonly property string id: (Qt.application.arguments.find(a => a.startsWith("--open-channel=")) || "").slice(15)
+        running: id.length > 0 && backend.signedIn && !!backend.teamsJson
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            if (step === 0) {
+                const ch = JSON.parse(backend.teamsJson).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === id)
+                if (!ch) { console.warn("OPENCHANNEL not found"); return }
+                backend.selectChat(ch.id, ch.name)
+            } else if (step === 5 || step === 10) {
+                console.warn("OPENCHANNEL live roster", backend.chatLiveRosterJson)
+                window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-channel" + step + ".png")))
+            } else if (step === 11 && Qt.application.arguments.indexOf("--open-channel-join") < 0) Qt.quit()
+            // --open-channel-join: Join the live meeting from its post (the
+            // pre-join screen), join without audio, check who's in, leave.
+            else if (step === 11) console.warn("OPENCHANNEL join", conversation.joinLiveMeetingForTest())
+            else if (step === 13) { console.warn("OPENCHANNEL prejoin", preJoin.visible, preJoin.subject, preJoin.joinUrl.slice(0, 80)); preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-prejoin.png"))) }
+            else if (step === 14) { preJoin.audio = "none"; preJoin.close(); preJoin.join(false, false, false) }
+            else if (step === 20) { console.warn("OPENCHANNEL in call", backend.callState, backend.callRosterJson.slice(0, 300)); callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-call.png"))) }
+            else if (step === 22) backend.hangUp()
+            else if (step === 25) Qt.quit()
+            step++
+        }
+    }
     // --open-chat=<name>: open that chat, capture it after 10 s (and 20 s),
     // then quit.
     Timer {
@@ -5766,6 +5793,7 @@ Window {
             for (const t of teams) { const c = (t.channels || []).find(c => c.id === backend.currentChatId); if (c) return c.layout || "" }
             return ""
         }
+        onJoinMeetingRequested: (url, title) => preJoin.openFor(url, title, "", "")
         onOpenThread: rootId => {
             threadsPane.channelId = backend.currentChatId
             threadsPane.openThread(rootId)
