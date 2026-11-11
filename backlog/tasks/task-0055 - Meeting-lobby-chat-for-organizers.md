@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-08T02:16:00Z'
-updated_date: '2026-11-08T16:26:00Z'
+updated_date: '2026-11-11T16:13:00Z'
 labels:
   - calls
   - meetings
@@ -38,4 +38,6 @@ Teams lets a scheduled meeting's organizer chat with people waiting in the lobby
 - OST now parses lobbyThreadId (OutgoingCall::lobby_thread) for when it does arrive.
 
 - Teams desktop's call signaling isn't visible to CDP (native calling stack): watching winpc's pages through a leave/rejoin showed no conversation traffic. Capturing winpc's lobby thread needs another route (Teams web as organizer, or the desktop's logs).
+
+- 2026-11-11 live test: OST Test 2 (OST, advertises supportsLobbyChat) waited in the lobby of OST Test 1's meeting while Teams desktop (winpc) and OST (linuxlt) were both in it as OST Test 1. Teams' toast showed the lobby chat button (so a lobby thread existed); OST got the rosterUpdate (lobbyParticipants 1) and the lobby list, but no conversationUpdate at all, though its join registers the conversationUpdate callback. Next: find how Teams desktop gets lobbyThreadId (its calling stack may fetch it, or receive it on a channel OST does not subscribe to).
 <!-- SECTION:NOTES:END -->
