@@ -72,6 +72,8 @@ fn main() {
         "qml/MeetingTile.qml",
         "qml/RetryScreen.qml",
         "qml/MeetingOptionsDialog.qml",
+        "qml/MeetingPeoplePicker.qml",
+        "qml/ArrowTip.qml",
         "qml/PostThread.qml",
         "qml/GalleryGrid.qml",
         "qml/SharedDisplayWindow.qml",

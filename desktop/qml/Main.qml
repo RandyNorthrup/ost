@@ -1017,6 +1017,7 @@ Window {
         visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0 || retryReason !== ""
         onRejoin: window.rejoinMeeting()
         controlsOptions: { const o = {}; (backend.callControlsJson ? JSON.parse(backend.callControlsJson).options : []).forEach(x => o[x.name] = x); return o }
+        controlsPeople: backend.callControlsJson ? JSON.parse(backend.callControlsJson) : ({})
         onLoadControls: backend.loadMeetingControls()
         onSetMeetingOption: (name, value) => backend.setMeetingOption(name, JSON.stringify(value))
         onApplyMeetingOptions: changes => backend.setMeetingOptions(JSON.stringify(changes))
@@ -2177,6 +2178,27 @@ Window {
                 else if (step === 16) callWindow.optionsDialogForTest().scrollTo(5)
                 else if (step === 17) shot("dialog-copilot")
                 else if (step === 18) callWindow.optionsDialogForTest().close()
+                // --join-controls-people: the co-organizer picker: capture
+                // Roles, remove the co-organizer and Apply, pick them again
+                // from the list and Apply, logging what's saved each time.
+                else if (Qt.application.arguments.indexOf("--join-controls-people") >= 0 && step >= 19 && step <= 36) {
+                    const dlg = callWindow.optionsDialogForTest()
+                    const picker = () => dlg.pickerForTest("CoOrganizers")
+                    const saved = () => JSON.stringify((callWindow.controlsOptions.CoOrganizers || {}).selectedPeople)
+                    if (step === 19) { callWindow.openMeetingOptions() }
+                    else if (step === 21) { dlg.scrollTo(1) }
+                    else if (step === 22) { shot("roles"); console.warn("JOIN people saved", saved(), "invitees", JSON.stringify(callWindow.controlsPeople.invitees), "names", JSON.stringify(callWindow.controlsPeople.people), "candidates", JSON.stringify(dlg.candidates("CoOrganizers"))) }
+                    else if (step === 23) { picker().unpick(0) }
+                    else if (step === 24) { picker().openForTest(); }
+                    else if (step === 25) { shot("roles-removed"); console.warn("JOIN people dirty", dlg.dirty, "note", dlg.planningNote) }
+                    else if (step === 26) { dlg.tryApply() }
+                    else if (step === 29) { console.warn("JOIN people after remove", saved()); picker().typeForTest("OST") }
+                    else if (step === 30) { shot("roles-search"); const m = picker().matches; console.warn("JOIN people matches", JSON.stringify(m)); if (m.length) picker().pick(m[0]) }
+                    else if (step === 31) { shot("roles-picked") }
+                    else if (step === 32) { dlg.tryApply() }
+                    else if (step === 35) { console.warn("JOIN people after re-add", saved()); shot("roles-saved") }
+                    else if (step === 36) { dlg.close() }
+                }
                 else if (step === 20 && Qt.application.arguments.indexOf("--join-controls-toggle") >= 0) { console.warn("JOIN controls lobby before", opt("AutoAdmittedUsers")); callWindow.pickControl("AutoAdmittedUsers") }
                 else if (step === 24) console.warn("JOIN controls lobby after toggle", opt("AutoAdmittedUsers"))
                 else if (step === 25 && Qt.application.arguments.indexOf("--join-controls-toggle") >= 0) callWindow.pickControl("AutoAdmittedUsers")

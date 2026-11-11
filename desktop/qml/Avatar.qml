@@ -50,6 +50,28 @@ Rectangle {
     width: size
     height: size
     radius: square ? squareRadius : size / 2
+    /// Fluent's colourful avatar, as Teams' Fluent pickers draw people
+    /// without a picture (Meeting options): the colour hashed from the name
+    /// with Fluent's getHashCode over its 30 persona colours (Background2
+    /// with Foreground2 initials, swapped in dark), the initials in Fluent's
+    /// type ramp, one initial at 16 px. Read from Teams on winpc 2026-11-11.
+    property bool colorful: false
+    readonly property var fluentPalette: [
+        ["#D69CA5", "#420610"], ["#EEACB2", "#6E0811"], ["#F1BBBC", "#751D1F"], ["#EFC4AD", "#712D09"], ["#FFDDB3", "#8F4E00"],
+        ["#F9E2AE", "#835B00"], ["#ECDFA5", "#6C5700"], ["#E0CEA2", "#553E06"], ["#DDC3B0", "#50301A"], ["#BDD99B", "#294903"],
+        ["#A8F0CD", "#00723B"], ["#9AD29A", "#063B06"], ["#A6E9ED", "#00666D"], ["#9BD9DB", "#02494C"], ["#94C8D4", "#00333F"],
+        ["#A9D3F2", "#004377"], ["#9ABFDC", "#002C4E"], ["#C8D1FA", "#2C3C85"], ["#A3B2E8", "#001665"], ["#D2CCF8", "#3F3682"],
+        ["#C6B1DE", "#341A51"], ["#D9A7E0", "#4C0D55"], ["#E6BFED", "#63276D"], ["#F7C0E3", "#80215D"], ["#ECA5D1", "#6B0043"],
+        ["#D696C0", "#43002B"], ["#D7D4D4", "#444241"], ["#CECCCB", "#343231"], ["#CDD6D8", "#3B4447"], ["#BCC3C7", "#202427"]]
+    readonly property var fluentColors: {
+        let h = 0
+        for (let i = name.length - 1; i >= 0; i--) {
+            const ch = name.charCodeAt(i), shift = i % 8
+            h ^= (ch << shift) + (ch >> (8 - shift))
+        }
+        const pair = fluentPalette[Math.abs(h) % fluentPalette.length]
+        return [theme.pick(pair[0], pair[1]), theme.pick(pair[1], pair[0])]
+    }
     readonly property var swatches: ["#E8C8CA", "#D6E6F7", "#DFF6DD", "#FCE4D6", "#E9E3F7", "#D4EDEB"]
     readonly property var inks: ["#751D1F", "#0F548C", "#0E700E", "#8A3707", "#5C2E91", "#00666D"]
     readonly property int hue: {
@@ -57,7 +79,7 @@ Rectangle {
         for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997
         return h % swatches.length
     }
-    color: meeting ? "#C5CBFA" : pic.visible ? "transparent" : group ? "#949494" : swatches[hue]
+    color: meeting ? "#C5CBFA" : pic.visible ? "transparent" : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
 
     function initials(n) {
         const words = n.trim().split(/\s+/).filter(w => w.length > 0)
@@ -126,10 +148,10 @@ Rectangle {
     Text {
         visible: !pic.visible && !root.group && !root.meeting
         anchors.centerIn: parent
-        text: root.initialsText || root.initials(root.name)
-        color: root.inks[root.hue]
+        text: root.initialsText || (root.colorful && root.size <= 16 ? root.initials(root.name).charAt(0) : root.initials(root.name))
+        color: root.colorful ? root.fluentColors[1] : root.inks[root.hue]
         font.family: theme.font
-        font.pixelSize: Math.round(root.size * 0.38)
+        font.pixelSize: root.colorful ? (root.size <= 24 ? 10 : root.size <= 28 ? 12 : root.size <= 40 ? 14 : Math.round(root.size * 0.38)) : Math.round(root.size * 0.38)
         font.weight: Font.DemiBold
     }
 

@@ -224,10 +224,11 @@ pub async fn photo(
     Ok((!bytes.is_empty()).then(|| bytes.to_vec()))
 }
 
-/// People's display names by MRI, as Teams resolves people it only knows by
-/// MRI (`POST {mt}/beta/users/fetchShortProfile` with the MRIs; the reply's
-/// `value` lists `{mri, displayName, ...}`). Unknown MRIs are left out.
-pub async fn short_profiles(client: &TeamsClient, mris: &[String]) -> Result<Vec<(String, String)>> {
+/// People's short profiles by MRI, as Teams resolves people it only knows
+/// by MRI (`POST {mt}/beta/users/fetchShortProfile` with the MRIs; the
+/// reply's `value` lists `{mri, displayName, userPrincipalName, ...}`).
+/// Unknown MRIs are left out.
+pub async fn short_profile_records(client: &TeamsClient, mris: &[String]) -> Result<Vec<serde_json::Value>> {
     let mris: Vec<&String> = mris.iter().filter(|m| m.starts_with("8:")).collect();
     if mris.is_empty() {
         return Ok(Vec::new());
@@ -244,10 +245,14 @@ pub async fn short_profiles(client: &TeamsClient, mris: &[String]) -> Result<Vec
         .context("Short profiles")?
         .json()
         .await?;
-    Ok(v["value"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    Ok(v["value"].as_array().cloned().unwrap_or_default())
+}
+
+/// People's display names by MRI (short_profile_records' `displayName`).
+pub async fn short_profiles(client: &TeamsClient, mris: &[String]) -> Result<Vec<(String, String)>> {
+    Ok(short_profile_records(client, mris)
+        .await?
+        .iter()
         .filter_map(|p| {
             let mri = p["mri"].as_str()?.to_string();
             let name = p["displayName"].as_str().filter(|n| !n.is_empty())?.to_string();

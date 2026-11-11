@@ -49,6 +49,24 @@ async fn main() -> anyhow::Result<()> {
         println!("{url}");
         return Ok(());
     }
+    if first == "raw" {
+        // The whole GET reply but the options, or the named options (test aid).
+        let link = MeetingLink::parse(args.get(1).context("link")?).context("not a meeting join link")?;
+        let (base, token) = teams_cli::api::tabs::middle_tier(&client).await?;
+        let path = meeting_options::options_path(link.tenant_id.as_deref().unwrap_or_default(), link.organizer_id.as_deref().unwrap_or_default(), &link.thread_id, &link.message_id);
+        let mut v: serde_json::Value = client.http().get(format!("{base}{path}")).bearer_auth(&token).send().await?.json().await?;
+        // With option names after the link: just those options.
+        let names: Vec<&String> = args.iter().skip(2).collect();
+        if names.is_empty() {
+            v.as_object_mut().map(|o| o.remove("options"));
+            println!("{v:#}");
+        } else {
+            for o in v["options"].as_array().into_iter().flatten().filter(|o| names.iter().any(|n| o["name"].as_str() == Some(n.as_str()))) {
+                println!("{o:#}");
+            }
+        }
+        return Ok(());
+    }
     let link = MeetingLink::parse(first).context("not a meeting join link")?;
     let (tenant, organizer) = (link.tenant_id.clone().context("no tenant")?, link.organizer_id.clone().context("no organizer")?);
     let changes: Vec<(String, serde_json::Value)> = args[1..]
@@ -62,8 +80,13 @@ async fn main() -> anyhow::Result<()> {
         let c: Vec<(&str, serde_json::Value)> = changes.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
         meeting_options::set(&client, &tenant, &organizer, &link.thread_id, &link.message_id, &c).await?
     };
-    for o in options {
-        println!("{} = {}", o["name"].as_str().unwrap_or_default(), o["currentValue"]);
+    for o in options.options {
+        let name = o["name"].as_str().unwrap_or_default();
+        match o["type"].as_str() {
+            // People pickers: who is picked, and who can be (the invitees).
+            Some("PeopleSelection" | "PresenterSelection") => println!("{name} = {} (invitees {})", o["selectedPeople"], o["invitees"]),
+            _ => println!("{name} = {}", o["currentValue"]),
+        }
     }
     Ok(())
 }

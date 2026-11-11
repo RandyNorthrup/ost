@@ -26,18 +26,96 @@ Popup {
     padding: 0
     width: 780.7; height: 538.7
     anchors.centerIn: Overlay.overlay
-    closePolicy: Popup.CloseOnEscape
+    // Escape and Close ask first when something's changed (tryClose).
+    closePolicy: Popup.NoAutoClose
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
     Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
 
     /// The meeting's options as the API lists them ({name: option}).
     property var options: ({})
+    /// For the people pickers: {invitees: [{mri, upn, objectId, tenantId}],
+    /// people: {mri: name}, organizer: {mri, objectId, upn, tenantId},
+    /// tenantId}.
+    property var people: ({})
+    /// Teams' dialog strings from the same reply (translations).
+    readonly property var strings: people.translations || ({})
     /// What's been changed and not applied yet ({name: value}).
     property var changes: ({})
     signal apply(var changes)
     onAboutToShow: changes = ({})
-    function value(n) { return changes[n] !== undefined ? changes[n] : (options[n] ? options[n].currentValue : undefined) }
-    function change(n, v) { const c = Object.assign({}, changes); if (options[n] && options[n].currentValue === v) delete c[n]; else c[n] = v; changes = c }
+    function isPeople(o) { return !!o && (o.type === "PeopleSelection" || o.type === "PresenterSelection") }
+    function value(n) {
+        if (changes[n] !== undefined) return changes[n]
+        const o = options[n]
+        return !o ? undefined : isPeople(o) ? (o.selectedPeople || []) : o.currentValue
+    }
+    function change(n, v) {
+        const c = Object.assign({}, changes)
+        const o = options[n]
+        const same = isPeople(o)
+            ? (o.selectedPeople || []).map(p => p.mri).join() === v.map(p => p.mri).join()
+            : !!o && o.currentValue === v
+        if (same) delete c[n]; else c[n] = v
+        changes = c
+    }
+    function tryClose() { if (dirty) unsaved.open(); else close() }
+    // Teams' pickers (PeopleSelection `Xn`, PeoplePicker `da`): the
+    // meeting's invitees; co-organizers also those picked and never the
+    // organizer, nor anyone from another org; specific producers also the
+    // organizer; nobody already picked in the same section.
+    function samePerson(a, b) {
+        const eq = (x, y) => !!x && !!y && String(x).toLowerCase() === String(y).toLowerCase()
+        return eq(a.objectId, b.objectId) || eq(a.mri, b.mri) || eq(a.upn, b.upn)
+    }
+    function candidates(n) {
+        const org = people.organizer
+        let list = (people.invitees || []).filter(p => p.mri && p.upn && p.objectId)
+        const add = p => { if (!list.some(x => samePerson(x, p))) list.push(p) }
+        if (n === "CoOrganizers") {
+            value(n).forEach(add)
+            if (org) list = list.filter(p => !samePerson(p, org))
+            list = list.filter(p => !p.tenantId || !people.tenantId || p.tenantId === people.tenantId)
+        }
+        if (n === "SpecifiedProducers" && org && org.upn) add(org)
+        const cat = options[n] ? options[n].category : ""
+        const taken = Object.keys(options).filter(k => k !== n && isPeople(options[k]) && options[k].category === cat)
+            .reduce((all, k) => all.concat(value(k).map(p => p.mri)), [])
+        return list.filter(p => taken.indexOf(p.mri) < 0)
+    }
+    // A picker that must name someone: specific presenters or producers
+    // while "Specific people" is chosen (Teams' isValid).
+    function invalid(n) {
+        if (n === "SpecifiedPresenters") return value("PresenterOption") === "SpecifiedPeople" && value(n).length === 0
+        if (n === "SpecifiedProducers") return value("ProducerOption") === "SpecifiedPeople" && value(n).length === 0
+        return false
+    }
+    // Teams' planning-group note over Who can present: shown once there
+    // are co-organizers, or only some people present.
+    readonly property bool planningNote: (value("CoOrganizers") || []).length > 0
+        || ["SpecifiedPeople", "OrganizerOnly"].indexOf(value("PresenterOption")) >= 0
+    // Apply checks the pickers first, as Teams does: an empty required
+    // one is shown instead of saving.
+    function tryApply() {
+        for (let i = 0; i < sections.length; i++) {
+            if (sections[i].fields.some(f => f.kind === "people" && shown(f) && invalid(f.name))) { scrollTo(i); return }
+        }
+        const out = {}
+        Object.keys(changes).forEach(k => {
+            out[k] = isPeople(options[k]) ? changes[k].map(p => ({ mri: p.mri, upn: p.upn, objectId: p.objectId, tenantId: p.tenantId })) : changes[k]
+        })
+        apply(out)
+        changes = ({})
+    }
+    // Escape closes an open picker list first, then the dialog.
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.opened && !unsaved.opened
+        onActivated: {
+            const f = root.contentItem.Window.activeFocusItem
+            if (f && typeof f.closeDropForEscape === "function" && f.closeDropForEscape()) return
+            root.tryClose()
+        }
+    }
     readonly property bool dirty: Object.keys(changes).length > 0
 
     // Teams' value names per option.
@@ -124,7 +202,7 @@ Popup {
         color: closeH.hovered ? theme.menuHover : "transparent"
         FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
         HoverHandler { id: closeH; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: root.close() }
+        TapHandler { onTapped: root.tryClose() }
         Accessible.role: Accessible.Button
         Accessible.name: "Close"
     }
@@ -216,7 +294,8 @@ Popup {
                             required property var modelData
                             required property int index
                             readonly property var opt: root.options[modelData.name] || ({})
-                            readonly property bool locked: !!opt.isDisabled
+                            // Locked by the admin (isLocked) or unavailable (isDisabled).
+                            readonly property bool locked: !!opt.isDisabled || !!opt.isLocked
                             readonly property bool isSwitch: ["switch", "audio", "video"].indexOf(modelData.kind) >= 0
                             width: sec.width
                             height: fieldCol.implicitHeight + 21.7
@@ -224,14 +303,53 @@ Popup {
                                 id: fieldCol
                                 width: parent.width
                                 spacing: 0
-                                Text {
-                                    visible: text !== ""
-                                    width: field.isSwitch ? 450.7 : parent.width
-                                    text: field.modelData.label
-                                    wrapMode: Text.Wrap
-                                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                                    lineHeight: 20; lineHeightMode: Text.FixedHeight
-                                    color: theme.textSecondary
+                                // Teams' planning-group note over Who can present
+                                // (a #F5F5F5 alert, radius 5, padding 5: the
+                                // filled info glyph (16), the text 12/16 20 after
+                                // it with Learn more; 12 above the label).
+                                Item { visible: note.visible; width: 1; height: 2 }
+                                Rectangle {
+                                    id: note
+                                    visible: field.modelData.name === "PresenterOption" && root.planningNote
+                                    width: 498.7; height: noteText.implicitHeight + 10; radius: 5
+                                    color: theme.pick("#F5F5F5", "#2E2E2E")
+                                    FluentIcon { x: 5; y: 5.5; name: "info-16"; size: 16; color: theme.text }
+                                    Text {
+                                        id: noteText
+                                        x: 25; y: 5; width: 468.7
+                                        wrapMode: Text.Wrap
+                                        textFormat: Text.StyledText
+                                        text: "You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar&nbsp;<a href=\"https://support.microsoft.com/teams/meetings/chat-with-event-group-microsoft-teams\">Learn more</a>"
+                                        linkColor: theme.brandForeground1
+                                        font.family: theme.font; font.pixelSize: 12
+                                        lineHeight: 16; lineHeightMode: Text.FixedHeight
+                                        color: theme.text
+                                        onLinkActivated: url => Qt.openUrlExternally(url)
+                                        HoverHandler { cursorShape: noteText.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                                    }
+                                    Accessible.role: Accessible.AlertMessage
+                                    Accessible.name: "You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar"
+                                }
+                                Item { visible: note.visible; width: 1; height: 12 }
+                                // The label, then Teams' lock (locked by the admin)
+                                // and info (the chosen value's _Info string)
+                                // buttons: 24 x 23.3, transparent, the 16 px glyph
+                                // filled in brand on hover, Fluent's tooltip above.
+                                Row {
+                                    visible: field.modelData.label !== ""
+                                    readonly property string valueInfo: field.modelData.kind === "list"
+                                        ? (root.strings["meetingsOptions_" + field.modelData.name + "_" + root.value(field.modelData.name) + "_Info"] || "") : ""
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.min(implicitWidth, (field.isSwitch ? 450.7 : fieldCol.width) - (lockBtn.visible ? 24 : 0) - (infoBtn.visible ? 24 : 0))
+                                        text: field.modelData.label
+                                        wrapMode: Text.Wrap
+                                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                        color: theme.textSecondary
+                                    }
+                                    LabelButton { id: lockBtn; visible: !!field.opt.isLocked; glyph: "lock-closed-16"; tip: "This option is locked by admin."; label: field.modelData.label }
+                                    LabelButton { id: infoBtn; visible: parent.valueInfo !== ""; glyph: "info-16"; regular: "info-16-regular"; tip: parent.valueInfo; label: field.modelData.label }
                                 }
                                 Text {
                                     visible: !!field.modelData.desc
@@ -254,33 +372,19 @@ Popup {
                                     accessibleName: field.modelData.label
                                     onPicked: code => root.change(field.modelData.name, code)
                                 }
-                                // People pickers: who's chosen, then Teams' search box.
-                                Column {
+                                // People pickers (Teams' TagPicker).
+                                MeetingPeoplePicker {
+                                    readonly property string fieldName: field.modelData.name
                                     visible: field.modelData.kind === "people"
-                                    width: parent.width
-                                    spacing: 4
-                                    Repeater {
-                                        model: field.opt.selectedPeople || []
-                                        Text {
-                                            required property var modelData
-                                            text: modelData.displayName || modelData.name || modelData.email || ""
-                                            font.family: theme.font; font.pixelSize: 14
-                                            color: theme.text
-                                        }
-                                    }
-                                    Rectangle {
-                                        x: 0.67; width: 497.3; height: 50; radius: 4
-                                        color: theme.surface
-                                        border.color: theme.stroke; border.width: 0.67
-                                        Text {
-                                            x: 17.3; anchors.verticalCenter: parent.verticalCenter
-                                            text: "Search for participants"
-                                            font.family: theme.font; font.pixelSize: 14
-                                            color: theme.disabled
-                                        }
-                                        Accessible.role: Accessible.EditableText
-                                        Accessible.name: field.modelData.label || "Search for participants"
-                                    }
+                                    picked: visible ? root.value(field.modelData.name) : []
+                                    candidates: visible ? root.candidates(field.modelData.name) : []
+                                    names: root.people.people || ({})
+                                    max: field.opt.maxPeopleSelectionAllowed || 0
+                                    // Teams' picker is off while there's nobody to offer.
+                                    disabled: field.locked || (candidates.length === 0 && picked.length === 0)
+                                    hasError: root.invalid(field.modelData.name)
+                                    placeholder: "Search for participants"
+                                    onChanged: list => root.change(field.modelData.name, list)
                                 }
                             }
                             // Fluent's switch, 40 x 20, on the label's row.
@@ -332,8 +436,103 @@ Popup {
             color: root.dirty ? theme.textOnBrand : theme.disabled
         }
         HoverHandler { id: applyH; enabled: root.dirty; cursorShape: Qt.PointingHandCursor }
-        TapHandler { enabled: root.dirty; onTapped: { root.apply(root.changes); root.changes = ({}) } }
+        TapHandler { enabled: root.dirty; onTapped: root.tryApply() }
         Accessible.role: Accessible.Button
         Accessible.name: "Apply"
+    }
+
+    // Teams' "Unsaved changes" (Close or Escape with changes not
+    // applied), measured on winpc 2026-11-11: 600 wide, radius 8, padding
+    // 24, the dialog shadow; the title 20/600 (line 28), the question 14/20
+    // 6 under it, the buttons 6 under that at the right, 8 apart:
+    // Continue editing (primary) and Discard.
+    Popup {
+        id: unsaved
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true
+        width: 600; padding: 24
+        closePolicy: Popup.CloseOnEscape
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: "transparent" }
+        Column {
+            width: parent.width
+            spacing: 6
+            Text {
+                text: "Unsaved changes"
+                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+                lineHeight: 28; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            Text {
+                text: "Do you want to discard edits or continue editing?"
+                font.family: theme.font; font.pixelSize: 14
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                topPadding: 2; bottomPadding: 2
+                color: theme.text
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 8
+                Rectangle {
+                    width: contLabel.implicitWidth + 24; height: 31.3; radius: 4
+                    color: contH.hovered ? theme.brandHover : theme.brandFill
+                    Text { id: contLabel; anchors.centerIn: parent; text: "Continue editing"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                    HoverHandler { id: contH; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: unsaved.close() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Continue editing"
+                }
+                Rectangle {
+                    width: Math.max(96, discLabel.implicitWidth + 24); height: 31.3; radius: 4
+                    color: discH.hovered ? theme.menuHover : theme.surface
+                    border.color: theme.stroke; border.width: 0.67
+                    Text { id: discLabel; anchors.centerIn: parent; text: "Discard"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    HoverHandler { id: discH; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { unsaved.close(); root.changes = ({}); root.close() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Discard"
+                }
+            }
+        }
+    }
+    function pickerForTest(n) {
+        for (let i = 0; i < sectionRepeater.count; i++) {
+            const sec = sectionRepeater.itemAt(i)
+            const found = sec ? findPicker(sec, n) : null
+            if (found) return found
+        }
+        return null
+    }
+    function findPicker(item, n) {
+        for (let i = 0; i < item.children.length; i++) {
+            const c = item.children[i]
+            if (c.candidates !== undefined && c.visible && c.fieldName === n) return c
+            const deeper = findPicker(c, n)
+            if (deeper) return deeper
+        }
+        return null
+    }
+
+    component LabelButton: Rectangle {
+        id: lb
+        property string glyph
+        property string regular: glyph
+        property string tip
+        property string label
+        width: 24; height: 23.3; radius: 4
+        color: "transparent"
+        FluentIcon {
+            anchors.centerIn: parent
+            name: lbH.hovered ? (lb.glyph === lb.regular ? lb.glyph + "-filled" : lb.glyph) : lb.regular
+            size: 16
+            color: lbH.hovered ? theme.brand : theme.textStrong
+        }
+        HoverHandler { id: lbH }
+        ArrowTip { visible: lbH.hovered; tipText: lb.tip }
+        Accessible.role: Accessible.Button
+        Accessible.name: lb.label + " " + lb.tip
     }
 }

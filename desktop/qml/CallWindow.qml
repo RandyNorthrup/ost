@@ -243,6 +243,8 @@ Window {
     /// Teams' Controls menu (organizers), read from the meeting's options
     /// (call_controls_json): {options: [{name, currentValue, ...}]}.
     property var controlsOptions: ({})
+    /// The people pickers' invitees, names and organizer (the same reply).
+    property var controlsPeople: ({})
     signal loadControls()
     signal setMeetingOption(string name, var value)
     signal applyMeetingOptions(var changes)
@@ -2065,6 +2067,7 @@ Window {
     MeetingOptionsDialog {
         id: optionsDialog
         options: win.controlsOptions
+        people: win.controlsPeople
         onApply: changes => win.applyMeetingOptions(changes)
     }
     Shortcut { sequence: "F11"; enabled: win.meeting; onActivated: win.toggleFullScreen() }

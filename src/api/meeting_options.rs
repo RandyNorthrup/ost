@@ -35,8 +35,27 @@ fn check_ids(tenant: &str, organizer: &str, thread: &str, message: &str) -> Resu
     Ok(())
 }
 
+/// The meeting's options and its invitees (whom the people pickers
+/// offer: `{mri, upn, objectId, tenantId, meetingRole, ...}`; Teams'
+/// dialog resolves their names itself).
+/// `translations` holds the dialog's strings by key
+/// (`meetingsOptions_<option>[_<value>]_Info` and the like).
+#[derive(Debug, Clone, Default)]
+pub struct MeetingOptions {
+    pub options: Vec<Value>,
+    pub invitees: Vec<Value>,
+    pub translations: Value,
+}
+
+impl MeetingOptions {
+    fn from_reply(v: &Value) -> Self {
+        let list = |k: &str| v[k].as_array().cloned().unwrap_or_default();
+        MeetingOptions { options: list("options"), invitees: list("invitees"), translations: v["translations"].clone() }
+    }
+}
+
 /// The meeting's options, as Teams lists them.
-pub async fn get(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<Vec<Value>> {
+pub async fn get(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<MeetingOptions> {
     check_ids(tenant, organizer, thread, message)?;
     let (base, token) = super::tabs::middle_tier(client).await?;
     let v: Value = client
@@ -49,7 +68,20 @@ pub async fn get(client: &TeamsClient, tenant: &str, organizer: &str, thread: &s
         .context("Meeting options")?
         .json()
         .await?;
-    Ok(v["options"].as_array().cloned().unwrap_or_default())
+    Ok(MeetingOptions::from_reply(&v))
+}
+
+/// A picked person as Teams' pickers send them: `upn`, `mri`, `objectId`,
+/// `userType` ("Member") and the `tenantId` when known.
+pub fn picked_person(p: &Value) -> Value {
+    let mut out = json!({
+        "upn": p["upn"], "mri": p["mri"], "objectId": p["objectId"],
+        "userType": p.get("userType").filter(|t| t.is_string()).cloned().unwrap_or(json!("Member")),
+    });
+    if let Some(t) = p.get("tenantId").filter(|t| t.is_string()) {
+        out["tenantId"] = t.clone();
+    }
+    out
 }
 
 /// One option as Apply sends it back: its name and type, the value (people
@@ -62,7 +94,11 @@ pub fn post_option(o: &Value, value: Option<&Value>) -> Value {
     match ty {
         "PeopleSelection" | "PresenterSelection" => json!({
             "name": name, "type": ty,
-            "selectedPeople": value.cloned().or_else(|| o.get("selectedPeople").cloned()).unwrap_or_else(|| json!([])),
+            "selectedPeople": value
+                .or_else(|| o.get("selectedPeople"))
+                .and_then(|v| v.as_array())
+                .map(|people| people.iter().map(picked_person).collect::<Vec<_>>())
+                .unwrap_or_default(),
             "isValid": true, "isRecommended": null,
         }),
         "Interpretation" => json!({
@@ -94,7 +130,8 @@ pub fn post_body(options: &[Value], changes: &[(&str, Value)]) -> Value {
 }
 
 /// Save options (Teams' Apply): re-reads them, applies `changes` and posts
-/// the whole set. Returns the options as saved.
+/// the whole set. Returns the options as saved. A people picker's value
+/// is its list of people (`{mri, upn, objectId, tenantId}`).
 pub async fn set(
     client: &TeamsClient,
     tenant: &str,
@@ -102,8 +139,9 @@ pub async fn set(
     thread: &str,
     message: &str,
     changes: &[(&str, Value)],
-) -> Result<Vec<Value>> {
-    let options = get(client, tenant, organizer, thread, message).await?;
+) -> Result<MeetingOptions> {
+    let before = get(client, tenant, organizer, thread, message).await?;
+    let options = before.options;
     for (name, _) in changes {
         if !options.iter().any(|o| o["name"].as_str() == Some(*name)) {
             bail!("This meeting has no option {name}");
@@ -124,7 +162,16 @@ pub async fn set(
     if v["success"] != json!(true) {
         bail!("Meeting options weren't saved");
     }
-    Ok(v["options"].as_array().cloned().unwrap_or_default())
+    // The reply lists the options; the invitees and strings only when it
+    // has them.
+    let mut saved = MeetingOptions::from_reply(&v);
+    if v.get("invitees").is_none() {
+        saved.invitees = before.invitees;
+    }
+    if !saved.translations.is_object() {
+        saved.translations = before.translations;
+    }
+    Ok(saved)
 }
 
 #[cfg(test)]
@@ -163,6 +210,22 @@ mod tests {
                 {"name":"Interpretation","type":"Interpretation","currentValue":false,"isValid":true,"category":"ROLES","isRecommended":null},
                 {"name":"CARTExternalFeed","type":"ExternalFeed","currentValue":false,"refreshKey":false,"isBackupEnabled":false,"sslEnabled":false,"isRecommended":null}
             ]})
+        );
+    }
+
+    #[test]
+    fn picked_people_as_teams() {
+        // The GET lists picked people without userType; Apply sends them
+        // as Teams' picker does.
+        let got = vec![json!({"name":"CoOrganizers","type":"PeopleSelection","selectedPeople":[{"mri":"8:orgid:b","objectId":"b","tenantId":"t","upn":"b@x"}]})];
+        assert_eq!(
+            post_body(&got, &[])["options"][0]["selectedPeople"],
+            json!([{"upn":"b@x","mri":"8:orgid:b","objectId":"b","userType":"Member","tenantId":"t"}])
+        );
+        let picked = json!([{"mri":"8:orgid:c","objectId":"c","upn":"c@x","name":"C"}]);
+        assert_eq!(
+            post_body(&got, &[("CoOrganizers", picked)])["options"][0]["selectedPeople"],
+            json!([{"upn":"c@x","mri":"8:orgid:c","objectId":"c","userType":"Member"}])
         );
     }
 

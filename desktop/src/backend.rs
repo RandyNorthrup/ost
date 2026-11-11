@@ -3340,9 +3340,14 @@ async fn load_controls(
     }
     .await;
     let json = match result {
-        Ok(options) => {
-            tracing::info!(count = options.len(), changed = ?changes.iter().map(|c| &c.0).collect::<Vec<_>>(), "meeting options");
-            json!({ "options": options }).to_string()
+        Ok(o) => {
+            tracing::info!(count = o.options.len(), invitees = o.invitees.len(), changed = ?changes.iter().map(|c| &c.0).collect::<Vec<_>>(), "meeting options");
+            let (people, organizer_person) = picker_people(&o, &tenant, &organizer).await;
+            json!({
+                "options": o.options, "invitees": o.invitees, "people": people,
+                "organizer": organizer_person, "tenantId": tenant, "translations": o.translations,
+            })
+            .to_string()
         }
         Err(e) => {
             tracing::warn!("meeting options: {}", short_error(&e));
@@ -3350,6 +3355,46 @@ async fn load_controls(
         }
     };
     let _ = qt.queue(move |mut this| this.as_mut().set_call_controls_json(QString::from(json.as_str())));
+}
+
+/// The names Meeting options' people pickers show ({mri: name}: the
+/// invitees, the people picked and the organizer) and the organizer as a
+/// picker entry ({mri, objectId, upn, tenantId}), as Teams resolves them
+/// through the people service.
+async fn picker_people(
+    o: &api::meeting_options::MeetingOptions,
+    tenant: &str,
+    organizer: &str,
+) -> (serde_json::Value, serde_json::Value) {
+    let organizer_mri = format!("8:orgid:{organizer}");
+    let mut mris: Vec<String> = o
+        .invitees
+        .iter()
+        .chain(o.options.iter().flat_map(|op| op["selectedPeople"].as_array().into_iter().flatten()))
+        .filter_map(|p| p["mri"].as_str().map(str::to_string))
+        .collect();
+    mris.push(organizer_mri.clone());
+    mris.sort();
+    mris.dedup();
+    let records = match TeamsClient::new().await {
+        Ok(client) => api::directory::short_profile_records(&client, &mris).await.unwrap_or_else(|e| {
+            tracing::info!("picker names: {}", short_error(&e));
+            Vec::new()
+        }),
+        Err(_) => Vec::new(),
+    };
+    let mut names = serde_json::Map::new();
+    let mut organizer_person = json!({ "mri": organizer_mri, "objectId": organizer, "tenantId": tenant });
+    for r in &records {
+        let Some(mri) = r["mri"].as_str() else { continue };
+        if let Some(n) = r["displayName"].as_str().filter(|n| !n.is_empty()) {
+            names.insert(mri.to_string(), json!(n));
+        }
+        if mri == organizer_mri {
+            organizer_person["upn"] = r["userPrincipalName"].clone();
+        }
+    }
+    (serde_json::Value::Object(names), organizer_person)
 }
 
 /// Who was in the call before us (roster updates only carry changes):

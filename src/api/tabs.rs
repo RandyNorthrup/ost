@@ -333,7 +333,7 @@ fn check_tab(id: &str) -> Result<()> {
     }
 }
 
-pub(crate) async fn middle_tier(client: &TeamsClient) -> Result<(String, String)> {
+pub async fn middle_tier(client: &TeamsClient) -> Result<(String, String)> {
     let base = client
         .middle_tier_url()
         .context("No Teams middle-tier endpoint")?;
