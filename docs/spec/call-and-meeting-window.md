@@ -593,7 +593,7 @@ Full code reading: scratchpad timer/spec.md (session 744c3998); the model is `ca
   - the media path counts every stream it sends and receives (audio, video, share);
   - `Sampler` turns the counts into Teams' strings;
   - the receive limit is the MCP bandwidth estimate.
-  - The send limit stays "--" until OST has a send-side estimator.
+  - The send limit is OST's send-side estimate (TASK-0074, src/calling/send_bwe.rs): every RTP packet OST sends in a meeting carries the transport-wide sequence number (extension 3), the media processor answers with transport-wide feedback (RTCP 205/15), and a GCC-style estimator (delay trend with an adaptive threshold, loss, AIMD from 600 kbps) gives the rate; the camera and screen encoders take what it leaves after audio and overhead (×0.85), within the processor's own video limits. Measured live 2026-11-11: about 1.4 Mbps with 720p test video, the encoder following it up to the processor's 600 kbps cap.
 
 ### 1.9 Call timer (CallDurationIndicator, `tp`, module 414673; format 494225/877513)
 - Start time comes from `callStartTimestamp(teamsCallId)`. It ticks every 1000 ms.

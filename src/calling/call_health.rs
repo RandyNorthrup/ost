@@ -416,7 +416,9 @@ impl Sampler {
         let mut put = |tid: &str, value: String, enabled: bool| {
             r.values.insert(tid.to_string(), Value { value, enabled });
         };
-        put("network-sent-bw-estimate", String::new(), true);
+        // OST's send-side estimate (transport-wide feedback on what we
+        // send), as Teams' send limit.
+        put("network-sent-bw-estimate", mbps(super::send_bwe::current_bps() as f64), true);
         put(
             "network-received-bw-estimate",
             mbps(receive_estimate as f64),

@@ -633,6 +633,13 @@ fn send_loop(
         let limits = control.as_ref().and_then(|c| c.get());
         let fps = limits.map_or(cfg.fps, |l| l.max_fps.clamp(1, 30));
         let kbps = limits.map_or(cfg.kbps, |l| l.max_kbps.clamp(50, 4000));
+        // In a meeting, also what the send-side estimate leaves for video
+        // after audio and packet overhead (Teams' encoder follows its send
+        // limit the same way).
+        let kbps = match super::send_bwe::current_bps() {
+            0 => kbps,
+            bps => kbps.min((((bps as f64 - 64_000.0) * 0.85) / 1000.0).max(50.0) as u32),
+        };
         // A little under the frame interval, so 15 fps cameras aren't halved.
         let min_gap = std::time::Duration::from_millis(1000 / fps as u64 * 8 / 10);
         let f = match frames.recv_timeout(std::time::Duration::from_millis(250)) {
@@ -686,6 +693,7 @@ fn send_loop(
             && *k != kbps
         {
             enc.set_bitrate(kbps);
+            tracing::info!(from = *k, kbps, "video bitrate");
             *k = kbps;
         }
         let made_for = (f.width, f.height, kbps, fps);

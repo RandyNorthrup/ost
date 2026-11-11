@@ -1216,10 +1216,12 @@ struct VideoOut {
     ssrc: u32,
     /// Where the RTCP reader flags keyframe requests for the camera.
     keyframe_req: KeyframeSlot,
+    bwe: Option<super::send_bwe::Shared>,
 }
 
 impl Drop for WebRtcAudioSession {
     fn drop(&mut self) {
+        super::send_bwe::reset();
         for t in &self.tasks {
             t.abort();
         }
@@ -1407,6 +1409,7 @@ impl WebRtcAudioSession {
                 v.srtp.clone(),
                 super::call_health::Kind::VideoSend,
                 v.ssrc,
+                v.bwe.clone(),
             ));
             self.camera = Some((sender, fwd));
             Ok(())
@@ -1572,6 +1575,7 @@ impl WebRtcAudioSession {
             v.srtp.clone(),
             super::call_health::Kind::ShareSend,
             v.ssrc,
+            v.bwe.clone(),
         ));
         self.share = Some((sender, fwd));
         Ok(())
@@ -1802,6 +1806,9 @@ impl WebRtcAudioSession {
                 Arc::new(std::sync::atomic::AtomicU32::new(0)),
             )
         });
+        // ... and for what we send: Teams' send-side estimate (Call
+        // health's Teams send limit, and our video encoder's bitrate).
+        let bwe = local.meeting.then(super::send_bwe::shared);
 
         // Meetings: who speaks, from the mix's contributing sources (Teams'
         // voice-level outline), reported as they change.
@@ -1853,6 +1860,7 @@ impl WebRtcAudioSession {
             },
             held: held.clone(),
             twcc: twcc.clone(),
+            bwe: bwe.clone(),
             speakers,
             #[cfg(feature = "video")]
             video: video_rx.clone(),
@@ -2000,6 +2008,7 @@ impl WebRtcAudioSession {
             held: held.clone(),
             dtmf: offer.dtmf_for_codec().map(|pt| (pt, dtmf_rx)),
             encoder: super::audio_codec::Encoder::new(codec),
+            bwe: bwe.clone(),
         })));
 
         // Ask for a keyframe (RTCP PLI) whenever the video decoder needs one.
@@ -2088,6 +2097,7 @@ impl WebRtcAudioSession {
                 pt: v.payload_type,
                 ssrc: local.video_ssrc,
                 keyframe_req: keyframe_req.clone(),
+                bwe: bwe.clone(),
             });
         // The screen-sharing line, for sharing ours later (a re-offer turns
         // it on).
@@ -2099,6 +2109,7 @@ impl WebRtcAudioSession {
             pt: v.payload_type,
             ssrc: local.share_ssrc,
             keyframe_req: share_keyframe_req.clone(),
+            bwe: bwe.clone(),
         });
         Ok(Self {
             tasks,
@@ -2198,6 +2209,8 @@ struct RecvCtx {
         Arc<std::sync::Mutex<super::twcc::Recorder>>,
         Arc<std::sync::atomic::AtomicU32>,
     )>,
+    /// In a meeting: the send-side estimator the feedback goes to.
+    bwe: Option<super::send_bwe::Shared>,
     /// In a meeting: who the mixed audio says is speaking.
     speakers: Option<Arc<std::sync::Mutex<super::active_speakers::Tracker>>>,
     /// The video payload type and its receiver.
@@ -2220,6 +2233,7 @@ async fn recv_loop(ctx: RecvCtx) {
     let started = std::time::Instant::now();
     let mut decoder = super::audio_codec::Decoder::new(ctx.opus_pt);
     let mut rr_logged = std::time::Instant::now() - Duration::from_secs(10);
+    let mut bwe_logged = std::time::Instant::now() - Duration::from_secs(10);
     let mut announced = false;
     // Video streams seen, and streams nothing took, noted once each
     // (diagnostics).
@@ -2251,10 +2265,26 @@ async fn recv_loop(ctx: RecvCtx) {
                 // RTCP (payload types 200-204 after the marker bit) is
                 // not decoded yet.
                 let pt = data.get(1).map(|b| b & 0x7f).unwrap_or(0);
+                // RTCP (200-206 after the marker bit) is decrypted once and
+                // read by everything that needs it.
+                let rtcp_plain = if (72..=78).contains(&pt) {
+                    ctx.srtp.lock().await.as_mut().and_then(|c| c.unprotect_rtcp(data).ok())
+                } else {
+                    None
+                };
+                // Transport-wide feedback on what we send: the send-side
+                // estimate (Teams' send limit).
+                if let (Some(p), Some(b)) = (&rtcp_plain, &ctx.bwe)
+                    && let Some(bps) = b.lock().unwrap_or_else(|e| e.into_inner()).on_rtcp(p, std::time::Instant::now())
+                    && bwe_logged.elapsed() > Duration::from_secs(5)
+                {
+                    bwe_logged = std::time::Instant::now();
+                    tracing::info!(kbps = (bps / 1000.0) as u64, "send-side estimate");
+                }
                 // Receiver reports on our audio (diagnostics): what the
                 // peer got of it.
                 if pt == 72 || pt == 73 {
-                    let plain = ctx.srtp.lock().await.as_mut().and_then(|c| c.unprotect_rtcp(data).ok());
+                    let plain = rtcp_plain.clone();
                     // Round-trip times for what we send (Call health).
                     if let Some(p) = &plain {
                         for (ssrc, lsr, dlsr) in report_timings(p) {
@@ -2277,8 +2307,8 @@ async fn recv_loop(ctx: RecvCtx) {
                         }
                     }
                 }
-                if (72..=76).contains(&pt) {
-                    // RTCP: only keyframe requests for what we send matter.
+                if (72..=78).contains(&pt) {
+                    // RTCP: keyframe requests for what we send.
                     #[cfg(feature = "video")]
                     {
                         let flags: Vec<(u32, Arc<AtomicBool>)> = ctx
@@ -2290,15 +2320,9 @@ async fn recv_loop(ctx: RecvCtx) {
                             })
                             .collect();
                         if !flags.is_empty() {
-                            let plain = ctx
-                                .srtp
-                                .lock()
-                                .await
-                                .as_mut()
-                                .and_then(|c| c.unprotect_rtcp(data).ok());
-                            if let Some(p) = plain {
+                            if let Some(p) = &rtcp_plain {
                                 for (ssrc, flag) in flags {
-                                    if super::webrtc_video::wants_keyframe(&p, ssrc) {
+                                    if super::webrtc_video::wants_keyframe(p, ssrc) {
                                         tracing::debug!(ssrc, "keyframe requested");
                                         flag.store(true, Ordering::Relaxed);
                                     }
@@ -2440,6 +2464,8 @@ struct SendCtx {
     dtmf: Option<(u8, mpsc::UnboundedReceiver<u8>)>,
     /// Encodes the microphone (Opus or PCMU, as negotiated).
     encoder: super::audio_codec::Encoder,
+    /// In a meeting: transport-wide sequence numbers on what we send.
+    bwe: Option<super::send_bwe::Shared>,
 }
 
 /// Every report block's (SSRC, LSR, DLSR) in a compound RTCP packet.
@@ -2530,16 +2556,21 @@ async fn forward_video(
     srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     kind: super::call_health::Kind,
     ssrc: u32,
+    bwe: Option<super::send_bwe::Shared>,
 ) {
     let health = super::call_health::current().stream(kind, ssrc);
     let (mut packets, mut octets, mut last_ts) = (0u32, 0u32, 0u32);
     let mut last_report = std::time::Instant::now();
-    while let Some(p) = rx.recv().await {
+    while let Some(mut p) = rx.recv().await {
+        let plain_len = p.len();
+        if let Some(b) = &bwe {
+            b.lock().unwrap_or_else(|e| e.into_inner()).stamp(&mut p, std::time::Instant::now());
+        }
         let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect(&p).ok());
         if let Some(sealed) = sealed
             && socket.send_to(&sealed, peer).await.is_ok()
         {
-            let payload = p.len().saturating_sub(12);
+            let payload = plain_len.saturating_sub(12);
             health.sent(payload);
             packets = packets.wrapping_add(1);
             octets = octets.wrapping_add(payload as u32);
@@ -2616,6 +2647,11 @@ async fn send_loop(mut ctx: SendCtx) {
                 rtp::encode(ctx.encoder.codec().payload_type(), seq, ts, ctx.ssrc, &payload)
             }
         };
+        let audio_len = packet.len();
+        let mut packet = packet;
+        if let Some(b) = &ctx.bwe {
+            b.lock().unwrap_or_else(|e| e.into_inner()).stamp(&mut packet, std::time::Instant::now());
+        }
         let protected = {
             let mut guard = ctx.srtp.lock().await;
             guard.as_mut().and_then(|c| c.protect(&packet).ok())
@@ -2626,8 +2662,8 @@ async fn send_loop(mut ctx: SendCtx) {
         {
             let mut st = ctx.stats.lock().await;
             st.packets_sent += 1;
-            st.audio_bytes_sent += packet.len().saturating_sub(12) as u64;
-            health_send.sent(packet.len().saturating_sub(12));
+            st.audio_bytes_sent += audio_len.saturating_sub(12) as u64;
+            health_send.sent(audio_len.saturating_sub(12));
             sent_packets = sent_packets.wrapping_add(1);
             sent_octets = sent_octets.wrapping_add(packet.len().saturating_sub(12) as u32);
         }
