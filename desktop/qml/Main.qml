@@ -1574,7 +1574,11 @@ Window {
             } else if (step === 5 || step === 10) {
                 console.warn("OPENCHANNEL live roster", backend.chatLiveRosterJson)
                 window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-channel" + step + ".png")))
-            } else if (step === 11 && Qt.application.arguments.indexOf("--open-channel-join") < 0) Qt.quit()
+            } else if (step === 11 && Qt.application.arguments.indexOf("--open-channel-details") >= 0) console.warn("OPENCHANNEL details", conversation.seeDetailsForTest())
+            else if (step === 14 && Qt.application.arguments.indexOf("--open-channel-details") >= 0) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-postview.png")))
+            else if (step === 15 && Qt.application.arguments.indexOf("--open-channel-details") >= 0) { conversation.postViewRoot = ""; Qt.callLater(() => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-back.png")))) }
+            else if (step === 17 && Qt.application.arguments.indexOf("--open-channel-details") >= 0) Qt.quit()
+            else if (step === 11 && Qt.application.arguments.indexOf("--open-channel-join") < 0 && Qt.application.arguments.indexOf("--open-channel-details") < 0) Qt.quit()
             // --open-channel-join: Join the live meeting from its post (the
             // pre-join screen), join without audio, check who's in, leave.
             else if (step === 11) console.warn("OPENCHANNEL join", conversation.joinLiveMeetingForTest())

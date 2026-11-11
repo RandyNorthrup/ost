@@ -79,6 +79,13 @@ Item {
     /// The channel's members ({mri, name}): call events carry no name, so
     /// a meeting's post shows its author's member name, as Teams does.
     property var members: []
+    // Test hook: "See details" on the newest ended meeting's post.
+    function seeDetailsForTest() {
+        const p = root.posts.filter(g => g.post && g.post.kind === "call" && g.events.length && ![g.post].concat(g.events).some(e => e.call_state === "started" && e.call_active)).pop()
+        if (!p) return ""
+        root.seeDetails(p.id)
+        return p.id
+    }
     // Test hook: Join the newest live meeting's post.
     function joinLiveForTest() {
         const p = root.posts.filter(g => g.post && g.post.kind === "call" && [g.post].concat(g.events).some(e => e.call_state === "started" && e.call_active)).pop()

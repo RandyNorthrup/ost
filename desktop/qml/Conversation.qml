@@ -403,8 +403,11 @@ Rectangle {
     signal joinMeetingRequested(string url, string title)
     /// Teams' post view (a channel post's thread): opened from "See
     /// details" under an ended meeting's post.
-    function openPostView(rootId) { openThreadWindow({ id: rootId, root_id: rootId }) }
+    function openPostView(rootId) { root.postViewRoot = rootId }
+    /// The post open in Teams' post view, over the channel ("" for none).
+    property string postViewRoot: ""
     function joinLiveMeetingForTest() { return channelPosts.joinLiveForTest() }
+    function seeDetailsForTest() { return channelPosts.seeDetailsForTest() }
     readonly property bool callGoing: !!root.liveCall || root.messages.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
     readonly property bool inThisCall: backend.callState !== "" && backend.callThreadId === root.chatId
     readonly property bool callsDisabled: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) > 20
@@ -457,6 +460,7 @@ Rectangle {
     function chatAppsForTest() { return chatApps }
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
+        postViewRoot = ""
         landing = true
         manageApps = false
         tabExpanded = false
@@ -3380,6 +3384,22 @@ Rectangle {
         Connections {
             target: compose.editor
             function onTextChanged() { draftSave.restart() }
+        }
+    }
+    // Teams' post view (an ended meeting's "See details"): the post's
+    // thread over the channel, with Go to channel and Open in new window.
+    Loader {
+        anchors.fill: parent
+        z: 50
+        active: root.postViewRoot !== "" && root.isChannel && !root.pane
+        sourceComponent: PostThread {
+            inPane: true
+            channelId: root.chatId; rootId: root.postViewRoot
+            teamId: root.teamId; teamName: root.teamName
+            channelName: root.chatName; myName: root.myName
+            onGoToChannel: root.postViewRoot = ""
+            onPopOut: { const id = root.postViewRoot; root.postViewRoot = ""; root.openThreadWindow({ id: id, root_id: id }) }
+            onAgentStoreRequested: id => root.openAgentStore(id, true)
         }
     }
 }
