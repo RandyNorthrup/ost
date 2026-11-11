@@ -1388,8 +1388,15 @@ Window {
         console.warn("BREAKOUT moving to", room.name)
         backend.moveMeeting(room.join_url, room.name)
     }
+    // Back to the main meeting held for a room: its time carries on.
+    function resumeHeldMeeting() {
+        callWindow.nextConnectedAt = Date.now() - (callWindow.heldElapsedBase + callWindow.mainHeldSeconds) * 1000
+        backend.leaveRoom(true)
+    }
     function goBackToMainMeeting() {
         breakoutReturn.stop()
+        // A room joined over the held main meeting: resume it.
+        if (callWindow.heldMeeting) { window.resumeHeldMeeting(); return }
         const main = window.breakoutMain
         if (!main) return
         window.breakoutMain = null
@@ -1412,7 +1419,7 @@ Window {
         }
     }
     onBreakoutRoomStateChanged: {
-        if (!window.breakoutMain || !breakoutRoomState || !breakoutRoomState.closed || breakoutReturn.running) return
+        if (!(window.breakoutMain || callWindow.heldMeeting) || !breakoutRoomState || !breakoutRoomState.closed || breakoutReturn.running) return
         callWindow.showBreakoutAlert("We'll move you back to the main meeting in " + breakoutMoveSeconds + " seconds.")
         breakoutReturn.interval = breakoutMoveSeconds * 1000 + breakoutRoomState.move_jitter_ms
         breakoutReturn.restart()
@@ -1428,11 +1435,18 @@ Window {
         target: callWindow
         function onJoinBreakoutRoom() { window.goToBreakoutRoom(window.assignedOpenRoom) }
         function onReturnToMainMeeting() { window.goBackToMainMeeting() }
-        function onJoinRoomAsOrganizer(room) { window.goToBreakoutRoom({ name: room.name, join_url: room.join_url }) }
+        // Teams holds the organizer's main meeting while they're in a room.
+        function onJoinRoomAsOrganizer(room) {
+            callWindow.heldElapsedBase = callWindow.seconds
+            backend.joinRoomHoldingMain(room.join_url, room.name)
+        }
+        function onLeaveRoom(resume) { breakoutReturn.stop(); if (resume) window.resumeHeldMeeting(); else backend.leaveRoom(false) }
     }
     Connections {
         target: backend
         function onCallStateChanged() {
+            // The room ended under the held main meeting: back to it.
+            if (backend.callState === "ended" && callWindow.heldMeeting) { window.resumeHeldMeeting(); return }
             if (!window.breakoutMain) return
             if (backend.callState === "ended" && !window.breakoutLeaving) {
                 // The room ended (closed rooms end for everyone): back
@@ -1475,6 +1489,8 @@ Window {
         property int step: -1
         onTriggered: {
             const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rooms-" + n + ".png")))
+            const heldShot = n => { const w = callWindow.heldWindowForTest(); if (w) w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rooms-" + n + ".png"))) }
+            const joinTest = Qt.application.arguments.indexOf("--breakout-join") >= 0
             const log = t => console.warn("BREAKOUTTEST", t, JSON.stringify(callWindow.breakoutRooms))
             const lobby = JSON.parse(backend.callLobbyJson || "[]")
             if (lobby.length) { console.warn("BREAKOUTTEST admitting", lobby[0].name); backend.admitFromLobby(lobby[0].id, lobby[0].name, false); return }
@@ -1502,8 +1518,14 @@ Window {
                 27: () => { t("close"); t("csv") },
                 28: () => shot("csv"),
                 29: () => t("close"),
-                40: () => callWindow.breakoutRun("close", { threads: callWindow.breakoutRooms.map(r => r.thread) }),
-                43: () => { log("closed"); shot("closed") },
+                // --breakout-join: the organizer's Join on the room's menu
+                // (the main meeting held), then Leave room.
+                30: () => { if (joinTest) { console.warn("BREAKOUTTEST joining"); callWindow.joinRoomAsOrganizer(callWindow.breakoutRooms[0]) } },
+                36: () => { if (joinTest) { console.warn("BREAKOUTTEST in room", backend.callHeldMeetingJson, backend.callState, JSON.stringify(callWindow.leaveItems)); shot("joined"); heldShot("held") } },
+                38: () => { if (joinTest) callWindow.leaveRoom(true) },
+                43: () => { if (joinTest) { console.warn("BREAKOUTTEST resumed", backend.callHeldMeetingJson || "none", backend.callState, backend.callPeer, "role", callWindow.myRole, "people", JSON.stringify(callWindow.people.map(p => p.name)), "time", callWindow.seconds, "bar", JSON.stringify(callWindow.ubar.bar)); shot("resumed") } },
+                46: () => callWindow.breakoutRun("close", { threads: callWindow.breakoutRooms.map(r => r.thread) }),
+                49: () => { log("closed"); shot("closed") },
                 60: () => { log("later"); shot("later"); t("remove") },
                 61: () => shot("remove"),
                 62: () => { t("close"); callWindow.breakoutRun("delete_all", {}) },

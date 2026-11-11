@@ -408,6 +408,11 @@ Window {
     }
     property bool breakoutBusy: false
     property bool roomToJoin: false
+    /// The main meeting on hold while you (its organizer) are in a room:
+    /// {title, url, since}, or null.
+    readonly property var heldMeeting: backend.callHeldMeetingJson ? JSON.parse(backend.callHeldMeetingJson) : null
+    /// Leave room (`resume`: back to the held main meeting) or Leave meeting.
+    signal leaveRoom(bool resume)
     property bool canReturnToMain: false
     signal joinBreakoutRoom()
     signal returnToMainMeeting()
@@ -436,6 +441,7 @@ Window {
     }
     function importBreakoutCsv() { csvDialog.open() }
     // The breakout rooms harness (--breakout-test): open a view or dialog.
+    function heldWindowForTest() { return heldWindow.visible ? heldWindow : null }
     function roomsForTest(op) {
         if (op === "pane") side = "rooms"
         else if (op === "assign") assignRooms.show()
@@ -537,7 +543,8 @@ Window {
         onTriggered: win.seconds = Math.floor((Date.now() - win.connectedAt) / 1000)
     }
     onStateChanged: {
-        if (state === "connected") { connectedAt = Date.now(); seconds = 0 }
+        // Resuming a held meeting carries on its time (nextConnectedAt).
+        if (state === "connected") { connectedAt = nextConnectedAt || Date.now(); nextConnectedAt = 0; seconds = Math.floor((Date.now() - connectedAt) / 1000) }
         else consulting = null
         // A new call: lobby notifications are on again.
         if (state === "calling") lobbyToast.resetForCall()
@@ -557,7 +564,7 @@ Window {
     readonly property var ubarFacts: ({
         p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled,
         organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
-        roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== ""
+        roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting
     })
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
@@ -1004,14 +1011,17 @@ Window {
             anchors { right: parent.right; rightMargin: 14; top: parent.top }
             BarButton {
                 id: leaveButton
-                icon: "call-leave-filled"; label: "Leave"; strong: true
+                // In a room joined over the held main meeting: Teams' "Leave
+                // room" with its exit arrow, and Leave meeting in its menu.
+                icon: win.heldMeeting ? "arrow-exit-20-filled" : "call-leave-filled"
+                label: win.heldMeeting ? "Leave room" : "Leave"; strong: true
                 iconColor: "#B10E1C"
-                tip: "Leave"; shortcut: "Ctrl+Shift+H"
+                tip: win.heldMeeting ? "Leave room" : "Leave"; shortcut: "Ctrl+Shift+H"
                 // Teams splits Leave only when its menu has more than Leave.
                 split: win.meeting && win.leaveItems.length > 1
                 chevronLabel: "More options"
                 chevronChecked: leaveMenu.visible
-                onClicked: win.leave()
+                onClicked: win.heldMeeting ? win.leaveRoom(true) : win.leave()
                 onChevronClicked: leaveMenu.open()
             }
         }
@@ -1979,7 +1989,8 @@ Window {
     // when more than one of your devices is in the call; End meeting for
     // the organizer, after Teams' confirmation.
     readonly property int myDevices: { const me = roster.find(p => p.id === selfId); return me ? (me.devices || 0) : 0 }
-    readonly property var leaveItems: [{ k: "leave", t: "Leave" }]
+    readonly property var leaveItems: heldMeeting ? [{ k: "room", t: "Leave room" }, { k: "meeting", t: "Leave meeting" }]
+        : [{ k: "leave", t: "Leave" }]
         .concat(myDevices > 1 ? [{ k: "all", t: "Leave on all my devices" }] : [])
         .concat(organizer ? [{ k: "end", t: "End meeting" }] : [])
     Popup {
@@ -2014,6 +2025,8 @@ Window {
                         onTapped: {
                             leaveMenu.close()
                             if (parent.modelData.k === "end") endAsk.open()
+                            else if (parent.modelData.k === "room") win.leaveRoom(true)
+                            else if (parent.modelData.k === "meeting") win.leaveRoom(false)
                             else if (parent.modelData.k === "all") win.leaveOnAllDevices()
                             else win.leave()
                         }
@@ -2025,6 +2038,108 @@ Window {
         }
     }
     ConfirmDialog { id: endAsk; onConfirmed: win.endMeeting() }
+    // Teams' held main meeting (measured on winpc 2026-11-11): while its
+    // organizer is in a breakout room, the main meeting keeps a window of
+    // its own — the meeting's title and time, "▷ Resume" (a bordered
+    // button, 105 x 31.33) first on the bar, the bar's other controls
+    // greyed but Chat, Rooms and Leave, and on the stage your avatar (153)
+    // over "On hold mm:ss" (24/600). Resume (as Leave room) goes back;
+    // Leave leaves the main meeting and keeps you in the room.
+    property real heldElapsedBase: 0
+    /// When the next connected call started (a resumed meeting's start).
+    property real nextConnectedAt: 0
+    property int mainHeldSeconds: 0
+    Timer {
+        running: !!win.heldMeeting; interval: 1000; repeat: true; triggeredOnStart: true
+        onTriggered: win.mainHeldSeconds = win.heldMeeting ? Math.max(0, Math.floor((Date.now() - win.heldMeeting.since) / 1000)) : 0
+    }
+    Window {
+        id: heldWindow
+        visible: !!win.heldMeeting && win.visible
+        title: win.heldMeeting ? win.heldMeeting.title : ""
+        width: win.width; height: win.height
+        x: win.x + 40; y: win.y + 40
+        color: theme.pane
+        property bool roomsShown: false
+        Rectangle { anchors.fill: parent; color: theme.pane }
+        Rectangle {
+            id: heldBar
+            width: parent.width; height: 60
+            color: theme.surface
+            FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "call-shield"; size: 20; color: theme.textStrong }
+            Text {
+                x: 44.67; anchors.verticalCenter: parent.verticalCenter
+                text: win.clock(Math.floor(win.heldElapsedBase) + win.mainHeldSeconds)
+                color: theme.textStrong
+                font.family: theme.font; font.pixelSize: 14
+            }
+            Row {
+                anchors { right: parent.right; rightMargin: 14; top: parent.top }
+                Item {
+                    width: resumeRow.width + 24.67 + 16; height: 60
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: resumeRow.width + 24.67; height: 31.33; radius: 4
+                        color: resumeHover.hovered ? theme.menuHover : theme.surface
+                        border.color: theme.stroke; border.width: 0.67
+                        Row {
+                            id: resumeRow
+                            anchors.centerIn: parent; spacing: 6
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.text }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        }
+                        HoverHandler { id: resumeHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: win.leaveRoom(true) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Resume"
+                    }
+                }
+                BarButton { icon: "call-chat"; label: "Chat"; tip: "Chat"; onClicked: if (win.heldMeeting) backend.openChatWindow(win.heldMeeting.thread) }
+                BarButton { icon: "call-people"; label: "People"; enabled: false }
+                BarButton { icon: "call-raise"; label: "Raise"; enabled: false }
+                BarButton { icon: "call-react"; label: "React"; enabled: false }
+                BarButton { icon: "call-view"; label: "View"; enabled: false }
+                BarButton { icon: "call-controls"; label: "Controls"; enabled: false }
+                BarButton { icon: "call-notes"; label: "Notes"; enabled: false }
+                BarButton { icon: "call-rooms"; label: "Rooms"; tip: "Breakout rooms"; checked: heldWindow.roomsShown; onClicked: heldWindow.roomsShown = !heldWindow.roomsShown }
+                BarButton { icon: "call-apps"; label: "Apps"; enabled: false }
+                Rectangle { width: 17; height: 60; color: "transparent"; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
+                BarButton { icon: "call-camera-off-filled"; label: "Camera"; strong: true; split: true; enabled: false }
+                BarButton { icon: "call-mic-off-filled"; label: "Mic"; strong: true; split: true; enabled: false }
+                BarButton { icon: "call-share-filled"; label: "Share"; strong: true; enabled: false }
+                Rectangle { width: 17; height: 60; color: "transparent"; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
+                BarButton { icon: "call-leave-filled"; label: "Leave"; strong: true; iconColor: "#B10E1C"; tip: "Leave"; onClicked: backend.leaveHeldMeeting() }
+            }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+        }
+        Item {
+            y: heldBar.height; width: parent.width - (heldWindow.roomsShown ? 360 : 0); height: parent.height - y
+            Column {
+                anchors.centerIn: parent; spacing: 48
+                Avatar { anchors.horizontalCenter: parent.horizontalCenter; size: 153; name: win.selfName; photoId: "me" }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "On hold " + win.clock(win.mainHeldSeconds)
+                    font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
+                    color: theme.text
+                }
+            }
+        }
+        BreakoutRoomsPane {
+            visible: heldWindow.roomsShown
+            x: parent.width - 360; y: heldBar.height; width: 360; height: parent.height - y
+            rooms: win.breakoutRooms
+            names: win.breakoutNames
+            settings: win.breakoutSettings
+            busy: win.breakoutBusy
+            onClosed: heldWindow.roomsShown = false
+            onOpenRooms: win.breakoutRun("open", { threads: win.breakoutRooms.filter(r => (r.invitees || []).length > 0).map(r => r.thread) })
+            onCloseRooms: win.breakoutRun("close", { threads: win.breakoutRooms.filter(r => r.open).map(r => r.thread) })
+            onAddRoom: win.breakoutRun("add", { name: win.nextRoomName() })
+            onSaveSettings: st => win.breakoutRun("settings", st)
+        }
+    }
+
     // Teams' compact view while the meeting window is minimised.
     CompactCallWindow {
         id: compactView
@@ -2730,7 +2845,10 @@ Window {
         property string shortcut: ""
         signal clicked()
         signal chevronClicked()
-        width: split ? 74 : 56; height: 60
+        // 48 wide, or wider for a long label (Teams' "Leave room").
+        readonly property real bw: Math.max(48, Math.ceil(bbLabelMetrics.advanceWidth) + 8)
+        TextMetrics { id: bbLabelMetrics; font.family: theme.font; font.pixelSize: 11; text: bb.label }
+        width: split ? bw + 26 : bw + 8; height: 60
         // Teams' bar tooltip (Fluent Tooltip, measured on winpc): 10 below
         // the button, its left edge on the button's (or its right edge on
         // the button's when it would leave the window); 12/16 text,
@@ -2766,7 +2884,7 @@ Window {
         }
         Rectangle {
             visible: bb.split
-            x: 52; y: 6; width: 22; height: 48
+            x: 4 + bb.bw; y: 6; width: 22; height: 48
             topRightRadius: 4; bottomRightRadius: 4
             color: (chevHover.hovered || bb.chevronChecked) ? theme.rowHover : "transparent"
             // Disabled together with the button (Teams' split buttons).
@@ -2778,13 +2896,13 @@ Window {
             Accessible.name: bb.chevronLabel
         }
         Rectangle {
-            x: 4; y: 6; width: 48; height: 48
+            x: 4; y: 6; width: bb.bw; height: 48
             radius: 4
             topRightRadius: bb.split ? 0 : 4; bottomRightRadius: bb.split ? 0 : 4
             color: bbHover.hovered && bb.enabled ? theme.rowHover : "transparent"
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {
-                x: 11.5; y: 3.5
+                x: (bb.bw - 25) / 2; y: 3.5
                 name: bb.icon; size: 25; color: bb.iconColor
                 // Teams' alert badge (roster-button-badge): 18 px with a
                 // 2 px white ring, #C50F1F, 10/700 white, 16 px right of
@@ -2812,7 +2930,7 @@ Window {
                 }
             }
             Text {
-                x: 0.7; y: 30.3; width: 46.7; height: 16
+                x: 0.7; y: 30.3; width: bb.bw - 1.3; height: 16
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 text: bb.label
                 elide: Text.ElideRight
@@ -2821,7 +2939,7 @@ Window {
             }
             Rectangle {
                 visible: bb.checked
-                x: 0.7; y: 50.3; width: 46.7; height: 2; radius: 1
+                x: 0.7; y: 50.3; width: bb.bw - 1.3; height: 2; radius: 1
                 color: theme.brand
             }
             HoverHandler { id: bbHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }

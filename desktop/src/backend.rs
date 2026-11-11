@@ -397,6 +397,9 @@ pub mod qobject {
         /// The breakout room this call is: {closed, allow_return,
         /// main_join_url, move_jitter_ms} ("" in a main meeting).
         #[qproperty(QString, call_breakout_room_json)]
+        /// The main meeting on hold while you're in one of its breakout
+        /// rooms as its organizer: {title, url, since} ("" when none).
+        #[qproperty(QString, call_held_meeting_json)]
         /// The fun picker's GIF results: {query, items: [{url, preview,
         /// width, height, title}], error}.
         #[qproperty(QString, fun_results_json)]
@@ -752,6 +755,19 @@ pub mod qobject {
         /// The meeting last joined: {url, title}.
         #[qinvokable]
         fn current_meeting(self: Pin<&mut Backend>) -> QString;
+        /// Teams' Join on a breakout room's menu: put the main meeting on
+        /// hold and join the room.
+        #[qinvokable]
+        fn join_room_holding_main(self: Pin<&mut Backend>, join_url: &QString, title: &QString);
+        /// Leave the breakout room joined over a held main meeting: back to
+        /// the main meeting (`resume`, Teams' Leave room and Resume) or out
+        /// of both (Leave meeting).
+        #[qinvokable]
+        fn leave_room(self: Pin<&mut Backend>, resume: bool);
+        /// Leave the held main meeting, staying in the room (Teams' Leave
+        /// in the held meeting's window).
+        #[qinvokable]
+        fn leave_held_meeting(self: Pin<&mut Backend>);
         /// Manage the meeting's breakout rooms as Teams' organizers do:
         /// "refresh"; "create" {rooms: [{name, participants}], settings};
         /// "assign" {rooms: [{thread, name, participants}], total};
@@ -1779,6 +1795,9 @@ pub struct BackendRust {
     call_thread_id: QString,
     user_mri: QString,
     roster: Vec<teams_cli::calling::roster::Participant>,
+    /// Your own roster entry (role, state) in a main meeting put on hold
+    /// for a breakout room: the room's roster replaces it meanwhile.
+    held_self: Vec<teams_cli::calling::roster::Participant>,
     /// Others' videos are turned off (View › More options).
     incoming_video_off: bool,
     call_muted: bool,
@@ -1827,6 +1846,7 @@ pub struct BackendRust {
     call_breakout_rooms_json: QString,
     call_breakout_all_json: QString,
     call_breakout_room_json: QString,
+    call_held_meeting_json: QString,
     fun_results_json: QString,
     custom_emoji_json: QString,
     custom_emoji_result: QString,
@@ -1880,6 +1900,9 @@ struct CallSlot {
     moved_from: Option<OutgoingCall>,
     /// The ids of the meetings we moved out of: their ends are theirs.
     left_calls: Vec<String>,
+    /// The main meeting on hold while its organizer is in a breakout room
+    /// (Teams' Join on a room's menu), with its link and title.
+    held_main: Option<(OutgoingCall, QString, QString)>,
     /// The callback tags of the calls we moved out of: their events
     /// (their conversation ending as we leave) are theirs.
     left_tags: Vec<String>,
@@ -2297,6 +2320,39 @@ async fn breakout_run(action: &str, args: &serde_json::Value, link: &outgoing::M
         "loaded": true,
         "warnings": csv_warnings,
     }))
+}
+
+/// What the call window shows of a meeting once it's joined (or resumed).
+struct JoinedView {
+    invite: String,
+    capability: teams_cli::calling::meeting_options::MeetingCapability,
+    processing: teams_cli::calling::roster::Processing,
+    ai_indicator: bool,
+    has_audio: bool,
+    can_dtmf: bool,
+    // Camera and Share as the joined media allows (in the lobby Share
+    // waits for the admission's links).
+    can_video: bool,
+    can_share: bool,
+    started: bool,
+    timers: teams_cli::calling::meeting_timer::Timers,
+}
+
+impl JoinedView {
+    fn of(call: &OutgoingCall) -> Self {
+        Self {
+            invite: call.invite_url().unwrap_or_default().to_string(),
+            capability: call.capability(),
+            processing: call.processing(),
+            ai_indicator: call.shows_ai_indicator(),
+            has_audio: call.has_audio(),
+            can_dtmf: call.can_dtmf(),
+            can_video: call.can_send_video(),
+            can_share: call.can_share(),
+            started: call.meeting_started(),
+            timers: call.timers().clone(),
+        }
+    }
 }
 
 /// Leave the meeting we moved out of (its media is already off).
@@ -3126,6 +3182,28 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         tracing::debug!(event = %json.chars().take(300).collect::<String>(), "event of a call we moved out of");
         return;
     }
+    // The held main meeting's events: its rooms (managed from the room
+    // too) and its end; the room's window shows nothing else of it.
+    if json.contains("\"callTag\"")
+        && let Some(tag) = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v["callTag"].as_str().map(str::to_string))
+    {
+        let mut slot = call_slot().lock().await;
+        if slot.held_main.as_ref().is_some_and(|(c, _, _)| c.call_tag() == tag) {
+            if teams_cli::calling::incoming::is_call_end_event(json) {
+                tracing::info!("the held main meeting ended");
+                slot.held_main = None;
+                drop(slot);
+                let _ = qt.queue(|mut this| this.as_mut().set_call_held_meeting_json(QString::default()));
+            } else if let Some(rooms) = teams_cli::calling::breakout::all_rooms(json) {
+                drop(slot);
+                let text = serde_json::to_string(&rooms).unwrap_or_default();
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_all_json(QString::from(text.as_str())));
+            }
+            return;
+        }
+    }
     // The chat call we watch: its roster changes, or it ends.
     if json.contains("\"callAgentPath\":\"subscription/") {
         tracing::debug!(event = %json.chars().take(1500).collect::<String>(), "watched call event");
@@ -3730,6 +3808,21 @@ async fn members_with_presence(thread: &str) -> anyhow::Result<String> {
         })
         .collect();
     Ok(serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()))
+}
+
+/// A resumed meeting's people: who's in it now (its join-time roster is
+/// stale), then you as it knew you before the hold (your role).
+async fn resume_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoing::OutgoingCall) {
+    let people = call.participants().await.unwrap_or_else(|e| {
+        tracing::info!("participants: {}", short_error(&e));
+        Vec::new()
+    });
+    tracing::info!(count = people.len(), "resumed roster");
+    let _ = qt.queue(move |mut this| {
+        this.as_mut().apply_roster(people);
+        let mine = std::mem::take(&mut this.as_mut().rust_mut().held_self);
+        this.as_mut().apply_roster(mine);
+    });
 }
 
 async fn seed_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoing::OutgoingCall) {
@@ -4798,7 +4891,14 @@ impl qobject::Backend {
     pub fn breakout_action(self: Pin<&mut Self>, action: &QString, args_json: &QString) {
         let action = action.to_string();
         let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
-        let Some(link) = self.call_meeting_link() else {
+        // From a room joined over the held main meeting, the main meeting.
+        let held: serde_json::Value = serde_json::from_str(&self.rust().call_held_meeting_json.to_string()).unwrap_or_default();
+        let link = held["url"]
+            .as_str()
+            .and_then(outgoing::MeetingLink::parse)
+            .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
+            .or_else(|| self.call_meeting_link());
+        let Some(link) = link else {
             tracing::warn!("breakout rooms: no meeting");
             return;
         };
@@ -4818,6 +4918,102 @@ impl qobject::Backend {
             };
             tracing::info!(action, ok = error.is_empty(), "breakout rooms action");
             let _ = qt.queue(move |this| this.breakout_action_done(QString::from(action.as_str()), QString::from(error.as_str())));
+        });
+    }
+
+    pub fn join_room_holding_main(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
+        let (url, title) = (join_url.to_string(), title.to_string());
+        let (main_url, main_title) = self.rust().last_join.clone();
+        let me = self.rust().user_mri.to_string().to_ascii_lowercase();
+        let mine: Vec<_> = self.rust().roster.iter().filter(|p| p.id == me).cloned().collect();
+        self.as_mut().rust_mut().held_self = mine;
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.take() else { return };
+            // Teams holds the organizer's main meeting while they're in a
+            // room (its window shows "On hold" and Resume): a local hold
+            // (CallState.LocalHold) — the meeting stays joined, nothing is
+            // sent or played. The service's hold is for 1:1 calls (a
+            // meeting answers its resume with 430 "Unable to find a
+            // holdee").
+            call.set_held(true);
+            tracing::info!("main meeting on hold for a breakout room");
+            slot.held_main = Some((call, main_url.clone(), main_title.clone()));
+            drop(slot);
+            let thread = outgoing::MeetingLink::parse(&main_url.to_string()).map(|l| l.thread_id).unwrap_or_default();
+            let held = json!({
+                "title": main_title.to_string(), "url": main_url.to_string(), "thread": thread,
+                "since": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
+            })
+            .to_string();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_held_meeting_json(QString::from(held.as_str()));
+                this.as_mut().set_call_camera_on(false);
+                this.as_mut().set_call_state(QString::default());
+                this.as_mut().join_meeting(&QString::from(url.as_str()), &QString::from(title.as_str()));
+            });
+        });
+    }
+
+    pub fn leave_held_meeting(mut self: Pin<&mut Self>) {
+        self.as_mut().set_call_held_meeting_json(QString::default());
+        runtime().spawn(async {
+            let held = call_slot().lock().await.held_main.take();
+            if let Some((main, _, _)) = held {
+                leave_moved_from(main).await;
+            }
+        });
+    }
+
+    pub fn leave_room(self: Pin<&mut Self>, resume: bool) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let room = slot.outgoing.take();
+            let held = slot.held_main.take();
+            drop(slot);
+            if let Some(room) = room {
+                // The room's own end is that call's, not the main meeting's.
+                let tag = room.call_tag().to_string();
+                call_slot().lock().await.left_tags.push(tag);
+                if let Err(e) = room.hang_up().await {
+                    tracing::warn!("leaving the room: {}", short_error(&e));
+                }
+            }
+            let Some((main, url, title)) = held else {
+                let _ = qt.queue(|mut this| this.as_mut().end_call_ui());
+                return;
+            };
+            if !resume {
+                if let Err(e) = main.hang_up().await {
+                    tracing::warn!("leaving the meeting: {}", short_error(&e));
+                }
+                let _ = qt.queue(|mut this| {
+                    this.as_mut().set_call_held_meeting_json(QString::default());
+                    this.as_mut().end_call_ui();
+                });
+                return;
+            }
+            main.set_held(false);
+            tracing::info!("back in the main meeting");
+            let view = JoinedView::of(&main);
+            // The window becomes the main meeting's again, then its people
+            // and state (queued in that order).
+            let _ = qt.queue(move |mut this| {
+                if let Some(link) = outgoing::MeetingLink::parse(&url.to_string()) {
+                    this.as_mut().reset_meeting_view(&link, &url, &title);
+                }
+                this.as_mut().set_call_held_meeting_json(QString::default());
+                this.as_mut().set_call_breakout_json(QString::default());
+                this.as_mut().set_call_breakout_room_json(QString::default());
+                // Through "connecting" back to "connected", as a join goes
+                // (the window takes up the meeting's own time again).
+                this.as_mut().set_call_state(QString::from("connecting"));
+            });
+            resume_roster(&qt, &main).await;
+            call_slot().lock().await.outgoing = Some(main);
+            let _ = qt.queue(move |mut this| this.as_mut().show_joined(view, false));
         });
     }
 
@@ -4974,55 +5170,15 @@ impl qobject::Backend {
             ));
             return;
         };
-        // Breakout rooms are the last meeting's.
+        // Breakout rooms are the last meeting's (but a held main
+        // meeting's rooms stay managed from its room).
         self.as_mut().set_call_breakout_json(QString::default());
-        self.as_mut().set_call_breakout_all_json(QString::default());
+        if self.rust().call_held_meeting_json.is_empty() {
+            self.as_mut().set_call_breakout_all_json(QString::default());
+        }
         self.as_mut().set_call_breakout_room_json(QString::default());
         self.as_mut().set_call_breakout_rooms_json(QString::default());
-        let title = if title.is_empty() {
-            QString::from("Meeting")
-        } else {
-            title.clone()
-        };
-        self.as_mut().rust_mut().last_join = (join_url.clone(), title.clone());
-        self.as_mut().set_call_end_reason(QString::default());
-        self.as_mut().set_call_peer(title);
-        self.as_mut().set_call_peer_id(QString::default());
-        self.as_mut().rust_mut().roster.clear();
-        self.as_mut().set_call_roster_json(QString::from("[]"));
-        self.as_mut().set_call_video_json(QString::from("{}"));
-        self.as_mut().set_call_speaker_mri(QString::default());
-        self.as_mut().set_call_speaking_json(QString::from("[]"));
-        self.as_mut().set_call_muted_by_meeting(false);
-        self.as_mut().set_call_share_mri(QString::default());
-        self.as_mut().set_call_lobby_json(QString::from("[]"));
-        self.as_mut().set_call_invite_url(QString::default());
-        self.as_mut()
-            .set_call_thread_id(QString::from(link.thread_id.as_str()));
-        self.as_mut().load_call_chat_members();
-        self.as_mut().set_call_options_url(QString::from(
-            link.options_url().unwrap_or_default().as_str(),
-        ));
-        self.as_mut()
-            .set_call_chat_url(QString::from(link.chat_url().as_str()));
-        self.as_mut().set_call_meeting(true);
-        self.as_mut().set_call_video_offered(false);
-        self.as_mut().set_call_muted(false);
-        self.as_mut().rust_mut().attendance = Default::default();
-        self.as_mut().set_call_scheduled(true);
-        self.as_mut().set_call_meeting_locked(false);
-        self.as_mut().set_call_attendee_restrictions(0);
-        self.as_mut().set_call_speaking_while_muted(false);
-        self.as_mut().set_call_timer_json(QString::default());
-        self.as_mut().set_call_ai_indicator(false);
-        self.as_mut().set_call_ai_available(false);
-        self.as_mut().set_call_ai_facilitator(false);
-        self.as_mut().set_call_ai_on(false);
-        self.as_mut().show_processing(Default::default());
-        self.as_mut().set_call_meeting_info_json(QString::default());
-        self.as_mut().set_call_lobby_thread(QString::default());
-        self.as_mut().show_transcript(Vec::new(), true);
-        self.as_mut().reset_captions();
+        self.as_mut().reset_meeting_view(&link, join_url, title);
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!("join meeting");
         let qt = self.qt_thread();
@@ -5034,19 +5190,9 @@ impl qobject::Backend {
             slot.cancel_placing = None;
             match result {
                 Ok(call) => {
-                    let has_audio = call.has_audio();
-                    let can_dtmf = call.can_dtmf();
-                    let invite = call.invite_url().unwrap_or_default().to_string();
-                    let capability = call.capability();
-                    let processing = call.processing();
-                    let ai_indicator = call.shows_ai_indicator();
+                    let view = JoinedView::of(&call);
                     let in_lobby = call.in_lobby();
-                    let started = call.meeting_started();
-                    let timers = call.timers().clone();
-                    // Camera and Share as the joined media allows (in the
-                    // lobby Share waits for the admission's links).
-                    let can_video = call.can_send_video();
-                    let can_share = call.can_share();
+                    let (has_audio, can_dtmf, can_video, can_share) = (view.has_audio, view.can_dtmf, view.can_video, view.can_share);
                     tracing::info!(has_audio, can_dtmf, can_video, can_share, in_lobby, "meeting joined");
                     seed_roster(&qt, &call).await;
                     // Back in a meeting we had moved out of: its end is ours again.
@@ -5060,24 +5206,7 @@ impl qobject::Backend {
                         runtime().spawn(leave_moved_from(earlier));
                     }
                     spawn_call_stats_logger(qt.clone());
-                    let _ = qt.queue(move |mut this| {
-                        this.as_mut()
-                            .set_call_invite_url(QString::from(invite.as_str()));
-                        this.as_mut().show_capability(capability, false);
-                        this.as_mut().rust_mut().timer_skew_ms = 0;
-                        this.as_mut().show_timers(timers, false);
-                        this.as_mut().show_processing(processing);
-                        this.as_mut().load_call_accessibility(true);
-                        this.as_mut().set_call_ai_indicator(ai_indicator);
-                        this.as_mut().set_call_has_audio(has_audio);
-                        this.as_mut().set_call_can_dtmf(can_dtmf);
-                        this.as_mut().set_call_can_video(can_video);
-                        this.as_mut().set_call_can_share(can_share);
-                        this.as_mut().set_call_lobby_presenter(started);
-                        // Held in the lobby: Teams keeps the pre-join
-                        // screen until someone admits us.
-                        this.as_mut().set_call_state(QString::from(if in_lobby { "lobby" } else { "connected" }));
-                    });
+                    let _ = qt.queue(move |mut this| this.as_mut().show_joined(view, in_lobby));
                 }
                 Err(e) => {
                     let moved_from = slot.moved_from.take();
@@ -5155,6 +5284,9 @@ impl qobject::Backend {
             let mut slot = call_slot().lock().await;
             if let Some(earlier) = slot.moved_from.take() {
                 runtime().spawn(leave_moved_from(earlier));
+            }
+            if let Some((held, _, _)) = slot.held_main.take() {
+                runtime().spawn(leave_moved_from(held));
             }
             if let Some(cancel) = slot.cancel_placing.take() {
                 let _ = cancel.send(());
@@ -5277,6 +5409,74 @@ impl qobject::Backend {
 
     /// Show the meeting's lock and attendee restrictions; `notify` for a
     /// change while we're in it (Teams' locked / unlocked notice).
+    /// The call window set for a meeting about to be joined (or resumed):
+    /// its title, links and an empty roster.
+    fn reset_meeting_view(mut self: Pin<&mut Self>, link: &outgoing::MeetingLink, join_url: &QString, title: &QString) {
+        let title = if title.is_empty() {
+            QString::from("Meeting")
+        } else {
+            title.clone()
+        };
+        self.as_mut().rust_mut().last_join = (join_url.clone(), title.clone());
+        self.as_mut().set_call_end_reason(QString::default());
+        self.as_mut().set_call_peer(title);
+        self.as_mut().set_call_peer_id(QString::default());
+        self.as_mut().rust_mut().roster.clear();
+        self.as_mut().set_call_roster_json(QString::from("[]"));
+        self.as_mut().set_call_video_json(QString::from("{}"));
+        self.as_mut().set_call_speaker_mri(QString::default());
+        self.as_mut().set_call_speaking_json(QString::from("[]"));
+        self.as_mut().set_call_muted_by_meeting(false);
+        self.as_mut().set_call_share_mri(QString::default());
+        self.as_mut().set_call_lobby_json(QString::from("[]"));
+        self.as_mut().set_call_invite_url(QString::default());
+        self.as_mut()
+            .set_call_thread_id(QString::from(link.thread_id.as_str()));
+        self.as_mut().load_call_chat_members();
+        self.as_mut().set_call_options_url(QString::from(
+            link.options_url().unwrap_or_default().as_str(),
+        ));
+        self.as_mut()
+            .set_call_chat_url(QString::from(link.chat_url().as_str()));
+        self.as_mut().set_call_meeting(true);
+        self.as_mut().set_call_video_offered(false);
+        self.as_mut().set_call_muted(false);
+        self.as_mut().rust_mut().attendance = Default::default();
+        self.as_mut().set_call_scheduled(true);
+        self.as_mut().set_call_meeting_locked(false);
+        self.as_mut().set_call_attendee_restrictions(0);
+        self.as_mut().set_call_speaking_while_muted(false);
+        self.as_mut().set_call_timer_json(QString::default());
+        self.as_mut().set_call_ai_indicator(false);
+        self.as_mut().set_call_ai_available(false);
+        self.as_mut().set_call_ai_facilitator(false);
+        self.as_mut().set_call_ai_on(false);
+        self.as_mut().show_processing(Default::default());
+        self.as_mut().set_call_meeting_info_json(QString::default());
+        self.as_mut().set_call_lobby_thread(QString::default());
+        self.as_mut().show_transcript(Vec::new(), true);
+        self.as_mut().reset_captions();
+    }
+
+    /// The call window for a joined (or resumed) meeting.
+    fn show_joined(mut self: Pin<&mut Self>, v: JoinedView, in_lobby: bool) {
+        self.as_mut().set_call_invite_url(QString::from(v.invite.as_str()));
+        self.as_mut().show_capability(v.capability, false);
+        self.as_mut().rust_mut().timer_skew_ms = 0;
+        self.as_mut().show_timers(v.timers, false);
+        self.as_mut().show_processing(v.processing);
+        self.as_mut().load_call_accessibility(true);
+        self.as_mut().set_call_ai_indicator(v.ai_indicator);
+        self.as_mut().set_call_has_audio(v.has_audio);
+        self.as_mut().set_call_can_dtmf(v.can_dtmf);
+        self.as_mut().set_call_can_video(v.can_video);
+        self.as_mut().set_call_can_share(v.can_share);
+        self.as_mut().set_call_lobby_presenter(v.started);
+        // Held in the lobby: Teams keeps the pre-join screen until someone
+        // admits us.
+        self.as_mut().set_call_state(QString::from(if in_lobby { "lobby" } else { "connected" }));
+    }
+
     fn show_capability(
         mut self: Pin<&mut Self>,
         cap: teams_cli::calling::meeting_options::MeetingCapability,
