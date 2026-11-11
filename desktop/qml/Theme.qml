@@ -110,6 +110,7 @@ QtObject {
     readonly property color successFg: pick("#0E700E", "#54B054")       // colorStatusSuccessForeground1 (toast)
     readonly property color greenForeground2: pick("#0B5A08", "#9FD89F") // colorPaletteGreenForeground2 (an open breakout room)
     readonly property color cardStroke: pick("#E6E6E6", "#3D3D3D")      // the breakout rooms pane's assignment card
+    readonly property color peerNoteFill: pick("#E6E6E6", "#333333")    // the status bar over a 1:1's compose box
     readonly property color savedFg: pick("#C239B3", "#D24ED0")         // colorPaletteBerryForeground1 (saved bookmark)
     readonly property color inputFilledDark: pick("#F0F0F0", "#141414") // the forward dialog's picker
     readonly property color disabledStrong: pick("#C7C7C7", "#5C5C5C")  // a disabled primary button's text

@@ -1468,7 +1468,7 @@ Window {
         property int step: 0
         onTriggered: {
             step++
-            if (step === 2) backend.selectChat(target, "")
+            if (step === 2) backend.selectChat(target, (chatList.chats.find(c => c.id === target) || {}).name || "")
             else if (step === 5) {
                 console.warn("RMHIST check", JSON.stringify((JSON.parse(backend.messagesJson || "[]")).map(m => (m.text || m.content || "").slice(0, 60))))
                 window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rmhist-check.png")))
@@ -1488,7 +1488,7 @@ Window {
             const grab = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rmhist-" + n + ".png")))
             const listed = () => chatList.chats.some(c => c.id === target && !c.hidden)
             step++
-            if (step === 2) { console.warn("RMHIST listed", listed()); backend.selectChat(target, "") }
+            if (step === 2) { console.warn("RMHIST listed", listed()); backend.selectChat(target, (chatList.chats.find(c => c.id === target) || {}).name || "") }
             else if (step === 4) { console.warn("RMHIST open", backend.currentChatId, "messages", (JSON.parse(backend.messagesJson || "[]")).length); grab("chat"); conversation.removeHistoryForTest().open() }
             else if (step === 5) grab("dialog")
             else if (step === 6) { conversation.removeHistoryForTest().close(); backend.removeChatHistory(target) }
@@ -6115,6 +6115,10 @@ Window {
         chatPresence: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId)
             return c && c.presence ? c.presence : ""
+        }
+        peerNote: {
+            const c = chatList.chats.find(c => c.id === backend.currentChatId)
+            return c && c.peerNote ? c.peerNote : null
         }
         messages: backend.messagesJson ? JSON.parse(backend.messagesJson) : []
         busy: backend.busy

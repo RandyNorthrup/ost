@@ -1883,6 +1883,9 @@ pub struct BackendRust {
     my_mri: Option<String>,
     /// Availability by MRI for the other members of 1:1 chats.
     presence: std::collections::HashMap<String, String>,
+    /// Others' status messages and out of office, by MRI: {text, html,
+    /// pinned, ooo} (Teams' banner over the compose box of a 1:1).
+    peer_notes: std::collections::HashMap<String, serde_json::Value>,
     /// Pictures by photo_for id: a file URL, or None for "has none".
     photos: HashMap<String, Option<String>>,
     /// Picture downloads in flight.
@@ -4460,6 +4463,11 @@ impl qobject::Backend {
                 {
                     c["presence"] = json!(p);
                 }
+                if let Some(mri) = c["peerMri"].as_str()
+                    && let Some(n) = self.rust().peer_notes.get(mri)
+                {
+                    c["peerNote"] = n.clone();
+                }
                 c
             })
             .collect();
@@ -6732,6 +6740,8 @@ impl qobject::Backend {
                                         this.as_mut().set_my_work_location(QString::from(p.work_location.as_str()));
                                     }
                                 }
+                                let note = json!({ "text": p.note_text, "html": p.note_html, "pinned": p.note_pinned, "ooo": p.out_of_office });
+                                this.as_mut().rust_mut().peer_notes.insert(p.mri.clone(), note);
                                 this.as_mut()
                                     .rust_mut()
                                     .presence

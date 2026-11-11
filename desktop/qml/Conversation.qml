@@ -112,6 +112,21 @@ Rectangle {
     /// A standing note on the compose box and whether you can type (Teams'
     /// lobby chat banners).
     property string composeNote: ""
+    /// A 1:1 peer's status: {text, html, pinned, ooo} (null when none).
+    property var peerNote: null
+    property var dismissedPeerNotes: ({})
+    // Teams' banner over the compose box of a 1:1 (measured on winpc
+    // 2026-11-11): the peer's status message when they set it to show when
+    // people message them ("Status of {name}: {message}"), else "{name} is
+    // out of office and may not respond".
+    readonly property string peerNoteText: {
+        const n = peerNote
+        if (!n || isGroup || isChannel || isSelf) return ""
+        if (n.pinned && n.text) return "Status of " + chatName + ": " + n.text
+        if (n.ooo) return chatName + " is out of office and may not respond"
+        return ""
+    }
+    readonly property bool peerNoteShown: peerNoteText !== "" && compose.visible && !dismissedPeerNotes[chatId + "|" + peerNoteText]
     property bool composeNoteMuted: false
     property bool composeDisabled: false
     /// Only Format and Send in the compose (Teams' lobby chat).
@@ -1525,7 +1540,7 @@ Rectangle {
         }
         // Read-only (a lobby's view): the messages start at the top, as
         // Teams' waiting-side Lobby pane lists them.
-        anchors { top: header.bottom; bottom: root.readOnly ? undefined : compose.top; left: parent.left; right: parent.right }
+        anchors { top: header.bottom; bottom: root.readOnly ? undefined : root.peerNoteShown ? peerNoteBar.top : compose.top; left: parent.left; right: parent.right }
         height: Math.min(contentHeight + 12, root.height - header.height - 12)
         anchors.bottomMargin: 12
         clip: true
@@ -3463,6 +3478,43 @@ Rectangle {
             color: theme.text
             Accessible.role: Accessible.StaticText
             Accessible.name: text
+        }
+    }
+    // The peer's status bar (Teams' compose notification, 29.33 tall over
+    // the compose box at its width): #E6E6E6 with a #E0E0E0 edge, radius
+    // 4, 16 in; the text 12/17.14 #424242; a 28 x 28 "Close notification"
+    // with the 16 px dismiss at the end.
+    Rectangle {
+        id: peerNoteBar
+        visible: root.peerNoteShown
+        x: compose.x; width: compose.width; height: 29.33
+        y: compose.y - height
+        radius: 4
+        color: theme.peerNoteFill
+        border.color: theme.divider; border.width: 0.67
+        Text {
+            x: 16.67; width: parent.width - 16.67 - 36; anchors.verticalCenter: parent.verticalCenter
+            elide: Text.ElideRight
+            text: root.peerNoteText
+            font.family: theme.font; font.pixelSize: 12
+            color: theme.textStrong
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+        }
+        Rectangle {
+            x: parent.width - 28.67; y: 0.67; width: 28; height: 28; radius: 4
+            color: closeNoteHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+            HoverHandler { id: closeNoteHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler {
+                onTapped: {
+                    const d = Object.assign({}, root.dismissedPeerNotes)
+                    d[root.chatId + "|" + root.peerNoteText] = true
+                    root.dismissedPeerNotes = d
+                }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close notification"
         }
     }
     // The chat's compose (Teams' simplified compose; ComposeBox). It sits
