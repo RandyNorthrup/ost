@@ -4,11 +4,11 @@ title: >-
   Chat list: remaining Teams items (Remove chat history, Open in new window,
   Notify when available, Manage apps, Set workflows; Followed threads and Saved
   quick views; Copilot row; team order)
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T12:32:00Z'
-updated_date: '2026-11-10T07:36:00Z'
+updated_date: '2026-11-11T22:21:00Z'
 labels:
   - desktop
   - chatlist
@@ -30,7 +30,7 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Chat menu has Open in new window, Notify when available, Manage apps, Set workflows and Remove chat history as Teams (Remove chat history verified on a disposable chat)
+- [x] #1 Chat menu has Open in new window, Notify when available, Manage apps, Set workflows and Remove chat history as Teams (Remove chat history verified on a disposable chat)
 - [x] #2 Quick views show Followed threads and Saved with their views, and Drafts as Teams lists them
 - [x] #3 Teams are ordered as Teams orders them
 <!-- AC:END -->
@@ -60,4 +60,20 @@ Quick views also lists Followed threads and Saved (and Drafts from the server). 
 - Chat header More chat options as Teams (33e553f): group/1:1, meeting and own-chat lists match winpc item for item; Ctrl+O and Ctrl+Shift+E. Share screen (call + share on connect) not tried live: it would ring a real member.
 
 - Copilot row moved to TASK-0038 (Teams hosts Copilot as an embedded web app, which needs that task's web-app host). Left here: Remove chat history verified on a disposable chat (needs the user: every chat with other members is a real one).
+
+- Remove chat history (2026-11-11): Teams sets PUT {chatsvc}/v1/users/ME/conversations/{id}/properties?name=clearHistoryTime {"clearHistoryTime": now ms}, not DELETE v1/threads (OST's old call). OST now does the same: hides the chat (listed again when something newer arrives), moves off it if open, and filters messages up to clearHistoryTime. Verified on a disposable 1:1 between OST Test 1 and OST Test 2 (Teams removed it on OST Test 1, OST removed it on OST Test 2; after a new message only that message shows in both).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The chat list's remaining Teams items are in place.
+
+- Chat menu (list and header): Open in new window, Notify when available (1:1), Manage apps, Set workflows, Copy link, and Remove chat history; meeting chats have Report a concern in its place.
+- Remove chat history now does what Teams does: sets the chat's clearHistoryTime (it used to try to delete the thread), hides the chat until something newer arrives, moves off it when open, and shows only newer messages. Verified on a disposable 1:1 between the two test accounts, both from Teams and from OST.
+- Quick views: Followed threads and Saved with their views; Drafts as Teams lists them.
+- Teams ordered as Teams orders them.
+- The Copilot row moved to TASK-0038 (an embedded web app).
+
+Tests: 447 unit tests; live checks on winpc and linuxlt.
+<!-- SECTION:FINAL_SUMMARY:END -->
