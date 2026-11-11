@@ -1717,7 +1717,7 @@ Window {
                 const noAudio = preJoin.audio === "none"
                 const cam = preJoin.cameraOn
                 preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio, cam)
-            } else if (step >= 3 && step <= 150 + window.joinStay && Qt.application.arguments.indexOf("--join-lobby-wait") >= 0) {
+            } else if (step >= 3 && step <= 153 + window.joinStay && Qt.application.arguments.indexOf("--join-lobby-wait") >= 0) {
                 // --join-lobby-wait: held in the lobby (a second account):
                 // capture the waiting screen, wait to be admitted (or
                 // denied), capture the meeting, then leave.
@@ -1728,6 +1728,8 @@ Window {
                 else if (admittedAt && step === admittedAt + 3) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-admitted.png")))
                 else if ((admittedAt && step === admittedAt + 5 + window.joinStay) || step === 150 + window.joinStay) { console.warn("JOIN lobby-wait leaving", st); backend.hangUp() }
                 else if (st === "ended" || st === "" || st === "idle") { if (step > 4) { console.warn("JOIN lobby-wait done", st); Qt.quit() } }
+                // Denied or timed out (the retry screen), or out of time: done.
+                else if (backend.callEndReason || step === 153 + window.joinStay) { console.warn("JOIN lobby-wait ending", st, backend.callEndReason); if (st === "lobby" || st === "connected") backend.hangUp(); Qt.quit() }
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
                 console.warn("JOIN lobby", backend.callLobbyJson)
