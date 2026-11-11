@@ -1,11 +1,11 @@
 ---
 id: TASK-0082
 title: Threads channel layout as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T18:48:00Z'
-updated_date: '2026-11-10T13:23:00Z'
+updated_date: '2026-11-11T23:55:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,7 +22,7 @@ Channels can use Teams' Threads layout (chatModalityType Conversational): the ch
 - [x] #1 Threads open in Teams' side thread pane, with replies
 - [x] #2 Verified side by side with Teams on winpc
 - [x] #3 A Threads-layout channel shows as Teams shows it (Conversation tab, chat bubbles, reply counts, Reply in thread, replies also sent to the channel, Open threads, the 'Message in <channel>' compose)
-- [ ] #4 A channel converted from Posts shows Teams' 'A channel owner set this channel to a threads layout' banner
+- [x] #4 A channel converted from Posts shows Teams' 'A channel owner set this channel to a threads layout' banner
 - [x] #5 Unread threads show as Teams shows them (bold reply count, the pane's Last read line, from rcmetadata ch/chb)
 <!-- AC:END -->
 
@@ -44,4 +44,25 @@ Channels can use Teams' Threads layout (chatModalityType Conversational): the ch
 - Left: converted-channel banner (needs a channel converted from Posts), unread thread state, the narrow-header "Conversation ⌄" tab menu.
 
 - Unread threads: rcmetadata ch/chb read per thread; bold reply count, Last read line in the pane, chb:0 on opening (captured from Teams). Verified Mark as unread from OST and reopening.
+
+- 2026-11-11: converted-channel banner. Teams' ThreadedChannelInfoBanner (channels:threaded_channel_learn_more) shows in a threads channel's main view until dismissed (local setting) or until ESP action ThreadedChannelInteraction is recorded (PUT {mt}/beta/me/engagementSurfaces/actions, sent on a main-view send). New src/api/engagement.rs reads/records ESP actions.
+- CSA teams list omits modality for OST Test 2; layout now read from the thread (GET /v1/threads/{id} properties.chatModalityType) on open and kept.
+- ThreadActivity/ModalityUpdate renders "The layout was changed to threads." / "… to posts." with the pencil icon. Verified as OST Test 2 in "OST layout test" (converted by Teams on winpc). Commit 88a472a.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Channels in Teams' Threads layout now look and behave as Teams shows them.
+
+Changes:
+- Conversation view for threads channels: chat bubbles, reply counts, hover "Reply in thread", "Replied in thread" / "Also sent to channel" lines, the "Message in <channel>" compose.
+- ThreadsPane: thread list and single-thread view, Send to (thread only / thread and channel), Open threads toggle, header actions.
+- Unread threads from rcmetadata ch/chb: bold reply counts and the pane's Last read line; opening a thread marks it read.
+- Converted channels show Teams' "A channel owner set this channel to a threads layout. Learn how threads work" banner, dismissed locally or by the ESP action ThreadedChannelInteraction (new src/api/engagement.rs).
+- A channel's layout is read from its thread properties when the teams list omits it; ModalityUpdate events render as Teams' "The layout was changed to threads/posts."
+
+Tests:
+- cargo test --lib (449 pass), including ModalityUpdate and conversation facts parsing.
+- Verified side by side with Teams on winpc in "OST threads test" and "OST layout test" (OST Test 1 and OST Test 2).
+<!-- SECTION:FINAL_SUMMARY:END -->
