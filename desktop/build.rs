@@ -143,6 +143,7 @@ fn main() {
         "qml/OofPage.qml",
         "qml/ProfileCard.qml",
         "qml/ThreadsPane.qml",
+        "qml/FindPane.qml",
         "qml/CreateChannelDialog.qml",
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",

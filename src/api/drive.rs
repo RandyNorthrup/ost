@@ -237,6 +237,23 @@ pub async fn set_favorite(
     Ok(())
 }
 
+/// The Graph sharing id of a file's address (`u!` + its unpadded
+/// base64url), for `/shares/{id}`.
+pub fn share_id(url: &str) -> String {
+    use base64::Engine;
+    format!("u!{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(url))
+}
+
+/// The drive item at a SharePoint or OneDrive address (a search result's).
+pub async fn item_by_url(client: &TeamsClient, url: &str) -> Result<DriveItem> {
+    let v: serde_json::Value = client
+        .graph_get(&format!("/shares/{}/driveItem?{SELECT}", share_id(url)))
+        .await?
+        .json()
+        .await?;
+    parse_item(&v).ok_or_else(|| anyhow::anyhow!("Not a file: {url}"))
+}
+
 /// Photos and videos in the files you can reach (Graph search).
 pub async fn media(client: &TeamsClient) -> Result<Vec<DriveItem>> {
     let q = serde_json::json!({ "requests": [{
@@ -548,6 +565,12 @@ pub async fn delete(client: &TeamsClient, drive_id: &str, item_id: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn share_ids_are_graph_encoded() {
+        assert_eq!(share_id("https://onedrive.live.com/redir?resid=1231244193912!12&authKey=1201919!12921!1"),
+            "u!aHR0cHM6Ly9vbmVkcml2ZS5saXZlLmNvbS9yZWRpcj9yZXNpZD0xMjMxMjQ0MTkzOTEyITEyJmF1dGhLZXk9MTIwMTkxOSExMjkyMSEx");
+    }
 
     #[test]
     fn items_parse_from_children_shared_and_recent_shapes() {

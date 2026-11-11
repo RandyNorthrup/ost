@@ -1339,6 +1339,12 @@ pub fn moderation_detail(upn: &str, job_title: &str) -> String {
 /// …/userprofilesvc/…/api/v1.0/teams/{teamThread}/users/profilesearch,
 /// `{"keyword"}`, guests left out), as Teams searches.
 pub async fn search_team_members(client: &TeamsClient, team_thread: &str, query: &str) -> Result<Vec<ModerationPerson>> {
+    profile_search(client, team_thread, query, 100, false).await
+}
+
+/// People in a team (or channel) matching `query`: Teams' profile search
+/// (Find in channel's From filter asks for 15, guests included).
+pub async fn profile_search(client: &TeamsClient, team_thread: &str, query: &str, top: u32, guests: bool) -> Result<Vec<ModerationPerson>> {
     let base = client
         .region_endpoint("userProfileService")
         .unwrap_or_else(|| "https://teams.microsoft.com/api/userprofilesvc/amer".to_string());
@@ -1346,7 +1352,7 @@ pub async fn search_team_members(client: &TeamsClient, team_thread: &str, query:
     let resp = client
         .http()
         .post(format!(
-            "{base}/api/v1.0/teams/{}/users/profilesearch?top=100&includeDLs=false&includeBots=false&enableGuest=false",
+            "{base}/api/v1.0/teams/{}/users/profilesearch?top={top}&includeDLs=false&includeBots=false&enableGuest={guests}",
             enc(team_thread)
         ))
         .bearer_auth(&token)

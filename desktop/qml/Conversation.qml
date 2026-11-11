@@ -112,7 +112,7 @@ Rectangle {
     readonly property Item input: compose.editor
     readonly property Item composeBox: compose
     function focusCompose() { if (compose.visible) input.forceActiveFocus() }
-    function openFind() { finding = true; tab = ""; findField.forceActiveFocus() }
+    function openFind() { finding = true; tab = "" }
     function jumpToNewest() { tab = ""; list.positionViewAtBeginning(); channelPosts.toEnd() }
     function toggleDetails() { participants.visible = !participants.visible }
     // A channel's tabs, as Teams lists them: Posts, Shared (its Files
@@ -268,7 +268,7 @@ Rectangle {
     function customEmojiAddForTest() { return msgHost.customEmojiAdd }
     function composeMediaForTest() { return compose.mediaInUse() }
     function closeChatMenuForTest() { chatMenu.close() }
-    function toggleFind() { root.finding = !root.finding; if (root.finding) { root.tab = ""; findField.forceActiveFocus() } else findField.text = "" }
+    function toggleFind() { root.finding = !root.finding; if (root.finding) root.tab = "" }
     readonly property bool headerNarrow: width < 640
     readonly property bool rosterInMenu: width < 720 && isGroup && !isChannel && !isSelf
     // A Threads-layout channel's Open threads button sits before Find; under
@@ -440,7 +440,6 @@ Rectangle {
     function openEmojiForTest() { msgHost.emojiPicker.open() }
     function formatForTest(a, b, tag) { input.select(a, b); root.wrapSelection(tag) }
     function openParticipantsForTest() { participants.visible = true }
-    function findForTest(q) { root.finding = true; findField.text = q; return root.findHits.length }
     function sendForTest() { root.sendCompose() }
     function chatAppsForTest() { return chatApps }
     function insertTextForTest(t) { compose.insertText(t) }
@@ -450,7 +449,7 @@ Rectangle {
         tabExpanded = false
         tabConversationTab = null
         openedAt = new Date()
-        tab = ""; finding = false; findField.text = ""; participants.visible = false; posting = false
+        tab = ""; finding = false; findMark = { id: "", terms: [] }; seekId = ""; participants.visible = false; posting = false
         editingId = ""
         // A thread pane keeps no draft (its channel's draft is the channel's).
         if (root.threadRoot) { draftChat = ""; root.setPlain(""); return }
@@ -1267,6 +1266,7 @@ Rectangle {
         HeaderAction {
             visible: root.contextInline >= 1 && !(root.isChannel && root.tab !== "")
             x: root.contextLeft + 32 * root.threadsButton; icon: "search-20"; Accessible.name: root.isChannel ? "Find in channel" : "Find in chat"
+            iconColor: root.finding ? theme.brand : root.hdrStrong
             onClicked: root.toggleFind()
         }
         HeaderAction {
@@ -1364,7 +1364,8 @@ Rectangle {
     ChannelPosts {
         id: channelPosts
         visible: root.postsLayout && root.tab === ""
-        anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: root.posting && !newestAtTop ? compose.top : parent.bottom; left: parent.left; right: parent.right }
+        findMark: root.findMark
+        anchors { top: header.bottom; bottom: root.posting && !newestAtTop ? compose.top : parent.bottom; left: parent.left; right: parent.right }
         anchors.bottomMargin: root.posting && !newestAtTop ? 12 : 0
         // See new posts at top: the composer opens in the list's top card.
         newestAtTop: backend.channelPostsAtTop
@@ -1401,7 +1402,7 @@ Rectangle {
             const i = model.findIndex(m => m.lastRead === true)
             if (i >= 0) Qt.callLater(() => list.positionViewAtIndex(i, ListView.End))
         }
-        anchors { top: findBar.visible ? findBar.bottom : header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
+        anchors { top: header.bottom; bottom: compose.top; left: parent.left; right: parent.right }
         anchors.bottomMargin: 12
         clip: true
         spacing: 0
@@ -2026,7 +2027,7 @@ Rectangle {
                                 persistentSelection: false
                                 selectionColor: theme.selectionFill
                                 selectedTextColor: theme.text
-                                text: part.isText ? bubble.textStyle + theme.messageHtml(part.modelData.flowText) : ""
+                                text: part.isText ? bubble.textStyle + root.marked(msg.modelData.id, theme.messageHtml(part.modelData.flowText)) : ""
                                 textFormat: TextEdit.RichText
                                 wrapMode: TextEdit.Wrap
                                 font.family: theme.font; font.pixelSize: theme.base
@@ -2139,7 +2140,7 @@ Rectangle {
                     // Teams' 14/20 text (a fixed 20 px line).
                     // Sanitised by the engine to a safe subset.
                     text: msg.modelData.deleted ? "This message has been deleted."
-                        : bubble.textStyle + (msg.modelData.html ? theme.messageHtml(msg.modelData.html) : msg.modelData.text)
+                        : bubble.textStyle + root.marked(msg.modelData.id, msg.modelData.html ? theme.messageHtml(msg.modelData.html) : msg.modelData.text)
                     textFormat: msg.modelData.deleted ? TextEdit.PlainText : TextEdit.RichText
                     wrapMode: TextEdit.Wrap
                     font.family: theme.font; font.pixelSize: theme.base
@@ -2470,72 +2471,34 @@ Rectangle {
     property string tab: ""
 
     // Find in chat: matches among the loaded messages, newest first.
+    /// Find in chat's pane is open (Main hosts it).
     property bool finding: false
-    property int findIndex: 0
-    readonly property var findHits: {
-        const q = findField.text.trim().toLowerCase()
-        if (!q) return []
-        const shown = root.annotate(root.messages)
-        const hits = []
-        for (let i = 0; i < shown.length; i++) if ((shown[i].text || "").toLowerCase().indexOf(q) >= 0) hits.push(i)
-        return hits
+    // A message found by Find in chat: it's brought into view (older pages
+    // load until it's there) and the search terms are marked in it, as
+    // Teams does.
+    property var findMark: ({ id: "", terms: [] })
+    property string seekId: ""
+    property int seekTries: 0
+    // (A channel reply shows in its post: `inPost` is the post.)
+    function showFound(id, terms, inPost) {
+        findMark = { id: id, terms: terms || [] }
+        seekId = inPost || id; seekTries = 0
+        seek()
     }
-    onFindHitsChanged: { findIndex = 0; if (findHits.length) list.positionViewAtIndex(findHits[0], ListView.Center) }
-    Rectangle {
-        id: findBar
-        visible: root.finding && root.tab === ""
-        anchors { top: header.bottom; left: parent.left; right: parent.right }
-        height: visible ? 48 : 0
-        color: theme.surface
-        Rectangle {
-            x: 72; anchors.verticalCenter: parent.verticalCenter
-            width: Math.min(420, parent.width - 144); height: 32; radius: theme.radius
-            color: theme.input
-            border.color: findField.activeFocus ? theme.brand : theme.stroke
-            FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
-            TextInput {
-                id: findField
-                x: 32; width: parent.width - 150
-                anchors.verticalCenter: parent.verticalCenter
-                font.family: theme.font; font.pixelSize: theme.base
-                color: theme.text
-                clip: true
-                Keys.onReturnPressed: root.findNext(1)
-                Keys.onEscapePressed: { text = ""; root.finding = false }
-                Text { visible: !findField.text; text: "Find in chat"; color: theme.textTertiary; font: findField.font }
-                Accessible.name: "Find in chat"
-            }
-            Text {
-                anchors.right: findNav.left; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                visible: findField.text.length > 0
-                text: root.findHits.length ? (root.findIndex + 1) + " of " + root.findHits.length : "No results"
-                font.family: theme.font; font.pixelSize: theme.small
-                color: theme.textSecondary
-            }
-            Row {
-                id: findNav
-                anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
-                Repeater {
-                    model: [{ icon: "chevron-left-20", d: 1, l: "Older match" }, { icon: "chevron-right-20", d: -1, l: "Newer match" }]
-                    Rectangle {
-                        required property var modelData
-                        width: 24; height: 24; radius: theme.radius
-                        color: fnh.hovered ? theme.rowHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 16; color: theme.textStrong; rotation: 90 }
-                        HoverHandler { id: fnh; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.findNext(parent.modelData.d) }
-                        Accessible.role: Accessible.Button
-                        Accessible.name: modelData.l
-                    }
-                }
-            }
+    function seek() {
+        if (!seekId) return
+        if (root.postsLayout) { if (channelPosts.showPost(seekId)) { seekId = ""; return } }
+        else {
+            const i = (list.model || []).findIndex(m => m.id === seekId)
+            if (i >= 0) { list.positionViewAtIndex(i, ListView.Center); seekId = ""; return }
         }
+        if (backend.messagesHasOlder && seekTries < 40) {
+            seekTries++
+            if (!backend.messagesLoadingOlder) backend.loadOlderMessages()
+        } else seekId = ""
     }
-    function findNext(d) {
-        if (!findHits.length) return
-        findIndex = (findIndex + d + findHits.length) % findHits.length
-        list.positionViewAtIndex(findHits[findIndex], ListView.Center)
-    }
+    onMessagesChanged: if (seekId) Qt.callLater(seek)
+    function marked(id, html) { return id && id === findMark.id ? theme.markTerms(html, findMark.terms) : html }
 
     // An expanded tab (Teams' Expand tab, measured on winpc 2026-11-09):
     // the chat list goes and the channel's header gives way to the tab's

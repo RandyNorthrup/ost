@@ -38,6 +38,15 @@ Item {
     /// The post whose reply box is open.
     property string replying: ""
     function toEnd() { list.positionViewAtEnd() }
+    /// Bring a post into view (Find in channel); whether it's loaded.
+    function showPost(id) {
+        const i = (root.posts || []).findIndex(p => p.id === id)
+        if (i >= 0) list.positionViewAtIndex(i, ListView.Center)
+        return i >= 0
+    }
+    /// The terms Find marks in a message.
+    property var findMark: ({ id: "", terms: [] })
+    function markFor(id) { return id && findMark && findMark.id === id ? findMark.terms : [] }
     function headerHeightForTest() { return list.headerItem ? list.headerItem.height : -1 }
     /// For the test harness: reply to the newest post.
     function replyToNewestForTest(text) {
@@ -220,7 +229,8 @@ Item {
                             visible: !!card.post && !!card.post.subject
                             width: parent.width; wrapMode: Text.Wrap
                             bottomPadding: 16
-                            text: card.post ? card.post.subject || "" : ""
+                            textFormat: Text.RichText
+                            text: card.post && card.post.subject ? theme.markTerms(card.post.subject.replace(/&/g, "&amp;").replace(/</g, "&lt;"), root.markFor(card.post.id)) : ""
                             font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
                             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                             color: theme.text
@@ -232,6 +242,7 @@ Item {
                         visible: !!card.post && !postEdit.active
                         x: 18; y: 64 + postHead.height; width: card.width - 36
                         message: card.post
+                        mark: root.markFor(card.post ? card.post.id : "")
                     }
                     // Teams' reaction summary, 17 under the body; posts show the
                     // add button even with no reactions.
@@ -351,6 +362,7 @@ Item {
                                     visible: !rep.editing
                                     x: 50; y: root.compact ? 34.2 : 20; width: card.width - 70
                                     message: rep.modelData
+                                    mark: root.markFor(rep.modelData ? rep.modelData.id : "")
                                 }
                                 Loader {
                                     id: repEdit

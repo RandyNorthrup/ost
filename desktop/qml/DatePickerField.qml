@@ -26,6 +26,12 @@ Item {
     /// (Schedule message: #F5F5F5, the underline only).
     property string format: "M/d/yy"
     property bool filled: false
+    /// No date chosen yet: the placeholder shows (Find in chat's From).
+    property bool empty: false
+    property string placeholder: ""
+    /// The calendar icon's size and its gap from the right.
+    property int iconSize: 20
+    property real iconRight: 10
     implicitWidth: 277.3; implicitHeight: 32
 
     function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
@@ -42,14 +48,14 @@ Item {
         Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: popup.opened ? 2 : 0.67; color: popup.opened ? theme.brand : theme.textSecondary }
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
-            text: Qt.formatDate(root.date, root.format)
-            font.family: theme.font; font.pixelSize: 14; color: theme.text
+            text: root.empty ? root.placeholder : Qt.formatDate(root.date, root.format)
+            font.family: theme.font; font.pixelSize: 14; color: root.empty ? theme.textSecondary : theme.text
         }
-        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "calendar-ltr-20"; size: 20; color: theme.textSecondary }
+        FluentIcon { anchors.right: parent.right; anchors.rightMargin: root.iconRight; anchors.verticalCenter: parent.verticalCenter; name: "calendar-ltr-20"; size: root.iconSize; color: theme.textSecondary }
         HoverHandler { id: fieldHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: popup.opened ? popup.close() : popup.open() }
         Accessible.role: Accessible.ComboBox
-        Accessible.name: "Date, " + Qt.formatDate(root.date, root.format)
+        Accessible.name: root.empty ? root.placeholder : "Date, " + Qt.formatDate(root.date, root.format)
     }
 
     Popup {

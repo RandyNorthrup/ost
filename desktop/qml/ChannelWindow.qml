@@ -43,9 +43,13 @@ Window {
     Component.onCompleted: backend.openChannelWindow(channelId)
     onClosing: backend.closeChannelWindow(channelId)
 
-    // Find in channel: the posts whose text has the words.
+    // Find in channel: Teams' find pane over the window (as Find in post's).
+    // A result opens in the posts with the terms marked; Escape goes back
+    // to the results.
     property bool finding: false
-    function toggleFind() { finding = !finding; if (finding) findField.forceActiveFocus(); else findField.text = "" }
+    property bool viewingFound: false
+    function toggleFind() { if (finding && viewingFound) { viewingFound = false; return } finding = !finding; viewingFound = false; if (!finding) host.findMark = { id: "", terms: [] } }
+    Shortcut { sequence: "Escape"; enabled: win.finding && win.viewingFound; onActivated: win.viewingFound = false }
     Shortcut { sequence: "Ctrl+F"; onActivated: win.toggleFind() }
 
     MessageHost {
@@ -55,6 +59,8 @@ Window {
         teamId: win.teamId; teamName: win.teamName; chatName: win.channelName
         defaultBox: compose
         canPopOut: true
+        /// The message Find opened, and the terms marked in it.
+        property var findMark: ({ id: "", terms: [] })
         onQuoteRequested: m => { compose.quote = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.quote_text || m.text || "" }; win.posting = true; compose.focusEditor() }
         onReactRequested: (id, key, on) => backend.toggleReaction(id, key, on)
         onDeleteRequested: id => backend.deleteMessage(id)
@@ -162,44 +168,28 @@ Window {
     }
     WorkflowsDialog { id: workflows }
 
-    // Find in channel: OST's find bar, as in the main window.
-    Rectangle {
-        id: findBar
-        visible: win.finding
-        anchors { top: header.bottom; left: parent.left; right: parent.right }
-        height: visible ? 48 : 0
-        color: theme.surface
-        Rectangle {
-            x: 16; anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 32; height: 32; radius: theme.radius
-            color: theme.input
-            border.color: findField.activeFocus ? theme.brand : theme.stroke
-            FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
-            TextInput {
-                id: findField
-                x: 32; width: parent.width - 120
-                anchors.verticalCenter: parent.verticalCenter
-                font.family: theme.font; font.pixelSize: theme.base
-                color: theme.text
-                clip: true
-                Keys.onEscapePressed: win.toggleFind()
-                Text { visible: !findField.text; text: "Find in channel"; color: theme.textTertiary; font: findField.font }
-                Accessible.name: "Find in channel"
-            }
-            Text {
-                anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
-                visible: findField.text.length > 0
-                readonly property int hits: win.messages.filter(m => (m.text || "").toLowerCase().indexOf(findField.text.trim().toLowerCase()) >= 0).length
-                text: hits ? hits + (hits === 1 ? " result" : " results") : "No results"
-                font.family: theme.font; font.pixelSize: theme.small
-                color: theme.textSecondary
-            }
+    FindPane {
+        id: findPane
+        z: 5
+        visible: win.finding && !win.viewingFound
+        anchors { top: titleRow.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        windowed: true
+        isChannel: true
+        chatId: win.channelId
+        channelGroup: win.teamId
+        onVisibleChanged: if (visible) focusField()
+        onClosed: { win.finding = false; win.viewingFound = false; host.findMark = { id: "", terms: [] } }
+        onJumpTo: (hit, terms) => {
+            host.findMark = { id: hit.id, terms: terms }
+            win.viewingFound = true
+            posts.showPost(hit.parent_id || hit.id)
         }
     }
 
     ChannelPosts {
         id: posts
-        anchors { top: findBar.bottom; left: parent.left; right: parent.right; bottom: win.posting && !backend.channelPostsAtTop ? compose.top : parent.bottom }
+        findMark: host.findMark
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: win.posting && !backend.channelPostsAtTop ? compose.top : parent.bottom }
         anchors.bottomMargin: win.posting && !backend.channelPostsAtTop ? 12 : 0
         compact: true
         messages: win.messages

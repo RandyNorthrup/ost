@@ -14,6 +14,23 @@ QtObject {
             .replace(/<h([123])>/g, '<p class="h$1">').replace(/<\/h[123]>/g, "</p>")
     }
 
+    // Find in chat's highlight (Teams' mark: #F9E2AE behind #242424, light
+    // and dark alike).
+    readonly property color findMark: "#F9E2AE"
+    // Words starting with one of the terms (Teams marks "OST" in "OST's",
+    // not in "post"): group 1 is what comes before, group 2 the term.
+    function termPattern(terms) {
+        const t = (terms || []).filter(x => !!x).map(x => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        return t.length ? new RegExp("(^|[^A-Za-z0-9_])(" + t.join("|") + ")", "gi") : null
+    }
+    // HTML with the search terms marked in its text (not inside tags).
+    function markTerms(h, terms) {
+        const re = termPattern(terms)
+        if (!re) return h
+        return String(h || "").replace(/(<[^>]*>)|([^<]+)/g, (m, tag, text) => tag ? tag
+            : text.replace(re, '$1<span style="background-color:' + findMark + '; color:#242424">$2</span>'))
+    }
+
     // Brand
     readonly property color brand: pick("#5B5FC7", "#7F85F5")          // BrandForeground1 / indicators
     readonly property color brandFill: pick("#5B5FC7", "#4F52B2")      // BrandBackground (buttons)

@@ -4124,6 +4124,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hmac",
  "home",
+ "iana-time-zone",
  "keyring",
  "md-5",
  "openh264",

@@ -12,6 +12,7 @@ pub mod drive;
 pub mod ecs;
 pub mod emoticons;
 pub mod files;
+pub mod find;
 pub mod folders;
 pub mod funstuff;
 mod me;

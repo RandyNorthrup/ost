@@ -43,12 +43,22 @@ Window {
     }
     readonly property var post: thread.find(m => m.id === rootId) || null
     readonly property var replies: thread.filter(m => m.id !== rootId)
-    // Find in post: the messages whose text has the words.
+    // Find in post: Teams' find pane over the window (under its title
+    // row). A result opens in the thread with the terms marked; Escape goes
+    // back to the results.
     property bool finding: false
-    readonly property var findHits: {
-        const q = findField.text.trim().toLowerCase()
-        if (!finding || !q) return []
-        return thread.filter(m => (m.text || "").toLowerCase().indexOf(q) >= 0).map(m => m.id)
+    property bool viewingFound: false
+    property var findMark: ({ id: "", terms: [] })
+    function markFor(id) { return id && findMark.id === id ? findMark.terms : [] }
+    function showFound(id, terms) {
+        findMark = { id: id, terms: terms || [] }
+        viewingFound = true
+        Qt.callLater(() => {
+            if (id === rootId) { flick.contentY = 0; return }
+            const i = replies.findIndex(m => m.id === id)
+            const item = i >= 0 ? replyRepeater.itemAt(i) : null
+            if (item) flick.contentY = Math.max(0, Math.min(flick.contentHeight - flick.height, item.mapToItem(card, 0, 0).y + card.y - flick.height / 3))
+        })
     }
     title: teamName + " | " + channelName
     width: 588; height: 493
@@ -63,6 +73,7 @@ Window {
     function hostForTest() { return thost }
     function postItemForTest() { return postItem }
     function flickForTest() { return flick }
+    function findPaneForTest() { return findPane }
     function moreMenuForTest() { moreMenu.parent = moreButton; moreMenu.x = moreButton.width - moreMenu.implicitWidth; moreMenu.y = moreButton.height; moreMenu.open() }
 
     // The thread's message actions: its own menus and pickers, here.
@@ -164,47 +175,28 @@ Window {
         }
     }
     Shortcut { sequence: "Ctrl+F"; onActivated: win.toggleFind() }
-    function toggleFind() { finding = !finding; if (finding) findField.forceActiveFocus(); else findField.text = "" }
+    function toggleFind() { if (finding && viewingFound) { viewingFound = false; return } finding = !finding; viewingFound = false; if (!finding) findMark = { id: "", terms: [] } }
 
-    // Find in post: OST's find bar, as in the channel (Teams' find pane is
-    // TASK-0051).
-    Rectangle {
-        id: findBar
-        visible: win.finding
-        anchors { top: header.bottom; left: parent.left; right: parent.right }
-        height: visible ? 48 : 0
-        color: theme.surface
-        Rectangle {
-            x: 16; anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 32; height: 32; radius: theme.radius
-            color: theme.input
-            border.color: findField.activeFocus ? theme.brand : theme.stroke
-            FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
-            TextInput {
-                id: findField
-                x: 32; width: parent.width - 120
-                anchors.verticalCenter: parent.verticalCenter
-                font.family: theme.font; font.pixelSize: theme.base
-                color: theme.text
-                clip: true
-                Keys.onEscapePressed: win.toggleFind()
-                Text { visible: !findField.text; text: "Find in post"; color: theme.textTertiary; font: findField.font }
-                Accessible.name: "Find in post"
-            }
-            Text {
-                anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
-                visible: findField.text.length > 0
-                text: win.findHits.length ? win.findHits.length + (win.findHits.length === 1 ? " result" : " results") : "No results"
-                font.family: theme.font; font.pixelSize: theme.small
-                color: theme.textSecondary
-            }
-        }
+    FindPane {
+        id: findPane
+        z: 5
+        visible: win.finding && !win.viewingFound
+        anchors { top: titleRow.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        windowed: true
+        isChannel: true
+        chatId: win.channelId
+        postRoot: win.rootId
+        channelGroup: win.teamId
+        onVisibleChanged: if (visible) focusField()
+        onClosed: { win.finding = false; win.viewingFound = false; win.findMark = { id: "", terms: [] } }
+        onJumpTo: (hit, terms) => win.showFound(hit.id, terms)
     }
+    Shortcut { sequence: "Escape"; enabled: win.finding && win.viewingFound; onActivated: win.viewingFound = false }
 
     // The thread
     Flickable {
         id: flick
-        anchors { top: findBar.bottom; left: parent.left; right: parent.right; bottom: compose.top; bottomMargin: 38.8 }
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: compose.top; bottomMargin: 38.8 }
         clip: true
         contentHeight: card.height + 7 + 3
         boundsBehavior: Flickable.StopAtBounds
@@ -228,9 +220,7 @@ Window {
                     readonly property var m: win.post
                     readonly property bool editing: !!m && thost.editingId === m.id
                     readonly property var mark: editing ? null : thost.highlight(m)
-                    readonly property bool hit: !!m && win.findHits.indexOf(m.id) >= 0
                     height: !m ? 64 : editing ? (postEdit.item ? postEdit.item.height : 0) + 8 : postBody.y + postBody.height + 17 + 26 + 8.7
-                    Rectangle { anchors.fill: parent; visible: postItem.hit; radius: 8; color: theme.pick("#FFF4CE", "#463100") }
                     Rectangle {
                         visible: !!postItem.mark
                         x: 4; y: 16; width: 4; height: 32; radius: 2
@@ -279,11 +269,25 @@ Window {
                             color: theme.textSecondary
                         }
                     }
+                    // The post's subject (as in the channel: 18/600, 16 under).
+                    Text {
+                        id: postSubject
+                        visible: !!postItem.m && !postItem.editing && !!postItem.m.subject
+                        x: 18; y: 64; width: card.width - 36
+                        wrapMode: Text.Wrap; bottomPadding: 16
+                        textFormat: Text.RichText
+                        text: postItem.m && postItem.m.subject ? theme.markTerms(postItem.m.subject.replace(/&/g, "&amp;").replace(/</g, "&lt;"), win.markFor(postItem.m.id)) : ""
+                        font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
+                        lineHeight: 25.7; lineHeightMode: Text.FixedHeight
+                        color: theme.text
+                        Accessible.role: Accessible.Heading
+                    }
                     MessageText {
                         id: postBody
                         visible: !!postItem.m && !postItem.editing
-                        x: 18; y: 64; width: card.width - 36
+                        x: 18; y: 64 + (postSubject.visible ? postSubject.height : 0); width: card.width - 36
                         message: postItem.m
+                        mark: win.markFor(postItem.m ? postItem.m.id : "")
                     }
                     ReactionSummary {
                         visible: !!postItem.m && !postItem.editing
@@ -325,6 +329,7 @@ Window {
                 }
                 // The replies
                 Repeater {
+                    id: replyRepeater
                     model: win.replies
                     // A reply, under a day divider where the day changes
                     // (Teams' timestamp-divider: 16 tall, the day 12/16
@@ -355,12 +360,10 @@ Window {
                         readonly property var modelData: repSlot.modelData
                         readonly property bool editing: thost.editingId === modelData.id
                         readonly property var mark: editing ? null : thost.highlight(modelData)
-                        readonly property bool hit: win.findHits.indexOf(modelData.id) >= 0
                         width: card.width
                         height: editing ? (repEdit.item ? repEdit.item.height : 0) + 8
                             : 42.2 + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 8.1
                         z: repHover.hovered || repBar.hovered ? 2 : 1
-                        Rectangle { anchors.fill: parent; visible: rep.hit; color: theme.pick("#FFF4CE", "#463100") }
                         Rectangle {
                             visible: !!rep.mark
                             x: 4; y: 8; width: 4; height: 20; radius: 2
@@ -403,6 +406,7 @@ Window {
                             visible: !rep.editing
                             x: 50; y: 42.2; width: card.width - 70
                             message: rep.modelData
+                            mark: win.markFor(rep.modelData ? rep.modelData.id : "")
                         }
                         ReactionSummary {
                             visible: !rep.editing && (rep.modelData.reactions || []).length > 0

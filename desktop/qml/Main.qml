@@ -474,6 +474,65 @@ Window {
         }
     }
 
+    property var findTestWindow: null
+    // --find-test[=files] (with --open-chat=<id>, --find=<keywords>): Find in
+    // chat: before a search, the results, the first one opened, the Date
+    // and From filters, Attachment on, then Files; captures each.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--find-test")) && chatList.chats.length > 1
+        interval: 2500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const arg = n => (Qt.application.arguments.find(a => a.startsWith("--" + n + "=")) || "").slice(n.length + 3)
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const filesFirst = Qt.application.arguments.indexOf("--find-test=files") >= 0
+            const log = tag => console.warn("FIND", tag, JSON.stringify({ shown: findPane.shown, chips: findPane.chipKeysForTest(), rows: findPane.rows.length,
+                                                                          result: findPane.result ? { total: findPane.result.total, more: findPane.result.more, loading: findPane.result.loading, error: findPane.result.error, terms: findPane.result.terms } : null,
+                                                                          first: findPane.hits.length ? findPane.hits[0] : null, mark: conversation.findMark }))
+            if (step === 0) {
+                const want = arg("open-chat")
+                if (want.indexOf("@thread.tacv2") > 0) backend.selectChat(want, "General")
+                else { const c = chatList.chats.find(c => c.id === want) || chatList.chats[1]; backend.selectChat(c.id, c.name) }
+            }
+            else if (step === 1) { conversation.openFind() }
+            else if (step === 2) { log("idle"); cap("find-idle") }
+            else if (step === 3) { if (filesFirst) findPane.files = true; findPane.runForTest(arg("find") || "OST test") }
+            else if (step === 5) { log("results"); cap("find-results") }
+            else if (step === 6) { if (findPane.hits.length && !filesFirst) findPane.jumpTo(findPane.hits[0], findPane.terms) }
+            else if (step === 8) { log("jump"); cap("find-jump") }
+            else if (step === 9) { findPane.datePopForTest() }
+            else if (step === 10) { cap("find-date") }
+            else if (step === 11) { findPane.pickDateForTest("week") }
+            else if (step === 13) { log("week"); cap("find-week") }
+            else if (step === 14) { findPane.fromPopForTest() }
+            else if (step === 15) { cap("find-from") }
+            else if (step === 16) { findPane.closePopsForTest(); if (!filesFirst) findPane.toggleForTest("attachment") }
+            else if (step === 18) { log("attachment"); cap("find-attachment") }
+            else if (step === 19) { findPane.files = !filesFirst; findPane.run() }
+            else if (step === 21) { log("files"); cap("find-files") }
+            else if (step === 22) { findPane.runForTest("zzqqxxnotfound") }
+            else if (step === 24) { log("none"); cap("find-none") }
+            else if (step === 25) {
+                // Find in post (--find-post=<post id>, in a channel).
+                const root = arg("find-post")
+                if (!root) { Qt.quit(); return }
+                findTestWindow = conversation.openThreadWindow({ id: root })
+                findTestWindow.toggleFind()
+            }
+            else if (step === 27) { findTestWindow.findPaneForTest().runForTest(arg("find") || "OST") }
+            else if (step === 29) {
+                const p = findTestWindow.findPaneForTest()
+                console.warn("FIND post", JSON.stringify({ rows: p.rows.length, result: p.result ? { total: p.result.total, loading: p.result.loading, error: p.result.error } : null, first: p.hits.length ? p.hits[0] : null }))
+                findTestWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-find-post.png")))
+            }
+            else if (step === 30) { const p = findTestWindow.findPaneForTest(); if (p.hits.length) p.jumpTo(p.hits[0], p.terms) }
+            else if (step === 32) { findTestWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-find-post-open.png"))) }
+            else if (step === 33) { findTestWindow.close(); Qt.quit() }
+            step++
+        }
+    }
+
     // --header-test: Shared tab, a placeholder tab, find, participants;
     // captures each.
     Timer {
@@ -489,7 +548,7 @@ Window {
             else if (step === 2) { cap("shared") }
             else if (step === 3) { conversation.tab = "Recap" }
             else if (step === 4) { cap("recap") }
-            else if (step === 5) { conversation.tab = ""; console.warn("HEADER find 'OST test'", conversation.findForTest("ost test")) }
+            else if (step === 5) { conversation.tab = ""; conversation.openFind(); findPane.runForTest("ost test"); console.warn("HEADER find 'OST test'", findPane.shown) }
             else if (step === 6) { cap("find") }
             else if (step === 7) { conversation.finding = false; conversation.openParticipantsForTest() }
             else if (step === 8) { window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-people.png")); Qt.quit() }) }
@@ -5398,7 +5457,7 @@ Window {
         visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || quickView.selectedKey.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
-        anchors { top: appBanner.bottom; bottom: statusBar.top; right: tabConversation.left
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: findPane.left
             left: conversation.tabExpanded ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
             leftMargin: rail.current === "chat" && (chatList.mentionsOpen || !!chatList.quickOpen) ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
@@ -5482,6 +5541,21 @@ Window {
         onClosed: { rootId = ""; listOpen = false }
         onJumpTo: id => conversation.jumpToMessage(id)
         onPopOut: id => conversation.openThreadWindow({ id: id, root_id: id })
+    }
+    // Find in chat / channel (Teams' pane on the right).
+    FindPane {
+        id: findPane
+        readonly property bool shown: conversation.visible && conversation.finding && conversation.tab === ""
+        visible: shown
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: tabConversation.left }
+        width: shown ? 360 : 0
+        chatId: backend.currentChatId
+        isChannel: conversation.isChannel
+        channelGroup: conversation.isChannel ? conversation.teamId : ""
+        members: { try { return JSON.parse(backend.chatMembersJson || "[]") } catch (e) { return [] } }
+        onShownChanged: if (shown) focusField()
+        onClosed: conversation.finding = false
+        onJumpTo: (hit, terms) => conversation.showFound(hit.id, terms, conversation.isChannel && hit.parent_id ? hit.parent_id : "")
     }
     TabConversationPane {
         id: tabConversation

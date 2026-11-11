@@ -139,6 +139,13 @@ pub mod qobject {
         /// The open chat's scheduled messages, soonest first:
         /// [{id, conversation, send_at_ms, message}].
         #[qproperty(QString, scheduled_json)]
+        /// Find in chat's results: {key, loading, error, total, more,
+        /// terms, hits: [{id, parent_id, sender_mri, sender_name,
+        /// sender_mail, time, text, file_name, file_type, url}]}.
+        #[qproperty(QString, find_json)]
+        /// Find in channel's From filter matches: {keyword, people: [{mri,
+        /// name, mail}]}.
+        #[qproperty(QString, find_people_json)]
         /// Settings' synced values: {props, mt, loaded}.
         #[qproperty(QString, settings_json)]
         /// The last setting that failed to save, or "".
@@ -409,6 +416,20 @@ pub mod qobject {
         /// Cancel a scheduled message (Teams' Delete on it).
         #[qinvokable]
         fn cancel_scheduled(self: Pin<&mut Backend>, id: &QString);
+        /// Search a chat or channel as Teams' Find in chat: `filters_json`
+        /// is {files, start, end, attachment, mentions, from_mail,
+        /// from_oid}; `from` the first result (25 a page, appended).
+        /// Results land in find_json under `key`.
+        #[qinvokable]
+        fn find_in_chat(self: Pin<&mut Backend>, key: &QString, thread: &QString, keywords: &QString, filters_json: &QString, from: i32);
+        /// A Find in chat file result's ··· action: "download" or
+        /// "favorite" (Teams' Download and Favorite), by its address.
+        #[qinvokable]
+        fn find_file_action(self: Pin<&mut Backend>, op: &QString, url: &QString);
+        /// Find in channel's From filter: the channel's people matching
+        /// `keyword`, into find_people_json ([{mri, name, mail}]).
+        #[qinvokable]
+        fn find_people(self: Pin<&mut Backend>, channel: &QString, keyword: &QString);
         /// Save an edited scheduled message (its text, media and time).
         #[qinvokable]
         fn edit_scheduled(
@@ -1502,6 +1523,10 @@ pub struct BackendRust {
     settings_json: QString,
     profile_card_json: QString,
     scheduled_json: QString,
+    find_json: QString,
+    find_people_json: QString,
+    /// The search Find in chat shows (newer searches drop older replies).
+    find_key: String,
     /// The next message from the compose goes at this time (Schedule
     /// message), epoch ms.
     next_schedule_ms: Option<i64>,
@@ -6688,6 +6713,131 @@ impl qobject::Backend {
 
     pub fn set_next_schedule(mut self: Pin<&mut Self>, ms: &QString) {
         self.as_mut().rust_mut().next_schedule_ms = ms.to_string().parse::<i64>().ok().filter(|m| *m > 0);
+    }
+
+    pub fn find_in_chat(mut self: Pin<&mut Self>, key: &QString, thread: &QString, keywords: &QString, filters_json: &QString, from: i32) {
+        let key = key.to_string();
+        let thread = thread.to_string();
+        let keywords = keywords.to_string().trim().to_string();
+        let filters: api::find::Filters = serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
+        let from = from.max(0) as usize;
+        // Earlier pages stay while the next one loads.
+        let mut shown: serde_json::Value = serde_json::from_str(&self.rust().find_json.to_string()).unwrap_or_default();
+        if from == 0 || shown["key"] != key.as_str() {
+            shown = json!({ "key": key, "hits": [], "terms": [], "total": 0, "more": false });
+        }
+        shown["loading"] = true.into();
+        shown["error"] = "".into();
+        self.as_mut().rust_mut().find_key = key.clone();
+        self.as_mut().set_find_json(QString::from(shown.to_string().as_str()));
+        if thread.is_empty() || (keywords.is_empty() && filters.from_mail.is_empty() && filters.start.is_empty() && !filters.attachment && !filters.mentions) {
+            shown["loading"] = false.into();
+            self.as_mut().set_find_json(QString::from(shown.to_string().as_str()));
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let oid = client.object_id().unwrap_or_default();
+                let tenant = client.tenant_id().unwrap_or_default();
+                let mut filters = filters;
+                // A channel's Files search names its folder.
+                if filters.files && thread.ends_with("@thread.tacv2") && filters.channel_path.is_empty() {
+                    let folder = api::drive::channel_folder(&client, &filters.channel_group, &thread).await?;
+                    filters.channel_path = api::find::folder_path(&folder.web_url);
+                }
+                api::find::search(&client, &thread, &keywords, &filters, from, &api::find::local_timezone(), &oid, &tenant).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().find_key != key {
+                    return;
+                }
+                let mut shown = shown;
+                shown["loading"] = false.into();
+                match result {
+                    Ok(found) => {
+                        let mut hits = shown["hits"].as_array().cloned().unwrap_or_default();
+                        hits.extend(found.hits.iter().map(|h| json!(h)));
+                        shown["hits"] = hits.into();
+                        shown["total"] = found.total.into();
+                        shown["more"] = found.more.into();
+                        shown["terms"] = json!(found.terms);
+                    }
+                    Err(e) => {
+                        tracing::warn!("find in chat failed: {}", short_error(&e));
+                        shown["error"] = short_error(&e).into();
+                    }
+                }
+                this.as_mut().set_find_json(QString::from(shown.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn find_people(self: Pin<&mut Self>, channel: &QString, keyword: &QString) {
+        let (channel, keyword) = (channel.to_string(), keyword.to_string().trim().to_string());
+        if channel.is_empty() || keyword.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::channels::profile_search(&client, &channel, &keyword, 15, true).await
+            }
+            .await;
+            let people: Vec<serde_json::Value> = match result {
+                Ok(p) => p.iter().map(|p| json!({ "mri": p.mri, "name": p.name, "mail": p.mail })).collect(),
+                Err(e) => {
+                    tracing::warn!("find people: {}", short_error(&e));
+                    Vec::new()
+                }
+            };
+            let v = json!({ "keyword": keyword, "people": people });
+            let _ = qt.queue(move |mut this| this.as_mut().set_find_people_json(QString::from(v.to_string().as_str())));
+        });
+    }
+
+    pub fn find_file_action(mut self: Pin<&mut Self>, op: &QString, url: &QString) {
+        let (op, url) = (op.to_string(), url.to_string());
+        if !url.starts_with("https://") {
+            return;
+        }
+        let dir = if op == "download" {
+            let Some(d) = download_dir() else { return };
+            Some(d)
+        } else {
+            None
+        };
+        let qt = self.qt_thread();
+        self.as_mut().set_status_text(QString::from(if op == "download" { "Downloading…" } else { "" }));
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let item = api::drive::item_by_url(&client, &url).await?;
+                match dir {
+                    Some(dir) => {
+                        let path = api::drive::download(&client, &item, &dir).await?;
+                        Ok(format!(
+                            "Saved {} to {}",
+                            item.name,
+                            path.parent().map(|p| p.display().to_string()).unwrap_or_default()
+                        ))
+                    }
+                    None => {
+                        api::drive::set_favorite(&client, &item.drive_id, &item.id, true).await?;
+                        Ok(format!("Added {} to Favorites", item.name))
+                    }
+                }
+            }
+            .await;
+            let msg = match result {
+                Ok(m) => m,
+                Err(e) => short_error(&e),
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+        });
     }
 
     pub fn cancel_scheduled(self: Pin<&mut Self>, id: &QString) {
