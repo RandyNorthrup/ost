@@ -1016,6 +1016,10 @@ Window {
         id: callWindow
         visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0 || retryReason !== ""
         onRejoin: window.rejoinMeeting()
+        controlsOptions: { const o = {}; (backend.callControlsJson ? JSON.parse(backend.callControlsJson).options : []).forEach(x => o[x.name] = x); return o }
+        onLoadControls: backend.loadMeetingControls()
+        onSetMeetingOption: (name, value) => backend.setMeetingOption(name, JSON.stringify(value))
+        onApplyMeetingOptions: changes => backend.setMeetingOptions(JSON.stringify(changes))
         peer: backend.callPeer
         selfName: backend.userName
         state: backend.callState
@@ -2126,6 +2130,29 @@ Window {
                 const lobby = JSON.parse(backend.callLobbyJson || "[]")
                 if (lobby.length && !window.deniedOne) { window.deniedOne = true; console.warn("JOIN deny-wait denying", JSON.stringify(lobby[0])); backend.denyFromLobby(lobby[0].id, lobby[0].name) }
                 else if (step === 7 + window.joinStay) { console.warn("JOIN deny-wait leaving"); backend.hangUp() }
+            } else if (step >= 8 && step <= 40 && Qt.application.arguments.indexOf("--join-controls") >= 0) {
+                // --join-controls: Teams' Controls menu and Meeting options
+                // dialog (organizers): capture the menu, the dialog at three
+                // sections; with --join-controls-toggle, turn "Enable lobby"
+                // off and back on through the menu, logging the options.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-controls-" + n + ".png")))
+                const opt = n => { const o = callWindow.controlsOptions[n]; return o ? o.currentValue : "?" }
+                if (step === 8) callWindow.runControl("OrganizerControlButton")
+                else if (step === 10) { shot("menu"); console.warn("JOIN controls items", JSON.stringify(callWindow.controlsItems.map(i => [i.label || i.heading || "-", i.checked, i.enabled]))) }
+                else if (step === 11) { callWindow.closeMenusForTest(); callWindow.openMeetingOptions() }
+                else if (step === 13) shot("dialog-access")
+                else if (step === 14) callWindow.optionsDialogForTest().scrollTo(3)
+                else if (step === 15) shot("dialog-participation")
+                else if (step === 16) callWindow.optionsDialogForTest().scrollTo(5)
+                else if (step === 17) shot("dialog-copilot")
+                else if (step === 18) callWindow.optionsDialogForTest().close()
+                else if (step === 20 && Qt.application.arguments.indexOf("--join-controls-toggle") >= 0) { console.warn("JOIN controls lobby before", opt("AutoAdmittedUsers")); callWindow.pickControl("AutoAdmittedUsers") }
+                else if (step === 24) console.warn("JOIN controls lobby after toggle", opt("AutoAdmittedUsers"))
+                else if (step === 25 && Qt.application.arguments.indexOf("--join-controls-toggle") >= 0) callWindow.pickControl("AutoAdmittedUsers")
+                else if (step === 29) console.warn("JOIN controls lobby after second toggle", opt("AutoAdmittedUsers"))
+                else if (step === 40) { console.warn("JOIN controls leaving"); backend.hangUp() }
+            } else if (step === 42 && Qt.application.arguments.indexOf("--join-controls") >= 0) {
+                Qt.quit()
             } else if (step >= 3 && step <= 3 + window.joinStay && Qt.application.arguments.indexOf("--join-retry-watch") >= 0) {
                 // --join-retry-watch (with --join-stay): wait while someone
                 // in Teams admits, denies or removes us; capture Teams'

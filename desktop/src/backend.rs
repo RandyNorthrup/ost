@@ -245,6 +245,10 @@ pub mod qobject {
         /// for it: "deniedFromLobby", "notAdmittedForLongTime", "removed"
         /// or "".
         #[qproperty(QString, call_end_reason)]
+        /// The meeting's options as Teams' Controls menu reads them:
+        /// {options: [...] (name, type, values, currentValue, isDisabled),
+        /// error} or "" before they load.
+        #[qproperty(QString, call_controls_json)]
         /// Teams' Transcript pane: [{id, kind (speech, started,
         /// stopped), userId, name, text, atMs}], oldest first.
         #[qproperty(QString, call_transcript_json)]
@@ -645,6 +649,19 @@ pub mod qobject {
         /// the call window.
         #[qinvokable]
         fn join_meeting(self: Pin<&mut Backend>, join_url: &QString, title: &QString);
+        /// Teams' Controls menu: read the meeting's options (lobby,
+        /// presenters, chat, attendee restrictions) into
+        /// call_controls_json.
+        #[qinvokable]
+        fn load_meeting_controls(self: Pin<&mut Backend>);
+        /// Save one meeting option (Teams' Controls items and Meeting
+        /// options' Apply), then read the options again.
+        #[qinvokable]
+        fn set_meeting_option(self: Pin<&mut Backend>, name: &QString, value_json: &QString);
+        /// Teams' Meeting options Apply: save several options
+        /// ({name: value}) at once.
+        #[qinvokable]
+        fn set_meeting_options(self: Pin<&mut Backend>, changes_json: &QString);
         /// Teams' Rejoin on its retry screen: join the meeting last joined
         /// again.
         #[qinvokable]
@@ -1640,6 +1657,7 @@ pub struct BackendRust {
     call_recording_tip: QString,
     call_meeting_info_json: QString,
     call_end_reason: QString,
+    call_controls_json: QString,
     call_transcript_json: QString,
     call_captions_json: QString,
     call_captions_on: bool,
@@ -3296,6 +3314,37 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     tracing::debug!(payload = %json, "call event payload");
 }
 
+/// Read (and with `changes`, first save) the meeting's options for Teams'
+/// Controls menu, into call_controls_json.
+async fn load_controls(
+    qt: cxx_qt::CxxQtThread<qobject::Backend>,
+    link: teams_cli::calling::outgoing::MeetingLink,
+    changes: Vec<(String, serde_json::Value)>,
+) {
+    let (tenant, organizer) = (link.tenant_id.clone().unwrap_or_default(), link.organizer_id.clone().unwrap_or_default());
+    let result = async {
+        let client = TeamsClient::new().await?;
+        if changes.is_empty() {
+            api::meeting_options::get(&client, &tenant, &organizer, &link.thread_id, &link.message_id).await
+        } else {
+            let c: Vec<(&str, serde_json::Value)> = changes.iter().map(|(n, v)| (n.as_str(), v.clone())).collect();
+            api::meeting_options::set(&client, &tenant, &organizer, &link.thread_id, &link.message_id, &c).await
+        }
+    }
+    .await;
+    let json = match result {
+        Ok(options) => {
+            tracing::info!(count = options.len(), changed = ?changes.iter().map(|c| &c.0).collect::<Vec<_>>(), "meeting options");
+            json!({ "options": options }).to_string()
+        }
+        Err(e) => {
+            tracing::warn!("meeting options: {}", short_error(&e));
+            json!({ "options": [], "error": short_error(&e) }).to_string()
+        }
+    };
+    let _ = qt.queue(move |mut this| this.as_mut().set_call_controls_json(QString::from(json.as_str())));
+}
+
 /// Who was in the call before us (roster updates only carry changes):
 /// add the people the updates haven't told us about. The list carries
 /// names, not hands or roles.
@@ -4376,6 +4425,47 @@ impl qobject::Backend {
                 }
             }
         });
+    }
+
+    /// The meeting the call is in, as its join link names it.
+    fn call_meeting_link(&self) -> Option<outgoing::MeetingLink> {
+        outgoing::MeetingLink::parse(&self.rust().last_join.0.to_string())
+            .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
+    }
+
+    pub fn load_meeting_controls(self: Pin<&mut Self>) {
+        let Some(link) = self.call_meeting_link() else {
+            return;
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move { load_controls(qt, link, Vec::new()).await });
+    }
+
+    pub fn set_meeting_option(self: Pin<&mut Self>, name: &QString, value_json: &QString) {
+        let Some(link) = self.call_meeting_link() else {
+            return;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&value_json.to_string()) else {
+            return;
+        };
+        let qt = self.qt_thread();
+        let name = name.to_string();
+        runtime().spawn(async move { load_controls(qt, link, vec![(name, value)]).await });
+    }
+
+    pub fn set_meeting_options(self: Pin<&mut Self>, changes_json: &QString) {
+        let Some(link) = self.call_meeting_link() else {
+            return;
+        };
+        let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&changes_json.to_string()) else {
+            return;
+        };
+        let changes: Vec<(String, serde_json::Value)> = map.into_iter().collect();
+        if changes.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move { load_controls(qt, link, changes).await });
     }
 
     pub fn rejoin_meeting(mut self: Pin<&mut Self>) {

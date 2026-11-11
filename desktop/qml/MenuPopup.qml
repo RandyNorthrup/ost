@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Window
 
 // Teams' flyout menu (Fluent Menu), as measured in the client:
 // - surface: padding 4, radius 4, shadow 16, sized to its widest item;
@@ -8,7 +9,7 @@ import QtQuick.Controls.Basic
 //   hover NeutralBackground1Hover; disabled items #BDBDBD and inert;
 // - dividers: 1 px, 4 above and below.
 // items: [{ label, icon?, iconColor?, chevron?, keys?, checked?, endCheck?, separator?,
-// enabled?, submenu? }] (endCheck: Teams' 16 px check at the row's end, 6 in,
+// heading?, enabled?, submenu? }] (heading: a group's title row, not pickable) (endCheck: Teams' 16 px check at the row's end, 6 in,
 // as on More ▸ Record and transcribe ▸ Hide transcript; toggle: a Fluent
 // switch row, 36 tall, its 40 x 20 track 8 in and the label at 60, as the
 // RTT captions menu's "Live Captions": picking it leaves the menu open);
@@ -142,7 +143,7 @@ Popup {
                 id: row
                 required property var modelData
                 required property int index
-                readonly property bool on: modelData.enabled !== false
+                readonly property bool on: modelData.enabled !== false && !modelData.heading
                 readonly property color ink: !on ? theme.disabled : mh.hovered ? theme.text : theme.textStrong
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
@@ -151,10 +152,23 @@ Popup {
                 Rectangle {
                     visible: !!row.modelData.separator
                     anchors.verticalCenter: parent.verticalCenter
-                    x: -root.padding; width: root.width; height: root.viewStyle ? 0.67 : 1; color: theme.divider
+                    // One physical pixel (Teams' 0.67 CSS px at 150 %); thinner
+                    // vanishes at a fractional y on a 100 % display.
+                    x: -root.padding; width: root.width; height: root.viewStyle ? Math.max(0.67, 1 / Screen.devicePixelRatio) : 1; color: theme.divider
+                }
+                // A group's heading (Teams' Controls: "Allow all
+                // participants to:", 12/600 #616161, 32 tall, 8 px in).
+                Text {
+                    visible: !!row.modelData.heading
+                    x: 8; anchors.verticalCenter: parent.verticalCenter
+                    text: row.modelData.heading || ""
+                    font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                    color: theme.textSecondary
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
                 }
                 Rectangle {
-                    visible: !row.modelData.separator
+                    visible: !row.modelData.separator && !row.modelData.heading
                     anchors.fill: parent; radius: 4
                     color: mh.hovered && row.on && !row.modelData.toggle ? theme.menuHover : "transparent"
                     // A switch row's track and knob.

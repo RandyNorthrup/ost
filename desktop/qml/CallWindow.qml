@@ -240,6 +240,61 @@ Window {
                                        : { k: "lock", t: "Lock the meeting", icon: "lock-closed-20" })
         return out
     }
+    /// Teams' Controls menu (organizers), read from the meeting's options
+    /// (call_controls_json): {options: [{name, currentValue, ...}]}.
+    property var controlsOptions: ({})
+    signal loadControls()
+    signal setMeetingOption(string name, var value)
+    signal applyMeetingOptions(var changes)
+    function openMeetingOptions() { loadControls(); optionsDialog.open() }
+    function controlValue(n) { const o = controlsOptions[n]; return o ? o.currentValue : undefined }
+    // Teams' item states and toggles (unified-bar-container-manager `St`,
+    // `xe`, `je`, `gt`): everyone presenting locks the A/V restrictions to
+    // unrestricted.
+    readonly property bool controlsEveryonePresents: ["Everyone", "EveryoneInCompany"].indexOf(controlValue("PresenterOption")) >= 0
+    readonly property string avRestrictions: controlsEveryonePresents ? "UnRestricted" : (controlValue("AttendeeRestrictions") || "")
+    function avActive(audio) {
+        const r = avRestrictions
+        if (!r) return false
+        if (r === "UnRestricted") return true
+        if (r === "DisableAudio") return !audio
+        if (r === "DisableVideo") return audio
+        return false
+    }
+    function avToggle(audio) {
+        switch (avRestrictions) {
+        case "": return "DisableAudio,DisableVideo"
+        case "UnRestricted": return audio ? "DisableAudio" : "DisableVideo"
+        case "DisableAudio": return audio ? "UnRestricted" : "DisableAudio,DisableVideo"
+        case "DisableVideo": return audio ? "DisableAudio,DisableVideo" : "UnRestricted"
+        default: return audio ? "DisableVideo" : "DisableAudio"
+        }
+    }
+    function listToggle(current) { return current === "Everyone" ? "OrganizerOnly" : "Everyone" }
+    readonly property var controlsItems: {
+        const loaded = Object.keys(controlsOptions).length > 0
+        const lockTip = "This option is locked because everyone in this meeting already has presenter permissions."
+        return [
+            { label: "Lock meeting", key: "lock", checked: locked, tip: "When the meeting is locked, nobody else can join the meeting." },
+            { label: "Enable lobby", key: "AutoAdmittedUsers", checked: loaded && controlValue("AutoAdmittedUsers") !== "Everyone", enabled: loaded,
+              tip: "When lobby is enabled, participants will wait in a lobby until admitted by an organizer." },
+            { separator: true },
+            { heading: "Allow all participants to:" },
+            { label: "Present", key: "PresenterOption", checked: loaded && controlValue("PresenterOption") === "Everyone", enabled: loaded },
+            { label: "Chat", key: "AllowMeetingChat", checked: loaded && controlValue("AllowMeetingChat") !== "Disabled", enabled: loaded },
+            { label: "Unmute themselves", key: "audio", checked: avActive(true), enabled: loaded && !controlsEveryonePresents, tip: controlsEveryonePresents ? lockTip : "" },
+            { label: "Turn on their cameras", key: "video", checked: avActive(false), enabled: loaded && !controlsEveryonePresents, tip: controlsEveryonePresents ? lockTip : "" },
+            { separator: true },
+            { label: "View more options", key: "options" }
+        ]
+    }
+    function pickControl(key) {
+        if (key === "lock") runMoreAction(locked ? "unlock" : "lock")
+        else if (key === "options") openMeetingOptions()
+        else if (key === "AutoAdmittedUsers" || key === "PresenterOption") setMeetingOption(key, listToggle(controlValue(key)))
+        else if (key === "AllowMeetingChat") setMeetingOption(key, controlValue(key) === "Disabled" ? "Enabled" : "Disabled")
+        else if (key === "audio" || key === "video") setMeetingOption("AttendeeRestrictions", avToggle(key === "audio"))
+    }
     /// A More actions request: "lock", "unlock", "lowerHands",
     /// "stopSpotlights".
     signal meetingAction(string action)
@@ -407,7 +462,7 @@ Window {
         else if (name === "RaiseHandsButton") toggleHand()
         else if (name === "ReactionButton") { reactMenu.parent = barItem(name); reactMenu.open() }
         else if (name === "ViewModeButton") { viewMenu.parent = barItem(name); viewMenu.open() }
-        else if (name === "OrganizerControlButton") Qt.openUrlExternally(optionsUrl)
+        else if (name === "OrganizerControlButton") { loadControls(); controlsMenu.open() }
         else if (name === "MeetingDetailsButton") Qt.openUrlExternally(chatUrl)
         else if (name === "MeetingAppsAddButton") { appsMenu.parent = barItem(name); appsMenu.open() }
         else if (name === "MoreButton") { moreMenu.parent = barItem(name); moreMenu.open() }
@@ -1613,7 +1668,7 @@ Window {
             }
         }
     }
-    function closeMenusForTest() { viewMenu.close(); moreMenu.close(); videoFlyout.close(); audioFlyout.close(); peoplePane.closeMenusForTest() }
+    function closeMenusForTest() { viewMenu.close(); controlsMenu.close(); moreMenu.close(); videoFlyout.close(); audioFlyout.close(); peoplePane.closeMenusForTest() }
     /// For the --join-view harness: open the View menu (and a submenu row).
     function viewMenuForTest(sub) {
         viewMenu.parent = barItem("ViewModeButton")
@@ -1991,6 +2046,27 @@ Window {
             else if (l === "Full screen") win.toggleFullScreen()
         }
     }
+    // Teams' Controls menu (organizer-control-button-menu, measured on
+    // winpc 2026-11-10): the View menu's style (263.3 wide, padding
+    // 16.67, 32 px rows, labels at 10, checks at the end), under the
+    // Controls button.
+    MenuPopup {
+        id: controlsMenu
+        viewStyle: true
+        parent: win.contentItem
+        x: Math.max(4, Math.min(win.width - width - 4, win.controlsButton ? win.controlsButton.mapToItem(win.contentItem, 0, 0).x : 4))
+        y: 59.3
+        width: 263.3
+        items: win.controlsItems
+        onPicked: i => win.pickControl(items[i].key)
+    }
+    property Item controlsButton: null
+    function optionsDialogForTest() { return optionsDialog }
+    MeetingOptionsDialog {
+        id: optionsDialog
+        options: win.controlsOptions
+        onApply: changes => win.applyMeetingOptions(changes)
+    }
     Shortcut { sequence: "F11"; enabled: win.meeting; onActivated: win.toggleFullScreen() }
     // Teams' call shortcuts (§13). Mute, camera and leave work app-wide
     // (Main.qml); the rest in the call window.
@@ -2259,7 +2335,7 @@ Window {
     Component { id: cReact; BarButton { icon: "call-react"; label: "React"; checked: reactMenu.visible; tip: "Send a reaction"; enabled: win.controlEnabled("ReactionButton"); onClicked: win.runControl("ReactionButton") } }
     Component { id: cView; BarButton { id: viewB; icon: "call-view"; label: "View"; tip: "Change your view"; checked: viewMenu.visible && viewMenu.parent === viewB; enabled: win.controlEnabled("ViewModeButton"); onClicked: win.runControl("ViewModeButton") } }
     // Controls: the meeting options (organizers), as Teams opens them.
-    Component { id: cControls; BarButton { icon: "call-controls"; label: "Controls"; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton") } }
+    Component { id: cControls; BarButton { id: ctlB; icon: "call-controls"; label: "Controls"; checked: controlsMenu.visible; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton"); Component.onCompleted: win.controlsButton = ctlB } }
     // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
     Component { id: cNotes; BarButton { icon: "call-notes"; label: "Notes"; tip: "Open notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
     Component { id: cRooms; BarButton { icon: "call-rooms"; label: "Rooms"; tip: "Create breakout rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton") } }

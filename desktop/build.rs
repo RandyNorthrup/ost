@@ -71,6 +71,7 @@ fn main() {
         "qml/LobbyToast.qml",
         "qml/MeetingTile.qml",
         "qml/RetryScreen.qml",
+        "qml/MeetingOptionsDialog.qml",
         "qml/GalleryGrid.qml",
         "qml/SharedDisplayWindow.qml",
         "qml/RoomNotice.qml",
