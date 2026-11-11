@@ -944,6 +944,9 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
             (!targets.is_empty()).then(|| ev("DeleteMember", targets, String::new(), None))
         }
         "TopicUpdate" => Some(ev("TopicUpdate", Vec::new(), first("value"), None)),
+        // A channel's layout changed (<value>Conversational or PostReply):
+        // Teams' "The layout was changed to threads." / "… to posts."
+        "ModalityUpdate" => Some(ev("ModalityUpdate", Vec::new(), first("value"), None)),
         "PictureUpdate" => Some(ev("PictureUpdate", Vec::new(), String::new(), None)),
         "MemberJoined" | "MemberLeft" => {
             if targets.is_empty() && !actor.is_empty() {
@@ -1006,6 +1009,8 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
         }
         "TopicUpdate" if meeting => format!("{actor} named the meeting {}.", e.value),
         "TopicUpdate" => format!("{actor} changed the group name to {}.", e.value),
+        "ModalityUpdate" if e.value == "Conversational" => "The layout was changed to threads.".into(),
+        "ModalityUpdate" => "The layout was changed to posts.".into(),
         "PictureUpdate" => format!("{actor} changed the group profile picture."),
         "MemberJoined" => {
             let verb = match (e.targets.len(), meeting) {
@@ -3205,18 +3210,55 @@ pub fn peer_horizon(json: &str, me: &str) -> Option<SeenRule> {
 }
 
 /// How far you had read a chat: the message id in your consumption horizon.
-/// When you removed the chat's history (Teams' `clearHistoryTime`, ms),
-/// if you did: messages up to then aren't shown.
-pub async fn cleared_history_time(client: &TeamsClient, chat_id: &str) -> Result<Option<u64>> {
+/// What the chat service says of a conversation that the lists don't
+/// always carry.
+#[derive(Debug, Default, PartialEq)]
+pub struct ConversationFacts {
+    /// When you removed its history (Teams' `clearHistoryTime`, ms):
+    /// messages up to then aren't shown.
+    pub cleared_ms: Option<u64>,
+    /// A channel's layout (`threadProperties.chatModalityType`:
+    /// "Conversational" or "PostReply"); the teams list leaves it out for
+    /// some members.
+    pub modality: Option<String>,
+}
+
+impl ConversationFacts {
+    pub fn from_reply(v: &serde_json::Value) -> Self {
+        Self {
+            cleared_ms: v
+                .pointer("/properties/clearHistoryTime")
+                .and_then(|h| h.as_str().and_then(|s| s.parse().ok()).or_else(|| h.as_u64()))
+                .filter(|t| *t > 0),
+            modality: v
+                .pointer("/threadProperties/chatModalityType")
+                .and_then(|m| m.as_str())
+                .filter(|m| !m.is_empty())
+                .map(str::to_string),
+        }
+    }
+}
+
+/// A channel's layout from its thread (`/v1/threads/{id}`,
+/// `properties.chatModalityType`), which members can read before they've
+/// opened the channel (their own conversation of it doesn't exist yet).
+pub async fn thread_modality(client: &TeamsClient, thread_id: &str) -> Result<Option<String>> {
+    let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), thread_id);
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Thread reply")?;
+    Ok(v.pointer("/properties/chatModalityType")
+        .and_then(|m| m.as_str())
+        .filter(|m| !m.is_empty())
+        .map(str::to_string))
+}
+
+pub async fn conversation_facts(client: &TeamsClient, chat_id: &str) -> Result<ConversationFacts> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}?view=msnp24Equivalent",
         client.chat_service_url(),
         chat_id
     );
     let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Conversation reply")?;
-    Ok(v.pointer("/properties/clearHistoryTime")
-        .and_then(|h| h.as_str().and_then(|s| s.parse().ok()).or_else(|| h.as_u64()))
-        .filter(|t| *t > 0))
+    Ok(ConversationFacts::from_reply(&v))
 }
 
 pub async fn my_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Option<u64>> {
@@ -4369,6 +4411,15 @@ mod quote_tests {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn conversation_facts_read_clear_time_and_layout() {
+        let v = serde_json::json!({"properties": {"clearHistoryTime": "1794433826361"}, "threadProperties": {"chatModalityType": "Conversational"}});
+        let f = super::ConversationFacts::from_reply(&v);
+        assert_eq!(f.cleared_ms, Some(1794433826361));
+        assert_eq!(f.modality.as_deref(), Some("Conversational"));
+        assert_eq!(super::ConversationFacts::from_reply(&serde_json::json!({})), super::ConversationFacts::default());
+    }
+
+    #[test]
     fn editor_html_becomes_teams_html() {
         let qt = r#"<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN"><html><head><meta name="qrichtext" content="1" /><style type="text/css">p, li { white-space: pre-wrap; }</style></head><body style=" font-family:'Selawik'; font-size:14px;">
 <p style=" margin-top:0px;">Hello <span style=" font-weight:700;">bold</span> and <span style=" font-style:italic; text-decoration: underline;">both</span> &lt;tag&gt;</p>
@@ -4940,6 +4991,13 @@ mod paging_and_event_tests {
             "Ann joined the conversation."
         );
         assert!(chat_event("ThreadActivity/PinnedItemsUpdate", "<x/>").is_none());
+        // OST layout test's conversion to threads (Teams, 2026-11-11).
+        let layout = "<modalityupdate><eventtime>1</eventtime><initiator>8:orgid:a</initiator><value>Conversational</value></modalityupdate>";
+        let e = chat_event("ThreadActivity/ModalityUpdate", layout).unwrap();
+        assert_eq!(event_text(&e, &names, false), "The layout was changed to threads.");
+        let back = layout.replace("Conversational", "PostReply");
+        let e = chat_event("ThreadActivity/ModalityUpdate", &back).unwrap();
+        assert_eq!(event_text(&e, &names, false), "The layout was changed to posts.");
         // Adding Polls to OST group test (OST, 2026-11-09): the bot's
         // AddMember is hidden; the app events read as Teams words them.
         let bot = "<addmember><eventtime>1794234644843</eventtime><initiator>8:orgid:a</initiator><target>28:fd931076-bbfb-4a38-a85c-1f0fb5b61bee</target><detailedtargetinfo><id>28:fd931076-bbfb-4a38-a85c-1f0fb5b61bee</id></detailedtargetinfo></addmember>";

@@ -159,6 +159,9 @@ pub mod qobject {
         #[qproperty(QString, find_people_json)]
         /// Settings' synced values: {props, mt, loaded}.
         #[qproperty(QString, settings_json)]
+        /// The engagement-surface actions you've done (Teams' first-run
+        /// tips): ["ThreadedChannelInteraction", …].
+        #[qproperty(QString, esp_actions_json)]
         /// The last setting that failed to save, or "".
         #[qproperty(QString, settings_error)]
         /// Where you work today ("Office", "Remote", or "").
@@ -1146,6 +1149,10 @@ pub mod qobject {
         /// Save an app setting.
         #[qinvokable]
         fn set_setting(self: Pin<&mut Backend>, name: &QString, value: &QString);
+        /// Tell the service you've done an engagement action (Teams'
+        /// tracked actions), unless it knows already.
+        #[qinvokable]
+        fn record_engagement_action(self: Pin<&mut Backend>, action: &QString);
 
         /// Reply to a post in the open channel (`root_id` is the post's id).
         #[qinvokable]
@@ -1852,6 +1859,7 @@ pub struct BackendRust {
     call_breakout_all_json: QString,
     call_breakout_room_json: QString,
     call_held_meeting_json: QString,
+    esp_actions_json: QString,
     fun_results_json: QString,
     custom_emoji_json: QString,
     custom_emoji_result: QString,
@@ -1886,6 +1894,9 @@ pub struct BackendRust {
     /// Others' status messages and out of office, by MRI: {text, html,
     /// pinned, ooo} (Teams' banner over the compose box of a 1:1).
     peer_notes: std::collections::HashMap<String, serde_json::Value>,
+    /// Channels' layouts from the chat service (the teams list leaves some
+    /// out), by channel id.
+    channel_layouts: std::collections::HashMap<String, String>,
     /// Pictures by photo_for id: a file URL, or None for "has none".
     photos: HashMap<String, Option<String>>,
     /// Picture downloads in flight.
@@ -3035,15 +3046,17 @@ async fn load_messages(
             h
         }
     };
-    let (page, cleared) = tokio::join!(
+    let (page, facts) = tokio::join!(
         api::messages::read_timeline_page(&client, &chat_id, api::messages::PAGE_SIZE, None),
-        api::messages::cleared_history_time(&client, &chat_id),
+        api::messages::conversation_facts(&client, &chat_id),
     );
     let page = page?;
-    let cleared = cleared.unwrap_or_else(|e| {
-        tracing::debug!("cleared history time unavailable: {}", short_error(&e));
-        None
-    });
+    let cleared = facts
+        .unwrap_or_else(|e| {
+            tracing::debug!("conversation facts unavailable: {}", short_error(&e));
+            Default::default()
+        })
+        .cleared_ms;
     let (mut timeline, has_older) = {
         let mut map = older_pages().lock().unwrap();
         let entry = map
@@ -7650,6 +7663,7 @@ impl qobject::Backend {
                         this.as_mut().set_signed_in(true);
                         this.as_mut().set_user_name(QString::from(name.as_str()));
                         this.as_mut().load_profile();
+                        this.as_mut().load_engagement();
                         this.as_mut().rust_mut().my_mri = teams_cli::config::Config::load()
                             .ok()
                             .and_then(|c| c.object_id())
@@ -7714,6 +7728,36 @@ impl qobject::Backend {
         self.as_mut().load_chat_members();
         self.as_mut().load_chat_meeting();
         self.as_mut().load_scheduled();
+        if chat_id.to_string().ends_with("@thread.tacv2") {
+            self.as_mut().check_channel_layout(chat_id.to_string());
+        }
+    }
+
+    /// A channel's layout as the chat service has it, when the teams list
+    /// says otherwise (or nothing): Teams lays the channel out by it.
+    fn check_channel_layout(self: Pin<&mut Self>, channel: String) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let Ok(client) = TeamsClient::new().await else { return };
+            let Ok(Some(modality)) = api::messages::thread_modality(&client, &channel).await else { return };
+            let _ = qt.queue(move |mut this| {
+                let mut teams: serde_json::Value = serde_json::from_str(&this.rust().teams_json.to_string()).unwrap_or_default();
+                let mut changed = false;
+                for t in teams.as_array_mut().into_iter().flatten() {
+                    for c in t["channels"].as_array_mut().into_iter().flatten() {
+                        if c["id"].as_str() == Some(channel.as_str()) && c["layout"].as_str() != Some(modality.as_str()) {
+                            c["layout"] = json!(modality);
+                            changed = true;
+                        }
+                    }
+                }
+                this.as_mut().rust_mut().channel_layouts.insert(channel.clone(), modality.clone());
+                if changed {
+                    tracing::info!(%modality, "channel layout from the chat service");
+                    this.as_mut().set_teams_json(QString::from(teams.to_string().as_str()));
+                }
+            });
+        });
     }
 
     /// The open chat's scheduled messages (from your 48:drafts stream).
@@ -9535,7 +9579,17 @@ impl qobject::Backend {
                         for id in &changed {
                             this.as_mut().forget_photos(id);
                         }
-                        this.as_mut().set_teams_json(QString::from(text.as_str()))
+                        // Layouts the chat service told us the list lacks.
+                        let fixes = this.rust().channel_layouts.clone();
+                        let mut v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                        for t in v.as_array_mut().into_iter().flatten() {
+                            for c in t["channels"].as_array_mut().into_iter().flatten() {
+                                if let Some(l) = c["id"].as_str().and_then(|id| fixes.get(id)) {
+                                    c["layout"] = json!(l);
+                                }
+                            }
+                        }
+                        this.as_mut().set_teams_json(QString::from(v.to_string().as_str()))
                     });
                     // Every team's tags: the @ picker offers them, and a
                     // mention of a tag you are in mentions you (as Teams'
@@ -10272,6 +10326,37 @@ impl qobject::Backend {
         {
             tracing::warn!("auto-start: {}", short_error(&e));
         }
+    }
+
+    /// Which of Teams' engagement actions you've done.
+    fn load_engagement(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::engagement::load_completed_actions(&TeamsClient::new().await?).await }.await;
+            match result {
+                Ok(list) => {
+                    let text = json!(list).to_string();
+                    let _ = qt.queue(move |mut this| this.as_mut().set_esp_actions_json(QString::from(text.as_str())));
+                }
+                Err(e) => tracing::info!("engagement state: {}", short_error(&e)),
+            }
+        });
+    }
+
+    pub fn record_engagement_action(mut self: Pin<&mut Self>, action: &QString) {
+        let action = action.to_string();
+        let mut done: Vec<String> = serde_json::from_str(&self.rust().esp_actions_json.to_string()).unwrap_or_default();
+        if done.contains(&action) {
+            return;
+        }
+        done.push(action.clone());
+        self.as_mut().set_esp_actions_json(QString::from(json!(done).to_string().as_str()));
+        runtime().spawn(async move {
+            let result = async { api::engagement::record_action(&TeamsClient::new().await?, &action).await }.await;
+            if let Err(e) = result {
+                tracing::warn!("engagement action {action}: {}", short_error(&e));
+            }
+        });
     }
 
     /// Your e-mail and organisation name, for the profile menu.

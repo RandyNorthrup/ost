@@ -1468,9 +1468,10 @@ Window {
         property int step: 0
         onTriggered: {
             step++
-            if (step === 2) backend.selectChat(target, (chatList.chats.find(c => c.id === target) || {}).name || "")
+            const channel = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === target)
+            if (step === 2) backend.selectChat(target, (chatList.chats.find(c => c.id === target) || channel || {}).name || "")
             else if (step === 5) {
-                console.warn("RMHIST check", JSON.stringify((JSON.parse(backend.messagesJson || "[]")).map(m => (m.text || m.content || "").slice(0, 60))))
+                console.warn("RMHIST check", JSON.stringify((JSON.parse(backend.messagesJson || "[]")).map(m => (m.text || m.content || "").slice(0, 60))), "layout", conversation.channelLayout, "threads", conversation.threadsLayout, "banner", appBanner.kind)
                 window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rmhist-check.png")))
             }
             else if (step === 7) Qt.quit()
@@ -5424,13 +5425,22 @@ Window {
             noteBanner = true
         } else noteBanner = false
     }
+    // Teams' threads-layout channel banner (its ThreadedChannelInfoBanner):
+    // in a threads channel's main view, "A channel owner set this channel
+    // to a threads layout." and "Learn how threads work", 4rem tall, until
+    // dismissed on this device or until you've sent there (the service's
+    // ThreadedChannelInteraction).
+    readonly property var espActions: backend.espActionsJson ? JSON.parse(backend.espActionsJson) : null
+    property bool threadsBannerDismissed: backend.setting("threadedChannelLearnMoreBannerDismissed") !== ""
+    readonly property bool threadsBanner: rail.current === "chat" && conversation.visible && conversation.threadsLayout
+        && !threadsBannerDismissed && !!espActions && espActions.indexOf("ThreadedChannelInteraction") < 0
     Rectangle {
         id: appBanner
         anchors { top: titleBar.bottom; left: parent.left; right: parent.right }
         // The newest banner shows (Teams' shell keeps one at a time).
-        readonly property string kind: window.dndBanner && (!window.noteBanner || window.bannerOrder === "dnd") ? "dnd" : window.noteBanner ? "note" : ""
+        readonly property string kind: window.dndBanner && (!window.noteBanner || window.bannerOrder === "dnd") ? "dnd" : window.noteBanner ? "note" : window.threadsBanner ? "threads" : ""
         readonly property bool shown: kind !== "" && backend.hasCredentials
-        height: shown ? 36 : 0
+        height: shown ? (kind === "threads" ? 64 : 36) : 0
         visible: shown
         color: theme.pick("#F5F5F5", "#292929")
         z: 9
@@ -5438,8 +5448,13 @@ Window {
         Text {
             x: 40; anchors.verticalCenter: parent.verticalCenter
             width: bannerAction.x - 12 - x; elide: Text.ElideRight
-            text: appBanner.kind === "note" ? window.noteBannerText : "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
+            textFormat: appBanner.kind === "threads" ? Text.RichText : Text.PlainText
+            text: appBanner.kind === "note" ? window.noteBannerText
+                : appBanner.kind === "threads" ? "A channel owner set this channel to a threads layout. <a href=\"https://go.microsoft.com/fwlink/?linkid=2311967\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">Learn how threads work</a>"
+                : "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            onLinkActivated: url => Qt.openUrlExternally(url)
+            HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         Rectangle {
             id: bannerAction
@@ -5461,7 +5476,13 @@ Window {
             color: bannerDismissHover.hovered ? theme.menuHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
             HoverHandler { id: bannerDismissHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: appBanner.kind === "note" ? window.noteBanner = false : window.dndBanner = false }
+            TapHandler {
+                onTapped: {
+                    if (appBanner.kind === "note") window.noteBanner = false
+                    else if (appBanner.kind === "threads") { backend.setSetting("threadedChannelLearnMoreBannerDismissed", new Date().toISOString()); window.threadsBannerDismissed = true }
+                    else window.dndBanner = false
+                }
+            }
             Accessible.role: Accessible.Button
             Accessible.name: "Dismiss"
         }

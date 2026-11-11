@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T16:14:00Z'
-updated_date: '2026-11-10T11:15:00Z'
+updated_date: '2026-11-11T22:35:00Z'
 labels:
   - desktop
 dependencies: []
@@ -25,7 +25,7 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
 - [x] #2 Set work location shows and sets the same location Teams does, when the tenant offers it
 - [x] #3 Schedule out of office opens Teams' out-of-office dialog and saves the same automatic replies
 - [ ] #4 Add another account behaves as Teams' (OST's sign-in, separate profiles)
-- [ ] #5 Others' status messages show in their profile cards and the 1:1 chat header as in Teams
+- [x] #5 Others' status messages show in their profile cards and the 1:1 chat header as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,4 +42,8 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
 - Schedule out of office: opens Settings > General > Out of office (Teams' page), saving Teams' automatic replies (updateAutomaticRepliesSetting); OST saved on/off, checked with the server read.
 
 - AC5: profile cards (TASK-0089) show others' status messages; the compose status/OOF banner still needs measuring from a second account.
+
+- AC5 (2026-11-11): measured Teams' bar over a 1:1's compose box with OST Test 2's pinned status message seen by OST Test 1 ("Status of OST Test 2: …", 29.33 tall, #E6E6E6, Close notification); OST shows the same from its presence refresh (peerNote on chat entries), plus Teams' out-of-office line. Teams' 1:1 header shows no status message; profile cards do (TASK-0089). Test note cleared afterwards.
+
+- AC4 research (2026-11-11): Teams' flyout ends with "Add another account"; with more accounts it lists them ("Switch to account {upn}, Status {availability}") and has an "Accounts and orgs" settings page and "Activity in other accounts and orgs" (new window). Its two-account layout can't be measured here without signing a second account into Teams on winpc (a password in Microsoft's sign-in), so AC4 waits for that view.
 <!-- SECTION:NOTES:END -->

@@ -1672,7 +1672,7 @@ Rectangle {
                 size: 20
                 // A meeting chat's calls are meetings (Teams: the video icon).
                 name: msg.isCall ? (msg.modelData.call_huddle || root.isMeetingChat ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
-                    : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20",
+                    : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20", ModalityUpdate: "edit-20",
                          PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", LobbyJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
                          MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", DeleteCustomApp: "apps-20",
                          RecordingStarted: "record-20", RecordingStopped: "record-stop-20", RecordingSaved: "cloud-arrow-up-20",
@@ -3352,6 +3352,9 @@ Rectangle {
             compose.formatting = false
             return
         }
+        // Teams' tracked action: a message sent in a threads channel's main
+        // view (it ends the threads-layout banner).
+        if (root.threadsLayout && !root.pane) backend.recordEngagementAction("ThreadedChannelInteraction")
         backend.setReplyQuote(root.quoting ? JSON.stringify(root.quoting) : "")
         backend.setNextImportance(compose.importance)
         // A scheduled message goes to Teams' drafts instead (not with files).
