@@ -1,7 +1,7 @@
 ---
 id: TASK-0051
 title: 'Search as Teams: full results page and message search'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
@@ -36,3 +36,19 @@ Search P1 gaps (docs/parity/gaps-shell-calendar-files.md).
 - Enter in the title bar search opens the page; results open where they were said with the terms marked.
 - Follow-ups in TASK-105 (preview pane, Communities, Files grid view, uncaptured filter terms).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Search now works as Teams'.
+
+- Find in chat / channel / post opens Teams' find pane, with the keyword box, filters and results (docs/spec/find-in-chat.md).
+- Enter in the title bar's search opens Teams' full results page:
+  - Tabs: All, Messages, Files, People, Channels, Group chats, Meetings and Images.
+  - Filters: Type, In, Person (With / From), Date, More and File Type.
+  - The Send feedback thumbs.
+- Message content search sends Teams' own Substrate requests, with the filter terms captured from Teams.
+
+Tests: api::find and api::search unit tests; --find-test and --search-page-test on linuxlt.
+Follow-ups: TASK-0105 (preview pane, Communities, Files grid view, filter terms not yet captured).
+<!-- SECTION:FINAL_SUMMARY:END -->
