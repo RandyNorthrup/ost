@@ -382,6 +382,21 @@ pub mod qobject {
         /// The meeting's lobby chat thread (Teams' organizers messaging
         /// people in the lobby), once opened; "" otherwise.
         #[qproperty(QString, call_lobby_thread)]
+        /// The breakout rooms this meeting assigns us: [{name, open,
+        /// join_url, auto_move, move_jitter_ms}] ("" before any).
+        #[qproperty(QString, call_breakout_json)]
+        /// The meeting's breakout rooms as their organizer manages them:
+        /// {rooms: [{name, thread, join_url, open, participants: [{mri,
+        /// role}]}], settings: {allow_select, room_duration, allow_return,
+        /// auto_move}, loaded} ("" before any).
+        #[qproperty(QString, call_breakout_rooms_json)]
+        /// The meeting's rooms from the call (its organizer's view):
+        /// [{name, thread, join_url, open, invitees, auto_move,
+        /// allow_return}] ("" before any).
+        #[qproperty(QString, call_breakout_all_json)]
+        /// The breakout room this call is: {closed, allow_return,
+        /// main_join_url, move_jitter_ms} ("" in a main meeting).
+        #[qproperty(QString, call_breakout_room_json)]
         /// The fun picker's GIF results: {query, items: [{url, preview,
         /// width, height, title}], error}.
         #[qproperty(QString, fun_results_json)]
@@ -730,6 +745,23 @@ pub mod qobject {
         /// thread into call_lobby_thread.
         #[qinvokable]
         fn open_lobby_chat(self: Pin<&mut Backend>);
+        /// Breakout rooms: leave this meeting quietly and join another (a
+        /// room, or the main meeting again).
+        #[qinvokable]
+        fn move_meeting(self: Pin<&mut Backend>, join_url: &QString, title: &QString);
+        /// The meeting last joined: {url, title}.
+        #[qinvokable]
+        fn current_meeting(self: Pin<&mut Backend>) -> QString;
+        /// Manage the meeting's breakout rooms as Teams' organizers do:
+        /// "refresh"; "create" {rooms: [{name, participants}], settings};
+        /// "assign" {rooms: [{thread, name, participants}], total};
+        /// "open" / "close" {threads (all when empty), total}; "settings"
+        /// {allow_select, room_duration, allow_return, auto_move}; "add"
+        /// {name}; "rename" {thread, name}; "delete" {thread};
+        /// "delete_all"; "announce" {message}. The rooms come back in
+        /// call_breakout_rooms_json; breakout_action_done says how it went.
+        #[qinvokable]
+        fn breakout_action(self: Pin<&mut Backend>, action: &QString, args_json: &QString);
         /// Teams' Download in the Attendance view: save the report file
         /// (the service's name) to Downloads.
         #[qinvokable]
@@ -973,6 +1005,10 @@ pub mod qobject {
         /// Try again).
         #[qsignal]
         fn meeting_action_failed(self: Pin<&mut Backend>, action: QString);
+        /// A breakout rooms action finished: `error` is empty when it
+        /// worked.
+        #[qsignal]
+        fn breakout_action_done(self: Pin<&mut Backend>, action: QString, error: QString);
         /// The tray asks for the window (its icon or the name row).
         #[qsignal]
         fn tray_show(self: Pin<&mut Backend>);
@@ -1787,6 +1823,10 @@ pub struct BackendRust {
     chat_meeting_json: QString,
     attendance_json: QString,
     call_lobby_thread: QString,
+    call_breakout_json: QString,
+    call_breakout_rooms_json: QString,
+    call_breakout_all_json: QString,
+    call_breakout_room_json: QString,
     fun_results_json: QString,
     custom_emoji_json: QString,
     custom_emoji_result: QString,
@@ -1835,6 +1875,14 @@ struct CallSlot {
     ringing: Option<IncomingCall>,
     active: Option<ActiveCall>,
     outgoing: Option<OutgoingCall>,
+    /// The meeting we're moving out of (to a breakout room or back): its
+    /// media is off, and it is left once the next meeting answers.
+    moved_from: Option<OutgoingCall>,
+    /// The ids of the meetings we moved out of: their ends are theirs.
+    left_calls: Vec<String>,
+    /// The callback tags of the calls we moved out of: their events
+    /// (their conversation ending as we leave) are theirs.
+    left_tags: Vec<String>,
     /// Withdraws the call being placed (still ringing the callee).
     cancel_placing: Option<tokio::sync::oneshot::Sender<()>>,
     /// The screen picked to share, waiting for Teams to take our re-offer.
@@ -2101,6 +2149,162 @@ fn live_roster_json(w: &teams_cli::calling::live_roster::LiveRoster) -> String {
         .map(|p| serde_json::json!({"id": p.id, "name": p.name}))
         .collect();
     serde_json::to_string(&people).unwrap_or_else(|_| "[]".into())
+}
+
+/// Run a breakout rooms action on the meeting `link` names and read the
+/// rooms and settings back (the state call_breakout_rooms_json shows).
+async fn breakout_run(action: &str, args: &serde_json::Value, link: &outgoing::MeetingLink) -> anyhow::Result<serde_json::Value> {
+    use api::breakout_rooms as br;
+    let client = TeamsClient::new().await?;
+    let main = br::Coords::new(
+        link.tenant_id.as_deref().unwrap_or_default(),
+        link.organizer_id.as_deref().unwrap_or_default(),
+        &link.thread_id,
+        &link.message_id,
+    )?;
+    let me = call_slot().lock().await.outgoing.as_ref().map(|c| c.participant_id().to_string()).unwrap_or_default();
+    let version = br::new_version(&me);
+    let total = args["total"].as_u64().unwrap_or(0) as usize;
+    let str_of = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let rooms_now = || async { br::list(&client, &main).await };
+    let pick = |rooms: &[br::Room], threads: &serde_json::Value| -> Vec<br::Coords> {
+        let wanted: Vec<String> = threads.as_array().map(|a| a.iter().map(str_of).collect()).unwrap_or_default();
+        rooms.iter().filter(|r| wanted.is_empty() || wanted.contains(&r.coords.thread)).map(|r| r.coords.clone()).collect()
+    };
+    let find = |rooms: &[br::Room], thread: &str| rooms.iter().find(|r| r.coords.thread == thread).cloned();
+    let mut csv_warnings: Vec<String> = Vec::new();
+    match action {
+        "refresh" => {}
+        "create" => {
+            let rooms: Vec<br::NewRoom> = args["rooms"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|r| br::NewRoom {
+                    name: str_of(&r["name"]),
+                    participants: r["participants"].as_array().cloned().unwrap_or_default(),
+                })
+                .collect();
+            if rooms.is_empty() {
+                anyhow::bail!("No rooms to create");
+            }
+            let settings = args.get("settings").map(br::Settings::from_args);
+            br::create(&client, &main, &rooms, settings.as_ref(), &version).await?;
+        }
+        "assign" => {
+            let current = rooms_now().await?;
+            let mut rooms = Vec::new();
+            for r in args["rooms"].as_array().into_iter().flatten() {
+                let mut room = find(&current, &str_of(&r["thread"])).context("No such room")?;
+                if let Some(n) = r["name"].as_str() {
+                    room.name = n.to_string();
+                }
+                room.participants = r["participants"].as_array().cloned().unwrap_or_default();
+                rooms.push(room);
+            }
+            br::assign(&client, &main, &rooms, total, &version).await?;
+        }
+        "open" | "close" => {
+            let current = rooms_now().await?;
+            let rooms = pick(&current, &args["threads"]);
+            if rooms.is_empty() {
+                anyhow::bail!("No rooms");
+            }
+            if action == "open" {
+                br::open(&client, &main, &rooms, total, &version).await?;
+            } else {
+                br::close(&client, &main, &rooms, total, &version).await?;
+            }
+        }
+        "settings" => {
+            br::set_settings(&client, &main, &br::Settings::from_args(args), &version).await?;
+        }
+        "add" => br::add_room(&client, &main, &str_of(&args["name"]), &[], &version).await?,
+        "rename" => {
+            let mut room = find(&rooms_now().await?, &str_of(&args["thread"])).context("No such room")?;
+            room.name = str_of(&args["name"]);
+            br::update_room(&client, &room, &version).await?;
+        }
+        "delete" => {
+            let room = find(&rooms_now().await?, &str_of(&args["thread"])).context("No such room")?;
+            br::delete_room(&client, &room.coords, &version).await?;
+        }
+        "delete_all" => br::delete_all(&client, &main, &rooms_now().await?, &version).await?,
+        // Teams' Download CSV template: saved to Downloads.
+        "csv_template" => {
+            let dir = download_dir().context("No Downloads folder")?;
+            let path = api::files::save_unique(&dir, br::CSV_TEMPLATE_NAME, br::CSV_TEMPLATE.as_bytes())?;
+            tracing::info!(path = %path.display(), "breakout CSV template saved");
+        }
+        // Teams' Import from CSV: the rooms and their people from the file,
+        // matched by email to the meeting's invitees; rooms already made
+        // are replaced.
+        "import_csv" => {
+            let path = std::path::PathBuf::from(str_of(&args["path"]));
+            if path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()) != Some("csv".into()) {
+                anyhow::bail!("We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again.");
+            }
+            let text = std::fs::read_to_string(&path).context("We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again.")?;
+            let import = br::parse_csv(&text)?;
+            let invitees = api::meeting_options::get(&client, &main.tenant, &main.organizer, &main.thread, &main.message).await?.invitees;
+            let mut warnings: Vec<&str> = import.warnings.clone();
+            let mut rooms = Vec::new();
+            for (name, emails) in &import.rooms {
+                let mut people = Vec::new();
+                for email in emails {
+                    let found = invitees.iter().find(|i| {
+                        i["upn"].as_str().or(i["email"].as_str()).is_some_and(|u| u.eq_ignore_ascii_case(email))
+                    });
+                    match found {
+                        Some(i) if i["mri"].is_string() && i["objectId"].is_string() => people.push(json!({
+                            "upn": email, "mri": i["mri"], "objectId": i["objectId"], "role": "admin",
+                            "tenantId": i.get("tenantId").cloned().unwrap_or(json!(main.tenant)),
+                        })),
+                        _ => {
+                            if !warnings.contains(&"UNMATCHED_PARTICIPANTS") {
+                                warnings.push("UNMATCHED_PARTICIPANTS");
+                            }
+                        }
+                    }
+                }
+                rooms.push(br::NewRoom { name: name.clone(), participants: people });
+            }
+            let existing = rooms_now().await?;
+            if !existing.is_empty() {
+                br::delete_all(&client, &main, &existing, &br::new_version(&me)).await?;
+            }
+            br::create(&client, &main, &rooms, None, &version).await?;
+            tracing::info!(rooms = rooms.len(), ?warnings, "breakout rooms imported");
+            csv_warnings = warnings.iter().map(|w| w.to_string()).collect();
+        }
+        "announce" => {
+            let threads: Vec<String> = rooms_now().await?.into_iter().map(|r| r.coords.thread).collect();
+            br::announce(&client, &main, &threads, &str_of(&args["message"])).await?;
+        }
+        other => anyhow::bail!("Unknown breakout action {other}"),
+    }
+    let rooms = rooms_now().await?;
+    let settings = br::settings(&client, &main).await.unwrap_or_default();
+    Ok(json!({
+        "rooms": rooms.iter().map(|r| json!({
+            "name": r.name,
+            "thread": r.coords.thread,
+            "join_url": r.join_url,
+            "open": r.open,
+            "participants": r.participants,
+        })).collect::<Vec<_>>(),
+        "settings": settings,
+        "loaded": true,
+        "warnings": csv_warnings,
+    }))
+}
+
+/// Leave the meeting we moved out of (its media is already off).
+async fn leave_moved_from(call: OutgoingCall) {
+    match call.hang_up().await {
+        Ok(()) => tracing::info!("left the meeting we moved out of"),
+        Err(e) => tracing::warn!("leaving the meeting we moved out of: {}", short_error(&e)),
+    }
 }
 
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
@@ -2911,6 +3115,17 @@ async fn ensure_recorder(meeting: &teams_cli::calling::recorder::Meeting) -> any
 }
 
 async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
+    // An event for a call we moved out of (a meeting left for a breakout
+    // room, or the room left for the meeting) is that call's, not ours.
+    if json.contains("\"callTag\"")
+        && let Some(tag) = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v["callTag"].as_str().map(str::to_string))
+        && call_slot().lock().await.left_tags.contains(&tag)
+    {
+        tracing::debug!(event = %json.chars().take(300).collect::<String>(), "event of a call we moved out of");
+        return;
+    }
     // The chat call we watch: its roster changes, or it ends.
     if json.contains("\"callAgentPath\":\"subscription/") {
         tracing::debug!(event = %json.chars().take(1500).collect::<String>(), "watched call event");
@@ -3038,6 +3253,30 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let qt2 = qt.clone();
         runtime().spawn(async move { refresh_lobby(qt2).await });
     }
+    // The breakout room we're in (closed, may we go back, where to).
+    if json.contains("breakoutRoomProperties")
+        && let Some(state) = teams_cli::calling::breakout::room_state(json)
+    {
+        let text = serde_json::to_string(&state).unwrap_or_default();
+        tracing::info!(closed = state.closed, allow_return = state.allow_return, "in a breakout room");
+        let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_room_json(QString::from(text.as_str())));
+    }
+    // The meeting's rooms, as its organizer sees them.
+    if json.contains("allBreakoutRooms")
+        && let Some(rooms) = teams_cli::calling::breakout::all_rooms(json)
+    {
+        let text = serde_json::to_string(&rooms).unwrap_or_default();
+        tracing::info!(rooms = rooms.len(), open = rooms.iter().filter(|r| r.open).count(), "meeting breakout rooms");
+        let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_all_json(QString::from(text.as_str())));
+    }
+    // Breakout rooms assigned to us (opened, closed, changed).
+    if json.contains("breakoutDetails")
+        && let Some(rooms) = teams_cli::calling::breakout::assigned_rooms(json)
+    {
+        let text = serde_json::to_string(&rooms).unwrap_or_default();
+        tracing::info!(rooms = rooms.len(), open = rooms.iter().filter(|r| r.open).count(), "breakout rooms");
+        let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_json(QString::from(text.as_str())));
+    }
     // Waiting in a lobby: once an organizer writes, the lobby chat thread
     // arrives (activeModalities.groupChat.lobbyThreadId) and Teams offers
     // its Lobby chat.
@@ -3052,6 +3291,13 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 this.as_mut().set_call_lobby_thread(QString::from(id.as_str()));
             }
         });
+    }
+    // Our leg moved to another call (the lobby handed us to the meeting):
+    // hang-up and hold now go to the new leg.
+    if let Some(links) = teams_cli::calling::outgoing::leg_retarget(json)
+        && let Some(call) = call_slot().lock().await.outgoing.as_mut()
+    {
+        call.retarget(links);
     }
     // Admitted from the lobby: the call modality arrives with the
     // conversation's links; Teams then shows the meeting.
@@ -3329,6 +3575,21 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     }
     if teams_cli::calling::incoming::is_call_end_event(json) {
         tracing::debug!(payload = %json, "call end payload");
+        // The end of a meeting we moved out of (to a breakout room or
+        // back) is not the end of the one we're in.
+        let ended_id = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v.pointer("/body/debugContent/callId").and_then(|c| c.as_str()).map(str::to_string));
+        if let Some(id) = ended_id {
+            let mut slot = call_slot().lock().await;
+            if slot.moved_from.as_ref().is_some_and(|c| c.call_id() == id) {
+                slot.moved_from = None;
+            }
+            if slot.left_calls.contains(&id) {
+                tracing::info!("a meeting we moved out of ended");
+                return;
+            }
+        }
         // Denied, not let in, or removed: Teams keeps the window on its
         // retry screen saying so.
         let reason = teams_cli::calling::incoming::end_reason(json);
@@ -4534,6 +4795,68 @@ impl qobject::Backend {
             .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
     }
 
+    pub fn breakout_action(self: Pin<&mut Self>, action: &QString, args_json: &QString) {
+        let action = action.to_string();
+        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let Some(link) = self.call_meeting_link() else {
+            tracing::warn!("breakout rooms: no meeting");
+            return;
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = breakout_run(&action, &args, &link).await;
+            let error = match &result {
+                Ok(state) => {
+                    let text = state.to_string();
+                    let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_rooms_json(QString::from(text.as_str())));
+                    String::new()
+                }
+                Err(e) => {
+                    tracing::warn!("breakout rooms {action}: {}", short_error(e));
+                    short_error(e)
+                }
+            };
+            tracing::info!(action, ok = error.is_empty(), "breakout rooms action");
+            let _ = qt.queue(move |this| this.breakout_action_done(QString::from(action.as_str()), QString::from(error.as_str())));
+        });
+    }
+
+    pub fn current_meeting(self: Pin<&mut Self>) -> QString {
+        let (url, title) = self.rust().last_join.clone();
+        QString::from(json!({ "url": url.to_string(), "title": title.to_string() }).to_string().as_str())
+    }
+
+    pub fn move_meeting(self: Pin<&mut Self>, join_url: &QString, title: &QString) {
+        let (url, title) = (join_url.to_string(), title.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            // As Teams moves between meetings: the one we leave goes quiet
+            // now and is left once the next one answers (join_meeting).
+            let mut slot = call_slot().lock().await;
+            if let Some(mut call) = slot.outgoing.take() {
+                call.stop_media();
+                if slot.left_calls.len() >= 16 {
+                    slot.left_calls.remove(0);
+                }
+                slot.left_calls.push(call.call_id().to_string());
+                if slot.left_tags.len() >= 16 {
+                    slot.left_tags.remove(0);
+                }
+                slot.left_tags.push(call.call_tag().to_string());
+                if let Some(earlier) = slot.moved_from.replace(call) {
+                    runtime().spawn(leave_moved_from(earlier));
+                }
+            }
+            drop(slot);
+            tracing::info!("moving to another meeting");
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_camera_on(false);
+                this.as_mut().set_call_state(QString::default());
+                this.as_mut().join_meeting(&QString::from(url.as_str()), &QString::from(title.as_str()));
+            });
+        });
+    }
+
     pub fn open_lobby_chat(self: Pin<&mut Self>) {
         if !self.rust().call_lobby_thread.is_empty() {
             return;
@@ -4651,6 +4974,11 @@ impl qobject::Backend {
             ));
             return;
         };
+        // Breakout rooms are the last meeting's.
+        self.as_mut().set_call_breakout_json(QString::default());
+        self.as_mut().set_call_breakout_all_json(QString::default());
+        self.as_mut().set_call_breakout_room_json(QString::default());
+        self.as_mut().set_call_breakout_rooms_json(QString::default());
         let title = if title.is_empty() {
             QString::from("Meeting")
         } else {
@@ -4721,8 +5049,16 @@ impl qobject::Backend {
                     let can_share = call.can_share();
                     tracing::info!(has_audio, can_dtmf, can_video, can_share, in_lobby, "meeting joined");
                     seed_roster(&qt, &call).await;
+                    // Back in a meeting we had moved out of: its end is ours again.
+                    let id = call.call_id().to_string();
+                    slot.left_calls.retain(|left| *left != id);
                     slot.outgoing = Some(call);
+                    // Moving between meetings: leave the last one now.
+                    let moved_from = slot.moved_from.take();
                     drop(slot);
+                    if let Some(earlier) = moved_from {
+                        runtime().spawn(leave_moved_from(earlier));
+                    }
                     spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
                         this.as_mut()
@@ -4744,7 +5080,11 @@ impl qobject::Backend {
                     });
                 }
                 Err(e) => {
+                    let moved_from = slot.moved_from.take();
                     drop(slot);
+                    if let Some(earlier) = moved_from {
+                        runtime().spawn(leave_moved_from(earlier));
+                    }
                     let msg = short_error(&e);
                     tracing::info!("meeting join ended: {msg}");
                     let _ = qt.queue(move |mut this| {
@@ -4813,6 +5153,9 @@ impl qobject::Backend {
         self.as_mut().end_call_ui();
         runtime().spawn(async {
             let mut slot = call_slot().lock().await;
+            if let Some(earlier) = slot.moved_from.take() {
+                runtime().spawn(leave_moved_from(earlier));
+            }
             if let Some(cancel) = slot.cancel_placing.take() {
                 let _ = cancel.send(());
                 tracing::info!("outgoing call cancelled");

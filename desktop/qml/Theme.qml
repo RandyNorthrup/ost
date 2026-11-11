@@ -108,6 +108,8 @@ QtObject {
     readonly property color brandForeground2: pick("#444791", "#9299F7")  // colorBrandForeground2 (forward card's time link)
     readonly property color brandForeground1: pick("#4F52B2", "#7F85F5")  // colorBrandForeground1 (links, e.g. the compose hint)
     readonly property color successFg: pick("#0E700E", "#54B054")       // colorStatusSuccessForeground1 (toast)
+    readonly property color greenForeground2: pick("#0B5A08", "#9FD89F") // colorPaletteGreenForeground2 (an open breakout room)
+    readonly property color cardStroke: pick("#E6E6E6", "#3D3D3D")      // the breakout rooms pane's assignment card
     readonly property color savedFg: pick("#C239B3", "#D24ED0")         // colorPaletteBerryForeground1 (saved bookmark)
     readonly property color inputFilledDark: pick("#F0F0F0", "#141414") // the forward dialog's picker
     readonly property color disabledStrong: pick("#C7C7C7", "#5C5C5C")  // a disabled primary button's text

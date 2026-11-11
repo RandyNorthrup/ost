@@ -28,6 +28,8 @@ pub struct OutgoingCall {
     /// The call's id (our chain id) and how many screens we've shared:
     /// Teams tags each share "<callId>;ss_<n>".
     call_id: String,
+    /// The tag in this call's callback URLs (events carry it as callTag).
+    call_tag: String,
     shares: std::sync::atomic::AtomicU64,
     described_sharing: std::sync::atomic::AtomicBool,
     /// The join response's roster (people and their streams).
@@ -505,6 +507,26 @@ impl OutgoingCall {
         self.meeting_started
     }
 
+    /// Our leg was moved to another call (admitted from the lobby, the
+    /// lobby's call hands us to the meeting's): from now on the leg's links
+    /// are the new ones, so hanging up ends the leg we're really on.
+    pub fn retarget(&mut self, links: LegLinks) {
+        tracing::info!("call leg retargeted");
+        self.call_leg = Some(links.call_leg);
+        if links.hold.is_some() {
+            self.hold_link = links.hold;
+        }
+        if links.transfer.is_some() {
+            self.transfer_link = links.transfer;
+        }
+        if let Some(l) = links.renegotiation.filter(|l| super::incoming::is_service_link(l)) {
+            self.renegotiation_link = Some(l);
+        }
+        if let (Some(l), Some((old, _))) = (links.media_descriptions, self.media_descriptions.as_mut()) {
+            *old = l;
+        }
+    }
+
     /// Admitted from the lobby: take the conversation's links from the
     /// update that admitted us (the lobby's join response has only a few).
     pub fn admit_from_lobby(&mut self, update: &serde_json::Value) {
@@ -681,6 +703,16 @@ impl OutgoingCall {
     pub async fn transcript_history(&self) -> Result<Vec<super::transcript::Entry>> {
         let link = self.artifacts_link.clone().context("The meeting has no transcript store")?;
         super::transcript::history(&self.http, &link, &self.call_id).await
+    }
+
+    /// The tag in this call's callback URLs.
+    pub fn call_tag(&self) -> &str {
+        &self.call_tag
+    }
+
+    /// Our participant id in the call.
+    pub fn participant_id(&self) -> &str {
+        self.me.0["participantId"].as_str().unwrap_or_default()
     }
 
     /// The call's id (the chain id everyone in it shares).
@@ -1170,6 +1202,12 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// Stop our media (nothing sent or played) and keep the leg: moving to
+    /// another meeting, Teams leaves this one only once the next connects.
+    pub fn stop_media(&mut self) {
+        self.media = None;
+    }
+
     /// Stop media and end the call for both sides.
     pub async fn hang_up(mut self) -> Result<()> {
         self.media = None;
@@ -1572,6 +1610,35 @@ fn endpoint_in_lobby(create_response: &str, endpoint_id: &str) -> bool {
         .any(|ep| ep.get("lobby").is_some() && ep.get("call").is_none())
 }
 
+/// A call leg's links after the service moved it to another call.
+#[derive(Debug, PartialEq)]
+pub struct LegLinks {
+    pub call_leg: String,
+    pub hold: Option<String>,
+    pub transfer: Option<String>,
+    pub renegotiation: Option<String>,
+    pub media_descriptions: Option<String>,
+}
+
+/// A `call/mediaAcknowledgement` that moved our leg ("Participant retarget
+/// was successful." when the lobby admits us): its new links. The plain
+/// acknowledgements of our re-offers carry `callLeg: null` and give none.
+pub fn leg_retarget(json: &str) -> Option<LegLinks> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    if !v.get("callAgentPath")?.as_str()?.starts_with("call/mediaAcknowledgement") {
+        return None;
+    }
+    let links = v.pointer("/body/links")?;
+    let link = |name: &str| links.get(name).and_then(|u| u.as_str()).map(str::to_string);
+    Some(LegLinks {
+        call_leg: link("callLeg")?,
+        hold: link("hold"),
+        transfer: link("transfer"),
+        renegotiation: link("mediaRenegotiation"),
+        media_descriptions: link("updateMediaDescriptions"),
+    })
+}
+
 /// A conversation update admitting us from a meeting's lobby (the call
 /// modality appears in `activeModalities`): its body, whose links replace
 /// the lobby's few.
@@ -1775,6 +1842,11 @@ async fn start(
         call_test::derive_epconv_url(&region).context("No conversation service URL")?;
     let (surl, endpoint_id) =
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
+    // This call's own callback base (`…/x<tag>/callAgent/…`): its events
+    // say which call they're for, so a meeting we're leaving while joining
+    // the next (breakout rooms) can't end the new one.
+    let call_tag = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
+    let surl = format!("{}/x{call_tag}/", surl.trim_end_matches('/'));
 
     let mut local = LocalAudio::prepare().await?;
     // 1:1 calls offer video too (Teams' calls do); meetings and group
@@ -2002,6 +2074,7 @@ async fn start(
             .map(|l| (l, std::sync::atomic::AtomicU64::new(1))),
         joined_roster: super::roster::joined(&created.response_body),
         call_id: chain_id.clone(),
+        call_tag: call_tag.clone(),
         shares: std::sync::atomic::AtomicU64::new(0),
         described_sharing: std::sync::atomic::AtomicBool::new(false),
         http,
@@ -2294,6 +2367,20 @@ mod tests {
             r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":603,"phrase":"Declined"}}}"#;
         assert_eq!(read_answer(end).unwrap().err().unwrap(), "Declined (603)");
         assert!(read_answer(r#"{"callAgentPath":"call/progress/","body":{}}"#).is_none());
+    }
+
+    #[test]
+    fn a_retarget_gives_the_new_leg() {
+        // Admitted from a meeting's lobby (OST Test 2, 2026-11-11): the
+        // lobby call's leg moves to the meeting's call hub.
+        let moved = r#"{"body":{"debugContent":{},"links":{"callLeg":"https://cc/v1/active/89306a7a/204715502/a4/","hold":"https://cc/v1/active/89306a7a/204715502/a4/hold","transfer":"https://cc/v1/active/89306a7a/204715502/a4/transfer","mediaRenegotiation":"https://cc/v1/active/89306a7a/204715502/a4/renegotiate","updateMediaDescriptions":"https://cc/v1/active/89306a7a/204715502/a4/updateMediaDescriptions"},"mediaAcknowledgement":{"code":0,"phrase":"Participant retarget was successful.","reason":"noError"}},"callAgentPath":"call/mediaAcknowledgement/"}"#;
+        let links = leg_retarget(moved).unwrap();
+        assert_eq!(links.call_leg, "https://cc/v1/active/89306a7a/204715502/a4/");
+        assert!(links.hold.unwrap().ends_with("/hold"));
+        // A plain acknowledgement moves nothing.
+        let ack = r#"{"body":{"debugContent":{},"links":{"callLeg":null},"mediaAcknowledgement":{"code":0,"phrase":"Success"}},"callAgentPath":"call/mediaAcknowledgement/"}"#;
+        assert!(leg_retarget(ack).is_none());
+        assert!(leg_retarget(r#"{"callAgentPath":"call/acceptance/","body":{"links":{"callLeg":"x"}}}"#).is_none());
     }
 
     #[test]

@@ -438,6 +438,14 @@ pub struct Facts {
     pub can_pop_out: bool,
     /// The meeting allows reactions.
     pub reactions: bool,
+    /// A breakout room you're assigned to is open and you're not in it
+    /// (Teams' "Join room").
+    pub room_to_join: bool,
+    /// In a breakout room whose organizer lets people go back (Teams'
+    /// "Return").
+    pub can_return_to_main: bool,
+    /// This call is a breakout room (Teams shows no Notes there).
+    pub breakout_room: bool,
 }
 
 impl Facts {
@@ -456,8 +464,10 @@ impl Facts {
             "ReactionButton" => !self.p2p && self.reactions,
             "OrganizerControlButton" => self.organizer,
             // Private scheduled meetings (not Meet now: its flag is off).
-            "MeetingDetailsButton" => self.scheduled,
+            "MeetingDetailsButton" => self.scheduled && !self.breakout_room,
             "StartBreakoutRoomButton" => self.scheduled && self.organizer,
+            "ReturnToBreakoutRoomButton" => self.room_to_join,
+            "BreakoutRoomReturnToMainButton" => self.can_return_to_main,
             "MeetingAppsAddButton" => !self.pstn,
             "HoldButton" => self.p2p && !self.on_hold,
             "MergeCallsButton" => self.consult,
@@ -647,6 +657,22 @@ mod tests {
         let gone = overflow(&l, &w, 17.0, 0.0);
         assert!(gone.contains(&"RaiseHandsButton".to_string()) && gone.contains(&"ReactionButton".to_string()));
         assert!(!gone.contains(&"MoreButton".to_string()) && !gone.contains(&"ShareButton".to_string()));
+    }
+
+    #[test]
+    fn join_room_leads_the_bar() {
+        // Teams desktop, a participant whose room opened (2026-11-11):
+        // "Join room" before Chat.
+        let facts = Facts { scheduled: true, room_to_join: true, reactions: true, ..Default::default() };
+        let a = arrange(&facts, &|_| 48.0, 17.0, 2000.0);
+        assert_eq!(a.bar.first().map(String::as_str), Some("ReturnToBreakoutRoomButton"));
+        assert!(!arrange(&Facts { scheduled: true, ..Default::default() }, &|_| 48.0, 17.0, 2000.0)
+            .bar
+            .iter()
+            .any(|n| n == "ReturnToBreakoutRoomButton" || n == "BreakoutRoomReturnToMainButton"));
+        // In a room (Teams desktop, 2026-11-11): no Notes.
+        let room = Facts { scheduled: true, breakout_room: true, reactions: true, ..Default::default() };
+        assert!(!arrange(&room, &|_| 48.0, 17.0, 2000.0).bar.iter().any(|n| n == "MeetingDetailsButton"));
     }
 
     #[test]

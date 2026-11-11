@@ -528,7 +528,17 @@ pub fn data_frame_call(payload: &str) -> Option<String> {
             .to_string();
         let body: serde_json::Value =
             serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
-        return Some(serde_json::json!({ "callAgentPath": path, "body": body }).to_string());
+        // A placed call's callbacks carry its tag (`…/x<tag>/callAgent/…`).
+        let tag = url[..i]
+            .rsplit('/')
+            .next()
+            .and_then(|seg| seg.strip_prefix('x'))
+            .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_hexdigit()));
+        let mut v = serde_json::json!({ "callAgentPath": path, "body": body });
+        if let Some(t) = tag {
+            v["callTag"] = serde_json::json!(t);
+        }
+        return Some(v.to_string());
     }
     let is_call = url.contains("NGCallManagerWin") || body.contains("\"callInvitation\"");
     is_call.then_some(body)
@@ -852,6 +862,24 @@ mod data_frame_tests {
             serde_json::json!({"callId": "c", "callerId": "8:x", "evt": 107, "cp": cp}).to_string();
         assert_eq!(unwrap_call_payload(&wrapped), inv);
         assert_eq!(unwrap_call_payload(inv), inv);
+    }
+
+    #[test]
+    fn a_placed_calls_callbacks_carry_its_tag() {
+        use super::data_frame_call;
+        let f = serde_json::json!({"id": 5, "method": "POST",
+            "url": "/v4/f/abc/x0f3a9b2c4d5e/callAgent/ep-1/0a1b2c3d/conversation/conversationEnd/", "headers": {},
+            "body": r#"{"code":0,"subCode":5012}"#})
+        .to_string();
+        let v: serde_json::Value = serde_json::from_str(&data_frame_call(&f).unwrap()).unwrap();
+        assert_eq!(v["callAgentPath"], "conversation/conversationEnd/");
+        assert_eq!(v["callTag"], "0f3a9b2c4d5e");
+        // Untagged callbacks (answered calls) have none.
+        let g = serde_json::json!({"id": 6, "method": "POST",
+            "url": "/v4/f/abc/callAgent/ep-1/0a1b2c3d/call/end/", "headers": {}, "body": "{}"})
+        .to_string();
+        let w: serde_json::Value = serde_json::from_str(&data_frame_call(&g).unwrap()).unwrap();
+        assert!(w.get("callTag").is_none());
     }
 
     #[test]

@@ -29,7 +29,21 @@ Popup {
     property string titleIcon: ""
     property bool fixedButtons: false
     property bool stacked: false
+    /// Teams' breakout rooms dialogs ("Delete Room 1?", "Remove rooms?")
+    /// carry a 32 x 31.33 Close at the title's end.
+    property bool closeButton: false
     signal confirmed()
+
+    Rectangle {
+        visible: root.closeButton
+        x: root.width - 24.67 - 32; y: 24.67; width: 32; height: 31.33; radius: 4
+        color: closeHover.hovered ? theme.menuHover : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.close() }
+        Accessible.role: Accessible.Button
+        Accessible.name: "Close"
+    }
 
     FluentIcon {
         visible: root.titleIcon.length > 0
@@ -39,7 +53,7 @@ Popup {
     }
     Text {
         x: root.titleIcon.length > 0 ? 50.67 : 24.67; y: 24.67; height: 28
-        width: root.width - x - 24.67
+        width: root.width - x - 24.67 - (root.closeButton ? 40 : 0)
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
         text: root.title

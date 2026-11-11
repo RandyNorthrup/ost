@@ -387,6 +387,93 @@ Window {
     function toggleFullScreen() { visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
     /// The open side pane: "", "chat" or "people".
     property string side: ""
+    // Breakout rooms. As organizer: the meeting's rooms (its call lists
+    // them), their settings and Teams' alerts for what you do; as a
+    // participant (Main.qml moves you): whether your room is open to join,
+    // and whether you may go back.
+    readonly property var breakoutRooms: {
+        const all = backend.callBreakoutAllJson ? JSON.parse(backend.callBreakoutAllJson) : null
+        if (all) return all
+        const api = backend.callBreakoutRoomsJson ? JSON.parse(backend.callBreakoutRoomsJson) : {}
+        return (api.rooms || []).map(r => ({ name: r.name, thread: r.thread, join_url: r.join_url, open: r.open,
+                                            invitees: (r.participants || []).map(p => p.mri) }))
+    }
+    readonly property var breakoutSettings: (backend.callBreakoutRoomsJson ? JSON.parse(backend.callBreakoutRoomsJson) : {}).settings || ({})
+    property var breakoutNames: ({})
+    onPeopleChanged: {
+        let added = false
+        const n = Object.assign({}, breakoutNames)
+        for (const p of people) if (!p.you && p.id && n[p.id] !== p.name) { n[p.id] = p.name; added = true }
+        if (added) breakoutNames = n
+    }
+    property bool breakoutBusy: false
+    property bool roomToJoin: false
+    property bool canReturnToMain: false
+    signal joinBreakoutRoom()
+    signal returnToMainMeeting()
+    /// The organizer's Join on a room's menu.
+    signal joinRoomAsOrganizer(var room)
+    function breakoutRun(action, args) {
+        breakoutBusy = true
+        const a = Object.assign({ total: people.length }, args || {})
+        backend.breakoutAction(action, JSON.stringify(a))
+    }
+    function nextRoomName() {
+        const used = breakoutRooms.map(r => { const m = /^Room (\d+)$/.exec(r.name); return m ? parseInt(m[1]) : 0 })
+        return "Room " + (Math.max(0, ...used) + 1)
+    }
+    // Teams' Create rooms: "Room 1" … "Room n"; automatic assignment
+    // spreads everyone else evenly at random; letting people choose sets
+    // the rooms' allowUsersToSelectBreakoutRoom.
+    function createBreakoutRooms(count, mode) {
+        const others = people.filter(p => !p.you)
+        for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [others[i], others[j]] = [others[j], others[i]] }
+        const rooms = []
+        for (let i = 0; i < count; i++) rooms.push({ name: "Room " + (i + 1), participants: [] })
+        if (mode === "automatic")
+            others.forEach((p, i) => rooms[i % count].participants.push({ mri: p.id, role: p.guest ? "guest" : "admin", tenantId: backend.tenantId() }))
+        breakoutRun("create", { rooms: rooms, settings: { allow_select: mode === "selfselect", allow_return: false } })
+    }
+    function importBreakoutCsv() { csvDialog.open() }
+    // The breakout rooms harness (--breakout-test): open a view or dialog.
+    function roomsForTest(op) {
+        if (op === "pane") side = "rooms"
+        else if (op === "assign") assignRooms.show()
+        else if (op === "settings") roomsPane.settingsOpen = true
+        else if (op === "back") roomsPane.settingsOpen = false
+        else if (op === "announce") roomsPane.announce()
+        else if (op === "rename" && breakoutRooms.length) roomsPane.roomAction("rename", breakoutRooms[0])
+        else if (op === "remove") removeRoomsAsk.open()
+        else if (op === "csv") csvDialog.open()
+        else if (op === "close") for (const d of [assignRooms, roomText, removeRoomsAsk, deleteRoomAsk, csvDialog]) d.close()
+    }
+    function breakoutDone(action, error) {
+        breakoutBusy = false
+        const ok = {
+            create: ["Breakout rooms have been created.", "call-rooms"], add: ["Room was added", ""],
+            rename: ["Room was renamed", ""], delete: ["Room was deleted", ""], delete_all: ["Rooms were deleted", ""],
+            import_csv: ["Breakout rooms have been created.", "call-rooms"]
+        }
+        const failed = {
+            create: "We ran into a problem creating rooms. Try again.", add: "Room failed to be added",
+            rename: "Room failed to be renamed", delete: "Room failed to be deleted", delete_all: "Couldn't delete rooms.",
+            assign: "We had some trouble assigning participants.", announce: "Couldn't send your announcement.",
+            settings: "Your settings failed to save", import_csv: "We ran into a problem creating rooms. Try again."
+        }
+        // A CSV import that skipped entries says why (Teams' import
+        // warnings).
+        const warnings = action === "import_csv" && !error
+            ? ((backend.callBreakoutRoomsJson ? JSON.parse(backend.callBreakoutRoomsJson) : {}).warnings || []) : []
+        if (error && failed[action]) showBreakoutAlert(action === "import_csv" && error.indexOf("couldn't import") >= 0 ? error : failed[action], "alert-warning-16-filled")
+        else if (warnings.length > 1) showBreakoutAlert("Your CSV was imported, but some entries were skipped because of multiple issues.", "alert-warning-16-filled")
+        else if (warnings.length === 1) showBreakoutAlert({
+                MALFORMED_ENTRIES: "Some entries in CSV were skipped because of the following issues",
+                USER_ASSIGNED_MULTIPLE_ROOMS: "Some participants were listed in multiple rooms. Each participant can be assigned to only one room. We kept the assignment from the last occurrence in the file. Remove duplicates, then import again.",
+                LIMIT_EXCEEDED: "Breakout room limits were exceeded. Teams supports up to 100 rooms and 1000 participants. Reduce the number of rooms or participants in your CSV, then import again.",
+                UNMATCHED_PARTICIPANTS: "Some entries in CSV were skipped because of the following issues"
+            }[warnings[0]] || "", "alert-warning-16-filled")
+        else if (!error && ok[action]) showBreakoutAlert(ok[action][0], ok[action][1])
+    }
     // Teams' lobby chat (organizers of a meeting with a lobby): the toast's
     // chat button opens the chat pane on its Lobby tab.
     // Only scheduled meetings have one (a channel meeting's lobby chat
@@ -469,11 +556,16 @@ Window {
     property bool scheduled: false
     readonly property var ubarFacts: ({
         p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled,
-        organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true
+        organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
+        roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== ""
     })
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
-    readonly property var ubarWidths: ({ MicrophoneButton: 74, VideoButton: 74, ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8 })
+    TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Join room" }
+    TextMetrics { id: returnMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Return" }
+    readonly property var ubarWidths: ({ MicrophoneButton: 74, VideoButton: 74, ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8,
+                                         ReturnToBreakoutRoomButton: Math.ceil(joinRoomMetrics.advanceWidth) + 24.67 + 16,
+                                         BreakoutRoomReturnToMainButton: Math.ceil(returnMetrics.advanceWidth) + 24.67 + 16 })
     // The middle slot's room: from 4 past the indicators (shield, timer)
     // to 17 before Leave.
     readonly property real ubarRoom: leaveGroup.x - 17 - (timerText.x + timerText.implicitWidth + 6.67 + 4)
@@ -495,6 +587,7 @@ Window {
             ChatButton: cChat, RosterButton: cPeople, RaiseHandsButton: cRaise, ReactionButton: cReact,
             ViewModeButton: cView, OrganizerControlButton: cControls, MeetingDetailsButton: cNotes,
             StartBreakoutRoomButton: cRooms, MeetingAppsAddButton: cApps, MoreButton: cMore,
+            ReturnToBreakoutRoomButton: cJoinRoom, BreakoutRoomReturnToMainButton: cReturnMain,
             VideoButton: cCamera, MicrophoneButton: cMic, ShareButton: cShare
         })[name] || null
     }
@@ -525,13 +618,16 @@ Window {
         else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
         else if (name === "ReportMeetingButton") openMeetingReport()
         else if (name === "MeetingFacilitatorTimerButton") toggleTimer()
+        else if (name === "StartBreakoutRoomButton") { side = side === "rooms" ? "" : "rooms"; if (side === "rooms") backend.breakoutAction("refresh", "{}") }
+        else if (name === "ReturnToBreakoutRoomButton") joinBreakoutRoom()
+        else if (name === "BreakoutRoomReturnToMainButton") returnToMainMeeting()
     }
     function controlEnabled(name) {
         if (!holdOk(name)) return false
         if (["RaiseHandsButton", "ReactionButton", "CallTransferButtonV2", "CallConsultativeTransferButtonV2"].indexOf(name) >= 0) return live
         if (name === "OrganizerControlButton") return optionsUrl.length > 0
         if (name === "MeetingDetailsButton") return chatUrl.length > 0
-        if (name === "StartBreakoutRoomButton") return false
+        if (name === "StartBreakoutRoomButton") return live
         if (name === "VideoButton") return canVideo
         if (name === "MicrophoneButton") return hasAudio
         if (name === "ShareButton") return canShare || sharing
@@ -1561,7 +1657,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" || win.side === "rooms" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -1632,6 +1728,32 @@ Window {
             onClosed: win.side = ""
             onUpdateAccessibility: patch => win.updateAccessibility(patch)
             onMutedNoticeToggled: on => win.setShowMutedNotice(on)
+        }
+        BreakoutRoomsPane {
+            id: roomsPane
+            visible: win.side === "rooms"
+            anchors.fill: parent
+            rooms: win.breakoutRooms
+            people: win.people.filter(p => !p.you).map(p => ({ id: p.id, name: p.name, role: p.role || "", guest: !!p.guest }))
+            names: win.breakoutNames
+            settings: win.breakoutSettings
+            busy: win.breakoutBusy
+            onClosed: win.side = ""
+            onCreateRooms: (count, mode) => win.createBreakoutRooms(count, mode)
+            onImportCsv: win.importBreakoutCsv()
+            onAssignParticipants: assignRooms.show()
+            onOpenRooms: win.breakoutRun("open", { threads: win.breakoutRooms.filter(r => (r.invitees || []).length > 0).map(r => r.thread) })
+            onCloseRooms: win.breakoutRun("close", { threads: win.breakoutRooms.filter(r => r.open).map(r => r.thread) })
+            onAddRoom: win.breakoutRun("add", { name: win.nextRoomName() })
+            onAnnounce: { roomText.rename = false; roomText.title = "Announcement"; roomText.initial = ""; roomText.placeholder = "Make an announcement"; roomText.thread = ""; roomText.show() }
+            onRemoveRooms: removeRoomsAsk.open()
+            onSaveSettings: s => win.breakoutRun("settings", s)
+            onRoomAction: (action, room) => {
+                if (action === "join") win.joinRoomAsOrganizer(room)
+                else if (action === "open" || action === "close") win.breakoutRun(action, { threads: [room.thread] })
+                else if (action === "rename") { roomText.rename = true; roomText.title = "Rename " + room.name + "?"; roomText.initial = room.name; roomText.placeholder = ""; roomText.thread = room.thread; roomText.show() }
+                else if (action === "delete") { deleteRoomAsk.thread = room.thread; deleteRoomAsk.title = "Delete " + room.name + "?"; deleteRoomAsk.open() }
+            }
         }
         CallHealthPane {
             id: callHealthPane
@@ -1823,6 +1945,20 @@ Window {
         action: ""
         onDismissed: win.recorderFailure = ""
     }
+    // Teams' breakout rooms alerts ("Breakout rooms have been created.",
+    // "We'll move you to your assigned room in 10 seconds." …).
+    property var breakoutAlert: null
+    function showBreakoutAlert(text, icon) { breakoutAlert = { text: text, icon: icon || "" }; breakoutAlertTimer.restart() }
+    Timer { id: breakoutAlertTimer; interval: 10000; onTriggered: win.breakoutAlert = null }
+    CallAlert {
+        visible: !!win.breakoutAlert
+        x: stage.x + (stage.width - width) / 2
+        y: win.belowBar + 10.7
+        z: 6
+        text: win.breakoutAlert ? win.breakoutAlert.text : ""
+        icon: win.breakoutAlert ? win.breakoutAlert.icon : ""
+        onDismissed: win.breakoutAlert = null
+    }
     LobbyToast {
         id: lobbyToast
         x: stage.x + (stage.width - width) / 2
@@ -1951,6 +2087,54 @@ Window {
             roleAsk.open()
         }
         onConfirmed: win.participantAction(roleAsk.role, roleAsk.who, roleAsk.whoName, "")
+    }
+    AssignRoomsDialog {
+        id: assignRooms
+        rooms: win.breakoutRooms
+        people: win.people.filter(p => !p.you).map(p => ({ id: p.id, name: p.name }))
+        onSaved: changes => { if (changes.length) win.breakoutRun("assign", { rooms: changes.map(c => ({ thread: c.thread, participants: c.participants.map(id => ({ mri: id })) })) }) }
+    }
+    BreakoutTextDialog {
+        id: roomText
+        property string thread: ""
+        onConfirmed: text => {
+            if (rename) win.breakoutRun("rename", { thread: thread, name: text })
+            else win.breakoutRun("announce", { message: text })
+        }
+    }
+    ConfirmDialog {
+        id: removeRoomsAsk
+        width: 450; closeButton: true
+        title: "Remove rooms?"
+        body: "This will delete all existing rooms."
+        confirmText: "Remove"
+        onConfirmed: win.breakoutRun("delete_all", {})
+    }
+    ConfirmDialog {
+        id: deleteRoomAsk
+        property string thread: ""
+        width: 500; closeButton: true
+        body: ""
+        confirmText: "Delete"
+        onConfirmed: win.breakoutRun("delete", { thread: thread })
+    }
+    BreakoutCsvDialog {
+        id: csvDialog
+        onDownloadTemplate: backend.breakoutAction("csv_template", "{}")
+        onPicked: path => {
+            // Rooms with people in them: Teams asks before replacing them.
+            if (win.breakoutRooms.some(r => (r.invitees || []).length > 0)) { csvOverwriteAsk.path = path; csvOverwriteAsk.open() }
+            else win.breakoutRun("import_csv", { path: path })
+        }
+    }
+    ConfirmDialog {
+        id: csvOverwriteAsk
+        property string path: ""
+        width: 500
+        title: "Overwriting rooms and participant assignment"
+        body: "There are already rooms created with participants in them. If you import a CSV it will overwrite the current rooms and participant assignment. Are you sure to continue?"
+        confirmText: "Continue"
+        onConfirmed: win.breakoutRun("import_csv", { path: path })
     }
     LockMeetingDialog {
         id: lockAsk
@@ -2419,7 +2603,34 @@ Window {
     Component { id: cControls; BarButton { id: ctlB; icon: "call-controls"; label: "Controls"; checked: controlsMenu.visible; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton"); Component.onCompleted: win.controlsButton = ctlB } }
     // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
     Component { id: cNotes; BarButton { icon: "call-notes"; label: "Notes"; tip: "Open notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
-    Component { id: cRooms; BarButton { icon: "call-rooms"; label: "Rooms"; tip: "Create breakout rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton") } }
+    Component { id: cRooms; BarButton { icon: "call-rooms"; label: "Rooms"; tip: win.breakoutRooms.length ? "Breakout rooms" : "Create breakout rooms"; checked: win.side === "rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton"); onClicked: win.runControl("StartBreakoutRoomButton") } }
+    // Teams' contextual text buttons (the layout's "button" template): a
+    // bordered 31.33 tall button, 14/600, padded 12, in an 8 wider slot.
+    component BarTextButton: Item {
+        id: btb
+        property string label
+        property string control
+        width: btbText.implicitWidth + 24.67 + 16; height: bar.height
+        Rectangle {
+            anchors.centerIn: parent
+            width: btbText.implicitWidth + 24.67; height: 31.33; radius: 4
+            color: btbHover.hovered ? theme.menuHover : theme.surface
+            border.color: theme.stroke; border.width: 0.67
+            Text {
+                id: btbText
+                anchors.centerIn: parent
+                text: btb.label
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                color: theme.text
+            }
+            HoverHandler { id: btbHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: win.runControl(btb.control) }
+        }
+        Accessible.role: Accessible.Button
+        Accessible.name: btb.label
+    }
+    Component { id: cJoinRoom; BarTextButton { label: "Join room"; control: "ReturnToBreakoutRoomButton" } }
+    Component { id: cReturnMain; BarTextButton { label: "Return"; control: "BreakoutRoomReturnToMainButton" } }
     Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
     Component { id: cMore; BarButton { icon: "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible; onClicked: win.runControl("MoreButton") } }
     Component {

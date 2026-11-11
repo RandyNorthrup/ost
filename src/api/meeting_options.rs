@@ -23,7 +23,7 @@ pub fn options_path(tenant: &str, organizer: &str, thread: &str, message: &str) 
     )
 }
 
-fn check_ids(tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<()> {
+pub(crate) fn check_ids(tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<()> {
     let guid = |s: &str| uuid::Uuid::parse_str(s).is_ok();
     let thread_ok = thread.starts_with("19:")
         && (thread.ends_with("@thread.v2") || thread.ends_with("@thread.tacv2"))

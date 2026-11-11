@@ -1026,7 +1026,7 @@ Window {
         state: backend.callState
         muted: backend.callMuted
         hasAudio: backend.callHasAudio
-        onLeave: backend.hangUp()
+        onLeave: { window.breakoutLeaving = true; window.breakoutMain = null; backend.hangUp() }
         onToggleMute: backend.toggleMute()
         canVideo: backend.callCanVideo
         cameraOn: backend.callCameraOn
@@ -1364,6 +1364,158 @@ Window {
             else if (step === 23) Qt.quit()
             step++
         }
+    }
+    // Breakout rooms, as a participant (Teams desktop, measured on winpc
+    // 2026-11-11). When the room you're assigned opens, Teams shows "Join
+    // room" first on the bar and "We'll move you to your assigned room in
+    // 10 seconds.", then moves you: it joins the room and leaves the main
+    // meeting once the room answers. When the organizer closes the room
+    // (the room's chat is restricted), "We'll move you back to the main
+    // meeting in 10 seconds." and back; if the room's call ends first,
+    // back at once after the room's jitter. "Return" goes back early when
+    // the organizer allows it, and the organizer's Join on a room's menu
+    // goes there too.
+    property var breakoutMain: null
+    property bool breakoutLeaving: false
+    readonly property var breakoutRooms: backend.callBreakoutJson ? JSON.parse(backend.callBreakoutJson) : []
+    readonly property var breakoutRoomState: backend.callBreakoutRoomJson ? JSON.parse(backend.callBreakoutRoomJson) : null
+    readonly property var assignedOpenRoom: breakoutRooms.find(r => r.open) || null
+    readonly property int breakoutMoveSeconds: 10
+    function goToBreakoutRoom(room) {
+        breakoutMove.stop()
+        if (!room || window.breakoutMain) return
+        window.breakoutMain = JSON.parse(backend.currentMeeting())
+        console.warn("BREAKOUT moving to", room.name)
+        backend.moveMeeting(room.join_url, room.name)
+    }
+    function goBackToMainMeeting() {
+        breakoutReturn.stop()
+        const main = window.breakoutMain
+        if (!main) return
+        window.breakoutMain = null
+        const url = window.breakoutRoomState && window.breakoutRoomState.main_join_url || main.url
+        console.warn("BREAKOUT back to", main.title)
+        backend.moveMeeting(url, main.title)
+    }
+    onAssignedOpenRoomChanged: {
+        if (window.breakoutMain || backend.callState !== "connected") return
+        const room = assignedOpenRoom
+        if (!room) { breakoutMove.stop(); return }
+        if (breakoutMove.running && breakoutMove.room && breakoutMove.room.join_url === room.join_url) return
+        breakoutMove.room = room
+        if (room.auto_move) {
+            callWindow.showBreakoutAlert("We'll move you to your assigned room in " + breakoutMoveSeconds + " seconds.")
+            breakoutMove.interval = breakoutMoveSeconds * 1000 + room.move_jitter_ms
+            breakoutMove.restart()
+        } else {
+            callWindow.showBreakoutAlert("You've been assigned to " + room.name)
+        }
+    }
+    onBreakoutRoomStateChanged: {
+        if (!window.breakoutMain || !breakoutRoomState || !breakoutRoomState.closed || breakoutReturn.running) return
+        callWindow.showBreakoutAlert("We'll move you back to the main meeting in " + breakoutMoveSeconds + " seconds.")
+        breakoutReturn.interval = breakoutMoveSeconds * 1000 + breakoutRoomState.move_jitter_ms
+        breakoutReturn.restart()
+    }
+    Binding { target: callWindow; property: "roomToJoin"; value: !!window.assignedOpenRoom && !window.breakoutMain }
+    Binding {
+        target: callWindow; property: "canReturnToMain"
+        value: !!window.breakoutMain && !!window.breakoutRoomState && window.breakoutRoomState.allow_return && !window.breakoutRoomState.closed
+    }
+    Timer { id: breakoutMove; property var room: null; onTriggered: window.goToBreakoutRoom(room) }
+    Timer { id: breakoutReturn; onTriggered: window.goBackToMainMeeting() }
+    Connections {
+        target: callWindow
+        function onJoinBreakoutRoom() { window.goToBreakoutRoom(window.assignedOpenRoom) }
+        function onReturnToMainMeeting() { window.goBackToMainMeeting() }
+        function onJoinRoomAsOrganizer(room) { window.goToBreakoutRoom({ name: room.name, join_url: room.join_url }) }
+    }
+    Connections {
+        target: backend
+        function onCallStateChanged() {
+            if (!window.breakoutMain) return
+            if (backend.callState === "ended" && !window.breakoutLeaving) {
+                // The room ended (closed rooms end for everyone): back
+                // after the room's jitter.
+                breakoutReturn.interval = Math.max(1, window.breakoutRoomState ? window.breakoutRoomState.move_jitter_ms : 0)
+                breakoutReturn.restart()
+            } else if (backend.callState === "") {
+                window.breakoutLeaving = false
+            }
+        }
+        function onBreakoutActionDone(action, error) { callWindow.breakoutDone(action, error) }
+    }
+    // --breakout-watch (with --join-test, as a participant): capture the
+    // call window ("-watch-<n>.png") and log whenever the breakout phase
+    // changes (the alert, Join room, in a room, Return, closed).
+    Timer {
+        running: Qt.application.arguments.indexOf("--breakout-watch") >= 0 && backend.callState !== ""
+        interval: 1500; repeat: true
+        property string last: ""
+        property int n: 0
+        onTriggered: {
+            const phase = JSON.stringify([callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", callWindow.roomToJoin,
+                                          !!window.breakoutMain, callWindow.canReturnToMain, backend.callState,
+                                          window.breakoutRoomState ? window.breakoutRoomState.closed : null])
+            if (phase === last) return
+            last = phase; n++
+            console.warn("BREAKOUTWATCH", n, phase, "bar", JSON.stringify(callWindow.ubar.bar.slice(0, 3)))
+            const k = n
+            callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-watch-" + k + ".png")))
+        }
+    }
+    // --breakout-test (with --join-test, as the organizer): once someone
+    // else is in the meeting, walk Teams' Rooms pane — create one room
+    // (automatic), the Assign dialog, Settings, open the rooms, an
+    // announcement ("OST test 100: …"), Rename, close the rooms, Remove
+    // rooms — capturing each step ("-rooms-<n>.png") and logging the rooms.
+    Timer {
+        running: Qt.application.arguments.indexOf("--breakout-test") >= 0 && backend.callState === "connected"
+        interval: 3000; repeat: true
+        property int step: -1
+        onTriggered: {
+            const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rooms-" + n + ".png")))
+            const log = t => console.warn("BREAKOUTTEST", t, JSON.stringify(callWindow.breakoutRooms))
+            const lobby = JSON.parse(backend.callLobbyJson || "[]")
+            if (lobby.length) { console.warn("BREAKOUTTEST admitting", lobby[0].name); backend.admitFromLobby(lobby[0].id, lobby[0].name, false); return }
+            // --breakout-solo: don't wait for anyone (rooms without people).
+            if (step < 0) { if (callWindow.people.some(p => !p.you) || Qt.application.arguments.indexOf("--breakout-solo") >= 0) step = 0; return }
+            step++
+            const t = callWindow.roomsForTest
+            ;({
+                1: () => { t("pane"); },
+                2: () => shot("create"),
+                3: () => callWindow.createBreakoutRooms(1, "automatic"),
+                6: () => { log("created"); shot("manage") },
+                7: () => t("assign"),
+                8: () => shot("assign"),
+                9: () => { t("close"); t("settings") },
+                10: () => shot("settings"),
+                11: () => t("back"),
+                12: () => callWindow.breakoutRun("open", { threads: callWindow.breakoutRooms.map(r => r.thread) }),
+                20: () => { log("opened"); shot("open") },
+                21: () => t("announce"),
+                22: () => shot("announce"),
+                23: () => { t("close"); callWindow.breakoutRun("announce", { message: "OST test 100: breakout announcement from OST" }) },
+                25: () => t("rename"),
+                26: () => shot("rename"),
+                27: () => { t("close"); t("csv") },
+                28: () => shot("csv"),
+                29: () => t("close"),
+                40: () => callWindow.breakoutRun("close", { threads: callWindow.breakoutRooms.map(r => r.thread) }),
+                43: () => { log("closed"); shot("closed") },
+                60: () => { log("later"); shot("later"); t("remove") },
+                61: () => shot("remove"),
+                62: () => { t("close"); callWindow.breakoutRun("delete_all", {}) },
+                65: () => { log("removed"); shot("removed") },
+                66: () => console.warn("BREAKOUTTEST done")
+            }[step] || (() => {}))()
+        }
+    }
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.indexOf("--breakout-test") >= 0
+        function onBreakoutActionDone(action, error) { console.warn("BREAKOUTTEST action", action, error || "ok") }
     }
     // --join-lobby-chat (with --join-test, as the organizer): once someone
     // waits in the lobby, capture the toast (its chat button), open the
