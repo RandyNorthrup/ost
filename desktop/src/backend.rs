@@ -2568,7 +2568,8 @@ fn with_lies(
 /// A chat's conversation id ("19:…@thread.v2", "19:…@unq.gbl.spaces",
 /// meeting chats), as a chat window takes it.
 fn is_chat_id(id: &str) -> bool {
-    id.starts_with("19:") && id.contains('@') && !id.contains(';') && !id.ends_with("@thread.tacv2")
+    // (Your own notes chat, 48:notes, is a chat too.)
+    id == "48:notes" || (id.starts_with("19:") && id.contains('@') && !id.contains(';') && !id.ends_with("@thread.tacv2"))
 }
 
 fn window_conversation(key: &str) -> &str {

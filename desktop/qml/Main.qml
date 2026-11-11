@@ -586,9 +586,14 @@ Window {
             }
             else if (step === 17) { searchView.setTab("messages"); searchView.kind = "chat"; searchView.run() }
             else if (step === 18) { log("type-chat"); cap("sp-type-chat") }
-            else if (step === 19) { const r = searchView.rowsForTest().find(r => r.t === "message"); if (r) searchView.openHit(r.h) }
-            else if (step === 21) { cap("sp-open"); console.warn("SEARCH open", backend.currentChatName, JSON.stringify(conversation.findMark)) }
-            else if (step === 22) Qt.quit()
+            else if (step === 19) { const r = searchView.rowsForTest().find(r => r.t === "message"); if (r) searchView.preview = r.h }
+            else if (step === 22) { cap("sp-preview"); console.warn("SEARCH preview", JSON.stringify(searchView.preview ? { id: searchView.preview.id, thread: searchView.preview.thread } : null)) }
+            else if (step === 23) { searchView.kind = ""; searchView.run() }
+            else if (step === 25) { const r = searchView.rowsForTest().find(r => r.t === "message" && String(r.h.thread).endsWith("@thread.tacv2")); console.warn("SEARCH channel hit", !!r); if (r) searchView.preview = r.h }
+            else if (step === 28) cap("sp-preview-channel")
+            else if (step === 29) { const r = searchView.rowsForTest().find(r => r.t === "message"); if (r) searchView.openHit(r.h) }
+            else if (step === 31) { cap("sp-open"); console.warn("SEARCH open", backend.currentChatName, JSON.stringify(conversation.findMark)) }
+            else if (step === 32) Qt.quit()
             step++
         }
     }

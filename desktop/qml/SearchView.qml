@@ -57,6 +57,11 @@ Rectangle {
     property bool hideBots: false
     property string fileType: ""
     property int generation: 0
+    /// The result open in the preview pane (Teams' preview beside the
+    /// results: 40% of the page).
+    property var preview: null
+    readonly property real previewWidth: preview ? Math.round(width * 0.4) : 0
+    readonly property real resultsWidth: width - previewWidth
     readonly property string key: tab + "#" + query + "#" + generation
     readonly property var result: { try { const r = JSON.parse(backend.searchPageJson || "{}"); return r.key === key ? r : null } catch (e) { return null } }
     readonly property var page: result && result.page ? result.page : null
@@ -96,6 +101,7 @@ Rectangle {
         }
     }
     function run() {
+        preview = null
         generation++
         if (query) backend.searchPage(key, tab, query, JSON.stringify(filters()), 0)
         list.contentY = 0
@@ -156,7 +162,7 @@ Rectangle {
     // Tabs.
     Row {
         id: tabRow
-        x: column.x; y: 16.2; spacing: 12
+        x: Math.max(16, (root.resultsWidth - root.columnWidth) / 2); y: 16.2; spacing: 12
         Repeater {
             model: root.shownTabs.concat(root.hiddenTabs.length ? ["+"] : [])
             Rectangle {
@@ -187,7 +193,7 @@ Rectangle {
             }
         }
     }
-    Rectangle { y: 60.7; width: parent.width; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
+    Rectangle { y: 60.7; width: root.resultsWidth; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
 
     // Filters.
     Item {
@@ -267,7 +273,7 @@ Rectangle {
                 Accessible.name: "Clear all"
             }
         }
-        Rectangle { y: 40.7; x: -column.x; width: root.width; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
+        Rectangle { y: 40.7; x: -column.x; width: root.resultsWidth; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
     }
     readonly property var fileTypeKeys: ["excel", "images", "loop", "onenote", "pdf", "powerpoint", "text", "word"]
     readonly property var fileTypeNames: ({ excel: "Excel", images: "Images", loop: "Loop", onenote: "OneNote", pdf: "PDF", powerpoint: "PowerPoint", text: "Text file", word: "Word" })
@@ -564,7 +570,7 @@ Rectangle {
     readonly property real columnWidth: tab === "files" ? 760 : 692
     Item {
         id: column
-        x: Math.max(16, (root.width - root.columnWidth) / 2); width: Math.min(root.columnWidth, root.width - 32)
+        x: Math.max(16, (root.resultsWidth - root.columnWidth) / 2); width: Math.min(root.columnWidth, root.resultsWidth - 32)
         y: filterRow.visible ? 101.7 : 61.4; height: root.height - y
     }
     // Messages without apps' and bots' (Hide apps & bots, the page's own).
@@ -634,6 +640,24 @@ Rectangle {
             sourceComponent: ({ heading: headingRow, message: messageCard, chat: chatCard, channel: channelCard, file: fileCard, person: personCard,
                                 event: eventCard, more: moreLink, none: noneRow, chatrow: chatRowCards, channelrow: channelRowCards, "image-row": imageRow })[modelData.t]
             property var row: modelData
+        }
+    }
+
+    SearchPreview {
+        id: previewPane
+        visible: !!root.preview
+        anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+        width: root.previewWidth
+        hit: root.preview
+        terms: root.terms
+        place: root.preview ? root.channelOf(root.preview.thread) : null
+        chatName: root.preview ? (String(root.preview.thread).startsWith("48:") ? backend.userName + " (You)" : root.chatName(root.preview.thread) || root.preview.sender_name || "") : ""
+        onClosed: root.preview = null
+        onGoTo: { const h = root.preview; root.preview = null; root.openHit(h) }
+        onPopOut: {
+            const h = root.preview
+            const ch = root.channelOf(h.thread)
+            root.openChatWindow(h.thread, ch ? ch.channel.name : root.chatName(h.thread))
         }
     }
 
@@ -737,6 +761,7 @@ Rectangle {
             Card {
                 id: card
                 height: 80 + mtext.height
+                color: root.preview && root.preview.id === mc.h.id ? theme.pick("#FAFAFA", "#2E2E2E") : theme.surface
                 // Its place.
                 Avatar {
                     x: 20; y: 16; size: 20
@@ -758,7 +783,7 @@ Rectangle {
                     spacing: 6
                     FeedbackThumbs { textSize: 12; anchors.verticalCenter: parent.verticalCenter }
                     Rectangle { width: 1; height: 14; anchors.verticalCenter: parent.verticalCenter; color: theme.stroke }
-                    CardAction { icon: mc.place ? "chat-20" : "arrow-reply-20"; label: mc.place ? "Reply in thread" : "Reply to this message"; onClicked: root.openHit(mc.h) }
+                    CardAction { icon: mc.place ? "chat-20" : "arrow-reply-20"; label: mc.place ? "Reply in thread" : "Reply to this message"; onClicked: root.preview = mc.h }
                     CardAction {
                         icon: "open-window-20"; label: "Open chat in new window"
                         onClicked: root.openChatWindow(mc.h.thread, mc.place ? mc.place.channel.name : root.chatName(mc.h.thread))
@@ -788,7 +813,7 @@ Rectangle {
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                 }
-                TapHandler { onTapped: root.openHit(mc.h) }
+                TapHandler { onTapped: root.preview = mc.h }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
             Accessible.role: Accessible.ListItem
