@@ -112,7 +112,14 @@ Item {
     // colours (red foreground, background1, border).
     property string bannerText: ""
     property bool bannerDanger: false
-    readonly property real bannerShownH: bannerText ? 29.3 : 0
+    // A standing note on top of the box (Teams' lobby chat awareness and
+    // disabled banners, measured on winpc 2026-11-11): the box's width,
+    // #F0F0F0, radius 6 6 0 0, a 0.67 #E0E0E0 line on top, padding 8 16 6,
+    // its text 14/20 #424242 (#616161 when the chat is unavailable).
+    property string noteText: ""
+    property bool noteMuted: false
+    readonly property real noteH: noteText ? noteLabel.implicitHeight + 14 : 0
+    readonly property real bannerShownH: (bannerText ? 29.3 : 0) + noteH
     function showBanner(text, danger, decayMs) {
         bannerText = text; bannerDanger = !!danger
         bannerDecay.interval = decayMs || 3000; bannerDecay.restart()
@@ -281,7 +288,7 @@ Item {
     // The compose banner.
     Rectangle {
         visible: !!root.bannerText
-        width: parent.width; height: root.bannerShownH + 4; radius: 4
+        width: parent.width; height: 29.3 + 4; radius: 4
         color: root.bannerDanger ? theme.pick("#FCF4F6", "#3E1F25") : theme.pick("#E6E6E6", "#3D3D3D")
         border.color: root.bannerDanger ? theme.pick("#F3D6D8", "#4F222B") : theme.divider; border.width: 0.67
         Text {
@@ -302,6 +309,23 @@ Item {
         }
         Accessible.role: Accessible.AlertMessage
         Accessible.name: root.bannerText
+    }
+    Rectangle {
+        visible: !!root.noteText
+        y: root.bannerText ? 29.3 : 0
+        width: parent.width; height: root.noteH + 6; radius: 6
+        color: theme.pick("#F0F0F0", "#2E2E2E")
+        Rectangle { width: parent.width; height: 0.67; color: theme.divider; radius: 6 }
+        Text {
+            id: noteLabel
+            x: 16; y: 8; width: parent.width - 32
+            wrapMode: Text.Wrap
+            text: root.noteText
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: root.noteMuted ? theme.textSecondary : theme.textStrong
+        }
+        Accessible.role: Accessible.StaticText
+        Accessible.name: root.noteText
     }
     // The post composer's elevation (Fluent shadow 8).
     FluentSurface { visible: root.post; y: box.y; width: box.width; height: box.height; depth: 8; radius: 6; color: theme.surface }
@@ -837,11 +861,13 @@ Item {
 
     // Toolbar items, in Teams' order (§15). Loop components and Actions and
     // apps are not built yet.
+    /// Only Format and Send (Teams' lobby chat compose).
+    property bool textOnly: false
     readonly property var toolModel: [
         { id: "expand-compose", icon: "format-20", label: root.formatting ? "Hide Formatting options" : "Show Formatting options", pressed: root.formatting },
-        { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers" },
-        { id: "FilePicker", icon: "attach-20", label: "Attach files (Alt+Shift+O)", hidden: root.editing },
-        { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps", hidden: root.editing }
+        { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers", hidden: root.textOnly },
+        { id: "FilePicker", icon: "attach-20", label: "Attach files (Alt+Shift+O)", hidden: root.editing || root.textOnly },
+        { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps", hidden: root.editing || root.textOnly }
     ].filter(t => !t.hidden)
     readonly property var endModel: root.editing
         ? [{ id: "discard-draft", icon: "dismiss-20", label: "Cancel" }, { id: "send", icon: "checkmark-20", label: "Done" }]

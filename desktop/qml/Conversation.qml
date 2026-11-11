@@ -104,6 +104,21 @@ Rectangle {
     property var linkedTabs: []
     signal openLinkedTab(string tabId)
     signal closePane()
+    /// The call chat pane's tabs ([{key, label, badge, count, tip}]) and the
+    /// one shown; picking one asks the call window to switch.
+    property var paneTabs: []
+    property string paneTab: ""
+    signal paneTabPicked(string key)
+    /// A standing note on the compose box and whether you can type (Teams'
+    /// lobby chat banners).
+    property string composeNote: ""
+    property bool composeNoteMuted: false
+    property bool composeDisabled: false
+    /// Only Format and Send in the compose (Teams' lobby chat).
+    property bool composeTextOnly: false
+    /// Teams' empty chat header (chat-pencil illustration and a title),
+    /// shown while there are no messages; "" for none.
+    property string emptyTitle: ""
     /// In a channel: reply to a post, and whether a new post is being written.
     signal sendReply(string rootId, string text)
     property bool posting: false
@@ -614,7 +629,7 @@ Rectangle {
     // Header
     Item {
         id: header
-        width: parent.width; height: theme.headerHeight
+        width: parent.width; height: theme.headerHeight + (root.pane && root.paneTabs.length ? 47.2 : 0)
         visible: root.chatName.length > 0 && !root.tabExpanded
         Rectangle {
             visible: root.liveBand
@@ -630,17 +645,78 @@ Rectangle {
                 if (it && it.visible) x = Math.min(x, it.x)
             return x - 4
         }
-        Text {
+        Item {
             visible: root.pane
-            x: root.paneTitleX; anchors.verticalCenter: parent.verticalCenter
-            text: root.paneTitle
-            font.family: theme.font; font.pixelSize: 16; font.weight: root.paneTitleSemibold ? Font.DemiBold : Font.Bold
-            color: theme.text
+            width: parent.width; height: theme.headerHeight
+            Text {
+                x: root.paneTitleX; anchors.verticalCenter: parent.verticalCenter
+                text: root.paneTitle
+                font.family: theme.font; font.pixelSize: 16; font.weight: root.paneTitleSemibold ? Font.DemiBold : Font.Bold
+                color: theme.text
+            }
+            HeaderAction {
+                x: parent.width - root.paneCloseRight; icon: "dismiss-20"; Accessible.name: "Close " + root.paneTitle.toLowerCase()
+                onClicked: root.closePane()
+            }
         }
-        HeaderAction {
-            visible: root.pane
-            x: parent.width - root.paneCloseRight; icon: "dismiss-20"; Accessible.name: "Close " + root.paneTitle.toLowerCase()
-            onClicked: root.closePane()
+        // The call chat pane's tabs (Teams' Everyone | Lobby, measured on
+        // winpc 2026-11-11): a 46.5 row 8 in, a 0.67 #E0E0E0 line under it;
+        // tabs padding 12 10, 14/20 #424242 (600 #242424 chosen) with a 3 px
+        // brand bar 12 in from each side at the bottom; Lobby's count badge
+        // 8 after it (20 tall, 12/600, pill: #4F52B2 on #E8EBFA, or #616161
+        // on #F0F0F0 at 0).
+        Item {
+            visible: root.pane && root.paneTabs.length > 0
+            y: theme.headerHeight
+            width: parent.width; height: 47.2
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: Math.max(0.67, 1 / Screen.devicePixelRatio); color: theme.divider }
+            Row {
+                x: 8
+                Repeater {
+                    model: root.paneTabs
+                    Item {
+                        id: ptab
+                        required property var modelData
+                        readonly property bool chosen: root.paneTab === modelData.key
+                        width: ptRow.implicitWidth + 24; height: 46.5
+                        Row {
+                            id: ptRow
+                            x: 12; anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: ptab.modelData.label
+                                font.family: theme.font; font.pixelSize: 14; font.weight: ptab.chosen ? Font.DemiBold : Font.Normal
+                                color: ptab.chosen ? theme.text : theme.textStrong
+                            }
+                            Rectangle {
+                                visible: ptab.modelData.badge !== undefined
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: badgeText.implicitWidth + 12; height: 20; radius: 10
+                                color: (ptab.modelData.count || 0) > 0 ? theme.pick("#E8EBFA", "#2F2F4A") : theme.pick("#F0F0F0", "#2E2E2E")
+                                Text {
+                                    id: badgeText
+                                    anchors.centerIn: parent
+                                    text: ptab.modelData.badge || ""
+                                    font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                                    color: (ptab.modelData.count || 0) > 0 ? theme.brandForeground1 : theme.textSecondary
+                                }
+                            }
+                        }
+                        Rectangle {
+                            visible: ptab.chosen
+                            anchors.bottom: parent.bottom; x: 12; width: parent.width - 24; height: 3; radius: 1.5
+                            color: theme.brand
+                        }
+                        HoverHandler { id: ptH; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.paneTabPicked(ptab.modelData.key) }
+                        ToolTip.visible: ptH.hovered && !!ptab.modelData.tip; ToolTip.delay: 500; ToolTip.text: ptab.modelData.tip || ""
+                        Accessible.role: Accessible.PageTab
+                        Accessible.name: ptab.modelData.label + (ptab.modelData.badge ? " " + ptab.modelData.badge : "")
+                        Accessible.selected: ptab.chosen
+                    }
+                }
+            }
         }
         Item {
         visible: !root.pane
@@ -1571,7 +1647,7 @@ Rectangle {
                 // A meeting chat's calls are meetings (Teams: the video icon).
                 name: msg.isCall ? (msg.modelData.call_huddle || root.isMeetingChat ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
                     : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20",
-                         PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
+                         PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", LobbyJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
                          MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", DeleteCustomApp: "apps-20",
                          RecordingStarted: "record-20", RecordingStopped: "record-stop-20", RecordingSaved: "cloud-arrow-up-20",
                          Transcript: "slide-text-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
@@ -3350,6 +3426,34 @@ Rectangle {
         onAccepted: root.addFiles(selectedFiles)
     }
 
+    // Teams' empty chat header (its "lobby-chat-new-chat" kind, measured
+    // on winpc 2026-11-11): the chat-pencil illustration (about 120), then
+    // the title 16/700 #242424 centred 50 under it, in the middle of the
+    // message area while the chat has no messages.
+    Column {
+        visible: root.emptyTitle !== "" && root.messages.length === 0
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: header.height + Math.max(16, (compose.y - header.height - height) / 2)
+        width: parent.width - 32
+        spacing: 50
+        Image {
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: 120; height: 120
+            source: "../assets/illustrations/chat-pencil-l-standard.svg"
+            sourceSize: Qt.size(240, 240)
+        }
+        Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            text: root.emptyTitle
+            font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+            lineHeight: 22; lineHeightMode: Text.FixedHeight
+            color: theme.text
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+        }
+    }
     // The chat's compose (Teams' simplified compose; ComposeBox). It sits
     // 72 in on each side, 6 above the bottom, its hint row included.
     ComposeBox {
@@ -3378,7 +3482,11 @@ Rectangle {
         // Teams offers it in chats and channels, not in your own chat or a
         // thread's reply box.
         scheduleAllowed: !root.isSelf && !root.threadRoot && !root.pane
-        placeholder: root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
+        placeholder: root.composeDisabled ? "" : root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
+        noteText: root.composeNote
+        textOnly: root.composeTextOnly
+        noteMuted: root.composeNoteMuted
+        enabled: !root.composeDisabled
         quote: root.quoting
         files: root.pendingFiles
         onQuoteDismissed: root.quoting = null

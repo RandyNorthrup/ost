@@ -50,6 +50,11 @@ Rectangle {
     signal deny(string id, string name)
     /// Teams' Admit all (no suspected guests waiting).
     signal admitAll()
+    /// Teams' lobby chat (organizers): with one person waiting the lobby
+    /// header's action is Chat (72 x 24, the chat glyph 20 and "Chat" 12,
+    /// measured on winpc 2026-11-11).
+    property bool lobbyChatAvailable: false
+    signal chatLobby()
     /// Admit or deny everyone in a subsection: [{id, name}].
     signal admitEach(var list)
     signal denyEach(var list)
@@ -91,7 +96,8 @@ Rectangle {
         if (lobbyShown > 0 && !display) {
             const split = threats.length > 0
             out.push({ kind: "section", key: "lobby", title: "Waiting in lobby (" + lobbyShown + ")",
-                       action: !split && lobbyShown > 1 ? "Admit all" : "", level: 0 })
+                       action: !split && lobbyShown > 1 ? "Admit all" : root.lobbyChatAvailable && waiting.length === 1 && !split ? "Chat" : "",
+                       actionIcon: !split && lobbyShown === 1 && root.lobbyChatAvailable ? "chat-20" : "", level: 0 })
             if (!collapsed.lobby) {
                 if (split) {
                     if (waiting.length > 0) {
@@ -279,20 +285,27 @@ Rectangle {
                 visible: !!entry.action
                 anchors.right: parent.right; anchors.rightMargin: 22
                 y: 7; height: 24; radius: 4
-                width: Math.max(72, actionText.implicitWidth + 21.3)
+                width: Math.max(72, actionRow.implicitWidth + 21.3)
                 color: actionHover.hovered ? theme.menuHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text {
-                    id: actionText
+                Row {
+                    id: actionRow
                     anchors.centerIn: parent
-                    text: entry.action || ""
-                    font.family: theme.font; font.pixelSize: 12
-                    color: theme.text
+                    spacing: 4
+                    FluentIcon { visible: !!entry.actionIcon; name: entry.actionIcon || "chat-20"; size: 20; color: theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text {
+                        id: actionText
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: entry.action || ""
+                        font.family: theme.font; font.pixelSize: 12
+                        color: theme.text
+                    }
                 }
                 HoverHandler { id: actionHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: {
                         if (entry.key === "here") root.muteAll()
+                        else if (entry.key === "lobby" && entry.action === "Chat") root.chatLobby()
                         else if (entry.key === "lobby") root.admitAll()
                         else if (entry.key === "waiting") root.admitEach(entry.list.map(p => ({ id: p.id, name: p.name })))
                         else if (entry.key === "threats") root.denyEach(entry.list.map(p => ({ id: p.id, name: p.name })))

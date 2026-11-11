@@ -1006,6 +1006,12 @@ Services:
   - With more than 1 waiting: "Admit all" (drill-in: "Admit ({{n}})").
   - Confirm variant: "Admit everyone in the lobby?" / "Some of the people waiting aren't shown." [Admit everyone] (XL meetings also get "See who's waiting").
   - Suspected threats: "Deny all".
+- **Lobby chat** (TASK-0055; captured on winpc 2026-11-11 with OST Test 2 waiting):
+  - The organizer's toast has a chat button before Deny ("Send message to lobby participants": 32 × 31.3, white, NeutralStroke1 edge, radius 4, chat glyph 20), and the lobby section's action is "Chat" (72 × 24, glyph 20 and 12 px label) while one person waits.
+  - Either opens the call chat pane with tabs under its header: **Everyone** ("Chat for everyone in the meeting") and **Lobby** ("Chat for organizers messaging people in the lobby") with a count badge ("1 waiting": 12/600 #4F52B2 on #E8EBFA; "0 waiting": #616161 on #F0F0F0). Tabs: a 46.5 row 8 in, padding 12 10, 14/20 (600 chosen) with a 3 px brand bar inset 12; a 0.67 #E0E0E0 line under the row.
+  - The thread: `POST {mt}/beta/meetings/lobby/getOrCreateLobbyChatThreadId` `{messageId, organizerId, tenantId, threadId}` → `{lobbyThreadId}` (a `LobbyChat` thread, `meetingChatType` lobby, identity masking on). People waiting join it as masked temporary members ("Attendee", `8:teamsvisitor:`, `meetingMemberType` temp, read-only) and get `activeModalities.groupChat.lobbyThreadId` in a conversationUpdate; they see only messages sent while they wait.
+  - The Lobby tab lists the messages and "{{name}} is in the lobby." rows (with one person waiting Teams names them: "Attendee (OST Test 2)"), nothing else. Before any message: Teams' empty chat header (chat-pencil illustration, "Messages you send to people waiting in the lobby will show up here."). On the compose (Format and Send only) a note (#F0F0F0, radius 6 6 0 0, padding 8 16 6, 14/20): "Messages you send are only visible to people currently in the lobby. They can view messages but not reply."; with nobody waiting the compose is off and the note (#616161) reads "Chat will be available when someone is waiting in the lobby."
+  - People waiting have a "Lobby chat" button on their pre-join screen; messages show from "Meeting Organizer" with "Only organizers and people in the lobby can view these messages." (not built yet).
 - Toast (512425): "Waiting in the lobby", "{{name}} +{{n}}".
   - 1 person: [Deny] [Admit] plus "More info", which opens the roster.
   - More than 1 person, or impersonation suspected: [View Lobby].

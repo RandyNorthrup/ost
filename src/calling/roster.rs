@@ -5,6 +5,13 @@
 
 use serde::Serialize;
 
+/// Every endpoint is in the lobby, none in the call (`modalityJoined`
+/// "Lobby"): the person waits in the meeting's lobby.
+fn lobby_only(p: &serde_json::Value) -> bool {
+    let eps: Vec<&serde_json::Value> = p.get("endpoints").and_then(|e| e.as_object()).map(|e| e.values().collect()).unwrap_or_default();
+    !eps.is_empty() && eps.iter().all(|ep| ep.get("call").is_none() && ep.get("lobby").is_some())
+}
+
 /// One person in the meeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Participant {
@@ -174,7 +181,9 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                         .find(|r| !r.is_empty())
                         .unwrap_or_default()
                         .to_string(),
-                    active: s("/state") == "active",
+                    // Someone waiting in the lobby (endpoints only in the
+                    // lobby modality) isn't in the meeting yet.
+                    active: s("/state") == "active" && !lobby_only(p),
                     server_muted: !streams.is_empty()
                         && streams
                             .iter()
@@ -472,6 +481,16 @@ pub fn joined(create_response: &str) -> Vec<Participant> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn someone_in_the_lobby_is_not_in_the_meeting() {
+        // As OST Test 2 waited (rosterUpdate, 2026-11-11).
+        let waiting = serde_json::json!({"state":"active","endpoints":{"9e4d":{"lobby":{"mediaStreams":[]},"modalityJoined":"Lobby"}}});
+        assert!(lobby_only(&waiting));
+        let admitted = serde_json::json!({"state":"active","endpoints":{"9e4d":{"call":{"mediaStreams":[]}}}});
+        assert!(!lobby_only(&admitted));
+        assert!(!lobby_only(&serde_json::json!({"state":"active"})));
+    }
+
     use super::*;
 
     #[test]

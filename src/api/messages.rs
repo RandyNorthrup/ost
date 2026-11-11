@@ -870,8 +870,13 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
             })
             .collect();
         let actor = v["initiator"].as_str().unwrap_or_default().to_string();
+        // A lobby chat's people waiting join as temporary members
+        // (meetingMemberType "temp"): Teams says they're in the lobby.
+        let lobby = kind == "MemberJoined"
+            && !members.is_empty()
+            && members.iter().all(|m| m["meetingMemberType"].as_str() == Some("temp"));
         return (matches!(kind, "MemberJoined" | "MemberLeft" | "AddMember" | "DeleteMember") && !targets.is_empty()).then(|| ChatEvent {
-            kind: kind.into(),
+            kind: if lobby { "LobbyJoined".into() } else { kind.into() },
             actor,
             targets,
             names,
@@ -1009,6 +1014,11 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
                 _ => "joined the conversation",
             };
             format!("{} {verb}.", list(&e.targets))
+        }
+        // Teams: "{{targetOne}} is in the lobby." / "… and … are in the lobby."
+        "LobbyJoined" => {
+            let verb = if e.targets.len() == 1 { "is" } else { "are" };
+            format!("{} {verb} in the lobby.", list(&e.targets))
         }
         "MemberLeft" => {
             let verb = match (e.targets.len(), meeting) {
@@ -5006,6 +5016,10 @@ mod paging_and_event_tests {
         assert_eq!(event_text(&left, &names, true), "OST Guest 1 left the chat.");
         assert_eq!(left.names.get("8:teamsvisitor:dfeeb0b8").map(String::as_str), Some("OST Guest 1"));
         let joined = chat_event("ThreadActivity/MemberJoined", r#"{"initiator":"8:orgid:me","members":[{"id":"8:teamsvisitor:dfeeb0b8","friendlyname":"OST Guest 1"}]}"#).unwrap();
+        // A lobby chat's waiting person (as the lobby thread has it, 2026-11-11).
+        let lobby = chat_event("ThreadActivity/MemberJoined", r#"{"eventtime":1794413917998,"initiator":"8:orgid:4287","members":[{"id":"8:teamsvisitor:e928","friendlyname":"Attendee","meetingMemberType":"temp"}]}"#).unwrap();
+        assert_eq!(lobby.kind, "LobbyJoined");
+        assert_eq!(event_text(&lobby, &|id| lobby.names.get(id).cloned().unwrap_or_default(), true), "Attendee is in the lobby.");
         assert_eq!(event_text(&joined, &names, true), "OST Guest 1 was invited to the meeting.");
     }
 }

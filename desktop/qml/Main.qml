@@ -1365,6 +1365,28 @@ Window {
             step++
         }
     }
+    // --join-lobby-chat (with --join-test, as the organizer): once someone
+    // waits in the lobby, capture the toast (its chat button), open the
+    // Lobby tab, send "OST test 97: lobby chat from OST" and capture the
+    // tab, logging the lobby thread and its messages.
+    Timer {
+        running: Qt.application.arguments.indexOf("--join-lobby-chat") >= 0 && backend.callState === "connected"
+        interval: 2000; repeat: true
+        property int step: -1
+        onTriggered: {
+            const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-lobbychat-" + n + ".png")))
+            const lobby = callWindow.lobby || []
+            if (step < 0) { if (lobby.length === 1) { console.warn("LOBBYCHAT waiting", JSON.stringify(lobby), "available", callWindow.lobbyChatAvailable, "role", callWindow.myRole, "toast chat", callWindow.lobbyToastForTest().chatShown); shot("toast"); step = 0 } return }
+            step++
+            if (step === 1) callWindow.openLobbyChat()
+            else if (step === 4) { console.warn("LOBBYCHAT thread", backend.callLobbyThread, "tab", callWindow.chatTab, "shown", callWindow.lobbyTabShown); shot("tab") }
+            else if (step === 5) { const p = callWindow.lobbyPaneForTest(); p.insertTextForTest("OST test 97: lobby chat from OST"); p.sendForTest() }
+            else if (step === 9) { console.warn("LOBBYCHAT messages", JSON.stringify(callWindow.lobbyMessages.map(m => [m.kind, m.text, m.sender]))); shot("sent") }
+            else if (step === 10) { callWindow.chatTab = "everyone"; }
+            else if (step === 11) { shot("everyone"); callWindow.chatTab = "lobby"; callWindow.side = "people" }
+            else if (step === 12) { shot("people"); console.warn("LOBBYCHAT stage people", JSON.stringify(callWindow.people.map(p => p.name))) }
+        }
+    }
     // --delete-undo-test: in the chat --open-chat names, delete your newest
     // message "OST test 40…", capture the tombstone, undo, and log the
     // message's state at each step.

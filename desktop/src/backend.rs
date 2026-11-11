@@ -379,6 +379,9 @@ pub mod qobject {
         /// endTimeUtc, attendeeCount}], callId, report: {summary,
         /// participants}, loading, error}.
         #[qproperty(QString, attendance_json)]
+        /// The meeting's lobby chat thread (Teams' organizers messaging
+        /// people in the lobby), once opened; "" otherwise.
+        #[qproperty(QString, call_lobby_thread)]
         /// The fun picker's GIF results: {query, items: [{url, preview,
         /// width, height, title}], error}.
         #[qproperty(QString, fun_results_json)]
@@ -723,6 +726,10 @@ pub mod qobject {
             message: &QString,
             call_id: &QString,
         );
+        /// Teams' lobby chat: get (or create) the meeting's lobby chat
+        /// thread into call_lobby_thread.
+        #[qinvokable]
+        fn open_lobby_chat(self: Pin<&mut Backend>);
         /// Teams' Download in the Attendance view: save the report file
         /// (the service's name) to Downloads.
         #[qinvokable]
@@ -1779,6 +1786,7 @@ pub struct BackendRust {
     call_chat_members_json: QString,
     chat_meeting_json: QString,
     attendance_json: QString,
+    call_lobby_thread: QString,
     fun_results_json: QString,
     custom_emoji_json: QString,
     custom_emoji_result: QString,
@@ -4511,6 +4519,31 @@ impl qobject::Backend {
             .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
     }
 
+    pub fn open_lobby_chat(self: Pin<&mut Self>) {
+        if !self.rust().call_lobby_thread.is_empty() {
+            return;
+        }
+        let Some(link) = self.call_meeting_link() else {
+            return;
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let (tenant, organizer) = (link.tenant_id.clone().unwrap_or_default(), link.organizer_id.clone().unwrap_or_default());
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::meeting_options::lobby_chat_thread(&client, &tenant, &organizer, &link.thread_id, &link.message_id).await
+            }
+            .await;
+            match result {
+                Ok(id) => {
+                    tracing::info!("lobby chat thread ready");
+                    let _ = qt.queue(move |mut this| this.as_mut().set_call_lobby_thread(QString::from(id.as_str())));
+                }
+                Err(e) => tracing::warn!("lobby chat: {}", short_error(&e)),
+            }
+        });
+    }
+
     pub fn load_meeting_controls(self: Pin<&mut Self>) {
         let Some(link) = self.call_meeting_link() else {
             return;
@@ -4644,6 +4677,7 @@ impl qobject::Backend {
         self.as_mut().set_call_ai_on(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_meeting_info_json(QString::default());
+        self.as_mut().set_call_lobby_thread(QString::default());
         self.as_mut().show_transcript(Vec::new(), true);
         self.as_mut().reset_captions();
         self.as_mut().set_call_state(QString::from("connecting"));

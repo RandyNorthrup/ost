@@ -29,6 +29,7 @@
 | `icons/microscope-20.svg` | The glyph of Teams' Feedback ▸ Suggest a feature, copied from the Teams client so the menu looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
 | `icons/ft-*.svg` | Fluent UI's file type icons (Word, Excel, PowerPoint, PDF, OneNote, Loop, text, images, generic), from the Fluent UI CDN's item-types set as Teams shows them in Find in chat's Files and Type menu. Covered by the Fluent UI asset licence, not an open-source licence; review before redistributing | Microsoft |
 | `icons/attendance-report-32.svg` | The glyph of Teams' Attendance card (a meeting's attendance report), copied from the Teams client so the card looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
+| `illustrations/chat-pencil-l-standard.svg` | Teams' empty chat illustration (a speech bubble and pencil), from Teams' public evergreen assets, as its lobby chat and new chats show it. Not covered by an open-source licence; review before redistributing | Microsoft |
 | `illustrations/all-caught-up.svg` | Teams' empty-filter illustration ("You're all caught up!"), copied from the Teams client so the chat list's empty state looks the same. Not covered by an open-source licence; review before redistributing | Microsoft |
 
 OST is not affiliated with or endorsed by Microsoft. "Microsoft Teams" is a

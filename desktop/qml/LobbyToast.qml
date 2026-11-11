@@ -18,6 +18,11 @@ Item {
     signal admit(string id, string name)
     signal deny(string id, string name)
     signal viewLobby()
+    /// Teams' lobby chat (organizers, one person waiting who isn't a
+    /// suspected bot): the chat button before Deny opens it.
+    property bool chatAvailable: false
+    signal chatLobby()
+    readonly property bool chatShown: chatAvailable && lobby.length === 1 && !first.suspected
 
     /// The lobby as it was when the toast was dismissed; it comes back when
     /// someone new arrives or leaves.
@@ -97,11 +102,25 @@ Item {
                 : root.first.suspected
                     ? [{ t: "Deny", primary: false, act: "deny" }, { t: "View Lobby", primary: true, act: "view" }]
                     : [{ t: "Deny", primary: false, act: "deny" }, { t: "Admit", primary: true, act: "admit" }]
+            // "Send message to lobby participants" (measured on winpc
+            // 2026-11-11): 32 x 31.3, white, a NeutralStroke1 edge, radius
+            // 4, the chat glyph (20, filled on hover).
+            Rectangle {
+                visible: root.chatShown
+                width: 32; height: 31.3; radius: 4
+                color: ch.hovered ? theme.menuHover : theme.surface
+                border.color: theme.stroke; border.width: 0.67
+                FluentIcon { anchors.centerIn: parent; name: ch.hovered ? "chat-20-filled" : "chat-20"; size: 20; color: ch.hovered ? theme.brand : theme.text }
+                HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.chatLobby() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Send message to lobby participants"
+            }
             Repeater {
                 model: actions.buttons
                 Rectangle {
                     required property var modelData
-                    width: (294.7 - 8 * (actions.buttons.length - 1)) / actions.buttons.length
+                    width: (294.7 - (root.chatShown ? 40 : 0) - 8 * (actions.buttons.length - 1)) / actions.buttons.length
                     height: 31.3; radius: 4
                     color: modelData.primary ? (bh.hovered ? theme.brandHover : theme.brandFill) : (bh.hovered ? theme.menuHover : theme.surface)
                     border.color: modelData.primary ? "transparent" : theme.stroke; border.width: 0.67

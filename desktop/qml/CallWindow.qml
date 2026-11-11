@@ -387,6 +387,45 @@ Window {
     function toggleFullScreen() { visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
     /// The open side pane: "", "chat" or "people".
     property string side: ""
+    // Teams' lobby chat (organizers of a meeting with a lobby): the toast's
+    // chat button opens the chat pane on its Lobby tab.
+    readonly property bool lobbyChatAvailable: meeting && myRole === "organizer"
+    readonly property bool lobbyTabShown: lobbyChatAvailable && backend.callLobbyThread !== ""
+    property string chatTab: "everyone"
+    readonly property var chatTabs: [
+        { key: "everyone", label: "Everyone", tip: "Chat for everyone in the meeting" },
+        { key: "lobby", label: "Lobby", tip: "Chat for organizers messaging people in the lobby", badge: lobby.length + " waiting", count: lobby.length }
+    ]
+    function openLobbyChat() {
+        side = "chat"; openChat(); chatTab = "lobby"
+        backend.openLobbyChat()
+    }
+    property string lobbyChatOpen: ""
+    Connections {
+        target: backend
+        function onCallLobbyThreadChanged() {
+            if (win.lobbyChatOpen) backend.closeChatWindow(win.lobbyChatOpen)
+            win.lobbyChatOpen = backend.callLobbyThread
+            if (win.lobbyChatOpen) backend.openChatWindow(win.lobbyChatOpen)
+            else win.chatTab = "everyone"
+        }
+    }
+    // The lobby thread's people join masked ("Attendee"); with one person
+    // waiting Teams names them: "Attendee (OST Test 2) is in the lobby."
+    readonly property var lobbyMessages: {
+        const all = backend.threadWindowsJson ? JSON.parse(backend.threadWindowsJson) : {}
+        // Teams' Lobby tab shows the messages and who is in the lobby, not
+        // the thread's other control messages.
+        const msgs = (all["win:" + backend.callLobbyThread] || []).filter(m => m.kind === "message" || (m.kind === "event" && m.event && m.event.kind === "LobbyJoined"))
+        if (lobby.length !== 1) return msgs
+        const real = lobby[0].name
+        return msgs.map(m => {
+            if (m.kind !== "event" || !m.event || m.event.kind !== "LobbyJoined" || (m.event.targets || []).length !== 1) return m
+            const shown = m.text.replace(/ is in the lobby\.$/, "")
+            const named = shown + " (" + real + ")"
+            return Object.assign({}, m, { text: named + " is in the lobby.", event: Object.assign({}, m.event, { unverified: (m.event.unverified || []).map(n => n === shown ? named : n) }) })
+        })
+    }
     signal openChat()
 
     width: 1024; height: 640
@@ -1524,10 +1563,41 @@ Window {
         clip: true
         Conversation {
             id: chatPane
-            visible: win.side === "chat"
+            visible: win.side === "chat" && (win.chatTab === "everyone" || !win.lobbyTabShown)
             anchors.fill: parent; anchors.margins: 1
             pane: true
+            paneTabs: win.lobbyTabShown ? win.chatTabs : []
+            paneTab: win.chatTab
+            onPaneTabPicked: key => win.chatTab = key
             onClosePane: win.side = ""
+        }
+        // Teams' Lobby tab: the meeting's lobby chat thread, live as a chat
+        // window's, sent to through the chat window path.
+        Conversation {
+            id: lobbyPane
+            visible: win.side === "chat" && win.lobbyTabShown && win.chatTab === "lobby"
+            anchors.fill: parent; anchors.margins: 1
+            pane: true; popout: true
+            chatId: backend.callLobbyThread
+            chatName: "Lobby"
+            myName: backend.userName
+            isGroup: true
+            messages: win.lobbyMessages
+            paneTabs: win.chatTabs
+            paneTab: win.chatTab
+            onPaneTabPicked: key => win.chatTab = key
+            onClosePane: win.side = ""
+            emptyTitle: "Messages you send to people waiting in the lobby will show up here."
+            // Teams' banners: the awareness note while someone waits, else
+            // the compose is off with "Chat will be available…".
+            composeTextOnly: true
+            composeDisabled: win.lobby.length === 0
+            composeNoteMuted: win.lobby.length === 0
+            composeNote: win.lobby.length === 0 ? "Chat will be available when someone is waiting in the lobby."
+                : "Messages you send are only visible to people currently in the lobby. They can view messages but not reply."
+            onReact: (id, key, on) => backend.toggleReaction(id, key, on)
+            onEditMessage: (id, text) => backend.editMessage(id, text)
+            onDeleteMessage: id => backend.deleteMessage(id)
         }
         AudioSettingsPane {
             id: audioSettingsPane
@@ -1592,6 +1662,8 @@ Window {
             people: win.people
             chatMembers: win.chatMembers
             lobby: win.lobby
+            lobbyChatAvailable: win.lobbyChatAvailable
+            onChatLobby: win.openLobbyChat()
             meeting: win.meeting
             onClosed: win.side = ""
             onAdmit: (id, name) => win.admitLobby(id, name, false)
@@ -1759,6 +1831,8 @@ Window {
         onAdmit: (id, name) => win.admitLobby(id, name, false)
         onDeny: (id, name) => win.denyLobby(id, name)
         onViewLobby: win.side = "people"
+        chatAvailable: win.lobbyChatAvailable
+        onChatLobby: win.openLobbyChat()
     }
     // Leave's options (hangup-button-more-options-menu, measured): a
     // surface right-aligned to the chevron, 6 below it, padding 16, a 0.67
@@ -2064,6 +2138,8 @@ Window {
     }
     property Item controlsButton: null
     function optionsDialogForTest() { return optionsDialog }
+    function lobbyPaneForTest() { return lobbyPane }
+    function lobbyToastForTest() { return lobbyToast }
     MeetingOptionsDialog {
         id: optionsDialog
         options: win.controlsOptions

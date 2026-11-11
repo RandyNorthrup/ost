@@ -71,6 +71,32 @@ pub async fn get(client: &TeamsClient, tenant: &str, organizer: &str, thread: &s
     Ok(MeetingOptions::from_reply(&v))
 }
 
+/// The meeting's lobby chat (Teams' organizers messaging people in the
+/// lobby; captured from Teams desktop 2026-11-11): `POST {mt}/beta/
+/// meetings/lobby/getOrCreateLobbyChatThreadId` with `{messageId,
+/// organizerId, tenantId, threadId}` answers `{lobbyThreadId}`, a
+/// LobbyChat thread the people waiting join as masked, read-only members.
+pub async fn lobby_chat_thread(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<String> {
+    check_ids(tenant, organizer, thread, message)?;
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let v: Value = client
+        .http()
+        .post(format!("{base}/beta/meetings/lobby/getOrCreateLobbyChatThreadId"))
+        .bearer_auth(&token)
+        .json(&json!({ "messageId": message, "organizerId": organizer, "tenantId": tenant, "threadId": thread }))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Lobby chat")?
+        .json()
+        .await?;
+    let id = v["lobbyThreadId"].as_str().unwrap_or_default();
+    if !id.starts_with("19:") || !id.ends_with("@thread.v2") {
+        bail!("No lobby chat");
+    }
+    Ok(id.to_string())
+}
+
 /// A picked person as Teams' pickers send them: `upn`, `mri`, `objectId`,
 /// `userType` ("Member") and the `tenantId` when known.
 pub fn picked_person(p: &Value) -> Value {
