@@ -2,6 +2,7 @@
 
 pub mod activity;
 pub mod app_details;
+pub mod attendance;
 pub mod calendar;
 mod chat;
 pub mod client;

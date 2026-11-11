@@ -372,8 +372,13 @@ pub mod qobject {
         /// added to the chat").
         #[qproperty(QString, call_chat_members_json)]
         /// The open meeting chat's meeting: {subject, join_url, ical_uid,
-        /// cancelled, start, end, organizer_id}, or "" for other chats.
+        /// cancelled, start, end, organizer_id, co_organizer_ids,
+        /// meeting_type}, or "" for other chats.
         #[qproperty(QString, chat_meeting_json)]
+        /// Teams' Attendance view: {key, reports: [{callId, startTimeUtc,
+        /// endTimeUtc, attendeeCount}], callId, report: {summary,
+        /// participants}, loading, error}.
+        #[qproperty(QString, attendance_json)]
         /// The fun picker's GIF results: {query, items: [{url, preview,
         /// width, height, title}], error}.
         #[qproperty(QString, fun_results_json)]
@@ -707,6 +712,26 @@ pub mod qobject {
         /// attendance list).
         #[qinvokable]
         fn download_attendance_list(self: Pin<&mut Backend>);
+        /// Teams' Attendance view: the meeting's reports (history) and one
+        /// report into attendance_json (`call_id` empty: the newest).
+        /// `message` is a channel meeting's post id, else empty.
+        #[qinvokable]
+        fn load_attendance(
+            self: Pin<&mut Backend>,
+            thread: &QString,
+            organizer: &QString,
+            message: &QString,
+            call_id: &QString,
+        );
+        /// Teams' Download in the Attendance view: save the report file
+        /// (the service's name) to Downloads.
+        #[qinvokable]
+        fn download_attendance_report(
+            self: Pin<&mut Backend>,
+            thread: &QString,
+            organizer: &QString,
+            call_id: &QString,
+        );
         /// Teams' Record and transcribe: "startTranscription",
         /// "stopTranscription", "startRecording" (recording only when the
         /// transcript runs) or "stopRecording", in `language` ("en-us"),
@@ -1753,6 +1778,7 @@ pub struct BackendRust {
     chat_members_json: QString,
     call_chat_members_json: QString,
     chat_meeting_json: QString,
+    attendance_json: QString,
     fun_results_json: QString,
     custom_emoji_json: QString,
     custom_emoji_result: QString,
@@ -5509,6 +5535,102 @@ impl qobject::Backend {
             Err(e) => format!("Couldn't save the attendance list: {}", short_error(&e)),
         };
         self.as_mut().set_status_text(QString::from(msg.as_str()));
+    }
+
+    pub fn load_attendance(
+        mut self: Pin<&mut Self>,
+        thread: &QString,
+        organizer: &QString,
+        message: &QString,
+        call_id: &QString,
+    ) {
+        let (thread, organizer, message, call) =
+            (thread.to_string(), organizer.to_string(), message.to_string(), call_id.to_string());
+        let key = format!("{thread}|{message}");
+        // Keep the history while another report loads.
+        let mut state: serde_json::Value =
+            serde_json::from_str(&self.rust().attendance_json.to_string()).unwrap_or(json!({}));
+        if state["key"] != json!(key) {
+            state = json!({ "key": key, "reports": [] });
+        }
+        state["loading"] = json!(true);
+        state["error"] = json!("");
+        state["callId"] = json!(call);
+        self.as_mut().set_attendance_json(QString::from(state.to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let message = (!message.is_empty()).then_some(message);
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let reports = api::attendance::history(&client, &thread, &organizer, message.as_deref()).await?;
+                // A chat's call-ended message names the call by its
+                // ngcCallId; the reports go by their own callId.
+                let call = if call.is_empty() {
+                    reports.first().and_then(|r| r["callId"].as_str()).unwrap_or_default().to_string()
+                } else {
+                    reports
+                        .iter()
+                        .find(|r| r["callId"].as_str() == Some(&call) || r["ngcCallId"].as_str() == Some(&call))
+                        .and_then(|r| r["callId"].as_str())
+                        .map(str::to_string)
+                        .unwrap_or(call)
+                };
+                let report = if call.is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    api::attendance::report(&client, &thread, &call, &organizer, message.as_deref()).await?
+                };
+                anyhow::Ok((reports, call, report))
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let mut state: serde_json::Value =
+                    serde_json::from_str(&this.rust().attendance_json.to_string()).unwrap_or(json!({}));
+                if state["key"] != json!(key) {
+                    return;
+                }
+                state["loading"] = json!(false);
+                match result {
+                    Ok((reports, call, report)) => {
+                        state["reports"] = json!(reports);
+                        state["callId"] = json!(call);
+                        state["report"] = report;
+                    }
+                    Err(e) => {
+                        tracing::warn!("attendance: {}", short_error(&e));
+                        state["error"] = json!(short_error(&e));
+                    }
+                }
+                this.as_mut().set_attendance_json(QString::from(state.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn download_attendance_report(mut self: Pin<&mut Self>, thread: &QString, organizer: &QString, call_id: &QString) {
+        let Some(dir) = download_dir() else { return };
+        let (thread, organizer, call) = (thread.to_string(), organizer.to_string(), call_id.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let (name, bytes) = api::attendance::file(&client, &thread, &call, &organizer).await?;
+                let name = name.unwrap_or_else(|| "Attendance report.csv".to_string());
+                api::files::save_unique(&dir, &name, &bytes)
+            }
+            .await;
+            let msg = match result {
+                Ok(path) => {
+                    tracing::info!(path = %path.display(), "attendance report saved");
+                    format!(
+                        "Saved {} to {}",
+                        path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                        dir.display()
+                    )
+                }
+                Err(e) => format!("Couldn't download the attendance report: {}", short_error(&e)),
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+        });
     }
 
     pub fn end_meeting(mut self: Pin<&mut Self>) {

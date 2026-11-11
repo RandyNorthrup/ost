@@ -54,6 +54,10 @@ pub struct ThreadMeeting {
     pub start: String,
     pub end: String,
     pub organizer_id: String,
+    /// `coOrganizerIds` (object ids).
+    pub co_organizer_ids: Vec<String>,
+    /// `meetingType`: Scheduled, Recurring, Broadcast, …
+    pub meeting_type: String,
 }
 
 /// The meeting in a thread's properties, if it has one with a join link.
@@ -80,6 +84,12 @@ pub fn thread_meeting(properties: &serde_json::Value) -> Option<ThreadMeeting> {
         start: s("startTime"),
         end: s("endTime"),
         organizer_id: s("organizerId"),
+        co_organizer_ids: m
+            .get("coOrganizerIds")
+            .and_then(|c| c.as_array())
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .unwrap_or_default(),
+        meeting_type: s("meetingType"),
     };
     (!meeting.join_url.is_empty()).then_some(meeting)
 }
@@ -1292,8 +1302,9 @@ mod live_call_tests {
     #[test]
     fn a_meeting_chats_meeting_is_read() {
         // As the OST calendar test meeting's thread has it.
-        let meeting = r#"{"subject":"OST calendar test: created from OST","startTime":"2026-11-06T23:00:00Z","endTime":"2026-11-06T23:30:00Z","iCalUid":"0400","isCancelled":false,"organizerId":"4287","meetingJoinUrl":"https://teams.microsoft.com/l/meetup-join/19%3ameeting_Y%40thread.v2/0?context=x"}"#;
+        let meeting = r#"{"subject":"OST calendar test: created from OST","startTime":"2026-11-06T23:00:00Z","endTime":"2026-11-06T23:30:00Z","iCalUid":"0400","isCancelled":false,"organizerId":"4287","meetingJoinUrl":"https://teams.microsoft.com/l/meetup-join/19%3ameeting_Y%40thread.v2/0?context=x","meetingType":"Scheduled","coOrganizerIds":["9edc"]}"#;
         let m = thread_meeting(&serde_json::json!({ "meeting": meeting })).unwrap();
+        assert_eq!((m.co_organizer_ids.clone(), m.meeting_type.as_str()), (vec!["9edc".to_string()], "Scheduled"));
         assert_eq!(
             (m.subject.as_str(), m.ical_uid.as_str(), m.cancelled),
             ("OST calendar test: created from OST", "0400", false)

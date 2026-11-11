@@ -227,7 +227,9 @@ Rectangle {
         // Teams (worker Ct): Storyline only in 1:1 chats.
         // Meeting chats: Chat, Shared, Recap (Teams lists Attendance, Breakout
         // Rooms, Q&A and Meeting Whiteboard after them, under "+4").
-        : isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? ["Chat", "Shared", "Recap"] : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+        // Attendance joins them once its card is opened (Teams moves it out
+        // of "+4" then).
+        : isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? ["Chat", "Shared", "Recap"].concat(attendanceTab ? ["Attendance"] : []) : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
     // Teams' conversation margins by pane width (measured on winpc at
     // 452-892 px): each row starts 14 in under 480 px, else 32; its icon
@@ -308,6 +310,17 @@ Rectangle {
     signal openMeetingDetails(string joinUrl, string icalUid, string start)
     // The meeting chat's meeting (join link, iCalUid, cancelled).
     readonly property var meeting: isMeetingChat && backend.chatMeetingJson ? JSON.parse(backend.chatMeetingJson) : null
+    // Teams' Attendance card shows to the meeting's organizer and
+    // co-organizers (not for town halls), under each meeting's end.
+    readonly property string myOid: (backend.userMri || "").replace("8:orgid:", "")
+    readonly property bool canSeeAttendance: !!meeting && meeting.meeting_type !== "Broadcast" && !!myOid
+        && (meeting.organizer_id === myOid || (meeting.co_organizer_ids || []).indexOf(myOid) >= 0)
+    property bool attendanceTab: false
+    property string attendanceCall: ""
+    function openAttendance(call) { attendanceCall = call; attendanceTab = true; tab = "Attendance" }
+    // A channel meeting's report, over the channel (Teams' channel
+    // Attendance view): {organizer, message, call}.
+    property var channelAttendance: null
     // Load a channel's tabs once it's known which team it's in.
     readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
     onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
@@ -461,6 +474,8 @@ Rectangle {
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
         postViewRoot = ""
+        channelAttendance = null
+        attendanceTab = false; attendanceCall = ""
         landing = true
         manageApps = false
         tabExpanded = false
@@ -1498,7 +1513,10 @@ Rectangle {
             readonly property bool scheduledMsg: !!modelData.scheduled_at
             readonly property string sharedHead: !modelData.shared_in_main || modelData.id === modelData.root_id ? ""
                 : root.threadsLayout ? "thread" : root.threadPane ? "channel" : ""
-            height: isRow ? topPad + (isCall ? 36 : 28)
+            // Teams' Attendance card under an ended meeting (28 down, 49.3).
+            readonly property bool attendanceCard: isCall && root.isMeetingChat && root.canSeeAttendance
+                && modelData.call_state !== "started" && modelData.call_state !== "missed" && !!modelData.call_id
+            height: isRow ? topPad + (isCall ? (attendanceCard ? 28 + 49.3 : 36) : 28)
                 : editingThis ? topPad + (editLoader.item ? editLoader.item.height : 0)
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height - 4.3 + 4 : 0) + threadLineH + repliesDivH
             readonly property int maxBubble: root.postsLayout ? Math.min(900, list.width - 144) : root.compact ? list.width - 64 - root.gutR : Math.min(640, list.width * 0.7)
@@ -1621,6 +1639,11 @@ Rectangle {
                 }
             }
 
+            AttendanceCard {
+                visible: msg.attendanceCard
+                x: root.gutContent; y: msg.topPad + 28
+                onClicked: root.openAttendance(msg.modelData.call_id)
+            }
             Rectangle {
                 visible: root.compact && msg.mine && !msg.grouped && !msg.isRow
                 x: 4; y: msg.topPad + 10; width: 2; height: 32; radius: 1
@@ -2737,6 +2760,18 @@ Rectangle {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; appId: root.webTab ? (root.webTab.app_id || "") : ""; home: root.webTab ? root.webTab.content_url : "" }
     }
+    // A meeting chat's Attendance tab.
+    function attendanceViewForTest() { return attendanceTabLoader.item || (channelAttendanceLoader.item ? channelAttendanceLoader.item.children[0] : null) }
+    Loader {
+        id: attendanceTabLoader
+        active: root.isMeetingChat && root.tab === "Attendance" && !!root.meeting
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: AttendanceView {
+            thread: root.chatId; organizer: root.meeting.organizer_id; message: ""
+            initialCall: root.attendanceCall
+        }
+    }
     // Tabs OST can't offer say so.
     Column {
         visible: !root.webTab && ["Notes", "Recap", "Storyline"].indexOf(root.tab) >= 0
@@ -3319,7 +3354,7 @@ Rectangle {
     // 72 in on each side, 6 above the bottom, its hint row included.
     ComposeBox {
         id: compose
-        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout)
+        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && root.tab !== "Attendance"
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }
@@ -3386,6 +3421,23 @@ Rectangle {
             function onTextChanged() { draftSave.restart() }
         }
     }
+    // A channel meeting's Attendance view, over the channel (Teams leaves
+    // the header band empty above its toolbar).
+    Loader {
+        id: channelAttendanceLoader
+        anchors.fill: parent
+        z: 51
+        active: !!root.channelAttendance && root.isChannel && !root.pane
+        sourceComponent: Rectangle {
+            color: theme.surface
+            AttendanceView {
+                y: header.height; width: parent.width; height: parent.height - y
+                thread: root.chatId; organizer: root.channelAttendance.organizer
+                message: root.channelAttendance.message; initialCall: root.channelAttendance.call
+            }
+            Shortcut { sequence: "Escape"; onActivated: root.channelAttendance = null }
+        }
+    }
     // Teams' post view (an ended meeting's "See details"): the post's
     // thread over the channel, with Go to channel and Open in new window.
     Loader {
@@ -3400,6 +3452,7 @@ Rectangle {
             onGoToChannel: root.postViewRoot = ""
             onPopOut: { const id = root.postViewRoot; root.postViewRoot = ""; root.openThreadWindow({ id: id, root_id: id }) }
             onAgentStoreRequested: id => root.openAgentStore(id, true)
+            onOpenAttendance: (organizer, message, call) => root.channelAttendance = { organizer: organizer, message: message, call: call }
         }
     }
 }

@@ -74,6 +74,8 @@ fn main() {
         "qml/MeetingOptionsDialog.qml",
         "qml/MeetingPeoplePicker.qml",
         "qml/ArrowTip.qml",
+        "qml/AttendanceCard.qml",
+        "qml/AttendanceView.qml",
         "qml/PostThread.qml",
         "qml/GalleryGrid.qml",
         "qml/SharedDisplayWindow.qml",

@@ -42,6 +42,9 @@ Item {
     property bool inPane: false
     signal goToChannel()
     signal popOut()
+    /// A meeting end's Attendance card: the meeting's organizer, its post
+    /// and the call.
+    signal openAttendance(string organizer, string message, string call)
     readonly property string threadKey: channelId + ";messageid=" + rootId
     /// The post and its replies, oldest first.
     readonly property var thread: {
@@ -49,6 +52,16 @@ Item {
         return all[threadKey] || []
     }
     readonly property var post: thread.find(m => m.id === rootId) || null
+    // Teams shows a channel meeting's Attendance card to its organizer
+    // (the join link's Oid).
+    readonly property string meetingOrganizer: {
+        const u = post ? (post.meeting_join_url || "") : ""
+        let d = u
+        try { d = decodeURIComponent(u) } catch (e) {}
+        const m = d.match(/"Oid"\s*:\s*"([0-9a-fA-F-]{36})"/)
+        return m ? m[1].toLowerCase() : ""
+    }
+    readonly property bool canSeeAttendance: meetingOrganizer !== "" && meetingOrganizer === (backend.userMri || "").replace("8:orgid:", "").toLowerCase()
     // Replies: messages, and a meeting's call ends (its starts fold into
     // the post).
     readonly property var replies: thread.filter(m => m.id !== rootId && !(m.kind === "call" && m.call_state === "started"))
@@ -405,7 +418,9 @@ Item {
                         readonly property var mark: editing ? null : thost.highlight(modelData)
                         width: card.width
                         readonly property bool callRow: modelData.kind === "call"
-                        height: callRow ? 52 : editing ? (repEdit.item ? repEdit.item.height : 0) + 8
+                        // Teams' Attendance card under the end, at the text (54), 32 down.
+                        readonly property bool attendanceCard: callRow && win.canSeeAttendance && modelData.call_state !== "missed" && modelData.call_state !== "started" && !!modelData.call_id
+                        height: callRow ? (attendanceCard ? 32 + 49.3 + 12 : 52) : editing ? (repEdit.item ? repEdit.item.height : 0) + 8
                             : 42.2 + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 8.1
                         // A call's end (Teams' call row).
                         FluentIcon {
@@ -426,6 +441,11 @@ Item {
                             font.family: theme.font; font.pixelSize: 12
                             lineHeight: 16; lineHeightMode: Text.FixedHeight
                             color: theme.text
+                        }
+                        AttendanceCard {
+                            visible: rep.attendanceCard
+                            x: 54; y: 32
+                            onClicked: win.openAttendance(win.meetingOrganizer, win.rootId, rep.modelData.call_id)
                         }
                         z: repHover.hovered || repBar.hovered ? 2 : 1
                         Rectangle {

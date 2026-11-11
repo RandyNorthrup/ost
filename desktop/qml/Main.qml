@@ -237,7 +237,7 @@ Window {
         if (e.view === "chat" && e.chatId && e.chatId !== backend.currentChatId) backend.selectChat(e.chatId, e.chatName)
         navApplying = false
     }
-    function goBack() { if (navIndex > 0) navApply(navIndex - 1) }
+    function goBack() { if (conversation.channelAttendance) { conversation.channelAttendance = null; return } if (navIndex > 0) navApply(navIndex - 1) }
     function goForward() { if (navIndex < navStack.length - 1) navApply(navIndex + 1) }
     Connections {
         target: backend
@@ -815,7 +815,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && Qt.application.arguments.indexOf("--meeting-details-test") < 0
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test="))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -1323,6 +1323,45 @@ Window {
             else if (step === 11) { console.warn("TABS moved", names); conversation.tabChangeForTest("remove", "OST tab A2") }
             else if (step === 12) { console.warn("TABS removed A", names); conversation.tabChangeForTest("remove", "OST tab B") }
             else if (step === 13) { console.warn("TABS removed B", names); Qt.quit() }
+            step++
+        }
+    }
+    // --attendance-test=<meeting chat id> [--attendance-channel=<channel
+    // id>,<post id>]: Teams' Attendance card and view: capture the meeting
+    // chat's cards, open the newest meeting's report (the tab), its picker,
+    // download the report; then the channel meeting's post view, its card
+    // and the channel report.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = Qt.application.arguments.find(a => a.startsWith("--attendance-test=")).slice(18)
+            const chan = (Qt.application.arguments.find(a => a.startsWith("--attendance-channel=")) || "").slice(21).split(",")
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-att-" + n + ".png")))
+            const msgs = () => backend.messagesJson ? JSON.parse(backend.messagesJson) : []
+            if (step === 0) { backend.selectChat(id, "OST calendar test: created from OST") }
+            else if (step === 3) {
+                const ends = msgs().filter(m => m.kind === "call" && m.call_id && m.call_state !== "started")
+                console.warn("ATT can", conversation.canSeeAttendance, "meeting", backend.chatMeetingJson.slice(0, 300), "ends", JSON.stringify(ends.map(m => [m.call_id, m.call_state, m.call_seconds])))
+                shot("chat")
+            }
+            else if (step === 4) {
+                const ends = msgs().filter(m => m.kind === "call" && m.call_id && m.call_state !== "started")
+                if (ends.length) conversation.openAttendance(ends[ends.length - 1].call_id)
+            }
+            else if (step === 6) { const v = conversation.attendanceViewForTest(); console.warn("ATT view", conversation.tab, JSON.stringify(conversation.tabNames), v ? v.callId : "-", backend.attendanceJson.slice(0, 600)); shot("view") }
+            else if (step === 7) { const v = conversation.attendanceViewForTest(); if (v) v.openPickerForTest() }
+            else if (step === 8) shot("picker")
+            else if (step === 9) { const v = conversation.attendanceViewForTest(); if (v) { v.children.forEach(c => c.close && c.close()); backend.downloadAttendanceReport(v.thread, v.organizer, v.callId) } }
+            else if (step === 11) console.warn("ATT download", backend.statusText)
+            else if (step === 12) { if (chan.length === 2) backend.selectChat(chan[0], "General"); else Qt.quit() }
+            else if (step === 15) conversation.openPostView(chan[1])
+            else if (step === 18) shot("post")
+            else if (step === 19) { const pv = conversation.postViewForTest ? conversation.postViewForTest() : null; console.warn("ATT post view", !!pv) }
+            else if (step === 20) conversation.channelAttendance = { organizer: (backend.userMri || "").replace("8:orgid:", ""), message: chan[1], call: "" }
+            else if (step === 22) { console.warn("ATT channel", backend.attendanceJson.slice(0, 400)); shot("channel") }
+            else if (step === 23) Qt.quit()
             step++
         }
     }
@@ -3298,7 +3337,7 @@ Window {
     // routing does.
     Connections {
         target: rail
-        function onCurrentChanged() { conversation.tabExpanded = false }
+        function onCurrentChanged() { conversation.tabExpanded = false; conversation.channelAttendance = null }
     }
 
     // --tab-window-test=<tab name> with --open-chat=<channel id>
@@ -5061,7 +5100,7 @@ Window {
         onOpenChat: (id, name) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, name) }
         onOpenPerson: (oid, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(oid, name) }
         onSearchSubmitted: text => window.openSearch(text)
-        canGoBack: window.navIndex > 0
+        canGoBack: window.navIndex > 0 || !!conversation.channelAttendance
         canGoForward: window.navIndex < window.navStack.length - 1
         onGoBack: window.goBack()
         onGoForward: window.goForward()
@@ -5632,8 +5671,9 @@ Window {
         onManageChannel: (id, name) => window.openManageChannel(id)
         onManageTeam: id => window.openManageTeam(id, "channels")
         onManageTags: id => window.openManageTeam(id, "tags")
-        // An expanded tab takes the list's place (Teams' Expand tab).
-        visible: rail.current === "chat" && !conversation.tabExpanded && !window.teamPage
+        // An expanded tab takes the list's place (Teams' Expand tab), as
+        // does a channel meeting's Attendance view.
+        visible: rail.current === "chat" && !conversation.tabExpanded && !conversation.channelAttendance && !window.teamPage
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
@@ -5797,7 +5837,7 @@ Window {
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: appBanner.bottom; bottom: statusBar.top; right: findPane.left
-            left: conversation.tabExpanded ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
+            left: conversation.tabExpanded || conversation.channelAttendance ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
             leftMargin: rail.current === "chat" && (chatList.mentionsOpen || !!chatList.quickOpen) ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
