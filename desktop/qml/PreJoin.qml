@@ -13,6 +13,13 @@ Window {
     property string joinUrl
     property date startTime
     property date endTime
+    /// The scheduled times are known (from the calendar, or once the
+    /// meeting tells us, in the lobby); Teams shows no date line before.
+    property bool timesKnown: false
+    function setTimes(start, end) {
+        if (!start || !end) return
+        startTime = new Date(start); endTime = new Date(end); timesKnown = true
+    }
     property bool micOn: true
     /// Your camera (Teams' pre-join switch): a live preview while on.
     property bool cameraOn: false
@@ -55,6 +62,7 @@ Window {
         joinUrl = url; subject = subj
         startTime = start ? new Date(start) : new Date()
         endTime = end ? new Date(end) : new Date()
+        timesKnown = !!start && !!end
         micOn = true; audio = "computer"; cameraOn = false
         show(); raise(); requestActivate()
     }
@@ -113,9 +121,10 @@ Window {
             }
         }
         Text {
-            visible: !win.meetNow
+            visible: !win.meetNow && win.timesKnown
             anchors.horizontalCenter: parent.horizontalCenter
-            text: Qt.formatDate(win.startTime, "dddd, MMM d") + "  •  " + Qt.formatTime(win.startTime, "h:mm AP") + " – " + Qt.formatTime(win.endTime, "h:mm AP")
+            // Teams: "Friday, Nov 6 • 3:00 PM – 3:30 PM PST".
+            text: Qt.formatDate(win.startTime, "dddd, MMM d") + "  •  " + Qt.formatTime(win.startTime, "h:mm AP") + " – " + Qt.formatDateTime(win.endTime, "h:mm AP t")
             font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
             color: theme.textStrong
         }

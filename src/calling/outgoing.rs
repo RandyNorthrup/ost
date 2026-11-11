@@ -1696,7 +1696,7 @@ pub async fn join_meeting(
     link: &MeetingLink,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start(&link.thread_id, Target::Meeting(&link.message_id), cancel).await
+    start(&link.thread_id, Target::Meeting(link), cancel).await
 }
 
 /// Start or join a group chat's call (`19:…@thread.v2`), as Teams does:
@@ -1737,8 +1737,9 @@ enum Target<'a> {
     Person(&'a str, bool),
     /// A group chat's call: Meet now, Audio call or Join.
     Group(signaling::GroupCallKind),
-    /// The meeting with this message id on the thread.
-    Meeting(&'a str),
+    /// The meeting a join link names (its message id on the thread and
+    /// its organizer).
+    Meeting(&'a MeetingLink),
     /// A new meeting in a channel (Meet now), with this title.
     ChannelMeeting(&'a str),
 }
@@ -1869,8 +1870,9 @@ async fn start(
             signaling::create_group_call(&http, &epconv_url, &params, &offer, &members, kind)
                 .await?
         }
-        Target::Meeting(message_id) => {
-            signaling::join_meeting(&http, &epconv_url, &params, &offer, message_id).await?
+        Target::Meeting(link) => {
+            let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
+            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer).await?
         }
         Target::ChannelMeeting(subject) => {
             signaling::create_channel_meeting(&http, &epconv_url, &params, &offer, subject).await?

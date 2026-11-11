@@ -906,13 +906,22 @@ Window {
         // Ignore: stop ringing here; the call isn't declined.
         onIgnore: backend.setRinger(false)
     }
+    // In the lobby, the meeting's own times fill the pre-join date line.
+    Connections {
+        target: backend
+        function onCallMeetingInfoJsonChanged() {
+            if (!preJoin.lobby || preJoin.timesKnown || !backend.callMeetingInfoJson) return
+            const i = JSON.parse(backend.callMeetingInfoJson)
+            preJoin.setTimes(i.start, i.end)
+        }
+    }
     PreJoin {
         id: preJoin
         // Held in the lobby: Teams shows this screen again until we're let in.
         lobby: backend.callState === "lobby"
         presenterConnected: backend.callLobbyPresenter
         userName: backend.userName
-        onLobbyChanged: if (lobby) { show(); raise() } else if (visible) close()
+        onLobbyChanged: if (lobby) { show(); raise(); if (!timesKnown) backend.loadMeetingInfo() } else if (visible) close()
         onJoin: (micOn, withAudio, cameraOn) => {
             window.muteOnJoin = !micOn
             window.noAudioOnJoin = !withAudio
@@ -1551,6 +1560,7 @@ Window {
     }
     readonly property bool joinRaise: Qt.application.arguments.indexOf("--join-raise") >= 0
     property bool speechShot: false
+    property int admittedAt: 0
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     // --join-url=<link>: the test meeting's link when it isn't in the
     // calendar's loaded week.
@@ -1588,6 +1598,17 @@ Window {
                 const noAudio = preJoin.audio === "none"
                 const cam = preJoin.cameraOn
                 preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio, cam)
+            } else if (step >= 3 && step <= 150 + window.joinStay && Qt.application.arguments.indexOf("--join-lobby-wait") >= 0) {
+                // --join-lobby-wait: held in the lobby (a second account):
+                // capture the waiting screen, wait to be admitted (or
+                // denied), capture the meeting, then leave.
+                const st = backend.callState
+                if (step % 5 === 3) console.warn("JOIN lobby-wait state", st, "visible", preJoin.visible, "lobby", preJoin.lobby)
+                if (st === "lobby" && step % 5 === 0) preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-inlobby.png")))
+                else if (st === "connected" && !admittedAt) { admittedAt = step; console.warn("JOIN lobby-wait admitted at step", step) }
+                else if (admittedAt && step === admittedAt + 3) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-admitted.png")))
+                else if ((admittedAt && step === admittedAt + 5 + window.joinStay) || step === 150 + window.joinStay) { console.warn("JOIN lobby-wait leaving", st); backend.hangUp() }
+                else if (st === "ended" || st === "" || st === "idle") { if (step > 4) { console.warn("JOIN lobby-wait done", st); Qt.quit() } }
             } else if (step === 6) {
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-alone.png")))
                 console.warn("JOIN lobby", backend.callLobbyJson)

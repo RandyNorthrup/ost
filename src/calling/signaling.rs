@@ -985,7 +985,7 @@ pub async fn create_1to1_call_to(
     sdp_offer: &str,
     callee_mri: Option<&str>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
-    create_call(http, epconv_url, params, sdp_offer, callee_mri, None).await
+    create_call(http, epconv_url, params, sdp_offer, callee_mri).await
 }
 
 /// Join a scheduled Teams meeting: the same single-shot call request with
@@ -998,16 +998,29 @@ pub async fn join_meeting(
     params: &ConversationCallParams<'_>,
     sdp_offer: &str,
     meeting_message_id: &str,
+    organizer: Option<(&str, &str)>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
-    create_call(
-        http,
-        epconv_url,
-        params,
-        sdp_offer,
-        None,
-        Some(meeting_message_id),
-    )
-    .await
+    let opts = CreateOptions {
+        group_chat: true,
+        meeting_message_id: Some(meeting_message_id),
+        to: Vec::new(),
+        conversation_type: None,
+        invitation_type: None,
+        // Nobody is rung when joining a meeting.
+        suppress_dialout: true,
+        subject: None,
+        meetup: false,
+        meeting_info: Some(meeting_info(organizer, (params.caller_oid, params.tenant_id))),
+    };
+    create_call_with(http, epconv_url, params, sdp_offer, &opts).await
+}
+
+/// A scheduled meeting's `meetingInfo`, as Teams sends it when joining:
+/// the organizer and tenant from the join link's context (ours when the
+/// link has none, as for meetings we organize).
+pub fn meeting_info(organizer: Option<(&str, &str)>, me: (&str, &str)) -> serde_json::Value {
+    let (organizer_id, tenant_id) = organizer.unwrap_or(me);
+    serde_json::json!({ "tenantId": tenant_id, "organizerId": organizer_id })
 }
 
 /// How a group chat's call is placed (Teams' calling stack 361315 `KX`).
@@ -1050,6 +1063,7 @@ pub async fn create_group_call(
         suppress_dialout: matches!(kind, GroupCallKind::Join),
         subject: None,
         meetup: false,
+        meeting_info: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1074,6 +1088,7 @@ pub async fn create_channel_meeting(
         suppress_dialout: true,
         subject: Some(subject),
         meetup: true,
+        meeting_info: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1089,6 +1104,10 @@ struct CreateOptions<'a> {
     subject: Option<&'a str>,
     /// Have the call service post the meeting in the thread.
     meetup: bool,
+    /// A scheduled meeting's `meetingInfo` (its organizer and tenant):
+    /// without it the call service starts a new ad hoc meeting organized
+    /// by whoever joins.
+    meeting_info: Option<serde_json::Value>,
 }
 
 async fn create_call(
@@ -1097,18 +1116,18 @@ async fn create_call(
     params: &ConversationCallParams<'_>,
     sdp_offer: &str,
     callee_mri: Option<&str>,
-    meeting_message_id: Option<&str>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
     let opts = CreateOptions {
         group_chat: callee_mri.is_none(),
-        meeting_message_id,
+        meeting_message_id: None,
         to: callee_mri.into_iter().collect(),
         conversation_type: None,
         invitation_type: None,
-        // false = ring the callee; nobody is rung when joining a meeting.
-        suppress_dialout: meeting_message_id.is_some(),
+        // false = ring the callee.
+        suppress_dialout: false,
         subject: None,
         meetup: false,
+        meeting_info: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1179,7 +1198,7 @@ async fn create_call_with(
         "endpointCapabilities": 73463,
         "clientEndpointCapabilities": 9336554,
         "endpointMetadata": { "holographicCapabilities": 3 },
-        "meetingInfo": null,
+        "meetingInfo": opts.meeting_info,
         "endpointState": {
             "endpointStateSequenceNumber": 0,
             "endpointProperties": {
@@ -1617,3 +1636,21 @@ mod hostless_tests {
     }
 }
 
+#[cfg(test)]
+mod meeting_info_tests {
+    use super::meeting_info;
+
+    #[test]
+    fn joins_name_the_links_organizer() {
+        // Someone else's meeting: the organizer and tenant from the link
+        // (joining as ourselves would start a new ad hoc meeting).
+        assert_eq!(
+            meeting_info(Some(("org-oid", "tenant")), ("my-oid", "my-tenant")),
+            serde_json::json!({ "tenantId": "tenant", "organizerId": "org-oid" })
+        );
+        assert_eq!(
+            meeting_info(None, ("my-oid", "my-tenant")),
+            serde_json::json!({ "tenantId": "my-tenant", "organizerId": "my-oid" })
+        );
+    }
+}

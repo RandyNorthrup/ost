@@ -5255,6 +5255,10 @@ impl qobject::Backend {
                 .unwrap_or_default();
             let json = serde_json::json!({
                 "title": info.title,
+                // The scheduled times (the pre-join screen's date line while
+                // we wait in the lobby).
+                "start": info.start.map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "end": info.end.map(|t| t.to_rfc3339()).unwrap_or_default(),
                 "startText": start_text,
                 "hours": hours.unwrap_or_default(),
                 "schedule": schedule.unwrap_or_default(),

@@ -1110,8 +1110,13 @@ Window {
             // (Popped out, the content has its own window and the stage
             // goes back to people.)
             readonly property bool content: win.presenting && !win.contentPoppedOut
+            // Teams (updateShouldMeBeInOverlay, live): with at most two
+            // people tiles, the other person fills the stage and you float
+            // over it, bottom right.
+            readonly property bool meOverlay: !content && win.others.length === 1 && !win.hideMe
             readonly property var side: content
                 ? (win.layout === "focus" ? [] : win.othersOrdered.concat(win.hideMe ? [] : [win.selfEntry]))
+                : meOverlay ? []
                 : speakerView
                 ? win.othersOrdered.filter(p => p !== speaker).concat(win.hideMe || speaker.self ? [] : [win.selfEntry])
                 : (win.hideMe || win.meInGallery ? [] : [win.selfEntry])
@@ -1134,7 +1139,7 @@ Window {
             readonly property real mainH: atTop ? height - sideH : height
             // Speaker: one 16:9 tile, centred.
             MeetingTile {
-                visible: tiles.speakerView && !tiles.content
+                visible: tiles.speakerView && !tiles.content && !tiles.meOverlay
                 call: win
                 person: tiles.speaker || ({})
                 width: Math.min(tiles.mainW, tiles.mainH * 16 / 9); height: width * 9 / 16
@@ -1143,11 +1148,36 @@ Window {
             // Gallery.
             GalleryGrid {
                 id: galleryGrid
-                visible: !tiles.speakerView && !tiles.content
+                visible: !tiles.speakerView && !tiles.content && !tiles.meOverlay
                 x: tiles.mainX; y: tiles.mainY; width: tiles.mainW; height: tiles.mainH - tiles.pagerH
                 onTileWChanged: win.galleryTileWidth = tileW
                 call: win
                 people: tiles.gallery
+            }
+            // Two people: the other person on the whole stage (Teams'
+            // participant-speaker)...
+            MeetingTile {
+                visible: tiles.meOverlay
+                call: win
+                person: win.others[0] || ({})
+                x: tiles.mainX; y: tiles.mainY; width: tiles.mainW; height: tiles.mainH
+            }
+            // ...and you over it (Teams' me-tile overlay, measured on winpc
+            // 2026-11-10): 245 x 137, 5.6 from the right and 5.5 from the
+            // bottom, a 2 px #F5F5F5 ring with radius 6, the name tag
+            // without your name.
+            Rectangle {
+                visible: tiles.meOverlay
+                z: 1
+                width: 245; height: 137; radius: 6
+                anchors { right: parent.right; bottom: parent.bottom; rightMargin: 5.6; bottomMargin: 5.5 }
+                color: "#F5F5F5"
+                MeetingTile {
+                    anchors.fill: parent
+                    call: win
+                    person: win.selfEntry
+                    overlay: true
+                }
             }
             // Teams' video pages: ‹ n/m › centred under the tiles; 32 px
             // buttons (radius 4, 20 px chevrons, #242424; #BDBDBD when

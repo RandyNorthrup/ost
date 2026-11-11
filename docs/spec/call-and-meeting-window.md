@@ -696,6 +696,9 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
 | InLobby, no presenter | `MM` | "Hi, {{userName}}. Someone will let you in when the meeting starts." |
 
 - **Held in the lobby, the protocol** (captured from a Teams web guest in the test meeting, 2026-11-08): the join response gives our endpoint a `lobby` modality (no `call`), `activeModalities` is null and the conversation links are few (leave, updateEndpointState, publishState…). The media processor still accepts the call with an SDP answer but `acceptedCallModalities: []`. Admission is a `conversation/conversationUpdate` with `activeModalities.call` (and `lobby: null`) carrying the full links, then the roster moves the endpoint to `call` and the media processor renegotiates (`call/mediaRenegotiation` offer, answered on the negotiation link). Teams' lobby text uses `isPresenterConnected`; OST takes the conversation's `state.isMeetingActivated`.
+- **Joining someone else's meeting** (verified live 2026-11-10 with a second account, OST Test 2, against Teams desktop as organizer): the join (`epconv`) body carries `meetingInfo {tenantId, organizerId}` from the join link's context (`Tid`, `Oid`); a guest's Teams adds `replyChainMessageId: "0"` and `meetingType: 1`. Without it the call service starts a new ad hoc meeting on the same thread, organized by whoever joins, and they sit in it alone.
+- **The date line while held in the lobby**: "Friday, Nov 6 • 3:00 PM – 3:30 PM PST" (the end time carries the time-zone abbreviation). When the meeting wasn't picked from the calendar, OST takes the times from the join response's `meetingDetails` (`startTime`, `endTime`) and shows no line until then. Those are empty for someone held in the lobby unless the meeting option "Show meeting info on join screen" (`AllowedUsersForMeetingDetails`) is Everyone; with the default, "Users allowed to bypass the lobby", the lobby screen has no date line (seen live 2026-11-10).
+- **Lobby settings and running meetings**: a Meeting options change to "Who can bypass the lobby?" applies to the next conversation. The running one keeps the `autoAdmittedUsers` it started with (seen live: OrganizerOnly saved, `meetingDetails.meetingCapability.autoAdmittedUsers` still EveryoneInCompany until everyone left).
 - In the lobby, the audio option headers are disabled; the mic and camera toggles still work. Join is disabled and the speaker toggle is disabled.
 - Teams Free variants: "We've let the organizer know you're waiting." / "When the meeting starts, we'll let the organizer know you're waiting."
 - Overflow/streaming: "Attendee mics and cameras are turned off by default for this event." / "The meeting has reached capacity. You are joining in audio-only mode."
@@ -1071,6 +1074,10 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
 - **Pins**: up to 9 (`maxPinnedItems` with `enableVideoStage`). The menu disables at `maxItemsOnStage`, which is 9 with 3×3 or else 4; which applies live is unverified ("You reached the maximum number of pins").
 - **Spotlight**: up to 7.
 - **Self view**: "Myself in grid" is on by default (`enableMyselfInGrid {isEnabled, isDefault:true}`, stored `stageSettings.isMyselfInGrid`). When off, self is a separate floating/bar tile.
+- **Two people: you float over the stage** (`updateShouldMeBeInOverlay`, flag `enableMeTileOverlayForOneOnOneInMVS`, live): when the people tiles (not screen shares) number at most `ps` = 2, your tile renders as an overlay. Measured on winpc 2026-11-10 (CSS px, window 1266×673):
+  - the other person (`participant-speaker`) fills the stage, 2.6 in from the stage layout, avatar 200 (the tile avatar's maximum);
+  - you (`myself-video`): a 245×137 layout box, 5.6 from the stage's right and 5.5 from its bottom, a 2 px #F5F5F5 ring with radius 6 around a 241×133 tile, avatar 65.8;
+  - your name tag there has no name: network bars and the mic glyph only (55 wide, 8 px in).
 - Tiles without video show the avatar.
 
 ### 8.3 Reactions (React menu `mw`, 414673; items 402023; overlay 385168/776505)

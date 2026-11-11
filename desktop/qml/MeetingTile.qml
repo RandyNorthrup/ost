@@ -12,6 +12,10 @@ Item {
     readonly property bool self: !!person.self
     /// The compact view's tiles: name tags without the name, 4 px in.
     property bool compact: false
+    /// Your tile floating over the stage (two people): the name tag
+    /// without your name, 8 px in.
+    property bool overlay: false
+    readonly property bool nameless: compact || overlay
     /// Optimize for room shows the videos on the shared display only;
     /// "Turn off other videos" stops theirs.
     property bool forRoom: false
@@ -62,7 +66,9 @@ Item {
         }
         Avatar {
             anchors.centerIn: parent
-            size: Math.round(parent.height * 0.4975)
+            // Teams' tile avatar: about half the tile's height, at most
+            // 200 (a whole-stage tile, measured on winpc 2026-11-10).
+            size: Math.min(200, Math.round(parent.height * 0.4975))
             name: mt.person.name || ""
             photoId: mt.self ? "me" : (mt.person.id || "")
             visible: !video.visible
@@ -162,7 +168,7 @@ Item {
                     Accessible.name: mt.call ? mt.call.networkHeading : ""
                 }
                 Text {
-                    visible: !mt.compact
+                    visible: !mt.nameless
                     anchors.verticalCenter: parent.verticalCenter
                     height: 16; verticalAlignment: Text.AlignVCenter
                     text: mt.person.name || ""; color: "white"
@@ -178,7 +184,7 @@ Item {
                 }
                 // Compact (no name): Teams' measured gaps are 8 after a
                 // guest's glyph and 6 before your own mic.
-                Item { visible: tagRow.micOff && (!mt.compact || !!mt.person.guest || mt.self); width: mt.self ? (mt.compact ? 6 : 14) : 8; height: 1 }
+                Item { visible: tagRow.micOff && (!mt.nameless || !!mt.person.guest || mt.self); width: mt.self ? (mt.nameless ? 6 : 14) : 8; height: 1 }
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: tagRow.micOff
