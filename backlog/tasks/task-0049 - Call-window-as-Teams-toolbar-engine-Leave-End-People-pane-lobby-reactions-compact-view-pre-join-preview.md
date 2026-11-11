@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-08T21:02:00Z'
+updated_date: '2026-11-11T04:48:00Z'
 labels:
   - calls
   - meetings
@@ -70,4 +70,7 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
 - More's own items beyond Video effects and settings / Audio settings are TASK-0062.
 
 - 2026-11-08: OST held in a lobby: pre-join InLobby state and admission handling (protocol from a Teams web guest's capture, unit-tested). Not verified live: ost-test1 organizes the test meeting and organizers bypass the lobby, so AC #4 stays open until a second, non-organizer test account exists (the user creates/signs in test accounts).
+
+- 2026-11-10: lobby verified live from the waiting side with OST Test 2 (09672de): held in the lobby of OST Test 1's meeting (Meeting options: only organizers bypass), Teams desktop's toast admitted it into the same meeting, and Deny ended its call. Fixed on the way: joins now send meetingInfo {tenantId, organizerId} from the link (OST had been starting a separate ad hoc meeting for non-organizers). Also the two-person me-tile overlay as Teams.
+- Still open for #4: what a denied (or long-unadmitted) person sees. Teams shows its call-ended screen ("Sorry, but you were denied access to the meeting.", ban icon; "Sorry, no one has responded to your request to join. Please try again."); OST just closes. See the call-ended screens task.
 <!-- SECTION:NOTES:END -->
