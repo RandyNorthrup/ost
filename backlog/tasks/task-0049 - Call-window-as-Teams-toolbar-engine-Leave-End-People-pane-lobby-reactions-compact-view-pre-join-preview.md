@@ -3,11 +3,11 @@ id: TASK-0049
 title: >-
   Call window as Teams: toolbar engine, Leave/End, People pane, lobby,
   reactions, compact view, pre-join preview
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-11T04:48:00Z'
+updated_date: '2026-11-11T15:29:00Z'
 labels:
   - calls
   - meetings
@@ -27,7 +27,7 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
 - [x] #1 Toolbar built from Teams' layout config per call type with tooltips and width-driven overflow into More
 - [x] #2 Leave ▾ (Leave / Leave on all my devices / End meeting with confirmation) per role
 - [x] #3 People pane sections, sort, search and invite field as Teams
-- [ ] #4 Lobby on both sides (waiting screen; Admit/Deny/Admit all and the lobby toast)
+- [x] #4 Lobby on both sides (waiting screen; Admit/Deny/Admit all and the lobby toast)
 - [x] #5 Send and receive meeting reactions
 - [x] #6 Compact view window when minimised; pre-join live camera preview
 - [x] #7 Teams' call keyboard shortcuts: Ctrl+Shift+M, Ctrl+Shift+O, Ctrl+Shift+K, Ctrl+Shift+E, Ctrl+Shift+H, Ctrl+Space and Ctrl+Shift+Y
@@ -73,4 +73,22 @@ Call window P1 gaps (docs/parity/gaps-calls-meetings.md), per docs/spec/call-and
 
 - 2026-11-10: lobby verified live from the waiting side with OST Test 2 (09672de): held in the lobby of OST Test 1's meeting (Meeting options: only organizers bypass), Teams desktop's toast admitted it into the same meeting, and Deny ended its call. Fixed on the way: joins now send meetingInfo {tenantId, organizerId} from the link (OST had been starting a separate ad hoc meeting for non-organizers). Also the two-person me-tile overlay as Teams.
 - Still open for #4: what a denied (or long-unadmitted) person sees. Teams shows its call-ended screen ("Sorry, but you were denied access to the meeting.", ban icon; "Sorry, no one has responded to your request to join. Please try again."); OST just closes. See the call-ended screens task.
+
+- 2026-11-11: #4 complete: waiting side (09672de) and OST as organizer admitting, denying and removing (--join-admit-remove, --join-deny-wait, 219c45f) verified live with OST Test 2 and Teams on winpc; denied / not-admitted / removed show Teams' retry screen (TASK-0106). Lobby dark-mode values use the theme's Fluent tokens (not measured separately).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The call window works as Teams' does.
+
+Changes:
+- Toolbar built from Teams' layout config per call type, with tooltips, dividers and width-driven overflow into More.
+- Leave ▾ (Leave, Leave on all my devices, End meeting with confirmation) per role.
+- People pane: sections, raised-hand sort, search, invite field, More actions (Mute all, attendee mic/camera, lower hands, attendance list, spotlights, lock) and the participant ··· menu.
+- Lobby on both sides: OST waits in a lobby (InLobby pre-join state, admission), and organizers get the lobby toast and Admit / Deny / Admit all; denied, timed-out and removed calls show Teams' retry screen.
+- Meeting reactions, compact view when minimised, pre-join live camera preview, Teams' call shortcuts.
+
+Tests:
+- Unit tests for the layout engine, lobby protocol and end reasons; live tests between OST Test 1, OST Test 2 and Teams desktop on winpc (lobby admit/deny/remove, End meeting, spotlight, roles, Leave on all devices).
+<!-- SECTION:FINAL_SUMMARY:END -->
