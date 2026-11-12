@@ -2378,7 +2378,7 @@ Rectangle {
                                 font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
                                 color: theme.text
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: Qt.openUrlExternally(fc.modelData.share_url || fc.modelData.object_url) }
+                                TapHandler { onTapped: backend.openFile(fc.modelData.share_url || fc.modelData.object_url, fc.modelData.name, "") }
                             }
                             Row {
                                 visible: !fc.tabLink
@@ -2395,7 +2395,7 @@ Rectangle {
                                         TapHandler {
                                             onTapped: parent.modelData.icon === "download-20"
                                                 ? backend.downloadFile(JSON.stringify(fc.modelData))
-                                                : Qt.openUrlExternally(fc.modelData.share_url || fc.modelData.object_url)
+                                                : backend.openFile(fc.modelData.share_url || fc.modelData.object_url, fc.modelData.name, "")
                                         }
                                         Accessible.role: Accessible.Button
                                         Accessible.name: modelData.label + " " + fc.modelData.name
@@ -2824,7 +2824,7 @@ Rectangle {
                             Accessible.name: "Download " + parent.modelData.name
                         }
                         HoverHandler { id: sfh; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally(modelData.share_url || modelData.object_url) }
+                        TapHandler { onTapped: backend.openFile(modelData.share_url || modelData.object_url, modelData.name, "") }
                     }
                 }
                 Item { width: 1; height: 16 }

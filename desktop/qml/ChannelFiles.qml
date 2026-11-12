@@ -34,7 +34,7 @@ Item {
     }
     function open(it) {
         if (it.is_folder) { trail = trail.concat([{ name: it.name, drive_id: it.drive_id, id: it.id, web_url: it.web_url, sp_site: it.sp_site, sp_list: it.sp_list, sp_item: it.sp_item }]); load(teamId, channelId, it.drive_id, it.id) }
-        else if (it.web_url) Qt.openUrlExternally(it.web_url)
+        else if (it.web_url) backend.openFile(it.web_url, it.name, JSON.stringify(it))
     }
     function back(i) { trail = trail.slice(0, i + 1); load(teamId, channelId, here.drive_id, here.id) }
     function ago(t) {

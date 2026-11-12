@@ -1022,7 +1022,7 @@ Rectangle {
                     icon: "link-20"; label: "Copy link"
                     onClicked: backend.copyText(parent.parent.f.url)
                 }
-                TapHandler { onTapped: Qt.openUrlExternally(parent.parent.f.url) }
+                TapHandler { onTapped: backend.openFile(parent.parent.f.url, parent.parent.f.file_name, "") }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
             Accessible.role: Accessible.ListItem
@@ -1165,7 +1165,7 @@ Rectangle {
                         Text { x: 82.6; y: 144.9; text: root.shortDate(parent.modelData.time); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         Text { x: 12.7; y: 165.9; width: parent.width - 25; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(root.chatName(parent.modelData.thread) || parent.modelData.file_name || ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         Text { x: 12.7; y: 191.2; width: parent.width - 25; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.text || ""); font.family: theme.font; font.pixelSize: 12; color: theme.text }
-                        TapHandler { onTapped: parent.modelData.file_name ? Qt.openUrlExternally(parent.modelData.url) : root.openHit(parent.modelData) }
+                        TapHandler { onTapped: parent.modelData.file_name ? backend.openFile(parent.modelData.url, parent.modelData.file_name, "") : root.openHit(parent.modelData) }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         Accessible.role: Accessible.ListItem
                         Accessible.name: "image shared by " + (modelData.sender_name || "")
@@ -1256,7 +1256,7 @@ Rectangle {
                             Text { visible: !!gcard.modelData.file_action && !!gcard.modelData.file_when; text: root.ago(gcard.modelData.file_when); height: 16; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         }
                         HoverHandler { id: gch; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally(gcard.modelData.url) }
+                        TapHandler { onTapped: backend.openFile(gcard.modelData.url, gcard.modelData.file_name, "") }
                         ToolTip.visible: gch.hovered && !gmore.hovered && !gmenu.visible; ToolTip.delay: 700
                         ToolTip.text: [gcard.modelData.file_name, root.fileLine(gcard.modelData), gcard.modelData.url].filter(x => !!x).join("\n")
                         Rectangle {

@@ -358,7 +358,7 @@ Item {
                         }
                         function activate() {
                             if (modelData.is_folder) root.openFolder(modelData.name, modelData.drive_id, modelData.id)
-                            else if (modelData.web_url) Qt.openUrlExternally(modelData.web_url)
+                            else if (modelData.web_url) backend.openFile(modelData.web_url, modelData.name, JSON.stringify(modelData))
                         }
                         HoverHandler { id: fh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onDoubleTapped: frow.activate(); onTapped: if (frow.modelData.is_folder) frow.activate() }

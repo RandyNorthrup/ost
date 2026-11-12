@@ -182,7 +182,7 @@ OST has the org name, Sign out, avatar, name, e-mail and the status row (TitleBa
 - [ ] [P3] Emoji skin tone; Teams list layout Grid / List; app bar options; sign language view; TTY mode; reduce motion — OST: absent (ref: SS §10.5; OST: absent)
 
 ### 11.6 Files and links (page absent)
-- [ ] [P1] "Always open Word, PowerPoint and Excel files in" Teams / Desktop app / Browser — OST: absent; every file opens in the browser (ref: SS §10.6, FA §5; OST: OneDriveView.qml:369-372, ChannelFiles.qml:37)
+- [x] [P1] "Always open Word, PowerPoint and Excel files in" Teams / Desktop app / Browser — OST: Desktop app (the desktop's app for Word files, a downloaded copy) and Browser, applied wherever files open; Teams' in-window Office for the web isn't embedded (docs/spec/file-actions.md; OST: Backend::open_file, SettingsView.qml)
 - [ ] [P2] Link open preference (Edge / Default browser) — OST: absent (ref: SS §10.6; OST: absent)
 - [ ] [P2] Download location; ask where to save each time — OST: absent; fixed `download_dir()` (ref: SS §10.6; OST: backend.rs:927)
 
@@ -330,7 +330,7 @@ OST has the org name, Sign out, avatar, name, e-mail and the status row (TitleBa
 
 ### 13.5 Viewing, editing, versions
 - [ ] [P1] In-Teams file viewer header (Comments, Catch up, Editing / Reviewer, Share, Close back to Teams) — OST: absent (ref: FA §5 "Header actions"; OST: absent)
-- [ ] [P2] Open in desktop app (Office URI schemes `ms-word:ofe|u|…`) — OST: absent (ref: FA §5 "API, open in desktop app"; OST: absent)
+- [x] [P2] Open in desktop app (Office URI schemes `ms-word:ofe|u|…`) — OST: Linux has no Office URI handlers; OST opens a downloaded copy in the desktop's app for the file (Files menu ▸ Open ▸ Open in app, and the Desktop app setting) (ref: FA §5 "API, open in desktop app"; OST: FileActions.qml, Backend::open_file)
 - [ ] [P2] Version history with Restore — OST: absent (ref: FA §6; OST: absent)
 - [ ] [P3] Tab conversation beside a file tab; file as a tab — OST: absent (ref: FA §3, §5; OST: absent)
 

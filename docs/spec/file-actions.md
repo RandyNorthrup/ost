@@ -93,3 +93,29 @@ and Open in app (OneDrive's wording; not yet seen in Teams).
 - The picker's Shared, Favorites, Browse by, More places…, Search, New folder and view switch, plus Copilot's Suggested names in Rename: TASK-0117.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
+
+## Opening Word, PowerPoint and Excel files
+
+Teams' Settings ▸ Files and links ▸ "Always open Word, PowerPoint, and Excel files in:" decides
+how a click on an Office file opens: in the file list, in a chat's file card, or in search.
+
+- On winpc (no Office installed, 2026-11-11), the choices were **Teams** and **Browser**.
+  They are stored in the synced `userPersonalSettings.filesSettings.fileOpenPreference` as
+  `teamsV2` or `web`.
+- With Office installed, Teams adds **Desktop app**, and that choice stays on the device
+  ("This setting will only apply to this device."). Teams' own strings announce the move to
+  it: "Files now open in Desktop app" and "Word, PowerPoint and Excel files will now open in
+  the desktop app for an improved experience". An admin policy (`forceOpenFilesInDesktopApp`)
+  can force the desktop app.
+- **Teams** opens Office for the web inside Teams' window. OST doesn't embed web pages, so it
+  doesn't offer that choice.
+- OST offers **Desktop app** when the desktop has an app for Word files: the `xdg-mime`
+  default, else the first app in the MIME cache. OST keeps this choice on the device
+  (setting `fileOpenIn`) and makes it the default when such an app exists, as Teams does.
+  OST then downloads a copy to `~/.cache/ost/open/<id>/` and opens it with that app
+  (`Backend::open_file`).
+- **Browser** opens the file's web address, and also sets the synced value to `web`.
+- Other files always open in the browser.
+
+Not yet in OST: the same page's "Always ask where to save downloaded file" toggle and its
+"Links open preference ▸ Always open web links in:" browser picker (TASK-0119).

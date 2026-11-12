@@ -1646,6 +1646,18 @@ pub mod qobject {
         /// Where downloads are saved now (Settings ▸ Files and links).
         #[qinvokable]
         fn download_location(self: Pin<&mut Backend>) -> QString;
+        /// The desktop's app for Word files (its name), empty when there
+        /// is none: Settings ▸ Files and links offers "Desktop app" then.
+        #[qinvokable]
+        fn office_app_name(self: Pin<&mut Backend>) -> QString;
+        /// Open a file as Teams' "Always open Word, PowerPoint, and Excel
+        /// files in" says: Word, PowerPoint and Excel files in the
+        /// desktop app (a downloaded copy) when that is chosen on this
+        /// device (setting "fileOpenIn" = "desktop"), else everything in
+        /// the browser. `item_json` is its DriveItem when known (else the
+        /// file is found by its address).
+        #[qinvokable]
+        fn open_file(self: Pin<&mut Backend>, url: &QString, name: &QString, item_json: &QString);
         /// Load Settings' synced values (into settings_json): {props: your
         /// user properties, JSON ones parsed; mt: the middle tier's
         /// settings}.
@@ -13163,6 +13175,44 @@ impl qobject::Backend {
         });
     }
 
+    pub fn office_app_name(self: Pin<&mut Self>) -> QString {
+        QString::from(office_app().map(|(_, name)| name).unwrap_or_default().as_str())
+    }
+
+    pub fn open_file(self: Pin<&mut Self>, url: &QString, name: &QString, item_json: &QString) {
+        let (url, name) = (url.to_string(), name.to_string());
+        let item: Option<api::drive::DriveItem> =
+            serde_json::from_str(&item_json.to_string()).ok().filter(|i: &api::drive::DriveItem| !i.id.is_empty());
+        let desktop = load_settings().get("fileOpenIn").and_then(|v| v.as_str()) == Some("desktop");
+        if !(desktop && is_office_file(&name) && office_app().is_some()) {
+            if url.starts_with("https://") {
+                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+            }
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let item = match item {
+                    Some(i) => i,
+                    None => api::drive::item_by_url(&client, &url).await?,
+                };
+                api::drive::local_copy(&client, &item).await
+            }
+            .await;
+            match result {
+                Ok(path) => {
+                    let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+                }
+                Err(e) => {
+                    let msg = format!("{name} didn't open: {}", short_error(&e));
+                    let _ = qt.queue(move |mut this| this.as_mut().toast(&msg, "error"));
+                }
+            }
+        });
+    }
+
     pub fn download_location(self: Pin<&mut Self>) -> QString {
         QString::from(download_dir().map(|d| d.display().to_string()).unwrap_or_default().as_str())
     }
@@ -13577,4 +13627,50 @@ mod tests {
         assert_eq!(photo_target("8:orgid:abc?x=1", None), None);
         assert_eq!(photo_target(&format!("{OID}/x"), None), None);
     }
+}
+
+/// Word, PowerPoint and Excel files (Teams' setting names these three).
+fn is_office_file(name: &str) -> bool {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "doc" | "docx" | "docm" | "dot" | "dotx" | "ppt" | "pptx" | "pptm" | "pps" | "ppsx" | "pot" | "potx" | "xls" | "xlsx" | "xlsm" | "xlsb" | "xlt" | "xltx")
+}
+
+/// The desktop's default app for Word files: its .desktop id and name
+/// (`xdg-mime query default`, then the entry's Name).
+fn office_app() -> Option<(String, String)> {
+    static APP: std::sync::OnceLock<Option<(String, String)>> = std::sync::OnceLock::new();
+    APP.get_or_init(|| {
+        const DOCX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        let home = std::env::var("XDG_DATA_HOME")
+            .ok()
+            .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.local/share")));
+        let dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+        let data: Vec<String> = home.into_iter().chain(dirs.split(':').map(str::to_string)).collect();
+        // The chosen default, else the first app that says it opens Word
+        // files (the MIME cache xdg-open falls back to).
+        let chosen = std::process::Command::new("xdg-mime")
+            .args(["query", "default", DOCX])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|id| id.ends_with(".desktop"));
+        let id = chosen.or_else(|| {
+            data.iter()
+                .filter_map(|d| std::fs::read_to_string(format!("{d}/applications/mimeinfo.cache")).ok())
+                .find_map(|text| {
+                    text.lines()
+                        .find_map(|l| l.strip_prefix(&format!("{DOCX}=")).and_then(|v| v.split(';').find(|x| !x.is_empty()).map(str::to_string)))
+                })
+        })?;
+        let name = data
+            .iter()
+            .filter_map(|d| std::fs::read_to_string(format!("{d}/applications/{id}")).ok())
+            .find_map(|text| {
+                text.lines()
+                    .find_map(|l| l.strip_prefix("Name=").map(|n| n.trim().to_string()))
+            })
+            .unwrap_or_else(|| id.trim_end_matches(".desktop").to_string());
+        Some((id, name))
+    })
+    .clone()
 }

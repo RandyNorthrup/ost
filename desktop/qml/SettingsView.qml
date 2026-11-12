@@ -718,10 +718,19 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "files"
+                id: openIn
                 icon: "document-20"; title: "Always open Word, PowerPoint, and Excel files in:"
-                readonly property string pref: root.prop("userPersonalSettings", ["filesSettings", "fileOpenPreference"], "web")
-                SettingsParts.RadioRow { label: "OST"; checked: parent.parent.pref === "teamsV2"; onPicked: root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", "teamsV2") }
-                SettingsParts.RadioRow { label: "Browser"; checked: parent.parent.pref !== "teamsV2"; onPicked: root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", "web") }
+                // Teams offers "Desktop app" when Office is installed and
+                // keeps that choice on the device; Browser is its synced
+                // "web". OST offers the desktop's own app for Word files.
+                // Teams' third choice, opening in Teams, is Office for the
+                // web inside its window, which OST doesn't embed (and Teams
+                // is retiring it for the desktop app).
+                readonly property string app: root.page === "files" ? backend.officeAppName() : ""
+                property string choice: root.page === "files" ? (backend.setting("fileOpenIn") || (app ? "desktop" : "web")) : ""
+                function pick(v) { backend.setSetting("fileOpenIn", v); choice = v; if (v === "web") root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", "web") }
+                SettingsParts.RadioRow { visible: !!openIn.app; label: "Desktop app"; checked: openIn.choice === "desktop" && !!openIn.app; onPicked: openIn.pick("desktop") }
+                SettingsParts.RadioRow { label: "Browser"; checked: openIn.choice !== "desktop" || !openIn.app; onPicked: openIn.pick("web") }
             }
             SettingsParts.Card {
                 visible: root.page === "files"
