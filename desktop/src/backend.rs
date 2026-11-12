@@ -13089,6 +13089,24 @@ impl qobject::Backend {
                         api::versions::act(&sp.site, &file, &s("label"), kind == "restore_version").await?;
                         json!(null)
                     }
+                    // The Move/Copy picker's other places (folders only
+                    // can be picked): Shared, Favorites, People (who shared
+                    // folders), Meetings; and its search and New folder.
+                    "picker_place" => {
+                        let folders = |v: Vec<api::drive::DriveItem>| v.into_iter().filter(|i| i.is_folder).collect::<Vec<_>>();
+                        match s("place").as_str() {
+                            "shared" => json!({ "items": folders(api::drive::shared_with_me(&client).await?) }),
+                            "favorites" => json!({ "items": folders(api::drive::favorites(&client).await?) }),
+                            "meetings" => json!({ "items": folders(api::drive::meetings(&client).await?) }),
+                            "people" => json!({ "people": api::drive::by_people(&client).await?.into_iter()
+                                .map(|(name, items)| json!({ "name": name, "items": folders(items) }))
+                                .collect::<Vec<_>>() }),
+                            other => anyhow::bail!("unknown place {other}"),
+                        }
+                    }
+                    "picker_search" => json!({ "query": s("query"), "all": args["all"].as_bool().unwrap_or(false),
+                        "items": api::drive::search_items(&client, &s("query"), args["all"].as_bool().unwrap_or(false)).await? }),
+                    "picker_new_folder" => json!(api::drive::new_folder(&client, &s("drive_id"), &s("item_id"), &s("name")).await?),
                     "folders" => {
                         let (d, i) = (s("drive_id"), s("item_id"));
                         let (here, items) = tokio::join!(

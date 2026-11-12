@@ -80,6 +80,50 @@ and Open in app (OneDrive's wording; not yet seen in Teams).
   - The list is on a white card with radius 12 at the top. Columns: Type, Name, Modified, Modified By, Activity (14/600, 48 tall). Rows are 59 tall with a 32 px folder and the name over "n items". Files are greyed and can't be picked.
   - Footer, 80 tall: "Move here" / "Copy here" (93 x 32; disabled where the item already is: white, #EBEBEB border, #D1D1D1 text) and Cancel (80 x 32, #7A7A7A border), 24 from the right.
   - The job is CreateCopyJobs again, to the chosen folder's address. A move sets `IsMoveMode` and keeps version history.
+
+### The picker's places, search and New folder
+
+Measured on winpc on 2026-11-12, as OST Test 1.
+
+- **Shared** opens "Shared with you": the folders shared with you (the trail
+  reads "Shared with you"). OST Test 1's is empty.
+- **Favorites** with nothing favourited shows a star illustration and "Items
+  you favorite will show up here".
+- **Browse by People** lists the people who shared folders with you, and
+  **Meetings** the folders from your meetings. In Teams both show Teams' own
+  "Please sign in" prompt instead, a bug in Teams 26288. OST lists them with
+  Graph (`/me/drive/sharedWithMe` grouped by who shared, and the meetings'
+  recording folders).
+- **More places…** opens "Shared libraries": "Recent" and "Your Teams"
+  sections of site cards (a 40 px initials tile, the name, and a second line
+  such as "Site Assets"). A card opens that library.
+- Only folders are listed in these places; files can't be picked.
+- **Search** is a 240 x 32 round box at the top right: "Search in {folder}",
+  or "Search in all files" in a place. Enter shows "Search results" with a
+  back arrow, the tabs "All files" and "My files", and the columns Name,
+  Modified, Modified by and Location. The query stays in the box; ✕ clears it
+  and goes back to the folder.
+  - Teams asks SharePoint:
+    `POST {personal}/_api/sp.searchresultitemcollection.getsearchresultsasstream?textDecorations=1&scenario='onedriveweb'`
+    with `{"payload": …}`: one `EntityRequests` entry for `File` from
+    `OneDriveBusiness`, 25 rows, the query limited with
+    `path:"…/Documents"` for My files.
+  - OST uses Graph: `/me/drive/root/search(q='…')` for My files and
+    `POST /search/query` (`driveItem`, 25 rows) for all files. Results are
+    folders first; a folder opens in the picker.
+  - On 2026-11-12 search failed tenant-wide: Teams stayed on its loading
+    placeholders, and SharePoint search, Graph search and `sharedWithMe` all
+    answered 500 to 504. OST shows "Sorry, something went wrong." in the list
+    and logs the service's answer; Teams' own failure wording is still to be
+    captured.
+- **New folder** (in a folder, not in places or search results): an inline
+  name row, "New folder" selected. Enter creates it and the picker opens it
+  ("This folder is empty"). Teams sends
+  `POST {site}/_api/web/folders/AddUsingPath(DecodedUrl='…/name',overwrite=false)`;
+  OST creates it with Graph (`POST …/children` with `folder: {}`); a name
+  already in use gets a number.
+- OST numbers its picker requests and drops an answer to an older one, so a
+  slow place can't replace the one you opened after it.
 - **Notices** sit under the list, 23 above the view's bottom:
   - 390 wide, #292929, radius 4, padding 12.
   - A 20 px glyph: #92C353 check, #F1707B error, or progress. Text is 13/17 #F0F0F0 at 48. A 24 px dismiss with a #7F85F5 glyph.
@@ -198,15 +242,15 @@ Shortcuts, My files or the folder's name. In Teams the place is a link. On
 failure: "Something went wrong so we couldn't add {name} as a shortcut to
 {place}. {error}".
 
-OST uses its Move/Copy picker in "Pick a folder" mode for Other locations.
-Teams' picker also has Shared, Favorites, Browse by and More places…
-(TASK-0117).
+OST uses its Move/Copy picker in "Pick a folder" mode for Other locations,
+with the same places as Teams' picker.
 
 ## Not yet in OST
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
 - Add to playlist (videos): TASK-0123. It opens OneDrive's file picker (`FilePicker.aspx`, scenario `StreamPlaylist.AddToPlaylist`) over your Stream playlists: My lists, Recent lists and Favorites. OST Test 1 has no playlist yet.
-- The picker's Shared, Favorites, Browse by, More places…, Search, New folder and view switch, plus Copilot's Suggested names in Rename: TASK-0117.
+- The picker's view switch and "Pin to Quick access", and Copilot's Suggested names in Rename: TASK-0124.
+- In a subfolder with nothing selected, Teams' command bar offers Share, Copy link, Download and Open in OneDrive for the folder itself: TASK-0124.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
 

@@ -33,6 +33,9 @@ pub struct DriveItem {
     pub sp_site: String,
     pub sp_list: String,
     pub sp_item: String,
+    /// The folder it is in (search results' Location).
+    #[serde(default)]
+    pub parent_name: String,
 }
 
 /// A document library (a SharePoint site's drive, or your OneDrive).
@@ -138,6 +141,7 @@ fn parse_item(v: &serde_json::Value) -> Option<DriveItem> {
         sp_site: [s(v, "/sharepointIds/siteUrl"), s(r, "/sharepointIds/siteUrl")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
         sp_list: [s(v, "/sharepointIds/listId"), s(r, "/sharepointIds/listId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
         sp_item: [s(v, "/sharepointIds/listItemUniqueId"), s(r, "/sharepointIds/listItemUniqueId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
+        parent_name: [s(v, "/parentReference/name"), s(r, "/parentReference/name")].into_iter().find(|n| !n.is_empty()).unwrap_or_default(),
         name,
         kind,
     })
@@ -714,6 +718,44 @@ pub async fn preview(client: &TeamsClient, item: &DriveItem) -> Result<Preview> 
     Ok(Preview { kind: kind.into(), text: String::new(), path: format!("file://{}", path.display()) })
 }
 
+/// Search for the Move/Copy picker: your OneDrive ("My files") with
+/// Graph's drive search, or everything you can reach ("All files") with
+/// Graph's search query. Folders first.
+pub async fn search_items(client: &TeamsClient, query: &str, all: bool) -> Result<Vec<DriveItem>> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut items = if all {
+        let body = serde_json::json!({ "requests": [{ "entityTypes": ["driveItem"], "query": { "queryString": q }, "from": 0, "size": 25 }] });
+        let v: serde_json::Value = client.graph_post("/search/query", &body).await?.json().await.context("Search reply")?;
+        v["value"][0]["hitsContainers"][0]["hits"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|h| {
+                let r = &h["resource"];
+                let mut it = parse_item(r)?;
+                if it.drive_id.is_empty() {
+                    it.drive_id = r["parentReference"]["driveId"].as_str().unwrap_or_default().to_string();
+                }
+                Some(it)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        get_items(client, &format!("{}?$top=50&{SELECT}", search_path(q))).await?
+    };
+    items.sort_by(|a, b| b.is_folder.cmp(&a.is_folder));
+    Ok(items)
+}
+
+/// My files' search address: the query quoted for OData ('' for ') and
+/// percent-encoded for a path (a space is %20, not +).
+fn search_path(q: &str) -> String {
+    let enc: String = url::form_urlencoded::byte_serialize(q.replace('\'', "''").as_bytes()).collect();
+    format!("/me/drive/root/search(q='{}')", enc.replace('+', "%20"))
+}
+
 /// Open in app: a copy of the file in OST's cache (replaced each time), for
 /// the desktop's own app to open.
 pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBuf> {
@@ -742,6 +784,12 @@ pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn my_files_search_quotes_and_encodes_the_query() {
+        assert_eq!(search_path("ost picker"), "/me/drive/root/search(q='ost%20picker')");
+        assert_eq!(search_path("Randy's & co"), "/me/drive/root/search(q='Randy%27%27s%20%26%20co')");
+    }
 
     #[test]
     fn share_ids_are_graph_encoded() {
