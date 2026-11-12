@@ -3,10 +3,11 @@ id: TASK-0116
 title: >-
   Files menu extras as Teams: Add shortcut, Request files, Folder color, folder
   Download, Add to playlist
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-12T06:37:00Z'
-updated_date: '2026-11-12T15:58:00Z'
+updated_date: '2026-11-12T19:19:00Z'
 labels:
   - files
 dependencies: []
@@ -24,5 +25,11 @@ The rest of Teams' Files menu (docs/spec/file-actions.md): Add shortcut ▸ (Sho
 - [ ] #1 Add shortcut ▸ adds the item to Shortcuts, My files or another place as Teams does
 - [ ] #2 A folder's Request files and Folder color ▸ work as in Teams
 - [ ] #3 A video's Add to playlist works as in Teams
-- [ ] #4 Download of a folder or of several selected items saves one zip as Teams does (OneDrive's media service transform/zip)
+- [x] #4 Download of a folder or of several selected items saves one zip as Teams does (OneDrive's media service transform/zip)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- AC#4 zip download done: media service transform/zip with .driveAccessToken (RenderOptions 5691143 + browser UA); spec docs/spec/zip-download.md; harness --zip-test.
+<!-- SECTION:NOTES:END -->
