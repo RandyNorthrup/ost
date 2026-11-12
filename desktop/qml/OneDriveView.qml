@@ -135,6 +135,13 @@ Item {
             if (v.path) { const t = Object.assign({}, root.thumbs); t[v.id] = v.path; root.thumbs = t }
         }
     }
+    // A coloured folder: OneDrive's shades in place of the yellow folder
+    // drawing's (front gradient, back, its dark stop).
+    function folderSwaps(code) {
+        if (!code || code === "0") return ({})
+        const c = actions.colorFor(code).shades
+        return { "#FFDD57": c[3], "#F7AB40": c[4], "#D48300": c[1], "#C77B00": c[1], "#BA7300": c[2] }
+    }
     function badge(kind) {
         const k = String(kind || "").toLowerCase()
         return ["doc", "docx"].indexOf(k) >= 0 ? "ft-docx-20" : ["xls", "xlsx"].indexOf(k) >= 0 ? "ft-xlsx-20"
@@ -620,6 +627,7 @@ Item {
                         FluentIcon {
                             x: frow.compact ? 66 : 62; y: frow.compact ? 7 : 8; size: frow.compact ? 20 : 32
                             name: frow.modelData.is_folder ? "ft-folder-32" : root.fileIcon(frow.modelData.kind)
+                            swaps: frow.modelData.is_folder ? root.folderSwaps(frow.modelData.folder_color) : ({})
                         }
                         // Name: OneDrive's "New" mark, the name, then ···, Share and the star.
                         Item {
@@ -826,8 +834,8 @@ Item {
         Item {
             visible: tile.modelData.is_folder
             x: 32; y: 24; width: 112; height: 80; clip: true
-            FluentIcon { x: 0; y: -16; size: 112; name: "ft-folder-32" }
-            Text { x: 14; y: 56; text: tile.modelData.child_count || 0; font.family: theme.font; font.pixelSize: 14; color: "#8F3900" }
+            FluentIcon { x: 0; y: -16; size: 112; name: "ft-folder-32"; swaps: root.folderSwaps(tile.modelData.folder_color) }
+            Text { x: 14; y: 56; text: tile.modelData.child_count || 0; font.family: theme.font; font.pixelSize: 14; color: actions.colorFor(tile.modelData.folder_color).shades[5] }
         }
         // A file: its picture (or type icon) with the app's badge.
         Rectangle {

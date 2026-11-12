@@ -303,6 +303,33 @@ pub async fn create_link(item: &ItemRef, scope: i64, edit: bool, expiration: &st
     Ok((url, s(&info["ShareId"])))
 }
 
+/// Request files (a folder's): an upload-only Anyone link with the
+/// request's description (linkKind 6, role 8), as OneDrive's dialog makes
+/// it; with people, the same call also emails it to them. Returns the
+/// link and its share id.
+pub async fn file_request(item: &ItemRef, description: &str, people: &[Value], message: &str) -> Result<(String, String)> {
+    let reply = post(&item.method("ShareLink"), &file_request_body(description, people, message)).await?;
+    let info = &reply["d"]["ShareLink"]["sharingLinkInfo"];
+    let url = s(&info["Url"]);
+    if url.is_empty() {
+        bail!("Something went wrong, please try again");
+    }
+    Ok((url, s(&info["ShareId"])))
+}
+
+pub fn file_request_body(description: &str, people: &[Value], message: &str) -> Value {
+    let mut request = json!({ "createLink": true, "settings": {
+        "allowAnonymousAccess": true, "linkKind": 6, "expiration": null, "restrictShareMembership": false,
+        "updatePassword": false, "password": "", "description": description, "role": 8,
+        "applicationLink": false, "limitUseToApplication": false,
+    }});
+    if !people.is_empty() {
+        request["emailData"] = json!({ "body": message });
+        request["peoplePickerInput"] = json!(Value::Array(people.to_vec()).to_string());
+    }
+    json!({ "request": request })
+}
+
 pub fn share_link_body(scope: i64, edit: bool, expiration: &str, password: &str) -> Value {
     if scope == 4 {
         return json!({"request": {"createLink": true, "settings": {
@@ -420,6 +447,14 @@ pub(crate) async fn get_with(url: &str, headers: &[(&str, &str)]) -> Result<Valu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_requests_are_onedrives() {
+        // Teams' request for "OST test 113" on Attachments (2026-11-12).
+        assert_eq!(file_request_body("OST test 113", &[], ""), json!({"request":{"createLink":true,"settings":{"allowAnonymousAccess":true,"linkKind":6,"expiration":null,"restrictShareMembership":false,"updatePassword":false,"password":"","description":"OST test 113","role":8,"applicationLink":false,"limitUseToApplication":false}}}));
+        let b = file_request_body("x", &[json!({"Key": "k"})], "hi");
+        assert_eq!((b["request"]["emailData"]["body"].as_str(), b["request"]["peoplePickerInput"].as_str()), (Some("hi"), Some("[{\"Key\":\"k\"}]")));
+    }
 
     #[test]
     fn methods_address_the_item() {

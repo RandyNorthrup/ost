@@ -8,7 +8,7 @@ import QtQuick.Window
 //   then a 4 px gap, then the label (14/20, NeutralForeground2);
 //   hover NeutralBackground1Hover; disabled items #BDBDBD and inert;
 // - dividers: 1 px, 4 above and below.
-// items: [{ label, icon?, iconColor?, chevron?, keys?, checked?, endCheck?, separator?,
+// items: [{ label, icon?, iconColor?, chevron?, dot?, keys?, checked?, endCheck?, separator?,
 // heading?, enabled?, submenu? }] (heading: a group's title row, not pickable) (endCheck: Teams' 16 px check at the row's end, 6 in,
 // as on More ▸ Record and transcribe ▸ Hide transcript; toggle: a Fluent
 // switch row, 36 tall, its 40 x 20 track 8 in and the label at 60, as the
@@ -221,6 +221,14 @@ Popup {
                         text: row.modelData.label || ""
                         font.family: theme.font; font.pixelSize: theme.base
                         color: row.modelData.toggle ? theme.text : row.ink
+                    }
+                    // A colour dot before the chevron (OneDrive's Folder color).
+                    Rectangle {
+                        visible: !!row.modelData.dot
+                        anchors.right: parent.right; anchors.rightMargin: root.chevronMargin + root.chevronSize + 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 12; height: 12; radius: 6
+                        color: row.modelData.dot || "transparent"
                     }
                     FluentIcon {
                         visible: !!row.modelData.chevron || !!row.modelData.submenu || !!row.modelData.flyout

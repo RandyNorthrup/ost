@@ -12826,6 +12826,17 @@ impl qobject::Backend {
                     }
                     "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),
                     "preview" => json!(api::drive::preview(&client, &item).await?),
+                    "folder_color" => {
+                        let url = api::copy_jobs::absolute_url(&sp).await?;
+                        api::copy_jobs::stamp_color(&sp.site, &url, &s("code")).await?;
+                        json!({ "code": s("code") })
+                    }
+                    // Request files: the upload link, emailed when people are given.
+                    "file_request" => {
+                        let people: Vec<serde_json::Value> = args["people"].as_array().cloned().unwrap_or_default();
+                        let (url, share_id) = api::sharing::file_request(&sp, &s("description"), &people, &s("message")).await?;
+                        json!({ "url": url, "share_id": share_id, "sent": !people.is_empty() })
+                    }
                     // Download of a folder or several items: one zip from
                     // OneDrive's media service, into the download folder.
                     "zip" => {

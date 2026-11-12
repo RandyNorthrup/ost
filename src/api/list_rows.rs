@@ -25,6 +25,8 @@ pub struct RowInfo {
     /// Created lately: the name gets OneDrive's "New" mark.
     pub is_new: bool,
     pub activity: Option<Activity>,
+    /// A folder's colour (OneDrive's code "0"–"15"; empty is yellow).
+    pub color: String,
 }
 
 /// The Activity column: the latest thing done to the file.
@@ -292,6 +294,7 @@ pub fn parse_row(row: &Value, me: &str, now: DateTime<Local>) -> Option<(String,
             modified_title: s("Modified").to_string(),
             principal_count: s("PrincipalCount").parse().unwrap_or(0),
             is_new: s("Created_x0020_Date.ifnew") == "1",
+            color: s("_ColorHex").to_string(),
             activity: match s("_activity") {
                 "" => None,
                 raw => activity(raw, me),
@@ -302,7 +305,7 @@ pub fn parse_row(row: &Value, me: &str, now: DateTime<Local>) -> Option<(String,
 
 /// Teams' file list asks with a browser's User-Agent; SharePoint words
 /// `FriendlyDisplay` only for browsers.
-const VIEW_XML: &str = r#"<View><ViewFields><FieldRef Name="UniqueId"/><FieldRef Name="Modified"/><FieldRef Name="Created_x0020_Date"/><FieldRef Name="_activity"/><FieldRef Name="PrincipalCount"/></ViewFields><RowLimit Paged="TRUE">500</RowLimit></View>"#;
+const VIEW_XML: &str = r#"<View><ViewFields><FieldRef Name="UniqueId"/><FieldRef Name="Modified"/><FieldRef Name="Created_x0020_Date"/><FieldRef Name="_activity"/><FieldRef Name="PrincipalCount"/><FieldRef Name="_ColorHex"/></ViewFields><RowLimit Paged="TRUE">500</RowLimit></View>"#;
 
 /// The rows of a library folder (`folder` is its server-relative path; empty
 /// for the library's top).
@@ -356,6 +359,7 @@ pub fn decorate(item: &super::drive::DriveItem, row: Option<&RowInfo>, now: Date
     if let Some(r) = row {
         v["sharing"] = json!(if r.principal_count > 0 { "Shared" } else { "Private" });
         v["is_new"] = json!(r.is_new);
+        v["folder_color"] = json!(r.color);
         if let Some(a) = &r.activity {
             let when = DateTime::parse_from_rfc3339(&a.time).ok().map(|t| activity_time(t.with_timezone(&Local), now));
             v["activity"] = json!({ "kind": a.kind, "text": a.text, "time": when.unwrap_or_default() });
@@ -458,7 +462,7 @@ mod tests {
         let (id, info) = parse_row(&row, "me@x", at(2026, 11, 12, 7, 0)).unwrap();
         assert_eq!(id, "1dd3508e-41d2-4fb6-8358-d55e775d08eb");
         assert_eq!(info, RowInfo { modified_text: "Yesterday at 10:28 PM".into(), modified_title: "11/11/2026 10:28 PM".into(),
-            principal_count: 1, is_new: true, activity: None });
+            principal_count: 1, is_new: true, activity: None, color: String::new() });
     }
 
     #[test]

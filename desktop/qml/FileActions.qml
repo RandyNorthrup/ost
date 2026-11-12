@@ -62,6 +62,7 @@ Item {
         }
         if (sp) L.push({ label: "Share", icon: "share-16" })
         if (sp || it.web_url) L.push({ label: "Copy link", icon: "link-16" })
+        if (sp && it.is_folder && canWrite) L.push({ label: "Request files", icon: "folder-arrow-up-16" })
         if (sp) L.push({ label: "Manage access", icon: "person-16" })
         L.push({ separator: true })
         if (canWrite) L.push({ label: "Delete", icon: "delete-16" })
@@ -74,6 +75,7 @@ Item {
         if (canWrite && sp) L.push({ label: "Move to", icon: "folder-arrow-right-16" })
         if (sp) L.push({ label: "Copy to", icon: "copy-16" })
         if (canWrite && sp) L.push({ label: "Duplicate", icon: "add-square-16" })
+        if (canWrite && sp && it.is_folder) L.push({ label: "Folder color", icon: "paint-bucket-16", flyout: true, dot: colorFor(it.folder_color).hex })
         if (!it.is_folder && sp) { L.push({ separator: true }); L.push({ label: "Version history", icon: "history-16" }) }
         if (sp) { L.push({ separator: true }); L.push({ label: "Details", icon: "info-16" }) }
         while (L.length && L[L.length - 1].separator) L.pop()
@@ -113,6 +115,39 @@ Item {
         notice("progress", "Preparing " + name + " for download. This can take a moment.")
         backend.driveAction(tag + "zip", JSON.stringify(list[0]), JSON.stringify({ more: list.slice(1), name: name }))
     }
+    // Folder color ▸: OneDrive's 4 x 4 grid of 24 px colours (40 apart, in
+    // a 164 x 160 card), the current one ringed.
+    Popup {
+        id: colorPicker
+        width: 164; height: 160; padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: FluentSurface { depth: 8; radius: 4; color: theme.surface }
+        contentItem: Item {
+            Repeater {
+                model: root.folderColors
+                Rectangle {
+                    required property var modelData
+                    required property int index
+                    readonly property bool current: root.item && String(root.item.folder_color || "0") === modelData.code
+                    x: 10 + (index % 4) * 40 - 3; y: 8 + Math.floor(index / 4) * 40 - 3
+                    width: 30; height: 30; radius: 15
+                    color: "transparent"
+                    border.width: current ? 2 : 0; border.color: theme.pick("#0F6CBD", "#479EF5")
+                    Rectangle { anchors.centerIn: parent; width: 24; height: 24; radius: 12; color: parent.modelData.hex }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            colorPicker.close(); menu.close()
+                            backend.driveAction(root.tag + "folder_color", JSON.stringify(root.item), JSON.stringify({ code: parent.modelData.code }))
+                        }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.name + (current ? " selected" : "")
+                }
+            }
+        }
+    }
+
     function act(label) {
         const it = root.item
         if (!it) return
@@ -129,6 +164,7 @@ Item {
         else if (label === "Move to") picker.openFor(it, true)
         else if (label === "Copy to") picker.openFor(it, false)
         else if (label === "Version history") versions.openFor(it)
+        else if (label === "Request files") fileRequest.openFor(it)
         else if (label === "Details") detailsItem(it)
         else if (label === "Preview") previewItem(it)
         else if (label === "Duplicate") { jobCount = 1; notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
@@ -139,9 +175,39 @@ Item {
     TextEdit { id: copier; visible: false }
     function copy(text) { copier.text = text; copier.selectAll(); copier.copy() }
 
+    // OneDrive's sixteen folder colours, in the picker's order, with their
+    // codes and the shades its folder drawing uses (main, background,
+    // accent, gradient start, gradient stop, count).
+    readonly property var folderColors: [
+        { code: "0", name: "Yellow", hex: "#FFCE3C", shades: ["#FFCE3C", "#F5B800", "#B64D07", "#FFE561", "#FFB515", "#8F3900"] },
+        { code: "8", name: "Grey", hex: "#B0B7BA", shades: ["#B0B7BA", "#96A3A7", "#575757", "#BDBFBF", "#A0ADB2", "#361500"] },
+        { code: "1", name: "Dark red", hex: "#E73E29", shades: ["#E73E29", "#D62E1F", "#590700", "#FF5028", "#C92828", "#000000"] },
+        { code: "9", name: "Light red", hex: "#FFBCB2", shades: ["#FFBCB2", "#F58076", "#BD2113", "#FFC7BA", "#FF9191", "#910C00"] },
+        { code: "2", name: "Dark orange", hex: "#EE7110", shades: ["#EE7110", "#E56000", "#6B2500", "#FF8E1D", "#DB5101", "#361500"] },
+        { code: "10", name: "Light orange", hex: "#FFBF84", shades: ["#FFBF84", "#FF8E3D", "#A14200", "#FFC48A", "#FF8C4A", "#782E00"] },
+        { code: "3", name: "Dark green", hex: "#3F9F4A", shades: ["#3F9F4A", "#33852C", "#053B00", "#5EB75A", "#1D8539", "#001404"] },
+        { code: "11", name: "Light green", hex: "#8ED290", shades: ["#8ED290", "#5BC26B", "#0B6E1A", "#B6E6AC", "#62BD71", "#00520A"] },
+        { code: "4", name: "Dark teal", hex: "#27938E", shades: ["#27938E", "#037D81", "#003133", "#3DB7AB", "#106E70", "#000000"] },
+        { code: "12", name: "Light teal", hex: "#7AD1CD", shades: ["#7AD1CD", "#5DC6C9", "#07676B", "#94EBE2", "#5DB4B6", "#0E4E4E"] },
+        { code: "5", name: "Dark blue", hex: "#1E84D0", shades: ["#1E84D0", "#036DC9", "#032F54", "#2F9ADE", "#0E6EC2", "#000000"] },
+        { code: "13", name: "Light blue", hex: "#86C8F7", shades: ["#86C8F7", "#73B3EB", "#1F64A1", "#9FDAFF", "#6EB6F0", "#004881"] },
+        { code: "6", name: "Dark purple", hex: "#9A61C7", shades: ["#9A61C7", "#7E54B8", "#370086", "#BC7ADD", "#7342AD", "#000000"] },
+        { code: "14", name: "Light purple", hex: "#D4AFF6", shades: ["#D4AFF6", "#BA90F5", "#7A2AD2", "#E2BFFA", "#BD94EF", "#5915A1"] },
+        { code: "7", name: "Dark pink", hex: "#CC53B4", shades: ["#CC53B4", "#BC4293", "#5C003D", "#E36DE3", "#BA3E91", "#000000"] },
+        { code: "15", name: "Light pink", hex: "#F7AAE7", shades: ["#F7AAE7", "#ED87CB", "#B8148C", "#FFBEFF", "#F097D2", "#8F0069"] }
+    ]
+    function colorFor(code) { return folderColors.find(c => c.code === String(code || "0")) || folderColors[0] }
+
     MenuPopup {
         id: menu
         fabric: true
+        onFlyoutRequested: (i, row) => {
+            if (i < 0 || !row || items[i].label !== "Folder color") { colorPicker.close(); return }
+            const p = row.mapToItem(root, 0, 0)
+            colorPicker.x = Math.max(0, p.x - 4 - 164)
+            colorPicker.y = Math.max(0, Math.min(p.y + row.height - 160 + 2, root.height - 160))
+            colorPicker.open()
+        }
         onPicked: i => root.act(items[i].label)
         onSubPicked: (i, j) => root.act(items[i].submenu[j].label)
     }
@@ -154,6 +220,12 @@ Item {
             const v = result ? JSON.parse(result) : null
             if (kind === "folders" || kind === "libraries") { picker.reply(kind, v, error); return }
             if (kind === "versions" || kind === "restore_version" || kind === "delete_version") { versions.reply(kind, v, error); return }
+            if (kind === "folder_color") {
+                if (error) root.notice("error", "The folder color wasn't changed", error)
+                else root.changed()
+                return
+            }
+            if (kind === "file_request") { fileRequest.reply(kind, v, error); return }
             if (kind === "zip") {
                 if (error) root.notice("error", "Couldn't download " + root.lastZip + ". Try again.", error)
                 else root.notice("done", v.name + " was downloaded.")
@@ -410,6 +482,268 @@ Item {
                     horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                     text: versions.error
                     font.family: theme.font; font.pixelSize: 14; color: theme.danger
+                }
+            }
+        }
+    }
+    // Request files (a folder's), OneDrive's two steps (600 wide, padding
+    // 24, radius 8): "Request files for this folder" with the description
+    // (Next / Cancel), then "Send file request": the upload link with Copy
+    // link, "Anyone with the link can upload files", and "Or you can send it
+    // via email" (To, Message; Done, or Send once someone is picked).
+    Popup {
+        id: fileRequest
+        property var target: null
+        property int step: 1
+        property string url: ""
+        property string shareId: ""
+        property bool busy: false
+        property bool tried: false
+        property bool copied: false
+        property var picked: []
+        property var found: []
+        property string query: ""
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true; padding: 24
+        width: 600
+        closePolicy: Popup.CloseOnEscape
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        function openFor(it) {
+            target = it; step = 1; url = ""; shareId = ""; busy = false; tried = false; copied = false; picked = []; found = []; query = ""
+            frName.text = ""; frMessage.text = ""; frTo.text = ""
+            open(); frName.forceActiveFocus()
+        }
+        function next() {
+            tried = true
+            if (!frName.text.trim() || busy) return
+            busy = true
+            backend.driveAction(root.tag + "file_request", JSON.stringify(target), JSON.stringify({ description: frName.text.trim() }))
+        }
+        function send() {
+            if (busy) return
+            busy = true
+            backend.driveAction(root.tag + "file_request", JSON.stringify(target), JSON.stringify({ description: frName.text.trim(), people: picked, message: frMessage.text }))
+        }
+        function reply(kind, v, error) {
+            busy = false
+            if (error) { root.notice("error", step === 1 ? "Something went wrong, please try again" : "Send file request email failed.", error); return }
+            if (v.sent) { close(); frDone.show(true); return }
+            url = v.url; shareId = v.share_id; step = 2
+        }
+        function search(q) {
+            query = q
+            if (q.trim().length < 1) { found = []; return }
+            backend.shareAction(root.tag + "frpeople", JSON.stringify(root.ref(target)), JSON.stringify({ query: q }))
+        }
+        Connections {
+            target: backend
+            function onShareDone(op, result, error) {
+                if (op !== root.tag + "frpeople" || error) return
+                const v = JSON.parse(result)
+                if (v.query === fileRequest.query) fileRequest.found = v.people || []
+            }
+        }
+        contentItem: Column {
+            spacing: 0
+            Text {
+                width: parent.width; height: 28
+                text: fileRequest.step === 1 ? "Request files for this folder" : "Send file request"
+                font.family: theme.font; font.pixelSize: 24; font.weight: Font.Medium; color: root.ink
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            // Step 1: the description.
+            Column {
+                visible: fileRequest.step === 1
+                width: parent.width; topPadding: 34; spacing: 0
+                Row {
+                    spacing: 9; height: 23
+                    FluentIcon { y: 3; size: 14; name: "folder-arrow-up-16"; color: root.ink }
+                    Text { text: "Let the recipients know which files you're requesting."; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                }
+                Item { width: 1; height: 9 }
+                Rectangle {
+                    width: parent.width; height: 32; radius: 4
+                    color: theme.surface; border.width: 0.67; border.color: root.line
+                    Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: frName.activeFocus ? 2 : 0.67; color: frName.activeFocus ? root.accent : root.strong }
+                    TextInput {
+                        id: frName
+                        x: 8; width: parent.width - 16; anchors.verticalCenter: parent.verticalCenter
+                        font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
+                        Keys.onReturnPressed: fileRequest.next()
+                        Text { visible: !frName.text; text: "Enter a description"; color: theme.textTertiary; font: frName.font }
+                        Accessible.name: "Let the recipients know which files you're requesting."
+                    }
+                }
+                Row {
+                    visible: fileRequest.tried && !frName.text.trim()
+                    spacing: 4; height: 18
+                    FluentIcon { y: 2; size: 12; name: "error-circle-12"; color: "#BC2F32" }
+                    Text { text: "Please type a name for the request."; font.family: theme.font; font.pixelSize: 12; color: "#BC2F32" }
+                }
+                Item { width: 1; height: 12 }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: "Recipients will only see the file description you've entered and can only upload files to this folder."; font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: root.strong }
+                Item { width: 1; height: 80 }
+                Row {
+                    anchors.right: parent.right; spacing: 8
+                    OdspButton { label: fileRequest.busy ? "…" : "Next"; onClicked: fileRequest.next() }
+                    OdspButton { label: "Cancel"; onClicked: fileRequest.close() }
+                }
+            }
+            // Step 2: the link, and sending it.
+            Column {
+                visible: fileRequest.step === 2
+                width: parent.width; topPadding: 18; spacing: 0
+                Text { height: 30; verticalAlignment: Text.AlignVCenter; text: "Here's the link people can use to upload files"; font.family: theme.font; font.pixelSize: 15; font.weight: Font.DemiBold; color: root.ink }
+                Item { width: 1; height: 5 }
+                Rectangle {
+                    width: 418; height: 34; color: theme.surface
+                    border.width: 0.67; border.color: theme.pick("#BDBDBD", "#666666")
+                    TextInput {
+                        x: 9; width: 300; anchors.verticalCenter: parent.verticalCenter
+                        readOnly: true; selectByMouse: true; clip: true
+                        text: fileRequest.url
+                        font.family: theme.font; font.pixelSize: 12; color: root.ink
+                        Accessible.name: "Link"
+                    }
+                    Rectangle {
+                        anchors.right: parent.right; anchors.rightMargin: 0.67; y: 0.67; width: 98.75; height: 32.67
+                        color: crh.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+                        Rectangle { width: 1; height: parent.height; color: theme.pick("#A19F9D", "#666666") }
+                        Text { anchors.centerIn: parent; text: fileRequest.copied ? "Copied" : "Copy link"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: "#7F85F5" }
+                        HoverHandler { id: crh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { root.copy(fileRequest.url); fileRequest.copied = true } }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: fileRequest.copied ? "Link copied" : "Copy link"
+                    }
+                }
+                Row {
+                    topPadding: 8; spacing: 5; height: 30
+                    FluentIcon { y: 10; size: 14; name: "folder-arrow-up-16"; color: root.strong }
+                    Text { y: 8; text: "Anyone with the link can upload files"; font.family: theme.font; font.pixelSize: 12; color: root.strong }
+                }
+                Item { width: 1; height: 32 }
+                Text { text: "Or you can send it via email"; font.family: theme.font; font.pixelSize: 15; color: root.ink }
+                Item { width: 1; height: 8 }
+                // To: picked people as pills, then the search box.
+                Rectangle {
+                    width: parent.width; height: Math.max(32.67, toFlow.height + 4); color: "transparent"
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.accent }
+                    Flow {
+                        id: toFlow
+                        width: parent.width; y: 2; spacing: 6
+                        Repeater {
+                            model: fileRequest.picked
+                            Rectangle {
+                                required property var modelData
+                                required property int index
+                                height: 28; radius: 14; width: pn.implicitWidth + 40
+                                color: theme.pick("#F0F0F0", "#3D3D3D")
+                                Text { id: pn; x: 12; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.DisplayText; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                                FluentIcon { x: pn.x + pn.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "dismiss-12"; color: root.ink }
+                                TapHandler { onTapped: fileRequest.picked = fileRequest.picked.filter((p, i) => i !== parent.index) }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Remove " + modelData.DisplayText
+                            }
+                        }
+                        TextInput {
+                            id: frTo
+                            width: Math.max(200, toFlow.width - 20); height: 28
+                            verticalAlignment: TextInput.AlignVCenter
+                            font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
+                            onTextChanged: fileRequest.search(text)
+                            Text { visible: !frTo.text && !fileRequest.picked.length; anchors.verticalCenter: parent.verticalCenter; text: "To: Name, group, or email"; color: root.ink; font: frTo.font }
+                            Accessible.name: "To: Name, group, or email"
+                        }
+                    }
+                }
+                // Suggestions
+                Column {
+                    width: parent.width
+                    Repeater {
+                        model: fileRequest.found.slice(0, 6)
+                        Rectangle {
+                            required property var modelData
+                            width: parent.width; height: 40
+                            color: sgh.hovered ? theme.menuHover : "transparent"
+                            Avatar { x: 8; y: 6; size: 28; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId ? "8:orgid:" + parent.modelData.EntityData.ObjectId : "" }
+                            Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.DisplayText + (parent.modelData.Description ? "  " + parent.modelData.Description : ""); font.family: theme.font; font.pixelSize: 14; color: root.ink; elide: Text.ElideRight; width: parent.width - 52 }
+                            HoverHandler { id: sgh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { fileRequest.picked = fileRequest.picked.concat([parent.modelData]); frTo.text = ""; fileRequest.found = [] } }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: modelData.DisplayText
+                        }
+                    }
+                }
+                Item { width: 1; height: 12 }
+                Rectangle {
+                    width: parent.width; height: 67; radius: 4; color: theme.surface
+                    TextEdit {
+                        id: frMessage
+                        anchors.fill: parent; anchors.margins: 6
+                        wrapMode: TextEdit.Wrap
+                        font.family: theme.font; font.pixelSize: 12; color: root.ink
+                        Text { visible: !frMessage.text; text: "Message..."; color: root.ink; font: frMessage.font }
+                        Accessible.name: "Add message"
+                    }
+                }
+                Item { width: 1; height: 47 }
+                Row {
+                    anchors.right: parent.right
+                    OdspButton {
+                        label: fileRequest.busy ? "…" : fileRequest.picked.length ? "Send" : "Done"
+                        onClicked: if (fileRequest.picked.length) fileRequest.send(); else { fileRequest.close(); frDone.show(false) }
+                    }
+                }
+            }
+        }
+    }
+    // After Request files: "Your file request was created!" (or "…sent!"),
+    // a 44 px #107C10 check over the words, centred; 600 wide, a Close.
+    Popup {
+        id: frDone
+        property bool sent: false
+        function show(s) { sent = s; open() }
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true; padding: 24
+        width: 600
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        contentItem: Item {
+            implicitHeight: 31.33 + 6 + 119 - 2
+            Rectangle {
+                anchors.right: parent.right; width: 32; height: 31.33; radius: 4
+                color: fdh.hovered ? theme.menuHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: root.strong }
+                HoverHandler { id: fdh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: frDone.close() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Close"
+            }
+            Column {
+                y: 39.33; width: parent.width; spacing: 0
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 44; height: 44; radius: 22; color: "#107C10"
+                    FluentIcon { anchors.centerIn: parent; name: "checkmark-20"; size: 20; color: "white" }
+                }
+                Item { width: 1; height: 16 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: frDone.sent ? "Your file request was sent!" : "Your file request was created!"
+                    font.family: theme.font; font.pixelSize: 21; color: root.ink
+                    Accessible.role: Accessible.AlertMessage
+                    Accessible.name: text
+                }
+                Item { width: 1; height: 11 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "We will notify you when someone uploads files."
+                    font.family: theme.font; font.pixelSize: 12; color: root.strong
                 }
             }
         }
@@ -858,7 +1192,10 @@ Item {
     function pickerDoneForTest() { picker.done() }
     function renameForTest(name) { nameInput.text = name; renameDialog.accepted() }
     function submenuForTest() { menu.openSubmenuForTest(0) }
-    function closeAllForTest() { menu.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close(); versions.close() }
+    function fileRequestForTest(it, name) { fileRequest.openFor(it); frName.text = name; fileRequest.next() }
+    function fileRequestStateForTest() { return { open: fileRequest.opened, step: fileRequest.step, url: fileRequest.url ? "(link)" : "", share_id: fileRequest.shareId } }
+    function colorForTest(it, code) { item = it; backend.driveAction(tag + "folder_color", JSON.stringify(it), JSON.stringify({ code: code })) }
+    function closeAllForTest() { menu.close(); fileRequest.close(); colorPicker.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close(); versions.close() }
     function copyForTest() { root.copy(copyLink.url); copyLink.copied = true }
     function linkForTest() { return { kind: copyLink.kind, share_id: copyLink.shareId, ref: copyLink.target ? ref(copyLink.target) : null } }
 }

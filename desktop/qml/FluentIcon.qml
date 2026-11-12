@@ -43,7 +43,10 @@ Image {
         xhr.send()
     }
 
+    /// Colours to swap in the SVG ({"#FFDD57": "#9FDAFF"}): a coloured
+    /// folder (OneDrive's Folder color).
+    property var swaps: ({})
     source: svgText
-        ? "data:image/svg+xml;utf8," + encodeURIComponent(svgText.replace(/#212121/g, root.color.toString()))
+        ? "data:image/svg+xml;utf8," + encodeURIComponent(Object.keys(swaps).reduce((t, k) => t.split(k).join(swaps[k]), svgText.replace(/#212121/g, root.color.toString())))
         : ""
 }

@@ -36,6 +36,22 @@ pub async fn absolute_url(item: &ItemRef) -> Result<String> {
     Ok(format!("{}{rel}", host(&item.site)))
 }
 
+/// Folder color: OneDrive's code ("0" yellow … "15" light pink) stamped on
+/// the folder at `folder_url` (its own address).
+pub async fn stamp_color(site: &str, folder_url: &str, code: &str) -> Result<()> {
+    if code.parse::<u8>().map_or(true, |n| n > 15) {
+        bail!("Not a folder color");
+    }
+    let path = folder_url.get(host(folder_url).len()..).unwrap_or_default();
+    let q: String = url::form_urlencoded::byte_serialize(format!("'{}'", path.replace('\'', "''")).as_bytes()).collect();
+    post(
+        &format!("{}/_api/foldercoloring/stampcolor(DecodedUrl=@a1)?@a1={q}", site.trim_end_matches('/')),
+        &json!({ "coloringInformation": { "__metadata": { "type": "SP.FolderColoringInformation" }, "ColorHex": code } }),
+    )
+    .await?;
+    Ok(())
+}
+
 /// `https://host` of an address.
 fn host(url: &str) -> String {
     url.split('/').take(3).collect::<Vec<_>>().join("/")

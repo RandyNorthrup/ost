@@ -86,10 +86,94 @@ and Open in app (OneDrive's wording; not yet seen in Teams).
   - Wording: "Renamed 1 item", "Copying 1 item" → "Copied 1 item". On failure: "1 item wasn't copied" over SharePoint's message.
   - A move is "Moving 1 item" / "Moved 1 item" / "1 item wasn't moved" (OneDrive's strings; several items: docs/spec/onedrive-rows.md).
 
+## Folder color and Request files (a folder's)
+
+### Folder color ▸
+
+The menu row shows the current colour as a 12 px dot before its chevron.
+Hovering it opens a 164 x 160 card beside the menu (to its left near the
+window's right edge):
+
+- 16 colours as 24 px circles, 40 apart, four to a row: Yellow, Grey, Dark
+  red, Light red, Dark orange, Light orange, Dark green, Light green, Dark
+  teal, Light teal, Dark blue, Light blue, Dark purple, Light purple, Dark
+  pink, Light pink.
+- The current colour has a blue ring.
+
+Picking one sends
+`POST {site}/_api/foldercoloring/stampcolor(DecodedUrl=@a1)` with
+`{"coloringInformation":{"__metadata":{"type":"SP.FolderColoringInformation"},"ColorHex":"{code}"}}`.
+
+The code is OneDrive's index, not the picker's order:
+
+| Code | Colour |
+|---|---|
+| 0 | Yellow |
+| 1 | Dark red |
+| 2 | Dark orange |
+| 3 | Dark green |
+| 4 | Dark teal |
+| 5 | Dark blue |
+| 6 | Dark purple |
+| 7 | Dark pink |
+| 8 | Grey |
+| 9 | Light red |
+| 10 | Light orange |
+| 11 | Light green |
+| 12 | Light teal |
+| 13 | Light blue |
+| 14 | Light purple |
+| 15 | Light pink |
+
+- The list reads the colour from the `_ColorHex` field.
+- OneDrive draws a coloured folder with six shades per colour: main,
+  background, accent, gradient start, gradient stop and the count colour.
+  For Light blue they are #86C8F7, #73B3EB, #1F64A1, #9FDAFF, #6EB6F0 and
+  #004881.
+- OST recolours its folder drawing with those shades (`FluentIcon.swaps`).
+
+### Request files
+
+Request files comes after Copy link. It is a two-step dialog, 600 wide with
+padding 24 and radius 8.
+
+**Step 1, "Request files for this folder"** (24/28 500):
+
+- A folder glyph and "Let the recipients know which files you're
+  requesting."
+- A 32 px box, "Enter a description". If it's empty, "Please type a name for
+  the request." shows in 12 px #BC2F32 with an error glyph.
+- "Recipients will only see the file description you've entered and can
+  only upload files to this folder." (12/20).
+- **Next** and **Cancel**.
+- Next makes the link:
+  `ShareLink {createLink:true, settings:{allowAnonymousAccess:true, linkKind:6, role:8, description, …}}`.
+  A folder has one such link, so a second request returns the same link.
+
+**Step 2, "Send file request"**:
+
+- "Here's the link people can use to upload files" (15/20 600).
+- The link in a 418 x 34 box, with Copy link (12/600, "Copied" after).
+- "Anyone with the link can upload files".
+- "Or you can send it via email": a To picker (people search) and a Message
+  box.
+- The button is **Done**, or **Send** once someone is picked. Send makes the
+  same `ShareLink` call with `emailData:{body}` and `peoplePickerInput`.
+
+**Then a confirmation**: a 44 px #107C10 check, "Your file request was
+created!" (or "…sent!"), and "We will notify you when someone uploads files."
+
+Errors read "Something went wrong, please try again" and "Send file request
+email failed.".
+
+Harness: `--folder-extras-test [--folder-extras-live]`. The live run colours
+Attachments Light blue and back to Yellow, and makes a request, then removes
+its link.
+
 ## Not yet in OST
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
-- Add shortcut ▸, Request files, Folder color ▸, Download of a folder (a zip) and Add to playlist: TASK-0116.
+- Add shortcut ▸ and Add to playlist: TASK-0116.
 - The picker's Shared, Favorites, Browse by, More places…, Search, New folder and view switch, plus Copilot's Suggested names in Rename: TASK-0117.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
