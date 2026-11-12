@@ -39,7 +39,7 @@ Research notes:
   Source: https://support.microsoft.com/en-us/teams/files/collaborate-on-files-in-microsoft-teams
 - [ ] Per-item hover **Share** button, which opens the share dialog (see §4).
   Source: https://support.microsoft.com/en-us/teams/files/share-files-in-microsoft-teams
-- [ ] Per-item **More actions** menu with these entries:
+- [x] Per-item **More actions** menu with these entries (OST: `FileActions.qml`, `docs/spec/file-actions.md`):
   - **Open in** (Teams / Desktop app / Browser)
   - **Open in OneDrive**
   - **Rename**: enter the name, then **Update**

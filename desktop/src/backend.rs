@@ -1026,6 +1026,10 @@ pub mod qobject {
         #[qsignal]
         fn share_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
 
+        /// A drive_action finished: its op, its result (JSON) and an error.
+        #[qsignal]
+        fn drive_action_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
+
         /// Someone in the meeting reacted (Teams' meeting reactions):
         /// their MRI and the reaction's name.
         #[qsignal]
@@ -1545,6 +1549,16 @@ pub mod qobject {
         /// OneDrive: move an item to the recycle bin.
         #[qinvokable]
         fn drive_delete(self: Pin<&mut Backend>, drive_id: &QString, item_id: &QString);
+
+        /// A Files item's More actions (docs/spec/file-actions.md) on a
+        /// DriveItem (JSON): "rename" {name}; "move" / "copy" {dest} (a
+        /// folder's web address); "duplicate"; "open_app" (a local copy,
+        /// its path); "folders" {drive_id, item_id} (the Move to / Copy
+        /// to picker's folder: {here, items}); "libraries" (the picker's
+        /// Quick access). Ops may carry a "<tag>:" prefix. The answer comes back in
+        /// drive_action_done.
+        #[qinvokable]
+        fn drive_action(self: Pin<&mut Backend>, op: &QString, item_json: &QString, args_json: &QString);
 
         /// Change an event's title and time (UTC).
         #[qinvokable]
@@ -12535,6 +12549,16 @@ impl qobject::Backend {
                             json!(api::drive::children(&client, &drive_id, &item_id).await?)
                     }
                 }
+                // Which items are favorites (the menu's Add to / Remove
+                // from favorites).
+                if out.get("items").is_some() {
+                    out["favorite_ids"] = json!(api::drive::favorites(&client)
+                        .await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|f| f.id)
+                        .collect::<Vec<_>>());
+                }
                 anyhow::Ok(out)
             }
             .await;
@@ -12726,6 +12750,65 @@ impl qobject::Backend {
                         .set_status_text(QString::from(short_error(&e).as_str()));
                 }
             });
+        });
+    }
+
+    pub fn drive_action(self: Pin<&mut Self>, op: &QString, item_json: &QString, args_json: &QString) {
+        let op = op.to_string();
+        let item: api::drive::DriveItem = serde_json::from_str(&item_json.to_string()).unwrap_or_default();
+        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let s = |k: &str| args[k].as_str().unwrap_or_default().to_string();
+            let sp = api::sharing::ItemRef { site: item.sp_site.clone(), list: item.sp_list.clone(), item: item.sp_item.clone() };
+            // "<tag>:<op>": each Files view takes only its own replies.
+            let kind = op.rsplit(':').next().unwrap_or_default().to_string();
+            let result: anyhow::Result<serde_json::Value> = async {
+                let client = TeamsClient::new().await?;
+                Ok(match kind.as_str() {
+                    "libraries" => json!(api::drive::libraries(&client).await?),
+                    "rename" => {
+                        api::drive::rename(&client, &item.drive_id, &item.id, &s("name")).await?;
+                        json!(null)
+                    }
+                    "move" | "copy" | "duplicate" => {
+                        let src = api::copy_jobs::absolute_url(&sp).await?;
+                        let (dest, name) = if kind == "duplicate" {
+                            let parent = src.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+                            (parent, Some(api::copy_jobs::duplicate_name(&item.name, item.is_folder)))
+                        } else {
+                            (api::copy_jobs::folder_url(&s("dest")), None)
+                        };
+                        api::copy_jobs::run(&sp.site, &[src], &dest, kind == "move", name.as_deref()).await?;
+                        json!(null)
+                    }
+                    "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),
+                    "folders" => {
+                        let (d, i) = (s("drive_id"), s("item_id"));
+                        let (here, items) = tokio::join!(
+                            async {
+                                if i.is_empty() {
+                                    api::drive::root(&client, &d).await
+                                } else {
+                                    api::drive::item(&client, &d, &i).await
+                                }
+                            },
+                            api::drive::children(&client, &d, &i)
+                        );
+                        json!({ "drive_id": d, "item_id": i, "here": here?, "items": items? })
+                    }
+                    other => anyhow::bail!("unknown drive action {other}"),
+                })
+            }
+            .await;
+            let (value, error) = match result {
+                Ok(v) => (v.to_string(), String::new()),
+                Err(e) => {
+                    tracing::warn!("drive {op}: {}", short_error(&e));
+                    (String::new(), short_error(&e))
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().drive_action_done(QString::from(op.as_str()), QString::from(value.as_str()), QString::from(error.as_str())));
         });
     }
 

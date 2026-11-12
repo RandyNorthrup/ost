@@ -137,27 +137,20 @@ Item {
                     Cell { width: 200; text: frow.modelData.modified_by }
                 }
                 Rectangle {
-                    visible: fh.hovered || rowMenu.visible
+                    id: moreButton
+                    visible: fh.hovered || actions.item === frow.modelData && actions.menuOpen
                     anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
                     width: 32; height: 32; radius: theme.radius
                     color: mh.hovered ? theme.pane : "transparent"
                     FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
                     HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: rowMenu.open() }
+                    TapHandler { onTapped: actions.popup(frow.modelData, moreButton, 0, moreButton.height) }
                     Accessible.role: Accessible.Button
                     Accessible.name: "More options for " + frow.modelData.name
-                    MenuPopup {
-                        id: rowMenu
-                        x: -200; y: parent.height; width: 220
-                        items: [{ label: frow.modelData.is_folder ? "Open" : "Open in browser", icon: "open-20" }, { label: "Copy link", icon: "link-20" },
-                                { separator: true }, { label: "Delete", icon: "delete-20" }]
-                        onPicked: i => {
-                            const l = items[i].label
-                            if (l === "Copy link") root.copy(frow.modelData.web_url)
-                            else if (l === "Delete") { deleteDialog.item = frow.modelData; deleteDialog.open() }
-                            else root.open(frow.modelData)
-                        }
-                    }
+                }
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: (ev) => actions.popup(frow.modelData, frow, ev.position.x, ev.position.y)
                 }
                 HoverHandler { id: fh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onDoubleTapped: root.open(frow.modelData); onTapped: if (frow.modelData.is_folder) root.open(frow.modelData) }
@@ -234,36 +227,6 @@ Item {
             close()
         }
     }
-    Popup {
-        id: deleteDialog
-        property var item: null
-        anchors.centerIn: parent
-        width: 380; padding: 24; modal: true
-        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
-        contentItem: Column {
-            spacing: 16
-            Text { text: "Delete?"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-            Text { width: 332; wrapMode: Text.Wrap; text: (deleteDialog.item ? deleteDialog.item.name : "") + " will be moved to the site's recycle bin."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-            Row {
-                spacing: 8; layoutDirection: Qt.RightToLeft; width: 332
-                Rectangle {
-                    width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Delete"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
-                    TapHandler { onTapped: { root.change("delete", root.here.drive_id, root.here.id, deleteDialog.item.id); deleteDialog.close() } }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: "Delete"
-                }
-                Rectangle {
-                    width: 90; height: 32; radius: theme.radius; color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
-                    TapHandler { onTapped: deleteDialog.close() }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
-                }
-            }
-        }
-    }
-
     component ToolButton2: Rectangle {
         id: tb
         property string icon
@@ -301,4 +264,14 @@ Item {
     function shareForTest() { driveShare.openFor({ site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }, root.here.name, root.here.kind) }
     // OneDrive's share dialog (Share), as Teams opens it.
     OneDriveShare { id: driveShare }
+    // An item's More actions (Teams' Files context menu), dialogs and notices.
+    FileActions {
+        id: actions
+        anchors.fill: parent
+        folder: root.here ? { drive_id: root.here.drive_id, item_id: root.here.id } : { drive_id: "-", item_id: "-" }
+        onChanged: if (root.here) root.load(root.teamId, root.channelId, root.here.drive_id, root.here.id)
+        onDeleteItem: it => root.change("delete", root.here.drive_id, root.here.id, it.id)
+        onFavoriteItem: (it, on) => backend.driveFavorite(it.drive_id, it.id, on)
+        onDownloadItem: it => backend.driveDownload(JSON.stringify(it))
+    }
 }

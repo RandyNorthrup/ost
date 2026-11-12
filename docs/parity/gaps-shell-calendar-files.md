@@ -300,8 +300,8 @@ OST has the org name, Sign out, avatar, name, e-mail and the status row (TitleBa
 ## 13. Files
 
 ### 13.1 OneDrive app
-- [ ] [P1] Per-item **Share** (share dialog, §13.4) — OST: absent in the OneDrive app (ref: FA §1 "Per-item hover Share", §4; OST: OneDriveView.qml:351-367)
-- [ ] [P1] **More actions**: Rename, Move to, Copy to, Copy link, Open in (Teams / Desktop app / Browser), Open in OneDrive — OST: Open, Open in browser, Download, Add/Remove favorites, and Delete (Delete only inside a folder view) (ref: FA §1 "Per-item More actions"; OST: OneDriveView.qml:39, 351-367)
+- [ ] [P1] Per-item **Share** (share dialog, §13.4) — OST: Share in the item's menu (FileActions.qml); the row's hover Share and favorite buttons are still missing (ref: FA §1 "Per-item hover Share", §4; OST: OneDriveView.qml)
+- [x] [P1] **More actions**: Rename, Move to, Copy to, Copy link, Open in (Teams / Desktop app / Browser), Open in OneDrive — OST: Teams' OneDrive context menu (right-click / ···) with Open ▸, Share, Copy link, Manage access, Delete, favorites, Download, Rename, Open in OneDrive, Move to, Copy to, Duplicate; Preview, Add shortcut, Version history and Details are follow-ups (ref: FA §1 "Per-item More actions"; docs/spec/file-actions.md; OST: FileActions.qml)
 - [ ] [P1] Opening a file inside Teams (viewer with the Office ribbon) — OST: every file opens `web_url` in the external browser (ref: FA §5; OST: OneDriveView.qml:369-372)
 - [ ] [P2] Search and filter inside OneDrive — OST: absent (ref: FA §1 "Search and filter"; OST: OneDriveView.qml:84-150)
 - [ ] [P2] **Create or upload** > new Word / Excel / PowerPoint file by name — OST: Folder and Files upload only (ref: FA §1 "Create or upload"; OST: OneDriveView.qml:107-116)
@@ -320,7 +320,7 @@ OST has the org name, Sign out, avatar, name, e-mail and the status row (TitleBa
 ### 13.3 Channel Shared tab (SharePoint library)
 - [ ] [P2] **In Post** (files and links from posts) / **In library** split — OST: library only (ref: FA §3 "Channel Shared tab"; OST: ChannelFiles.qml:5-8)
 - [ ] [P2] **New**: Word, Excel, PowerPoint, OneNote notebook, Visio, Forms for Excel, Link — OST: Folder and Files upload only (ref: FA §3 "Toolbar New"; OST: ChannelFiles.qml:97-102)
-- [ ] [P2] Row actions: Rename, Move to, Copy to, Open in, Download — OST: Open / Open in browser, Copy link, Delete (ref: FA §3 "Per-item More actions"; OST: ChannelFiles.qml:149-160)
+- [x] [P2] Row actions: Rename, Move to, Copy to, Open in, Download — OST: the same Files menu as the OneDrive app (ref: FA §3 "Per-item More actions"; docs/spec/file-actions.md; OST: FileActions.qml)
 - [ ] [P2] **Share** opens the share dialog — OST: opens the folder's web URL in the browser (ref: FA §3, §4; OST: ChannelFiles.qml:81)
 - [ ] [P3] More commands > **Sync**, **Open in SharePoint**; upload folder or template; drag and drop — OST: absent (ref: FA §3; OST: ChannelFiles.qml:78-104)
 

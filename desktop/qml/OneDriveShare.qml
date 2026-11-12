@@ -993,6 +993,10 @@ Popup {
         }
     }
 
+    /// Files' Manage access: the dialog on its People tab.
+    function openManage(itemRef, name, type) { openFor(itemRef, name, type); view = "manage"; tab = "people" }
+    /// Copy link's Settings: Link settings over the share form.
+    function openLinkSettingsFor(itemRef, name, type) { openFor(itemRef, name, type); openSettings() }
     function openSettings() {
         pendScope = linkScope; pendEdit = linkEdit; pendExpiration = expiration; pendPassword = password
         view = "settings"

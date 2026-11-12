@@ -18,6 +18,7 @@ pub mod files;
 pub mod find;
 pub mod search;
 pub mod sharing;
+pub mod copy_jobs;
 pub mod folders;
 pub mod funstuff;
 mod me;

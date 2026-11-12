@@ -29,28 +29,34 @@ Popup {
     /// (16 px, 6 from the right), labels of rows without an icon at 10, and
     /// dividers spanning the surface with 10 px either side.
     property bool viewStyle: false
+    /// OneDrive's (Fabric) context menu, as Teams' Files apps draw it: no
+    /// padding, rows 36 tall with no gap, a 16 px icon 8 in, the label at
+    /// 32, a 12 px chevron 8 from the right, 1 px dividers with 4 above and
+    /// below; a fixed width (`fabricWidth`).
+    property bool fabric: false
+    property real fabricWidth: 216.67
     readonly property bool hasIcons: items.some(i => !!i.icon || i.checked !== undefined)
     // Per-menu metrics (defaults: Teams' tab and status menus). The message
     // menu uses label 32, dividers 8.6, a 20 px chevron 5.6 from the right
     // and shortcut letters 8 from the right.
     property real labelInset: -1
-    property real separatorHeight: viewStyle ? 16.67 : 5
+    property real separatorHeight: viewStyle ? 16.67 : fabric ? 9 : 5
     property int chevronSize: viewStyle ? 16 : 12
     property real chevronMargin: viewStyle ? 6 : 8
     property real keysMargin: 6
     // An optional strip above the items (the right-click reactions), with a
     // divider under it.
     property Component header: null
-    readonly property real labelX: labelInset >= 0 ? labelInset : hasIcons ? 30 : 6
+    readonly property real labelX: labelInset >= 0 ? labelInset : fabric ? 32 : hasIcons ? 30 : 6
     /// Fluent menus without hasIcons: only rows with an icon leave room
     /// for it (Teams' Pause notifications: "10 minutes" at 6,
     /// "Notifications settings" at 30).
     property bool perItemIcons: false
     function rowLabelX(i) { return perItemIcons ? (i.icon ? 30 : 6) : labelX }
-    padding: viewStyle ? 16.67 : 4
+    padding: viewStyle ? 16.67 : fabric ? 0 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
     property real minRowWidth: 0
-    implicitWidth: Math.min(290, Math.max(widest.value, minRowWidth)) + 2 * padding
+    implicitWidth: fabric ? fabricWidth : Math.min(290, Math.max(widest.value, minRowWidth)) + 2 * padding
     /// The pointer is over the menu (for menus that open on hover).
     readonly property bool hovered: surfaceHover.hovered
     background: FluentSurface { depth: 16; radius: 4; HoverHandler { id: surfaceHover } }
@@ -91,6 +97,8 @@ Popup {
             // 230), wider when a row needs it.
             subMenu = Qt.createComponent("MenuPopup.qml").createObject(root.contentItem, {
                 viewStyle: Qt.binding(() => root.viewStyle),
+                fabric: Qt.binding(() => root.fabric),
+                fabricWidth: 232,
                 minRowWidth: Qt.binding(() => root.width - 2 * root.padding) })
             subMenu.picked.connect(i => { const s = root.subIndex; root.close(); root.subPicked(s, i) })
         }
@@ -114,8 +122,9 @@ Popup {
         const p = rowItem.mapToItem(root.contentItem, 0, 0)
         sub.items = it.submenu
         // Beside the list, or to its left (More, at the window's right).
-        sub.x = root.submenuLeft ? -sub.width : root.contentItem.width
-        sub.y = p.y
+        // OneDrive's submenus sit 4 px off the list, 4 below the row's top.
+        sub.x = root.submenuLeft ? -sub.width : root.contentItem.width + (root.fabric ? 4 : 0)
+        sub.y = p.y + (root.fabric ? 4 : 0)
         sub.open()
     }
     onClosed: if (subMenu) subMenu.close()
@@ -125,7 +134,7 @@ Popup {
         if (rows.length) hoverRow(i, rows[0])
     }
     contentItem: Column {
-        spacing: 2
+        spacing: root.fabric ? 0 : 2
         Loader {
             active: !!root.header
             visible: active
@@ -148,7 +157,7 @@ Popup {
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
-                height: modelData.separator ? root.separatorHeight : modelData.toggle ? 36 : 32
+                height: modelData.separator ? root.separatorHeight : modelData.toggle || root.fabric ? 36 : 32
                 Rectangle {
                     visible: !!row.modelData.separator
                     anchors.verticalCenter: parent.verticalCenter
@@ -169,7 +178,7 @@ Popup {
                 }
                 Rectangle {
                     visible: !row.modelData.separator && !row.modelData.heading
-                    anchors.fill: parent; radius: 4
+                    anchors.fill: parent; radius: root.fabric ? 0 : 4
                     color: mh.hovered && row.on && !row.modelData.toggle ? theme.menuHover : "transparent"
                     // A switch row's track and knob.
                     Rectangle {
@@ -187,7 +196,7 @@ Popup {
                     }
                     FluentIcon {
                         visible: !!row.modelData.icon
-                        x: 6; anchors.verticalCenter: parent.verticalCenter; size: 20
+                        x: root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
                         name: row.modelData.icon || ""
                         color: row.modelData.iconColor ? row.modelData.iconColor : row.modelData.checked ? theme.brand : row.ink
                     }

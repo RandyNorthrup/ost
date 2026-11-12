@@ -582,6 +582,73 @@ pub async fn delete(client: &TeamsClient, drive_id: &str, item_id: &str) -> Resu
     Ok(())
 }
 
+/// Characters OneDrive refuses in a name.
+pub fn bad_name(name: &str) -> bool {
+    let n = name.trim();
+    n.is_empty() || n.ends_with('.') || n.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+}
+
+/// Rename an item (Teams' Rename: the name with its extension).
+pub async fn rename(client: &TeamsClient, drive_id: &str, item_id: &str, name: &str) -> Result<()> {
+    if bad_name(name) {
+        bail!("That name isn't allowed");
+    }
+    client
+        .graph_patch(&item_path(drive_id, item_id)?, &serde_json::json!({ "name": name.trim() }))
+        .await?;
+    Ok(())
+}
+
+/// One item, by id.
+pub async fn item(client: &TeamsClient, drive_id: &str, item_id: &str) -> Result<DriveItem> {
+    let v: serde_json::Value = client
+        .graph_get(&format!("{}?{SELECT}", item_path(drive_id, item_id)?))
+        .await?
+        .json()
+        .await?;
+    parse_item(&v).context("The item didn't come back")
+}
+
+/// A drive's top folder (your OneDrive's when `drive_id` is empty), for the
+/// Move to / Copy to picker.
+pub async fn root(client: &TeamsClient, drive_id: &str) -> Result<DriveItem> {
+    let path = if drive_id.is_empty() {
+        "/me/drive/root".to_string()
+    } else {
+        format!("/drives/{}/root", check_id(drive_id)?)
+    };
+    let v: serde_json::Value = client.graph_get(&format!("{path}?{SELECT}")).await?.json().await?;
+    let mut item = parse_item(&v).context("The drive's folder didn't come back")?;
+    // The root's own name is "root"; the picker shows the drive's.
+    item.name = String::new();
+    Ok(item)
+}
+
+/// Open in app: a copy of the file in OST's cache (replaced each time), for
+/// the desktop's own app to open.
+pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBuf> {
+    if item.is_folder {
+        bail!("{} is a folder", item.name);
+    }
+    let dir = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .context("No cache folder")?
+        .join("ost/open")
+        .join(check_id(&item.id)?);
+    std::fs::create_dir_all(&dir)?;
+    let name = Path::new(&item.name).file_name().and_then(|n| n.to_str()).context("Bad file name")?;
+    let bytes = client
+        .graph_get(&format!("{}/content", item_path(&item.drive_id, &item.id)?))
+        .await?
+        .bytes()
+        .await
+        .context("Download")?;
+    let path = dir.join(name);
+    std::fs::write(&path, &bytes)?;
+    Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

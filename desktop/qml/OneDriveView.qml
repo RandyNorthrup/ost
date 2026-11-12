@@ -23,6 +23,7 @@ Item {
     signal favorite(string driveId, string itemId, bool on)
     signal restore(string ids)
     signal purge(string ids)
+    readonly property alias fileActions: actions
     /// Browse files by People: the person picked.
     property string person: ""
 
@@ -339,32 +340,21 @@ Item {
                             Cell { width: 82; text: frow.modelData.sharing }
                         }
                         Rectangle {
-                            visible: fh.hovered || rowMenu.visible
+                            id: moreButton
+                            visible: fh.hovered || actions.item === frow.modelData && actions.menuOpen
                             anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
                             width: 32; height: 32; radius: theme.radius
                             color: mh.hovered ? theme.pane : "transparent"
                             FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
                             HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: rowMenu.open() }
+                            TapHandler { onTapped: actions.popup(frow.modelData, moreButton, 0, moreButton.height) }
                             Accessible.role: Accessible.Button
                             Accessible.name: "More options for " + frow.modelData.name
-                            MenuPopup {
-                                id: rowMenu
-                                x: -200; y: parent.height; width: 220
-                                items: (frow.modelData.is_folder ? [{ label: "Open", icon: "folder-20" }] : [{ label: "Open in browser", icon: "open-20" }, { label: "Download", icon: "download-20" }])
-                                    // Graph's favorites (followed items) hold files, not folders.
-                                    .concat(frow.modelData.is_folder ? [] : [root.view === "favorites" ? { label: "Remove from favorites", icon: "star-20" } : { label: "Add to favorites", icon: "star-20" }])
-                                    .concat(root.canWrite ? [{ separator: true }, { label: "Delete", icon: "delete-20" }] : [])
-                                onPicked: i => {
-                                    const label = items[i].label
-                                    if (label === "Open") frow.activate()
-                                    else if (label === "Open in browser") Qt.openUrlExternally(frow.modelData.web_url)
-                                    else if (label === "Download") root.download(JSON.stringify(frow.modelData))
-                                    else if (label === "Delete") { deleteDialog.item = frow.modelData; deleteDialog.open() }
-                                    else if (label === "Add to favorites") root.favorite(frow.modelData.drive_id, frow.modelData.id, true)
-                                    else if (label === "Remove from favorites") root.favorite(frow.modelData.drive_id, frow.modelData.id, false)
-                                }
-                            }
+                        }
+                        // Right-click: the same menu at the pointer, as Teams.
+                        TapHandler {
+                            acceptedButtons: Qt.RightButton
+                            onTapped: (ev) => actions.popup(frow.modelData, frow, ev.position.x, ev.position.y)
                         }
                         function activate() {
                             if (modelData.is_folder) root.openFolder(modelData.name, modelData.drive_id, modelData.id)
@@ -474,36 +464,18 @@ Item {
             }
         }
     }
-    Popup {
-        id: deleteDialog
-        property var item: ({})
-        anchors.centerIn: parent
-        width: 380; padding: 20; modal: true
-        background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
-        contentItem: Column {
-            spacing: 14
-            Text { width: 340; wrapMode: Text.Wrap; text: "Delete \"" + (deleteDialog.item.name || "") + "\"?"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-            Text { width: 340; wrapMode: Text.Wrap; text: "It goes to the recycle bin."; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
-            Row {
-                spacing: 8
-                Rectangle {
-                    width: 90; height: 32; radius: theme.radius
-                    color: "#D13438"
-                    Text { anchors.centerIn: parent; text: "Delete"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
-                    TapHandler { onTapped: { root.remove(deleteDialog.item.drive_id, deleteDialog.item.id); deleteDialog.close() } }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: "Delete"
-                }
-                Rectangle {
-                    width: 90; height: 32; radius: theme.radius
-                    color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
-                    TapHandler { onTapped: deleteDialog.close() }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
-                }
-            }
-        }
+    // The item's More actions (Teams' OneDrive context menu), its
+    // dialogs and notices.
+    FileActions {
+        id: actions
+        anchors.fill: content
+        favoriteIds: root.driveData.favorite_ids || []
+        canWrite: root.canWrite
+        folder: root.view === "folder" ? { drive_id: root.here.drive_id, item_id: root.here.item_id } : { drive_id: "-", item_id: "-" }
+        onChanged: root.load(root.view, root.here.drive_id, root.here.item_id)
+        onDeleteItem: it => root.remove(it.drive_id, it.id)
+        onFavoriteItem: (it, on) => root.favorite(it.drive_id, it.id, on)
+        onDownloadItem: it => root.download(JSON.stringify(it))
     }
 
     // Test harness hooks

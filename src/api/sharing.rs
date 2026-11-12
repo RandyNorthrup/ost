@@ -159,7 +159,7 @@ pub fn parse_info(reply: &Value) -> Info {
 }
 
 /// POST a SharePoint REST method with a token for the site's host.
-async fn post(url: &str, body: &Value) -> Result<Value> {
+pub(crate) async fn post(url: &str, body: &Value) -> Result<Value> {
     let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
     if !host.starts_with("https://") {
         bail!("Not a SharePoint address: {url}");
@@ -354,7 +354,7 @@ pub async fn stop_sharing(item: &ItemRef) -> Result<()> {
 }
 
 /// GET a SharePoint REST resource with a token for the site's host.
-async fn get(url: &str) -> Result<Value> {
+pub(crate) async fn get(url: &str) -> Result<Value> {
     let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
     let token = crate::auth::oauth::access_token_for(&format!("{host}/.default")).await?;
     let resp = reqwest::Client::new()

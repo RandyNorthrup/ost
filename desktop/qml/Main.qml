@@ -922,7 +922,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -2916,6 +2916,80 @@ Window {
             else if (step === 8) { console.warn("MEETNOW state", backend.callState, "meeting", backend.callMeeting, "thread", backend.callThreadId, "roster", backend.callRosterJson); callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-meetnow.png"))) }
             else if (step === 22) backend.hangUp()
             else if (step === 26) { console.warn("MEETNOW after", backend.callState); Qt.quit() }
+            step++
+        }
+    }
+
+    // --file-actions-test: Teams' file menu on ost-share-test.txt in My
+    // files (its Open submenu, Rename, Delete?, Move to into Attachments)
+    // without changing anything; --file-actions-live also duplicates it
+    // (and deletes the copy), renames it and back, copies it to
+    // Attachments (and deletes the copy), moves it there and back;
+    // --file-actions-link makes its Copy link (and deletes that link).
+    Timer {
+        running: Qt.application.arguments.indexOf("--file-actions-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var it: null
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const live = Qt.application.arguments.indexOf("--file-actions-live") >= 0
+            const linkTest = Qt.application.arguments.indexOf("--file-actions-link") >= 0
+            const fa = oneDrive.fileActions
+            const d = oneDrive.driveData
+            const find = n => (d.items || []).find(i => i.name === n)
+            const log = (tag, x) => console.warn("FILEACT", tag, JSON.stringify(x === undefined ? fa.stateForTest() : x))
+            if (step === 0) { rail.current = "onedrive"; oneDrive.open("myfiles") }
+            else if (step === 2) {
+                it = find("ost-share-test.txt")
+                log("items", (d.items || []).map(i => i.name))
+                if (!it) { Qt.quit(); return }
+                log("menu", fa.menuForTest(it)); log("folder menu", fa.menuForTest(find("Attachments") || {}))
+                fa.popupForTest(it)
+            }
+            else if (step === 3) cap("menu")
+            else if (step === 4) fa.submenuForTest()
+            else if (step === 5) cap("submenu")
+            else if (step === 6) { fa.closeAllForTest(); fa.actForTest(it, "Rename") }
+            else if (step === 7) { log("rename"); cap("rename") }
+            else if (step === 8) { fa.closeAllForTest(); fa.actForTest(it, "Delete") }
+            else if (step === 9) { log("delete"); cap("delete") }
+            else if (step === 10) { fa.closeAllForTest(); fa.actForTest(it, "Move to") }
+            else if (step === 11) { log("move"); cap("move") }
+            else if (step === 12) log("into", fa.pickerIntoForTest("Attachments"))
+            else if (step === 13) { log("move into"); cap("move-into") }
+            else if (step === 14) { fa.closeAllForTest(); if (linkTest) fa.actForTest(it, "Copy link") }
+            else if (step === 16 && linkTest) { log("link", fa.linkForTest()); cap("link") }
+            else if (step === 17 && linkTest) fa.copyForTest()
+            else if (step === 18 && linkTest) cap("link-copied")
+            else if (step === 19 && linkTest) {
+                const l = fa.linkForTest(); fa.closeAllForTest()
+                if (l.share_id) backend.shareAction("unlink", JSON.stringify(l.ref), JSON.stringify({ kind: l.kind, share_id: l.share_id }))
+            }
+            else if (step === 20 && !live) Qt.quit()
+            else if (step === 21) fa.actForTest(it, "Duplicate")
+            else if (step === 22) { log("duplicating"); cap("duplicating") }
+            else if (step === 26) { log("duplicated"); log("copy there", !!find("ost-share-test Copy.txt")); cap("duplicated") }
+            else if (step === 27) oneDrive.deleteForTest("ost-share-test Copy.txt")
+            else if (step === 29) { fa.actForTest(it, "Rename"); fa.renameForTest("ost-share-test-ost") }
+            else if (step === 31) { log("renamed"); log("renamed there", !!find("ost-share-test-ost.txt")); cap("renamed") }
+            else if (step === 32) { const r = find("ost-share-test-ost.txt"); if (r) { fa.actForTest(r, "Rename"); fa.renameForTest("ost-share-test") } }
+            else if (step === 34) { it = find("ost-share-test.txt"); log("renamed back", !!it); if (it) fa.actForTest(it, "Copy to") }
+            else if (step === 36) log("copy into", fa.pickerIntoForTest("Attachments"))
+            else if (step === 38) cap("copy-picker")
+            else if (step === 39) fa.pickerDoneForTest()
+            else if (step === 44) { log("copied"); const a = find("Attachments"); if (a) oneDrive.openFolder(a.name, a.drive_id, a.id) }
+            else if (step === 45) { log("in Attachments", (d.items || []).map(i => i.name)); oneDrive.deleteForTest("ost-share-test.txt") }
+            else if (step === 47) { log("copy deleted", !find("ost-share-test.txt")); oneDrive.open("myfiles") }
+            else if (step === 48) { it = find("ost-share-test.txt"); if (it) fa.actForTest(it, "Move to") }
+            else if (step === 50) log("move into", fa.pickerIntoForTest("Attachments"))
+            else if (step === 52) fa.pickerDoneForTest()
+            else if (step === 57) { log("moved"); log("gone from My files", !find("ost-share-test.txt")); const a = find("Attachments"); if (a) oneDrive.openFolder(a.name, a.drive_id, a.id) }
+            else if (step === 58) { it = find("ost-share-test.txt"); log("in Attachments", !!it); if (it) fa.actForTest(it, "Move to") }
+            else if (step === 60) { log("picker at My files"); cap("move-back") }
+            else if (step === 61) fa.pickerDoneForTest()
+            else if (step === 66) { log("moved back"); oneDrive.open("myfiles") }
+            else if (step === 67) { log("back in My files", !!find("ost-share-test.txt")); Qt.quit() }
             step++
         }
     }

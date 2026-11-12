@@ -161,6 +161,7 @@ fn main() {
         "qml/HelpWindow.qml",
         "qml/SearchView.qml",
         "qml/OneDriveShare.qml",
+        "qml/FileActions.qml",
         "qml/ShareFileDialog.qml",
         "qml/SearchPreview.qml",
         "qml/CreateChannelDialog.qml",
