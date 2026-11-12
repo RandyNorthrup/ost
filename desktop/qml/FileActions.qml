@@ -22,6 +22,8 @@ Item {
     signal downloadItem(var item)
     /// Details: the list opens its Details pane for the item.
     signal detailsItem(var item)
+    /// Preview: the list shows its viewer for the item.
+    signal previewItem(var item)
 
     /// This view's tag on backend replies.
     readonly property string tag: "fa" + Math.floor(Math.random() * 1e9) + ":"
@@ -56,6 +58,7 @@ Item {
             L.push({ label: "Open", icon: "open-16", submenu: [
                 text ? { label: "Open in Text Editor", icon: "edit-16" } : { label: "Open in browser", icon: "globe-16" },
                 { label: "Open in app", icon: "open-16" }] })
+            L.push({ label: "Preview", icon: "full-screen-maximize-16" })
         }
         if (sp) L.push({ label: "Share", icon: "share-16" })
         if (sp || it.web_url) L.push({ label: "Copy link", icon: "link-16" })
@@ -116,6 +119,7 @@ Item {
         else if (label === "Copy to") picker.openFor(it, false)
         else if (label === "Version history") versions.openFor(it)
         else if (label === "Details") detailsItem(it)
+        else if (label === "Preview") previewItem(it)
         else if (label === "Duplicate") { jobCount = 1; notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
     }
 

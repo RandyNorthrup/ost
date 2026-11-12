@@ -12825,6 +12825,7 @@ impl qobject::Backend {
                         json!(null)
                     }
                     "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),
+                    "preview" => json!(api::drive::preview(&client, &item).await?),
                     // Version history: the list (with pictures' ids), and
                     // a version restored or sent to the recycle bin.
                     "versions" => {

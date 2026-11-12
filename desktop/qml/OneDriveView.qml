@@ -809,7 +809,23 @@ Item {
         onFavoriteItem: (it, on) => root.favorite(it.drive_id, it.id, on)
         onDownloadItem: it => root.download(JSON.stringify(it))
         onDetailsItem: it => details.item = it
+        onPreviewItem: it => viewer.show(it, root.items)
     }
+
+    // Preview: OneDrive's viewer over the whole view.
+    FilePreview {
+        id: viewer
+        anchors.fill: parent
+        z: 10
+        actions: actions
+        favoriteIds: root.favoriteIds
+        onFavorite: (it, on) => root.favorite(it.drive_id, it.id, on)
+        onDownload: it => root.download(JSON.stringify(it))
+        onDetails: it => details.item = it
+    }
+    function previewForTest() { return viewer.stateForTest() }
+    function previewStepForTest(d) { viewer.step(d) }
+    function previewCloseForTest() { viewer.close() }
 
     // Test harness hooks
     /// Show row `i` as hovered (grabToImage has no pointer).

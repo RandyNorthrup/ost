@@ -648,6 +648,60 @@ pub async fn thumbnail(client: &TeamsClient, item: &DriveItem) -> Result<Option<
     Ok(Some(path))
 }
 
+/// What Preview shows for a file: its text, a picture, or PDF pages (Office
+/// files converted by Graph, as OST can't embed Office for the web).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Preview {
+    /// "text", "image", "pdf" or "none".
+    pub kind: String,
+    pub text: String,
+    pub path: String,
+}
+
+const TEXT_KINDS: &[&str] = &["txt", "md", "json", "xml", "log", "csv", "css", "js", "ts", "html", "htm", "yaml", "yml", "ini", "cfg", "py", "rs", "sh", "c", "h", "cpp", "java", "cs", "sql", "toml"];
+const IMAGE_KINDS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp"];
+const OFFICE_KINDS: &[&str] = &["doc", "docx", "docm", "dot", "dotx", "rtf", "odt", "ppt", "pptx", "pptm", "pps", "ppsx", "odp", "xls", "xlsx", "xlsm", "xlsb", "ods"];
+/// Text previews stop here.
+const TEXT_LIMIT: usize = 1 << 20;
+
+pub fn preview_kind(kind: &str) -> &'static str {
+    let k = kind.to_ascii_lowercase();
+    if TEXT_KINDS.contains(&k.as_str()) {
+        "text"
+    } else if IMAGE_KINDS.contains(&k.as_str()) {
+        "image"
+    } else if k == "pdf" || OFFICE_KINDS.contains(&k.as_str()) {
+        "pdf"
+    } else {
+        "none"
+    }
+}
+
+/// Fetch what Preview shows for `item`.
+pub async fn preview(client: &TeamsClient, item: &DriveItem) -> Result<Preview> {
+    let kind = preview_kind(&item.kind);
+    if kind == "none" || item.is_folder {
+        return Ok(Preview { kind: "none".into(), text: String::new(), path: String::new() });
+    }
+    let convert = kind == "pdf" && item.kind.to_ascii_lowercase() != "pdf";
+    let url = format!("{}/content{}", item_path(&item.drive_id, &item.id)?, if convert { "?format=pdf" } else { "" });
+    let bytes = client.graph_get(&url).await?.bytes().await.context("Preview")?;
+    if kind == "text" {
+        let cut = &bytes[..bytes.len().min(TEXT_LIMIT)];
+        return Ok(Preview { kind: "text".into(), text: String::from_utf8_lossy(cut).into_owned(), path: String::new() });
+    }
+    let dir = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .context("No cache folder")?
+        .join("ost/preview");
+    std::fs::create_dir_all(&dir)?;
+    let ext = if kind == "pdf" { "pdf".to_string() } else { item.kind.to_ascii_lowercase() };
+    let path = dir.join(format!("{}.{ext}", check_id(&item.id)?));
+    std::fs::write(&path, &bytes)?;
+    Ok(Preview { kind: kind.into(), text: String::new(), path: format!("file://{}", path.display()) })
+}
+
 /// Open in app: a copy of the file in OST's cache (replaced each time), for
 /// the desktop's own app to open.
 pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBuf> {
@@ -707,6 +761,15 @@ mod tests {
             ("01R", "b!other", "docx")
         );
         assert_eq!(items[1].sharing, "Shared");
+    }
+
+    #[test]
+    fn previews_by_kind() {
+        assert_eq!(preview_kind("TXT"), "text");
+        assert_eq!(preview_kind("docx"), "pdf");
+        assert_eq!(preview_kind("pdf"), "pdf");
+        assert_eq!(preview_kind("png"), "image");
+        assert_eq!(preview_kind("zip"), "none");
     }
 
     #[test]
