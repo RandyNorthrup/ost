@@ -272,17 +272,27 @@ pub fn link_kind(scope: i64, edit: bool) -> i64 {
     }
 }
 
-/// Copy link: make (or reuse) the link for a scope and role; its address.
-pub async fn create_link(item: &ItemRef, scope: i64, edit: bool, expiration: &str, password: &str) -> Result<String> {
+/// Copy link: make (or reuse) the link for a scope and role; its address
+/// and share id. Scope 4 is Teams' "People currently in this chat" (a
+/// specific-people link the chat service opens to the chat's members).
+pub async fn create_link(item: &ItemRef, scope: i64, edit: bool, expiration: &str, password: &str) -> Result<(String, String)> {
     let reply = post(&item.method("ShareLink"), &share_link_body(scope, edit, expiration, password)).await?;
-    let url = s(&reply["d"]["ShareLink"]["sharingLinkInfo"]["Url"]);
+    let info = &reply["d"]["ShareLink"]["sharingLinkInfo"];
+    let url = s(&info["Url"]);
     if url.is_empty() {
         bail!("No link came back");
     }
-    Ok(url)
+    Ok((url, s(&info["ShareId"])))
 }
 
 pub fn share_link_body(scope: i64, edit: bool, expiration: &str, password: &str) -> Value {
+    if scope == 4 {
+        return json!({"request": {"createLink": true, "settings": {
+            "linkKind": 6, "expiration": if expiration.is_empty() { Value::Null } else { Value::from(expiration) },
+            "role": if edit { 2 } else { 1 }, "restrictShareMembership": true,
+            "updatePassword": false, "password": "", "scope": 2, "nav": "",
+        }}});
+    }
     json!({"request": {"createLink": true, "settings": {
         "allowAnonymousAccess": scope == 0,
         "linkKind": link_kind(scope, edit),
@@ -294,6 +304,17 @@ pub fn share_link_body(scope: i64, edit: bool, expiration: &str, password: &str)
         "scope": scope,
         "nav": "",
     }}})
+}
+
+/// Whether each person (by sign-in name) can open the file already
+/// (SharePoint's CheckPermissions, as Teams' share dialog asks).
+pub async fn check_access(item: &ItemRef, upns: &[String]) -> Result<Vec<(String, bool)>> {
+    let recipients: Vec<Value> = upns.iter().map(|u| json!({ "email": format!("i:0#.f|membership|{}", u.to_ascii_lowercase()) })).collect();
+    let reply = post(&item.method("CheckPermissions"), &json!({ "recipients": recipients })).await?;
+    Ok(results(&reply["d"]["CheckPermissions"])
+        .iter()
+        .map(|r| (s(&r["inputEntity"]).rsplit('|').next().unwrap_or_default().to_string(), r["hasAccess"].as_bool().unwrap_or_default()))
+        .collect())
 }
 
 /// A person's direct access: 2 edit, 1 view, 0 none.
@@ -406,6 +427,11 @@ mod tests {
         let send = share_object_body(std::slice::from_ref(&who), false, "OST test 105");
         assert_eq!(send["roleValue"], "role:1073741826");
         assert_eq!(send["peoplePickerInput"], format!("[{who}]"));
+        // "People currently in this chat" (Teams' Share this file).
+        assert_eq!(
+            share_link_body(4, true, "", ""),
+            json!({"request": {"createLink": true, "settings": {"linkKind": 6, "expiration": null, "role": 2, "restrictShareMembership": true, "updatePassword": false, "password": "", "scope": 2, "nav": ""}}})
+        );
         let picked = parse_picker(&json!({"d": {"ClientPeoplePickerSearchUser": format!("[{who}]")}}));
         assert_eq!(picked, [who]);
     }

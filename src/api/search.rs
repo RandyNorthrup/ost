@@ -440,6 +440,99 @@ pub async fn in_suggestions(keyword: &str) -> Result<serde_json::Value> {
     Ok(v)
 }
 
+/// Teams' share and forward picker ("Add recipients"): Substrate's
+/// peoplepicker.newChat suggestions for people, chats, channels and teams,
+/// in its best-match order, as {kind, oid, id, name, sub, upn}. People are
+/// "person" (their object id); chats, channels and teams are "chat" (the
+/// thread to post to). Their second line is Teams': a person's sign-in name
+/// before "@" in capitals (with the job title after it in brackets), a
+/// channel's team.
+pub async fn recipients(keyword: &str, my_oid: &str) -> Result<Vec<serde_json::Value>> {
+    let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    let reply: serde_json::Value = reqwest::Client::new()
+        .post("https://substrate.office.com/search/api/v1/suggestions?scenario=peoplepicker.newChat")
+        .bearer_auth(token)
+        .json(&recipients_body(keyword))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(parse_recipients(&reply, my_oid))
+}
+
+pub fn recipients_body(keyword: &str) -> serde_json::Value {
+    let q = serde_json::json!({ "QueryString": keyword, "DisplayQueryString": keyword });
+    serde_json::json!({
+        "EntityRequests": [
+            {
+                "Query": q, "EntityType": "People", "Size": 20,
+                "Fields": ["Id", "MRI", "DisplayName", "EmailAddresses", "PeopleType", "PeopleSubtype", "Phones", "UserPrincipalName", "GivenName", "Surname", "Cid", "CompanyName", "JobTitle", "ImAddress", "ExternalDirectoryObjectId", "ConcatenatedId", "Department"],
+                "Filter": { "And": [
+                    { "Or": [{ "Term": { "PeopleType": "Person" } }, { "Term": { "PeopleType": "Other" } }, { "Term": { "PeopleType": "Group" } }] },
+                    { "Or": [{ "Term": { "PeopleSubtype": "OrganizationUser" } }, { "Term": { "PeopleSubtype": "PendingOrgContact" } }, { "Term": { "PeopleSubtype": "OrgContact" } }, { "Term": { "PeopleSubtype": "Guest" } }, { "Term": { "PeopleSubtype": "PublicDistributionList" } }, { "Term": { "PeopleSubtype": "UnifiedGroup" } }] },
+                    { "Or": [{ "Term": { "Flags": "NonHidden" } }] }
+                ] },
+                "Provenances": ["Mailbox", "Directory", "SecurityGroups", "ExtendedDirectory"], "From": 0, "ServeNoEmailContacts": true
+            },
+            { "Query": { "QueryString": keyword }, "EntityType": "Chat", "Size": 20 },
+            { "Query": { "QueryString": keyword }, "EntityType": "Channel", "Size": 20, "Filter": { "Or": [{ "Term": { "ChannelType": "Standard" } }, { "Term": { "ChannelType": "Shared" } }] } },
+            { "Query": { "QueryString": keyword }, "EntityType": "Team", "Size": 20 }
+        ],
+        "Scenario": { "Name": "peoplepicker.newChat" },
+        "Cvid": uuid::Uuid::new_v4().to_string(),
+        "AppName": "Microsoft Teams",
+        "LogicalId": uuid::Uuid::new_v4().to_string(),
+    })
+}
+
+/// The suggestions in Teams' order (LayoutHints.BestMatchSuggestions, then
+/// any left over). Groups (Microsoft 365 groups and lists) are left out:
+/// OST doesn't post to them.
+pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_json::Value> {
+    let s = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let mut by_ref: Vec<(String, serde_json::Value)> = Vec::new();
+    for g in reply["Groups"].as_array().into_iter().flatten() {
+        let group = g["Type"].as_str().unwrap_or_default();
+        for r in g["Suggestions"].as_array().into_iter().flatten() {
+            let item = match group {
+                "People" if r["PeopleType"] == "Person" => {
+                    let oid = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
+                    let upn = s(&r["UserPrincipalName"]);
+                    let alias = upn.split('@').next().unwrap_or_default().to_uppercase();
+                    let job = s(&r["JobTitle"]);
+                    let guest = r["PeopleSubtype"] == "Guest";
+                    let sub = if !job.is_empty() {
+                        if alias.is_empty() { job } else { format!("({alias}) {job}") }
+                    } else if !guest {
+                        alias
+                    } else {
+                        r["EmailAddresses"][0].as_str().map(str::to_string).unwrap_or(upn.clone())
+                    };
+                    let mut name = s(&r["DisplayName"]);
+                    if !my_oid.is_empty() && oid == my_oid.to_ascii_lowercase() {
+                        name.push_str(" (You)");
+                    }
+                    serde_json::json!({ "kind": "person", "oid": oid, "name": name, "sub": sub, "upn": upn })
+                }
+                "Chat" => serde_json::json!({ "kind": "chat", "id": s(&r["ThreadId"]), "name": s(&r["Name"]), "sub": "", "thread_type": s(&r["ThreadType"]) }),
+                "Channel" => serde_json::json!({ "kind": "chat", "id": s(&r["ThreadId"]), "name": s(&r["Name"]), "sub": s(&r["TeamName"]), "thread_type": "channel", "group": s(&r["GroupId"]) }),
+                "Team" => serde_json::json!({ "kind": "chat", "id": s(&r["ThreadId"]), "name": s(&r["Name"]), "sub": "", "thread_type": "team", "group": s(&r["GroupId"]) }),
+                _ => continue,
+            };
+            by_ref.push((s(&r["ReferenceId"]), item));
+        }
+    }
+    let mut out = Vec::new();
+    for hint in reply["LayoutHints"]["BestMatchSuggestions"].as_array().into_iter().flatten() {
+        if let Some(i) = by_ref.iter().position(|(r, _)| r == hint["ReferenceId"].as_str().unwrap_or_default()) {
+            out.push(by_ref.remove(i).1);
+        }
+    }
+    out.extend(by_ref.into_iter().map(|(_, v)| v));
+    out
+}
+
 /// Search `tab` as Teams' results page does.
 #[allow(clippy::too_many_arguments)]
 pub async fn search(
@@ -515,6 +608,37 @@ mod tests {
         assert_eq!(bodies("images", "x", &Filters::default(), 0, "UTC", "", "").len(), 2);
         let m = bodies("meetings", "x", &Filters::default(), 0, "America/Los_Angeles", "", "");
         assert_eq!(m[0]["timezone"], "Pacific Standard Time");
+    }
+
+    #[test]
+    fn recipients_come_in_teams_order_with_teams_lines() {
+        // As the service answered "OST T" (Share this file, 2026-11-11).
+        let reply = serde_json::json!({
+            "Groups": [
+                { "Type": "People", "Suggestions": [
+                    { "DisplayName": "OST Test 2", "PeopleType": "Person", "PeopleSubtype": "OrganizationUser", "UserPrincipalName": "ost-test2@x.com", "ExternalDirectoryObjectId": "9EDCC62F", "ReferenceId": "r1" },
+                    { "DisplayName": "OST Test 1", "PeopleType": "Person", "PeopleSubtype": "OrganizationUser", "UserPrincipalName": "ost-test1@x.com", "ExternalDirectoryObjectId": "4287e791", "JobTitle": "Tester", "ReferenceId": "r2" },
+                    { "DisplayName": "OST Test Team", "PeopleType": "Group", "PeopleSubtype": "UnifiedGroup", "ReferenceId": "r3" }
+                ] },
+                { "Type": "Team", "Suggestions": [{ "Name": "OST Test Team", "ThreadId": "19:team@thread.tacv2", "GroupId": "g", "ReferenceId": "r14" }] },
+                { "Type": "Channel", "Suggestions": [{ "Name": "OST test channel", "ThreadId": "19:c@thread.tacv2", "TeamName": "OST Test Team", "GroupId": "g", "ReferenceId": "r9" }] },
+                { "Type": "Chat", "Suggestions": [{ "Name": "OST group test", "ThreadId": "19:g@thread.v2", "ThreadType": "Chat", "ReferenceId": "r8" }] }
+            ],
+            "LayoutHints": { "BestMatchSuggestions": [
+                { "ReferenceId": "r1" }, { "ReferenceId": "r2" }, { "ReferenceId": "r3" }, { "ReferenceId": "r8" }, { "ReferenceId": "r14" }, { "ReferenceId": "r9" }
+            ] }
+        });
+        let r = parse_recipients(&reply, "4287E791");
+        let lines: Vec<(String, String)> = r.iter().map(|v| (v["name"].as_str().unwrap().to_string(), v["sub"].as_str().unwrap().to_string())).collect();
+        assert_eq!(lines, [
+            ("OST Test 2".to_string(), "OST-TEST2".to_string()),
+            ("OST Test 1 (You)".to_string(), "(OST-TEST1) Tester".to_string()),
+            ("OST group test".to_string(), String::new()),
+            ("OST Test Team".to_string(), String::new()),
+            ("OST test channel".to_string(), "OST Test Team".to_string()),
+        ]);
+        assert_eq!(r[0]["oid"], "9edcc62f");
+        assert_eq!(r[4]["id"], "19:c@thread.tacv2");
     }
 
     #[test]

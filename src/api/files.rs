@@ -223,6 +223,48 @@ pub async fn upload_for_chat(
     }))
 }
 
+/// The `properties.files` entry Teams' "Share this file" posts for a file
+/// already in OneDrive or SharePoint: its item, addresses and the link the
+/// chat may open (`share_id` empty for the item's own address).
+pub fn shared_record(name: &str, unique: &str, object_url: &str, site_url: &str, share_url: &str, share_id: &str) -> serde_json::Value {
+    let unique = unique.trim_matches(|c| c == '{' || c == '}').to_ascii_lowercase();
+    let file_type = ext_of(name);
+    serde_json::json!({
+        "itemid": unique,
+        "fileName": name,
+        "fileType": file_type,
+        "fileInfo": {
+            "itemId": null,
+            "fileUrl": object_url,
+            "siteUrl": site_url,
+            "serverRelativeUrl": "",
+            "shareUrl": share_url,
+            "shareId": share_id
+        },
+        "fileChicletState": { "serviceName": "p2p", "state": null },
+        "@type": "http://schema.skype.com/File",
+        "version": 2,
+        "id": unique,
+        "baseUrl": site_url,
+        "objectUrl": object_url,
+        "openUrl": null,
+        "type": file_type,
+        "title": name,
+        "state": null,
+        "altText": null,
+        "chicletBreadcrumbs": null,
+        "providerData": "",
+        "botFileProperties": {},
+        "isUploadError": false,
+        "progressComplete": null,
+        "permissionScope": "users",
+        "filePreview": { "previewUrl": "", "previewHeight": 0, "previewWidth": 0 },
+        "sharepointIds": null,
+        "publication": null,
+        "site": null
+    })
+}
+
 /// Upload larger files in chunks through a Graph upload session.
 pub(crate) async fn upload_in_session(
     client: &TeamsClient,

@@ -785,7 +785,9 @@ pub mod qobject {
         /// ({site, list, item}): "info"; "people" {query}; "send" {people,
         /// edit, message}; "link" {scope, edit, expiration, password} (its
         /// address); "role" {login, role}; "unlink" {kind, share_id};
-        /// "stop" (Stop sharing). The
+        /// "stop" (Stop sharing); for Teams' "Share this file": "recipients"
+        /// {query}, "access" {upns}, "post" {targets, note, file: {name,
+        /// object_url, share_url, share_id}}. The
         /// answer comes back in share_done.
         #[qinvokable]
         fn share_action(self: Pin<&mut Backend>, op: &QString, item_json: &QString, args_json: &QString);
@@ -4956,11 +4958,13 @@ impl qobject::Backend {
         let op = op.to_string();
         let item: api::sharing::ItemRef = serde_json::from_str(&item_json.to_string()).unwrap_or_default();
         let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let group_chats = group_chat_ids(&self.rust().chats_json.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let s = |k: &str| args[k].as_str().unwrap_or_default().to_string();
             let result: anyhow::Result<serde_json::Value> = async {
-                Ok(match op.as_str() {
+                // "sf:<op>" is the same op for Teams' Share this file (its own replies).
+                Ok(match op.trim_start_matches("sf:") {
                     "info" => {
                         let mut info = api::sharing::info(&item).await?;
                         if let Ok(client) = TeamsClient::new().await {
@@ -4974,7 +4978,28 @@ impl qobject::Backend {
                         api::sharing::send(&item, &people, args["edit"].as_bool().unwrap_or(true), &s("message")).await?;
                         json!(null)
                     }
-                    "link" => json!(api::sharing::create_link(&item, args["scope"].as_i64().unwrap_or(1), args["edit"].as_bool().unwrap_or(false), &s("expiration"), &s("password")).await?),
+                    "link" | "copy" => {
+                        let (url, share_id) = api::sharing::create_link(&item, args["scope"].as_i64().unwrap_or(1), args["edit"].as_bool().unwrap_or(false), &s("expiration"), &s("password")).await?;
+                        json!({ "url": url, "share_id": share_id })
+                    }
+                    "recipients" => {
+                        let oid = TeamsClient::new().await.ok().and_then(|c| c.object_id()).unwrap_or_default();
+                        json!({ "query": s("query"), "items": api::search::recipients(&s("query"), &oid).await? })
+                    }
+                    "access" => {
+                        let upns: Vec<String> = args["upns"].as_array().into_iter().flatten().filter_map(|u| u.as_str().map(str::to_string)).collect();
+                        json!(api::sharing::check_access(&item, &upns).await?.into_iter().map(|(u, ok)| json!({ "upn": u, "ok": ok })).collect::<Vec<_>>())
+                    }
+                    "post" => {
+                        let client = TeamsClient::new().await?;
+                        let targets = args["targets"].as_array().cloned().unwrap_or_default();
+                        let chat = picked_conversation(&client, &targets, &group_chats).await?;
+                        let f = &args["file"];
+                        let fs = |k: &str| f[k].as_str().unwrap_or_default().to_string();
+                        let record = api::files::shared_record(&fs("name"), &item.item, &fs("object_url"), &item.site, &fs("share_url"), &fs("share_id"));
+                        api::files::send_with_files(&client, &chat, &s("note"), vec![record]).await?;
+                        json!({ "chat": chat })
+                    }
                     "role" => {
                         api::sharing::set_role(&item, &s("login"), args["role"].as_i64().unwrap_or(0)).await?;
                         json!(null)

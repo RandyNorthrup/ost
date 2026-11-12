@@ -60,10 +60,22 @@ Popup {
     property bool invitedEdit: true
     // A question over the dialog: {title, text, ok, run}.
     property var ask: null
+    /// Link settings alone, for Teams' "Share this file" (its file card's
+    /// link line, Give access): no Back, "People currently in this chat"
+    /// (scope 4) among the choices, and Apply hands the choice back.
+    property bool chatMode: false
+    signal linkChosen(int scope, bool edit, string expiration, string password)
     /// Anyone but the owners has access.
     readonly property bool shared: !!info && (info.links.length > 0 || info.people.some(p => p.role !== 3))
 
+    function openLinkSettings(itemRef, name, type, scope, edit, expiry, pass) {
+        openFor(itemRef, name, type)
+        chatMode = true
+        pendScope = scope; pendEdit = edit; pendExpiration = expiry || ""; pendPassword = pass || ""
+        view = "settings"
+    }
     function openFor(itemRef, name, type) {
+        chatMode = false
         item = itemRef; fileName = name || ""; fileType = type || ""
         info = null; view = "main"; picked = []; query = ""; suggestions = []; message = ""; copied = ""; error = ""
         sending = false; tab = "people"; filter = ""; person = null; ask = null; expiration = ""; password = ""
@@ -94,7 +106,7 @@ Popup {
                 root.load()
             } else if (op === "link") {
                 if (error) { root.error = error; return }
-                backend.copyText(v)
+                backend.copyText(v.url)
                 root.copied = root.linkSentence(root.linkScope, root.linkEdit, false)
                 root.load()
             } else if (op === "role" || op === "unlink" || op === "stop") {
@@ -182,7 +194,7 @@ Popup {
         property int scope: 0
         property int size: 24
         width: size; height: size; radius: size / 2
-        readonly property var look: [["#F1F6F1", "#0B6A0B", "globe-20"], ["#F0F5F8", "#004E8C", "briefcase-20"], ["#F2F2F2", "#393939", "person-add-20"], ["#F4EFEB", "#8E562E", "person-20"]][scope]
+        readonly property var look: [["#F1F6F1", "#0B6A0B", "globe-20"], ["#F0F5F8", "#004E8C", "briefcase-20"], ["#F2F2F2", "#393939", "person-add-20"], ["#F4EFEB", "#8E562E", "person-20"], ["#F6F6FA", "#6365A8", "chat-20"]][scope]
         color: look[0]; border.width: 0.67; border.color: look[1]
         FluentIcon { anchors.centerIn: parent; name: parent.look[2]; size: Math.round(parent.size * 0.58); color: parent.look[1] }
     }
@@ -458,9 +470,9 @@ Popup {
             visible: root.view === "settings"
             width: parent.width
             height: applyRow.y + 32 + 32
-            IconButton { x: 24; y: 30.67; icon: "arrow-left-20"; label: "Back"; onClicked: root.view = "main" }
-            Text { x: 65; y: 24; width: 313; height: 26.67; text: "Link settings"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
-            Text { x: 65; y: 50.67; width: 313; elide: Text.ElideMiddle; text: root.fileName; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+            IconButton { visible: !root.chatMode; x: 24; y: 30.67; icon: "arrow-left-20"; label: "Back"; onClicked: root.view = "main" }
+            Text { x: root.chatMode ? 24 : 65; y: 24; width: 313; height: 26.67; text: "Link settings"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
+            Text { x: root.chatMode ? 24 : 65; y: 50.67; width: 313; elide: Text.ElideMiddle; text: root.fileName; font.family: theme.font; font.pixelSize: 14; color: root.ink }
             IconButton { x: 387; y: 30.67; icon: "info-20"; label: "Learn more"; onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2185222") }
             IconButton { x: 424; y: 30.67; icon: "dismiss-20"; label: "Close"; onClicked: root.close() }
             Text { x: 24; y: 93.33; text: "The link works for"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
@@ -470,10 +482,11 @@ Popup {
                 Repeater {
                     model: [
                         { scope: 0, name: "Anyone", line: "Share with anyone, doesn't require sign-in" },
-                        { scope: 1, name: "People in " + root.org(), line: "Share with people in " + root.org() + ", organization account required." },
+                        { scope: 1, name: "People in " + root.org(), line: "Share with people in " + root.org() + ", organization account required." }
+                    ].concat(root.chatMode ? [{ scope: 4, name: "People currently in this chat", line: "", noInfo: true }] : []).concat([
                         { scope: 3, name: "Only people with existing access", line: "Reshare with people in your organization who already have access." },
                         { scope: 2, name: "People you choose", line: "Share with specific people you choose inside or outside of " + root.org() + ", using their name, group, or email." }
-                    ]
+                    ])
                     Column {
                         id: srow
                         required property var modelData
@@ -482,19 +495,19 @@ Popup {
                         width: 432; spacing: 12
                         Rectangle { visible: srow.index > 0; width: 432; height: 0.67; color: "transparent" }
                         Item {
-                            width: 432; height: srow.on ? Math.max(24, scopeLine.y + scopeLine.height) : 24
-                            ScopeBadge { scope: srow.modelData.scope === 3 ? 3 : srow.modelData.scope }
+                            width: 432; height: srow.on && srow.modelData.line ? Math.max(24, scopeLine.y + scopeLine.height) : 24
+                            ScopeBadge { scope: srow.modelData.scope }
                             Row {
                                 x: 40; y: 2; spacing: 0
                                 Text { text: srow.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: srow.on ? Font.Bold : Font.Normal; color: srow.on ? theme.pick("#575454", "#E1DFDD") : root.ink }
                                 Item {
-                                    visible: !srow.on; width: 24; height: 20
+                                    visible: !srow.on && !srow.modelData.noInfo; width: 24; height: 20
                                     FluentIcon { anchors.centerIn: parent; size: 12; name: "info-16"; color: root.soft }
                                 }
                             }
                             Text {
                                 id: scopeLine
-                                visible: srow.on
+                                visible: srow.on && !!srow.modelData.line
                                 x: 40; y: 21.33; width: 322.55
                                 wrapMode: Text.Wrap; lineHeight: 1.15
                                 text: srow.modelData.line
@@ -622,7 +635,8 @@ Popup {
                         root.expiration = root.pendScope === 3 ? "" : root.pendExpiration
                         root.password = root.pendScope === 0 ? root.pendPassword : ""
                         root.copied = ""
-                        root.view = "main"
+                        if (root.chatMode) { root.linkChosen(root.pendScope, root.pendEdit, root.expiration, root.password); root.close() }
+                        else root.view = "main"
                     }
                 }
             }

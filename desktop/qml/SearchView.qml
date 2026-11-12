@@ -1275,11 +1275,12 @@ Rectangle {
                                 readonly property bool loop: /\.(loop|fluid)$/i.test(gcard.modelData.file_name || "")
                                 items: [{ label: "Open in Browser", icon: "globe-20" }]
                                     .concat(loop ? [] : [{ label: "Download", icon: "arrow-download-20" }])
-                                    .concat([{ label: "Copy link", icon: "link-20" }, { label: "Favorite", icon: "star-20" }])
+                                    .concat([{ label: "Share", icon: "share-20" }, { label: "Copy link", icon: "link-20" }, { label: "Favorite", icon: "star-20" }])
                                 onPicked: i => {
                                     close()
                                     const label = items[i].label
                                     if (label === "Open in Browser") Qt.openUrlExternally(gcard.modelData.url)
+                                    else if (label === "Share") shareFile.openFor({ site: gcard.modelData.file_site, list: gcard.modelData.file_list, item: gcard.modelData.id }, gcard.modelData.file_name, gcard.modelData.file_type, gcard.link)
                                     else if (label === "Download") backend.findFileAction("download", gcard.link)
                                     else if (label === "Copy link") { backend.copyText(gcard.modelData.url); backend.statusText = "Link copied" }
                                     else backend.findFileAction("favorite", gcard.link)
@@ -1298,8 +1299,12 @@ Rectangle {
     function shortName(n) { const p = String(n || "").split(" "); return p.length > 1 ? p[0] + " " + p[p.length - 1][0] + "." : String(n || "") }
     function imageOf(h) { return h.image_url || (h.file_name ? "" : "") }
 
+    // Teams' "Share this file" (Share in a file card's ···).
+    ShareFileDialog { id: shareFile }
+
     // Test hooks.
     function rowsForTest() { return rows }
+    function shareFileForTest() { return shareFile }
     property Item gridMenuOwner: null
     function openGridMenuForTest() {
         const row = list.itemAtIndex(1)
