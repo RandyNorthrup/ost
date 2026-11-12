@@ -40,7 +40,7 @@ Item {
     readonly property bool canWrite: view === "folder"
 
     function open(v) {
-        view = v; trail = []; person = ""
+        view = v; trail = []; person = ""; selectedIds = []
         load(v === "myfiles" ? "folder" : v, "", "")
         if (v === "myfiles") { view = "folder"; trail = [{ name: "My files", drive_id: "", item_id: "" }] }
     }
@@ -58,12 +58,57 @@ Item {
         || (trail.length ? trail[0].name : "My files")
     Component.onCompleted: open("recent")
 
+    // Teams' OneDrive list colours.
+    readonly property color ink: theme.pick("#616161", "#D6D6D6")
+    readonly property color strong: theme.pick("#424242", "#D6D6D6")
+    readonly property color accent: theme.pick("#5B5FC7", "#7F85F5")
+    readonly property color hairline: theme.pick("#F0F0F0", "#3D3D3D")
+    readonly property color selectedFill: theme.pick("#E9EAF6", "#2B2C3F")
+    readonly property var favoriteIds: driveData.favorite_ids || []
+
+    /// The rows picked with their selection circles (ids); a reload keeps
+    /// those still there, so another folder starts with none.
+    property var selectedIds: []
+    readonly property var selection: items.filter(i => selectedIds.indexOf(i.id) >= 0)
+    onItemsChanged: selectedIds = selectedIds.filter(id => items.some(i => i.id === id))
+    function toggle(it) {
+        selectedIds = selectedIds.indexOf(it.id) >= 0 ? selectedIds.filter(i => i !== it.id) : selectedIds.concat([it.id])
+    }
+    function selectOnly(it) { selectedIds = [it.id] }
+
+    // OneDrive's file size wording: "1 byte", "56 bytes", "26.0 KB",
+    // "7.66 MB" (two decimals under 10, one under 100, none above).
     function size(n) {
-        if (!n) return ""
-        if (n < 1024) return n + " B"
-        if (n < 1048576) return Math.round(n / 1024) + " KB"
-        if (n < 1073741824) return (n / 1048576).toFixed(1) + " MB"
-        return (n / 1073741824).toFixed(1) + " GB"
+        if (typeof n !== "number" || isNaN(n) || n < 0) return ""
+        if (n === 1) return "1 byte"
+        const f = v => v >= 100 || v === Math.floor(v) ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2)
+        if (n < 1024) return n + " bytes"
+        if (n < 1024e3) return f(n / 1024) + " KB"
+        if (n < 1048576e3) return f(n / 1048576) + " MB"
+        if (n < 1073741824e3) return f(n / 1073741824) + " GB"
+        return f(n / 1099511627776) + " TB"
+    }
+    function itemCount(n) { return n === 1 ? "1 item" : (n || 0) + " items" }
+    function fileIcon(kind) {
+        const t = String(kind || "").toLowerCase()
+        const k = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
+                : t === "pdf" ? "pdf" : t === "one" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
+                : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(t) >= 0 ? "photo"
+                : ["mp4", "mov", "wmv", "avi", "mkv", "webm", "m4v"].indexOf(t) >= 0 ? "video" : "genericfile"
+        return "ft-" + k + "-32"
+    }
+    // The selection bar's Open: the file's app icon for Office files,
+    // OneDrive's OpenFile glyph otherwise.
+    function openIcon(kind) {
+        const k = String(kind || "").toLowerCase()
+        return ["doc", "docx"].indexOf(k) >= 0 ? "ft-docx-20" : ["xls", "xlsx"].indexOf(k) >= 0 ? "ft-xlsx-20"
+             : ["ppt", "pptx"].indexOf(k) >= 0 ? "ft-pptx-20" : k === "pdf" ? "ft-pdf-20" : "open-16"
+    }
+    // The Activity column's glyph (OneDrive: Edit, Comment, Reply, Share,
+    // Accounts, Groupedlist).
+    function activityIcon(kind) {
+        return ({ edit: "edit-16", comment: "comment-16", commentResponse: "arrow-reply-16", share: "share-16",
+                  mention: "mention-16", createTask: "task-list-ltr-20", completeTask: "task-list-ltr-20" })[kind] || "edit-16"
     }
     function ago(t) {
         if (!t) return ""
@@ -173,6 +218,7 @@ Item {
         anchors { left: pane.right; right: parent.right; top: parent.top; bottom: parent.bottom }
         // Title, or the folder trail.
         Row {
+            visible: root.selection.length === 0
             x: 4; y: 30; spacing: 4
             Repeater {
                 model: root.view === "folder" ? root.trail : [{ name: root.title }]
@@ -190,6 +236,105 @@ Item {
                         TapHandler { enabled: root.view === "folder" && index < root.trail.length - 1; onTapped: root.back(index) }
                     }
                 }
+            }
+        }
+        // With rows selected, Teams' command bar takes the title's place: a
+        // white card (52 tall, radius 12, shadow 8) with the selection's
+        // commands from 10 in, and "✕ n selected" at the right.
+        FluentSurface {
+            id: selBar
+            visible: root.selection.length > 0
+            x: 0; y: 16; width: parent.width - 16; height: 52
+            radius: 12; depth: 8; color: theme.surface
+            readonly property var one: root.selection.length === 1 ? root.selection[0] : null
+            readonly property bool fav: !!one && root.favoriteIds.indexOf(one.id) >= 0
+            // One file: Open ▾, Share, Copy link, Delete, ···; one folder: the
+            // same without Open; several: Delete, Add to favorites, Download, ···.
+            readonly property var commands: {
+                const it = one, L = []
+                if (it) {
+                    if (!it.is_folder) L.push({ label: "Open", icon: root.openIcon(it.kind), chevron: true })
+                    if (it.sp_item) L.push({ label: "Share", icon: "share-16" })
+                    if (it.sp_item || it.web_url) L.push({ label: "Copy link", icon: "link-16" })
+                    if (root.canWrite) L.push({ label: "Delete", icon: "delete-16" })
+                } else {
+                    if (root.canWrite) L.push({ label: "Delete", icon: "delete-16" })
+                    if (root.selection.some(i => !i.is_folder)) L.push({ label: "Add to favorites", icon: "star-16" })
+                    if (root.selection.some(i => !i.is_folder)) L.push({ label: "Download", icon: "arrow-download-16" })
+                }
+                if (more.length) L.push({ label: "", tip: "More", icon: "more-horizontal-16" })
+                return L
+            }
+            // ···: the rest of the item's menu (Teams: Add to favorites, Add
+            // shortcut, Download, Duplicate, Move to, Copy to, Rename, Open in
+            // OneDrive, Version history; several: Duplicate, Move to, Copy to).
+            readonly property var more: {
+                const it = one, L = []
+                const sp = root.selection.every(i => !!i.sp_item)
+                if (it) {
+                    if (!it.is_folder) L.push({ label: fav ? "Remove from favorites" : "Add to favorites", icon: "star-16" })
+                    if (!it.is_folder) L.push({ label: "Download", icon: "arrow-download-16" })
+                }
+                if (root.canWrite && sp) L.push({ label: "Duplicate", icon: "add-square-16" })
+                if (root.canWrite && sp) L.push({ label: "Move to", icon: "folder-arrow-right-16" })
+                if (sp) L.push({ label: "Copy to", icon: "copy-16" })
+                if (it && root.canWrite) L.push({ label: "Rename", icon: "rename-16" })
+                if (it && it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? "Open in OneDrive" : "Open in SharePoint", icon: "cloud-16" })
+                return L
+            }
+            function run(label) {
+                openMenu.close(); moreMenu.close()
+                // The menus hang under their buttons: Open's from its left
+                // (+4), ···'s right edge 4 inside its own.
+                if (label === "Open" && !one) return
+                if (label === "Open") { openMenu.x = cmdRow.x + cmds.itemAt(0).x + 4; openMenu.items = actions.itemsFor(one)[0].submenu; openMenu.open(); return }
+                if (label === "") {
+                    const b = cmds.itemAt(commands.length - 1)
+                    moreMenu.x = Math.max(0, Math.min(cmdRow.x + b.x + b.width - 4 - 232, width - 232)); moreMenu.open(); return
+                }
+                actions.actMany(root.selection, label)
+            }
+            Row {
+                id: cmdRow
+                x: 10; y: 10; spacing: 4
+                Repeater {
+                    id: cmds
+                    model: selBar.commands
+                    BarCommand {
+                        required property var modelData
+                        label: modelData.label; icon: modelData.icon; chevron: !!modelData.chevron
+                        tip: modelData.tip || modelData.label
+                        onClicked: selBar.run(modelData.label)
+                    }
+                }
+            }
+            MenuPopup {
+                id: openMenu
+                fabric: true; fabricWidth: 232
+                y: 52
+                onPicked: i => { actions.item = selBar.one; actions.others = []; actions.act(items[i].label) }
+            }
+            MenuPopup {
+                id: moreMenu
+                fabric: true; fabricWidth: 232
+                items: selBar.more
+                y: 52
+                onPicked: i => actions.actMany(root.selection, items[i].label)
+            }
+            // "✕ n selected": clears the selection (0.67 #D1D1D1, radius 20).
+            Rectangle {
+                id: countPill
+                anchors.right: parent.right; anchors.rightMargin: 6 + 4
+                y: 10; height: 32; radius: 16
+                width: 36.67 + countText.implicitWidth + 14.67
+                color: cph.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
+                border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
+                FluentIcon { x: 12.67; y: 10; name: "dismiss-12"; size: 12; color: root.ink }
+                Text { id: countText; x: 36.67; y: 9; text: root.selection.length + " selected"; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.selectedIds = [] }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Clear selection, " + root.selection.length + " selected"
             }
         }
         Rectangle {
@@ -295,20 +440,45 @@ Item {
                     Accessible.name: modelData.site + " " + modelData.name
                 }
             }
-            // The files table
+            // The files table, as Teams' OneDrive app (OneDrive's own list in
+            // a frame): select 56, Type 40, Name, Modified 136, Modified By
+            // 136, File size 91, Sharing 81, Activity 119; header and rows
+            // 49 tall. A hovered row is #EBEBEB, a selected one #E9EAF6,
+            // both inset 8 with radius 8.
             Item {
+                id: table
                 visible: root.view !== "libraries" && root.view !== "recycle" && (root.view !== "people" || !!root.person)
                 anchors.fill: parent
-                readonly property real wName: Math.max(200, width * 0.32)
-                Row {
+                readonly property real wName: Math.max(200, width - 56 - 40 - 136 - 136 - 91 - 81 - 119)
+                Item {
                     id: head
-                    x: 0; y: 13; height: 36
-                    Item { width: 77; height: 36; FluentIcon { anchors.centerIn: parent; name: "document-20"; size: 16; color: theme.textSecondary } }
-                    HeadCell { label: "Name"; width: parent.parent.wName }
-                    HeadCell { label: root.view === "recent" ? "Opened" : "Modified"; width: 136 }
-                    HeadCell { label: root.view === "shared" ? "Shared by" : "Modified By"; width: 136 }
-                    HeadCell { label: "File size"; width: 90 }
-                    HeadCell { label: "Sharing"; width: 82 }
+                    width: parent.width; height: 49
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
+                    HoverHandler { id: headHover }
+                    // "Select all rows": on hover, or filled once all are picked.
+                    Rectangle {
+                        readonly property bool all: root.items.length > 0 && root.selection.length === root.items.length
+                        visible: headHover.hovered || all
+                        x: 29; y: 15.5; width: 18; height: 18; radius: 9
+                        color: all ? root.accent : theme.surface
+                        border.width: all ? 0 : 1; border.color: root.strong
+                        FluentIcon { visible: parent.all; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                        TapHandler { onTapped: root.selectedIds = parent.all ? [] : root.items.map(i => i.id) }
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: "Select all rows"
+                        Accessible.checked: all
+                    }
+                    Row {
+                        height: parent.height
+                        Item { width: 56; height: 49 }
+                        Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: root.ink } }
+                        ListHead { label: "Name"; width: table.wName }
+                        ListHead { label: root.view === "recent" ? "Opened" : "Modified"; width: 136 }
+                        ListHead { label: root.view === "shared" ? "Shared by" : "Modified By"; width: 136 }
+                        ListHead { label: "File size"; width: 91 }
+                        ListHead { label: "Sharing"; width: 81 }
+                        ListHead { label: "Activity"; width: 119 }
+                    }
                 }
                 ListView {
                     id: files
@@ -317,39 +487,101 @@ Item {
                     model: root.items
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                    delegate: Rectangle {
+                    delegate: Item {
                         id: frow
                         required property var modelData
-                        width: files.width; height: 48
-                        color: fh.hovered ? theme.rowHover : "transparent"
-                        Rectangle { y: 0; x: 16; width: parent.width - 32; height: 1; color: theme.dividerSoft }
-                        Row {
-                            height: parent.height
-                            Item {
-                                width: 77; height: parent.height
-                                FluentIcon {
-                                    anchors.centerIn: parent; size: 20
-                                    name: root.iconFor(frow.modelData)
-                                    color: frow.modelData.is_folder ? "#E8A33D" : theme.brand
+                        required property int index
+                        readonly property bool sel: root.selectedIds.indexOf(modelData.id) >= 0
+                        readonly property bool hot: fh.hovered || actions.item === modelData && actions.menuOpen || root.hoverForTest === index
+                        readonly property bool fav: root.favoriteIds.indexOf(modelData.id) >= 0
+                        width: files.width; height: 49
+                        Rectangle {
+                            x: 8; width: parent.width - 16; height: 48; radius: 8
+                            color: frow.sel ? root.selectedFill : frow.hot ? theme.rowHover : "transparent"
+                        }
+                        // The selection circle (18, at 29,14): on hover, filled when selected.
+                        Rectangle {
+                            id: circle
+                            visible: frow.hot || frow.sel
+                            x: 29; y: 14; width: 18; height: 18; radius: 9
+                            color: frow.sel ? root.accent : theme.surface
+                            border.width: frow.sel ? 0 : 1; border.color: root.strong
+                            FluentIcon { visible: frow.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                            TapHandler { onTapped: root.toggle(frow.modelData) }
+                            Accessible.role: Accessible.CheckBox
+                            Accessible.name: frow.modelData.name
+                            Accessible.checked: frow.sel
+                        }
+                        FluentIcon {
+                            x: 62; y: 8; size: 32
+                            name: frow.modelData.is_folder ? "ft-folder-32" : root.fileIcon(frow.modelData.kind)
+                        }
+                        // Name: OneDrive's "New" mark, the name, then ···, Share and the star.
+                        Item {
+                            id: nameCell
+                            x: 96; width: table.wName; height: 49
+                            readonly property bool tools: frow.hot || frow.sel
+                            FluentIcon { id: newMark; visible: !!frow.modelData.is_new; x: 12; y: 14; size: 12; width: 7.92; name: "glimmer-12"; color: root.strong }
+                            Text {
+                                id: nameText
+                                x: newMark.visible ? 19.92 : 12; y: 14
+                                width: Math.min(implicitWidth, nameCell.width - x - 8 - (nameCell.tools ? 101 : 0))
+                                elide: Text.ElideRight
+                                text: frow.modelData.name
+                                font.family: theme.font; font.pixelSize: 14; font.weight: frow.sel ? Font.DemiBold : Font.Normal
+                                color: root.ink
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: frow.activate() }
+                                Accessible.role: Accessible.Link
+                                Accessible.name: frow.modelData.name
+                            }
+                            Row {
+                                visible: nameCell.tools
+                                x: nameText.x + nameText.width + 8; y: 9; spacing: 4.5
+                                RowTool {
+                                    id: moreButton
+                                    icon: "more-horizontal-16"; tip: "More Actions"
+                                    onClicked: actions.popup(frow.modelData, moreButton, 0, moreButton.height)
+                                }
+                                RowTool { visible: !!frow.modelData.sp_item; icon: "share-16"; tip: "Share"; onClicked: { actions.item = frow.modelData; actions.act("Share") } }
+                                RowTool {
+                                    visible: !frow.modelData.is_folder
+                                    icon: frow.fav ? "star-16-filled" : "star-16"
+                                    tip: frow.fav ? "Remove this item from Favorites" : "Add this item to Favorites"
+                                    onClicked: root.favorite(frow.modelData.drive_id, frow.modelData.id, !frow.fav)
                                 }
                             }
-                            Cell { width: files.parent.wName; text: frow.modelData.name; strong: true }
-                            Cell { width: 136; text: root.ago(frow.modelData.modified) }
-                            Cell { width: 136; text: frow.modelData.modified_by || root.userName }
-                            Cell { width: 90; text: frow.modelData.is_folder ? frow.modelData.child_count + " items" : root.size(frow.modelData.size) }
-                            Cell { width: 82; text: frow.modelData.sharing }
                         }
-                        Rectangle {
-                            id: moreButton
-                            visible: fh.hovered || actions.item === frow.modelData && actions.menuOpen
-                            anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
-                            width: 32; height: 32; radius: theme.radius
-                            color: mh.hovered ? theme.pane : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
-                            HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: actions.popup(frow.modelData, moreButton, 0, moreButton.height) }
-                            Accessible.role: Accessible.Button
-                            Accessible.name: "More options for " + frow.modelData.name
+                        Row {
+                            x: 96 + table.wName; height: 49
+                            RowCell {
+                                width: 136; text: frow.modelData.modified_text || ""
+                                tip: frow.modelData.modified_title || ""
+                            }
+                            RowCell { width: 136; text: frow.modelData.modified_by || root.userName }
+                            RowCell { width: 91; text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
+                            Item {
+                                width: 81; height: 49
+                                Row {
+                                    x: 12; y: 14.67; spacing: 4
+                                    FluentIcon { visible: frow.modelData.sharing === "Shared"; y: 2.5; name: "people-16"; size: 14; color: root.strong }
+                                    Text { text: frow.modelData.sharing; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                                }
+                            }
+                            Item {
+                                width: 119; height: 49
+                                visible: !!frow.modelData.activity
+                                FluentIcon {
+                                    x: 12; y: 15.83; size: 16; color: root.strong
+                                    name: frow.modelData.activity ? root.activityIcon(frow.modelData.activity.kind) : ""
+                                }
+                                Text {
+                                    x: 32; y: 15.83; width: parent.width - 32 - 4; height: 16
+                                    elide: Text.ElideRight
+                                    text: frow.modelData.activity ? frow.modelData.activity.text + " " + frow.modelData.activity.time : ""
+                                    font.family: theme.font; font.pixelSize: 12; color: root.ink
+                                }
+                            }
                         }
                         // Right-click: the same menu at the pointer, as Teams.
                         TapHandler {
@@ -360,10 +592,16 @@ Item {
                             if (modelData.is_folder) root.openFolder(modelData.name, modelData.drive_id, modelData.id)
                             else if (modelData.web_url) backend.openFile(modelData.web_url, modelData.name, JSON.stringify(modelData))
                         }
-                        HoverHandler { id: fh; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onDoubleTapped: frow.activate(); onTapped: if (frow.modelData.is_folder) frow.activate() }
-                        Accessible.role: Accessible.Button
+                        HoverHandler { id: fh }
+                        // A click selects the row alone (Ctrl adds or removes
+                        // it); a double click opens it.
+                        TapHandler {
+                            onTapped: (ev, button) => (ev.modifiers & Qt.ControlModifier) ? root.toggle(frow.modelData) : root.selectOnly(frow.modelData)
+                            onDoubleTapped: frow.activate()
+                        }
+                        Accessible.role: Accessible.Row
                         Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+                        Accessible.selected: sel
                     }
                 }
             }
@@ -390,6 +628,66 @@ Item {
         }
     }
 
+    // The table's header cell: 14/600 #616161 at 10.67, 49 tall.
+    component ListHead: Item {
+        property string label
+        height: 49
+        Text { x: 10.67; y: 14.83; text: parent.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+    }
+    // A row's text cell: 14 px at 12, 14 down; `tip` shows on hover (the
+    // Modified column's full date).
+    component RowCell: Item {
+        property alias text: rt.text
+        property string tip: ""
+        height: 49
+        Text {
+            id: rt
+            x: 12; y: 14; width: parent.width - 20
+            elide: Text.ElideRight
+            font.family: theme.font; font.pixelSize: 14; color: root.ink
+            HoverHandler { id: rth }
+            ToolTip.visible: rth.hovered && parent.tip.length > 0
+            ToolTip.text: parent.tip
+            ToolTip.delay: 500
+        }
+    }
+    // A command bar button: 32 tall, a 16 px glyph at 8, the label (14 px)
+    // at 32, an optional 12 px chevron; 8 px either side.
+    component BarCommand: Rectangle {
+        id: bc
+        property string label
+        property string icon
+        property string tip
+        property bool chevron: false
+        signal clicked()
+        height: 32; radius: 4
+        width: 8 + 16 + (label ? 8 + bcText.implicitWidth : 0) + (chevron ? 4 + 16 : 0) + 8
+        color: bch.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
+        FluentIcon { x: 8; y: 8; name: bc.icon; size: 16; color: bc.icon.startsWith("ft-") ? "#212121" : root.ink }
+        Text { id: bcText; visible: !!bc.label; x: 32; y: 9; text: bc.label; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+        FluentIcon { visible: bc.chevron; x: bcText.x + bcText.implicitWidth + 6; y: 10; name: "chevron-down-12"; size: 12; color: root.ink }
+        HoverHandler { id: bch; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: bc.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: bc.tip
+    }
+    // The 28 px buttons after a hovered row's name (16 px #605E5C glyphs).
+    component RowTool: Rectangle {
+        id: rtool
+        property string icon
+        property string tip
+        signal clicked()
+        width: 28; height: 28; radius: 4
+        color: rth2.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: rtool.icon; size: 16; color: theme.pick("#605E5C", "#D6D6D6") }
+        HoverHandler { id: rth2; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: rtool.clicked() }
+        ToolTip.visible: rth2.hovered
+        ToolTip.text: tip
+        ToolTip.delay: 500
+        Accessible.role: Accessible.Button
+        Accessible.name: tip
+    }
     component HeadCell: Item {
         property string label
         height: 36
@@ -479,6 +777,13 @@ Item {
     }
 
     // Test harness hooks
+    /// Show row `i` as hovered (grabToImage has no pointer).
+    property int hoverForTest: -1
+    function selectForTest(names) { selectedIds = items.filter(i => names.indexOf(i.name) >= 0).map(i => i.id); return selectedIds.length }
+    function barForTest() { return { commands: selBar.commands.map(c => c.label || "···"), more: selBar.more.map(c => c.label), count: root.selection.length } }
+    function barRunForTest(label) { selBar.run(label) }
+    function barCloseForTest() { openMenu.close(); moreMenu.close() }
+    function rowsForTest() { return items.map(i => [i.name, i.modified_text, i.modified_title, i.modified_by, i.is_folder ? itemCount(i.child_count) : size(i.size), i.sharing, i.is_new ? "new" : "", i.activity ? i.activity.text + " " + i.activity.time : ""].join(" | ")) }
     function newFolderForTest(name) { root.newFolder(root.here.drive_id, root.here.item_id, name) }
     function restoreTestFolders() {
         const ids = root.deleted.filter(d => d.name === "OST drive test").map(d => d.id)

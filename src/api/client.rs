@@ -8,6 +8,10 @@ use crate::auth::TokenStore;
 use crate::config::Config;
 
 const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
+/// Teams web's User-Agent on Linux. AMS reads the platform from its
+/// `Teams/{version}/{platform}` part; SharePoint words friendly dates only
+/// for browsers.
+pub const TEAMS_WEB_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Teams/26276.513.5241.9675/1415";
 const DEFAULT_CHAT_SERVICE: &str = "https://amer.ng.msg.teams.microsoft.com";
 const CHATSVCAGG: &str = "https://chatsvcagg.teams.microsoft.com";
 
@@ -568,7 +572,7 @@ impl TeamsClient {
         // AMS reads the caller's platform from the User-Agent's
         // `Teams/{version}/{platform}` part (Teams desktop sends …/49) and
         // refuses a request without it; OST is platform 1415 elsewhere.
-        const UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Teams/26276.513.5241.9675/1415";
+        const UA: &str = TEAMS_WEB_UA;
         let created = self
             .http
             .post(format!("{base}/v1/objects/"))

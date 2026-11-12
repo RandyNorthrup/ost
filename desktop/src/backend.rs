@@ -12561,6 +12561,28 @@ impl qobject::Backend {
                             json!(api::drive::children(&client, &drive_id, &item_id).await?)
                     }
                 }
+                // Teams' columns from SharePoint's rows (friendly Modified,
+                // Sharing, the "new" mark, Activity); other views word
+                // Graph's times the same way.
+                let rows = if view == "folder" {
+                    api::list_rows::for_folder(&client, &drive_id, &item_id)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("OneDrive rows: {e:#}");
+                            Default::default()
+                        })
+                } else {
+                    Default::default()
+                };
+                if let Some(items) = out.get("items").cloned() {
+                    let now = chrono::Local::now();
+                    let items: Vec<api::drive::DriveItem> =
+                        serde_json::from_value(items).unwrap_or_default();
+                    out["items"] = json!(items
+                        .iter()
+                        .map(|it| api::list_rows::decorate(it, rows.get(&it.sp_item.to_ascii_lowercase()), now))
+                        .collect::<Vec<_>>());
+                }
                 // Which items are favorites (the menu's Add to / Remove
                 // from favorites).
                 if out.get("items").is_some() {
@@ -12784,14 +12806,22 @@ impl qobject::Backend {
                         json!(null)
                     }
                     "move" | "copy" | "duplicate" => {
-                        let src = api::copy_jobs::absolute_url(&sp).await?;
-                        let (dest, name) = if kind == "duplicate" {
-                            let parent = src.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
-                            (parent, Some(api::copy_jobs::duplicate_name(&item.name, item.is_folder)))
+                        // The item, and any others selected with it ("more").
+                        let more: Vec<api::drive::DriveItem> =
+                            serde_json::from_value(args["more"].clone()).unwrap_or_default();
+                        let all: Vec<&api::drive::DriveItem> = std::iter::once(&item).chain(more.iter()).collect();
+                        let mut sources = Vec::new();
+                        for it in &all {
+                            let r = api::sharing::ItemRef { site: it.sp_site.clone(), list: it.sp_list.clone(), item: it.sp_item.clone() };
+                            sources.push(api::copy_jobs::absolute_url(&r).await?);
+                        }
+                        let (dest, names) = if kind == "duplicate" {
+                            let parent = sources[0].rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+                            (parent, all.iter().map(|it| api::copy_jobs::duplicate_name(&it.name, it.is_folder)).collect())
                         } else {
-                            (api::copy_jobs::folder_url(&s("dest")), None)
+                            (api::copy_jobs::folder_url(&s("dest")), Vec::new())
                         };
-                        api::copy_jobs::run(&sp.site, &[src], &dest, kind == "move", name.as_deref()).await?;
+                        api::copy_jobs::run(&sp.site, &sources, &dest, kind == "move", &names).await?;
                         json!(null)
                     }
                     "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),

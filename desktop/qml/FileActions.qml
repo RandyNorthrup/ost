@@ -37,7 +37,7 @@ Item {
 
     /// Open the menu for `it` at (x, y) in `source`'s coordinates.
     function popup(it, source, x, y) {
-        item = it
+        item = it; others = []
         menu.items = itemsFor(it)
         const p = source.mapToItem(root, x, y)
         menu.x = Math.max(0, Math.min(p.x, root.width - menu.width))
@@ -72,6 +72,29 @@ Item {
         while (L.length && L[L.length - 1].separator) L.pop()
         return L
     }
+    /// OneDrive's counted wording: "{0} item||{0} items".
+    function count(n, one, many) { return (n === 1 ? one : many).replace("{0}", n) }
+    /// Items acted on together (the selection), besides `item`.
+    property var others: []
+    /// How many the running job covers, for its notice.
+    property int jobCount: 1
+    /// The selection toolbar's actions on several items (Teams: Delete, Add
+    /// to favorites, Download, then Duplicate, Move to and Copy to).
+    function actMany(list, label) {
+        if (!list.length) return
+        if (list.length === 1) { item = list[0]; others = []; act(label); return }
+        item = list[0]; others = list.slice(1)
+        if (label === "Delete") deleteDialog.openForMany(list)
+        else if (label === "Add to favorites") list.filter(i => !i.is_folder).forEach(i => favoriteItem(i, true))
+        else if (label === "Download") list.filter(i => !i.is_folder).forEach(i => downloadItem(i))
+        else if (label === "Move to") picker.openFor(item, true)
+        else if (label === "Copy to") picker.openFor(item, false)
+        else if (label === "Duplicate") {
+            jobCount = list.length
+            notice("progress", count(jobCount, "Copying {0} item", "Copying {0} items"))
+            backend.driveAction(tag + "duplicate", JSON.stringify(item), JSON.stringify({ more: others }))
+        }
+    }
     function act(label) {
         const it = root.item
         if (!it) return
@@ -87,7 +110,7 @@ Item {
         else if (label === "Rename") renameDialog.openFor(it)
         else if (label === "Move to") picker.openFor(it, true)
         else if (label === "Copy to") picker.openFor(it, false)
-        else if (label === "Duplicate") { notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
+        else if (label === "Duplicate") { jobCount = 1; notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
     }
 
     // The clipboard, without OST's own "Copied to clipboard" notice
@@ -114,11 +137,16 @@ Item {
                 else { toast.visible = false; Qt.openUrlExternally("file://" + v.path) }
                 return
             }
-            const words = { rename: ["Renamed 1 item", "1 item wasn't renamed"], move: ["Moved 1 item", "1 item wasn't moved"],
-                            copy: ["Copied 1 item", "1 item wasn't copied"], duplicate: ["Copied 1 item", "1 item wasn't copied"] }[kind]
+            // OneDrive's strings: "Moved {0} item||Moved {0} items", "{0} item
+            // wasn't moved||{0} items weren't moved", and so on.
+            const n = kind === "rename" ? 1 : root.jobCount
+            const words = { rename: ["Renamed {0} item", "Renamed {0} items", "{0} item wasn't renamed", "{0} items weren't renamed"],
+                            move: ["Moved {0} item", "Moved {0} items", "{0} item wasn't moved", "{0} items weren't moved"],
+                            copy: ["Copied {0} item", "Copied {0} items", "{0} item wasn't copied", "{0} items weren't copied"],
+                            duplicate: ["Copied {0} item", "Copied {0} items", "{0} item wasn't copied", "{0} items weren't copied"] }[kind]
             if (!words) return
-            if (error) root.notice("error", words[1], error)
-            else { root.notice("done", words[0]); root.changed() }
+            if (error) root.notice("error", root.count(n, words[2], words[3]), error)
+            else { root.notice("done", root.count(n, words[0], words[1])); root.changed() }
         }
     }
 
@@ -289,14 +317,17 @@ Item {
     OdspDialog {
         id: deleteDialog
         property var target: null
+        property var targets: []
         title: "Delete?"; okText: "Delete"
         bodyHeight: 128.67
-        function openFor(it) { target = it; open() }
-        onAccepted: { close(); root.deleteItem(target) }
+        function openFor(it) { target = it; targets = [it]; open() }
+        function openForMany(list) { target = list[0]; targets = list; open() }
+        onAccepted: { close(); targets.forEach(t => root.deleteItem(t)) }
         Text {
             y: 22.67; width: parent.width
             wrapMode: Text.Wrap
-            text: "Are you sure you want to send this item to the recycle bin?"
+            text: deleteDialog.targets.length > 1 ? "Are you sure you want to send these items to the recycle bin?"
+                : "Are you sure you want to send this item to the recycle bin?"
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: root.ink
         }
@@ -442,6 +473,7 @@ Item {
         background: Rectangle { color: theme.pick("#F5F5F5", "#141414"); radius: 4 }
         function openFor(it, move) {
             target = it; moving = move; place = "mine"; shown = null
+            root.jobCount = 1 + root.others.length
             trail = [{ name: "My files", drive_id: "", item_id: "" }]
             open()
             load("", "")
@@ -464,8 +496,8 @@ Item {
         function done() {
             if (!shown || !shown.here || sameFolder) return
             const op = moving ? "move" : "copy"
-            root.notice("progress", (moving ? "Moving" : "Copying") + " 1 item")
-            backend.driveAction(root.tag + op, JSON.stringify(target), JSON.stringify({ dest: shown.here.web_url }))
+            root.notice("progress", root.count(root.jobCount, moving ? "Moving {0} item" : "Copying {0} item", moving ? "Moving {0} items" : "Copying {0} items"))
+            backend.driveAction(root.tag + op, JSON.stringify(target), JSON.stringify({ dest: shown.here.web_url, more: root.jobCount > 1 ? root.others : [] }))
             close()
         }
 

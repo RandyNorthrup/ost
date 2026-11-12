@@ -160,6 +160,11 @@ pub fn parse_info(reply: &Value) -> Info {
 
 /// POST a SharePoint REST method with a token for the site's host.
 pub(crate) async fn post(url: &str, body: &Value) -> Result<Value> {
+    post_with(url, body, &[]).await
+}
+
+/// `post` with extra headers.
+pub(crate) async fn post_with(url: &str, body: &Value, headers: &[(&str, &str)]) -> Result<Value> {
     let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
     if !host.starts_with("https://") {
         bail!("Not a SharePoint address: {url}");
@@ -169,7 +174,10 @@ pub(crate) async fn post(url: &str, body: &Value) -> Result<Value> {
         .post(url)
         .bearer_auth(token)
         .header("accept", "application/json;odata=verbose")
-        .header("content-type", "application/json;odata=verbose")
+        .header("content-type", "application/json;odata=verbose");
+    let resp = headers
+        .iter()
+        .fold(resp, |r, (k, v)| r.header(*k, *v))
         .body(body.to_string())
         .send()
         .await

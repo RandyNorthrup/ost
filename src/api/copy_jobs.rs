@@ -74,8 +74,9 @@ pub fn duplicate_name(name: &str, is_folder: bool) -> String {
 }
 
 /// The body of CreateCopyJobs, as Teams sends it (Duplicate, 2026-11-11);
-/// a move sets IsMoveMode and keeps the version history.
-pub fn create_body(sources: &[String], dest: &str, move_mode: bool, name: Option<&str>) -> Value {
+/// a move sets IsMoveMode and keeps the version history. `names` renames
+/// the items, in order (Duplicate).
+pub fn create_body(sources: &[String], dest: &str, move_mode: bool, names: &[String]) -> Value {
     let mut options = json!({
         "IgnoreVersionHistory": !move_mode,
         "AllowSchemaMismatch": true,
@@ -86,8 +87,8 @@ pub fn create_body(sources: &[String], dest: &str, move_mode: bool, name: Option
     if move_mode {
         options["IsMoveMode"] = json!(true);
     }
-    if let Some(n) = name {
-        options["CustomizedItemName"] = json!({ "results": [n] });
+    if !names.is_empty() {
+        options["CustomizedItemName"] = json!({ "results": names });
     }
     json!({ "exportObjectUris": sources, "destinationUri": dest, "options": options })
 }
@@ -106,10 +107,10 @@ pub fn job_errors(reply: &Value) -> Vec<String> {
 }
 
 /// Copy (or move) items into a folder and wait for SharePoint to finish.
-/// `site` is the source's site; `name` renames the one item (Duplicate).
-pub async fn run(site: &str, sources: &[String], dest: &str, move_mode: bool, name: Option<&str>) -> Result<()> {
+/// `site` is the sources' site; `names` renames them (Duplicate).
+pub async fn run(site: &str, sources: &[String], dest: &str, move_mode: bool, names: &[String]) -> Result<()> {
     let site = site.trim_end_matches('/');
-    let reply = post(&format!("{site}/_api/site/CreateCopyJobs"), &create_body(sources, dest, move_mode, name))
+    let reply = post(&format!("{site}/_api/site/CreateCopyJobs"), &create_body(sources, dest, move_mode, names))
         .await
         .map_err(sp_message)?;
     let jobs = reply["d"]["CreateCopyJobs"]["results"].as_array().cloned().unwrap_or_default();
@@ -171,7 +172,7 @@ mod tests {
             &["https://x-my.sharepoint.com/personal/a/Documents/ost-share-test.txt".into()],
             "https://x-my.sharepoint.com/personal/a/Documents",
             false,
-            Some("ost-share-test Copy.txt"),
+            &["ost-share-test Copy.txt".into()],
         );
         assert_eq!(
             b,
@@ -181,7 +182,7 @@ mod tests {
                               "SameWebCopyMoveOptimization":true,"NameConflictBehavior":2,
                               "CustomizedItemName":{"results":["ost-share-test Copy.txt"]}}})
         );
-        let m = create_body(&["s".into()], "d", true, None);
+        let m = create_body(&["s".into()], "d", true, &[]);
         assert_eq!((m["options"]["IsMoveMode"].as_bool(), m["options"]["IgnoreVersionHistory"].as_bool()), (Some(true), Some(false)));
         assert!(m["options"].get("CustomizedItemName").is_none());
     }

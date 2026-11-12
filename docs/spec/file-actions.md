@@ -84,7 +84,7 @@ and Open in app (OneDrive's wording; not yet seen in Teams).
   - 390 wide, #292929, radius 4, padding 12.
   - A 20 px glyph: #92C353 check, #F1707B error, or progress. Text is 13/17 #F0F0F0 at 48. A 24 px dismiss with a #7F85F5 glyph.
   - Wording: "Renamed 1 item", "Copying 1 item" → "Copied 1 item". On failure: "1 item wasn't copied" over SharePoint's message.
-  - OST words a move "Moving 1 item" / "Moved 1 item" / "1 item wasn't moved" (not yet captured).
+  - A move is "Moving 1 item" / "Moved 1 item" / "1 item wasn't moved" (OneDrive's strings; several items: docs/spec/onedrive-rows.md).
 
 ## Not yet in OST
 

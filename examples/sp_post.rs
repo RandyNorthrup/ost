@@ -1,6 +1,6 @@
 //! A SharePoint REST call as OneDrive's share dialog makes it (debugging
 //! aid): `cargo run --example sp_post -- <url> [json body]`
-//! (`SP_MERGE=1` sends it as an item update).
+//! (`SP_MERGE=1` sends it as an item update; `SP_HEADERS` adds headers).
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -18,7 +18,13 @@ async fn main() -> anyhow::Result<()> {
     } else {
         req
     };
-    let req = if let Some(b) = args.get(1) { req.body(b.clone()) } else { req };
+    // SP_HEADERS="name: value; name: value" adds headers (as a browser sends them).
+    let mut req = if let Some(b) = args.get(1) { req.body(b.clone()) } else { req };
+    for h in std::env::var("SP_HEADERS").unwrap_or_default().split(';') {
+        if let Some((k, v)) = h.split_once(':') {
+            req = req.header(k.trim(), v.trim());
+        }
+    }
     let resp = req.send().await?;
     println!("{}", resp.status());
     println!("{}", resp.text().await?);

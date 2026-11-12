@@ -300,12 +300,12 @@ OST has the org name, Sign out, avatar, name, e-mail and the status row (TitleBa
 ## 13. Files
 
 ### 13.1 OneDrive app
-- [ ] [P1] Per-item **Share** (share dialog, §13.4) — OST: Share in the item's menu (FileActions.qml); the row's hover Share and favorite buttons are still missing (ref: FA §1 "Per-item hover Share", §4; OST: OneDriveView.qml)
+- [x] [P1] Per-item **Share** (share dialog, §13.4) — OST: Share in the item's menu (FileActions.qml) and the row's hover ···, Share and favorite buttons, with Teams' Modified wording, Sharing, New mark and Activity column from SharePoint's rows (ref: FA §1 "Per-item hover Share", §4; docs/spec/onedrive-rows.md; OST: OneDriveView.qml, src/api/list_rows.rs)
 - [x] [P1] **More actions**: Rename, Move to, Copy to, Copy link, Open in (Teams / Desktop app / Browser), Open in OneDrive — OST: Teams' OneDrive context menu (right-click / ···) with Open ▸, Share, Copy link, Manage access, Delete, favorites, Download, Rename, Open in OneDrive, Move to, Copy to, Duplicate; Preview, Add shortcut, Version history and Details are follow-ups (ref: FA §1 "Per-item More actions"; docs/spec/file-actions.md; OST: FileActions.qml)
 - [ ] [P1] Opening a file inside Teams (viewer with the Office ribbon) — OST: every file opens `web_url` in the external browser (ref: FA §5; OST: OneDriveView.qml:369-372)
 - [ ] [P2] Search and filter inside OneDrive — OST: absent (ref: FA §1 "Search and filter"; OST: OneDriveView.qml:84-150)
 - [ ] [P2] **Create or upload** > new Word / Excel / PowerPoint file by name — OST: Folder and Files upload only (ref: FA §1 "Create or upload"; OST: OneDriveView.qml:107-116)
-- [ ] [P2] Multi-select (circle checks) with bulk Move / Copy / Delete — OST: absent (ref: FA §1 "Multi-select"; OST: OneDriveView.qml:319-377)
+- [x] [P2] Multi-select (circle checks) with bulk Move / Copy / Delete — OST: selection circles, Ctrl+click and select all, and Teams' selection bar (Open, Share, Copy link, Delete, ···; several: Delete, Add to favorites, Download, Duplicate, Move to, Copy to in one copy job); Sort, view switch and Details are TASK-0120, the zip download TASK-0116 (ref: FA §1 "Multi-select"; docs/spec/onedrive-rows.md; OST: OneDriveView.qml)
 - [ ] [P2] **Quick access** (channel libraries you opened) and **More places…** — OST: static hint text. OST adds a "Libraries" view that Teams doesn't list (ref: FA §1 "Quick access"; OST: OneDriveView.qml:125-126, 141-148)
 - [ ] [P2] Drag-and-drop upload onto the list; upload progress — OST: absent (ref: FA §3 "Upload", §2 "Large-file upload"; OST: OneDriveView.qml:424-430)
 - [ ] [P3] Sort by column — OST: static headers (ref: FA §1 [verify visually]; OST: OneDriveView.qml:403-410)
