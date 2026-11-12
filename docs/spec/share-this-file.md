@@ -35,7 +35,6 @@ Opened from Share in a search file card's ··· (Grid view). Measured on winpc 
   file's own address.
 - **··· ▸ Share outside Teams** closes this dialog and opens OneDrive's share dialog
   (`docs/spec/onedrive-share.md`).
-
 - **Format** (left of Emoji; "Show / Hide Formatting option") puts Teams' formatting bar at
   the top of the message box. It is the compose box's bar: 458 for its buttons, with no
   Discard, at 6.67, 9.67. The box and the dialog grow by 20.67, and the message is sent

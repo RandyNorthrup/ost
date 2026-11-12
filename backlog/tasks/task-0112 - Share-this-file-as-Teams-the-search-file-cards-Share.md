@@ -1,11 +1,11 @@
 ---
 id: TASK-0112
 title: 'Share this file as Teams: the search file card''s Share'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-12T03:35:00Z'
-updated_date: '2026-11-12T05:29:00Z'
+updated_date: '2026-11-12T05:52:00Z'
 labels:
   - search
   - files
@@ -21,7 +21,7 @@ Teams' search file cards (Grid view's ··· and the list) offer Share, which op
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The search page's file cards offer Share and it opens Teams' Share this file dialog with the same layout (measured on winpc)
+- [x] #1 The search page's file cards offer Share and it opens Teams' Share this file dialog with the same layout (measured on winpc)
 - [x] #2 Share posts the file with the optional message to the picked people, chats or channels as Teams does, and Copy link copies the link Teams copies
 - [x] #3 The link settings (···) show and apply Teams' sharing-link options
 <!-- AC:END -->
@@ -33,4 +33,21 @@ Teams' search file cards (Grid view's ··· and the list) offer Share, which op
 
 - 2026-11-11 (a527a0b): built ShareFileDialog.qml (spec docs/spec/share-this-file.md). Recipients on Substrate peoplepicker.newChat (api::search::recipients, Teams' best-match order and second-line rule from its bundle: UPN alias in capitals, "(ALIAS) Job title"), CheckPermissions access bar + Give access, Link settings via OneDrive's dialog in chatMode (+ "People currently in this chat" = ShareLink kind 6 restrictShareMembership), Share = ShareLink + chat post with Teams' files record (api::files::shared_record), ··· Share outside Teams. Verified: OST's "OST test 109" record matches Teams' "OST test 108" in the test 1:1 (same chat link reused).
 - AC#1 left open: the message box's Format button (Teams' formatting bar) isn't there yet; Emoji is. Also: M365 groups are left out of the suggestions; "(You)" isn't returned to OST by the service.
+
+- AC#1 closed by TASK-0114 (0af75d3): the Format button and bar are in.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' "Share this file" for a search file card's Share.
+
+Changes:
+- ShareFileDialog.qml: recipients on Teams' picker service, CheckPermissions access bar with Give access, the file card with preview and link line, Format and Emoji, Copy link, Share, ··· Share outside Teams.
+- OneDriveShare chat mode: Link settings alone with "People currently in this chat" (ShareLink kind 6, restrictShareMembership).
+- api: search::recipients, sharing::check_access, chat link in create_link, files::shared_record / send_html_with_files.
+- Spec: docs/spec/share-this-file.md.
+
+Tests:
+- cargo test --lib; --sharefile-test [--sharefile-send]: OST test 109/110 match Teams' own record (OST test 108).
+<!-- SECTION:FINAL_SUMMARY:END -->
