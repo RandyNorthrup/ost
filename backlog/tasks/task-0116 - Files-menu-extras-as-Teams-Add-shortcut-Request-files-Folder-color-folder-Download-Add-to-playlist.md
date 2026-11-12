@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-12T06:37:00Z'
+updated_date: '2026-11-12T15:58:00Z'
 labels:
   - files
 dependencies: []
@@ -22,6 +23,6 @@ The rest of Teams' Files menu (docs/spec/file-actions.md): Add shortcut ▸ (Sho
 <!-- AC:BEGIN -->
 - [ ] #1 Add shortcut ▸ adds the item to Shortcuts, My files or another place as Teams does
 - [ ] #2 A folder's Request files and Folder color ▸ work as in Teams
-- [ ] #3 Download of a folder saves it as Teams does (zip)
-- [ ] #4 A video's Add to playlist works as in Teams
+- [ ] #3 A video's Add to playlist works as in Teams
+- [ ] #4 Download of a folder or of several selected items saves one zip as Teams does (OneDrive's media service transform/zip)
 <!-- AC:END -->
