@@ -170,10 +170,42 @@ Harness: `--folder-extras-test [--folder-extras-live]`. The live run colours
 Attachments Light blue and back to Yellow, and makes a request, then removes
 its link.
 
+## Add shortcut ▸ (a file's)
+
+Add shortcut comes after Add to favorites, and its submenu lists Shortcuts, My
+files and Other locations. OneDrive's code (its "Stasher") posts:
+
+`POST {host}/_api/v2.1/drives/{drive}/items/{target}/children`
+
+with this body:
+
+`{"name":"<file name without extension>","remoteItem":{"sharepointIds":{listId,listItemUniqueId,siteId,siteUrl,webId}},"file":{},"@microsoft.graph.conflictBehavior":"rename"}`
+
+The target depends on the choice:
+
+- **Shortcuts**: `drives/me/special/shortcuts`, on your OneDrive's host.
+  OneDrive makes this special folder the first time. Teams' list hides it,
+  and so does OST.
+- **My files**: `drives/me/items/root`.
+- **Other locations**: OneDrive's "Pick a folder" picker with **Select** and
+  **Cancel**. The target is the chosen folder (`items/{uniqueId}`), or the
+  library's `items/root`.
+
+The shortcut shows up as "{name}.url".
+
+The notice reads "Added {name} as a shortcut to {place}.", where {place} is
+Shortcuts, My files or the folder's name. In Teams the place is a link. On
+failure: "Something went wrong so we couldn't add {name} as a shortcut to
+{place}. {error}".
+
+OST uses its Move/Copy picker in "Pick a folder" mode for Other locations.
+Teams' picker also has Shared, Favorites, Browse by and More places…
+(TASK-0117).
+
 ## Not yet in OST
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
-- Add shortcut ▸ and Add to playlist: TASK-0116.
+- Add to playlist (videos): TASK-0116.
 - The picker's Shared, Favorites, Browse by, More places…, Search, New folder and view switch, plus Copilot's Suggested names in Rename: TASK-0117.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.

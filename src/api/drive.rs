@@ -44,7 +44,7 @@ pub struct Library {
     pub web_url: String,
 }
 
-const SELECT: &str = "$select=id,name,size,folder,file,lastModifiedDateTime,lastModifiedBy,shared,webUrl,parentReference,remoteItem,sharepointIds";
+const SELECT: &str = "$select=id,name,size,folder,file,lastModifiedDateTime,lastModifiedBy,shared,webUrl,parentReference,remoteItem,sharepointIds,specialFolder";
 
 /// Graph ids for drives and items: letters, digits and `!-_.` only.
 fn check_id(id: &str) -> Result<&str> {
@@ -148,6 +148,9 @@ fn parse_items(v: &serde_json::Value) -> Vec<DriveItem> {
         .and_then(|x| x.as_array())
         .into_iter()
         .flatten()
+        // OneDrive's Shortcuts folder (Add shortcut's) is hidden from the
+        // list, as Teams' OneDrive app hides it.
+        .filter(|x| x["specialFolder"]["name"].as_str() != Some("shortcuts"))
         .filter_map(parse_item)
         .collect()
 }
@@ -755,7 +758,8 @@ mod tests {
             { "id": "local", "name": "Plan.docx", "size": 10,
               "remoteItem": { "id": "01R", "parentReference": { "driveId": "b!other" }, "shared": { "scope": "users" },
                               "webUrl": "https://x/p" } },
-            { "name": "no id" }
+            { "name": "no id" },
+            { "id": "01S", "name": "Shortcuts", "folder": { "childCount": 0 }, "specialFolder": { "name": "shortcuts" } }
         ]});
         let items = parse_items(&v);
         assert_eq!(items.len(), 2);

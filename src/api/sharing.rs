@@ -170,13 +170,17 @@ pub(crate) async fn post_with(url: &str, body: &Value, headers: &[(&str, &str)])
         bail!("Not a SharePoint address: {url}");
     }
     let token = crate::auth::oauth::access_token_for(&format!("{host}/.default")).await?;
+    // OData-verbose unless the caller gives its own Accept / Content-Type
+    // (SharePoint's v2.x API takes plain JSON).
+    let pick = |name: &str| headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| *v).unwrap_or("application/json;odata=verbose");
     let resp = reqwest::Client::new()
         .post(url)
         .bearer_auth(token)
-        .header("accept", "application/json;odata=verbose")
-        .header("content-type", "application/json;odata=verbose");
+        .header("accept", pick("accept"))
+        .header("content-type", pick("content-type"));
     let resp = headers
         .iter()
+        .filter(|(k, _)| !k.eq_ignore_ascii_case("accept") && !k.eq_ignore_ascii_case("content-type"))
         .fold(resp, |r, (k, v)| r.header(*k, *v))
         .body(body.to_string())
         .send()

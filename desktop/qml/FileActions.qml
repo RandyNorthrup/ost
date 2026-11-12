@@ -68,6 +68,7 @@ Item {
         if (canWrite) L.push({ label: "Delete", icon: "delete-16" })
         // Graph's favorites (followed items) hold files, not folders.
         if (!it.is_folder) L.push({ label: fav ? "Remove from favorites" : "Add to favorites", icon: "star-16" })
+        if (!it.is_folder && sp) L.push({ label: "Add shortcut", icon: "link-square-16", submenu: [{ label: "Shortcuts" }, { label: "My files" }, { label: "Other locations" }] })
         L.push({ label: "Download", icon: "arrow-download-16" })
         if (canWrite) L.push({ label: "Rename", icon: "rename-16" })
         // A team site's file opens in SharePoint (not yet seen in Teams).
@@ -96,8 +97,8 @@ Item {
         if (label === "Delete") deleteDialog.openForMany(list)
         else if (label === "Add to favorites") list.filter(i => !i.is_folder).forEach(i => favoriteItem(i, true))
         else if (label === "Download") zip(list)
-        else if (label === "Move to") picker.openFor(item, true)
-        else if (label === "Copy to") picker.openFor(item, false)
+        else if (label === "Move to") { picker.shortcut = false; picker.openFor(item, true) }
+        else if (label === "Copy to") { picker.shortcut = false; picker.openFor(item, false) }
         else if (label === "Duplicate") {
             jobCount = list.length
             notice("progress", count(jobCount, "Copying {0} item", "Copying {0} items"))
@@ -105,6 +106,12 @@ Item {
         }
     }
     /// A folder, or several items: OneDrive's zip (docs/spec/zip-download.md).
+    // Add shortcut: OneDrive's "Added {0} as a shortcut to {1}."
+    property var pendingShortcut: null
+    function addShortcut(it, place, placeName, extra) {
+        pendingShortcut = { name: it.name, place: placeName }
+        backend.driveAction(tag + "shortcut", JSON.stringify(it), JSON.stringify(Object.assign({ place: place }, extra)))
+    }
     property int zipCount: 0
     property string lastZip: ""
     function zip(list) {
@@ -161,10 +168,13 @@ Item {
         else if (label === "Remove from favorites") favoriteItem(it, false)
         else if (label === "Download") it.is_folder ? zip([it]) : downloadItem(it)
         else if (label === "Rename") renameDialog.openFor(it)
-        else if (label === "Move to") picker.openFor(it, true)
-        else if (label === "Copy to") picker.openFor(it, false)
+        else if (label === "Move to") { picker.shortcut = false; picker.openFor(it, true) }
+        else if (label === "Copy to") { picker.shortcut = false; picker.openFor(it, false) }
         else if (label === "Version history") versions.openFor(it)
         else if (label === "Request files") fileRequest.openFor(it)
+        else if (label === "Shortcuts") addShortcut(it, "shortcuts", "Shortcuts", {})
+        else if (label === "My files") addShortcut(it, "myfiles", "My files", {})
+        else if (label === "Other locations") { picker.shortcut = true; picker.openFor(it, false) }
         else if (label === "Details") detailsItem(it)
         else if (label === "Preview") previewItem(it)
         else if (label === "Duplicate") { jobCount = 1; notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
@@ -220,6 +230,12 @@ Item {
             const v = result ? JSON.parse(result) : null
             if (kind === "folders" || kind === "libraries") { picker.reply(kind, v, error); return }
             if (kind === "versions" || kind === "restore_version" || kind === "delete_version") { versions.reply(kind, v, error); return }
+            if (kind === "shortcut") {
+                const p = root.pendingShortcut || { name: "", place: "" }
+                if (error) root.notice("error", "Something went wrong so we couldn't add " + p.name + " as a shortcut to " + p.place + ".", error)
+                else root.notice("done", "Added " + p.name + " as a shortcut to " + p.place + ".")
+                return
+            }
             if (kind === "folder_color") {
                 if (error) root.notice("error", "The folder color wasn't changed", error)
                 else root.changed()
@@ -966,7 +982,9 @@ Item {
         property var libraries: []
         property string place: "mine"
         property bool loading: false
-        readonly property bool sameFolder: !!shown && moving && shown.drive_id === (root.folder.drive_id || "") && shown.item_id === (root.folder.item_id || "")
+        /// Add shortcut ▸ Other locations: OneDrive's "Pick a folder" with Select.
+        property bool shortcut: false
+        readonly property bool sameFolder: !!shown && moving && !shortcut && shown.drive_id === (root.folder.drive_id || "") && shown.item_id === (root.folder.item_id || "")
         parent: Overlay.overlay
         anchors.centerIn: Overlay.overlay
         modal: true; focus: true; padding: 0
@@ -999,6 +1017,12 @@ Item {
         }
         function done() {
             if (!shown || !shown.here || sameFolder) return
+            if (shortcut) {
+                const place = trail.length ? trail[trail.length - 1].name : "My files"
+                close()
+                root.addShortcut(target, "folder", place, { site: shown.here.sp_site, drive_id: shown.drive_id || shown.here.drive_id, folder: shown.item_id ? shown.here.sp_item : "" })
+                return
+            }
             const op = moving ? "move" : "copy"
             root.notice("progress", root.count(root.jobCount, moving ? "Moving {0} item" : "Copying {0} item", moving ? "Moving {0} items" : "Copying {0} items"))
             backend.driveAction(root.tag + op, JSON.stringify(target), JSON.stringify({ dest: shown.here.web_url, more: root.jobCount > 1 ? root.others : [] }))
@@ -1010,7 +1034,7 @@ Item {
             width: 210; height: parent.height
             Text {
                 x: 24; y: 14; height: 44; verticalAlignment: Text.AlignVCenter
-                text: pk.moving ? "Move to" : "Copy to"
+                text: pk.shortcut ? "Pick a folder" : pk.moving ? "Move to" : "Copy to"
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
@@ -1118,7 +1142,7 @@ Item {
                     width: hereText.implicitWidth + 24; height: 32; radius: 4
                     color: !ok ? theme.surface : hh.hovered ? theme.brandHover : theme.brandFill
                     border.width: ok ? 0 : 0.67; border.color: theme.pick("#EBEBEB", "#3D3D3D")
-                    Text { id: hereText; anchors.centerIn: parent; text: pk.moving ? "Move here" : "Copy here"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.ok ? "white" : root.line }
+                    Text { id: hereText; anchors.centerIn: parent; text: pk.shortcut ? "Select" : pk.moving ? "Move here" : "Copy here"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.ok ? "white" : root.line }
                     HoverHandler { id: hh; cursorShape: parent.ok ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: parent.ok; onTapped: pk.done() }
                     Accessible.role: Accessible.Button
@@ -1194,6 +1218,7 @@ Item {
     function submenuForTest() { menu.openSubmenuForTest(0) }
     function fileRequestForTest(it, name) { fileRequest.openFor(it); frName.text = name; fileRequest.next() }
     function fileRequestStateForTest() { return { open: fileRequest.opened, step: fileRequest.step, url: fileRequest.url ? "(link)" : "", share_id: fileRequest.shareId } }
+    function shortcutForTest(it, place) { addShortcut(it, place, place === "shortcuts" ? "Shortcuts" : "My files", {}) }
     function colorForTest(it, code) { item = it; backend.driveAction(tag + "folder_color", JSON.stringify(it), JSON.stringify({ code: code })) }
     function closeAllForTest() { menu.close(); fileRequest.close(); colorPicker.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close(); versions.close() }
     function copyForTest() { root.copy(copyLink.url); copyLink.copied = true }

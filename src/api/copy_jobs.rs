@@ -52,6 +52,60 @@ pub async fn stamp_color(site: &str, folder_url: &str, code: &str) -> Result<()>
     Ok(())
 }
 
+/// A site's and web's ids (`_api/site/id`, `_api/web/id`).
+pub async fn site_ids(site: &str) -> Result<(String, String)> {
+    let site = site.trim_end_matches('/');
+    let (a, b) = (format!("{site}/_api/site/id"), format!("{site}/_api/web/id"));
+    let (x, y) = tokio::join!(get(&a), get(&b));
+    let id = |v: Result<Value>| v.ok().and_then(|v| v["d"]["Id"].as_str().map(str::to_string)).unwrap_or_default();
+    Ok((id(x), id(y)))
+}
+
+/// Where Add shortcut puts the shortcut: OneDrive's Shortcuts, your My
+/// files, or a folder (`drive`, its unique id; empty for the drive's top)
+/// on a site.
+pub enum ShortcutPlace {
+    Shortcuts,
+    MyFiles,
+    Folder { site: String, drive: String, folder: String },
+}
+
+/// The body OneDrive's Add shortcut posts (its "Stasher").
+pub fn shortcut_body(name: &str, item: &ItemRef, site_id: &str, web_id: &str) -> Value {
+    json!({
+        "name": name,
+        "remoteItem": { "sharepointIds": {
+            "listId": item.list.trim_matches(|c| c == '{' || c == '}'),
+            "listItemUniqueId": item.item.trim_matches(|c| c == '{' || c == '}'),
+            "siteId": site_id, "siteUrl": item.site.trim_end_matches('/'), "webId": web_id,
+        }},
+        "file": {},
+        "@microsoft.graph.conflictBehavior": "rename",
+    })
+}
+
+/// Add shortcut: `personal` is your OneDrive's host (`https://x-my…`).
+pub async fn add_shortcut(item: &ItemRef, name: &str, personal: &str, place: &ShortcutPlace) -> Result<()> {
+    let ok = |s: &str| s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!-_.".contains(&b));
+    let url = match place {
+        ShortcutPlace::Shortcuts => format!("{}/_api/v2.1/drives/me/special/shortcuts/children", host(personal)),
+        ShortcutPlace::MyFiles => format!("{}/_api/v2.1/drives/me/items/root/children", host(personal)),
+        ShortcutPlace::Folder { site, drive, folder } => {
+            let f = folder.trim_matches(|c| c == '{' || c == '}');
+            if !ok(drive) || !(f.is_empty() || f.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')) {
+                bail!("Not a folder");
+            }
+            let target = if f.is_empty() { "root".to_string() } else { format!("{{{f}}}") };
+            format!("{}/_api/v2.1/drives/{drive}/items/{target}/children", host(site))
+        }
+    };
+    let (site_id, web_id) = site_ids(&item.site).await?;
+    super::sharing::post_with(&url, &shortcut_body(name, item, &site_id, &web_id), &[("accept", "application/json"), ("content-type", "application/json")])
+        .await
+        .map_err(sp_message)?;
+    Ok(())
+}
+
 /// `https://host` of an address.
 fn host(url: &str) -> String {
     url.split('/').take(3).collect::<Vec<_>>().join("/")
@@ -172,6 +226,12 @@ fn sp_message(e: anyhow::Error) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcut_bodies_are_onedrives() {
+        let it = ItemRef { site: "https://x-my.sharepoint.com/personal/a/".into(), list: "{0E0A}".into(), item: "1dd3".into() };
+        assert_eq!(shortcut_body("ost-share-test", &it, "S", "W"), json!({"name":"ost-share-test","remoteItem":{"sharepointIds":{"listId":"0E0A","listItemUniqueId":"1dd3","siteId":"S","siteUrl":"https://x-my.sharepoint.com/personal/a","webId":"W"}},"file":{},"@microsoft.graph.conflictBehavior":"rename"}));
+    }
 
     #[test]
     fn duplicate_names_follow_onedrive() {

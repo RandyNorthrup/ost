@@ -12826,6 +12826,20 @@ impl qobject::Backend {
                     }
                     "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),
                     "preview" => json!(api::drive::preview(&client, &item).await?),
+                    // Add shortcut ▸ Shortcuts / My files / a folder.
+                    "shortcut" => {
+                        let me_root = api::drive::root(&client, "").await?;
+                        let personal = me_root.web_url.split('/').take(3).collect::<Vec<_>>().join("/");
+                        let place = match s("place").as_str() {
+                            "shortcuts" => api::copy_jobs::ShortcutPlace::Shortcuts,
+                            "myfiles" => api::copy_jobs::ShortcutPlace::MyFiles,
+                            _ => api::copy_jobs::ShortcutPlace::Folder { site: s("site"), drive: s("drive_id"), folder: s("folder") },
+                        };
+                        // A file's shortcut is named without its extension, as OneDrive names it.
+                        let name = if item.is_folder { item.name.clone() } else { std::path::Path::new(&item.name).file_stem().and_then(|n| n.to_str()).unwrap_or(&item.name).to_string() };
+                        api::copy_jobs::add_shortcut(&sp, &name, &personal, &place).await?;
+                        json!(null)
+                    }
                     "folder_color" => {
                         let url = api::copy_jobs::absolute_url(&sp).await?;
                         api::copy_jobs::stamp_color(&sp.site, &url, &s("code")).await?;

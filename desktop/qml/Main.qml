@@ -3044,7 +3044,12 @@ Window {
             else if (step === 13) { log("back to yellow", it.folder_color || "(none)"); fa.fileRequestForTest(it, "OST test 114") }
             else if (step === 16) { const st = fa.fileRequestStateForTest(); log("request", st); share = st.share_id; cap("request") }
             else if (step === 17) { fa.closeAllForTest(); if (share) backend.shareAction("unlink", JSON.stringify(fa.ref(it)), JSON.stringify({ kind: 6, share_id: share })) }
-            else if (step === 19) Qt.quit()
+            // Add shortcut ▸ Shortcuts and ▸ My files for ost-share-test.txt
+            // (the shortcuts are removed by the runner afterwards).
+            else if (step === 18) { log("file menu", fa.menuForTest(find("ost-share-test.txt"))); fa.shortcutForTest(find("ost-share-test.txt"), "shortcuts") }
+            else if (step === 20) { log("shortcut", fa.stateForTest().toast); fa.shortcutForTest(find("ost-share-test.txt"), "myfiles") }
+            else if (step === 22) { log("shortcut my files", fa.stateForTest().toast); cap("shortcut") }
+            else if (step === 23) Qt.quit()
             step++
         }
     }
