@@ -20,6 +20,7 @@ pub mod search;
 pub mod sharing;
 pub mod copy_jobs;
 pub mod list_rows;
+pub mod versions;
 pub mod folders;
 pub mod funstuff;
 mod me;

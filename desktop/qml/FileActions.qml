@@ -69,6 +69,7 @@ Item {
         if (canWrite && sp) L.push({ label: "Move to", icon: "folder-arrow-right-16" })
         if (sp) L.push({ label: "Copy to", icon: "copy-16" })
         if (canWrite && sp) L.push({ label: "Duplicate", icon: "add-square-16" })
+        if (!it.is_folder && sp) { L.push({ separator: true }); L.push({ label: "Version history", icon: "history-16" }) }
         while (L.length && L[L.length - 1].separator) L.pop()
         return L
     }
@@ -110,6 +111,7 @@ Item {
         else if (label === "Rename") renameDialog.openFor(it)
         else if (label === "Move to") picker.openFor(it, true)
         else if (label === "Copy to") picker.openFor(it, false)
+        else if (label === "Version history") versions.openFor(it)
         else if (label === "Duplicate") { jobCount = 1; notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
     }
 
@@ -132,6 +134,7 @@ Item {
             const kind = op.slice(root.tag.length)
             const v = result ? JSON.parse(result) : null
             if (kind === "folders" || kind === "libraries") { picker.reply(kind, v, error); return }
+            if (kind === "versions" || kind === "restore_version" || kind === "delete_version") { versions.reply(kind, v, error); return }
             if (kind === "open_app") {
                 if (error) root.notice("error", "The file couldn't be opened", error)
                 else { toast.visible = false; Qt.openUrlExternally("file://" + v.path) }
@@ -242,6 +245,149 @@ Item {
             OdspButton { label: dlg.okText; enabled2: dlg.okEnabled; onClicked: dlg.accepted() }
             OdspButton { label: "Cancel"; onClicked: dlg.close() }
         }
+        }
+    }
+    // Version history (OneDrive's): 70% of the window wide at most 848.4,
+    // padding 24, radius 8; "Version history" 20/28 600 and Close; the
+    // versions on a 316 tall white card (radius 4, shadow 4): Version 100,
+    // then Modified, Size and Modified By at 40/20/40 of the rest; header
+    // 46 tall (12/20 600, a 2 px #F0F0F0 line), rows 46 (14/20), #EBEBEB on
+    // hover with a 28 px ··· after the label: Open File, and for older
+    // versions Restore and Delete Version (both at once, no question).
+    Popup {
+        id: versions
+        property var target: null
+        property var list: []
+        property bool loading: false
+        property string error: ""
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true; padding: 0
+        width: Math.min(848.4, (Overlay.overlay ? Overlay.overlay.width : 1212) * 0.7)
+        height: 24 + 31.33 + 8.33 + 316 + 2 + 31
+        closePolicy: Popup.CloseOnEscape
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        function openFor(it) { target = it; list = []; error = ""; open(); load() }
+        function load() { loading = true; backend.driveAction(root.tag + "versions", JSON.stringify(target), "{}") }
+        function reply(kind, v, err) {
+            if (kind === "versions") { loading = false; error = err || ""; list = err ? [] : (v || []); return }
+            if (err) { root.notice("error", kind === "restore_version" ? "The version wasn't restored" : "The version wasn't deleted", err); return }
+            load(); root.changed()
+        }
+        function run(ver, label) {
+            if (label === "Open File") Qt.openUrlExternally(ver.url)
+            else if (label === "Restore") backend.driveAction(root.tag + "restore_version", JSON.stringify(target), JSON.stringify({ label: ver.label }))
+            else if (label === "Delete Version") backend.driveAction(root.tag + "delete_version", JSON.stringify(target), JSON.stringify({ label: ver.label }))
+        }
+        contentItem: Item {
+            Text {
+                x: 24; y: 24; width: parent.width - 48 - 40; height: 31.33
+                text: "Version history"
+                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+                lineHeight: 28; lineHeightMode: Text.FixedHeight
+                color: root.ink
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            Rectangle {
+                x: parent.width - 24 - 32; y: 24; width: 32; height: 31.33; radius: 4
+                color: vch.hovered ? theme.menuHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: root.strong }
+                HoverHandler { id: vch; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: versions.close() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Close"
+            }
+            FluentSurface {
+                id: vcard
+                x: 24; y: 24 + 31.33 + 8.33 + 2; width: parent.width - 48; height: 316
+                depth: 4; radius: 4; color: theme.surface
+                readonly property real rest: width - 100
+                readonly property var cols: [100, rest * 0.4, rest * 0.2, rest * 0.4]
+                Item {
+                    width: parent.width; height: 46
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.pick("#F0F0F0", "#3D3D3D") }
+                    Row {
+                        Repeater {
+                            model: ["Version", "Modified", "Size", "Modified By"]
+                            Item {
+                                required property string modelData
+                                required property int index
+                                width: vcard.cols[index]; height: 46
+                                Text { x: index === 0 ? 20 : 8; y: 13; text: modelData; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.ink }
+                            }
+                        }
+                    }
+                }
+                ListView {
+                    id: vlist
+                    y: 46; width: parent.width; height: parent.height - 46
+                    clip: true
+                    model: versions.list
+                    boundsBehavior: Flickable.StopAtBounds
+                    delegate: Rectangle {
+                        id: vrow
+                        required property var modelData
+                        width: vlist.width; height: 46
+                        readonly property bool hot: vrh.hovered || vmenu.opened
+                        color: hot ? theme.rowHover : "transparent"
+                        readonly property color cell: theme.pick("#5E5E5D", "#D6D6D6")
+                        // The label opens that version.
+                        Text {
+                            id: vlabel
+                            x: 20; anchors.verticalCenter: parent.verticalCenter
+                            text: vrow.modelData.label
+                            font.family: theme.font; font.pixelSize: 16; color: root.ink
+                            font.underline: vlh.hovered
+                            HoverHandler { id: vlh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: versions.run(vrow.modelData, "Open File") }
+                            Accessible.role: Accessible.Link
+                            Accessible.name: "Version " + vrow.modelData.label
+                        }
+                        Rectangle {
+                            id: vmore
+                            visible: vrow.hot
+                            x: 63; y: 9; width: 28; height: 28; radius: 2
+                            color: vmh.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-16"; size: 16; color: theme.pick("#605E5C", "#D6D6D6") }
+                            HoverHandler { id: vmh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: vmenu.open() }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Show more actions for this item"
+                            MenuPopup {
+                                id: vmenu
+                                fabric: true; fabricWidth: 232
+                                x: 3.5; y: parent.height + 4
+                                items: vrow.modelData.current ? [{ label: "Open File", icon: "open-16" }]
+                                    : [{ label: "Open File", icon: "open-16" }, { label: "Restore", icon: "arrow-undo-16" }, { label: "Delete Version", icon: "delete-16" }]
+                                onPicked: i => versions.run(vrow.modelData, items[i].label)
+                            }
+                        }
+                        Row {
+                            x: 100; height: parent.height
+                            Text { width: vcard.cols[1]; leftPadding: 8; anchors.verticalCenter: parent.verticalCenter; text: vrow.modelData.modified; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; color: vrow.cell }
+                            Text { width: vcard.cols[2]; leftPadding: 8; anchors.verticalCenter: parent.verticalCenter; text: vrow.modelData.size; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; color: vrow.cell }
+                            Item {
+                                width: vcard.cols[3]; height: 46
+                                Avatar { x: 8; y: 11; size: 24; name: vrow.modelData.by; photoId: vrow.modelData.by_oid }
+                                Text { x: 48; width: parent.width - 56; anchors.verticalCenter: parent.verticalCenter; text: vrow.modelData.by; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; color: vrow.cell }
+                            }
+                        }
+                        HoverHandler { id: vrh }
+                        Accessible.role: Accessible.Row
+                        Accessible.name: "Version " + modelData.label + ", " + modelData.modified + ", " + modelData.size + ", " + modelData.by
+                    }
+                }
+                BusyIndicator { anchors.centerIn: parent; running: versions.loading; visible: versions.loading }
+                Text {
+                    visible: !!versions.error
+                    anchors.centerIn: parent; width: parent.width - 48
+                    horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                    text: versions.error
+                    font.family: theme.font; font.pixelSize: 14; color: theme.danger
+                }
+            }
         }
     }
     // Both of OneDrive's dialog buttons are brand-filled in Teams.
@@ -678,6 +824,8 @@ Item {
     OneDriveShare { id: share }
 
     // Test harness hooks
+    function versionsForTest() { return { open: versions.opened, loading: versions.loading, error: versions.error, list: versions.list.map(v => [v.label, v.modified, v.size, v.by, v.current ? "current" : ""].join(" | ")) } }
+    function versionRunForTest(label, action) { const v = versions.list.find(x => x.label === label); if (v) versions.run(v, action); return !!v }
     function menuForTest(it) { return itemsFor(it).map(i => i.separator ? "--" : i.label + (i.submenu ? " >" : "")) }
     function popupForTest(it) { popup(it, root, root.width / 2 - 108, 60) }
     function actForTest(it, label) { item = it; act(label) }
@@ -686,7 +834,7 @@ Item {
     function pickerDoneForTest() { picker.done() }
     function renameForTest(name) { nameInput.text = name; renameDialog.accepted() }
     function submenuForTest() { menu.openSubmenuForTest(0) }
-    function closeAllForTest() { menu.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close() }
+    function closeAllForTest() { menu.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close(); versions.close() }
     function copyForTest() { root.copy(copyLink.url); copyLink.copied = true }
     function linkForTest() { return { kind: copyLink.kind, share_id: copyLink.shareId, ref: copyLink.target ? ref(copyLink.target) : null } }
 }

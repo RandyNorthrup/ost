@@ -204,11 +204,21 @@ pub async fn info(item: &ItemRef) -> Result<Info> {
 /// Fill in people's directory ids (Graph, by address) so their pictures
 /// show; those Graph can't find keep initials.
 pub async fn with_object_ids(client: &super::client::TeamsClient, info: &mut Info) {
+    let emails: Vec<String> = info.people.iter().chain(info.links.iter().flat_map(|l| l.members.iter())).map(|p| p.email.clone()).collect();
+    let found = object_ids(client, &emails).await;
+    let fill = |p: &mut Person| p.oid = found.get(&p.email.to_ascii_lowercase()).cloned().unwrap_or_default();
+    info.people.iter_mut().for_each(fill);
+    info.links.iter_mut().flat_map(|l| l.members.iter_mut()).for_each(fill);
+}
+
+/// Directory ids for addresses (lowercased), from Graph; those Graph can't
+/// find are left out.
+pub async fn object_ids(client: &super::client::TeamsClient, emails: &[String]) -> std::collections::HashMap<String, String> {
     use futures::StreamExt;
-    let mut emails: Vec<String> = info.people.iter().chain(info.links.iter().flat_map(|l| l.members.iter())).map(|p| p.email.to_ascii_lowercase()).filter(|e| !e.is_empty()).collect();
+    let mut emails: Vec<String> = emails.iter().map(|e| e.to_ascii_lowercase()).filter(|e| !e.is_empty()).collect();
     emails.sort();
     emails.dedup();
-    let found: std::collections::HashMap<String, String> = futures::stream::iter(emails)
+    futures::stream::iter(emails)
         .map(|e| async move {
             let id = match client.graph_get_opt(&format!("/users/{}?$select=id", url::form_urlencoded::byte_serialize(e.as_bytes()).collect::<String>())).await {
                 Ok(Some(r)) => r.json::<Value>().await.ok().map(|v| s(&v["id"])).unwrap_or_default(),
@@ -217,11 +227,11 @@ pub async fn with_object_ids(client: &super::client::TeamsClient, info: &mut Inf
             (e, id)
         })
         .buffer_unordered(6)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .filter(|(_, id)| !id.is_empty())
         .collect()
-        .await;
-    let fill = |p: &mut Person| p.oid = found.get(&p.email.to_ascii_lowercase()).cloned().unwrap_or_default();
-    info.people.iter_mut().for_each(fill);
-    info.links.iter_mut().flat_map(|l| l.members.iter_mut()).for_each(fill);
 }
 
 /// The people picker's suggestions for `query` (SharePoint's entities,

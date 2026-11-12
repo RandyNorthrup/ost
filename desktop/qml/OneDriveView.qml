@@ -280,6 +280,7 @@ Item {
                 if (sp) L.push({ label: "Copy to", icon: "copy-16" })
                 if (it && root.canWrite) L.push({ label: "Rename", icon: "rename-16" })
                 if (it && it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? "Open in OneDrive" : "Open in SharePoint", icon: "cloud-16" })
+                if (it && !it.is_folder && it.sp_item) L.push({ label: "Version history", icon: "history-16" })
                 return L
             }
             function run(label) {

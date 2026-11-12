@@ -60,6 +60,22 @@ fn plural(n: i64, one: &str, many: &str) -> String {
     fill(if n == 1 { one } else { many }, &[&n.to_string()])
 }
 
+/// OneDrive's file size wording: "1 byte", "56 bytes", "26.0 KB", "7.66 MB"
+/// (two decimals under 10, one under 100, none above).
+pub fn size_text(n: f64) -> String {
+    let f = |v: f64| {
+        if v >= 100.0 || v == v.floor() { format!("{v:.0}") } else if v >= 10.0 { format!("{v:.1}") } else { format!("{v:.2}") }
+    };
+    match n {
+        n if n == 1.0 => "1 byte".into(),
+        n if n < 1024.0 => format!("{n:.0} bytes"),
+        n if n < 1024e3 => format!("{} KB", f(n / 1024.0)),
+        n if n < 1048576e3 => format!("{} MB", f(n / 1048576.0)),
+        n if n < 1073741824e3 => format!("{} GB", f(n / 1073741824.0)),
+        n => format!("{} TB", f(n / 1099511627776.0)),
+    }
+}
+
 /// SharePoint's `Modified.FriendlyDisplay` as OneDrive's list words it
 /// ("1|0|5|10:28 PM" is "Yesterday at 10:28 PM"; "0|November 5" is as is).
 pub fn friendly_display(code: &str) -> String {
@@ -360,6 +376,18 @@ mod tests {
 
     fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
         Local.with_ymd_and_hms(y, mo, d, h, mi, 0).unwrap()
+    }
+
+    #[test]
+    fn sizes_read_as_onedrive() {
+        assert_eq!(size_text(1.0), "1 byte");
+        assert_eq!(size_text(56.0), "56 bytes");
+        assert_eq!(size_text(26.02 * 1024.0), "26.0 KB");
+        assert_eq!(size_text(26.0 * 1024.0), "26 KB");
+        assert_eq!(size_text(82.7 * 1024.0), "82.7 KB");
+        assert_eq!(size_text(7.66 * 1048576.0), "7.66 MB");
+        assert_eq!(size_text(37.5 * 1048576.0), "37.5 MB");
+        assert_eq!(size_text(150.0 * 1048576.0), "150 MB");
     }
 
     #[test]

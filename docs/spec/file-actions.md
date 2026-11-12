@@ -88,7 +88,7 @@ and Open in app (OneDrive's wording; not yet seen in Teams).
 
 ## Not yet in OST
 
-- Preview, Version history and Details: TASK-0115.
+- Preview and Details: TASK-0115. Version history is in `docs/spec/version-history.md`.
 - Add shortcut ▸, Request files, Folder color ▸, Download of a folder (a zip) and Add to playlist: TASK-0116.
 - The picker's Shared, Favorites, Browse by, More places…, Search, New folder and view switch, plus Copilot's Suggested names in Rename: TASK-0117.
 - Favorites on folders: Graph's followed items hold files only.

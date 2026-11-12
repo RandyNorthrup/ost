@@ -12825,6 +12825,23 @@ impl qobject::Backend {
                         json!(null)
                     }
                     "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),
+                    // Version history: the list (with pictures' ids), and
+                    // a version restored or sent to the recycle bin.
+                    "versions" => {
+                        let file = api::copy_jobs::absolute_url(&sp).await?;
+                        let mut list = api::versions::list(&sp.site, &file).await?;
+                        let emails: Vec<String> = list.iter().map(|v| v.by_email.clone()).collect();
+                        let ids = api::sharing::object_ids(&client, &emails).await;
+                        for v in &mut list {
+                            v.by_oid = ids.get(&v.by_email.to_ascii_lowercase()).cloned().unwrap_or_default();
+                        }
+                        json!(list)
+                    }
+                    "restore_version" | "delete_version" => {
+                        let file = api::copy_jobs::absolute_url(&sp).await?;
+                        api::versions::act(&sp.site, &file, &s("label"), kind == "restore_version").await?;
+                        json!(null)
+                    }
                     "folders" => {
                         let (d, i) = (s("drive_id"), s("item_id"));
                         let (here, items) = tokio::join!(
