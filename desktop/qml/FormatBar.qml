@@ -17,6 +17,9 @@ Item {
     /// The channel post composer's bar (measured): Announcement after Code
     /// block, no Discard, the whole 490 for the buttons.
     property bool post: false
+    /// Discard at the end (not in Teams' share dialog's bar, which keeps
+    /// the same 458 for its buttons).
+    property bool discard: true
     /// The selected text (Insert link's Text to display).
     property string selectedText: ""
     signal command(string op, string arg)
@@ -148,7 +151,7 @@ Item {
     }
     // Discard draft (Cancel when editing).
     Rectangle {
-        visible: !root.post
+        visible: !root.post && root.discard
         x: root.width - 6 - 32; y: 9; width: 32; height: 32; radius: 4
         color: "transparent"
         FluentIcon { anchors.centerIn: parent; size: 20; name: root.editing ? "dismiss-20" : "fmt-discard"; color: discardHover.hovered ? theme.brand : theme.textStrong }

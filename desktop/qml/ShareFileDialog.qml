@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import com.ost.desktop
 
 // Teams' "Share this file" (a search file card's Share), measured on winpc
 // 2026-11-11: a 600-wide Fluent dialog, radius 8, padding 32.
@@ -32,7 +33,7 @@ Popup {
     parent: Overlay.overlay
     modal: true; focus: true
     padding: 0
-    width: 600; height: 648.33 + (picker.height - 33.33)
+    width: 600; height: 648.33 + (picker.height - 33.33) + (formatting ? 20.67 : 0)
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
@@ -57,11 +58,15 @@ Popup {
     property bool sharing: false
     property string error: ""
     property string thumb: ""
+    /// Format on: Teams' formatting bar over the message (the box 20.67
+    /// taller), and the message sent as formatted HTML.
+    property bool formatting: false
+    property var richState: ({})
 
     function openFor(itemRef, name, type, url) {
         item = itemRef; fileName = name || ""; fileType = type || ""; objectUrl = url || ""
         info = null; picked = []; query = ""; suggestions = []; scope = 3; edit = true; expiration = ""; password = ""
-        noAccess = []; sharing = false; error = ""
+        noAccess = []; sharing = false; error = ""; formatting = false
         thumb = backend.fileThumbnail(objectUrl)
         open()
         pickerInput.text = ""; note.text = ""
@@ -124,7 +129,7 @@ Popup {
     }
     function post(url, shareId) {
         backend.shareAction("sf:post", JSON.stringify(item), JSON.stringify({
-            targets: picked, note: note.text,
+            targets: picked, note: note.getText(0, note.length), note_html: note.length ? rich.exportHtml() : "",
             file: { name: fileName, object_url: objectUrl, share_url: url, share_id: shareId }
         }))
     }
@@ -239,13 +244,31 @@ Popup {
     Text { x: 32.67; y: picker.y + picker.height + 37.33; text: "Message preview"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
     Rectangle {
         id: preview
-        x: 32.67; y: picker.y + picker.height + 57.33; width: 534.67; height: 329.33
+        x: 32.67; y: picker.y + picker.height + 57.33; width: 534.67; height: 329.33 + (root.formatting ? 20.67 : 0)
         radius: 6; color: theme.pick("#F5F5F5", "#141414"); border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+        clip: true
+        Rectangle { visible: note.activeFocus; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 2; radius: 1; color: theme.brand; z: 2 }
+        // Teams' formatting bar (458 for its buttons, no Discard), at 6.67, 9.67.
+        FormatBar {
+            id: fmtBar
+            visible: root.formatting
+            x: 0.67; y: 0.67; width: 490; tierWidth: 640
+            discard: false
+            st: root.richState
+            selectedText: note.selectedText
+            onCommand: (op, arg) => { rich.apply(note.selectionStart, note.selectionEnd, op, arg || ""); note.forceActiveFocus(); root.refreshRichState() }
+            onUndoRequested: { note.undo(); note.forceActiveFocus() }
+            onRedoRequested: { note.redo(); note.forceActiveFocus() }
+        }
         TextEdit {
             id: note
-            x: 12.67; y: 10; width: parent.width - 28.67
-            wrapMode: TextEdit.Wrap
+            x: 12.67; y: root.formatting ? 43.67 : 10; width: parent.width - 28.67
+            wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
+            selectByMouse: true; selectionColor: theme.selectionFill; selectedTextColor: theme.text
             font.family: theme.font; font.pixelSize: 14; color: theme.text
+            onCursorPositionChanged: root.refreshRichState()
+            onTextChanged: root.refreshRichState()
+            RichText { id: rich }
             Text { visible: !parent.text; text: "Add a message (optional)"; font: parent.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
             Accessible.name: "Add a message (optional)"
@@ -295,8 +318,18 @@ Popup {
             Accessible.role: Accessible.Grouping
             Accessible.name: root.fileName
         }
+        // Format (Show / Hide Formatting option).
         Rectangle {
-            x: parent.width - 8 - 32; y: 292.67; width: 32; height: 32; radius: 4
+            x: parent.width - 8 - 64; y: parent.height - 36.67; width: 32; height: 32; radius: 4
+            color: fmh.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; size: 20; name: "format-20"; color: root.formatting ? theme.brand : theme.textStrong }
+            HoverHandler { id: fmh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.formatting = !root.formatting; note.forceActiveFocus() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: root.formatting ? "Hide Formatting option" : "Show Formatting options"
+        }
+        Rectangle {
+            x: parent.width - 8 - 32; y: parent.height - 36.67; width: 32; height: 32; radius: 4
             color: emh.hovered ? theme.hover : "transparent"
             FluentIcon { anchors.centerIn: parent; size: 20; name: "emoji-20"; color: theme.textStrong }
             HoverHandler { id: emh; cursorShape: Qt.PointingHandCursor }
@@ -374,10 +407,14 @@ Popup {
         onLinkChosen: (s, e, x, p) => { root.scope = s; root.edit = e; root.expiration = x; root.password = p }
     }
 
+    function refreshRichState() { try { richState = JSON.parse(rich.state(note.cursorPosition)) } catch (e) { richState = ({}) } }
+
     // Test hooks.
+    function formatForTest(op) { formatting = true; note.selectAll(); rich.apply(note.selectionStart, note.selectionEnd, op, ""); refreshRichState() }
     function typeForTest(q) { pickerInput.forceActiveFocus(); pickerInput.text = q }
     function pickForTest(name) { const s = suggestions.find(x => x.name === name); if (s) pick(s); return !!s }
     function noteForTest(t) { note.text = t }
+    function noteHtmlForTest() { return rich.exportHtml() }
     function linkForTest(s, e) { scope = s; edit = e }
     function stateForTest() { return { picked: picked.map(p => p.name), suggestions: suggestions.map(s => s.name + " | " + s.sub), blocked: blocked, scope: scope, line: linkLine(), error: error, sharing: sharing } }
 }

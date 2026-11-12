@@ -694,8 +694,10 @@ Window {
             else if (step === 9) { log("suggest"); cap("suggest") }
             else if (step === 10) sf.pickForTest("OST Test 2")
             else if (step === 12) { log("picked"); cap("picked") }
-            else if (step === 13 && !send) Qt.quit()
-            else if (step === 13) { sf.linkForTest(4, true); sf.noteForTest("OST test 109: shared from OST") }
+            else if (step === 13 && !send) { sf.noteForTest("Formatted note"); sf.formatForTest("bold") }
+            else if (step === 14 && !send) { log("format"); cap("format") }
+            else if (step === 15 && !send) Qt.quit()
+            else if (step === 13) { sf.linkForTest(4, true); sf.noteForTest("OST test 110: shared from OST, formatted"); sf.formatForTest("bold"); console.warn("SHAREFILE note", sf.noteHtmlForTest()) }
             else if (step === 14) { log("ready"); cap("ready"); sf.share() }
             else if (step === 18) { log("shared"); cap("shared") }
             else if (step === 19) Qt.quit()

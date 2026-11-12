@@ -36,8 +36,12 @@ Opened from Share in a search file card's ··· (Grid view). Measured on winpc 
 - **··· ▸ Share outside Teams** closes this dialog and opens OneDrive's share dialog
   (`docs/spec/onedrive-share.md`).
 
+- **Format** (left of Emoji; "Show / Hide Formatting option") puts Teams' formatting bar at
+  the top of the message box. It is the compose box's bar: 458 for its buttons, with no
+  Discard, at 6.67, 9.67. The box and the dialog grow by 20.67, and the message is sent
+  as formatted HTML.
+
 ## Not yet in OST
 
-- The message box's Format button (Teams' formatting bar); Emoji works.
 - Teams lists you ("OST Test 1 (You)") among the people. The suggestions service doesn't
   return you to OST, so OST doesn't.

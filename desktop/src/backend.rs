@@ -4963,8 +4963,9 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let s = |k: &str| args[k].as_str().unwrap_or_default().to_string();
             let result: anyhow::Result<serde_json::Value> = async {
-                // "sf:<op>" is the same op for Teams' Share this file (its own replies).
-                Ok(match op.trim_start_matches("sf:") {
+                // "sf:<op>" / "fw:<op>": the same op for Share this file and
+                // Forward (each dialog takes only its own replies).
+                Ok(match op.rsplit(':').next().unwrap_or_default() {
                     "info" => {
                         let mut info = api::sharing::info(&item).await?;
                         if let Ok(client) = TeamsClient::new().await {
@@ -4997,7 +4998,14 @@ impl qobject::Backend {
                         let f = &args["file"];
                         let fs = |k: &str| f[k].as_str().unwrap_or_default().to_string();
                         let record = api::files::shared_record(&fs("name"), &item.item, &fs("object_url"), &item.site, &fs("share_url"), &fs("share_id"));
-                        api::files::send_with_files(&client, &chat, &s("note"), vec![record]).await?;
+                        // The note as the share dialog's editor wrote it (Format), else plain.
+                        let note_html = s("note_html");
+                        if note_html.trim().is_empty() {
+                            api::files::send_with_files(&client, &chat, &s("note"), vec![record]).await?;
+                        } else {
+                            let (html, _) = api::messages::teams_html_with_media(&note_html, &[]);
+                            api::files::send_html_with_files(&client, &chat, &html, vec![record]).await?;
+                        }
                         json!({ "chat": chat })
                     }
                     "role" => {

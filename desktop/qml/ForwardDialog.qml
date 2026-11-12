@@ -6,7 +6,7 @@ import QtQuick.Controls.Basic
 // - title "Forward this message" (20/28 semibold) and "You can forward to
 //   any chat or channel." (14, NeutralForeground3);
 // - "Add recipients *": a 535 x 33 picker on NeutralBackground5 (#F0F0F0).
-//   People come from the directory, chats and channels from your list.
+//   Suggestions are Teams' picker service (peoplepicker.newChat).
 //   Suggestions are 50 px rows with a 32 px avatar and the match in bold.
 //   Picks become pills (24 px avatar, name, dismiss). A group chat or channel
 //   is a single choice. More than one person goes to a group chat;
@@ -30,27 +30,23 @@ Popup {
     readonly property bool single: picked.some(p => p.kind === "chat")
     readonly property bool multiPeople: picked.filter(p => p.kind === "person").length > 1
     property string query: ""
-    readonly property var people: (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).filter(p => !picked.some(x => x.oid === p.id))
-    readonly property var chats: {
-        const q = query.trim().toLowerCase()
-        if (q.length < 1) return []
-        const list = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
-        return list.filter(c => !c.isSelf && !String(c.id).endsWith("@unq.gbl.spaces") && (c.name || "").toLowerCase().indexOf(q) >= 0 && !picked.some(x => x.id === c.id)).slice(0, 6)
-    }
-    readonly property var teamsChannels: {
-        const q = query.trim().toLowerCase()
-        if (q.length < 1) return []
-        const out = []
-        for (const t of (backend.teamsJson ? JSON.parse(backend.teamsJson) : []))
-            for (const c of t.channels) if ((c.name + " " + t.name).toLowerCase().indexOf(q) >= 0) out.push({ id: c.id, name: c.name + " (" + t.name + ")" })
-        return out.slice(0, 4)
-    }
+    // Add recipients: Teams' picker service (people, chats, channels,
+    // teams in its order, with its second lines), as Share this file. A
+    // chat or channel is a single choice; people can add up.
+    property var remote: []
     readonly property var suggestions: query.trim().length === 0 ? []
-        : people.map(p => ({ kind: "person", oid: p.id, name: p.name, sub: p.job_title || p.mail || "" }))
-            .concat((picked.filter(p => p.kind === "person").length > 0 ? [] : chats).map(c => ({ kind: "chat", id: c.id, name: c.name, sub: "" })))
-            .concat(picked.length > 0 ? [] : teamsChannels.map(c => ({ kind: "chat", id: c.id, name: c.name, sub: "" })))
+        : remote.filter(s => !picked.some(p => p.kind === s.kind && (s.kind === "person" ? p.oid === s.oid : p.id === s.id)))
+                .filter(s => s.kind === "person" || picked.length === 0)
+    Connections {
+        target: backend
+        function onShareDone(op, result, error) {
+            if (op !== "fw:recipients" || !result) return
+            const v = JSON.parse(result)
+            if (v.query === root.query.trim()) root.remote = v.items
+        }
+    }
 
-    onOpened: { picked = []; query = ""; search.text = ""; note.text = ""; search.forceActiveFocus() }
+    onOpened: { picked = []; query = ""; remote = []; search.text = ""; note.text = ""; search.forceActiveFocus() }
     // Test hooks (--forward-test).
     function typeForTest(t) { search.text = t }
     function pickForTest(oid) { const s = suggestions.find(x => x.oid === oid); if (s) { picked = picked.concat([s]); search.text = "" } return !!s }
@@ -86,7 +82,7 @@ Popup {
                     required property int index
                     width: 2 + 24 + 8 + chipName.implicitWidth + 4 + 12 + 6; height: 25; radius: 12.5
                     color: theme.surface
-                    Avatar { x: 2; y: 0.5; size: 24; name: chip.modelData.name; photoId: chip.modelData.oid || ""; group: chip.modelData.kind === "chat" }
+                    Avatar { x: 2; y: 0.5; size: 24; name: chip.modelData.name.replace(/ \(You\)$/, ""); photoId: chip.modelData.kind === "person" ? "8:orgid:" + chip.modelData.oid : chip.modelData.group ? "team:" + chip.modelData.group : ""; meeting: chip.modelData.thread_type === "Meeting"; group: chip.modelData.kind === "chat" && !chip.modelData.group && chip.modelData.thread_type !== "Meeting"; square: !!chip.modelData.group }
                     Text { id: chipName; x: 34; anchors.verticalCenter: parent.verticalCenter; text: chip.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                     FluentIcon {
                         x: chipName.x + chipName.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-12"; size: 12; color: theme.textStrong
@@ -103,7 +99,7 @@ Popup {
                 verticalAlignment: TextInput.AlignVCenter
                 enabled: !root.single
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-                onTextChanged: { root.query = text; backend.searchPeople(text) }
+                onTextChanged: { root.query = text; if (text.trim().length) backend.shareAction("fw:recipients", "{}", JSON.stringify({ query: text.trim() })); else root.remote = [] }
                 Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && text.length === 0 && root.picked.length > 0) { root.picked = root.picked.slice(0, -1); e.accepted = true } }
                 Text { visible: !search.text && root.picked.length === 0; anchors.verticalCenter: parent.verticalCenter; text: "Enter name, email, group or tag"; font: search.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
@@ -183,7 +179,7 @@ Popup {
                 required property var modelData
                 width: 526.7; height: 50; radius: 4
                 color: optHover.hovered ? theme.menuHover : "transparent"
-                Avatar { x: 12; y: 9; size: 32; name: opt.modelData.name; photoId: opt.modelData.oid || ""; group: opt.modelData.kind === "chat" }
+                Avatar { x: 12; y: 9; size: 32; name: opt.modelData.name.replace(/ \(You\)$/, ""); photoId: opt.modelData.kind === "person" ? "8:orgid:" + opt.modelData.oid : opt.modelData.group ? "team:" + opt.modelData.group : ""; meeting: opt.modelData.thread_type === "Meeting"; group: opt.modelData.kind === "chat" && !opt.modelData.group && opt.modelData.thread_type !== "Meeting"; square: !!opt.modelData.group }
                 Column {
                     x: 60; anchors.verticalCenter: parent.verticalCenter
                     Text { text: root.bolded(opt.modelData.name); textFormat: Text.StyledText; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }

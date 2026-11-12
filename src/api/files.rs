@@ -381,16 +381,26 @@ pub async fn send_with_files(
     text: &str,
     files: Vec<serde_json::Value>,
 ) -> Result<()> {
-    let url = format!(
-        "{}/v1/users/ME/conversations/{}/messages",
-        client.chat_service_url(),
-        chat_id
-    );
     let content = if text.trim().is_empty() {
         String::new()
     } else {
         format!("<p>{}</p>", super::chat::html_escape(text))
     };
+    send_html_with_files(client, chat_id, &content, files).await
+}
+
+/// Post a message (Teams' HTML, already made) with files.
+pub async fn send_html_with_files(
+    client: &TeamsClient,
+    chat_id: &str,
+    content: &str,
+    files: Vec<serde_json::Value>,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages",
+        client.chat_service_url(),
+        chat_id
+    );
     let mut body = serde_json::json!({
         "content": content,
         "messagetype": "RichText/Html",
