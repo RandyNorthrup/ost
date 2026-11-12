@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import QtWebEngine
+import QtQuick.Dialogs
 import com.ost.desktop
 
 Window {
@@ -199,7 +200,28 @@ Window {
         : chatList.chats.filter(c => c.unread && !c.muted).length + backend.activityUnread
     function refreshTaskbarBadge() { backend.setTaskbarBadge(taskbarCount, backend.signedIn ? trayKind : "") }
     onTaskbarCountChanged: refreshTaskbarBadge()
-    Component.onCompleted: refreshTaskbarBadge()
+    Component.onCompleted: { refreshTaskbarBadge(); backend.installLinkHandler() }
+
+    // Settings ▸ Files and links ▸ "Always ask where to save downloaded
+    // file": a download asks for its place (the download folder and the
+    // file's name suggested).
+    FileDialog {
+        id: saveAsDialog
+        property int pending: 0
+        title: "Save as"
+        fileMode: FileDialog.SaveFile
+        onAccepted: backend.saveAsAnswer(pending, decodeURIComponent(String(selectedFile)))
+        onRejected: backend.saveAsAnswer(pending, "")
+    }
+    Connections {
+        target: backend
+        function onSaveAsRequested(id, name, folder) {
+            saveAsDialog.pending = id
+            saveAsDialog.currentFolder = "file://" + folder
+            saveAsDialog.selectedFile = "file://" + folder + "/" + name
+            saveAsDialog.open()
+        }
+    }
     onTrayShownChanged: refreshTray()
     onTrayKindChanged: { refreshTray(); refreshTaskbarBadge() }
     onMyPresenceChanged: refreshTray()
@@ -922,7 +944,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3051,6 +3073,41 @@ Window {
             else if (step === 22) { log("shortcut my files", fa.stateForTest().toast); cap("shortcut") }
             else if (step === 23) Qt.quit()
             step++
+        }
+    }
+
+    // --files-links-test: Settings ▸ Files and links (the two new rows);
+    // a web link opened with Microsoft Edge chosen (run with a stand-in
+    // microsoft-edge on PATH that records its URL); a download with "Always
+    // ask where to save" on, answered with /tmp/ostdl/chosen.txt. Restores
+    // both settings.
+    Timer {
+        id: filesLinksTest
+        running: Qt.application.arguments.indexOf("--files-links-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property string askBefore: ""
+        property string browserBefore: ""
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const log = (tag, x) => console.warn("FILESLINKS", tag, JSON.stringify(x))
+            if (step === 0) { askBefore = backend.setting("askDownloadLocation"); browserBefore = backend.setting("linkBrowser"); log("browsers", JSON.parse(backend.webBrowsers())); rail.current = "settings"; settingsView.pageForTest("files") }
+            else if (step === 1) cap("page")
+            else if (step === 2) { backend.setSetting("linkBrowser", "edge"); Qt.openUrlExternally("https://example.com/ost-link-test") }
+            else if (step === 3) { backend.setSetting("askDownloadLocation", "true"); rail.current = "onedrive"; oneDrive.open("myfiles") }
+            else if (step === 5 && !(oneDrive.driveData.items || []).some(i => i.name === "ost-share-test.txt")) return
+            else if (step === 5) { const it = (oneDrive.driveData.items || []).find(i => i.name === "ost-share-test.txt"); log("download", !!it); backend.driveDownload(JSON.stringify(it)) }
+            else if (step === 8) { backend.setSetting("askDownloadLocation", askBefore); backend.setSetting("linkBrowser", browserBefore); log("restored", [backend.setting("askDownloadLocation"), backend.setting("linkBrowser")]); Qt.quit() }
+            step++
+        }
+    }
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.indexOf("--files-links-test") >= 0
+        function onSaveAsRequested(id, name, folder) {
+            console.warn("FILESLINKS", "asked", JSON.stringify([id, name, folder]))
+            saveAsDialog.close()
+            backend.saveAsAnswer(id, "/tmp/ostdl/chosen.txt")
         }
     }
 

@@ -709,6 +709,13 @@ Rectangle {
                         Accessible.name: "Change download location"
                     }
                 }
+                // Teams' "Always ask where to save downloaded file" (this
+                // device's): each download asks for its place first.
+                SettingsParts.SwitchRow {
+                    label: "Always ask where to save downloaded file"
+                    on: root.local("askDownloadLocation", "false") === "true"
+                    onToggled: v => backend.setSetting("askDownloadLocation", v ? "true" : "false")
+                }
                 FolderDialog {
                     id: folderPick
                     title: "Choose a download location"
@@ -731,6 +738,25 @@ Rectangle {
                 function pick(v) { backend.setSetting("fileOpenIn", v); choice = v; if (v === "web") root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", "web") }
                 SettingsParts.RadioRow { visible: !!openIn.app; label: "Desktop app"; checked: openIn.choice === "desktop" && !!openIn.app; onPicked: openIn.pick("desktop") }
                 SettingsParts.RadioRow { label: "Browser"; checked: openIn.choice !== "desktop" || !openIn.app; onPicked: openIn.pick("web") }
+            }
+            // Teams' "Links open preference": web links open in the default
+            // browser or Microsoft Edge (when installed; Teams' default).
+            SettingsParts.Card {
+                id: linksPref
+                visible: root.page === "files"
+                icon: "link-20"; title: "Links open preference"
+                readonly property var browsers: root.page === "files" ? JSON.parse(backend.webBrowsers()) : []
+                readonly property string choice: root.local("linkBrowser", browsers.some(b => b.key === "edge") ? "edge" : "default")
+                Text { text: "Always open web links in:"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                SettingsParts.Gap { size: 10 }
+                OutlineDropdown {
+                    width: 293.3; height: 30
+                    options: linksPref.browsers.map(b => ({ label: b.label }))
+                    current: Math.max(0, linksPref.browsers.findIndex(b => b.key === linksPref.choice))
+                    accessibleName: "Always open web links in"
+                    onPicked: i => backend.setSetting("linkBrowser", linksPref.browsers[i].key)
+                }
+                SettingsParts.Gap { size: 20 }
             }
             SettingsParts.Card {
                 visible: root.page === "files"

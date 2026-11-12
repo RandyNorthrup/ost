@@ -233,5 +233,30 @@ how a click on an Office file opens: in the file list, in a chat's file card, or
 - **Browser** opens the file's web address, and also sets the synced value to `web`.
 - Other files always open in the browser.
 
-Not yet in OST: the same page's "Always ask where to save downloaded file" toggle and its
-"Links open preference ▸ Always open web links in:" browser picker (TASK-0119).
+### Downloads and links (the same page)
+
+**Downloads ▸ "Always ask where to save downloaded file"**:
+
+- It is a toggle on this device. Teams' desktop shell keeps it
+  (`SetDownloadLocationPromptState`).
+- When it's on, each download first asks where to save, suggesting the file's
+  name in the download folder.
+- In OST this covers chat files, OneDrive files and zips:
+  - the backend raises `save_as_requested`;
+  - Main.qml shows a save dialog;
+  - `save_as_answer` continues the download to the chosen path, or cancels it.
+
+**"Links open preference ▸ Always open web links in:"**:
+
+- A 293 x 30 dropdown. On winpc it offered only **Default browser** and
+  **Microsoft Edge**, with Edge chosen, even though Chrome was installed.
+- OST offers Default browser, plus Microsoft Edge when a `microsoft-edge`
+  command is installed. It defaults to Edge when Edge is there, as Teams does.
+- OST makes its handler (`Backend::open_web_link`) Qt's URL handler for
+  http and https. Every web link OST opens then goes to the chosen browser:
+  Edge, or `xdg-open`. Office files opened in the browser follow the same
+  choice.
+
+Harness: `--files-links-test`, run with a stand-in `microsoft-edge` on PATH
+that records its URL. It checked that a link goes to Edge and that a download
+lands at the path the dialog gave.

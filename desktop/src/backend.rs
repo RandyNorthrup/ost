@@ -41,6 +41,8 @@ pub fn request_activate() {
 unsafe extern "C" {
     /// Put text (and its HTML form) on the clipboard (src/native.cpp).
     fn ost_set_clipboard(text: *const core::ffi::c_char, html: *const core::ffi::c_char);
+    /// Route http(s) links through Backend::open_web_link (native.cpp).
+    fn ost_install_link_handler(backend: *mut core::ffi::c_void);
     /// Put the picture in a file on the clipboard (src/native.cpp).
     fn ost_set_clipboard_image(path: *const core::ffi::c_char) -> bool;
     /// Save the clipboard's picture as a PNG (src/native.cpp).
@@ -58,6 +60,8 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qurl.h");
+        type QUrl = cxx_qt_lib::QUrl;
     }
 
     #[auto_cxx_name]
@@ -1030,6 +1034,12 @@ pub mod qobject {
         #[qsignal]
         fn drive_action_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
 
+        /// Settings ▸ Files and links ▸ "Always ask where to save downloaded
+        /// file": a download waits for a place; QML shows a save dialog
+        /// (`name` suggested, in `folder`) and answers with save_as_answer.
+        #[qsignal]
+        fn save_as_requested(self: Pin<&mut Backend>, id: i32, name: QString, folder: QString);
+
         /// Someone in the meeting reacted (Teams' meeting reactions):
         /// their MRI and the reaction's name.
         #[qsignal]
@@ -1516,6 +1526,26 @@ pub mod qobject {
         #[qinvokable]
         fn drive_download(self: Pin<&mut Backend>, item_json: &QString);
 
+        /// The place picked for a waiting download (save_as_requested's
+        /// id); "" cancels it.
+        #[qinvokable]
+        fn save_as_answer(self: Pin<&mut Backend>, id: i32, path: &QString);
+
+        /// Open http(s) links in the browser chosen in Settings ▸ Files and
+        /// links (every Qt.openUrlExternally of a web link lands here once
+        /// install_link_handler has run).
+        #[qinvokable]
+        fn open_web_link(self: &Backend, url: &QUrl);
+
+        /// Make open_web_link Qt's handler for http and https.
+        #[qinvokable]
+        fn install_link_handler(self: Pin<&mut Backend>);
+
+        /// "Always open web links in:": Teams' choices this desktop has
+        /// ("Default browser", and "Microsoft Edge" when it is installed).
+        #[qinvokable]
+        fn web_browsers(self: &Backend) -> QString;
+
         /// OneDrive: upload local files (newline-separated paths) to a folder.
         #[qinvokable]
         fn drive_upload(
@@ -1700,8 +1730,53 @@ pub mod qobject {
     impl cxx_qt::Threading for Backend {}
 }
 
+/// A download waiting for "Always ask where to save downloaded file".
+enum PendingSave {
+    Drive(api::drive::DriveItem),
+    File(api::files::FileAttachment),
+    Zip { op: String, items: Vec<api::drive::DriveItem>, name: String },
+}
+
+/// Microsoft Edge's command on this desktop, if it is installed.
+fn edge_command() -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    ["microsoft-edge-stable", "microsoft-edge", "microsoft-edge-beta", "microsoft-edge-dev"]
+        .into_iter()
+        .find(|c| std::env::split_paths(&path).any(|d| d.join(c).is_file()))
+        .map(str::to_string)
+}
+
+/// Open a web address as Settings ▸ Files and links says: in Microsoft Edge
+/// when chosen (and installed), else the desktop's default browser.
+pub fn open_web_address(url: &str) {
+    // Teams' default is Microsoft Edge when it is there.
+    let edge = load_settings().get("linkBrowser").and_then(|v| v.as_str()).unwrap_or("edge") == "edge";
+    let cmd = if edge { edge_command() } else { None };
+    let _ = std::process::Command::new(cmd.as_deref().unwrap_or("xdg-open")).arg(url).spawn();
+}
+
+/// Settings ▸ Files and links ▸ "Always ask where to save downloaded file"
+/// (this device's, as in Teams).
+fn ask_where_to_save() -> bool {
+    load_settings().get("askDownloadLocation").and_then(|v| v.as_str().map(|s| s == "true").or(v.as_bool())).unwrap_or(false)
+}
+
+/// Save a finished download where the user picked: it was saved in the
+/// picked folder under its own name; give it the picked name.
+fn place_download(saved: std::path::PathBuf, target: Option<&std::path::Path>) -> std::path::PathBuf {
+    match target {
+        Some(t) if t != saved => match std::fs::rename(&saved, t) {
+            Ok(()) => t.to_path_buf(),
+            Err(_) => saved,
+        },
+        _ => saved,
+    }
+}
+
 #[derive(Default)]
 pub struct BackendRust {
+    pending_saves: std::collections::HashMap<i32, PendingSave>,
+    next_save: i32,
     busy: bool,
     signed_in: bool,
     user_name: QString,
@@ -12621,7 +12696,80 @@ impl qobject::Backend {
         let Ok(item) = serde_json::from_str::<api::drive::DriveItem>(&item_json.to_string()) else {
             return;
         };
+        if ask_where_to_save() {
+            let name = item.name.clone();
+            self.as_mut().ask_save(PendingSave::Drive(item), &name);
+            return;
+        }
         let Some(dir) = download_dir() else { return };
+        self.as_mut().run_drive_download(item, dir, None);
+    }
+
+    /// Ask QML where to save a download (save_as_requested).
+    fn ask_save(mut self: Pin<&mut Self>, pending: PendingSave, name: &str) {
+        let id = {
+            let mut r = self.as_mut().rust_mut();
+            r.next_save += 1;
+            let id = r.next_save;
+            r.pending_saves.insert(id, pending);
+            id
+        };
+        let folder = download_dir().map(|d| d.display().to_string()).unwrap_or_default();
+        self.as_mut().save_as_requested(id, QString::from(name), QString::from(folder.as_str()));
+    }
+
+    pub fn open_web_link(&self, url: &cxx_qt_lib::QUrl) {
+        open_web_address(&url.to_string());
+    }
+
+    pub fn install_link_handler(mut self: Pin<&mut Self>) {
+        let ptr = unsafe { self.as_mut().get_unchecked_mut() } as *mut Self as *mut core::ffi::c_void;
+        unsafe { ost_install_link_handler(ptr) };
+    }
+
+    pub fn web_browsers(&self) -> QString {
+        let mut list = vec![json!({ "key": "default", "label": "Default browser" })];
+        if edge_command().is_some() {
+            list.push(json!({ "key": "edge", "label": "Microsoft Edge" }));
+        }
+        QString::from(json!(list).to_string().as_str())
+    }
+
+    pub fn save_as_answer(mut self: Pin<&mut Self>, id: i32, path: &QString) {
+        let Some(pending) = self.as_mut().rust_mut().pending_saves.remove(&id) else { return };
+        let path = path.to_string();
+        let path = path.strip_prefix("file://").unwrap_or(&path).to_string();
+        if path.is_empty() {
+            if let PendingSave::Zip { op, .. } = pending {
+                self.as_mut().drive_action_done(QString::from(op.as_str()), QString::default(), QString::from("canceled"));
+            }
+            return;
+        }
+        let target = std::path::PathBuf::from(&path);
+        let Some(dir) = target.parent().map(|p| p.to_path_buf()) else { return };
+        match pending {
+            PendingSave::Drive(item) => self.as_mut().run_drive_download(item, dir, Some(target)),
+            PendingSave::File(file) => self.as_mut().run_file_download(file, dir, Some(target)),
+            PendingSave::Zip { op, items, name } => {
+                let qt = self.qt_thread();
+                runtime().spawn(async move {
+                    let result = async {
+                        let saved = api::zip_download::download(&items, &dir, Some(name.as_str())).await?;
+                        let p = place_download(saved, Some(&target));
+                        anyhow::Ok(json!({ "path": p.display().to_string(), "name": p.file_name().and_then(|n| n.to_str()).unwrap_or_default() }))
+                    }
+                    .await;
+                    let (v, e) = match result {
+                        Ok(v) => (v.to_string(), String::new()),
+                        Err(e) => (String::new(), short_error(&e)),
+                    };
+                    let _ = qt.queue(move |mut this| this.as_mut().drive_action_done(QString::from(op.as_str()), QString::from(v.as_str()), QString::from(e.as_str())));
+                });
+            }
+        }
+    }
+
+    fn run_drive_download(mut self: Pin<&mut Self>, item: api::drive::DriveItem, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
         self.as_mut().set_status_text(QString::from(
             format!("Downloading {}…", item.name).as_str(),
         ));
@@ -12629,7 +12777,8 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::drive::download(&client, &item, &dir).await
+                let saved = api::drive::download(&client, &item, &dir).await?;
+                anyhow::Ok(place_download(saved, target.as_deref()))
             }
             .await;
             let msg = match result {
@@ -12787,10 +12936,18 @@ impl qobject::Backend {
         });
     }
 
-    pub fn drive_action(self: Pin<&mut Self>, op: &QString, item_json: &QString, args_json: &QString) {
+    pub fn drive_action(mut self: Pin<&mut Self>, op: &QString, item_json: &QString, args_json: &QString) {
         let op = op.to_string();
         let item: api::drive::DriveItem = serde_json::from_str(&item_json.to_string()).unwrap_or_default();
         let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        // A zip waits for its place when asked to.
+        if op.rsplit(':').next() == Some("zip") && ask_where_to_save() {
+            let more: Vec<api::drive::DriveItem> = serde_json::from_value(args["more"].clone()).unwrap_or_default();
+            let items: Vec<api::drive::DriveItem> = std::iter::once(item).chain(more).collect();
+            let name = args["name"].as_str().filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("{}.zip", items[0].name));
+            self.as_mut().ask_save(PendingSave::Zip { op, items, name: name.clone() }, &name);
+            return;
+        }
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let s = |k: &str| args[k].as_str().unwrap_or_default().to_string();
@@ -13323,7 +13480,7 @@ impl qobject::Backend {
         let desktop = load_settings().get("fileOpenIn").and_then(|v| v.as_str()) == Some("desktop");
         if !(desktop && is_office_file(&name) && office_app().is_some()) {
             if url.starts_with("https://") {
-                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                open_web_address(&url);
             }
             return;
         }
@@ -13593,7 +13750,16 @@ impl qobject::Backend {
         else {
             return;
         };
+        if ask_where_to_save() {
+            let name = file.name.clone();
+            self.as_mut().ask_save(PendingSave::File(file), &name);
+            return;
+        }
         let Some(dir) = download_dir() else { return };
+        self.as_mut().run_file_download(file, dir, None);
+    }
+
+    fn run_file_download(mut self: Pin<&mut Self>, file: api::files::FileAttachment, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
         self.as_mut().set_status_text(QString::from(
             format!("Downloading {}…", file.name).as_str(),
         ));
@@ -13601,7 +13767,8 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::files::download(&client, &file, &dir).await
+                let saved = api::files::download(&client, &file, &dir).await?;
+                anyhow::Ok(place_download(saved, target.as_deref()))
             }
             .await;
             let msg = match result {

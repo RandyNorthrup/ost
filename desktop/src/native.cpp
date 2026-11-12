@@ -132,3 +132,14 @@ extern "C" void ost_set_taskbar_badge(int count, const char *kind)
                 .save(QStringLiteral("%1/badge-%2-%3-%4.png").arg(QString::fromLocal8Bit(dump)).arg(count).arg(k).arg(size));
     }
 }
+
+#include <QtGui/QDesktopServices>
+
+// Settings ▸ Files and links ▸ "Always open web links in:": every http(s)
+// link OST opens (Qt.openUrlExternally) goes to the backend's
+// openWebLink, which starts the chosen browser.
+extern "C" void ost_install_link_handler(QObject *backend)
+{
+    QDesktopServices::setUrlHandler(QStringLiteral("http"), backend, "openWebLink");
+    QDesktopServices::setUrlHandler(QStringLiteral("https"), backend, "openWebLink");
+}
