@@ -75,6 +75,8 @@ Item {
         selectedIds = selectedIds.indexOf(it.id) >= 0 ? selectedIds.filter(i => i !== it.id) : selectedIds.concat([it.id])
     }
     function selectOnly(it) { selectedIds = [it.id] }
+    // The Details pane follows the selected item.
+    onSelectionChanged: if (details.item && selection.length === 1 && selection[0].id !== details.item.id) details.item = selection[0]
 
     // OneDrive's file size wording: "1 byte", "56 bytes", "26.0 KB",
     // "7.66 MB" (two decimals under 10, one under 100, none above).
@@ -238,6 +240,16 @@ Item {
                 }
             }
         }
+        // The Details pane (Teams': 304 wide at the list's right, under the
+        // command bar).
+        DetailsPane {
+            id: details
+            visible: !!item
+            x: card.x + card.width + 2; y: 76; width: 304; height: card.height
+            item: null
+            actions: actions
+            onDismissed: item = null
+        }
         // With rows selected, Teams' command bar takes the title's place: a
         // white card (52 tall, radius 12, shadow 8) with the selection's
         // commands from 10 in, and "✕ n selected" at the right.
@@ -322,10 +334,17 @@ Item {
                 y: 52
                 onPicked: i => actions.actMany(root.selection, items[i].label)
             }
+            // Details (OneDrive's OpenPane glyph) at the right.
+            BarCommand {
+                id: detailsCommand
+                anchors.right: parent.right; anchors.rightMargin: 6
+                y: 10; label: "Details"; icon: "panel-right-16"; tip: "Open the details pane"
+                onClicked: details.item = details.item && selBar.one && details.item.id === selBar.one.id ? null : selBar.one || root.selection[0]
+            }
             // "✕ n selected": clears the selection (0.67 #D1D1D1, radius 20).
             Rectangle {
                 id: countPill
-                anchors.right: parent.right; anchors.rightMargin: 6 + 4
+                anchors.right: detailsCommand.left; anchors.rightMargin: 29
                 y: 10; height: 32; radius: 16
                 width: 36.67 + countText.implicitWidth + 14.67
                 color: cph.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
@@ -337,11 +356,12 @@ Item {
                 Accessible.role: Accessible.Button
                 Accessible.name: "Clear selection, " + root.selection.length + " selected"
             }
+            Rectangle { x: countPill.x + countPill.width + 14; y: 16; width: 1; height: 20; color: theme.pick("#E0E0E0", "#3D3D3D") }
         }
         Rectangle {
             id: card
             x: 0; y: 76
-            width: parent.width - 16; height: parent.height - y - 16
+            width: parent.width - 16 - (details.visible ? 304 + 2 : 0); height: parent.height - y - 16
             radius: 4
             color: theme.surface
             clip: true
@@ -450,7 +470,11 @@ Item {
                 id: table
                 visible: root.view !== "libraries" && root.view !== "recycle" && (root.view !== "people" || !!root.person)
                 anchors.fill: parent
-                readonly property real wName: Math.max(200, width - 56 - 40 - 136 - 136 - 91 - 81 - 119)
+                // With the Details pane open the list is narrow (Teams: 555
+                // wide): Name and Modified only, rows 63 tall with "Modified
+                // by … · size" under the name.
+                readonly property bool narrow: width < 640
+                readonly property real wName: narrow ? Math.max(120, width - 56 - 40 - 189.33) : Math.max(200, width - 56 - 40 - 136 - 136 - 91 - 81 - 119)
                 Item {
                     id: head
                     width: parent.width; height: 49
@@ -474,11 +498,11 @@ Item {
                         Item { width: 56; height: 49 }
                         Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: root.ink } }
                         ListHead { label: "Name"; width: table.wName }
-                        ListHead { label: root.view === "recent" ? "Opened" : "Modified"; width: 136 }
-                        ListHead { label: root.view === "shared" ? "Shared by" : "Modified By"; width: 136 }
-                        ListHead { label: "File size"; width: 91 }
-                        ListHead { label: "Sharing"; width: 81 }
-                        ListHead { label: "Activity"; width: 119 }
+                        ListHead { label: root.view === "recent" ? "Opened" : "Modified"; width: table.narrow ? 189.33 : 136 }
+                        ListHead { visible: !table.narrow; label: root.view === "shared" ? "Shared by" : "Modified By"; width: 136 }
+                        ListHead { visible: !table.narrow; label: "File size"; width: 91 }
+                        ListHead { visible: !table.narrow; label: "Sharing"; width: 81 }
+                        ListHead { visible: !table.narrow; label: "Activity"; width: 119 }
                     }
                 }
                 ListView {
@@ -495,9 +519,9 @@ Item {
                         readonly property bool sel: root.selectedIds.indexOf(modelData.id) >= 0
                         readonly property bool hot: fh.hovered || actions.item === modelData && actions.menuOpen || root.hoverForTest === index
                         readonly property bool fav: root.favoriteIds.indexOf(modelData.id) >= 0
-                        width: files.width; height: 49
+                        width: files.width; height: table.narrow ? 63 : 49
                         Rectangle {
-                            x: 8; width: parent.width - 16; height: 48; radius: 8
+                            x: 8; width: parent.width - 16; height: parent.height - 1; radius: 8
                             color: frow.sel ? root.selectedFill : frow.hot ? theme.rowHover : "transparent"
                         }
                         // The selection circle (18, at 29,14): on hover, filled when selected.
@@ -520,7 +544,7 @@ Item {
                         // Name: OneDrive's "New" mark, the name, then ···, Share and the star.
                         Item {
                             id: nameCell
-                            x: 96; width: table.wName; height: 49
+                            x: 96; width: table.wName; height: frow.height
                             readonly property bool tools: frow.hot || frow.sel
                             FluentIcon { id: newMark; visible: !!frow.modelData.is_new; x: 12; y: 14; size: 12; width: 7.92; name: "glimmer-12"; color: root.strong }
                             Text {
@@ -535,6 +559,14 @@ Item {
                                 TapHandler { onTapped: frow.activate() }
                                 Accessible.role: Accessible.Link
                                 Accessible.name: frow.modelData.name
+                            }
+                            // Narrow: "Modified by OST Test 1 · 0 items" (12 px #5E5E5D).
+                            Text {
+                                visible: table.narrow
+                                x: 12; y: 35.33; width: nameCell.width - 20
+                                elide: Text.ElideRight
+                                text: "Modified by " + (frow.modelData.modified_by || root.userName) + " · " + (frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size))
+                                font.family: theme.font; font.pixelSize: 12; color: theme.pick("#5E5E5D", "#ADADAD")
                             }
                             Row {
                                 visible: nameCell.tools
@@ -556,12 +588,13 @@ Item {
                         Row {
                             x: 96 + table.wName; height: 49
                             RowCell {
-                                width: 136; text: frow.modelData.modified_text || ""
+                                width: table.narrow ? 189.33 : 136; text: frow.modelData.modified_text || ""
                                 tip: frow.modelData.modified_title || ""
                             }
-                            RowCell { width: 136; text: frow.modelData.modified_by || root.userName }
-                            RowCell { width: 91; text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
+                            RowCell { visible: !table.narrow; width: 136; text: frow.modelData.modified_by || root.userName }
+                            RowCell { visible: !table.narrow; width: 91; text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
                             Item {
+                                visible: !table.narrow
                                 width: 81; height: 49
                                 Row {
                                     x: 12; y: 14.67; spacing: 4
@@ -571,7 +604,7 @@ Item {
                             }
                             Item {
                                 width: 119; height: 49
-                                visible: !!frow.modelData.activity
+                                visible: !!frow.modelData.activity && !table.narrow
                                 FluentIcon {
                                     x: 12; y: 15.83; size: 16; color: root.strong
                                     name: frow.modelData.activity ? root.activityIcon(frow.modelData.activity.kind) : ""
@@ -775,6 +808,7 @@ Item {
         onDeleteItem: it => root.remove(it.drive_id, it.id)
         onFavoriteItem: (it, on) => root.favorite(it.drive_id, it.id, on)
         onDownloadItem: it => root.download(JSON.stringify(it))
+        onDetailsItem: it => details.item = it
     }
 
     // Test harness hooks
@@ -783,6 +817,13 @@ Item {
     function selectForTest(names) { selectedIds = items.filter(i => names.indexOf(i.name) >= 0).map(i => i.id); return selectedIds.length }
     function barForTest() { return { commands: selBar.commands.map(c => c.label || "···"), more: selBar.more.map(c => c.label), count: root.selection.length } }
     function barRunForTest(label) { selBar.run(label) }
+    function detailsForTest() { return details.stateForTest() }
+    function detailsScrollForTest(y) { details.scrollForTest(y) }
+    function detailsBellForTest() { details.bellForTest() }
+    function detailsReloadForTest() { details.load() }
+    function detailsCommentForTest(t) { details.commentForTest(t) }
+    function detailsDeleteCommentForTest(t) { return details.deleteCommentForTest(t) }
+    function openDetailsForTest(name) { const it = items.find(i => i.name === name); details.item = it || null; return !!it }
     function barCloseForTest() { openMenu.close(); moreMenu.close() }
     function rowsForTest() { return items.map(i => [i.name, i.modified_text, i.modified_title, i.modified_by, i.is_folder ? itemCount(i.child_count) : size(i.size), i.sharing, i.is_new ? "new" : "", i.activity ? i.activity.text + " " + i.activity.time : ""].join(" | ")) }
     function newFolderForTest(name) { root.newFolder(root.here.drive_id, root.here.item_id, name) }

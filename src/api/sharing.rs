@@ -371,14 +371,41 @@ pub async fn stop_sharing(item: &ItemRef) -> Result<()> {
     Ok(())
 }
 
-/// GET a SharePoint REST resource with a token for the site's host.
-pub(crate) async fn get(url: &str) -> Result<Value> {
+/// DELETE a SharePoint REST resource with a token for the site's host.
+pub(crate) async fn delete(url: &str) -> Result<()> {
     let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
     let token = crate::auth::oauth::access_token_for(&format!("{host}/.default")).await?;
     let resp = reqwest::Client::new()
-        .get(url)
+        .delete(url)
         .bearer_auth(token)
         .header("accept", "application/json;odata=verbose")
+        .send()
+        .await
+        .with_context(|| format!("SharePoint {url}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        bail!("SharePoint {status}: {}", resp.text().await.unwrap_or_default().chars().take(200).collect::<String>());
+    }
+    Ok(())
+}
+
+/// GET a SharePoint REST resource with a token for the site's host.
+pub(crate) async fn get(url: &str) -> Result<Value> {
+    get_with(url, &[]).await
+}
+
+/// `get` with extra headers.
+pub(crate) async fn get_with(url: &str, headers: &[(&str, &str)]) -> Result<Value> {
+    let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
+    let token = crate::auth::oauth::access_token_for(&format!("{host}/.default")).await?;
+    // OData-verbose unless the caller asks for another Accept (SharePoint's
+    // v2.x API answers plain JSON, as OneDrive asks for it).
+    let accept = headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("accept")).map(|(_, v)| *v).unwrap_or("application/json;odata=verbose");
+    let req = reqwest::Client::new().get(url).bearer_auth(token).header("accept", accept);
+    let resp = headers
+        .iter()
+        .filter(|(k, _)| !k.eq_ignore_ascii_case("accept"))
+        .fold(req, |r, (k, v)| r.header(*k, *v))
         .send()
         .await
         .with_context(|| format!("SharePoint {url}"))?;

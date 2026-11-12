@@ -12837,6 +12837,50 @@ impl qobject::Backend {
                         }
                         json!(list)
                     }
+                    // The Details pane: activity, bell, More details, who
+                    // has access (the share dialog's call) and the picture.
+                    "details" => {
+                        let me = client.user_principal_name().unwrap_or_default();
+                        let (details, sharing, thumb) = tokio::join!(
+                            api::item_details::load(&item, &me),
+                            async {
+                                let mut i = api::sharing::info(&sp).await?;
+                                api::sharing::with_object_ids(&client, &mut i).await;
+                                anyhow::Ok(i)
+                            },
+                            api::drive::thumbnail(&client, &item)
+                        );
+                        let details = details?;
+                        // Comment authors' directory ids, for their pictures.
+                        let emails: Vec<String> = details.activities.iter().map(|a| a.author_email.clone()).filter(|e| !e.is_empty()).collect();
+                        let oids = api::sharing::object_ids(&client, &emails).await;
+                        let (people, links, direct) = match sharing {
+                            // The owner (listed first) isn't shown; people
+                            // with direct access are, and a link circle when
+                            // there are links.
+                            Ok(i) => (
+                                i.people.iter().skip(1).filter(|p| p.direct).map(|p| json!({ "name": p.name, "oid": p.oid })).collect::<Vec<_>>(),
+                                !i.links.is_empty(),
+                                i.direct_url.clone(),
+                            ),
+                            Err(_) => (Vec::new(), false, String::new()),
+                        };
+                        json!({ "details": details, "people": people, "links": links, "direct_url": direct, "oids": oids,
+                                "thumbnail": thumb.ok().flatten().map(|p| format!("file://{}", p.display())).unwrap_or_default() })
+                    }
+                    "notify" => {
+                        let file = api::copy_jobs::absolute_url(&sp).await?;
+                        api::item_details::set_notify(&item, &file, args["on"].as_bool().unwrap_or(true)).await?;
+                        json!(null)
+                    }
+                    "comment" => {
+                        api::item_details::add_comment(&item, &s("text")).await?;
+                        json!(null)
+                    }
+                    "delete_comment" => {
+                        api::item_details::delete_comment(&item, &s("id")).await?;
+                        json!(null)
+                    }
                     "restore_version" | "delete_version" => {
                         let file = api::copy_jobs::absolute_url(&sp).await?;
                         api::versions::act(&sp.site, &file, &s("label"), kind == "restore_version").await?;

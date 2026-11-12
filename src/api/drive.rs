@@ -624,6 +624,30 @@ pub async fn root(client: &TeamsClient, drive_id: &str) -> Result<DriveItem> {
     Ok(item)
 }
 
+/// The item's 320 x 180 picture (the Details pane's), saved in OST's cache;
+/// None when it has none.
+pub async fn thumbnail(client: &TeamsClient, item: &DriveItem) -> Result<Option<PathBuf>> {
+    let dir = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .context("No cache folder")?
+        .join("ost/thumbs");
+    std::fs::create_dir_all(&dir)?;
+    let Some(resp) = client
+        .graph_get_opt(&format!("{}/thumbnails/0/c320x180/content", item_path(&item.drive_id, &item.id)?))
+        .await?
+    else {
+        return Ok(None);
+    };
+    let bytes = resp.bytes().await.context("Thumbnail")?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    let path = dir.join(format!("{}-c320x180.jpg", check_id(&item.id)?));
+    std::fs::write(&path, &bytes)?;
+    Ok(Some(path))
+}
+
 /// Open in app: a copy of the file in OST's cache (replaced each time), for
 /// the desktop's own app to open.
 pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBuf> {

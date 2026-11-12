@@ -20,6 +20,8 @@ Item {
     signal deleteItem(var item)
     signal favoriteItem(var item, bool on)
     signal downloadItem(var item)
+    /// Details: the list opens its Details pane for the item.
+    signal detailsItem(var item)
 
     /// This view's tag on backend replies.
     readonly property string tag: "fa" + Math.floor(Math.random() * 1e9) + ":"
@@ -70,6 +72,7 @@ Item {
         if (sp) L.push({ label: "Copy to", icon: "copy-16" })
         if (canWrite && sp) L.push({ label: "Duplicate", icon: "add-square-16" })
         if (!it.is_folder && sp) { L.push({ separator: true }); L.push({ label: "Version history", icon: "history-16" }) }
+        if (sp) { L.push({ separator: true }); L.push({ label: "Details", icon: "info-16" }) }
         while (L.length && L[L.length - 1].separator) L.pop()
         return L
     }
@@ -112,6 +115,7 @@ Item {
         else if (label === "Move to") picker.openFor(it, true)
         else if (label === "Copy to") picker.openFor(it, false)
         else if (label === "Version history") versions.openFor(it)
+        else if (label === "Details") detailsItem(it)
         else if (label === "Duplicate") { jobCount = 1; notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
     }
 
