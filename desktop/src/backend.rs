@@ -12826,6 +12826,16 @@ impl qobject::Backend {
                     }
                     "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),
                     "preview" => json!(api::drive::preview(&client, &item).await?),
+                    // Download of a folder or several items: one zip from
+                    // OneDrive's media service, into the download folder.
+                    "zip" => {
+                        let more: Vec<api::drive::DriveItem> = serde_json::from_value(args["more"].clone()).unwrap_or_default();
+                        let all: Vec<api::drive::DriveItem> = std::iter::once(item.clone()).chain(more).collect();
+                        let dir = download_dir().ok_or_else(|| anyhow::anyhow!("No download folder"))?;
+                        let name = s("name");
+                        let path = api::zip_download::download(&all, &dir, Some(name.as_str()).filter(|n| !n.is_empty())).await?;
+                        json!({ "path": path.display().to_string(), "name": path.file_name().and_then(|n| n.to_str()).unwrap_or_default() })
+                    }
                     "thumb" => json!({ "id": item.id, "path": api::drive::thumbnail_sized(&client, &item, &s("size")).await?.map(|p| format!("file://{}", p.display())).unwrap_or_default() }),
                     // Version history: the list (with pictures' ids), and
                     // a version restored or sent to the recycle bin.

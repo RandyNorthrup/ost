@@ -22,6 +22,7 @@ pub mod copy_jobs;
 pub mod list_rows;
 pub mod versions;
 pub mod item_details;
+pub mod zip_download;
 pub mod folders;
 pub mod funstuff;
 mod me;

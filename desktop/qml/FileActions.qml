@@ -67,7 +67,7 @@ Item {
         if (canWrite) L.push({ label: "Delete", icon: "delete-16" })
         // Graph's favorites (followed items) hold files, not folders.
         if (!it.is_folder) L.push({ label: fav ? "Remove from favorites" : "Add to favorites", icon: "star-16" })
-        if (!it.is_folder) L.push({ label: "Download", icon: "arrow-download-16" })
+        L.push({ label: "Download", icon: "arrow-download-16" })
         if (canWrite) L.push({ label: "Rename", icon: "rename-16" })
         // A team site's file opens in SharePoint (not yet seen in Teams).
         if (it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? "Open in OneDrive" : "Open in SharePoint", icon: "cloud-16" })
@@ -93,7 +93,7 @@ Item {
         item = list[0]; others = list.slice(1)
         if (label === "Delete") deleteDialog.openForMany(list)
         else if (label === "Add to favorites") list.filter(i => !i.is_folder).forEach(i => favoriteItem(i, true))
-        else if (label === "Download") list.filter(i => !i.is_folder).forEach(i => downloadItem(i))
+        else if (label === "Download") zip(list)
         else if (label === "Move to") picker.openFor(item, true)
         else if (label === "Copy to") picker.openFor(item, false)
         else if (label === "Duplicate") {
@@ -101,6 +101,17 @@ Item {
             notice("progress", count(jobCount, "Copying {0} item", "Copying {0} items"))
             backend.driveAction(tag + "duplicate", JSON.stringify(item), JSON.stringify({ more: others }))
         }
+    }
+    /// A folder, or several items: OneDrive's zip (docs/spec/zip-download.md).
+    property int zipCount: 0
+    property string lastZip: ""
+    function zip(list) {
+        // OneDrive's names: the one item's, else OneDrive_{n}_{M-D-YYYY}.zip.
+        const d = new Date()
+        const name = list.length === 1 ? list[0].name + ".zip" : "OneDrive_" + (++zipCount) + "_" + (d.getMonth() + 1) + "-" + d.getDate() + "-" + d.getFullYear() + ".zip"
+        lastZip = name
+        notice("progress", "Preparing " + name + " for download. This can take a moment.")
+        backend.driveAction(tag + "zip", JSON.stringify(list[0]), JSON.stringify({ more: list.slice(1), name: name }))
     }
     function act(label) {
         const it = root.item
@@ -113,7 +124,7 @@ Item {
         else if (label === "Delete") deleteDialog.openFor(it)
         else if (label === "Add to favorites") favoriteItem(it, true)
         else if (label === "Remove from favorites") favoriteItem(it, false)
-        else if (label === "Download") downloadItem(it)
+        else if (label === "Download") it.is_folder ? zip([it]) : downloadItem(it)
         else if (label === "Rename") renameDialog.openFor(it)
         else if (label === "Move to") picker.openFor(it, true)
         else if (label === "Copy to") picker.openFor(it, false)
@@ -143,6 +154,11 @@ Item {
             const v = result ? JSON.parse(result) : null
             if (kind === "folders" || kind === "libraries") { picker.reply(kind, v, error); return }
             if (kind === "versions" || kind === "restore_version" || kind === "delete_version") { versions.reply(kind, v, error); return }
+            if (kind === "zip") {
+                if (error) root.notice("error", "Couldn't download " + root.lastZip + ". Try again.", error)
+                else root.notice("done", v.name + " was downloaded.")
+                return
+            }
             if (kind === "open_app") {
                 if (error) root.notice("error", "The file couldn't be opened", error)
                 else { toast.visible = false; Qt.openUrlExternally("file://" + v.path) }

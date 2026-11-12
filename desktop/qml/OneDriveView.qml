@@ -341,7 +341,7 @@ Item {
                 } else {
                     if (root.canWrite) L.push({ label: "Delete", icon: "delete-16" })
                     if (root.selection.some(i => !i.is_folder)) L.push({ label: "Add to favorites", icon: "star-16" })
-                    if (root.selection.some(i => !i.is_folder)) L.push({ label: "Download", icon: "arrow-download-16" })
+                    L.push({ label: "Download", icon: "arrow-download-16" })
                 }
                 if (more.length) L.push({ label: "", tip: "More", icon: "more-horizontal-16" })
                 return L
@@ -354,7 +354,7 @@ Item {
                 const sp = root.selection.every(i => !!i.sp_item)
                 if (it) {
                     if (!it.is_folder) L.push({ label: fav ? "Remove from favorites" : "Add to favorites", icon: "star-16" })
-                    if (!it.is_folder) L.push({ label: "Download", icon: "arrow-download-16" })
+                    L.push({ label: "Download", icon: "arrow-download-16" })
                 }
                 if (root.canWrite && sp) L.push({ label: "Duplicate", icon: "add-square-16" })
                 if (root.canWrite && sp) L.push({ label: "Move to", icon: "folder-arrow-right-16" })
