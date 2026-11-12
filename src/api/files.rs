@@ -397,6 +397,26 @@ pub async fn download(client: &TeamsClient, file: &FileAttachment, dir: &Path) -
     save_unique(dir, &file.name, &bytes)
 }
 
+/// A file's preview picture as Teams' search file cards fetch it (the
+/// RichFilePreview's thumbnail, size "c960x540"): `Ok(None)` when the file
+/// has none (OneNote sections, pages, folders).
+pub async fn thumbnail(client: &TeamsClient, url: &str) -> Result<Option<Vec<u8>>> {
+    if !url.starts_with("https://") {
+        return Ok(None);
+    }
+    let resp = client.graph_get_opt(&thumbnail_path(url)).await?;
+    let Some(resp) = resp else { return Ok(None) };
+    let bytes = resp.bytes().await.context("Thumbnail")?;
+    Ok((!bytes.is_empty()).then(|| bytes.to_vec()))
+}
+
+/// Graph's address for a file's c960x540 thumbnail, from its link.
+pub fn thumbnail_path(url: &str) -> String {
+    use base64::Engine;
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(url.as_bytes());
+    format!("/shares/u!{token}/driveItem/thumbnails/0/c960x540/content")
+}
+
 /// Save `bytes` as `name` in `dir`, never outside it, adding " (n)" when
 /// the name is taken.
 pub fn save_unique(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {

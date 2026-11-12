@@ -49,6 +49,8 @@ pub struct Filters {
     pub attachment: bool,
     /// File Type ▾ (Files): find::type_extensions' kinds.
     pub file_type: String,
+    /// Files in Grid view: Teams asks for 24 a page (25 in List view).
+    pub grid: bool,
 }
 
 const THREAD_TYPE: &str = "Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String:(topic OR space)";
@@ -205,6 +207,10 @@ pub fn bodies(tab: &str, keywords: &str, f: &Filters, from: usize, timezone: &st
                         r["Filter"] = serde_json::json!({ "Term": { "ConversationType": "OneToOne" } });
                     }
                     // (Type ▸ Channel sends no filter term, as Teams.)
+                }
+                if kind == "File" && name == "files" && f.grid {
+                    let key = if r.get("Size").is_some() { "Size" } else { "size" };
+                    r[key] = 24.into();
                 }
                 if from > 0 {
                     let key = if r.get("From").is_some() { "From" } else { "from" };
@@ -509,6 +515,14 @@ mod tests {
         assert_eq!(bodies("images", "x", &Filters::default(), 0, "UTC", "", "").len(), 2);
         let m = bodies("meetings", "x", &Filters::default(), 0, "America/Los_Angeles", "", "");
         assert_eq!(m[0]["timezone"], "Pacific Standard Time");
+    }
+
+    #[test]
+    fn files_grid_asks_for_teams_page() {
+        let list = bodies("files", "x", &Filters::default(), 0, "UTC", "", "");
+        assert_eq!(list[0]["entityRequests"][0]["size"], 25);
+        let grid = bodies("files", "x", &Filters { grid: true, ..Default::default() }, 0, "UTC", "", "");
+        assert_eq!(grid[0]["entityRequests"][0]["size"], 24);
     }
 
     #[test]

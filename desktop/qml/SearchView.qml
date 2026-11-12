@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Window
 
 // Teams' search results page (Enter in the title bar's search; measured on
 // winpc 2026-11-10), right of the app bar on white:
@@ -56,6 +57,15 @@ Rectangle {
     property bool attachment: false
     property bool hideBots: false
     property string fileType: ""
+    // Files' Grid view / List view (Teams keeps the choice).
+    property string fileLayout: backend.setting("searchResultLayout") === "grid" ? "grid" : "list"
+    readonly property bool fileGrid: tab === "files" && fileLayout === "grid"
+    function setFileLayout(l) {
+        if (l === fileLayout) return
+        fileLayout = l
+        backend.setSetting("searchResultLayout", l)
+        run()
+    }
     property int generation: 0
     /// The result open in the preview pane (Teams' preview beside the
     /// results: 40% of the page).
@@ -97,7 +107,7 @@ Rectangle {
             in_kind: inPlace ? inPlace.kind : "", in_thread: inPlace ? inPlace.thread || "" : "", in_group: inPlace ? inPlace.group || "" : "",
             person_mail: person ? person.mail : "", person_oid: person ? String(person.mri || "").split(":").pop() : "", person_from: !!(person && person.from),
             start: r ? r[0].toISOString() : "", end: r ? r[1].toISOString() : "",
-            mentions: mentions, attachment: attachment, file_type: fileType,
+            mentions: mentions, attachment: attachment, file_type: fileType, grid: fileGrid,
         }
     }
     function run() {
@@ -162,7 +172,7 @@ Rectangle {
     // Tabs.
     Row {
         id: tabRow
-        x: Math.max(16, (root.resultsWidth - root.columnWidth) / 2); y: 16.2; spacing: 12
+        x: Math.max(16, (root.resultsWidth - 692) / 2); y: 16.2; spacing: 12
         Repeater {
             model: root.shownTabs.concat(root.hiddenTabs.length ? ["+"] : [])
             Rectangle {
@@ -274,6 +284,42 @@ Rectangle {
             }
         }
         Rectangle { y: 40.7; x: -column.x; width: root.resultsWidth; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
+        // Files' Grid view / List view (Teams: 30.67 + 32 x 31.33 outline
+        // buttons sharing a #D1D1D1 edge, radius 4 outside, 52.5 in from
+        // the list's right; the chosen one's icon filled in brand colour).
+        Row {
+            visible: root.tab === "files"
+            x: parent.width - 52.5 - width; y: 4.33
+            Repeater {
+                model: [{ key: "grid", label: "Grid view", icon: "grid-20" }, { key: "list", label: "List view", icon: "text-align-left-20" }]
+                Item {
+                    id: lb
+                    required property var modelData
+                    required property int index
+                    readonly property bool on: root.fileLayout === modelData.key
+                    width: index === 0 ? 30.67 : 32; height: 31.33
+                    Rectangle {
+                        // Rounded outside only: the inner corners hide under the clip.
+                        x: lb.index === 0 ? 0 : -6; width: parent.width + 6; height: parent.height; radius: 4
+                        color: lbh.hovered ? theme.hover : "transparent"
+                        border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
+                    }
+                    clip: true
+                    Rectangle { visible: lb.index === 1; width: 0.67; height: parent.height; color: theme.pick("#D1D1D1", "#666666") }
+                    FluentIcon {
+                        anchors.centerIn: parent; size: 16
+                        name: lb.modelData.icon + (lb.on ? "-filled" : "")
+                        color: lb.on ? theme.brandForeground1 : theme.textStrong
+                    }
+                    HoverHandler { id: lbh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.setFileLayout(lb.modelData.key) }
+                    ToolTip.visible: lbh.hovered; ToolTip.delay: 500; ToolTip.text: modelData.label
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: modelData.label
+                    Accessible.checked: on
+                }
+            }
+        }
     }
     readonly property var fileTypeKeys: ["excel", "images", "loop", "onenote", "pdf", "powerpoint", "text", "word"]
     readonly property var fileTypeNames: ({ excel: "Excel", images: "Images", loop: "Loop", onenote: "OneNote", pdf: "PDF", powerpoint: "PowerPoint", text: "Text file", word: "Word" })
@@ -568,9 +614,16 @@ Rectangle {
 
     // The results.
     readonly property real columnWidth: tab === "files" ? 760 : 692
+    // Teams' file grid (760, centred past a 62 margin and the same 112
+    // padding, then 54 left) starts at width / 2 - 323: 34 right of the list.
+    readonly property real gridShift: fileGrid ? Math.max(0, Math.min(34, resultsWidth - column.x - column.width - 16)) : 0
     Item {
         id: column
-        x: Math.max(16, (root.resultsWidth - root.columnWidth) / 2); width: Math.min(root.columnWidth, root.resultsWidth - 32)
+        // Files: Teams centres its 816 list (760 + 32 / 24 padding) in the
+        // page past a 112 left padding and the 14 px scrollbar, then moves
+        // it 30 left: the cards start at width / 2 - 357.
+        x: root.tab === "files" ? Math.max(16, root.resultsWidth / 2 - 357) : Math.max(16, (root.resultsWidth - root.columnWidth) / 2)
+        width: Math.min(root.columnWidth, root.resultsWidth - 32)
         y: filterRow.visible ? 101.7 : 61.4; height: root.height - y
     }
     // Messages without apps' and bots' (Hide apps & bots, the page's own).
@@ -594,6 +647,10 @@ Rectangle {
         } else if (tab === "messages") {
             if (msgs.length) heading("Top results", true)
             for (const h of msgs) out.push({ t: "message", h: h })
+        } else if (tab === "files" && fileGrid) {
+            const hits = page.files ? page.files.hits : []
+            if (hits.length) out.push({ t: "grid-heading" })
+            for (let i = 0; i < hits.length; i += 3) out.push({ t: "file-grid", items: hits.slice(i, i + 3) })
         } else if (tab === "files") {
             if (page.files && page.files.hits.length) heading("", true)
             for (const f of page.files ? page.files.hits : []) out.push({ t: "file", h: f })
@@ -620,7 +677,7 @@ Rectangle {
 
     ListView {
         id: list
-        x: column.x - 16; width: column.width + 32
+        x: column.x - 16; width: column.width + 32 + root.gridShift
         y: column.y; height: column.height
         clip: true
         spacing: 0
@@ -638,7 +695,8 @@ Rectangle {
             required property var modelData
             width: list.width
             sourceComponent: ({ heading: headingRow, message: messageCard, chat: chatCard, channel: channelCard, file: fileCard, person: personCard,
-                                event: eventCard, more: moreLink, none: noneRow, chatrow: chatRowCards, channelrow: channelRowCards, "image-row": imageRow })[modelData.t]
+                                event: eventCard, more: moreLink, none: noneRow, chatrow: chatRowCards, channelrow: channelRowCards, "image-row": imageRow,
+                                "grid-heading": gridHeading, "file-grid": fileGridRow })[modelData.t]
             property var row: modelData
         }
     }
@@ -703,7 +761,8 @@ Rectangle {
     Component {
         id: headingRow
         Item {
-            height: 48
+            // Files' feedback row is 28 (20 + 8), the cards right under it.
+            height: !row.title && root.tab === "files" ? 28 : 48
             Text {
                 visible: !!row.title
                 x: 16; y: 0; height: 20
@@ -922,7 +981,10 @@ Rectangle {
             }
         }
     }
-    // A file (Files tab: 760 wide, 84–140 tall).
+    // A file (Files tab, measured on winpc 2026-11-11): 760 wide, padding
+    // 16; the 32 px type icon at 16, 20; at 60 the name (14/20, terms
+    // bold) at 16, the place at 42, "Shared by OST Test 1 6 days ago" at 62
+    // (both 12/16 #616161) and the summary (14/20 #424242, two lines) at 84.
     Component {
         id: fileCard
         Item {
@@ -932,14 +994,27 @@ Rectangle {
             Card {
                 id: card2
                 height: fcol.height + 32
-                FluentIcon { x: 16; y: 16; size: 32; name: root.fileIcon(parent.parent.f.file_type, parent.parent.f.file_name) }
+                FluentIcon { x: 16; y: 20; size: 32; name: root.fileIcon(parent.parent.f.file_type, parent.parent.f.file_name) }
                 Column {
                     id: fcol
-                    x: 60; y: 16; width: parent.width - 60 - 56; spacing: 4
-                    Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.parent.f.file_name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    Text { visible: !!root.filePlace(parent.parent.parent.f); width: parent.width; elide: Text.ElideRight; text: root.filePlace(parent.parent.parent.f); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
-                    Text { visible: !!parent.parent.parent.f.sender_name; width: parent.width; elide: Text.ElideRight; text: "Modified by " + parent.parent.parent.f.sender_name + (parent.parent.parent.f.time ? " " + root.ago(parent.parent.parent.f.time) : ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
-                    Text { visible: !!parent.parent.parent.f.text; width: parent.width; height: 20; clip: true; maximumLineCount: 1; textFormat: Text.RichText; text: root.marked(parent.parent.parent.f.text); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    x: 60; y: 16; width: parent.width - 60 - 56
+                    Item {
+                        width: parent.width; height: 26
+                        Text { y: -0.67; width: parent.width; height: 20; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.parent.parent.f.file_name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    }
+                    PlaceLine { visible: segments.length > 0; segments: root.filePlace(parent.parent.parent.f); height: 20 }
+                    Item {
+                        visible: !!lineText.text
+                        width: parent.width; height: 22
+                        Text { id: lineText; width: parent.width; height: 16; elide: Text.ElideRight; text: root.fileLine(parent.parent.parent.parent.f); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    }
+                    Text {
+                        visible: !!parent.parent.parent.f.text
+                        width: parent.width; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
+                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        textFormat: Text.RichText; text: root.marked(parent.parent.parent.f.text)
+                        font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                    }
                 }
                 CardAction {
                     visible: fh2.hovered
@@ -954,10 +1029,50 @@ Rectangle {
             Accessible.name: f.file_name
         }
     }
+    // Teams' "Shared by OST Test 1 6 days ago" (or Created / Modified by;
+    // just the author when that's all there is).
+    function fileLine(f) {
+        if (!f.file_action) return f.file_by || ""
+        return f.file_action + " " + f.file_by + (f.file_when ? " " + ago(f.file_when) : "")
+    }
+    // The grid's "OST T." (the first word and the second's initial).
+    function gridName(n) { const p = String(n || "").split(" "); return p[0] + " " + (p[1] ? p[1][0] + "." : "") }
+    // Where a file is, as Teams' place line shows it: its site, then the
+    // folders under its library (the folder's link, ParentLink).
     function filePlace(f) {
-        const u = String(f.url || f.file_url || "")
-        const m = u.match(/sharepoint\.com\/(?:sites|personal)\/([^/]+)\/(?:Shared Documents|Shared%20Documents|Documents)\/(.*)\/[^/]*$/)
-        return m ? decodeURIComponent(m[1]) + "  ›  " + decodeURIComponent(m[2]).split("/").join("  ›  ") : ""
+        const m = String(f.file_folder || "").match(/^https:\/\/[^/]+\/(?:sites|personal|teams|contentstorage)\/([^/]+)(?:\/[^/]+)?((?:\/[^/]+)*)$/)
+        if (!m) return []
+        return [m[1]].concat(m[2].split("/").filter(x => !!x)).map(x => { try { return decodeURIComponent(x) } catch (e) { return x } })
+    }
+    // Teams' place line: the parts (12/16 #616161, capitalized) between
+    // 8 px chevrons 8 apart, all within 320; parts too long share the room.
+    component PlaceLine: Row {
+        id: pl
+        property var segments: []
+        spacing: 8
+        FontMetrics { id: plm; font.family: theme.font; font.pixelSize: 12; font.capitalization: Font.Capitalize }
+        readonly property var widths: {
+            const natural = segments.map(t => Math.ceil(plm.advanceWidth(t)))
+            let room = 320 - 16 * Math.max(0, segments.length - 1)
+            const out = natural.slice()
+            const order = natural.map((w, i) => i).sort((a, b) => natural[a] - natural[b])
+            let left = order.length
+            for (const i of order) { const share = room / left; out[i] = Math.min(natural[i], share); room -= out[i]; left-- }
+            return out
+        }
+        Repeater {
+            model: pl.segments
+            Row {
+                required property string modelData
+                required property int index
+                spacing: 8
+                FluentIcon { visible: index > 0; y: 4; size: 8; name: "chevron-right-20"; color: theme.textSecondary }
+                Text {
+                    width: pl.widths[index] || 0; height: 16; elide: Text.ElideRight
+                    text: modelData; font.family: theme.font; font.pixelSize: 12; font.capitalization: Font.Capitalize; color: theme.textSecondary
+                }
+            }
+        }
     }
     function ago(iso) {
         const d = new Date(iso), days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
@@ -966,8 +1081,9 @@ Rectangle {
     function fileIcon(type, name) {
         const t = String(type || String(name || "").split(".").pop()).toLowerCase()
         const kind = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
-                   : t === "pdf" ? "pdf" : t === "one" || t === "onepart" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
-                   : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp"].indexOf(t) >= 0 ? "photo" : "genericfile"
+                   : t === "pdf" ? "pdf" : t === "one" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
+                   : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp"].indexOf(t) >= 0 ? "photo"
+                   : ["mp4", "mov", "wmv", "avi", "mkv", "webm", "m4v"].indexOf(t) >= 0 ? "video" : "genericfile"
         return "ft-" + kind + "-32"
     }
     // A person.
@@ -1058,9 +1174,137 @@ Rectangle {
             }
         }
     }
+    // Grid view: Send feedback over the grid's right edge, the cards 44
+    // below it (Teams: feedback 28 under the filters, cards at 72).
+    Component {
+        id: gridHeading
+        Item {
+            height: 52
+            FeedbackThumbs { y: 8; anchors.right: parent.right; anchors.rightMargin: 16 }
+        }
+    }
+    // Grid view (Teams, measured on winpc 2026-11-11): three 242.27 x
+    // 186.27 cards 15.6 apart (radius 6, Fluent shadow 2). The file's
+    // preview (c960x540 thumbnail, cropped from the top) fills 136.27 on
+    // #F5F5F5, or a 28 px generic file picture when it has none; under it a
+    // #FAFAFA footer, 50 tall: the 32 px type icon at 12.67, the name (14/20
+    // semibold, terms bold) at 52.67, 7 and "OST T." + "6 days ago" (12/16
+    // #616161, 4 apart) at 27, and "More attachment options" (32 px, a 16 px
+    // ···) at 202.6, 9.
+    Component {
+        id: fileGridRow
+        Item {
+            height: 186.27 + 15.6
+            Row {
+                x: 16 + root.gridShift; spacing: 15.6
+                Repeater {
+                    model: row.items
+                    FluentSurface {
+                        id: gcard
+                        required property var modelData
+                        readonly property string link: modelData.file_url || modelData.url || ""
+                        property string thumb: backend.fileThumbnail(link)
+                        Connections {
+                            target: backend
+                            function onThumbnailReady(url) { if (url === gcard.link) gcard.thumb = backend.fileThumbnail(gcard.link) }
+                        }
+                        width: 242.27; height: 186.27; depth: 2; radius: 6; color: theme.surface
+                        // Rounded at the top only: the footer covers the rest.
+                        Rectangle { width: parent.width; height: 136.27 + 6; radius: 6; color: theme.pick("#F5F5F5", "#2E2E2E") }
+                        FluentIcon { visible: gimg.status !== Image.Ready; x: (parent.width - 28) / 2; y: (136.27 - 28) / 2; size: 28; name: "ft-genericfile-32" }
+                        // The picture, cropped from its top to fill the area
+                        // and clipped to the card's top corners on a canvas
+                        // (painted at twice the size, like Avatar's).
+                        Image {
+                            id: gimg
+                            visible: false; asynchronous: true; source: gcard.thumb
+                            sourceSize.width: Math.ceil(gcard.width * 2 * Math.max(1, Screen.devicePixelRatio))
+                            onStatusChanged: { gpic.requestPaint(); if (status === Image.Ready) grepaint.restart() }
+                        }
+                        Timer { id: grepaint; interval: 50; onTriggered: gpic.requestPaint() }
+                        Canvas {
+                            id: gpic
+                            width: gcard.width * 2; height: 136.27 * 2; scale: 0.5; transformOrigin: Item.TopLeft
+                            smooth: true; antialiasing: true
+                            visible: gimg.status === Image.Ready
+                            onPaint: {
+                                const ctx = getContext("2d")
+                                ctx.reset()
+                                const iw = gimg.implicitWidth, ih = gimg.implicitHeight
+                                if (gimg.status !== Image.Ready || !iw || !ih) return
+                                const r = 12
+                                ctx.beginPath()
+                                ctx.moveTo(0, height); ctx.lineTo(0, r); ctx.arcTo(0, 0, r, 0, r)
+                                ctx.lineTo(width - r, 0); ctx.arcTo(width, 0, width, r, r); ctx.lineTo(width, height)
+                                ctx.closePath()
+                                ctx.clip()
+                                const k = Math.max(width / iw, height / ih), sw = width / k, sh = height / k
+                                ctx.drawImage(gimg, (iw - sw) / 2, 0, sw, sh, 0, 0, width, height)
+                            }
+                        }
+                        Rectangle { y: 136.27; width: parent.width; height: 50; radius: 6; color: theme.pick("#FAFAFA", "#1A1A1A") }
+                        Rectangle { y: 136.27; width: parent.width; height: 8; color: theme.pick("#FAFAFA", "#1A1A1A") }
+                        FluentIcon { x: 12.67; y: 145.27; size: 32; name: root.fileIcon(gcard.modelData.file_type, gcard.modelData.file_name) }
+                        Text {
+                            x: 52.67; y: 143.27; width: 144.67; height: 20; verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(gcard.modelData.file_name || "")
+                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                        }
+                        Row {
+                            x: 52.67; y: 163.27; spacing: 4
+                            Text { text: gcard.modelData.file_action ? root.gridName(gcard.modelData.file_by) : (gcard.modelData.file_by || ""); height: 16; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                            Text { visible: !!gcard.modelData.file_action && !!gcard.modelData.file_when; text: root.ago(gcard.modelData.file_when); height: 16; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        }
+                        HoverHandler { id: gch; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Qt.openUrlExternally(gcard.modelData.url) }
+                        ToolTip.visible: gch.hovered && !gmore.hovered && !gmenu.visible; ToolTip.delay: 700
+                        ToolTip.text: [gcard.modelData.file_name, root.fileLine(gcard.modelData), gcard.modelData.url].filter(x => !!x).join("\n")
+                        Rectangle {
+                            id: gmoreBtn
+                            x: 202.6; y: 145.27; width: 32; height: 32; radius: 4
+                            color: gmore.hovered ? theme.hover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; size: 16; name: "more-horizontal-20"; color: theme.textSecondary }
+                            HoverHandler { id: gmore; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: gmenu.open() }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "More attachment options"
+                            // Teams: 180 wide under the button, from its left.
+                            MenuPopup {
+                                id: gmenu
+                                x: 0; y: parent.height + 4; width: 180
+                                readonly property bool loop: /\.(loop|fluid)$/i.test(gcard.modelData.file_name || "")
+                                items: [{ label: "Open in Browser", icon: "globe-20" }]
+                                    .concat(loop ? [] : [{ label: "Download", icon: "arrow-download-20" }])
+                                    .concat([{ label: "Copy link", icon: "link-20" }, { label: "Favorite", icon: "star-20" }])
+                                onPicked: i => {
+                                    close()
+                                    const label = items[i].label
+                                    if (label === "Open in Browser") Qt.openUrlExternally(gcard.modelData.url)
+                                    else if (label === "Download") backend.findFileAction("download", gcard.link)
+                                    else if (label === "Copy link") { backend.copyText(gcard.modelData.url); backend.statusText = "Link copied" }
+                                    else backend.findFileAction("favorite", gcard.link)
+                                }
+                            }
+                        }
+                        function openMenu() { gmenu.open() }
+                        function closeMenu() { gmenu.close() }
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: (modelData.file_name || "") + " " + root.fileLine(modelData)
+                    }
+                }
+            }
+        }
+    }
     function shortName(n) { const p = String(n || "").split(" "); return p.length > 1 ? p[0] + " " + p[p.length - 1][0] + "." : String(n || "") }
     function imageOf(h) { return h.image_url || (h.file_name ? "" : "") }
 
     // Test hooks.
     function rowsForTest() { return rows }
+    property Item gridMenuOwner: null
+    function openGridMenuForTest() {
+        const row = list.itemAtIndex(1)
+        const card = row && row.item ? Array.from(row.item.children[0].children).find(c => !!c.openMenu) : null
+        if (card && card.openMenu) { gridMenuOwner = card; card.openMenu() }
+    }
+    function closeGridMenuForTest() { if (gridMenuOwner) gridMenuOwner.closeMenu() }
 }

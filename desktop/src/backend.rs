@@ -1008,6 +1008,10 @@ pub mod qobject {
         #[qsignal]
         fn photo_ready(self: Pin<&mut Backend>, id: QString);
 
+        /// A file's preview picture asked for with file_thumbnail is ready.
+        #[qsignal]
+        fn thumbnail_ready(self: Pin<&mut Backend>, url: QString);
+
         /// Someone in the meeting reacted (Teams' meeting reactions):
         /// their MRI and the reaction's name.
         #[qsignal]
@@ -1049,6 +1053,12 @@ pub mod qobject {
         /// a download when needed and signals photo_ready when it lands.
         #[qinvokable]
         fn photo_for(self: Pin<&mut Backend>, id: &QString, name: &QString) -> QString;
+
+        /// A file's preview picture, as Teams' search file cards show it
+        /// (from its link): a file URL, or "" while it downloads (then
+        /// thumbnail_ready) or when the file has none.
+        #[qinvokable]
+        fn file_thumbnail(self: Pin<&mut Backend>, url: &QString) -> QString;
 
         /// Teams' image for an emoticon or reaction key (`like`,
         /// `heart-tone2`, `1f603_…`) at one of Teams' asset sizes: a file URL,
@@ -1901,6 +1911,10 @@ pub struct BackendRust {
     photos: HashMap<String, Option<String>>,
     /// Picture downloads in flight.
     photo_fetching: HashSet<String>,
+    /// Files' preview pictures by link (file URL, or None for "has none"),
+    /// and those downloading.
+    thumbnails: HashMap<String, Option<String>>,
+    thumbnail_fetching: HashSet<String>,
     /// The calendar range last shown (UTC start, end), for refreshing.
     calendar_range: Option<(String, String)>,
     /// Unsent drafts by chat id: (text, unix ms when last edited).
@@ -10118,6 +10132,40 @@ impl qobject::Backend {
             });
         }
         QString::from(cached.flatten().as_deref().unwrap_or(""))
+    }
+
+    pub fn file_thumbnail(mut self: Pin<&mut Self>, url: &QString) -> QString {
+        let url = url.to_string();
+        if let Some(known) = self.rust().thumbnails.get(&url) {
+            return QString::from(known.as_deref().unwrap_or(""));
+        }
+        if url.is_empty() || !self.as_mut().rust_mut().thumbnail_fetching.insert(url.clone()) {
+            return QString::default();
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let Some(bytes) = api::files::thumbnail(&client, &url).await? else { return anyhow::Ok(None) };
+                let dir = photo_dir().ok_or_else(|| anyhow::anyhow!("No cache directory"))?.with_file_name("thumbnails");
+                std::fs::create_dir_all(&dir)?;
+                let name = url.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+                let path = dir.join(format!("{name:016x}.jpg"));
+                write_private(&path, &bytes)?;
+                anyhow::Ok(Some(format!("file://{}", path.display())))
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().rust_mut().thumbnail_fetching.remove(&url);
+                let found = result.unwrap_or_else(|e| {
+                    tracing::debug!("thumbnail unavailable: {}", short_error(&e));
+                    None
+                });
+                this.as_mut().rust_mut().thumbnails.insert(url.clone(), found);
+                this.as_mut().thumbnail_ready(QString::from(url.as_str()));
+            });
+        });
+        QString::default()
     }
 
     fn drafts_mut(self: Pin<&mut Self>) -> &mut HashMap<String, (String, u64)> {

@@ -352,6 +352,14 @@ pub struct Hit {
     pub file_type: String,
     pub url: String,
     pub file_url: String,
+    /// The search page's line for a file: what its person did ("Shared
+    /// by", "Created by", "Modified by"; empty when only its author is
+    /// known, shown alone), who, and when.
+    pub file_action: String,
+    pub file_by: String,
+    pub file_when: String,
+    /// The file's folder (its link), for the search page's place line.
+    pub file_folder: String,
 }
 
 /// A page of results.
@@ -390,6 +398,28 @@ pub fn plain(html: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A file result's line as Teams builds it: its first annotation's action,
+/// person and time ("Shared by OST Test 1", 6 days ago); else who last
+/// modified it and when; else just its author ("System Account").
+fn file_context(r: &serde_json::Value) -> (String, String, String) {
+    let src = &r["Source"];
+    let note = &r["Annotations"][0];
+    let action = match note["Type"].as_str().unwrap_or_default() {
+        "Shared" => "Shared by",
+        "Created" => "Created by",
+        "" => "",
+        _ => "Modified by",
+    };
+    if !action.is_empty() {
+        return (action.into(), s(&note["User"]["DisplayName"]), s(&note["Timestamp"]));
+    }
+    let by = s(&src["ModifiedBy"]);
+    if !by.is_empty() {
+        return ("Modified by".into(), by, s(&src["LastModifiedTime"]));
+    }
+    (String::new(), s(&src["Author"]), String::new())
+}
+
 fn s(v: &serde_json::Value) -> String {
     v.as_str().unwrap_or_default().to_string()
 }
@@ -413,10 +443,15 @@ pub fn found_from(reply: &serde_json::Value) -> Found {
     for r in rs["Results"].as_array().into_iter().flatten() {
         let src = &r["Source"];
         let hit = if r["Type"] == "File" || src.get("FileName").is_some() {
+            let (file_action, file_by, file_when) = file_context(r);
             Hit {
                 id: s(&src["UniqueId"]),
                 sender_name: s(&src["ModifiedBy"]),
                 time: s(&src["LastModifiedTime"]),
+                file_action,
+                file_by,
+                file_when,
+                file_folder: s(&src["ParentLink"]),
                 text: plain(&s(&r["HitHighlightedSummary"])),
                 file_name: s(&src["FileName"]),
                 file_type: [&src["FileType"], &src["FileExtension"], &src["SecondaryFileExtension"]]
@@ -737,6 +772,24 @@ mod tests {
         assert_eq!(h.sender_name, "OST Test 1");
         assert_eq!(h.sender_mri, "8:orgid:4287e791-1b98-4963-8b94-281c50472683");
         assert_eq!(h.text, "Take a look at this app. Help https://x&y");
+    }
+
+    #[test]
+    fn file_lines_read_as_teams_words_them() {
+        // As the service answered "OST" on the Files tab (2026-11-11).
+        let reply = serde_json::json!({"EntitySets": [{"ResultSets": [{"Results": [
+            {"Type": "File", "Annotations": [{"Type": "Shared", "Timestamp": "2026-11-05T17:46:04.0000000Z", "User": {"DisplayName": "OST Test 1"}}],
+             "Source": {"FileName": "ost-attachment-test.txt", "ModifiedBy": "OST Test 1", "LastModifiedTime": "2026-11-05T17:45:45Z"}},
+            {"Type": "File", "Annotations": [{"Type": "Modified", "Timestamp": "2026-11-07T02:12:12.0000000Z", "User": {"DisplayName": "OST Test 1"}}],
+             "Source": {"FileName": "Untitled", "ModifiedBy": "OST Test 1"}},
+            {"Type": "File", "Source": {"FileName": "All.aspx", "Author": "System Account", "LastModifiedTime": "2026-11-08T23:41:49Z"}}
+        ]}]}]});
+        let f = found_from(&reply);
+        let line = |i: usize| (f.hits[i].file_action.as_str(), f.hits[i].file_by.as_str(), f.hits[i].file_when.as_str());
+        assert_eq!(line(0), ("Shared by", "OST Test 1", "2026-11-05T17:46:04.0000000Z"));
+        assert_eq!(line(1), ("Modified by", "OST Test 1", "2026-11-07T02:12:12.0000000Z"));
+        assert_eq!(line(2), ("", "System Account", ""));
+        assert_eq!(f.hits[0].sender_name, "OST Test 1", "Find in chat keeps the modifier");
     }
 }
 
