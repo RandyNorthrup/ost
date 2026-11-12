@@ -12826,6 +12826,7 @@ impl qobject::Backend {
                     }
                     "open_app" => json!({ "path": api::drive::local_copy(&client, &item).await?.display().to_string() }),
                     "preview" => json!(api::drive::preview(&client, &item).await?),
+                    "thumb" => json!({ "id": item.id, "path": api::drive::thumbnail_sized(&client, &item, &s("size")).await?.map(|p| format!("file://{}", p.display())).unwrap_or_default() }),
                     // Version history: the list (with pictures' ids), and
                     // a version restored or sent to the recycle bin.
                     "versions" => {
@@ -12877,6 +12878,15 @@ impl qobject::Backend {
                     "comment" => {
                         api::item_details::add_comment(&item, &s("text")).await?;
                         json!(null)
+                    }
+                    // The Details pane with nothing selected: the folder's
+                    // activity.
+                    "folder_details" => {
+                        let (d, i) = (s("drive_id"), s("item_id"));
+                        let here = if i.is_empty() { api::drive::root(&client, &d).await? } else { api::drive::item(&client, &d, &i).await? };
+                        let host = here.sp_site.split('/').take(3).collect::<Vec<_>>().join("/");
+                        let me = client.user_principal_name().unwrap_or_default();
+                        json!({ "activities": api::item_details::folder_activity(&host, &here.drive_id, &i, &me).await? })
                     }
                     "delete_comment" => {
                         api::item_details::delete_comment(&item, &s("id")).await?;

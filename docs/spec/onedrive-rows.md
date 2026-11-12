@@ -163,11 +163,42 @@ With rows selected, the title line becomes OneDrive's command bar:
   - when done: "Copied {n} items", "Moved {n} items";
   - on failure: "{n} items weren't copied", "{n} items weren't moved".
 
+## Sort and views
+
+At the title line's right (and in the selection bar, around "✕ n
+selected") are **Sort ▾**, the view switch and **Details**.
+
+- **Sort ▾**: a 232-wide menu listing Type, Name, Modified, Modified By and
+  File size, then a divider, Ascending and Descending. Ticks show the current
+  choice; when nothing has been chosen, nothing is ticked. Teams asks
+  SharePoint for the folder again with `SortField={field}&SortDir=Asc|Desc`.
+  Folders stay first. The choice lasts while you move between folders.
+- **The column headers** (Name, Modified, Modified By, File size) have a
+  chevron. Clicking one opens Ascending, Descending and Column settings ▸. The
+  sorted column shows a 12 px ↑ or ↓ (#605E5C) after its name.
+- **The view switch** offers List, Compact List and Tiles, each with its
+  glyph. A tick shows the current one, and the button shows its glyph.
+  - **Compact List** keeps List's columns, but rows are 34 tall with 20 px
+    icons.
+  - **Tiles** drops the white card. Cells are 176 x 171 and 8 apart,
+    starting 12 below the title line.
+    - Folders come first. Each is a 112 x 80 folder drawing with the number of
+      items (14 px #8F3900), and the name and date centred under it (14 px,
+      117 and 141 down).
+    - Files start a new row 40 lower. Each shows its 74 x 96 picture with the
+      app's badge, and the name.
+    - Hover gives a white card (radius 12, shadow) with the selection circle
+      at the top right.
+- **Details** with nothing selected opens the current folder's pane
+  (`docs/spec/details-pane.md`). The button shows pressed while the pane is
+  open.
+
+OST sorts in the app, on the same fields, with folders first. Column settings
+▸ isn't in OST yet. File pictures in Tiles are Graph's "medium" thumbnails.
+
 ## Not yet in OST
 
-- Sort ▾, the view switch and Details, in the title line and in the selection
-  bar: TASK-0120. Details' pane itself is TASK-0115. The column headers'
-  sort chevrons go with Sort.
+- The column headers' Column settings ▸.
 - Add shortcut ▸, Version history and a folder's Request files: TASK-0115 and
   TASK-0116. They are left out of the bar, as they are of the item menu.
 - Download of several items or a folder. Teams makes one zip with OneDrive's

@@ -66,6 +66,46 @@ Item {
     readonly property color selectedFill: theme.pick("#E9EAF6", "#2B2C3F")
     readonly property var favoriteIds: driveData.favorite_ids || []
 
+    /// Sort ▾ and the column headers (OneDrive's: Type, Name, Modified,
+    /// Modified By, File size; folders stay first), and the view switch
+    /// (List, Compact List, Tiles). Both last for the session.
+    property string sortField: ""
+    property bool sortAsc: true
+    property string listView: "list"
+    readonly property var shown: {
+        if (!sortField) return items
+        const key = it => sortField === "size" ? (it.is_folder ? it.child_count || 0 : it.size || 0)
+                        : sortField === "kind" ? String(it.kind || "") : String(it[sortField] || "").toLowerCase()
+        const out = items.slice()
+        out.sort((a, b) => {
+            if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1
+            const x = key(a), y = key(b)
+            const c = typeof x === "number" ? x - y : x < y ? -1 : x > y ? 1 : 0
+            return sortAsc ? c : -c
+        })
+        return out
+    }
+    readonly property var sortFields: [{ key: "kind", label: "Type" }, { key: "name", label: "Name" }, { key: "modified", label: "Modified" },
+                                       { key: "modified_by", label: "Modified By" }, { key: "size", label: "File size" }]
+    function sortMenuItems() {
+        return sortFields.map(f => ({ label: f.label, checked: sortField === f.key })).concat([{ separator: true },
+            { label: "Ascending", checked: !!sortField && sortAsc }, { label: "Descending", checked: !!sortField && !sortAsc }])
+    }
+    function pickSort(label) {
+        const f = sortFields.find(x => x.label === label)
+        if (f) { sortField = f.key; return }
+        if (!sortField) sortField = "name"
+        sortAsc = label === "Ascending"
+    }
+    readonly property var viewItems: [{ label: "List", icon: "list-16", checked: listView === "list" },
+                                      { label: "Compact List", icon: "text-align-left-16", checked: listView === "compact" },
+                                      { label: "Tiles", icon: "grid-16", checked: listView === "tiles" }]
+    function toggleDetails(it) {
+        if (details.visible) { details.item = null; details.folder = null; return }
+        if (it) details.item = it
+        else { details.item = null; details.folder = { name: root.view === "folder" ? root.here.name : root.title, drive_id: root.here.drive_id, item_id: root.here.item_id } }
+    }
+
     /// The rows picked with their selection circles (ids); a reload keeps
     /// those still there, so another folder starts with none.
     property var selectedIds: []
@@ -78,6 +118,28 @@ Item {
     // The Details pane follows the selected item.
     onSelectionChanged: if (details.item && selection.length === 1 && selection[0].id !== details.item.id) details.item = selection[0]
 
+    // File pictures for Tiles (Graph's "medium"), by item id.
+    property var thumbs: ({})
+    property var thumbAsked: ({})
+    readonly property string thumbTag: "odt" + Math.floor(Math.random() * 1e9) + ":"
+    function wantThumb(it) {
+        if (thumbAsked[it.id] || it.is_folder) return
+        thumbAsked[it.id] = true
+        backend.driveAction(thumbTag + "thumb", JSON.stringify(it), JSON.stringify({ size: "medium" }))
+    }
+    Connections {
+        target: backend
+        function onDriveActionDone(op, result, error) {
+            if (!op.startsWith(root.thumbTag) || error) return
+            const v = JSON.parse(result)
+            if (v.path) { const t = Object.assign({}, root.thumbs); t[v.id] = v.path; root.thumbs = t }
+        }
+    }
+    function badge(kind) {
+        const k = String(kind || "").toLowerCase()
+        return ["doc", "docx"].indexOf(k) >= 0 ? "ft-docx-20" : ["xls", "xlsx"].indexOf(k) >= 0 ? "ft-xlsx-20"
+             : ["ppt", "pptx"].indexOf(k) >= 0 ? "ft-pptx-20" : k === "pdf" ? "ft-pdf-20" : ""
+    }
     // OneDrive's file size wording: "1 byte", "56 bytes", "26.0 KB",
     // "7.66 MB" (two decimals under 10, one under 100, none above).
     function size(n) {
@@ -240,15 +302,22 @@ Item {
                 }
             }
         }
+        // Sort ▾, the view switch and Details at the title's right.
+        Row {
+            visible: root.selection.length === 0 && root.view === "folder"
+            anchors.right: parent.right; anchors.rightMargin: 16 + 6
+            y: 26; spacing: 4
+            ViewControls {}
+        }
         // The Details pane (Teams': 304 wide at the list's right, under the
         // command bar).
         DetailsPane {
             id: details
-            visible: !!item
+            visible: !!item || !!folder
             x: card.x + card.width + 2; y: 76; width: 304; height: card.height
             item: null
             actions: actions
-            onDismissed: item = null
+            onDismissed: { item = null; folder = null }
         }
         // With rows selected, Teams' command bar takes the title's place: a
         // white card (52 tall, radius 12, shadow 8) with the selection's
@@ -334,18 +403,21 @@ Item {
                 y: 52
                 onPicked: i => actions.actMany(root.selection, items[i].label)
             }
-            // Details (OneDrive's OpenPane glyph) at the right.
-            BarCommand {
-                id: detailsCommand
+            // At the right: Sort ▾, "✕ n selected", a divider, the view switch
+            // and Details.
+            Row {
                 anchors.right: parent.right; anchors.rightMargin: 6
-                y: 10; label: "Details"; icon: "panel-right-16"; tip: "Open the details pane"
-                onClicked: details.item = details.item && selBar.one && details.item.id === selBar.one.id ? null : selBar.one || root.selection[0]
-            }
+                y: 10; spacing: 4
+                BarCommand {
+                    label: "Sort"; icon: "arrow-sort-down-lines-16"; chevron: true; tip: "Sort all items by"
+                    onClicked: { sortMenu2.items = root.sortMenuItems(); sortMenu2.open() }
+                    MenuPopup { id: sortMenu2; fabric: true; fabricWidth: 232; y: parent.height + 10; onPicked: i => root.pickSort(items[i].label) }
+                }
+                Item { width: countPill.width; height: 32
             // "✕ n selected": clears the selection (0.67 #D1D1D1, radius 20).
             Rectangle {
                 id: countPill
-                anchors.right: detailsCommand.left; anchors.rightMargin: 29
-                y: 10; height: 32; radius: 16
+                y: 0; height: 32; radius: 16
                 width: 36.67 + countText.implicitWidth + 14.67
                 color: cph.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
                 border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
@@ -356,14 +428,17 @@ Item {
                 Accessible.role: Accessible.Button
                 Accessible.name: "Clear selection, " + root.selection.length + " selected"
             }
-            Rectangle { x: countPill.x + countPill.width + 14; y: 16; width: 1; height: 20; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                }
+                Item { width: 25; height: 32; Rectangle { x: 12; y: 6; width: 1; height: 20; color: theme.pick("#E0E0E0", "#3D3D3D") } }
+                ViewControls { inBar: true }
+            }
         }
         Rectangle {
             id: card
             x: 0; y: 76
             width: parent.width - 16 - (details.visible ? 304 + 2 : 0); height: parent.height - y - 16
             radius: 4
-            color: theme.surface
+            color: root.listView === "tiles" && root.view === "folder" ? "transparent" : theme.surface
             clip: true
             // People: who shared files with you; pick one to see them.
             ListView {
@@ -477,6 +552,7 @@ Item {
                 readonly property real wName: narrow ? Math.max(120, width - 56 - 40 - 189.33) : Math.max(200, width - 56 - 40 - 136 - 136 - 91 - 81 - 119)
                 Item {
                     id: head
+                    visible: root.listView !== "tiles" || root.view !== "folder"
                     width: parent.width; height: 49
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
                     HoverHandler { id: headHover }
@@ -497,10 +573,10 @@ Item {
                         height: parent.height
                         Item { width: 56; height: 49 }
                         Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: root.ink } }
-                        ListHead { label: "Name"; width: table.wName }
-                        ListHead { label: root.view === "recent" ? "Opened" : "Modified"; width: table.narrow ? 189.33 : 136 }
-                        ListHead { visible: !table.narrow; label: root.view === "shared" ? "Shared by" : "Modified By"; width: 136 }
-                        ListHead { visible: !table.narrow; label: "File size"; width: 91 }
+                        ListHead { label: "Name"; field: root.view === "folder" ? "name" : ""; width: table.wName }
+                        ListHead { label: root.view === "recent" ? "Opened" : "Modified"; field: root.view === "folder" ? "modified" : ""; width: table.narrow ? 189.33 : 136 }
+                        ListHead { visible: !table.narrow; label: root.view === "shared" ? "Shared by" : "Modified By"; field: root.view === "folder" ? "modified_by" : ""; width: 136 }
+                        ListHead { visible: !table.narrow; label: "File size"; field: root.view === "folder" ? "size" : ""; width: 91 }
                         ListHead { visible: !table.narrow; label: "Sharing"; width: 81 }
                         ListHead { visible: !table.narrow; label: "Activity"; width: 119 }
                     }
@@ -509,7 +585,8 @@ Item {
                     id: files
                     anchors { top: head.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
                     clip: true
-                    model: root.items
+                    model: root.shown
+                    visible: root.listView !== "tiles" || root.view !== "folder"
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                     delegate: Item {
@@ -519,7 +596,10 @@ Item {
                         readonly property bool sel: root.selectedIds.indexOf(modelData.id) >= 0
                         readonly property bool hot: fh.hovered || actions.item === modelData && actions.menuOpen || root.hoverForTest === index
                         readonly property bool fav: root.favoriteIds.indexOf(modelData.id) >= 0
-                        width: files.width; height: table.narrow ? 63 : 49
+                        // Compact List: 34 tall rows, 20 px icons.
+                        readonly property bool compact: root.listView === "compact" && !table.narrow && root.view === "folder"
+                        readonly property real ty: compact ? 7.67 : 14
+                        width: files.width; height: table.narrow ? 63 : compact ? 34 : 49
                         Rectangle {
                             x: 8; width: parent.width - 16; height: parent.height - 1; radius: 8
                             color: frow.sel ? root.selectedFill : frow.hot ? theme.rowHover : "transparent"
@@ -528,7 +608,7 @@ Item {
                         Rectangle {
                             id: circle
                             visible: frow.hot || frow.sel
-                            x: 29; y: 14; width: 18; height: 18; radius: 9
+                            x: 29; y: (frow.compact ? 34 : 49) / 2 - 9; width: 18; height: 18; radius: 9
                             color: frow.sel ? root.accent : theme.surface
                             border.width: frow.sel ? 0 : 1; border.color: root.strong
                             FluentIcon { visible: frow.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
@@ -538,7 +618,7 @@ Item {
                             Accessible.checked: frow.sel
                         }
                         FluentIcon {
-                            x: 62; y: 8; size: 32
+                            x: frow.compact ? 66 : 62; y: frow.compact ? 7 : 8; size: frow.compact ? 20 : 32
                             name: frow.modelData.is_folder ? "ft-folder-32" : root.fileIcon(frow.modelData.kind)
                         }
                         // Name: OneDrive's "New" mark, the name, then ···, Share and the star.
@@ -546,10 +626,10 @@ Item {
                             id: nameCell
                             x: 96; width: table.wName; height: frow.height
                             readonly property bool tools: frow.hot || frow.sel
-                            FluentIcon { id: newMark; visible: !!frow.modelData.is_new; x: 12; y: 14; size: 12; width: 7.92; name: "glimmer-12"; color: root.strong }
+                            FluentIcon { id: newMark; visible: !!frow.modelData.is_new; x: 12; y: frow.ty; size: 12; width: 7.92; name: "glimmer-12"; color: root.strong }
                             Text {
                                 id: nameText
-                                x: newMark.visible ? 19.92 : 12; y: 14
+                                x: newMark.visible ? 19.92 : 12; y: frow.ty
                                 width: Math.min(implicitWidth, nameCell.width - x - 8 - (nameCell.tools ? 101 : 0))
                                 elide: Text.ElideRight
                                 text: frow.modelData.name
@@ -570,7 +650,7 @@ Item {
                             }
                             Row {
                                 visible: nameCell.tools
-                                x: nameText.x + nameText.width + 8; y: 9; spacing: 4.5
+                                x: nameText.x + nameText.width + 8; y: frow.ty - 5; spacing: 4.5
                                 RowTool {
                                     id: moreButton
                                     icon: "more-horizontal-16"; tip: "More Actions"
@@ -588,16 +668,17 @@ Item {
                         Row {
                             x: 96 + table.wName; height: 49
                             RowCell {
+                                ty: frow.ty
                                 width: table.narrow ? 189.33 : 136; text: frow.modelData.modified_text || ""
                                 tip: frow.modelData.modified_title || ""
                             }
-                            RowCell { visible: !table.narrow; width: 136; text: frow.modelData.modified_by || root.userName }
-                            RowCell { visible: !table.narrow; width: 91; text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
+                            RowCell { ty: frow.ty; visible: !table.narrow; width: 136; text: frow.modelData.modified_by || root.userName }
+                            RowCell { ty: frow.ty; visible: !table.narrow; width: 91; text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
                             Item {
                                 visible: !table.narrow
                                 width: 81; height: 49
                                 Row {
-                                    x: 12; y: 14.67; spacing: 4
+                                    x: 12; y: frow.ty + 0.67; spacing: 4
                                     FluentIcon { visible: frow.modelData.sharing === "Shared"; y: 2.5; name: "people-16"; size: 14; color: root.strong }
                                     Text { text: frow.modelData.sharing; font.family: theme.font; font.pixelSize: 14; color: root.ink }
                                 }
@@ -606,7 +687,7 @@ Item {
                                 width: 119; height: 49
                                 visible: !!frow.modelData.activity && !table.narrow
                                 FluentIcon {
-                                    x: 12; y: 15.83; size: 16; color: root.strong
+                                    x: 12; y: frow.ty + 1.83; size: 16; color: root.strong
                                     name: frow.modelData.activity ? root.activityIcon(frow.modelData.activity.kind) : ""
                                 }
                                 Text {
@@ -639,6 +720,37 @@ Item {
                     }
                 }
             }
+            // Tiles (OneDrive's): 176 x 171 cells, 8 apart, folders first and
+            // files from a new row 40 below; a folder is its 112 x 80 art with
+            // the item count (#8F3900) and the name and date under it, a file
+            // its 74 x 96 picture with the app's badge and its name. Hover:
+            // a white card (radius 12, shadow) with the selection circle.
+            Flickable {
+                id: tiles
+                visible: root.listView === "tiles" && root.view === "folder"
+                anchors.fill: parent; anchors.leftMargin: 4; anchors.topMargin: 12
+                contentHeight: tileCol.height + 16
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                Column {
+                    id: tileCol
+                    width: tiles.width
+                    spacing: 40
+                    Repeater {
+                        model: [root.shown.filter(i => i.is_folder), root.shown.filter(i => !i.is_folder)]
+                        Flow {
+                            required property var modelData
+                            visible: modelData.length > 0
+                            width: tileCol.width; spacing: 8
+                            Repeater {
+                                model: parent.modelData
+                                Tile {}
+                            }
+                        }
+                    }
+                }
+            }
             // Empty states, as Teams words them.
             Text {
                 visible: !root.busy && !root.driveData.error && root.view !== "libraries"
@@ -662,21 +774,145 @@ Item {
         }
     }
 
-    // The table's header cell: 14/600 #616161 at 10.67, 49 tall.
+    // The view switch and Details (and, on the title line, Sort ▾ first).
+    component ViewControls: Row {
+        property bool inBar: false
+        spacing: 4
+        BarCommand {
+            visible: !parent.inBar
+            label: "Sort"; icon: "arrow-sort-down-lines-16"; chevron: true; tip: "Sort all items by"
+            onClicked: { sortMenu.items = root.sortMenuItems(); sortMenu.open() }
+            MenuPopup { id: sortMenu; fabric: true; fabricWidth: 232; y: parent.height + 10; onPicked: i => root.pickSort(items[i].label) }
+        }
+        BarCommand {
+            icon: root.listView === "tiles" ? "grid-16" : root.listView === "compact" ? "text-align-left-16" : "list-16"
+            chevron: true; tip: "Switch view options"
+            onClicked: viewMenu.open()
+            MenuPopup {
+                id: viewMenu; fabric: true; fabricWidth: 232; y: parent.height + 10
+                items: root.viewItems
+                onPicked: i => root.listView = ["list", "compact", "tiles"][i]
+            }
+        }
+        BarCommand {
+            label: "Details"; icon: "panel-right-16"; tip: "Open the details pane"
+            pressed: details.visible
+            onClicked: root.toggleDetails(root.selection.length === 1 ? root.selection[0] : null)
+        }
+    }
+    component Tile: Item {
+        id: tile
+        required property var modelData
+        readonly property bool sel: root.selectedIds.indexOf(modelData.id) >= 0
+        readonly property bool hot: th.hovered || sel
+        width: 176; height: 171
+        FluentSurface {
+            visible: tile.hot
+            anchors.fill: parent; radius: 12; depth: 4
+            color: tile.sel ? root.selectedFill : theme.surface
+        }
+        Rectangle {
+            visible: tile.hot
+            x: parent.width - 30; y: 12; width: 18; height: 18; radius: 9
+            color: tile.sel ? root.accent : theme.surface
+            border.width: tile.sel ? 0 : 1; border.color: root.strong
+            FluentIcon { visible: tile.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+            TapHandler { onTapped: root.toggle(tile.modelData) }
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: tile.modelData.name
+            Accessible.checked: tile.sel
+        }
+        // A folder: the art and its count.
+        Item {
+            visible: tile.modelData.is_folder
+            x: 32; y: 24; width: 112; height: 80; clip: true
+            FluentIcon { x: 0; y: -16; size: 112; name: "ft-folder-32" }
+            Text { x: 14; y: 56; text: tile.modelData.child_count || 0; font.family: theme.font; font.pixelSize: 14; color: "#8F3900" }
+        }
+        // A file: its picture (or type icon) with the app's badge.
+        Rectangle {
+            visible: !tile.modelData.is_folder
+            x: 51; y: 16; width: 74; height: 96; radius: 4
+            color: theme.surface
+            border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+            Image {
+                id: thumbImg
+                anchors.fill: parent; anchors.margins: 1
+                source: root.thumbs[tile.modelData.id] || ""
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+            }
+            FluentIcon { visible: !thumbImg.source.toString(); anchors.centerIn: parent; size: 32; name: root.fileIcon(tile.modelData.kind) }
+            Rectangle {
+                visible: !!root.badge(tile.modelData.kind)
+                x: 6; y: parent.height - 30; width: 24; height: 24; radius: 4; color: "white"
+                border.width: 0.67; border.color: "#E0E0E0"
+                FluentIcon { anchors.centerIn: parent; size: 16; name: root.badge(tile.modelData.kind) }
+            }
+            Component.onCompleted: root.wantThumb(tile.modelData)
+        }
+        Text {
+            x: 8; y: 117; width: parent.width - 16; height: 30
+            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            text: tile.modelData.name
+            font.family: theme.font; font.pixelSize: 14; color: root.ink
+            font.underline: tile.modelData.is_folder && th.hovered
+        }
+        Text {
+            visible: tile.modelData.is_folder
+            x: 8; y: 141; width: parent.width - 16
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            text: tile.modelData.modified_text || ""
+            font.family: theme.font; font.pixelSize: 14; color: root.ink
+        }
+        HoverHandler { id: th; cursorShape: Qt.PointingHandCursor }
+        TapHandler {
+            onTapped: (ev, button) => (ev.modifiers & Qt.ControlModifier) ? root.toggle(tile.modelData) : tile.modelData.is_folder ? root.openFolder(tile.modelData.name, tile.modelData.drive_id, tile.modelData.id) : root.selectOnly(tile.modelData)
+            onDoubleTapped: if (!tile.modelData.is_folder && tile.modelData.web_url) backend.openFile(tile.modelData.web_url, tile.modelData.name, JSON.stringify(tile.modelData))
+        }
+        TapHandler { acceptedButtons: Qt.RightButton; onTapped: (ev) => actions.popup(tile.modelData, tile, ev.position.x, ev.position.y) }
+        Accessible.role: Accessible.ListItem
+        Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+        Accessible.selected: sel
+    }
+    // The table's header cell: 14/600 #616161 at 10.67, 49 tall. A sortable
+    // column shows ↑ / ↓ when sorted and a chevron; a click opens its menu
+    // (Ascending, Descending).
     component ListHead: Item {
+        id: lh
         property string label
+        property string field: ""
         height: 49
-        Text { x: 10.67; y: 14.83; text: parent.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+        Row {
+            x: 10.67; y: 14.83; spacing: 6
+            Text { text: lh.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+            FluentIcon { visible: !!lh.field && root.sortField === lh.field; y: 3; size: 12; name: root.sortAsc ? "arrow-up-12" : "arrow-down-12"; color: theme.pick("#605E5C", "#D6D6D6") }
+            FluentIcon { visible: !!lh.field; y: 4; size: 10; name: "chevron-down-12"; color: theme.pick("#605E5C", "#D6D6D6") }
+        }
+        HoverHandler { enabled: !!lh.field; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: !!lh.field; onTapped: headMenu.open() }
+        MenuPopup {
+            id: headMenu
+            fabric: true; fabricWidth: 232
+            x: 2; y: 46
+            items: [{ label: "Ascending", checked: root.sortField === lh.field && root.sortAsc }, { label: "Descending", checked: root.sortField === lh.field && !root.sortAsc }]
+            onPicked: i => { root.sortField = lh.field; root.sortAsc = i === 0 }
+        }
+        Accessible.role: lh.field ? Accessible.Button : Accessible.ColumnHeader
+        Accessible.name: label + (root.sortField === field && field ? (root.sortAsc ? ", sorted ascending" : ", sorted descending") : "")
     }
     // A row's text cell: 14 px at 12, 14 down; `tip` shows on hover (the
     // Modified column's full date).
     component RowCell: Item {
         property alias text: rt.text
         property string tip: ""
+        property real ty: 14
         height: 49
         Text {
             id: rt
-            x: 12; y: 14; width: parent.width - 20
+            x: 12; y: parent.ty; width: parent.width - 20
             elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: 14; color: root.ink
             HoverHandler { id: rth }
@@ -689,6 +925,7 @@ Item {
     // at 32, an optional 12 px chevron; 8 px either side.
     component BarCommand: Rectangle {
         id: bc
+        property bool pressed: false
         property string label
         property string icon
         property string tip
@@ -696,7 +933,7 @@ Item {
         signal clicked()
         height: 32; radius: 4
         width: 8 + 16 + (label ? 8 + bcText.implicitWidth : 0) + (chevron ? 4 + 16 : 0) + 8
-        color: bch.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
+        color: bc.pressed ? theme.pick("#EBEBEB", "#3D3D3D") : bch.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
         FluentIcon { x: 8; y: 8; name: bc.icon; size: 16; color: bc.icon.startsWith("ft-") ? "#212121" : root.ink }
         Text { id: bcText; visible: !!bc.label; x: 32; y: 9; text: bc.label; font.family: theme.font; font.pixelSize: 14; color: root.ink }
         FluentIcon { visible: bc.chevron; x: bcText.x + bcText.implicitWidth + 6; y: 10; name: "chevron-down-12"; size: 12; color: root.ink }
@@ -833,6 +1070,9 @@ Item {
     function selectForTest(names) { selectedIds = items.filter(i => names.indexOf(i.name) >= 0).map(i => i.id); return selectedIds.length }
     function barForTest() { return { commands: selBar.commands.map(c => c.label || "···"), more: selBar.more.map(c => c.label), count: root.selection.length } }
     function barRunForTest(label) { selBar.run(label) }
+    function setViewForTest(v) { listView = v }
+    function sortForTest(f, asc) { sortField = f; sortAsc = asc; return shown.map(i => i.name) }
+    function folderDetailsForTest() { selectedIds = []; toggleDetails(null) }
     function detailsForTest() { return details.stateForTest() }
     function detailsScrollForTest(y) { details.scrollForTest(y) }
     function detailsBellForTest() { details.bellForTest() }

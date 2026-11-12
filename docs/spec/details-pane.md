@@ -188,3 +188,28 @@ not measured: OneDrive's actual breakpoint hasn't been found.
 
 Harness: `--details-test [--details-live]`. The live run posts "OST test
 112" on ost-share-test.txt, checks its card, then deletes it.
+
+## A folder (nothing selected)
+
+**Details** with nothing selected shows the current folder:
+
+- The header has the folder icon, its name ("My files") and Dismiss. It has
+  no Options button.
+- Under it is "Activity" (16/600), then the folder's activity cards. There
+  is no picture, no Has access, no view switch, no bell, no comment box and no
+  More details.
+- The list is `GET {host}/_api/v2.0/drives/{d}/root/activities` (or
+  `items/{id}/activities`), worded for the items in the folder:
+  - names are in bold;
+  - "You commented on **x**", "You edited **x**";
+  - "You moved **x** from **Attachments** to **Documents**";
+  - "You deleted **x**" (or "… from **folder**");
+  - "You created **x**" (or "… in **folder**");
+  - "You shared **x**".
+- Teams merges entries:
+  - A move's "from" activity (`move.From`, on the file) and its "to" activity
+    (`move.to`, on the folder it left) read as one.
+  - Repeated edits of one file by one person in a row show once.
+- OST does the same (`item_details::folder_feed`, unit-tested on My files'
+  feed of 2026-11-12). Teams' exact merging rule hasn't been found in its
+  code: this one matches what it shows.

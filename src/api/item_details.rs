@@ -313,6 +313,124 @@ pub async fn delete_comment(item: &DriveItem, id: &str) -> Result<()> {
     super::sharing::delete(&comments_url(item, &format!("Comments({id})"))).await
 }
 
+/// One activity as a folder's Details pane words it (about the items in it:
+/// their names in bold). `to` is the destination folder of a move that the
+/// next activity completes.
+pub fn describe_in_folder(a: &Value, me: &str, to: Option<&str>) -> Option<(String, String)> {
+    let act = &a["action"];
+    let has = |k: &str| act.get(k).is_some();
+    let actor = person(&a["actor"]["user"], me);
+    let (you, who) = (actor.me, actor.name.as_str());
+    let item = a["driveItem"]["name"].as_str().unwrap_or_default();
+    let it = bold(item);
+    // The folder the item is in (by its parent's path), "" for the top.
+    let parent = a["driveItem"]["parentReference"]["path"].as_str().and_then(|p| p.split_once(':')).map(|(_, r)| r.rsplit('/').next().unwrap_or_default().to_string()).unwrap_or_default();
+    let comment = &act["comment"];
+    let (kind, text) = if has("mention") {
+        ("mention", if you { fill("You mentioned someone in {0}", &[&it]) } else { fill("{1} mentioned you in {0}", &[&it, who]) })
+    } else if comment.is_object() && !comment["isReply"].as_bool().unwrap_or(false) {
+        ("comment", fill(if you { "You commented on {0}" } else { "{1} commented on {0}" }, &[&it, who]))
+    } else if comment.is_object() {
+        ("commentResponse", fill(if you { "You replied to a comment on {0}" } else { "{1} replied to a comment on {0}" }, &[&it, who]))
+    } else if has("create") {
+        let t = if parent.is_empty() { if you { "You created {0}" } else { "{1} created {0}" } } else if you { "You created {0} in {2}" } else { "{1} created {0} in {2}" };
+        ("create", fill(t, &[&it, who, &bold(&parent)]))
+    } else if has("delete") {
+        let gone = bold(act["delete"]["name"].as_str().unwrap_or(item));
+        // Deleted from a folder: the activity's item is that folder.
+        let from = if a["driveItem"].is_object() { item.to_string() } else { String::new() };
+        let t = if from.is_empty() { if you { "You deleted {0}" } else { "{1} deleted {0}" } } else if you { "You deleted {0} from {2}" } else { "{1} deleted {0} from {2}" };
+        ("delete", fill(t, &[&gone, who, &bold(&from)]))
+    } else if has("edit") {
+        ("edit", fill(if you { "You edited {0}" } else { "{1} edited {0}" }, &[&it, who]))
+    } else if has("move") {
+        let m = &act["move"];
+        let from = m["From"].as_str().or(m["from"].as_str()).map(|p| bold(&last(p, true)));
+        let to = to.map(bold);
+        let t = match (&from, &to) {
+            (Some(_), Some(_)) => if you { "You moved {0} from {2} to {3}" } else { "{1} moved {0} from {2} to {3}" },
+            (Some(_), None) => if you { "You moved {0} from {2}" } else { "{1} moved {0} from {2}" },
+            _ => if you { "You moved {0}" } else { "{1} moved {0}" },
+        };
+        ("move", fill(t, &[&it, who, from.as_deref().unwrap_or_default(), to.as_deref().unwrap_or_default()]))
+    } else if has("rename") {
+        let old = act["rename"]["oldName"].as_str().unwrap_or_default();
+        ("rename", fill(if you { "You renamed {1} to {2}" } else { "{0} renamed {1} to {2}" }, &[who, &bold(old), &it]))
+    } else if has("restore") {
+        ("restore", fill("{0} was restored", &[&it]))
+    } else if has("share") {
+        ("share", fill(if you { "You shared {0}" } else { "{1} shared {0}" }, &[&it, who]))
+    } else if has("version") {
+        let v = act["version"]["newVersion"].as_str().unwrap_or_default();
+        ("version", fill(if you { "You created {2} of {0}" } else { "{1} created {2} of {0}" }, &[&it, who, v]))
+    } else {
+        return None;
+    };
+    Some((kind.to_string(), text))
+}
+
+/// A folder's activity as its Details pane lists it: a move's "from" and
+/// its matching "to" read as one, and repeated edits of one item by one
+/// person show once.
+pub fn folder_feed(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedItem> {
+    let acts: Vec<&Value> = reply["value"].as_array().into_iter().flatten().collect();
+    let mut out: Vec<FeedItem> = Vec::new();
+    let mut used = vec![false; acts.len()];
+    let mut last_edit: Option<(String, String)> = None;
+    for i in 0..acts.len() {
+        if used[i] {
+            continue;
+        }
+        let a = acts[i];
+        let m = &a["action"]["move"];
+        // A move's "to" half: folded into its "from" half.
+        if m.is_object() && m.get("to").is_some() && m.get("From").is_none() && m.get("from").is_none() {
+            continue;
+        }
+        let mut to = None;
+        if let Some(from) = m["From"].as_str() {
+            let file = last(from, false);
+            let time = a["@sharePoint.localizedRelativeTime"].as_str();
+            if let Some(j) = (0..acts.len()).find(|&j| !used[j] && j != i && acts[j]["action"]["move"]["to"].as_str().is_some_and(|t| last(t, false) == file) && acts[j]["@sharePoint.localizedRelativeTime"].as_str() == time) {
+                used[j] = true;
+                to = acts[j]["action"]["move"]["to"].as_str().map(|t| last(t, true));
+            }
+        }
+        let Some((kind, text)) = describe_in_folder(a, me, to.as_deref()) else { continue };
+        if kind == "edit" {
+            let key = (a["driveItem"]["id"].as_str().unwrap_or_default().to_string(), a["actor"]["user"]["email"].as_str().unwrap_or_default().to_string());
+            if last_edit.as_ref() == Some(&key) {
+                continue;
+            }
+            last_edit = Some(key);
+        } else {
+            last_edit = None;
+        }
+        let Some(when) = a["times"]["recordedTime"].as_str() else { continue };
+        let Ok(t) = DateTime::parse_from_rfc3339(when) else { continue };
+        let t = t.with_timezone(&Local);
+        let time = match a["@sharePoint.localizedRelativeTime"].as_str() {
+            Some(code) if !code.is_empty() => friendly_display(code),
+            _ => super::list_rows::friendly_at(t, now),
+        };
+        out.push(FeedItem { kind, text, time, tip: tip(t, now), group: group(t, now), comment_id: String::new(), author: String::new(), author_email: String::new(), mine: false, at: t.timestamp() });
+    }
+    out
+}
+
+/// The current folder's activity (the Details pane with nothing selected).
+/// `item_id` empty is the drive's top.
+pub async fn folder_activity(host: &str, drive_id: &str, item_id: &str, me: &str) -> Result<Vec<FeedItem>> {
+    let ok = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!-_.".contains(&b));
+    if !host.starts_with("https://") || !ok(drive_id) || !(item_id.is_empty() || ok(item_id)) {
+        bail!("No activity for this folder");
+    }
+    let target = if item_id.is_empty() { "root".to_string() } else { format!("items/{item_id}") };
+    let url = format!("{host}/_api/v2.0/drives/{drive_id}/{target}/activities?%24expand=driveItem(%24select%3Did%2Cname%2CwebUrl%2CparentReference%2Cfile%2Cfolder)&%24top=25");
+    let reply = get_with(&url, &[("user-agent", super::client::TEAMS_WEB_UA), ("accept", "application/json")]).await?;
+    Ok(folder_feed(&reply, me, Local::now()))
+}
+
 /// `https://host` of an address.
 fn host(url: &str) -> String {
     url.split('/').take(3).collect::<Vec<_>>().join("/")
@@ -464,6 +582,34 @@ mod tests {
         act = merge(act, cards);
         assert_eq!(act.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(), ["comment", "edit"]);
         assert_eq!(act[0].comment_id, "1");
+    }
+
+    #[test]
+    fn folder_feed_reads_as_teams() {
+        // My files' activity on 2026-11-12, cut down: Teams lists "You
+        // commented on …", one edit, and the move pairs as one.
+        let root = "/drives/b!x/root:";
+        let item = |n: &str| json!({"id": n, "name": n, "parentReference": {"path": root}});
+        let a = |action: Value, it: Value, code: &str| json!({"@sharePoint.localizedRelativeTime": code, "action": action, "actor": you(), "times": {"recordedTime": "2026-11-12T16:00:00Z"}, "driveItem": it});
+        let reply = json!({"value": [
+            a(json!({"comment": {"commentId": "2", "isReply": false}}), item("ost-share-test.txt"), "1|0|4"),
+            a(json!({"edit": {}, "version": {"newVersion": "5.0"}}), item("ost-share-test.txt"), "1|0|4"),
+            a(json!({"edit": {}, "version": {"newVersion": "4.0"}}), item("ost-share-test.txt"), "1|0|4"),
+            a(json!({"move": {"From": "personal/a/Documents/Attachments/ost-share-test.txt"}}), item("ost-share-test.txt"), "1|0|6|3"),
+            a(json!({"move": {"to": "personal/a/Documents/ost-share-test.txt"}}), item("Attachments"), "1|0|6|3"),
+            json!({"@sharePoint.localizedRelativeTime": "1|0|6|3", "action": {"delete": {"name": "ost-share-test Copy.txt"}}, "actor": you(), "times": {"recordedTime": "2026-11-12T16:00:00Z"}}),
+            a(json!({"delete": {"name": "ost-share-test.txt"}}), item("Attachments"), "1|0|5|10:28 PM"),
+            a(json!({"create": {}}), item("ost-open-test.docx"), "1|0|5|10:46 PM"),
+        ]});
+        let f: Vec<String> = folder_feed(&reply, me(), Local::now()).into_iter().map(|i| i.text).collect();
+        assert_eq!(f, [
+            "You commented on <b>ost-share-test.txt</b>",
+            "You edited <b>ost-share-test.txt</b>",
+            "You moved <b>ost-share-test.txt</b> from <b>Attachments</b> to <b>Documents</b>",
+            "You deleted <b>ost-share-test Copy.txt</b>",
+            "You deleted <b>ost-share-test.txt</b> from <b>Attachments</b>",
+            "You created <b>ost-open-test.docx</b>",
+        ]);
     }
 
     #[test]

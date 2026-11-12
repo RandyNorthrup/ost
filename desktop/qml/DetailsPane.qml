@@ -10,6 +10,10 @@ Rectangle {
     id: root
     /// The item (a drive item from the list) and its loaded details.
     property var item: null
+    /// With nothing selected, the folder shown ({name, drive_id, item_id}):
+    /// its name and its activity only.
+    property var folder: null
+    readonly property bool folderMode: !item && !!folder
     property var info: null
     property bool loading: false
     property string error: ""
@@ -27,17 +31,22 @@ Rectangle {
     property bool notify: true
 
     function load() {
-        if (!item) return
         loading = true; error = ""
-        backend.driveAction(tag + "details", JSON.stringify(item), "{}")
+        if (item) backend.driveAction(tag + "details", JSON.stringify(item), "{}")
+        else if (folder) backend.driveAction(tag + "folder_details", "{}", JSON.stringify({ drive_id: folder.drive_id || "", item_id: folder.item_id || "" }))
+        else loading = false
     }
     onItemChanged: { info = null; load() }
+    onFolderChanged: if (!item) { info = null; load() }
     Connections {
         target: backend
         function onDriveActionDone(op, result, err) {
             if (!op.startsWith(root.tag)) return
             const kind = op.slice(root.tag.length)
-            if (kind === "details") {
+            if (kind === "folder_details") {
+                root.loading = false; root.error = err || ""
+                root.info = err ? null : { details: { activities: JSON.parse(result).activities } }
+            } else if (kind === "details") {
                 root.loading = false; root.error = err || ""
                 root.info = err ? null : JSON.parse(result)
                 if (root.info) root.notify = root.info.details.notify
@@ -76,11 +85,11 @@ Rectangle {
                 width: parent.width; height: 62.67; color: root.card
                 FluentIcon {
                     x: 16; y: 21.33; size: 20
-                    name: !root.item ? "" : root.item.is_folder ? "ft-folder-32" : root.icon20(root.item.kind)
+                    name: root.folderMode || (root.item && root.item.is_folder) ? "ft-folder-32" : root.item ? root.icon20(root.item.kind) : ""
                 }
                 Text {
                     x: 44; y: 21.33; width: parent.width - 44 - 80
-                    text: root.item ? root.item.name : ""
+                    text: root.item ? root.item.name : root.folder ? root.folder.name : ""
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink
                     Accessible.role: Accessible.Heading
@@ -88,6 +97,7 @@ Rectangle {
                 }
                 Rectangle {
                     id: optionsButton
+                    visible: !root.folderMode
                     x: parent.width - 16 - 24 - 8 - 32; y: 15.67; width: 32; height: 31.33; radius: 4
                     color: oph.hovered ? theme.menuHover : "transparent"
                     FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: root.strong }
@@ -108,6 +118,7 @@ Rectangle {
             }
             // The picture: 304 x 180.
             Rectangle {
+                visible: !root.folderMode
                 width: parent.width; height: 180; color: root.card; clip: true
                 Image {
                     width: 320; height: 180
@@ -118,6 +129,7 @@ Rectangle {
             }
             // Has access: Add people, the people, the link circle; Manage access.
             Rectangle {
+                visible: !root.folderMode
                 width: parent.width; height: 114.67; radius: 4; color: root.card
                 Text { x: 16; y: 16; text: "Has access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink; Accessible.role: Accessible.Heading; Accessible.name: text }
                 Row {
@@ -166,7 +178,17 @@ Rectangle {
                     id: actCol
                     x: 16; y: 16; width: parent.width - 32
                     spacing: 0
+                    // A folder: "Activity" only (no view switch, bell or comments).
+                    Text {
+                        visible: root.folderMode
+                        height: 32; verticalAlignment: Text.AlignVCenter
+                        text: "Activity"
+                        font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: root.ink
+                        Accessible.role: Accessible.Heading
+                        Accessible.name: text
+                    }
                     Row {
+                        visible: !root.folderMode
                         spacing: 0; height: 32
                         Item {
                             width: 94.1; height: 32
@@ -213,7 +235,7 @@ Rectangle {
                     Item { width: 1; height: 8 }
                     // The comment box: 272 x 32, Cancel and Submit comment.
                     Rectangle {
-                        visible: !root.commentsDisabled
+                        visible: !root.commentsDisabled && !root.folderMode
                         width: parent.width; height: 32; radius: 4
                         color: theme.surface
                         border.width: 0.67; border.color: commentBox.activeFocus ? root.brand : theme.pick("#D1D1D1", "#666666")
@@ -356,13 +378,13 @@ Rectangle {
             // More details: label (14/20 600) over value (14/20), 12 apart.
             Rectangle {
                 width: parent.width; height: detCol.height + 32; radius: 4; color: root.card
-                visible: !!root.info
+                visible: !!root.info && !root.folderMode
                 Column {
                     id: detCol
                     x: 16; y: 16; width: parent.width - 32
                     spacing: 12
                     Repeater {
-                        model: !root.info ? [] : [
+                        model: !root.info || root.folderMode ? [] : [
                             { label: "Type", value: root.info.details.type_text },
                             { label: "Modified", value: root.info.details.modified },
                             { label: "Date created", value: root.info.details.created },
@@ -475,9 +497,9 @@ Rectangle {
     }
     // Test hooks
     function stateForTest() {
-        return { loading: loading, error: error, notify: notify, people: info ? info.people.length : -1, links: info ? info.links : false,
+        return { loading: loading, error: error, notify: notify, people: info && info.people ? info.people.length : -1, links: info ? !!info.links : false,
                  thumbnail: info ? !!info.thumbnail : false, groups: feed.map(a => a.group + ": " + (a.comment_id ? a.author + " commented: " : "") + a.text.replace(/<[^>]+>/g, "") + " · " + a.time),
-                 more: info ? [info.details.type_text, info.details.modified, info.details.created, info.details.path.join(" › ")] : [] }
+                 more: info && !folderMode ? [info.details.type_text, info.details.modified, info.details.created, info.details.path.join(" › ")] : [], folder: folderMode }
     }
     function bellForTest() { notify = !notify; backend.driveAction(tag + "notify", JSON.stringify(item), JSON.stringify({ on: notify })) }
     function commentForTest(text) { commentBox.text = text; send() }

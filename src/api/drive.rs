@@ -627,6 +627,15 @@ pub async fn root(client: &TeamsClient, drive_id: &str) -> Result<DriveItem> {
 /// The item's 320 x 180 picture (the Details pane's), saved in OST's cache;
 /// None when it has none.
 pub async fn thumbnail(client: &TeamsClient, item: &DriveItem) -> Result<Option<PathBuf>> {
+    thumbnail_sized(client, item, "c320x180").await
+}
+
+/// The item's picture at one of Graph's sizes ("medium", "c320x180"),
+/// cached; None when it has none.
+pub async fn thumbnail_sized(client: &TeamsClient, item: &DriveItem, size: &str) -> Result<Option<PathBuf>> {
+    if !size.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        bail!("Not a thumbnail size");
+    }
     let dir = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
@@ -634,7 +643,7 @@ pub async fn thumbnail(client: &TeamsClient, item: &DriveItem) -> Result<Option<
         .join("ost/thumbs");
     std::fs::create_dir_all(&dir)?;
     let Some(resp) = client
-        .graph_get_opt(&format!("{}/thumbnails/0/c320x180/content", item_path(&item.drive_id, &item.id)?))
+        .graph_get_opt(&format!("{}/thumbnails/0/{size}/content", item_path(&item.drive_id, &item.id)?))
         .await?
     else {
         return Ok(None);
@@ -643,7 +652,7 @@ pub async fn thumbnail(client: &TeamsClient, item: &DriveItem) -> Result<Option<
     if bytes.is_empty() {
         return Ok(None);
     }
-    let path = dir.join(format!("{}-c320x180.jpg", check_id(&item.id)?));
+    let path = dir.join(format!("{}-{size}.jpg", check_id(&item.id)?));
     std::fs::write(&path, &bytes)?;
     Ok(Some(path))
 }
