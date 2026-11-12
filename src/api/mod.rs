@@ -17,6 +17,7 @@ pub mod engagement;
 pub mod files;
 pub mod find;
 pub mod search;
+pub mod sharing;
 pub mod folders;
 pub mod funstuff;
 mod me;

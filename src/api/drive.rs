@@ -29,6 +29,10 @@ pub struct DriveItem {
     pub web_url: String,
     /// File extension, lowercase ("docx"); empty for folders.
     pub kind: String,
+    /// SharePoint's address for it (site, list, item), for the share dialog.
+    pub sp_site: String,
+    pub sp_list: String,
+    pub sp_item: String,
 }
 
 /// A document library (a SharePoint site's drive, or your OneDrive).
@@ -40,7 +44,7 @@ pub struct Library {
     pub web_url: String,
 }
 
-const SELECT: &str = "$select=id,name,size,folder,file,lastModifiedDateTime,lastModifiedBy,shared,webUrl,parentReference,remoteItem";
+const SELECT: &str = "$select=id,name,size,folder,file,lastModifiedDateTime,lastModifiedBy,shared,webUrl,parentReference,remoteItem,sharepointIds";
 
 /// Graph ids for drives and items: letters, digits and `!-_.` only.
 fn check_id(id: &str) -> Result<&str> {
@@ -131,6 +135,9 @@ fn parse_item(v: &serde_json::Value) -> Option<DriveItem> {
             .into_iter()
             .find(|u| u.starts_with("https://"))
             .unwrap_or_default(),
+        sp_site: [s(v, "/sharepointIds/siteUrl"), s(r, "/sharepointIds/siteUrl")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
+        sp_list: [s(v, "/sharepointIds/listId"), s(r, "/sharepointIds/listId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
+        sp_item: [s(v, "/sharepointIds/listItemUniqueId"), s(r, "/sharepointIds/listItemUniqueId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
         name,
         kind,
     })
@@ -447,7 +454,20 @@ pub async fn channel_folder(
         Err(e) => return Err(e),
     };
     let v: serde_json::Value = resp.json().await?;
-    parse_item(&v).context("The channel has no files folder")
+    let mut folder = parse_item(&v).context("The channel has no files folder")?;
+    // filesFolder takes no $select: its SharePoint address (for Share)
+    // comes from the item itself.
+    if folder.sp_item.is_empty()
+        && !folder.drive_id.is_empty()
+        && let Ok(r) = client.graph_get(&format!("/drives/{}/items/{}?$select=sharepointIds", folder.drive_id, folder.id)).await
+    {
+        let ids: serde_json::Value = r.json().await.unwrap_or_default();
+        let g = |k: &str| ids["sharepointIds"][k].as_str().unwrap_or_default().to_string();
+        folder.sp_site = g("siteUrl");
+        folder.sp_list = g("listId");
+        folder.sp_item = g("listItemUniqueId");
+    }
+    Ok(folder)
 }
 
 /// Add a shortcut to a shared folder in your OneDrive (Teams' "Add

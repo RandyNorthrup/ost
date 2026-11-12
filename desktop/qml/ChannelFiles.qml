@@ -30,10 +30,10 @@ Item {
     onReplyChanged: {
         const r = reply || {}
         error = r.error || ""
-        if (r.root && r.channel === channelId) trail = [{ name: r.root.name || channelName, drive_id: r.root.drive_id, id: r.root.id, web_url: r.root.web_url }]
+        if (r.root && r.channel === channelId) trail = [{ name: r.root.name || channelName, drive_id: r.root.drive_id, id: r.root.id, web_url: r.root.web_url, sp_site: r.root.sp_site, sp_list: r.root.sp_list, sp_item: r.root.sp_item }]
     }
     function open(it) {
-        if (it.is_folder) { trail = trail.concat([{ name: it.name, drive_id: it.drive_id, id: it.id, web_url: it.web_url }]); load(teamId, channelId, it.drive_id, it.id) }
+        if (it.is_folder) { trail = trail.concat([{ name: it.name, drive_id: it.drive_id, id: it.id, web_url: it.web_url, sp_site: it.sp_site, sp_list: it.sp_list, sp_item: it.sp_item }]); load(teamId, channelId, it.drive_id, it.id) }
         else if (it.web_url) Qt.openUrlExternally(it.web_url)
     }
     function back(i) { trail = trail.slice(0, i + 1); load(teamId, channelId, here.drive_id, here.id) }
@@ -78,7 +78,7 @@ Item {
     Row {
         anchors { right: parent.right; rightMargin: 24 }
         y: 14; height: 36; spacing: 4
-        ToolButton2 { icon: "share-20"; label: "Share"; enabled: !!root.here && !!root.here.web_url; onClicked: Qt.openUrlExternally(root.here.web_url) }
+        ToolButton2 { icon: "share-20"; label: "Share"; enabled: !!root.here && !!root.here.sp_item; onClicked: driveShare.openFor({ site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }, root.here.name, root.here.kind) }
         ToolButton2 { icon: "link-20"; label: "Copy link"; enabled: !!root.here && !!root.here.web_url; onClicked: { root.copy(root.here.web_url); backend.statusText = "Link copied" } }
         ToolButton2 { icon: "cloud-add-20"; label: "Add shortcut to OneDrive"; enabled: !!root.here; onClicked: root.change("shortcut", root.here.drive_id, root.here.id, root.here.name) }
         Rectangle {
@@ -298,4 +298,7 @@ Item {
     function emptyShownForTest() { return emptyState.visible + " " + emptyState.width + "x" + emptyState.height }
     function newFolderForTest(name) { root.change("folder", root.here.drive_id, root.here.id, name) }
     function deleteForTest(name) { const it = root.items.find(i => i.name === name); if (it) root.change("delete", root.here.drive_id, root.here.id, it.id); return !!it }
+    function shareForTest() { driveShare.openFor({ site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }, root.here.name, root.here.kind) }
+    // OneDrive's share dialog (Share), as Teams opens it.
+    OneDriveShare { id: driveShare }
 }

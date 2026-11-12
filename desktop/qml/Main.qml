@@ -622,6 +622,50 @@ Window {
             step++
         }
     }
+    // --share-test[=<file name>]: OneDrive's share dialog for a search
+    // result (default ost-attachment-test.txt): the form, suggestions for
+    // "OST Te", Link settings, Manage Access (People, Links) and an Access
+    // summary; captures each ("-share-<view>.png"). Nothing is changed.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--share-test")) && chatList.chats.length > 1
+        interval: 2500
+        property int step: 0
+        repeat: true
+        onTriggered: {
+            const want = (Qt.application.arguments.find(a => a.startsWith("--share-test=")) || "").slice(13) || "ost-attachment-test.txt"
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-share-" + tag + ".png")))
+            const log = tag => console.warn("SHARE", tag, JSON.stringify(oneDriveShare.stateForTest()).slice(0, 1500))
+            if (step === 0) window.openSearch(want.replace(/\.[^.]*$/, ""))
+            else if (step === 2) searchView.setTab("files")
+            else if (step === 4) {
+                const h = (searchView.page && searchView.page.files ? searchView.page.files.hits : []).find(h => h.file_name === want)
+                console.warn("SHARE hit", JSON.stringify(h ? { site: h.file_site, list: h.file_list, id: h.id } : null))
+                if (h) oneDriveShare.openFor({ site: h.file_site, list: h.file_list, item: h.id }, h.file_name, h.file_type)
+            }
+            else if (step === 6) { log("main"); cap("main") }
+            else if (step === 7) oneDriveShare.typeForTest("OST Te")
+            else if (step === 9) { log("suggest"); cap("suggest") }
+            else if (step === 10) { oneDriveShare.typeForTest(""); oneDriveShare.openSettings() }
+            else if (step === 11) { log("settings"); cap("settings") }
+            else if (step === 12) oneDriveShare.showForTest("manage", "people")
+            else if (step === 13) cap("people")
+            else if (step === 14) oneDriveShare.showForTest("manage", "links")
+            else if (step === 15) cap("links")
+            else if (step === 16) oneDriveShare.showForTest("access")
+            else if (step === 17) cap("access")
+            // --share-send: Send it to OST Test 2 ("OST test 107"), then
+            // Stop sharing; captures each step.
+            else if (step === 18 && Qt.application.arguments.indexOf("--share-send") >= 0) { oneDriveShare.showForTest("main"); oneDriveShare.typeForTest("OST Test 2") }
+            else if (step === 20 && Qt.application.arguments.indexOf("--share-send") >= 0) { oneDriveShare.pickForTest("OST Test 2"); oneDriveShare.messageForTest("OST test 107: shared from OST") }
+            else if (step === 21 && Qt.application.arguments.indexOf("--share-send") >= 0) { cap("picked"); oneDriveShare.send() }
+            else if (step === 24 && Qt.application.arguments.indexOf("--share-send") >= 0) { log("sent"); cap("invited"); oneDriveShare.showForTest("manage", "people") }
+            else if (step === 25 && Qt.application.arguments.indexOf("--share-send") >= 0) { log("shared"); cap("shared") }
+            else if (step === 26 && Qt.application.arguments.indexOf("--share-send") >= 0) backend.shareAction("stop", JSON.stringify(oneDriveShare.item), "{}")
+            else if (step === 29 && Qt.application.arguments.indexOf("--share-send") >= 0) { log("stopped"); cap("stopped") }
+            else if (step === 18 || step === 30) { oneDriveShare.close(); Qt.quit() }
+            step++
+        }
+    }
     property var findTestWindow: null
     // --find-test[=files] (with --open-chat=<id>, --find=<keywords>): Find in
     // chat: before a search, the results, the first one opened, the Date
@@ -840,7 +884,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -2990,6 +3034,10 @@ Window {
                 if (ch) { rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
             } else if (step === 2) conversation.tab = "Shared"
             else if (step === 4) { console.warn("CF folder", cf.here ? cf.here.name : "-", "items", cf.items.length, cf.error, "busy", cf.busy, "empty shown", cf.emptyShownForTest()); cap("shared") }
+            // --channel-files-share: Share instead (OneDrive's dialog), captured.
+            else if (step === 5 && Qt.application.arguments.indexOf("--channel-files-share") >= 0) { console.warn("CF share ids", JSON.stringify(cf.here ? [cf.here.sp_site, cf.here.sp_list, cf.here.sp_item] : null)); cf.shareForTest() }
+            else if (step === 6 && Qt.application.arguments.indexOf("--channel-files-share") >= 0) cap("share")
+            else if (step === 7 && Qt.application.arguments.indexOf("--channel-files-share") >= 0) Qt.quit()
             else if (step === 5) cf.newFolderForTest("OST channel test")
             else if (step === 6) { console.warn("CF made", cf.items.some(i => i.name === "OST channel test")); cap("made"); cf.deleteForTest("OST channel test") }
             else if (step === 8) { console.warn("CF deleted", !cf.items.some(i => i.name === "OST channel test")); Qt.quit() }
@@ -6079,6 +6127,7 @@ Window {
         }
     }
     ShareForm { id: appShare }
+    OneDriveShare { id: oneDriveShare }
     // Teams' in-context Store behind the @ picker's "Add agent". An app's
     // details open in its place; their Back returns to it, and Add puts
     // the app in the conversation.

@@ -781,6 +781,14 @@ pub mod qobject {
         /// call_breakout_rooms_json; breakout_action_done says how it went.
         #[qinvokable]
         fn breakout_action(self: Pin<&mut Backend>, action: &QString, args_json: &QString);
+        /// OneDrive's share dialog (docs/spec/onedrive-share.md) for a file
+        /// ({site, list, item}): "info"; "people" {query}; "send" {people,
+        /// edit, message}; "link" {scope, edit, expiration, password} (its
+        /// address); "role" {login, role}; "unlink" {kind, share_id};
+        /// "stop" (Stop sharing). The
+        /// answer comes back in share_done.
+        #[qinvokable]
+        fn share_action(self: Pin<&mut Backend>, op: &QString, item_json: &QString, args_json: &QString);
         /// Teams' Download in the Attendance view: save the report file
         /// (the service's name) to Downloads.
         #[qinvokable]
@@ -1011,6 +1019,10 @@ pub mod qobject {
         /// A file's preview picture asked for with file_thumbnail is ready.
         #[qsignal]
         fn thumbnail_ready(self: Pin<&mut Backend>, url: QString);
+
+        /// A share_action finished: its op, its result (JSON) and an error.
+        #[qsignal]
+        fn share_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
 
         /// Someone in the meeting reacted (Teams' meeting reactions):
         /// their MRI and the reaction's name.
@@ -4938,6 +4950,56 @@ impl qobject::Backend {
     fn call_meeting_link(&self) -> Option<outgoing::MeetingLink> {
         outgoing::MeetingLink::parse(&self.rust().last_join.0.to_string())
             .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
+    }
+
+    pub fn share_action(self: Pin<&mut Self>, op: &QString, item_json: &QString, args_json: &QString) {
+        let op = op.to_string();
+        let item: api::sharing::ItemRef = serde_json::from_str(&item_json.to_string()).unwrap_or_default();
+        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let s = |k: &str| args[k].as_str().unwrap_or_default().to_string();
+            let result: anyhow::Result<serde_json::Value> = async {
+                Ok(match op.as_str() {
+                    "info" => {
+                        let mut info = api::sharing::info(&item).await?;
+                        if let Ok(client) = TeamsClient::new().await {
+                            api::sharing::with_object_ids(&client, &mut info).await;
+                        }
+                        json!(info)
+                    }
+                    "people" => json!({ "query": s("query"), "people": api::sharing::search_people(&item.site, &s("query")).await? }),
+                    "send" => {
+                        let people = args["people"].as_array().cloned().unwrap_or_default();
+                        api::sharing::send(&item, &people, args["edit"].as_bool().unwrap_or(true), &s("message")).await?;
+                        json!(null)
+                    }
+                    "link" => json!(api::sharing::create_link(&item, args["scope"].as_i64().unwrap_or(1), args["edit"].as_bool().unwrap_or(false), &s("expiration"), &s("password")).await?),
+                    "role" => {
+                        api::sharing::set_role(&item, &s("login"), args["role"].as_i64().unwrap_or(0)).await?;
+                        json!(null)
+                    }
+                    "stop" => {
+                        api::sharing::stop_sharing(&item).await?;
+                        json!(null)
+                    }
+                    "unlink" => {
+                        api::sharing::delete_link(&item, args["kind"].as_i64().unwrap_or_default(), &s("share_id")).await?;
+                        json!(null)
+                    }
+                    other => anyhow::bail!("unknown share action {other}"),
+                })
+            }
+            .await;
+            let (value, error) = match result {
+                Ok(v) => (v.to_string(), String::new()),
+                Err(e) => {
+                    tracing::warn!("share {op}: {}", short_error(&e));
+                    (String::new(), short_error(&e))
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().share_done(QString::from(op.as_str()), QString::from(value.as_str()), QString::from(error.as_str())));
+        });
     }
 
     pub fn breakout_action(self: Pin<&mut Self>, action: &QString, args_json: &QString) {

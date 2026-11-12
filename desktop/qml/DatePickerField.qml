@@ -32,6 +32,10 @@ Item {
     /// The calendar icon's size and its gap from the right.
     property int iconSize: 20
     property real iconRight: 10
+    /// No field of its own: the owner draws it and calls openPicker()
+    /// (OneDrive's share dialog's expiration date).
+    property bool bare: false
+    function openPicker() { popup.open() }
     implicitWidth: 277.3; implicitHeight: 32
 
     function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
@@ -42,6 +46,7 @@ Item {
 
     Rectangle {
         id: field
+        visible: !root.bare
         anchors.fill: parent; radius: 4
         color: root.filled ? theme.pick("#F5F5F5", "#141414") : theme.surface
         border.color: root.filled ? "transparent" : fieldHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67

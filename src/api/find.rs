@@ -360,6 +360,9 @@ pub struct Hit {
     pub file_when: String,
     /// The file's folder (its link), for the search page's place line.
     pub file_folder: String,
+    /// The file's site and list, for SharePoint's sharing methods.
+    pub file_site: String,
+    pub file_list: String,
 }
 
 /// A page of results.
@@ -452,6 +455,8 @@ pub fn found_from(reply: &serde_json::Value) -> Found {
                 file_by,
                 file_when,
                 file_folder: s(&src["ParentLink"]),
+                file_site: [&src["SpWebUrl"], &src["SiteName"]].iter().map(|v| s(v)).find(|u| !u.is_empty()).unwrap_or_default(),
+                file_list: s(&src["ListId"]),
                 text: plain(&s(&r["HitHighlightedSummary"])),
                 file_name: s(&src["FileName"]),
                 file_type: [&src["FileType"], &src["FileExtension"], &src["SecondaryFileExtension"]]
