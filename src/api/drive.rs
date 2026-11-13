@@ -745,7 +745,7 @@ pub async fn search_items(client: &TeamsClient, query: &str, all: bool) -> Resul
     } else {
         get_items(client, &format!("{}?$top=50&{SELECT}", search_path(q))).await?
     };
-    items.sort_by(|a, b| b.is_folder.cmp(&a.is_folder));
+    items.sort_by_key(|i| !i.is_folder);
     Ok(items)
 }
 

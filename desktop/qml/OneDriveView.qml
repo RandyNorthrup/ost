@@ -38,6 +38,10 @@ Item {
     readonly property var people: driveData.people || []
     readonly property var libraries: driveData.libraries || []
     readonly property bool canWrite: view === "folder"
+    /// In a subfolder Teams puts the folder's own command bar on the top
+    /// line, the trail under it (68 lower) and the list at 144.67.
+    readonly property bool sub: view === "folder" && trail.length > 1
+    readonly property var hereItem: sub && driveData.here && driveData.here.id === here.item_id ? driveData.here : null
 
     function open(v) {
         view = v; trail = []; person = ""; selectedIds = []
@@ -289,23 +293,49 @@ Item {
         anchors { left: pane.right; right: parent.right; top: parent.top; bottom: parent.bottom }
         // Title, or the folder trail.
         Row {
-            visible: root.selection.length === 0
-            x: 4; y: 30; spacing: 4
+            visible: root.selection.length === 0 || root.sub
+            x: 4; y: root.sub ? 98 : 30; spacing: 4
             Repeater {
                 model: root.view === "folder" ? root.trail : [{ name: root.title }]
                 Row {
                     required property var modelData
                     required property int index
                     spacing: 4
-                    FluentIcon { visible: index > 0; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.textSecondary }
+                    // Teams: the folders above are 400, the one you're in 600,
+                    // with a 12 px chevron (#424242) 4 either side.
+                    FluentIcon { visible: index > 0; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: root.strong }
                     Text {
                         text: modelData.name
                         font.family: theme.font; font.pixelSize: 18
-                        font.weight: Font.DemiBold
+                        font.weight: index === (root.view === "folder" ? root.trail.length - 1 : 0) ? Font.DemiBold : Font.Normal
                         color: index === (root.view === "folder" ? root.trail.length - 1 : 0) ? theme.text : theme.textSecondary
                         HoverHandler { cursorShape: root.view === "folder" && index < root.trail.length - 1 ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler { enabled: root.view === "folder" && index < root.trail.length - 1; onTapped: root.back(index) }
                     }
+                }
+            }
+        }
+        // A subfolder's own commands, with nothing selected: Share, Copy
+        // link, Download and Open in OneDrive (Teams' bar, without its card).
+        Row {
+            id: folderBar
+            visible: root.selection.length === 0 && !!root.hereItem
+            x: 10; y: 26; spacing: 4
+            readonly property var commands: {
+                const it = root.hereItem, L = []
+                if (!it) return L
+                if (it.sp_item) L.push({ label: "Share", icon: "share-16" })
+                if (it.sp_item || it.web_url) L.push({ label: "Copy link", icon: "link-16" })
+                if (it.sp_item) L.push({ label: "Download", icon: "arrow-download-16" })
+                if (it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? "Open in OneDrive" : "Open in SharePoint", icon: "cloud-16" })
+                return L
+            }
+            Repeater {
+                model: folderBar.commands
+                BarCommand {
+                    required property var modelData
+                    label: modelData.label; icon: modelData.icon; tip: modelData.label
+                    onClicked: actions.actMany([root.hereItem], modelData.label)
                 }
             }
         }
@@ -321,7 +351,7 @@ Item {
         DetailsPane {
             id: details
             visible: !!item || !!folder
-            x: card.x + card.width + 2; y: 76; width: 304; height: card.height
+            x: card.x + card.width + 2; y: card.y; width: 304; height: card.height
             item: null
             actions: actions
             onDismissed: { item = null; folder = null }
@@ -442,7 +472,7 @@ Item {
         }
         Rectangle {
             id: card
-            x: 0; y: 76
+            x: 0; y: root.sub ? 144.67 : 76
             width: parent.width - 16 - (details.visible ? 304 + 2 : 0); height: parent.height - y - 16
             radius: 4
             color: root.listView === "tiles" && root.view === "folder" ? "transparent" : theme.surface
@@ -1076,6 +1106,8 @@ Item {
     /// Show row `i` as hovered (grabToImage has no pointer).
     property int hoverForTest: -1
     function selectForTest(names) { selectedIds = items.filter(i => names.indexOf(i.name) >= 0).map(i => i.id); return selectedIds.length }
+    function folderBarForTest() { return folderBar.visible ? folderBar.commands.map(c => c.label) : [] }
+    function folderBarRunForTest(label) { actions.actMany([root.hereItem], label) }
     function barForTest() { return { commands: selBar.commands.map(c => c.label || "···"), more: selBar.more.map(c => c.label), count: root.selection.length } }
     function barRunForTest(label) { selBar.run(label) }
     function setViewForTest(v) { listView = v }

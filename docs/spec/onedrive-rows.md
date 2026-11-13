@@ -163,6 +163,28 @@ With rows selected, the title line becomes OneDrive's command bar:
   - when done: "Copied {n} items", "Moved {n} items";
   - on failure: "{n} items weren't copied", "{n} items weren't moved".
 
+## A subfolder's own bar
+
+In a subfolder (not at the top of My files or a library), with nothing
+selected, the top line is the folder's command bar, without the white card:
+
+- At 16 down, 52 tall, padding 0 6 0 10, the same 32-tall buttons: **Share**,
+  **Copy link**, **Download** and **Open in OneDrive** (OneDrive's Share,
+  Link, download and OneDriveLogo glyphs). They act on the folder itself:
+  the share dialog, the link dialog, a zip named after the folder, and the
+  folder in the browser.
+- Sort ▾, the view switch and Details stay at the right.
+- The trail moves under the bar, 68 lower (the crumbs' tops at 96): the
+  folders above are 18/400 #616161, the one you're in 18/600, with a 12 px
+  #424242 chevron 4 either side.
+- The list starts at 144.67 instead of 76.67.
+
+With rows selected the white selection bar takes the top line and the trail
+stays where it is. At the top of My files the title line holds "My files" with
+Sort, the view switch and Details, and the list starts at 76.67.
+
+OST loads the folder's own item with its children (`here`) for these commands.
+
 ## Sort and views
 
 At the title line's right (and in the selection bar, around "✕ n

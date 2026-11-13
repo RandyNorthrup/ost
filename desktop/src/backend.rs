@@ -12632,8 +12632,25 @@ impl qobject::Backend {
                         )
                     }
                     _ => {
-                        out["items"] =
-                            json!(api::drive::children(&client, &drive_id, &item_id).await?)
+                        // In a subfolder, the folder itself too: Teams' bar
+                        // offers its Share, Copy link, Download and Open in
+                        // OneDrive when nothing is selected.
+                        let (items, here) = tokio::join!(
+                            api::drive::children(&client, &drive_id, &item_id),
+                            async {
+                                if view == "folder" && !item_id.is_empty() {
+                                    Some(api::drive::item(&client, &drive_id, &item_id).await)
+                                } else {
+                                    None
+                                }
+                            }
+                        );
+                        out["items"] = json!(items?);
+                        match here {
+                            Some(Ok(it)) => out["here"] = json!(it),
+                            Some(Err(e)) => tracing::warn!("OneDrive folder: {e:#}"),
+                            None => {}
+                        }
                     }
                 }
                 // Teams' columns from SharePoint's rows (friendly Modified,

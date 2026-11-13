@@ -250,7 +250,6 @@ with the same places as Teams' picker.
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
 - Add to playlist (videos): TASK-0123. It opens OneDrive's file picker (`FilePicker.aspx`, scenario `StreamPlaylist.AddToPlaylist`) over your Stream playlists: My lists, Recent lists and Favorites. OST Test 1 has no playlist yet.
 - The picker's view switch and "Pin to Quick access", and Copilot's Suggested names in Rename: TASK-0124.
-- In a subfolder with nothing selected, Teams' command bar offers Share, Copy link, Download and Open in OneDrive for the folder itself: TASK-0124.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
 
