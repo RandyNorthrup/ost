@@ -237,6 +237,11 @@ Item {
     function format(op, arg) {
         const a = input.selectionStart, b = input.selectionEnd
         rich.apply(a, b, op, arg || "")
+        // A new table takes the cursor into its first cell, as in Teams.
+        if (op === "table") {
+            for (let p = Math.max(a, b); p <= Math.max(a, b) + 3 && p <= input.length; p++)
+                if (JSON.parse(rich.state(p)).table) { input.cursorPosition = p; break }
+        }
         input.forceActiveFocus()
         refreshRichState()
     }
@@ -772,7 +777,21 @@ Item {
                     root.enterPressed(event)
                 }
                 Keys.onEnterPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }
-                Keys.onTabPressed: event => { if (mentionPicker.opened) mentionPicker.pick(); else event.accepted = false }
+                // In a table Tab goes to the next cell (from the last one it
+                // adds a row, as Teams' editor does) and Shift+Tab back.
+                Keys.onTabPressed: event => {
+                    if (mentionPicker.opened) { mentionPicker.pick(); return }
+                    if (root.richState.table) {
+                        if (root.richState.nextCell < 0) { rich.apply(input.cursorPosition, input.cursorPosition, "table-row-below", ""); root.refreshRichState() }
+                        if (root.richState.nextCell >= 0) input.cursorPosition = root.richState.nextCell
+                        return
+                    }
+                    event.accepted = false
+                }
+                Keys.onBacktabPressed: event => {
+                    if (root.richState.table && root.richState.prevCell >= 0) { input.cursorPosition = root.richState.prevCell; return }
+                    event.accepted = false
+                }
                 Keys.onUpPressed: event => { if (mentionPicker.opened) mentionPicker.move(-1); else event.accepted = false }
                 Keys.onDownPressed: event => { if (mentionPicker.opened) mentionPicker.move(1); else event.accepted = false }
                 Keys.onEscapePressed: event => { if (mentionPicker.opened) mentionPicker.close(); else event.accepted = false }
@@ -923,7 +942,8 @@ Item {
         const ctrl = event.modifiers & Qt.ControlModifier
         const shift = event.modifiers & Qt.ShiftModifier
         if (ctrl) { root.trySubmit(); return }
-        if (shift || root.enterKey === "newline" || root.fmtOn) { event.accepted = false; return }
+        // In a table Enter starts a new line in the cell, as in Teams.
+        if (shift || root.enterKey === "newline" || root.fmtOn || root.richState.table) { event.accepted = false; return }
         root.trySubmit()
     }
 
@@ -1344,6 +1364,20 @@ Item {
         input.cursorPosition = input.length
     }
     function pickShareForTest() { insertMention({ kind: "share" }) }
+    // Tables: insert one, fill its cells in order (Tab between them), run a
+    // row/column/table op, read the export.
+    function tableForTest(cols, rows) { root.formatting = true; format("table", cols + "x" + rows) }
+    function tableFillForTest(texts) {
+        refreshRichState()
+        for (let i = 0; i < texts.length; i++) {
+            input.insert(input.cursorPosition, escapeHtml(texts[i]))
+            refreshRichState()
+            if (i < texts.length - 1 && richState.nextCell >= 0) input.cursorPosition = richState.nextCell
+        }
+        refreshRichState()
+    }
+    function tableOpForTest(op) { format(op, "") }
+    function exportForTest() { return rich.exportHtml() }
     /// Insert a mention at the cursor, as if picked after an "@".
     function insertMentionOf(person) {
         mentionAt = input.cursorPosition

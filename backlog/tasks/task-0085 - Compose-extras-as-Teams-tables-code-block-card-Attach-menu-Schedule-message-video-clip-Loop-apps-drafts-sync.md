@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-10T17:39:00Z'
+updated_date: '2026-11-13T03:55:00Z'
 labels:
   - desktop
   - messages
@@ -22,7 +22,7 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Tables can be inserted and edited from the formatting bar and are sent and shown as Teams does
+- [x] #1 Tables can be inserted and edited from the formatting bar and are sent and shown as Teams does
 - [x] #2 Code blocks show Teams' card menu and syntax colours
 - [ ] #3 Attach offers Teams' menu (OneDrive / cloud files, browse channels, upload) and sends what it picks as Teams does
 - [ ] #4 Schedule message, Record video clip, Loop components and installed apps' actions work as in Teams
@@ -43,4 +43,7 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - Editing a scheduled message: PUT drafts/{id} (captured from Teams with OST TEST 93), with an inline edit box headed "Select Done to deliver on …". Verified OST TEST 94: scheduled, edited (text and time), cancelled.
 
 - Teams' chat list (2026-11-10) shows Quick views ▸ Drafts even when empty: "You have no draft messages." with an illustration, and Channels/Chats chips. A draft row is: avatar 32, chat name 14/600, "You: {draft}" 14 italic, and a ··· menu with Discard, Go to conversation and Open in new window. OST lists Drafts only while drafts exist. Whether scheduled messages appear there is unverified. A "Copilot" row now sits above Quick views (TASK-0038).
+
+- Tables (AC1), 2026-11-12: researched on winpc ("OST TEST 111" from Teams): grid 7x5 picker, Insert column or row / Delete submenus, wire `<p>&nbsp;</p><table><tbody><tr><td><p>…` and received look. Qt 6.11's QQuickTextEdit takes QTextTable fine (the old frame crash didn't reproduce). Built: richtext.cpp table ops/export/state (nextCell/prevCell), FormatBar grid + menus, Enter/Tab in cells, send path, received styling (min 1 device px borders). Verified with --table-test [--table-send]: "OST TEST 112" stored identically to Teams' table; an earlier attempt sent flat "OST TEST 112bc123" before the send-path fix (left in OST group test).
+- "Allow edits" (Loop table) waits for Loop (AC4).
 <!-- SECTION:NOTES:END -->

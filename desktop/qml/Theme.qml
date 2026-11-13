@@ -12,7 +12,11 @@ QtObject {
     function messageHtml(h) {
         return String(h || "").replace(/src="ost-contact-card"/g, 'style="vertical-align: middle" src="' + Qt.resolvedUrl("../assets/icons/contact-card-inline-" + (dark ? "dark" : "light") + ".svg") + '"')
             .replace(/<h([123])>/g, '<p class="h$1">').replace(/<\/h[123]>/g, "</p>")
+            // Table borders: 0.67 px, but at least one device pixel (a
+            // thinner line falls between pixel rows and vanishes).
+            .replace(/<table border="0\.67"/g, '<table border="' + tableBorder + '"')
     }
+    readonly property real tableBorder: Math.max(0.67, 1 / ((Qt.application.screens[0] || { devicePixelRatio: 1 }).devicePixelRatio || 1))
 
     // Find in chat's highlight (Teams' mark: #F9E2AE behind #242424, light
     // and dark alike).

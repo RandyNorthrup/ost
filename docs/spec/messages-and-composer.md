@@ -887,7 +887,13 @@ Groups are separated by dividers; empty groups are skipped.
 - **OST.** `RichText` (src/richtext.cpp) edits the compose box's QTextDocument and exports clean HTML, which `teams_html_with_media` turns into Teams' HTML.
   - Quotes and code blocks are marked paragraphs. QML draws the quote box and code card behind them, because QQuickTextEdit crashes on frames added while it shows the document.
   - "OST TEST 69", sent from OST with every format, matched Teams' wire format, and Teams web drew it exactly as its own messages.
-- **Not done yet.** Tables (Insert table, rows and columns), the code card's "Make this collaborative" (needs Loop), and the inline-code hairline box when receiving (Qt rich text can't draw one).
+- **Tables** (measured on winpc 2026-11-12, "OST TEST 111"; OST sent "OST TEST 112"):
+  - **Insert table** (More options) opens a grid under its row, 15.33 in: 201.33 wide, white, radius 4, shadow 16, padding 16. "Insert {columns}x{rows} table" (14 px #242424) at 31.67, 16.67, then 7 x 5 cells of 24 px from 16.67, 36.67 (it doesn't grow). Cells up to the pointer are #5B5FC7 with a white 0.67 line, the rest white with #424242. Teams also has an "Allow edits" checkbox under the grid (a Loop table; not in OST until Loop components, AC4).
+  - The table takes the box's full width with columns sized by their text: collapsed 0.67 #616161 borders, cells padded 0 5, rows 20.67. The cursor goes into the first cell, and the hint under the box reads "Enter starts a new line." Enter makes a new line in the cell; Tab goes to the next cell (from the last it adds a row), Shift+Tab back.
+  - **Insert column or row ▸**: Insert column to the right, Insert column to the left, Insert row above, Insert row below. **Delete column, row, or table ▸**: Delete column, Delete row, Delete table. Both are Fluent menus (32 px rows 2 apart, padding 4, no icons; 174 and 106 wide), centred on their row, 9 above it.
+  - Sent as `<p>&nbsp;</p><table><tbody><tr><td><p>…</p></td>…</tr></tbody></table><p>&nbsp;</p>` with no attributes (the service adds CRLF between the tags).
+  - Received: auto width, collapsed 0.67 #D1D1D1 borders, cells padded 0 5, 14/20, centred vertically. OST draws borders at least one device pixel wide, as a browser does.
+- **Not done yet.** The code card's "Make this collaborative" and the table grid's "Allow edits" (both need Loop), and the inline-code hairline box when receiving (Qt rich text can't draw one).
 
 - **Schedule message** (measured on winpc 2026-11-10, "OST TEST 90"–"92"):
   - Where it's offered: "+" ▸ Schedule message (SendClock icon), first in the list, in chats and channels. It isn't offered in your own chat.

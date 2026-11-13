@@ -3373,7 +3373,7 @@ Rectangle {
             // Formatted text goes as Teams HTML; plain text as before.
             // Formatting goes as Teams HTML; plain text as before.
             const html = compose.formattedText()
-            if (/<(b|i|u|s|ul|ol|h[123]|hr|blockquote|pre|code|span|a)[ >]|margin-left/.test(html)) backend.sendRich(html)
+            if (/<(b|i|u|s|ul|ol|h[123]|hr|blockquote|pre|code|span|a|table)[ >]|margin-left/.test(html)) backend.sendRich(html)
             else root.send(root.plainText())
         }
         compose.clear()

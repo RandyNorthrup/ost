@@ -18,6 +18,8 @@
 #include <QtGui/QTextFrame>
 #include <QtGui/QTextList>
 #include <QtGui/QTextTable>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QScreen>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickTextDocument>
 
@@ -547,8 +549,62 @@ QString blockHtml(const QTextBlock &block)
     return QStringLiteral("<p>") + inner + QStringLiteral("</p>");
 }
 
+// Teams' compose table (CKEditor's, measured on winpc): collapsed 0.67 px
+// #616161 borders, the box's full width, cells padded 0 5.
+void styleTable(QTextTable *t)
+{
+    QTextTableFormat tf = t->format();
+    // 0.67 CSS px, but at least one device pixel, as a browser draws it (a
+    // thinner line can fall between pixel rows and vanish).
+    const qreal dpr = QGuiApplication::primaryScreen() ? QGuiApplication::primaryScreen()->devicePixelRatio() : 1.0;
+    tf.setBorder(qMax<qreal>(0.67, 1.0 / dpr));
+    tf.setBorderBrush(QColor(0x61, 0x61, 0x61));
+    tf.setBorderStyle(QTextFrameFormat::BorderStyle_Solid);
+    tf.setBorderCollapse(true);
+    tf.setCellSpacing(0);
+    tf.setCellPadding(0);
+    tf.setMargin(0);
+    tf.setWidth(QTextLength(QTextLength::PercentageLength, 100));
+    t->setFormat(tf);
+    for (int r = 0; r < t->rows(); ++r)
+        for (int col = 0; col < t->columns(); ++col) {
+            QTextTableCell cell = t->cellAt(r, col);
+            QTextTableCellFormat cf = cell.format().toTableCellFormat();
+            cf.setLeftPadding(5);
+            cf.setRightPadding(5);
+            cf.setTopPadding(0);
+            cf.setBottomPadding(0);
+            cf.setVerticalAlignment(QTextCharFormat::AlignMiddle);
+            cell.setFormat(cf);
+        }
+}
+
+// A table as Teams' editor sends it: <table><tbody><tr><td><p>…</p></td>…
+// (Teams' editor also puts CRLF between block tags; OST's messages leave
+// those out everywhere, and Teams draws both alike).
+QString tableHtml(QTextTable *t)
+{
+    const QString nl;
+    QString out = QStringLiteral("<table>") + nl + QStringLiteral("<tbody>") + nl;
+    for (int r = 0; r < t->rows(); ++r) {
+        out += QStringLiteral("<tr>") + nl;
+        for (int col = 0; col < t->columns(); ++col) {
+            const QTextTableCell cell = t->cellAt(r, col);
+            if (cell.row() != r || cell.column() != col)
+                continue;
+            out += QStringLiteral("<td>") + nl;
+            QTextDocument *doc = t->document();
+            for (QTextBlock b = doc->findBlock(cell.firstPosition()); b.isValid() && b.position() <= cell.lastPosition(); b = b.next())
+                out += blockHtml(b) + nl;
+            out += QStringLiteral("</td>") + nl;
+        }
+        out += QStringLiteral("</tr>") + nl;
+    }
+    return out + QStringLiteral("</tbody>") + nl + QStringLiteral("</table>");
+}
+
 // The document's blocks: lists grouped, quote runs as <blockquote>, code
-// runs as Teams' code block.
+// runs as Teams' code block, tables as Teams' table.
 QString documentHtml(QTextDocument *doc)
 {
     QString out;
@@ -561,6 +617,17 @@ QString documentHtml(QTextDocument *doc)
         }
     };
     for (QTextBlock block = doc->begin(); block.isValid(); block = block.next()) {
+        if (QTextTable *t = QTextCursor(block).currentTable()) {
+            closeList();
+            if (inQuote) {
+                out += QStringLiteral("</blockquote>");
+                inQuote = false;
+            }
+            out += tableHtml(t);
+            // On from the table's last cell (the loop steps past it).
+            block = doc->findBlock(t->lastPosition());
+            continue;
+        }
         const QTextBlockFormat bf = block.blockFormat();
         if (bf.boolProperty(CodeBlockP)) {
             closeList();
@@ -759,6 +826,43 @@ extern "C" void ost_rich_apply(void *helper, int a, int b, const char *op_utf8, 
                 break;
             blk = blk.next();
         }
+    } else if (op == u"table") {
+        // Insert table's grid: "{columns}x{rows}".
+        const QStringList cr = arg.split(QLatin1Char('x'));
+        const int cols = cr.value(0).toInt(), rows = cr.value(1).toInt();
+        if (cols >= 1 && rows >= 1 && cols <= 7 && rows <= 5) {
+            QTextCursor at(doc);
+            at.setPosition(qMax(a, b));
+            if (!at.currentTable()) {
+                QTextTableFormat tf;
+                QTextTable *t = at.insertTable(rows, cols, tf);
+                styleTable(t);
+            }
+        }
+    } else if (op.startsWith(u"table-")) {
+        // Insert column or row ▸ / Delete column, row, or table ▸.
+        QTextCursor at(doc);
+        at.setPosition(qMax(a, b));
+        if (QTextTable *t = at.currentTable()) {
+            const QTextTableCell cell = t->cellAt(at);
+            const int r = cell.row(), col = cell.column();
+            if (op == u"table-col-right")
+                t->insertColumns(col + 1, 1);
+            else if (op == u"table-col-left")
+                t->insertColumns(col, 1);
+            else if (op == u"table-row-above")
+                t->insertRows(r, 1);
+            else if (op == u"table-row-below")
+                t->insertRows(r + 1, 1);
+            else if (op == u"table-del-col")
+                t->removeColumns(col, 1); // the last one takes the table
+            else if (op == u"table-del-row")
+                t->removeRows(r, 1);
+            else if (op == u"table-del")
+                t->removeRows(0, t->rows());
+            if (op.contains(u"col-") || op.contains(u"row-"))
+                styleTable(t);
+        }
     } else if (op == u"hr") {
         QTextCursor at(doc);
         at.setPosition(qMax(a, b));
@@ -890,7 +994,20 @@ extern "C" char *ost_rich_state(void *helper, int pos)
     if (QTextList *l = blk.textList())
         list = l->format().style() == QTextListFormat::ListDecimal ? QStringLiteral("ol") : QStringLiteral("ul");
     const bool headingWeight = f.boolProperty(HeadingWeight);
-    return dup(QStringLiteral("{\"empty\":%11,\"bold\":%1,\"italic\":%2,\"underline\":%3,\"strike\":%4,\"code\":%5,\"heading\":%6,\"quote\":%7,\"codeBlock\":%8,\"lang\":\"%9\",\"list\":\"%10\"}")
+    // In a table: the next and previous cells' starts (-1 past either end),
+    // for Tab and Shift+Tab.
+    QString table = QStringLiteral("false"), next = QStringLiteral("-1"), prev = QStringLiteral("-1");
+    if (QTextTable *t = c.currentTable()) {
+        const QTextTableCell cell = t->cellAt(c);
+        const int i = cell.row() * t->columns() + cell.column();
+        const int n = t->rows() * t->columns();
+        table = QStringLiteral("true");
+        if (i + 1 < n)
+            next = QString::number(t->cellAt((i + 1) / t->columns(), (i + 1) % t->columns()).lastCursorPosition().position());
+        if (i > 0)
+            prev = QString::number(t->cellAt((i - 1) / t->columns(), (i - 1) % t->columns()).lastCursorPosition().position());
+    }
+    return dup(QStringLiteral("{\"table\":%12,\"nextCell\":%13,\"prevCell\":%14,\"empty\":%11,\"bold\":%1,\"italic\":%2,\"underline\":%3,\"strike\":%4,\"code\":%5,\"heading\":%6,\"quote\":%7,\"codeBlock\":%8,\"lang\":\"%9\",\"list\":\"%10\"}")
                    .arg(!headingWeight && f.fontWeight() >= QFont::DemiBold ? "true" : "false",
                         f.fontItalic() ? "true" : "false",
                         f.fontUnderline() && !f.isAnchor() ? "true" : "false",
@@ -901,7 +1018,8 @@ extern "C" char *ost_rich_state(void *helper, int pos)
                         code ? "true" : "false",
                         code ? blk.blockFormat().stringProperty(BlockLang) : QString(),
                         list)
-                   .arg(blk.length() <= 1 ? "true" : "false"));
+                   .arg(blk.length() <= 1 ? "true" : "false")
+                   .arg(table, next, prev));
 }
 
 // The document as clean HTML: p/h1-3/hr/blockquote/pre/ul/ol, b/i/u/s,

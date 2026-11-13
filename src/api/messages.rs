@@ -2145,6 +2145,17 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
             }
             continue;
         }
+        // Tables as Teams draws them in messages (measured on winpc
+        // 2026-11-12): collapsed 0.67 px #D1D1D1 borders, auto width, cells
+        // padded 0 5 and centred vertically.
+        if !closing && name == "table" {
+            out.push_str("<table border=\"0.67\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;border-color:#D1D1D1;border-style:solid\">");
+            continue;
+        }
+        if !closing && (name == "td" || name == "th") {
+            out.push_str(&format!("<{name} style=\"padding-left:5px;padding-right:5px;vertical-align:middle\">"));
+            continue;
+        }
         out.push('<');
         if closing {
             out.push('/');
@@ -3630,6 +3641,15 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                 out.push('>');
             }
             ("hr", false) => out.push_str("<hr>"),
+            // A table, as Teams' editor sends it (no attributes).
+            ("table" | "tbody" | "tr" | "td", _) => {
+                out.push('<');
+                if closing {
+                    out.push('/');
+                }
+                out.push_str(&name);
+                out.push('>');
+            }
             // A code block (its language and the editor's id).
             ("pre", false) => {
                 let lang = editor_attr(tag, "class")
@@ -4825,6 +4845,19 @@ mod tests {
             html_escape("a < b & \"c\"\nd"),
             "a &lt; b &amp; &quot;c&quot;<br>d"
         );
+    }
+
+    #[test]
+    fn tables_go_out_as_teams_sends_them_and_show_as_teams_draws_them() {
+        // OST's export of a 3x2 table ("OST TEST 111", as Teams sent it on
+        // 2026-11-12 less its CRLFs).
+        let qt = "<p>&nbsp;</p><table><tbody><tr><td><p>OST TEST 111</p></td><td><p>b</p></td></tr></tbody></table><p>&nbsp;</p>";
+        let (html, _) = teams_html_and_mentions(qt);
+        assert_eq!(html, qt);
+        let shown = sanitize_html("<table>\r\n<tbody>\r\n<tr>\r\n<td>\r\n<p>1</p>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>");
+        assert!(shown.starts_with("<table border=\"0.67\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;border-color:#D1D1D1;border-style:solid\">"), "{shown}");
+        assert!(shown.contains("<td style=\"padding-left:5px;padding-right:5px;vertical-align:middle\">"), "{shown}");
+        assert!(shown.contains("</td>") && shown.ends_with("</table>"), "{shown}");
     }
 
     #[test]

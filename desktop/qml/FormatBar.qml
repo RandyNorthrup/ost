@@ -47,6 +47,9 @@ Item {
          { k: "clear", icon: "fmt-clear-format", label: "Clear all formatting" }],
         [{ k: "outdent", icon: "fmt-outdent", label: "Decrease indent" }, { k: "indent", icon: "fmt-indent", label: "Increase indent" }],
         [{ k: "hr", icon: "fmt-rule", label: "Insert horizontal rule" }],
+        [{ k: "table", icon: "fmt-table", label: "Insert table", popup: true },
+         { k: "tableInsert", icon: "fmt-table-insert", label: "Insert column or row", popup: true },
+         { k: "tableDelete", icon: "fmt-table-delete", label: "Delete column, row, or table", popup: true }],
         [{ k: "undo", icon: "fmt-undo", label: "Undo typing" }, { k: "redo", icon: "fmt-redo", label: "Repeat typing" }]
     ]
     // Teams' toolbar slot: the bar is a flex row whose column gap is
@@ -90,6 +93,7 @@ Item {
             else if (it.k === "size") sizes.show(button)
             else if (it.k === "link") link.show(button)
             else if (it.k === "rich") styles.show(button, false)
+            else if (it.k.startsWith("table")) root.tableAt(it.k, button)
             return
         }
         if (it.k === "announcement") root.announcementToggled()
@@ -217,6 +221,9 @@ Item {
                                 TapHandler {
                                     onTapped: {
                                         if (row.modelData.k === "rich") { styles.show(row, true); return }
+                                        // The table items open beside their row, the menu
+                                        // staying open as in Teams.
+                                        if (row.modelData.k.startsWith("table")) { root.tableAt(row.modelData.k, row); return }
                                         overflow.close()
                                         root.act(row.modelData, moreBtn)
                                     }
@@ -226,6 +233,73 @@ Item {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Insert table opens the grid under its item (15.33 in); Insert column
+    // or row and Delete column, row, or table open their menus centred on
+    // the item, 9 above it (measured on winpc 2026-11-12).
+    function tableAt(k, anchor) {
+        const p = anchor.mapToItem(Overlay.overlay, 0, 0)
+        if (k === "table") { tableGrid.showAt(p.x + 15.33, p.y + anchor.height); return }
+        const insert = k === "tableInsert"
+        tableMenu.op = insert ? ["table-col-right", "table-col-left", "table-row-above", "table-row-below"] : ["table-del-col", "table-del-row", "table-del"]
+        tableMenu.items = insert
+            ? [{ label: "Insert column to the right" }, { label: "Insert column to the left" }, { label: "Insert row above" }, { label: "Insert row below" }]
+            : [{ label: "Delete column" }, { label: "Delete row" }, { label: "Delete table" }]
+        tableMenu.open()
+        tableMenu.x = p.x + anchor.width / 2 - tableMenu.width / 2
+        tableMenu.y = Math.max(8, p.y - 9 - tableMenu.height)
+    }
+    // Fluent menus (32 px rows, 2 apart, padding 4, no icons; Teams'
+    // measured 174 and 106 wide from their labels).
+    MenuPopup {
+        id: tableMenu
+        parent: Overlay.overlay
+        property var op: []
+        onPicked: i => { overflow.close(); root.command(op[i], "") }
+    }
+    // Insert table's grid (Teams': 201.33 wide, padding 16, white, radius 4):
+    // "Insert {columns}x{rows} table" (14 px #242424), then 7 x 5 cells of
+    // 24 px from 16.67, 36.67; those up to the pointer #5B5FC7 with a white
+    // hairline, the rest white with a #424242 one. Teams' "Allow edits" (a
+    // Loop table) is left out until Loop components exist (TASK-0085).
+    Popup {
+        id: tableGrid
+        parent: Overlay.overlay
+        width: 201.33; height: 36.67 + 5 * 24 + 16; padding: 0
+        property int cols: 1
+        property int rows: 1
+        function showAt(px, py) {
+            cols = 1; rows = 1
+            x = Math.max(8, Math.min(Overlay.overlay.width - width - 8, px))
+            y = Math.max(8, Math.min(Overlay.overlay.height - height - 8, py))
+            open()
+        }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        Text {
+            x: 31.67; y: 16.67 - 2
+            text: "Insert " + tableGrid.cols + "x" + tableGrid.rows + " table"
+            font.family: theme.font; font.pixelSize: 14; color: theme.text
+        }
+        Grid {
+            x: 16.67; y: 36.67; columns: 7
+            Repeater {
+                model: 35
+                Rectangle {
+                    required property int index
+                    readonly property int c: index % 7 + 1
+                    readonly property int r: Math.floor(index / 7) + 1
+                    readonly property bool on: c <= tableGrid.cols && r <= tableGrid.rows
+                    width: 24; height: 24
+                    color: on ? theme.brand : theme.surface
+                    border.width: 0.67; border.color: on ? "white" : theme.pick("#424242", "#ADADAD")
+                    HoverHandler { cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) { tableGrid.cols = parent.c; tableGrid.rows = parent.r } }
+                    TapHandler { onTapped: { tableGrid.close(); overflow.close(); root.command("table", parent.c + "x" + parent.r) } }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: "Insert " + c + " by " + r + " table"
                 }
             }
         }
@@ -423,5 +497,8 @@ Item {
     }
     // Test hooks.
     function openOverflowForTest() { overflow.show() }
+    function tableGridForTest(c, r) { tableAt("table", moreBtn); tableGrid.cols = c; tableGrid.rows = r }
+    function tableMenuForTest(insert) { tableGrid.close(); tableAt(insert ? "tableInsert" : "tableDelete", moreBtn) }
+    function closeTablePopupsForTest() { tableGrid.close(); tableMenu.close(); overflow.close() }
     function openColorsForTest(hl) { colors.show(moreBtn, hl) }
 }
