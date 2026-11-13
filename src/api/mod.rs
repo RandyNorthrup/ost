@@ -18,6 +18,7 @@ pub mod files;
 pub mod find;
 pub mod search;
 pub mod sharing;
+pub mod cloud_attach;
 pub mod copy_jobs;
 pub mod list_rows;
 pub mod versions;

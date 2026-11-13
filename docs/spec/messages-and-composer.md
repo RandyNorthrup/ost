@@ -954,7 +954,30 @@ Groups are separated by dividers; empty groups are skipped.
   - **Attach cloud files** opens OneDrive's file picker in a dialog: `{OneDrive}/_layouts/15/FilePicker.aspx?app=Teams.Chat&scenario=FilesPersonalPicker&filePicker={"sdk":"8.0","title":"OneDrive","entry":{"oneDrive":{"recent":true}},"typesAndSources":{"mode":"files","pivots":{"teamsCloudStorage":false,"sharedLibraries":true}},"tray":{"commands":[{"key":"Attach","label":"Attach","action":"pick","primary":true},{"key":"Cancel","label":"Cancel","action":"close"}]},"selection":{"mode":"multiple"},"leftNav":{"enabled":true},"search":{"enabled":false},…}`.
     - Places: "OneDrive" title (the Navigation Pane button), Home, My files, Shared, Favorites, Browse by (People, Meetings, Media), Quick access, More places…. Home lists recent files: Name (with its place under it), Opened, Owner, Activity.
     - Rows have selection circles; "{n} selected ✕" at the bottom left; Attach (primary) and Cancel at the bottom right. My files has New folder and the view switch.
-  - Not yet captured: the recent cloud files list, and what Attach puts in the compose box and sends. On 2026-11-12 Teams' Attach did nothing (SharePoint answered 503 that evening).
+  - **Captured 2026-11-13** ("OST TEST 117/120" in OST group test, "OST TEST 118" in the OST layout test channel):
+    - **The popover's files.** Opening it asks substrate `POST /search/api/v1/recommendations?setflight=recDisableExchangeAttachments,…` (Scenario `teamsDesktop.AttachFile`, the conversation's last 3 messages as `Microsoft.OutlookServices.Message` context: Id, Body, Sender/ToRecipients ExternalId, times).
+      - Typing searches with `POST /search/api/v1/suggestions?scenario=slimpicker.compose&setflight=TurnOffMPLSuppressionTeams&domain=File` (`EntityType` File, Size 25).
+      - Both were empty for ost-test1, so the result rows are unmeasured.
+      - Nothing found shows `search-exclamation-l-standard` (120 at 92.3, 116.2) over "We couldn't find any results" (16/22 600 at 244.2) and "Check for spelling or try another search keyword" (12/16 #424242 at 274.2). Under them are two centred buttons, "Upload from this device" and "Attach cloud files" (12 px, 23.3 tall, padding 1 8, 0.67 #D1D1D1, radius 4, 12 apart from 306.2). The item list is hidden.
+      - The box is 285 x 32 at 10, 7, with a 2 px brand underline while focused. Clear search is 24 x 23.3 at 260.3, 11.3.
+    - **A channel** adds "Browse Teams and Channels" (people-team) between the two items, so the line and rows move up 32. It opens the same picker with `entry.sharePoint.byPath` at the channel's folder, whose trail reads `{team} › Documents › {channel}`. An empty folder shows "This folder is empty" (20/600 at 207.7) over `empty_files_v3` (256).
+    - **The picker** is a 972.8 x 557.6 dialog (76% x 82% of the window), radius 8, over rgba(37,36,36,.75). It is #F5F5F5, with white content from x 82.
+      - The rail is 68 wide; Navigation Pane widens it to 210 over the content ("OneDrive" 20/600, labels 14 at 52, "Browse by" / "Quick access" 14/600 headers, More places… 12/600 #115EA3). The open item is #115EA3 on #EBEBEB (36 x 36), with a 4 x 16 bar at x 4.
+      - Home (`sp.RecentFileCollection.DeltaSync?top=500`, the files you opened) is a card (radius 12, 0.67 #F0F0F0) at 98, 78. Its columns Name / Opened / Owner / Activity (12/600 #424242) sit at 143.7 / 468.2 / 622.7 / 797.2. Its rows are 56: icon 32, name 14 over the site's title 12 #616161, the time as OneDrive's activity time, then "You edited this · Nov 6".
+      - My files and folders have a #F5F5F5 header 43.7 (Name / Modified / Modified By / Activity 14/600 #616161) and 59 px rows: the name 14 #616161 over "{n} items" or the size (12 #8A8A8A), the cells #8A8A8A. A selected row is #CFE4FA.
+      - Shared, Favorites and Meetings (`sp.OneDriveItemCollection.GetSmartCacheData` {"names":["calendarevents","sharedmeetingfiles"]}) were empty: 20/600 text at 119.7 over a 256 picture (`empty_shared_v3`, `empty_favorites_v3`, `empty_meeting_v3`).
+      - People (`sp.PeopleCollection.GetCollaboratorsAsStream`) lists each collaborator with chips of their files (198 x 41.3, radius 6; 16 px icon, the name 12, a #F5F5F5 "18m ago" pill).
+      - Media shows 265.8 x 149.5 pictures under date headings ("Nov 8 - Nov 9, 2026", 18/600).
+      - The footer is 80: "{n} selected ✕" (radius 18, 0.67 #605E5C) at 24, 24; Attach (80 x 32, brand, radius 2; #F5F5F5 / #BDBDBD while nothing is picked) and Cancel.
+    - **The compose box.** The picked file reads `{host}/_api/v2.0/shares/u!{url}?expand=site,driveItem(select=…,sharepointIds,publication,viewpoint/sharing,mainlink)` and `{site}/_api/v2.0/sites/root/items/{uniqueId}/driveItem/commands`, whose `invite.defaultLinkDescription` the card shows.
+      - The card goes under the text (file-well, 13 in): 320 x 237.3, radius 6, 0.67 #E0E0E0 and a soft shadow.
+      - Its #FAFAFA header is 56.7 tall: a 32 px icon at 16, 12; the name 14/600 at 60, 10.3 over the description (12 #424242, a button that opens Link settings with "People currently in this chat"); Remove attachment 32 x 30 at 274.7, 13.
+      - Below the header is the `thumbnails/0/c960x540` picture (179.3 tall, #F5F5F5).
+    - **Send, in a chat.** Teams finds the members (users/fetch), then `POST …/driveItem/invite` {"recipients":[{"email"}],"roles":["write"]} with `prefer: ReturnSpecificErrorCode,getDefaultLink`, `scenario: TeamsFiles` and `application: Teams_Maglev`. Without that prefer, SharePoint answers 400 "RequireSignIn and SendInvitation cannot both be false".
+      - The reply's `value[0]` is the default link: `id`, and `link.webUrl`. On this tenant it is the Anyone edit link, created by the first such invite.
+      - The `properties.files` entry has itemid = the list item's GUID, `fileInfo` (itemId = Graph's id, fileUrl, siteUrl, shareUrl and shareId from the invite), `fileChicletState` {serviceName "p2p", state "reference"}, state "reference", `chicletBreadcrumbs` from the site path ("personal" / "ost-test1_scnetsolutions_com"), permissionScope "Anyone", `sharepointIds` {driveId, listId, listItemUniqueId, siteId, siteUrl, webId}, and null publication/site values.
+      - A "You've shared {name}" toast follows.
+    - **Send, in a channel.** There is no invite. shareUrl and shareId are "", and serviceName is "teams".
 - **Fun picker** (505584):
   - Popover above the button, aligned to its end.
   - Tabs All | Emoji | GIFs | Stickers, each only when its policy allows.
@@ -1216,7 +1239,8 @@ Menu items show the shortcut text; hover-bar buttons expose it through `aria-key
 - [ ] Reaction REST calls (`properties?name=emotions` PUT/DELETE) and the annotations fetch.
 - [ ] Simplified compose: single-line side toolbar vs multiline bottom toolbar; button order Format, Emoji/GIF/Stickers, Attach, Loop, +, Send.
 - [ ] Formatting bar groups and order; overflow taken from the end into "More options".
-- [ ] "+" flyout items; Attach menu; fun picker tabs.
+- [ ] "+" flyout items; fun picker tabs.
+- [x] Attach menu (2026-11-13): the popover, the cloud file picker, the compose card, and the send in chats and channels, all as Teams. OST TEST 119 and 121 store the same records as Teams' 120 and 118. Not yet: the picker's command bar, People's collaborators, Media's headings and controls, the card's Link settings, and the suggestion rows (TASK-0130).
 - [ ] Delivery options (Urgent disabled above 20 members), schedule send on right-click of Send, Enter behaviour and setting, hint text.
 - [ ] Pre-send checks, 90112-byte message limit and its error text, draft save, debounced at 400 ms.
 - [ ] @mention rules: Everyone limits (channel, team and tag mentions done).

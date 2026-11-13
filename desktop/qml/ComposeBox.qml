@@ -41,6 +41,9 @@ Item {
     property string placeholder: "Type a message"
     property var quote: null
     property var files: []
+    /// Files picked from OneDrive or SharePoint ({key, name, kind, loading,
+    /// file, thumbnail}), drawn as Teams' attachment cards under the text.
+    property var cloudFiles: []
     property bool formatting: false
     // Teams' delivery option for the next message: "", "high" or "urgent";
     // offered outside channels, Urgent only up to 20 members.
@@ -128,7 +131,7 @@ Item {
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
     readonly property alias editor: input
-    readonly property bool empty: input.length === 0 && files.length === 0 && !quote
+    readonly property bool empty: input.length === 0 && files.length === 0 && cloudFiles.length === 0 && !quote
     // Once the text wraps the box stays multiline until it is empty again
     // (Teams 461103 / 458473).
     property bool grown: false
@@ -136,7 +139,7 @@ Item {
     /// Teams' compact compose (pane under 480 px): the editor across the
     /// box and the tools in the bottom row.
     property bool compact: false
-    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || !!quote || grown
+    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || grown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -164,7 +167,9 @@ Item {
     signal quoteDismissed()
     signal fileRemoved(string path)
     signal emojiRequested(Item anchor)
-    signal attachRequested()
+    signal attachRequested(Item anchor)
+    /// A cloud file's card closed (Remove attachment).
+    signal cloudRemoved(string key)
     signal typed()
     signal settingsRequested()
     width: 748
@@ -624,7 +629,8 @@ Item {
             x: root.post ? 11.3 : 0.67
             y: root.headerH + (root.fmtOn ? 43 : 0.67) + root.subjectRowH
             width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
-            height: Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
+            height: cloudCards.visible ? cloudCards.y + cloudCards.height + 13.9
+                : Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
             // Teams' quote box and code card behind the text's quote and
             // code runs (RichText marks them; their margins make room).
             Repeater {
@@ -725,6 +731,76 @@ Item {
                             icon: "dismiss-20"; label: "Remove " + parent.modelData.split("/").pop()
                             onClicked: root.fileRemoved(parent.modelData)
                         }
+                    }
+                }
+            }
+            // Teams' attachment card for a cloud file (file-well, measured
+            // on winpc 2026-11-13): 320 x 237.3 under the text (13 in, 15
+            // under its line), radius 6, 0.67 #E0E0E0 and a soft shadow; a
+            // #FAFAFA header 56.7 tall with the type icon (32 at 16, 12),
+            // the name (14/600 at 60, 10.3) over the default link's
+            // description (12 #424242 at 60, 25) and Remove attachment
+            // (32 x 30 at 274.7, 13); then the file's picture (179.3 tall,
+            // #F5F5F5 behind it).
+            Flow {
+                id: cloudCards
+                visible: root.cloudFiles.length > 0
+                x: 13; y: input.y + input.contentHeight + 15
+                width: parent.width - 30
+                spacing: 8
+                Repeater {
+                    model: root.cloudFiles
+                    Rectangle {
+                        id: cc
+                        required property var modelData
+                        width: 320; height: 237.3; radius: 6
+                        color: theme.surface
+                        border.color: theme.pick("#E0E0E0", "#3D3D3D"); border.width: 0.67
+                        FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 6 }
+                        Rectangle {
+                            x: 0.67; y: 0.67; width: parent.width - 1.33; height: 56.7
+                            topLeftRadius: 6; topRightRadius: 6
+                            color: theme.pick("#FAFAFA", "#292929")
+                            FluentIcon { x: 16; y: 12; size: 32; name: root.cloudTypeIcon(cc.modelData.kind) }
+                            Text {
+                                x: 60; y: 10.3; width: 206.4 - 4 - 60 + 12
+                                elide: Text.ElideMiddle
+                                text: cc.modelData.name
+                                lineHeight: 16; lineHeightMode: Text.FixedHeight
+                                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                            }
+                            Text {
+                                x: 60; y: 25; width: 154.4
+                                elide: Text.ElideRight
+                                text: cc.modelData.file ? cc.modelData.file.link_description : ""
+                                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                font.family: theme.font; font.pixelSize: 12; color: theme.pick("#424242", "#D6D6D6")
+                            }
+                            Rectangle {
+                                x: 274.7 - 0.67; y: 13 - 0.67; width: 32; height: 30; radius: 4
+                                color: ccRemove.hovered ? theme.menuHover : "transparent"
+                                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.pick("#424242", "#D6D6D6") }
+                                HoverHandler { id: ccRemove; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: root.cloudRemoved(cc.modelData.key) }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Remove attachment"
+                            }
+                        }
+                        Rectangle {
+                            x: 0.67; y: 57.4; width: parent.width - 1.33; height: 179.3
+                            bottomLeftRadius: 6; bottomRightRadius: 6
+                            color: theme.pick("#F5F5F5", "#1F1F1F")
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                fillMode: Image.PreserveAspectCrop; verticalAlignment: Image.AlignTop
+                                source: cc.modelData.thumbnail || ""
+                                asynchronous: true
+                            }
+                            BusyIndicator { anchors.centerIn: parent; running: !!cc.modelData.loading; visible: running }
+                        }
+                        Accessible.role: Accessible.Grouping
+                        Accessible.name: modelData.name
                     }
                 }
             }
@@ -906,10 +982,30 @@ Item {
     function toolClicked(id, item) {
         if (id === "expand-compose") { formatting = !formatting; input.forceActiveFocus() }
         else if (id === "UnifiedFunPicker") root.emojiRequested(item)
-        else if (id === "FilePicker") root.attachRequested()
+        else if (id === "FilePicker") root.attachRequested(item)
         else if (id === "message-extension-flyout-command") { plusFlyout.anchorItem = item; plusFlyout.open() }
         else if (id === "discard-draft") root.requestCancel()
         else if (id === "send") root.trySubmit()
+    }
+    /// The Attach button on show (Alt+Shift+O opens the popover over it).
+    function attachButton() {
+        const find = it => {
+            for (const c of it.children) {
+                if (c.visible && c.modelData && c.modelData.id === "FilePicker") return c
+                const f = find(c)
+                if (f) return f
+            }
+            return null
+        }
+        return find(root) || root
+    }
+    function cloudTypeIcon(kind) {
+        const t = String(kind || "").toLowerCase()
+        const k = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
+                : t === "pdf" ? "pdf" : t === "one" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
+                : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(t) >= 0 ? "photo"
+                : ["mp4", "mov", "avi", "mkv", "webm", "wmv", "m4v"].indexOf(t) >= 0 ? "video" : "genericfile"
+        return "ft-" + k + "-32"
     }
     function trySubmit() {
         if (root.empty) return

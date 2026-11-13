@@ -13139,6 +13139,50 @@ impl qobject::Backend {
                             other => anyhow::bail!("unknown place {other}"),
                         }
                     }
+                    // Teams' Attach: the popover's files (recent-file
+                    // suggestions, given the conversation's last messages,
+                    // or a search), the cloud file picker's Home and other
+                    // places (files too), and a picked file read for the
+                    // compose box (its default link and its picture).
+                    "attach_suggest" => {
+                        let me = client.object_id().unwrap_or_default();
+                        let chat = s("chat_id");
+                        let others = if chat.is_empty() { Vec::new() } else { api::files::member_oids(&client, &chat).await.unwrap_or_default() };
+                        let everyone: Vec<String> = std::iter::once(me).chain(others).collect();
+                        let context: Vec<serde_json::Value> = args["context"].as_array().into_iter().flatten().map(|m| {
+                            let from = m["sender"].as_str().unwrap_or_default();
+                            let to: Vec<String> = everyone.iter().filter(|o| !o.eq_ignore_ascii_case(from)).cloned().collect();
+                            api::cloud_attach::context_message(m["id"].as_str().unwrap_or_default(), m["text"].as_str().unwrap_or_default(), from, m["time"].as_str().unwrap_or_default(), &to)
+                        }).collect();
+                        json!({ "query": s("query"), "items": api::cloud_attach::suggest(&s("query"), &json!(context)).await? })
+                    }
+                    "attach_recent" => json!({ "items": api::cloud_attach::recent(&client).await? }),
+                    "attach_place" => {
+                        let now = chrono::Local::now();
+                        let deco = |v: Vec<api::drive::DriveItem>| v.iter().map(|it| api::list_rows::decorate(it, None, now)).collect::<Vec<_>>();
+                        match s("place").as_str() {
+                            "shared" => json!({ "items": deco(api::drive::shared_with_me(&client).await?) }),
+                            "favorites" => json!({ "items": deco(api::drive::favorites(&client).await?) }),
+                            "meetings" => json!({ "items": api::cloud_attach::meeting_files(&client).await? }),
+                            // Pictures and videos (not SharePoint's own
+                            // "__siteIcon__" pictures).
+                            "media" => json!({ "items": deco(api::drive::media(&client).await?.into_iter().filter(|i| !i.name.starts_with("__")).collect()) }),
+                            "people" => json!({ "people": api::drive::by_people(&client).await?.into_iter()
+                                .map(|(name, items)| json!({ "name": name, "items": deco(items) }))
+                                .collect::<Vec<_>>() }),
+                            // A channel's folder ("Browse Teams and Channels").
+                            "channel" => {
+                                json!({ "folder": api::drive::channel_folder(&client, &s("team_id"), &s("channel_id")).await? })
+                            }
+                            other => anyhow::bail!("unknown place {other}"),
+                        }
+                    }
+                    "attach_prepare" => {
+                        let f = api::cloud_attach::prepare(&client, &item).await?;
+                        let pic = api::drive::DriveItem { id: f.item_id.clone(), drive_id: f.drive_id.clone(), ..Default::default() };
+                        let thumb = api::drive::thumbnail_sized(&client, &pic, "c960x540").await.ok().flatten();
+                        json!({ "file": f, "thumbnail": thumb.map(|p| format!("file://{}", p.display())).unwrap_or_default() })
+                    }
                     "picker_search" => json!({ "query": s("query"), "all": args["all"].as_bool().unwrap_or(false), "dates": s("dates"),
                         "items": api::drive::search_folders(&client, &s("query"), args["all"].as_bool().unwrap_or(false), api::drive::date_filter_days(&s("dates"))).await? }),
                     "picker_new_folder" => json!(api::drive::new_folder(&client, &s("drive_id"), &s("item_id"), &s("name")).await?),
@@ -13711,32 +13755,51 @@ impl qobject::Backend {
     /// `conversation`.
     fn send_files_in(mut self: Pin<&mut Self>, chat_id: String, conversation: String, paths: &QString, text: &QString) {
         let text = text.to_string();
-        let paths: Vec<std::path::PathBuf> = paths
+        // Each line is a local path (file:// tolerated) or, for a file
+        // picked from OneDrive or SharePoint, "cloud:" and its CloudFile.
+        enum Part {
+            Local(std::path::PathBuf),
+            Cloud(api::cloud_attach::CloudFile),
+        }
+        let parts: Vec<Part> = paths
             .to_string()
             .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty())
-            // QML hands over decoded local paths (file:// is tolerated).
-            .map(|l| std::path::PathBuf::from(l.strip_prefix("file://").unwrap_or(l)))
+            .filter_map(|l| match l.strip_prefix("cloud:") {
+                Some(j) => serde_json::from_str(j).ok().map(Part::Cloud),
+                None => Some(Part::Local(std::path::PathBuf::from(l.strip_prefix("file://").unwrap_or(l)))),
+            })
             .collect();
-        if chat_id.is_empty() || paths.is_empty() {
+        if chat_id.is_empty() || parts.is_empty() {
             return;
         }
         self.as_mut().set_busy(true);
-        let names: Vec<String> = paths
+        let names: Vec<String> = parts
             .iter()
-            .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_string))
+            .filter_map(|p| match p {
+                Part::Local(p) => p.file_name().and_then(|n| n.to_str()).map(str::to_string),
+                Part::Cloud(_) => None,
+            })
             .collect();
-        self.as_mut().set_status_text(QString::from(
-            format!("Uploading {}…", names.join(", ")).as_str(),
-        ));
+        let shared: Vec<String> = parts.iter().filter_map(|p| if let Part::Cloud(f) = p { Some(f.name.clone()) } else { None }).collect();
+        if !names.is_empty() {
+            self.as_mut().set_status_text(QString::from(
+                format!("Uploading {}…", names.join(", ")).as_str(),
+            ));
+        }
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
                 let mut files = Vec::new();
-                for p in &paths {
-                    files.push(api::files::upload_for_chat(&client, &chat_id, p).await?);
+                for p in &parts {
+                    files.push(match p {
+                        Part::Local(p) => api::files::upload_for_chat(&client, &chat_id, p).await?,
+                        // Shared with the chat as Teams does (a channel
+                        // post invites no one).
+                        Part::Cloud(f) => api::cloud_attach::send_record(&client, &conversation, f).await?,
+                    });
                 }
                 api::files::send_with_files(&client, &conversation, &text, files).await
             }
@@ -13748,6 +13811,10 @@ impl qobject::Backend {
                     Ok(()) => {
                         this.as_mut().set_status_text(QString::default());
                         this.as_mut().reload_where(&sent_to);
+                        // Teams' toast after sending a cloud file.
+                        if let Some(name) = shared.first() {
+                            this.as_mut().toast(&format!("You've shared {name}"), "success");
+                        }
                     }
                     Err(e) => this
                         .as_mut()

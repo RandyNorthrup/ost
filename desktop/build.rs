@@ -157,6 +157,8 @@ fn main() {
         "qml/HoverCard.qml",
         "qml/ListCard.qml",
         "qml/ConnectorCard.qml",
+        "qml/AttachMenu.qml",
+        "qml/CloudPicker.qml",
         "qml/ThreadsPane.qml",
         "qml/FindPane.qml",
         "qml/FeedbackWindow.qml",

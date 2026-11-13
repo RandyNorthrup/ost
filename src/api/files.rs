@@ -313,7 +313,7 @@ pub(crate) async fn upload_in_session(
 }
 
 /// The e-mail addresses of a chat's other members (for sharing a file).
-async fn member_emails(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
+pub(crate) async fn member_emails(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
     let oids = member_oids(client, chat_id).await?;
     let mut emails = Vec::new();
     for oid in oids.iter().take(50) {

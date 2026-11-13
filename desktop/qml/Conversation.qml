@@ -371,7 +371,7 @@ Rectangle {
     function openTab(i) { if (i < tabNames.length) tab = i === 0 ? "" : tabNames[i] }
     readonly property bool composeFocused: input.activeFocus
     readonly property bool detailsOpen: participants.visible
-    function attachFile() { if (compose.visible) filePicker.open() }
+    function attachFile() { if (compose.visible) root.openAttach(compose.attachButton()) }
     function replyForTest(text) { return channelPosts.replyToNewestForTest(text) }
     // Test hooks for the compose box.
     function setComposeText(t) { root.setPlain(t) }
@@ -3352,6 +3352,65 @@ Rectangle {
     function wrapSelection(tag) { compose.wrapSelection(tag) }
     // Files picked to send with the next message (local paths).
     property var pendingFiles: []
+    // Files picked from OneDrive or SharePoint ({key, name, kind, loading,
+    // file, thumbnail}); each is read for its card first.
+    property var pendingCloud: []
+    readonly property bool hasFiles: pendingFiles.length > 0 || pendingCloud.some(c => !!c.file)
+    /// What the backend sends: local paths, then "cloud:" and each read
+    /// cloud file.
+    function fileLines() {
+        return pendingFiles.concat(pendingCloud.filter(c => !!c.file).map(c => "cloud:" + JSON.stringify(c.file))).join("\n")
+    }
+    function clearFiles() { pendingFiles = []; pendingCloud = [] }
+    readonly property string attachTag: "conv-attach-" + Math.floor(Math.random() * 1e9) + ":"
+    /// Files from the Attach popover or the cloud file picker into the
+    /// compose box (Teams reads each for its card).
+    function attachCloud(list) {
+        for (const f of list) {
+            const key = f.web_url
+            if (!key || pendingCloud.some(c => c.key === key)) continue
+            pendingCloud = pendingCloud.concat([{ key: key, name: f.name, kind: f.kind || "", loading: true }])
+            backend.driveAction(attachTag + encodeURIComponent(key) + ":attach_prepare",
+                JSON.stringify({ name: f.name, web_url: f.web_url, drive_id: f.drive_id || "", id: f.id || "", kind: f.kind || "" }), "{}")
+        }
+    }
+    Connections {
+        target: backend
+        function onDriveActionDone(op, result, error) {
+            if (!op.startsWith(root.attachTag) || !op.endsWith(":attach_prepare")) return
+            const key = decodeURIComponent(op.slice(root.attachTag.length, op.length - ":attach_prepare".length))
+            if (error) {
+                root.pendingCloud = root.pendingCloud.filter(c => c.key !== key)
+                compose.showBanner("Couldn't attach the file. Please try again.", false, 3000)
+                return
+            }
+            const v = JSON.parse(result)
+            root.pendingCloud = root.pendingCloud.map(c => c.key === key ? Object.assign({}, c, { loading: false, file: v.file, thumbnail: v.thumbnail }) : c)
+        }
+    }
+    /// Teams' Attach popover over the Attach button.
+    function openAttach(anchor) {
+        attachMenu.anchorItem = anchor || compose
+        attachMenu.channel = root.isChannel
+        attachMenu.chatId = root.threadChannel || root.chatId
+        attachMenu.context = root.messages.filter(m => m.kind !== "call" && !m.deleted).slice(-3).reverse()
+            .map(m => ({ id: m.id, text: m.text || "", sender: String(m.sender_mri || "").replace(/^8:orgid:/, ""), time: m.time }))
+        attachMenu.open()
+    }
+    AttachMenu {
+        id: attachMenu
+        onAttachCloud: { cloudPicker.entry = "home"; cloudPicker.open() }
+        onBrowseChannels: { cloudPicker.entry = { team: root.teamName, team_id: root.teamId, channel_id: root.threadChannel || root.chatId }; cloudPicker.open() }
+        onUpload: filePicker.open()
+        onPicked: f => root.attachCloud([f])
+    }
+    CloudPicker {
+        id: cloudPicker
+        onAttached: files => root.attachCloud(files)
+    }
+    function attachMenuForTest() { return attachMenu }
+    function cloudPickerForTest() { return cloudPicker }
+    function cloudForTest() { return pendingCloud.map(c => ({ name: c.name, loading: !!c.loading, link: c.file ? c.file.link_description : "", thumb: !!c.thumbnail })) }
     function addFiles(urls) {
         const paths = urls.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, "")))
         pendingFiles = pendingFiles.concat(paths.filter(p => pendingFiles.indexOf(p) < 0))
@@ -3360,9 +3419,9 @@ Rectangle {
     function sendCompose() {
         if (root.popout) {
             // A chat window sends to its own chat.
-            if (root.pendingFiles.length > 0) {
-                backend.sendChatWindowFiles(root.chatId, root.pendingFiles.join("\n"), root.plainText())
-                root.pendingFiles = []
+            if (root.hasFiles) {
+                backend.sendChatWindowFiles(root.chatId, root.fileLines(), root.plainText())
+                root.clearFiles()
             } else if (root.plainText().trim().length > 0 || compose.mediaInUse().length > 0) {
                 backend.sendChatWindowMessage(root.chatId, compose.formattedText(), JSON.stringify(compose.mediaInUse()), root.quoting ? JSON.stringify(root.quoting) : "")
             }
@@ -3373,9 +3432,9 @@ Rectangle {
         }
         if (root.threadRoot) {
             // A thread pane replies in its thread.
-            if (root.pendingFiles.length > 0) {
-                backend.sendThreadFiles(root.threadChannel, root.threadRoot, root.pendingFiles.join("\n"), root.plainText())
-                root.pendingFiles = []
+            if (root.hasFiles) {
+                backend.sendThreadFiles(root.threadChannel, root.threadRoot, root.fileLines(), root.plainText())
+                root.clearFiles()
             } else if (root.plainText().trim().length > 0 || compose.mediaInUse().length > 0) {
                 backend.sendThreadReply(root.threadChannel, root.threadRoot, compose.formattedText(), JSON.stringify(compose.mediaInUse()), root.quoting ? JSON.stringify(root.quoting) : "", compose.sendTo === "channel")
             }
@@ -3392,14 +3451,14 @@ Rectangle {
         backend.setReplyQuote(root.quoting ? JSON.stringify(root.quoting) : "")
         backend.setNextImportance(compose.importance)
         // A scheduled message goes to Teams' drafts instead (not with files).
-        backend.setNextSchedule(compose.scheduleAt > 0 && root.pendingFiles.length === 0 ? String(Math.round(compose.scheduleAt)) : "")
+        backend.setNextSchedule(compose.scheduleAt > 0 && !root.hasFiles ? String(Math.round(compose.scheduleAt)) : "")
         compose.scheduleAt = 0
         // A new channel post: Teams' subject, headline and banner colour.
-        backend.setNextPost(compose.post && root.pendingFiles.length === 0
+        backend.setNextPost(compose.post && !root.hasFiles
             ? compose.postFields() : root.threadsLayout ? JSON.stringify({ threads: true, subject: compose.formatting ? compose.subject : "" }) : "")
-        if (root.pendingFiles.length > 0) {
-            backend.sendFiles(root.pendingFiles.join("\n"), root.plainText())
-            root.pendingFiles = []
+        if (root.hasFiles) {
+            backend.sendFiles(root.fileLines(), root.plainText())
+            root.clearFiles()
         } else if (compose.mediaInUse().length > 0) {
             // Picked emoticons, GIFs and stickers go in Teams' own form.
             backend.sendRichMedia(input.getFormattedText(0, input.length), JSON.stringify(compose.mediaInUse()))
@@ -3592,7 +3651,9 @@ Rectangle {
         onQuoteDismissed: root.quoting = null
         onFileRemoved: path => root.pendingFiles = root.pendingFiles.filter(p => p !== path)
         onEmojiRequested: a => root.openEmojiFor(compose)
-        onAttachRequested: filePicker.open()
+        cloudFiles: root.pendingCloud
+        onCloudRemoved: key => root.pendingCloud = root.pendingCloud.filter(c => c.key !== key)
+        onAttachRequested: a => root.openAttach(a)
         onSettingsRequested: root.openChatSettings()
         onTyped: root.typing()
         onSubmit: root.sendCompose()
@@ -3623,7 +3684,7 @@ Rectangle {
         mentionables: roster.filter(m => !m.me).map(m => ({ mri: m.mri, name: m.name, mail: m.mail }))
         urgentAllowed: !root.isGroup || (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) <= 20
         onScheduleMeetingRequested: root.scheduleMeeting()
-        onCancelled: { root.quoting = null; root.pendingFiles = []; compose.resetPost(); root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
+        onCancelled: { root.quoting = null; root.clearFiles(); compose.resetPost(); root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
         Connections {
             target: compose.editor
             function onTextChanged() { draftSave.restart() }

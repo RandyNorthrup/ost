@@ -13,6 +13,8 @@ use super::files::{MAX_FILE_BYTES, save_unique, seg, upload_in_session};
 
 /// One file or folder.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+// Any field may be missing (a picked file can carry only its address).
+#[serde(default)]
 pub struct DriveItem {
     pub id: String,
     pub drive_id: String,
