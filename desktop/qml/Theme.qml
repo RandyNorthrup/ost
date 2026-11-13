@@ -5,6 +5,9 @@ import QtQuick
 QtObject {
     /// Dark theme on: chosen in Settings > Appearance, or the system's.
     property bool dark: false
+    /// The compact profile card hovering a picture or name opens (Main
+    /// sets it).
+    property var hoverCard: null
     function pick(light, darkValue) { return dark ? darkValue : light }
     // Message HTML as shown: a shared contact's card icon in brand colour.
     // Headings as paragraphs of class h1-h3: Qt adds its own heading size on

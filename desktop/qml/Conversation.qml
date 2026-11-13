@@ -492,6 +492,7 @@ Rectangle {
     function forceChannelBarForTest(id) { msgHost.forceChannelBarId = id }
     function channelMenuForTest(m, context) { openMessageMenu(m, channelPosts, false, channelPosts.width - 300, 120, context) }
     function composeForTest() { return compose }
+    function hoverTitleForTest(on) { if (on) theme.hoverCard.hoverEnter(root.chatPhotoId, title, root.chatName, root.chatPresence); else theme.hoverCard.hoverLeave() }
     function channelPostsForTest() { return channelPosts }
     /// Start an @mention of a bot just added here (Teams puts "@{bot}" in
     /// the compose box).
@@ -780,6 +781,12 @@ Rectangle {
             text: root.chatName
             font.family: theme.font; font.pixelSize: root.headerNarrow && !root.isChannel ? 14 : theme.title; font.weight: Font.Bold
             color: root.hdrText
+            // A 1:1 chat's title opens the person's card on hover, as their
+            // picture does (Teams).
+            HoverHandler {
+                enabled: !root.isGroup && !root.isChannel && (root.chatPhotoId || "").indexOf("8:orgid:") === 0
+                onHoveredChanged: if (theme.hoverCard) { if (hovered) theme.hoverCard.hoverEnter(root.chatPhotoId, title, root.chatName, root.chatPresence); else theme.hoverCard.hoverLeave() }
+            }
         }
         // Name group chat (chat-title-name-group-chat): group chats only,
         // 4 after the title.
@@ -1790,7 +1797,16 @@ Rectangle {
                     readonly property bool person: (!msg.mine || root.compact) && (msg.modelData.sender_mri || "").indexOf("8:orgid:") === 0
                     TextMetrics { id: senderMetrics; font: metaText.font; text: msg.modelData.sender || "" }
                     HoverHandler { id: senderHover; enabled: metaText.person; cursorShape: senderHover.point.position.x <= senderMetrics.advanceWidth ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                    TapHandler { enabled: metaText.person; onTapped: ev => { if (ev.position.x <= senderMetrics.advanceWidth) backend.requestProfile(msg.modelData.sender_mri) } }
+                    TapHandler { enabled: metaText.person; onTapped: ev => { if (ev.position.x <= senderMetrics.advanceWidth) { if (theme.hoverCard) theme.hoverCard.close(); backend.requestProfile(msg.modelData.sender_mri) } } }
+                    // Hovering the name opens the compact card, as in Teams.
+                    Item {
+                        id: senderSpot
+                        width: senderMetrics.advanceWidth; height: parent.height
+                        HoverHandler {
+                            enabled: metaText.person
+                            onHoveredChanged: if (theme.hoverCard) { if (hovered) theme.hoverCard.hoverEnter(msg.modelData.sender_mri, senderSpot, msg.modelData.sender); else theme.hoverCard.hoverLeave() }
+                        }
+                    }
                 }
                 // Teams' delivery option label: IMPORTANT / URGENT, 12 px
                 // semibold, RedForeground3, 8 after the time (measured).

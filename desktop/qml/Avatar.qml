@@ -42,10 +42,14 @@ Rectangle {
     /// Clicking opens the person's profile card (Teams does this for
     /// people's pictures in messages, the people pane and 1:1 headers).
     property bool opensProfile: false
-    HoverHandler { enabled: root.opensProfile && root.photoId.indexOf("8:orgid:") === 0; cursorShape: Qt.PointingHandCursor }
+    // Hovering opens the compact card (HoverCard), clicking the full one.
+    HoverHandler {
+        enabled: root.opensProfile && root.photoId.indexOf("8:orgid:") === 0; cursorShape: Qt.PointingHandCursor
+        onHoveredChanged: if (theme.hoverCard) { if (hovered) theme.hoverCard.hoverEnter(root.photoId, root, root.name, root.presence); else theme.hoverCard.hoverLeave() }
+    }
     TapHandler {
         enabled: root.opensProfile && root.photoId.indexOf("8:orgid:") === 0
-        onTapped: backend.requestProfile(root.photoId)
+        onTapped: { if (theme.hoverCard) theme.hoverCard.close(); backend.requestProfile(root.photoId) }
     }
     width: size
     height: size

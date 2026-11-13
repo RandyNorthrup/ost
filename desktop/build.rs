@@ -154,6 +154,7 @@ fn main() {
         "qml/SettingsParts.qml",
         "qml/OofPage.qml",
         "qml/ProfileCard.qml",
+        "qml/HoverCard.qml",
         "qml/ThreadsPane.qml",
         "qml/FindPane.qml",
         "qml/FeedbackWindow.qml",

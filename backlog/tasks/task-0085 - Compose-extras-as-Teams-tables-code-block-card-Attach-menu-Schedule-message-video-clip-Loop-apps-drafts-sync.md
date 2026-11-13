@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-13T03:55:00Z'
+updated_date: '2026-11-13T04:15:00Z'
 labels:
   - desktop
   - messages
@@ -46,4 +46,6 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 
 - Tables (AC1), 2026-11-12: researched on winpc ("OST TEST 111" from Teams): grid 7x5 picker, Insert column or row / Delete submenus, wire `<p>&nbsp;</p><table><tbody><tr><td><p>…` and received look. Qt 6.11's QQuickTextEdit takes QTextTable fine (the old frame crash didn't reproduce). Built: richtext.cpp table ops/export/state (nextCell/prevCell), FormatBar grid + menus, Enter/Tab in cells, send path, received styling (min 1 device px borders). Verified with --table-test [--table-send]: "OST TEST 112" stored identically to Teams' table; an earlier attempt sent flat "OST TEST 112bc123" before the send-path fix (left in OST group test).
 - "Allow edits" (Loop table) waits for Loop (AC4).
+
+- Attach (AC3) researched 2026-11-12: popover measured, FilePicker.aspx parameters captured (spec §17). Teams' Attach of ost-share-test.txt did nothing during the SharePoint 503s, so the attached-file chip and message format are still to capture before building.
 <!-- SECTION:NOTES:END -->

@@ -946,6 +946,15 @@ Groups are separated by dividers; empty groups are skipped.
   - "Search cloud files" box, then a "Recent cloud files" list.
   - Items: "Attach cloud files", "Browse Teams and Channels" (channels), "Upload from this device", "Upload from your mobile device" (conditional).
   - Disabled offline.
+- **Attach menu, measured** (winpc 2026-11-12, OST group test):
+  - A popover centred on the Attach button, its bottom at the button's top: 306.3 x 438.3, white, radius 4, shadow 16.
+  - The search box (padding 7 10 5): 285 x 32, #F5F5F5, radius 4, a 14 px #616161 search glyph at 13.7, "Search cloud files" (14 px) at 42.7.
+  - With no recent files: Teams' `document-clock-l-standard.svg` illustration (120 px at 92.6, 117.2) over "Your recent files suggestions will show up here soon." (14 px #424242, 200 wide, centred).
+  - A full-width 0.67 line at 358.3, then the items (283 x 28, 32 apart, from 11 in; a 14 px glyph at 19, the label 14/600 #424242 at 46): "Attach cloud files" (cloud), "Upload from this device" (arrow up). A chat has no "Browse Teams and Channels".
+  - **Attach cloud files** opens OneDrive's file picker in a dialog: `{OneDrive}/_layouts/15/FilePicker.aspx?app=Teams.Chat&scenario=FilesPersonalPicker&filePicker={"sdk":"8.0","title":"OneDrive","entry":{"oneDrive":{"recent":true}},"typesAndSources":{"mode":"files","pivots":{"teamsCloudStorage":false,"sharedLibraries":true}},"tray":{"commands":[{"key":"Attach","label":"Attach","action":"pick","primary":true},{"key":"Cancel","label":"Cancel","action":"close"}]},"selection":{"mode":"multiple"},"leftNav":{"enabled":true},"search":{"enabled":false},…}`.
+    - Places: "OneDrive" title (the Navigation Pane button), Home, My files, Shared, Favorites, Browse by (People, Meetings, Media), Quick access, More places…. Home lists recent files: Name (with its place under it), Opened, Owner, Activity.
+    - Rows have selection circles; "{n} selected ✕" at the bottom left; Attach (primary) and Cancel at the bottom right. My files has New folder and the view switch.
+  - Not yet captured: the recent cloud files list, and what Attach puts in the compose box and sends. On 2026-11-12 Teams' Attach did nothing (SharePoint answered 503 that evening).
 - **Fun picker** (505584):
   - Popover above the button, aligned to its end.
   - Tabs All | Emoji | GIFs | Stickers, each only when its policy allows.
