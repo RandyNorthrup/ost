@@ -164,9 +164,9 @@ Everything below is in userPersonalSettings unless marked local.
   - Not built: the ringtone choice (OST synthesises its ring and doesn't ship Microsoft's
     audio; whether to ship Teams' MP3s is the project's call), recorded and text-to-speech
     greetings, the greeting language, and the transfer rules (they need the people picker).
-- Files and links: the download location (OST's downloads use it), the file-open choice and
-  file previews.
-  - Not built: "Always ask where to save" and the browser choice for links.
+- Files and links: the download location (OST's downloads use it), the file-open choice,
+  file previews, "Always ask where to save downloaded file" and "Always open web links in:"
+  (TASK-0119; docs/spec/file-actions.md).
 - Accounts and orgs: the account card (picture, name, e-mail, Manage) and the organisation;
   not "Refresh license and restart".
 - Notifications and activity: OST's desktop notifications follow mute all (with urgent
