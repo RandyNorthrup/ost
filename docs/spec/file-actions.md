@@ -102,17 +102,57 @@ Measured on winpc on 2026-11-12, as OST Test 1.
 - Only folders are listed in these places; files can't be picked.
 - **Search** is a 240 x 32 round box at the top right: "Search in {folder}",
   or "Search in all files" in a place. Enter shows "Search results" with a
-  back arrow, the tabs "All files" and "My files", and the columns Name,
-  Modified, Modified by and Location. The query stays in the box; ✕ clears it
-  and goes back to the folder.
+  back arrow (measured on winpc 2026-11-13, coordinates in the picker's
+  frame with the folder pane at 82):
+  - the tabs "All files" and "My files" (16/22 semibold #242424, 4 px
+    padding, at 98 and 170.8, y 85; the chosen one underlined 2 px in the
+    brand colour), then 22 further the date filter: a 32 tall pill (118.1
+    wide for "All dates": the choice 14/600 at 18.6, a 16 px chevron 10
+    after it) whose menu (4.6 right and 4.7 under it, 170.7 wide, no
+    padding, rows 32 tall 2 apart, a check at 8 and the label 14/20 #424242
+    at 30) offers All dates, Today, Last 7 days, Last 30 days, Last 3 months
+    and In the last year; then a "Person" pill (102.3 wide; "Filter by
+    people") — see below;
+  - the white card at 136.7 with the columns Name (the rest), Modified
+    (200), Modified by (215.9) and Location (198.9): the header 48 tall,
+    14/600, Name's label 20.6 in and the others 8.6; rows 56 tall: a 32 px
+    folder 20 in, the name (14 px #242424) at 68 and 9.8 down over
+    "Created by: {name}" (12 px #616161) at 29.5; Modified ("Sun at 3:41
+    PM", OneDrive's client wording), Modified by (8 in) and Location (12 in)
+    in 14 px #616161.
+  - Only folders are found: the query and template Teams sends are
+    `{q} (path:"{personal}/Documents" OR ParentLink:"{personal}/Documents*"
+    OR DocumentLink:"{personal}/Documents*")` for My files (no path limit
+    for All files) and `({searchterms}) (ContentTypeId:0x010100* OR
+    ContentTypeId:0x010102* OR ContentTypeId:0x0120*) AND
+    ((ContentTypeId:0x010100* OR ContentTypeId:0x0120*) AND
+    (ContentTypeId:0x0120* NOT HtmlFileType:"OneNote.Notebook" NOT
+    ParentLink:SiteAssets))`, 25 rows by relevance.
+  - The date filter appends ` AND (LastModifiedTime>={ISO} )` with midnight
+    UTC 0, 7, 30, 90 or 365 days back; the Person filter appends ` AND
+    (ModifiedBy:"{name}" OR author:"{name}" …)` per person chosen.
+  - Location (OneDrive's search code): the item's path under its web,
+    first "My files" for your own OneDrive, "{site title}'s OneDrive" for
+    someone else's ("Shared" when untitled), else the site's title (else the
+    web address's last two parts joined by "-"); then its folders, with the
+    library left out when it is Documents or Shared Documents. Two parts
+    show as "A › B"; more as "A › … › Z" ("A › B › … › Z" in your own
+    OneDrive); the last part ellipsizes, the tooltip is the parts joined by
+    "/", and a tap opens the folder it is in. Other sites' first part has the
+    site's picture and someone else's OneDrive their picture.
   - Teams asks SharePoint:
     `POST {personal}/_api/sp.searchresultitemcollection.getsearchresultsasstream?textDecorations=1&scenario='onedriveweb'`
     with `{"payload": …}`: one `EntityRequests` entry for `File` from
-    `OneDriveBusiness`, 25 rows, the query limited with
-    `path:"…/Documents"` for My files.
-  - OST uses Graph: `/me/drive/root/search(q='…')` for My files and
-    `POST /search/query` (`driveItem`, 25 rows) for all files. Results are
-    folders first; a folder opens in the picker.
+    `OneDriveBusiness`; All files goes through substrate.office.com search,
+    whose sign-in failed in Teams on 2026-11-13 ("Please sign in" that
+    wouldn't close), so its rows and the Person filter's popup weren't
+    measured.
+  - OST sends the same query and template through Graph's `POST
+    /search/query` (`driveItem`, 25 rows, with the managed properties
+    IsContainer, SiteTitle, SPWebUrl, SiteTemplateId and ParentLink); a
+    folder opens in the picker.
+  - Not in OST yet: the Person filter and the site / person pictures in
+    Location (TASK-0128).
   - On 2026-11-12 search failed tenant-wide: Teams stayed on its loading
     placeholders, and SharePoint search, Graph search and `sharedWithMe` all
     answered 500 to 504. OST shows "Sorry, something went wrong." in the list

@@ -720,42 +720,147 @@ pub async fn preview(client: &TeamsClient, item: &DriveItem) -> Result<Preview> 
     Ok(Preview { kind: kind.into(), text: String::new(), path: format!("file://{}", path.display()) })
 }
 
-/// Search for the Move/Copy picker: your OneDrive ("My files") with
-/// Graph's drive search, or everything you can reach ("All files") with
-/// Graph's search query. Folders first.
-pub async fn search_items(client: &TeamsClient, query: &str, all: bool) -> Result<Vec<DriveItem>> {
+/// A folder the Move / Copy picker's search found, as Teams lists it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct FolderHit {
+    #[serde(flatten)]
+    pub item: DriveItem,
+    /// "Created by: {name}" under the name.
+    pub created_by: String,
+    /// Modified as OneDrive's search words it ("Sun at 3:41 PM").
+    pub modified_text: String,
+    /// Location's parts: "My files", "{name}'s OneDrive" or the site, then
+    /// the folders under the library (the item itself left out).
+    pub location: Vec<String>,
+    /// In your own OneDrive (Location then has no site picture).
+    pub same_site: bool,
+    /// The folder it is in, which its Location opens.
+    pub parent_id: String,
+}
+
+/// The picker's date filter: All dates, Today, Last 7 days, Last 30 days,
+/// Last 3 months, In the last year (OneDrive counts 0, 7, 30, 90 and 365
+/// days back).
+pub fn date_filter_days(key: &str) -> Option<i64> {
+    match key {
+        "today" => Some(0),
+        "last7Days" => Some(7),
+        "last30Days" => Some(30),
+        "last3Months" => Some(90),
+        "lastYear" => Some(365),
+        _ => None,
+    }
+}
+
+/// The picker's search as Teams' file picker asks SharePoint search:
+/// folders only (no OneNote notebooks or Site Assets), My files limited to
+/// your OneDrive's library (`docs`), and the date filter as " AND
+/// (LastModifiedTime>=…)" from midnight UTC that many days back.
+fn folder_query(q: &str, docs: Option<&str>, since_ms: Option<i64>) -> (String, String) {
+    let mut query = q.to_string();
+    if let Some(d) = docs {
+        query += &format!(" (path:\"{d}\" OR ParentLink:\"{d}*\" OR DocumentLink:\"{d}*\")");
+    }
+    if let Some(ms) = since_ms {
+        let day = ms - ms.rem_euclid(86_400_000);
+        if let Some(t) = chrono::DateTime::from_timestamp_millis(day) {
+            query += &format!(" AND (LastModifiedTime>={} )", t.format("%Y-%m-%dT%H:%M:%S%.3fZ"));
+        }
+    }
+    let template = "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets".to_string();
+    (query, template)
+}
+
+/// Location as OneDrive's search draws it: the item's path under its web
+/// (`web`), first "My files" for your own OneDrive (`personal`), "{site}'s
+/// OneDrive" for someone else's ("Shared" when unnamed), else the site's
+/// title (else the web address's last two parts); then its folders, with
+/// the library itself left out when it is Documents or Shared Documents.
+fn location(item_url: &str, web: &str, site_title: &str, template: i64, personal: &str) -> (Vec<String>, bool) {
+    let (item, web) = (super::copy_jobs::folder_url(item_url), super::copy_jobs::folder_url(web));
+    if web.is_empty() {
+        return (Vec::new(), false);
+    }
+    // Under its web, else (a Loop workspace's items) just the site.
+    let rel = item.get(web.len() + 1..).filter(|_| item.to_lowercase().starts_with(&(web.to_lowercase() + "/"))).unwrap_or_default();
+    let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
+    let same = !personal.is_empty() && web.trim_end_matches('/').eq_ignore_ascii_case(personal.trim_end_matches('/'));
+    let first = if same {
+        "My files".to_string()
+    } else if template == 21 {
+        if site_title.is_empty() { "Shared".to_string() } else { format!("{site_title}'s OneDrive") }
+    } else if !site_title.is_empty() {
+        site_title.to_string()
+    } else {
+        let w: Vec<&str> = web.split('/').collect();
+        if w.len() >= 2 { format!("{}-{}", w[w.len() - 2], w[w.len() - 1]) } else { String::new() }
+    };
+    let mut out = vec![first];
+    let folders = &parts[..parts.len().saturating_sub(1)];
+    let lib = |p: &str| p == "Documents" || p == "Shared Documents";
+    if !(folders.len() == 1 && lib(folders[0])) && !folders.is_empty() {
+        let from = usize::from(lib(folders[0]));
+        out.extend(folders[from..].iter().map(|p| p.to_string()));
+    }
+    (out, same)
+}
+
+fn hit(h: &serde_json::Value, personal: &str, now: chrono::DateTime<chrono::Local>) -> Option<FolderHit> {
+    let r = &h["resource"];
+    let f = &r["listItem"]["fields"];
+    let mut item = parse_item(r)?;
+    item.is_folder = true;
+    item.kind.clear();
+    if item.drive_id.is_empty() {
+        item.drive_id = r["parentReference"]["driveId"].as_str().unwrap_or_default().to_string();
+    }
+    let st = |k: &str| f[k].as_str().unwrap_or_default().to_string();
+    let web = [st("spWebUrl"), st("spSiteURL")].into_iter().find(|w| !w.is_empty()).unwrap_or_default();
+    let template = f["siteTemplateId"].as_i64().or_else(|| f["siteTemplateId"].as_str().and_then(|t| t.parse().ok())).unwrap_or(0);
+    let (location, same_site) = location(&item.web_url, &web, &st("siteTitle"), template, personal);
+    let modified_text = chrono::DateTime::parse_from_rfc3339(&item.modified)
+        .map(|t| super::list_rows::activity_time(t.with_timezone(&chrono::Local), now))
+        .unwrap_or_default();
+    Some(FolderHit {
+        created_by: r["createdBy"]["user"]["displayName"].as_str().unwrap_or_default().to_string(),
+        modified_text,
+        location,
+        same_site,
+        parent_id: r["parentReference"]["id"].as_str().unwrap_or_default().to_string(),
+        item,
+    })
+}
+
+/// Search for the Move/Copy picker, as Teams': folders only, in your
+/// OneDrive ("My files") or everything you can reach ("All files"), 25 by
+/// relevance; `days` is the date filter (see `date_filter_days`).
+pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: Option<i64>) -> Result<Vec<FolderHit>> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(Vec::new());
     }
-    let mut items = if all {
-        let body = serde_json::json!({ "requests": [{ "entityTypes": ["driveItem"], "query": { "queryString": q }, "from": 0, "size": 25 }] });
-        let v: serde_json::Value = client.graph_post("/search/query", &body).await?.json().await.context("Search reply")?;
-        v["value"][0]["hitsContainers"][0]["hits"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|h| {
-                let r = &h["resource"];
-                let mut it = parse_item(r)?;
-                if it.drive_id.is_empty() {
-                    it.drive_id = r["parentReference"]["driveId"].as_str().unwrap_or_default().to_string();
-                }
-                Some(it)
-            })
-            .collect::<Vec<_>>()
-    } else {
-        get_items(client, &format!("{}?$top=50&{SELECT}", search_path(q))).await?
-    };
-    items.sort_by_key(|i| !i.is_folder);
-    Ok(items)
-}
-
-/// My files' search address: the query quoted for OData ('' for ') and
-/// percent-encoded for a path (a space is %20, not +).
-fn search_path(q: &str) -> String {
-    let enc: String = url::form_urlencoded::byte_serialize(q.replace('\'', "''").as_bytes()).collect();
-    format!("/me/drive/root/search(q='{}')", enc.replace('+', "%20"))
+    let personal = super::quick_access::personal_site(client).await.unwrap_or_default();
+    if !all && personal.is_empty() {
+        bail!("Your OneDrive's address is unknown");
+    }
+    let docs = format!("{personal}/Documents");
+    let now = chrono::Local::now();
+    let since = days.map(|d| now.timestamp_millis() - 86_400_000 * d);
+    let (query_string, template) = folder_query(q, (!all).then_some(docs.as_str()), since);
+    let body = serde_json::json!({ "requests": [{
+        "entityTypes": ["driveItem"],
+        "query": { "queryString": query_string, "queryTemplate": template },
+        "from": 0, "size": 25,
+        "fields": ["id", "name", "size", "webUrl", "parentReference", "lastModifiedDateTime", "lastModifiedBy", "createdBy", "folder", "file", "sharepointIds",
+            "IsContainer", "SiteTitle", "SPWebUrl", "SPSiteURL", "SiteTemplateId", "ParentLink"]
+    }] });
+    let v: serde_json::Value = client.graph_post("/search/query", &body).await?.json().await.context("Search reply")?;
+    Ok(v["value"][0]["hitsContainers"][0]["hits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|h| hit(h, &personal, now))
+        .collect())
 }
 
 /// Open in app: a copy of the file in OST's cache (replaced each time), for
@@ -788,9 +893,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn my_files_search_quotes_and_encodes_the_query() {
-        assert_eq!(search_path("ost picker"), "/me/drive/root/search(q='ost%20picker')");
-        assert_eq!(search_path("Randy's & co"), "/me/drive/root/search(q='Randy%27%27s%20%26%20co')");
+    fn picker_search_asks_for_folders_as_teams_does() {
+        let (q, t) = folder_query("Recordings", Some("https://x-my.sharepoint.com/personal/a_b_com/Documents"), None);
+        assert_eq!(q, "Recordings (path:\"https://x-my.sharepoint.com/personal/a_b_com/Documents\" OR ParentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\" OR DocumentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\")");
+        assert_eq!(t, "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets");
+        // Last 7 days from 2026-11-13 16:20 UTC: from midnight on the 6th.
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z").unwrap().timestamp_millis();
+        let (q, _) = folder_query("ost", None, Some(now - 7 * 86_400_000));
+        assert_eq!(q, "ost AND (LastModifiedTime>=2026-11-06T00:00:00.000Z )");
+        assert_eq!(date_filter_days("last3Months"), Some(90));
+        assert_eq!(date_filter_days("all"), None);
+    }
+
+    #[test]
+    fn search_locations_read_as_onedrive_draws_them() {
+        let me = "https://x-my.sharepoint.com/personal/a_b_com";
+        let l = |u: &str, w: &str, t: &str, tpl: i64| location(u, w, t, tpl, me);
+        assert_eq!(l(&format!("{me}/Documents/Recordings"), me, "OST Test 1", 21), (vec!["My files".to_string()], true));
+        assert_eq!(l(&format!("{me}/Documents/Recordings/Old%20ones"), me, "OST Test 1", 21), (vec!["My files".to_string(), "Recordings".to_string()], true));
+        let team = "https://x.sharepoint.com/sites/OSTTestTeam";
+        assert_eq!(l(&format!("{team}/Shared%20Documents/OST%20threads%20test"), team, "OST Test Team", 64), (vec!["OST Test Team".to_string()], false));
+        assert_eq!(l(&format!("{team}/Shared%20Documents/General/Notes"), team, "OST Test Team", 64).0, ["OST Test Team", "General"]);
+        assert_eq!(l(&format!("{team}/SiteAssets/Notebook"), team, "OST Test Team", 64).0, ["OST Test Team", "SiteAssets"]);
+        let other = "https://x-my.sharepoint.com/personal/c_b_com";
+        assert_eq!(l(&format!("{other}/Documents/Plans"), other, "Randy Northrup", 21).0, ["Randy Northrup's OneDrive"]);
+        assert_eq!(l(&format!("{other}/Documents/Plans"), other, "", 21).0, ["Shared"]);
+        assert_eq!(l(&format!("{team}/Shared%20Documents/X"), team, "", 64).0, ["sites-OSTTestTeam"]);
+        assert_eq!(l("https://loop.cloud.microsoft/c/eyJz", "https://x.sharepoint.com/contentstorage/x8F", "My workspace", 70).0, ["My workspace"]);
+        assert!(l(&format!("{team}/X"), "", "T", 64).0.is_empty());
+    }
+
+    #[test]
+    fn search_hits_are_folders_with_their_location() {
+        let me = "https://x-my.sharepoint.com/personal/a_b_com";
+        let h = serde_json::json!({ "resource": {
+            "id": "01ABC", "name": "Recordings", "size": 0, "file": { "mimeType": "application/octet-stream" },
+            "lastModifiedDateTime": "2026-11-08T23:41:42Z", "lastModifiedBy": { "user": { "displayName": "SharePoint App" } },
+            "createdBy": { "user": { "displayName": "SharePoint App" } },
+            "webUrl": format!("{me}/Documents/Recordings"),
+            "parentReference": { "driveId": "b!d", "id": "01ROOT" },
+            "listItem": { "fields": { "isContainer": true, "siteTitle": "OST Test 1", "spWebUrl": me, "siteTemplateId": 21 } }
+        }});
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z").unwrap().with_timezone(&chrono::Local);
+        let f = hit(&h, me, now).unwrap();
+        assert!(f.item.is_folder);
+        assert_eq!(f.item.kind, "");
+        assert_eq!((f.item.drive_id.as_str(), f.parent_id.as_str(), f.created_by.as_str()), ("b!d", "01ROOT", "SharePoint App"));
+        assert_eq!(f.location, ["My files"]);
+        assert!(f.same_site);
+        assert!(f.modified_text.ends_with("PM") || f.modified_text.ends_with("AM"), "{}", f.modified_text);
     }
 
     #[test]

@@ -1051,15 +1051,30 @@ Item {
         property bool searching: false
         property bool searchAll: false
         property string query: ""
+        /// The date filter: all, today, last7Days, last30Days, last3Months,
+        /// lastYear (OneDrive's keys).
+        property string dates: "all"
+        readonly property var dateFilters: [["all", "All dates"], ["today", "Today"], ["last7Days", "Last 7 days"], ["last30Days", "Last 30 days"], ["last3Months", "Last 3 months"], ["lastYear", "In the last year"]]
+        readonly property string datesLabel: (dateFilters.find(d => d[0] === dates) || dateFilters[0])[1]
         property bool newFolder: false
         /// People: the person picked.
         property string person: ""
         readonly property var placeTitles: ({ shared: "Shared with you", favorites: "Favorites", people: "People", meetings: "Meetings", more: "Shared libraries" })
         readonly property bool inPlaceList: ["shared", "favorites", "people", "meetings", "more"].indexOf(place) >= 0 && trail.length <= 1
         function search(q, all) {
+            if (!searching) dates = "all"
             query = q; searchAll = all; searching = true; loading = true
             if (pkSearch.text !== q) pkSearch.text = q
-            ask("picker_search", { query: q, all: all })
+            ask("picker_search", { query: q, all: all, dates: dates })
+        }
+        function datesMenuForTest(o) { if (o) datesMenu.open(); else datesMenu.close() }
+        /// Location opens the folder a result is in (its library when it is
+        /// at the top).
+        function openLocation(h) {
+            const loc = h.location || []
+            if (loc.length <= 1) { if (h.same_site) openPlace("mine", null); else openPlace(h.drive_id, { name: loc[0] || "", drive_id: h.drive_id }); return }
+            trail = [{ name: loc[0], drive_id: h.same_site ? "" : h.drive_id, item_id: "" }, { name: loc[loc.length - 1], drive_id: h.drive_id, item_id: h.parent_id }]
+            load(h.drive_id, h.parent_id)
         }
         function createFolder(name) {
             if (!name.trim() || !shown) return
@@ -1073,7 +1088,7 @@ Item {
             // The service's own text (an HTTP status and address) is in the
             // log; the list says what OneDrive says.
             if (error) { shown = { drive_id: "", item_id: "", items: [], error: "Sorry, something went wrong." }; return }
-            if (kind === "picker_search") { if (v.query === query) shown = { drive_id: "", item_id: "", items: v.items, search: true }; return }
+            if (kind === "picker_search") { if (v.query === query && v.dates === dates) shown = { drive_id: "", item_id: "", items: v.items, search: true }; return }
             if (kind === "picker_place") { shown = { drive_id: "", item_id: "", items: v.items || [], people: v.people || null }; return }
             shown = v
         }
@@ -1297,21 +1312,54 @@ Item {
                     }
                 }
             }
-            // All files / My files under the results' title.
+            // All files / My files under the results' title (16/22 semibold
+            // tabs, 4 px padding, the chosen one underlined 2 px in the
+            // brand colour), then the date filter (a 32 tall pill: the
+            // choice 14/600 and a 16 px chevron; its menu 4.6 right and
+            // 4.7 under it, 170.7 wide).
             Row {
                 visible: pk.searching
-                x: 23; y: 58; spacing: 24
+                x: 16; y: 85; spacing: 22
+                Row {
+                spacing: 12
                 Repeater {
                     model: [{ label: "All files", all: true }, { label: "My files", all: false }]
-                    Text {
+                    Item {
+                        id: tabItem
                         required property var modelData
-                        text: modelData.label
-                        font.family: theme.font; font.pixelSize: 14; font.weight: pk.searchAll === modelData.all ? Font.DemiBold : Font.Normal; color: root.ink
-                        Rectangle { visible: pk.searchAll === parent.modelData.all; anchors.top: parent.bottom; anchors.topMargin: 4; width: parent.width; height: 2; radius: 1; color: root.accent }
-                        TapHandler { onTapped: pk.search(pk.query, parent.modelData.all) }
+                        width: tabText.implicitWidth + 8; height: 30
+                        Text {
+                            id: tabText
+                            x: 4; y: 2; height: 22; verticalAlignment: Text.AlignVCenter
+                            text: tabItem.modelData.label
+                            font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: root.ink
+                        }
+                        Rectangle { visible: pk.searchAll === tabItem.modelData.all; y: 28; width: parent.width; height: 2; radius: 1; color: root.accent }
+                        TapHandler { onTapped: pk.search(pk.query, tabItem.modelData.all) }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         Accessible.role: Accessible.PageTab
-                        Accessible.name: text
+                        Accessible.name: tabItem.modelData.all ? "Search results in files across your organization" : "Search results in your files"
+                        Accessible.selected: pk.searchAll === tabItem.modelData.all
+                    }
+                }
+                }
+                Rectangle {
+                    id: datesButton
+                    y: -1; width: 18.6 + datesText.implicitWidth + 10 + 16 + 18.7; height: 32; radius: 16
+                    color: dbh.hovered || datesMenu.opened ? theme.menuHover : theme.surface
+                    border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
+                    Text { id: datesText; x: 18.6; anchors.verticalCenter: parent.verticalCenter; text: pk.datesLabel; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+                    FluentIcon { x: datesText.x + datesText.implicitWidth + 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: root.ink }
+                    HoverHandler { id: dbh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: datesMenu.open() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Filter files by " + pk.datesLabel.toLowerCase()
+                    MenuPopup {
+                        id: datesMenu
+                        padding: 0; minRowWidth: 170.67
+                        x: 4.6; y: parent.height + 4.7
+                        items: pk.dateFilters.map(d => ({ label: d[1], checked: d[0] === pk.dates }))
+                        onPicked: i => { pk.dates = pk.dateFilters[i][0]; pk.search(pk.query, pk.searchAll) }
                     }
                 }
             }
@@ -1336,13 +1384,13 @@ Item {
                 }
             }
             Rectangle {
-                x: 16.67; y: 74.67; width: parent.width - 16.67 - 31.33; height: parent.height - y - 80 - 8
+                x: 16.67; y: pk.searching ? 136.67 : 74.67; width: parent.width - 16.67 - 31.33; height: parent.height - y - 80 - 8
                 // Tiles drop the white card, as in Teams.
                 radius: 12; color: pk.view === "tiles" && !pkMore.visible && !(pk.shown && pk.shown.people && !pk.person) ? "transparent" : theme.surface; clip: true
                 // Header: Type, Name, Modified, Modified By (14/600, 48 tall).
                 Row {
                     id: pkHead
-                    visible: !pkMore.visible && pk.view !== "tiles"
+                    visible: !pkMore.visible && pk.view !== "tiles" && !pk.searching
                     height: 48
                     Item { width: 55; height: 48; FluentIcon { x: 22; anchors.verticalCenter: parent.verticalCenter; name: "document-16"; size: 16; color: root.strong } }
                     PickHead { width: pk.view === "compact" ? 300 : 270; label: "Name" }
@@ -1350,7 +1398,6 @@ Item {
                     PickHead { width: 150; label: "Modified By" }
                     PickHead { visible: pk.view === "compact"; width: 150; label: "File Size" }
                     PickHead { visible: pk.view === "compact"; width: 170; label: "Sharing" }
-                    PickHead { visible: pk.searching; width: 150; label: "Location" }
                     PickHead { visible: pk.view === "list" && !pk.searching; width: 200; label: "Activity" }
                 }
                 Rectangle { visible: pkHead.visible; y: 48.67; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#333333") }
@@ -1442,8 +1489,98 @@ Item {
                         }
                     }
                 }
+                // Search results as Teams' picker lists them: Name (a 32 px
+                // folder, the name 14 px over "Created by: …" 12 px
+                // #616161), Modified ("Sun at 3:41 PM"), Modified by and
+                // Location, all #616161; the header 48 tall (14/600), rows
+                // 56. Columns 200, 215.9 and 198.9 wide, Name the rest.
+                Item {
+                    id: pkFound
+                    visible: pk.searching
+                    anchors.fill: parent
+                    readonly property real nameW: width - 200 - 215.9 - 198.9
+                    Row {
+                        id: foundHead
+                        height: 48
+                        Item { width: pkFound.nameW; height: 48; Text { x: 20.6; anchors.verticalCenter: parent.verticalCenter; text: "Name"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink } }
+                        Repeater {
+                            model: [["Modified", 200], ["Modified by", 215.9], ["Location", 198.9]]
+                            Item {
+                                required property var modelData
+                                width: modelData[1]; height: 48
+                                Text { x: 8.6; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData[0]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+                                Accessible.role: Accessible.ColumnHeader
+                                Accessible.name: modelData[0]
+                            }
+                        }
+                    }
+                    Rectangle { y: 48.67; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#333333") }
+                    ListView {
+                        anchors { top: foundHead.bottom; topMargin: 1.67; left: parent.left; right: parent.right; bottom: parent.bottom }
+                        clip: true
+                        model: pk.searching ? pkBody.listItems : []
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        Accessible.role: Accessible.Table
+                        Accessible.name: "List of search result folders"
+                        delegate: Rectangle {
+                            id: frow
+                            required property var modelData
+                            readonly property bool pickable: modelData.id !== (pk.target ? pk.target.id : "")
+                            // Teams' Location: the first part, then the next
+                            // or "…" and the last, with chevrons between.
+                            readonly property var locParts: {
+                                const s = modelData.location || [], same = !!modelData.same_site
+                                if (!s.length) return []
+                                const l = [s[0]]
+                                if (s.length === 2) l.push(s[1])
+                                if (s.length > 2 && same) l.push(s[1])
+                                if ((s.length > 3 && same) || s.length > 2) l.push("...", s[s.length - 1])
+                                return l
+                            }
+                            width: ListView.view.width; height: 56
+                            color: pickable && frh.hovered ? theme.menuHover : "transparent"
+                            opacity: pickable ? 1 : 0.45
+                            FluentIcon { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: "ft-folder-32" }
+                            Text { x: 68; y: 9.8; width: pkFound.nameW - 68 - 8; elide: Text.ElideRight; text: frow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                            Text { x: 68; y: 29.5; width: pkFound.nameW - 68 - 8; elide: Text.ElideRight; visible: !!frow.modelData.created_by; text: "Created by: " + frow.modelData.created_by; font.family: theme.font; font.pixelSize: 12; color: root.strong }
+                            Text { x: pkFound.nameW + 8.6; width: 200 - 16; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: frow.modelData.modified_text || ""; font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                            Text { x: pkFound.nameW + 200 + 8; width: 215.9 - 16; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: frow.modelData.modified_by || ""; font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                            Row {
+                                id: locRow
+                                visible: frow.locParts.length > 0
+                                x: pkFound.nameW + 200 + 215.9 + 12; width: 198.9 - 24; height: 18.67; anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4; clip: true
+                                Repeater {
+                                    model: frow.locParts
+                                    Row {
+                                        required property string modelData
+                                        required property int index
+                                        spacing: 4
+                                        FluentIcon { visible: index > 0; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: root.strong }
+                                        Text {
+                                            // The last part shrinks with an ellipsis.
+                                            width: index === frow.locParts.length - 1 ? Math.min(implicitWidth, Math.max(0, locRow.width - x - parent.x)) : implicitWidth
+                                            elide: Text.ElideRight
+                                            text: modelData; font.family: theme.font; font.pixelSize: 14; color: root.strong
+                                        }
+                                    }
+                                }
+                                HoverHandler { id: loch; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: pk.openLocation(frow.modelData) }
+                                ToolTip.visible: loch.hovered; ToolTip.delay: 500; ToolTip.text: (frow.modelData.location || []).join("/")
+                                Accessible.role: Accessible.Link
+                                Accessible.name: (frow.modelData.location || [])[0] || ""
+                            }
+                            HoverHandler { id: frh; cursorShape: frow.pickable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                            TapHandler { enabled: frow.pickable; onTapped: pk.into(frow.modelData) }
+                            Accessible.role: Accessible.Row
+                            Accessible.name: "Folder " + modelData.name
+                        }
+                    }
+                }
                 ListView {
-                    visible: !(pk.shown && pk.shown.people && !pk.person) && !(pk.place === "more" && !pk.searching) && pk.view !== "tiles"
+                    visible: !pk.searching && !(pk.shown && pk.shown.people && !pk.person) && pk.place !== "more" && pk.view !== "tiles"
                     anchors { top: nfRowItem.bottom; topMargin: pk.newFolder ? 0 : 1.67; left: parent.left; right: parent.right; bottom: parent.bottom }
                     clip: true
                     model: parent.parent.listItems
@@ -1496,8 +1633,6 @@ Item {
                                 font.family: theme.font; font.pixelSize: 14; color: root.strong
                             }
                         }
-                        // Search results also say where each one is.
-                        Text { visible: pk.searching; x: prow.compact ? 987 : 657; width: parent.width - x - 16; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.modelData.parent_name || ""; font.family: theme.font; font.pixelSize: 14; color: root.strong }
                         HoverHandler { id: prh2; cursorShape: prow.folder ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler { enabled: prow.folder; onTapped: pk.into(prow.modelData) }
                         Accessible.role: Accessible.Button
@@ -1510,7 +1645,7 @@ Item {
                 // nameplate; other files as their 74 x 96 picture. Files
                 // can't be picked (half opacity).
                 Flickable {
-                    visible: pk.view === "tiles" && !(pk.shown && pk.shown.people && !pk.person) && !(pk.place === "more" && !pk.searching)
+                    visible: pk.view === "tiles" && !pk.searching && !(pk.shown && pk.shown.people && !pk.person) && pk.place !== "more"
                     anchors { top: pk.newFolder ? nfRowItem.bottom : parent.top; topMargin: 8; left: parent.left; right: parent.right; bottom: parent.bottom }
                     clip: true; contentHeight: pkTiles.height + 16
                     boundsBehavior: Flickable.StopAtBounds
@@ -1734,10 +1869,14 @@ Item {
     function pickerStateForTest() {
         const sh = picker.shown || {}
         return { place: picker.place, trail: picker.trail.map(t => t.name), loading: picker.loading, searching: picker.searching, all: picker.searchAll,
-                 items: (sh.items || []).map(i => i.name + (i.is_folder ? "/" : "") + (i.parent_name ? " @" + i.parent_name : "")),
+                 items: (sh.items || []).map(i => i.name + (i.is_folder ? "/" : "") + (i.location ? " @" + i.location.join("›") : i.parent_name ? " @" + i.parent_name : "")),
+                 dates: picker.dates, created: (sh.items || []).filter(i => i.created_by).length,
                  people: sh.people ? sh.people.map(p => p.name + ":" + p.items.length) : null, libraries: picker.libraries.length, error: sh.error || "" }
     }
     function pickerSearchForTest(q, all) { picker.search(q, all) }
+    function pickerDatesForTest(key) { picker.dates = key; picker.search(picker.query, picker.searchAll) }
+    function pickerDatesMenuForTest(open) { picker.datesMenuForTest(open) }
+    function pickerLocationForTest(name) { const f = (picker.shown && picker.shown.items || []).find(i => i.name === name); if (f) picker.openLocation(f); return !!f }
     function pickerViewForTest(v) { picker.view = v }
     function pickerNavForTest(folded, browseOpen) { picker.navCollapsed = folded; picker.browseOpen = browseOpen }
     function pickerNewFolderForTest(name) { picker.createFolder(name) }

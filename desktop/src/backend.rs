@@ -13139,8 +13139,8 @@ impl qobject::Backend {
                             other => anyhow::bail!("unknown place {other}"),
                         }
                     }
-                    "picker_search" => json!({ "query": s("query"), "all": args["all"].as_bool().unwrap_or(false),
-                        "items": api::drive::search_items(&client, &s("query"), args["all"].as_bool().unwrap_or(false)).await? }),
+                    "picker_search" => json!({ "query": s("query"), "all": args["all"].as_bool().unwrap_or(false), "dates": s("dates"),
+                        "items": api::drive::search_folders(&client, &s("query"), args["all"].as_bool().unwrap_or(false), api::drive::date_filter_days(&s("dates"))).await? }),
                     "picker_new_folder" => json!(api::drive::new_folder(&client, &s("drive_id"), &s("item_id"), &s("name")).await?),
                     "folders" => {
                         let (d, i) = (s("drive_id"), s("item_id"));

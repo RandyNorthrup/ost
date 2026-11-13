@@ -3249,7 +3249,8 @@ Window {
 
     // --picker-test: the Copy to picker on ost-share-test.txt: My files,
     // Shared, Favorites, People, Meetings, More places…, a search in My
-    // files and in all files; --picker-live also makes "OST picker test"
+    // files and in all files, the date filter's menu and Last 7 days, and
+    // a result's Location opened; --picker-live also makes "OST picker test"
     // with New folder (opened, then deleted).
     Timer {
         running: Qt.application.arguments.indexOf("--picker-test") >= 0 && backend.signedIn
@@ -3281,18 +3282,26 @@ Window {
             else if (step === 17) fa.pickerSearchForTest("ost", true)
             else if (step === 18 && !settled()) return
             else if (step === 18) { log("search all", st()); cap("search-all") }
-            else if (step === 19) fa.pickerPlaceForTest("mine")
-            else if (step === 20 && !live) { fa.closeAllForTest(); Qt.quit() }
-            else if (step === 20 && !settled()) return
-            else if (step === 20) fa.pickerNewFolderForTest("OST picker test")
-            else if (step === 21 && !settled()) return
-            else if (step === 21) { log("new folder", st()); cap("new-folder") }
-            else if (step === 22) { fa.closeAllForTest(); oneDrive.open("myfiles") }
-            else if (step === 23 && !oneDrive.deleteForTest("OST picker test")) return
-            else if (step === 23) log("delete", true)
-            else if (step === 25) oneDrive.open("myfiles")
-            else if (step === 26 && !(d.items || []).length) return
-            else if (step === 26) { log("gone", !(d.items || []).some(i => i.name === "OST picker test")); Qt.quit() }
+            else if (step === 19) fa.pickerDatesMenuForTest(true)
+            else if (step === 20) cap("dates-menu")
+            else if (step === 21) { fa.pickerDatesMenuForTest(false); fa.pickerDatesForTest("last7Days") }
+            else if (step === 22 && !settled()) return
+            else if (step === 22) { log("last 7 days", st()); cap("search-7days") }
+            else if (step === 23) log("location", fa.pickerLocationForTest("OST threads test"))
+            else if (step === 24 && !settled()) return
+            else if (step === 24) { log("location opened", st()); cap("location") }
+            else if (step === 25) fa.pickerPlaceForTest("mine")
+            else if (step === 26 && !live) { fa.closeAllForTest(); Qt.quit() }
+            else if (step === 26 && !settled()) return
+            else if (step === 26) fa.pickerNewFolderForTest("OST picker test")
+            else if (step === 27 && !settled()) return
+            else if (step === 27) { log("new folder", st()); cap("new-folder") }
+            else if (step === 28) { fa.closeAllForTest(); oneDrive.open("myfiles") }
+            else if (step === 29 && !oneDrive.deleteForTest("OST picker test")) return
+            else if (step === 29) log("delete", true)
+            else if (step === 31) oneDrive.open("myfiles")
+            else if (step === 32 && !(d.items || []).length) return
+            else if (step === 32) { log("gone", !(d.items || []).some(i => i.name === "OST picker test")); Qt.quit() }
             step++
         }
     }
