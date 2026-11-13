@@ -815,7 +815,8 @@ Item {
         property var target: null
         property string ext: ""
         title: "Rename"; okText: "Update"
-        bodyHeight: 98.67
+        // 240 tall, as Teams' Rename without Copilot's Suggested names.
+        bodyHeight: 128.67
         okEnabled: nameInput.text.trim().length > 0
         function openFor(it) {
             target = it
@@ -1025,6 +1026,10 @@ Item {
             backend.driveAction(root.tag + "libraries", "{}", "{}")
             root.loadQuickAccess()
         }
+        /// The Navigation Pane button folds the places into a 68-wide rail of
+        /// icons; "Browse by" folds People and Meetings away.
+        property bool navCollapsed: false
+        property bool browseOpen: true
         /// The view switch: List, Compact List or Tiles (Teams' picker keeps
         /// it while it's open).
         property string view: "list"
@@ -1107,34 +1112,71 @@ Item {
             close()
         }
 
-        // The places
+        // The places (210 wide, or a 68-wide rail when folded)
         Item {
-            width: 210; height: parent.height
-            Text {
-                x: 24; y: 14; height: 44; verticalAlignment: Text.AlignVCenter
-                text: pk.shortcut ? "Pick a folder" : pk.moving ? "Move to" : "Copy to"
-                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
-                Accessible.role: Accessible.Heading
-                Accessible.name: text
+            width: pk.navCollapsed ? 68 : 210; height: parent.height
+            // The title row (16, 18; 190 x 36) is the Navigation Pane
+            // button: hovering shows its glyph at the right; folded, only
+            // the glyph remains (36 x 36).
+            Rectangle {
+                x: 16; y: 18; width: pk.navCollapsed ? 36 : 190; height: 36; radius: 4
+                color: pk.navCollapsed && nph.hovered ? theme.menuHover : "transparent"
+                Text {
+                    visible: !pk.navCollapsed
+                    x: 8; anchors.verticalCenter: parent.verticalCenter
+                    text: pk.shortcut ? "Pick a folder" : pk.moving ? "Move to" : "Copy to"
+                    font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                FluentIcon {
+                    visible: pk.navCollapsed || nph.hovered
+                    x: pk.navCollapsed ? 8 : parent.width - 30; anchors.verticalCenter: parent.verticalCenter
+                    name: pk.navCollapsed ? "panel-left-expand-20" : "panel-left-contract-20"; size: 20; color: root.ink
+                }
+                HoverHandler { id: nph; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: pk.navCollapsed = !pk.navCollapsed }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Navigation Pane"
             }
             Column {
                 y: 58; width: parent.width
                 PlaceRow { label: "My files"; icon: "folder-16"; on: pk.place === "mine"; onPicked: pk.openPlace("mine", null) }
                 PlaceRow { label: "Shared"; icon: "people-16"; on: pk.place === "shared"; onPicked: pk.openPlace("shared", null) }
                 PlaceRow { label: "Favorites"; icon: "star-16"; on: pk.place === "favorites"; onPicked: pk.openPlace("favorites", null) }
-                Item { width: 1; height: 16 }
-                Text { x: 24; height: 18.67; text: "Browse by"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                Item { width: 1; height: 9.33 }
-                PlaceRow { label: "People"; icon: "person-16"; on: pk.place === "people"; onPicked: pk.openPlace("people", null) }
-                PlaceRow { label: "Meetings"; icon: "calendar-ltr-16"; on: pk.place === "meetings"; onPicked: pk.openPlace("meetings", null) }
+                Item { width: 1; height: 8 }
+                // "Browse by" (36 tall) folds People and Meetings; its
+                // chevron shows on hover (down while open, up while folded),
+                // and always on the folded rail.
+                Rectangle {
+                    x: 16; width: pk.navCollapsed ? 36 : 190; height: 36; radius: 4
+                    color: pk.navCollapsed && bbh.hovered ? theme.menuHover : "transparent"
+                    Text { visible: !pk.navCollapsed; x: 8; anchors.verticalCenter: parent.verticalCenter; text: "Browse by"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    FluentIcon {
+                        visible: pk.navCollapsed || bbh.hovered
+                        x: pk.navCollapsed ? 10 : parent.width - 28; anchors.verticalCenter: parent.verticalCenter
+                        name: pk.browseOpen ? "chevron-down-16" : "chevron-up-16"; size: 16; color: root.ink
+                    }
+                    HoverHandler { id: bbh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: pk.browseOpen = !pk.browseOpen }
+                    ToolTip.visible: bbh.hovered; ToolTip.delay: 300; ToolTip.text: "Browse by"
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Browse by"
+                }
+                PlaceRow { visible: pk.browseOpen; label: "People"; icon: "person-16"; on: pk.place === "people"; onPicked: pk.openPlace("people", null) }
+                PlaceRow { visible: pk.browseOpen; label: "Meetings"; icon: "calendar-ltr-16"; on: pk.place === "meetings"; onPicked: pk.openPlace("meetings", null) }
                 Item { width: 1; height: 16 }
                 // "Quick access" with its (i): "Frequently used team
                 // locations, …"; each library has a pin on hover (solid and
-                // always shown once pinned).
+                // always shown once pinned). Folded, a 36-wide line.
                 Row {
-                    x: 24; height: 18.67; spacing: 8; visible: root.quickAccess.length > 0
+                    x: 24; height: 18.67; spacing: 8; visible: root.quickAccess.length > 0 && !pk.navCollapsed
                     Text { anchors.verticalCenter: parent.verticalCenter; text: "Quick access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                     InfoTip { anchors.verticalCenter: parent.verticalCenter }
+                }
+                Item {
+                    visible: root.quickAccess.length > 0 && pk.navCollapsed; width: parent.width; height: 18.67
+                    Rectangle { x: 16; y: 9; width: 36; height: 1; color: theme.pick("#D1D1D1", "#3D3D3D") }
                 }
                 Item { width: 1; height: 9.33; visible: root.quickAccess.length > 0 }
                 Repeater {
@@ -1147,7 +1189,20 @@ Item {
                     }
                 }
                 Item { width: 1; height: 6 }
+                // Folded: "…" (36 x 36) for More places.
+                Rectangle {
+                    visible: pk.navCollapsed
+                    x: 16; width: 36; height: 36; radius: 4
+                    color: mph2.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: root.accent }
+                    HoverHandler { id: mph2; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: pk.openPlace("more", null) }
+                    ToolTip.visible: mph2.hovered; ToolTip.delay: 300; ToolTip.text: "More places..."
+                    Accessible.role: Accessible.Link
+                    Accessible.name: "More places..."
+                }
                 Text {
+                    visible: !pk.navCollapsed
                     x: 32; height: 24; verticalAlignment: Text.AlignVCenter
                     text: "More places..."
                     font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: mph.hovered || pk.place === "more"
@@ -1161,7 +1216,7 @@ Item {
         // The folder
         Item {
             id: pkBody
-            x: 224; width: parent.width - 224; height: parent.height
+            x: pk.navCollapsed ? 82 : 224; width: parent.width - x; height: parent.height
             readonly property var listItems: !pk.shown ? [] : pk.shown.people
                 ? (pk.person ? (pk.shown.people.find(p => p.name === pk.person) || { items: [] }).items : [])
                 : pk.shown.items || []
@@ -1524,13 +1579,18 @@ Item {
         /// A Quick access library: its tile and pin.
         property var lib: null
         signal picked()
-        x: 16; width: 190; height: 36; radius: 8
+        // Folded (the picker's rail): 36 x 36, the icon alone, the name as
+        // a tooltip.
+        readonly property bool folded: picker.navCollapsed
+        x: 16; width: folded ? 36 : 190; height: 36; radius: 8
         color: prh.hovered ? theme.menuHover : "transparent"
         Rectangle { visible: pr.on; x: -16; width: 3; height: 20; radius: 1.5; anchors.verticalCenter: parent.verticalCenter; color: root.accent }
-        FluentIcon { visible: !pr.site; x: 12; anchors.verticalCenter: parent.verticalCenter; name: pr.icon; size: 16; color: pr.on ? root.accent : root.strong }
-        Avatar { visible: pr.site && !pr.lib; x: 10; anchors.verticalCenter: parent.verticalCenter; size: 20; name: pr.label; square: true }
+        FluentIcon { visible: !pr.site; x: pr.folded ? 10 : 12; anchors.verticalCenter: parent.verticalCenter; name: pr.icon; size: 16; color: pr.on ? root.accent : root.strong }
+        Avatar { visible: pr.site && !pr.lib; x: 8; anchors.verticalCenter: parent.verticalCenter; size: 20; name: pr.label; square: true }
         SiteTile { visible: !!pr.lib; x: 8; anchors.verticalCenter: parent.verticalCenter; acronym: pr.lib ? pr.lib.acronym : ""; tint: pr.lib ? pr.lib.color : "" }
+        ToolTip.visible: pr.folded && prh.hovered; ToolTip.delay: 300; ToolTip.text: pr.label
         Text {
+            visible: !pr.folded
             x: 36; width: parent.width - 44 - (pr.lib ? 28 : 0); anchors.verticalCenter: parent.verticalCenter
             text: pr.label; elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: 14; font.weight: pr.on ? Font.DemiBold : Font.Normal; color: root.strong
@@ -1541,7 +1601,7 @@ Item {
         Accessible.name: label
         // Pin to Quick access: 24 px at the row's right (16 px glyph),
         // shown on hover, and always (solid) once pinned.
-        PinButton { visible: !!pr.lib && (prh.hovered || pr.lib.pinned); x: 160; anchors.verticalCenter: parent.verticalCenter; lib: pr.lib }
+        PinButton { visible: !!pr.lib && !pr.folded && (prh.hovered || pr.lib.pinned); x: 160; anchors.verticalCenter: parent.verticalCenter; lib: pr.lib }
     }
 
     component PinButton: Rectangle {
@@ -1679,6 +1739,7 @@ Item {
     }
     function pickerSearchForTest(q, all) { picker.search(q, all) }
     function pickerViewForTest(v) { picker.view = v }
+    function pickerNavForTest(folded, browseOpen) { picker.navCollapsed = folded; picker.browseOpen = browseOpen }
     function pickerNewFolderForTest(name) { picker.createFolder(name) }
     function pickerIntoForTest(name) { const f = (picker.shown && picker.shown.items || []).find(i => i.name === name); if (f) picker.into(f); return !!f }
     function pickerDoneForTest() { picker.done() }

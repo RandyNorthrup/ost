@@ -66,12 +66,14 @@ and Open in app (OneDrive's wording; not yet seen in Teams).
   - "Are you sure you want to send this item to the recycle bin?" 14/20, 78 down.
   - Delete and Cancel, both 80 x 32, #5B5FC7, white 14/600, radius 4, 8 apart, 24 from the bottom right.
   - Delete moves the item to the recycle bin.
-- **Rename** is the same dialog, 266.67 tall in Teams:
+- **Rename** is the same dialog, 240 tall (266.67 with Copilot's Suggested names row):
   - The name without its extension in a 32 px box, 89 down: 0.67 #D1D1D1 border, #424242 underline, padding 0 12.
   - The extension after the box (".txt", padded 10 5 0).
   - Update and Cancel.
   - Teams' request is SharePoint's list-item update (`POST …/GetListUsingPath(DecodedUrl=@a1)/items(@a2)` with `{"__metadata":{"type":"SP.Data.DocumentsItem"},"FileLeafRef":"<name>"}`, sent as MERGE). OST renames through Graph (`PATCH /drives/{d}/items/{i}` `{name}`), which does the same.
-  - Teams also shows Copilot's "Suggested names" (44 tall) between the box and the buttons. OST leaves that row out, so its dialog is 210 tall.
+  - For some files (a .txt, not an .mp4) Teams adds Copilot's **Suggested names** under the box: a folded 390.67 x 44 row (Copilot glyph, "Suggested names", a chevron) at 133, 25 above the buttons. Expanded, it shows three loading pills ("Loading suggestions"), then three name pills, plus "AI-generated content may be incorrect" (12 px) with Helpful / Not helpful thumbs. On failure: "Something went wrong. Try again".
+  - The names come from OneDrive's AugLoop LLM service (`llmScenarioGuid` f44f84d5-dd13-4369-9939-c8cb945fe62f, `augloopFlights` with `enableAnalyzeImagePlugin:true`, the file's `{fileName, siteId, webId, listId, uniqueId}` and a prompt asking for 3 names as NDJSON `{"type":"suggestion","name":…}` lines then `{"type":"done"}`, or `{"type":"error","code":"InsufficientContent|FileNotAvailable|Confidential|UnknownError"}`). Before asking, OneDrive reads the file's `sensitivityLabel` from Graph and skips "Highly Confidential" / "Restricted" protected files.
+  - On 2026-11-12 Teams answered "Something went wrong." for OST Test 1, so there is nothing yet to match. OST leaves the row out (TASK-0125) and is 240 tall, as Teams is without it.
 - **Duplicate** is SharePoint's copy job on the file's site: `POST {site}/_api/site/CreateCopyJobs` with `{"exportObjectUris":[<file>],"destinationUri":<its folder>,"options":{"IgnoreVersionHistory":true,"AllowSchemaMismatch":true,"BypassSharedLock":true,"SameWebCopyMoveOptimization":true,"NameConflictBehavior":2,"CustomizedItemName":{"results":["<stem> Copy.<ext>"]}}}`. Then `GetCopyJobProgress` with the job's `{EncryptionKey, JobId, JobQueueUri}` until `JobState` is 0. Failures are `JobError` / `JobFatalError` events in `Logs`. OST does the same (`api::copy_jobs`).
 - **Move to / Copy to** open OneDrive's picker over the window:
   - 1140 x 720 at most, #F5F5F5.
@@ -174,9 +176,14 @@ Measured on winpc on 2026-11-12.
     wasn't pinned" / "wasn't unpinned" (OneDrive's strings).
   - More places…' "Recent" lists the same libraries; "Your Teams" lists
     your teams' libraries.
-- Not in OST yet: the picker's Navigation Pane button (collapses the left
-  pane, shown on hover next to the title) and the "Browse by" group's
-  collapse chevron.
+- **Navigation Pane**: the title row (16, 18; 190 x 36) is a button whose
+  20 px glyph shows on hover at its right. It folds the places into a
+  68-wide rail of 36 x 36 icons (from 16): the expand glyph, My files,
+  Shared, Favorites, the Browse by chevron, People, Meetings, a 36-wide line
+  where "Quick access" was, the library tiles and "…" for More places. The
+  list then starts at 98.67 instead of 240.67.
+- **Browse by** (36 tall) folds People and Meetings away; its 16 px chevron
+  shows on hover (down while open, up while folded), and always on the rail.
 - **Notices** sit under the list, 23 above the view's bottom:
   - 390 wide, #292929, radius 4, padding 12.
   - A 20 px glyph: #92C353 check, #F1707B error, or progress. Text is 13/17 #F0F0F0 at 48. A 24 px dismiss with a #7F85F5 glyph.
@@ -302,7 +309,7 @@ with the same places as Teams' picker.
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
 - Add to playlist (videos): TASK-0123. It opens OneDrive's file picker (`FilePicker.aspx`, scenario `StreamPlaylist.AddToPlaylist`) over your Stream playlists: My lists, Recent lists and Favorites. OST Test 1 has no playlist yet.
-- Copilot's Suggested names in Rename, and the picker's Navigation Pane button and Browse by chevron: TASK-0124.
+- Copilot's Suggested names in Rename (AugLoop): TASK-0125.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
 

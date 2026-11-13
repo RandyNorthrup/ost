@@ -2984,6 +2984,7 @@ Window {
             const find = n => (d.items || []).find(i => i.name === n)
             const log = (tag, x) => console.warn("FILEACT", tag, JSON.stringify(x === undefined ? fa.stateForTest() : x))
             if (step === 0) { rail.current = "onedrive"; oneDrive.open("myfiles") }
+            else if (step === 2 && !(d.items || []).length) return
             else if (step === 2) {
                 it = find("ost-share-test.txt")
                 log("items", (d.items || []).map(i => i.name))
@@ -3098,7 +3099,11 @@ Window {
             else if (step === 8 && st().loading) return
             else if (step === 9) cap("tiles-videos")
             else if (step === 10) { fa.pickerViewForTest("list"); cap("list-videos") }
-            else if (step === 11) { fa.closeAllForTest(); Qt.quit() }
+            else if (step === 11) fa.pickerNavForTest(true, true)
+            else if (step === 12) cap("rail")
+            else if (step === 13) fa.pickerNavForTest(false, false)
+            else if (step === 14) cap("browse-folded")
+            else if (step === 15) { fa.pickerNavForTest(false, true); fa.closeAllForTest(); Qt.quit() }
             step++
         }
     }
