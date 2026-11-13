@@ -23,6 +23,7 @@ pub mod list_rows;
 pub mod versions;
 pub mod item_details;
 pub mod zip_download;
+pub mod quick_access;
 pub mod folders;
 pub mod funstuff;
 mod me;

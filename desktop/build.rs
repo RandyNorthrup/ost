@@ -164,6 +164,7 @@ fn main() {
         "qml/FileActions.qml",
         "qml/DetailsPane.qml",
         "qml/FilePreview.qml",
+        "qml/SiteTile.qml",
         "qml/ShareFileDialog.qml",
         "qml/SearchPreview.qml",
         "qml/CreateChannelDialog.qml",

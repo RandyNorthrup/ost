@@ -124,6 +124,59 @@ Measured on winpc on 2026-11-12, as OST Test 1.
   already in use gets a number.
 - OST numbers its picker requests and drops an answer to an older one, so a
   slow place can't replace the one you opened after it.
+
+### The picker's views and Quick access
+
+Measured on winpc on 2026-11-12.
+
+- **The view switch** (48 x 40 at the header's right, after New folder): the
+  view's glyph and a chevron, tooltip "View options". Its menu is 172 wide
+  with 36-tall rows: List, Compact List and Tiles, the current one ticked.
+  The choice lasts while the picker is open.
+  - **List**: Type 55, Name 270, Modified 170, Modified By 150, Activity.
+    Rows are 59 tall: a 32 px type icon, the name over "n items" or the
+    size ("82.7 KB •" and a people glyph when shared). Activity is a 14 px
+    #0078D4 glyph, then the text and its time (14 px #424242), from
+    SharePoint's row data as in the files list.
+  - **Compact List**: Type 55, Name 300, Modified 150, Modified By 150,
+    File Size 150, Sharing 170, Activity. Rows are 32 tall with a 20 px icon
+    at 22, 6.
+  - **Tiles**: no white card. Folders are the files list's folder tiles
+    (176 x 171, the drawing with its count, the name and date). Videos are
+    304 x 171 pictures with the name (14 px) and date (12 px) in white on a
+    76-tall nameplate (`linear-gradient(to top, rgba(0,0,0,.65), .553 at 55%,
+    .196 at 80%, 0)`). Other files are their 74 x 96 picture. Tiles are 8
+    apart, from the card's top left + 8.
+  - Files can't be picked: rows at 45% and tiles at 50% opacity.
+  - Dates use the files list's wording ("Sunday at 3:41 PM").
+- **Quick access** (the picker and the OneDrive pane): the libraries you
+  pinned, then the ones you used lately.
+  - Teams reads `POST {your OneDrive}/_api/SP.PinnedItems.GetItemsBy` for
+    the pins and `GET {your OneDrive}/_api/sp.QuickAccessItemCollection.GetQuickAccessItems`
+    for the recent ones (`RecentDocumentLibraries`, a JSON string; its
+    `PinnedDocumentLibraries` stays empty).
+  - A row (36 tall) shows a 20 px tile (radius 4, the site's acronym on its
+    `siteColor`), then the site's name, plus " - {library}" for a library
+    other than the site's default one ("OST Test Team - Site Assets").
+  - "Quick access" has a 16 px (i) with the tooltip "Frequently used team
+    locations, including shared libraries and Teams channels."
+  - Hovering a row shows a 24 px pin button at its right (16 px glyph,
+    #616161); a pinned library keeps a solid pin. Tooltips: "Pin {name} to
+    Quick access" / "Unpin {name} from Quick access".
+  - Pinning sends `POST …/_api/SP.PinnedItems.AddItem` with `{"pinnedItem":
+    {webId, listId, title, listUrl, siteUrl, siteTitle, siteIconUrl, siteId,
+    isDefaultDocumentLibrary, siteColor, siteAcronym}}` (the icon is your
+    OneDrive's `siteiconmanager/getsitelogo?siteUrl='…'`); unpinning sends
+    `SP.PinnedItems.RemoveItem` with `{listId, siteId, webId}`. Both answer
+    200.
+  - The notices: "Updating {library}", then "Pinned {library} to Quick
+    access" or "Unpinned {library} from Quick access"; on failure "{library}
+    wasn't pinned" / "wasn't unpinned" (OneDrive's strings).
+  - More places…' "Recent" lists the same libraries; "Your Teams" lists
+    your teams' libraries.
+- Not in OST yet: the picker's Navigation Pane button (collapses the left
+  pane, shown on hover next to the title) and the "Browse by" group's
+  collapse chevron.
 - **Notices** sit under the list, 23 above the view's bottom:
   - 390 wide, #292929, radius 4, padding 12.
   - A 20 px glyph: #92C353 check, #F1707B error, or progress. Text is 13/17 #F0F0F0 at 48. A 24 px dismiss with a #7F85F5 glyph.
@@ -249,7 +302,7 @@ with the same places as Teams' picker.
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
 - Add to playlist (videos): TASK-0123. It opens OneDrive's file picker (`FilePicker.aspx`, scenario `StreamPlaylist.AddToPlaylist`) over your Stream playlists: My lists, Recent lists and Favorites. OST Test 1 has no playlist yet.
-- The picker's view switch and "Pin to Quick access", and Copilot's Suggested names in Rename: TASK-0124.
+- Copilot's Suggested names in Rename, and the picker's Navigation Pane button and Browse by chevron: TASK-0124.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
 

@@ -944,7 +944,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3072,6 +3072,66 @@ Window {
             else if (step === 20) { log("shortcut", fa.stateForTest().toast); fa.shortcutForTest(find("ost-share-test.txt"), "myfiles") }
             else if (step === 22) { log("shortcut my files", fa.stateForTest().toast); cap("shortcut") }
             else if (step === 23) Qt.quit()
+            step++
+        }
+    }
+
+    // --picker-views-test: the Copy to picker's view switch: List, Compact
+    // List, then Tiles in My files and in Recordings (videos).
+    Timer {
+        running: Qt.application.arguments.indexOf("--picker-views-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const d = oneDrive.driveData, fa = oneDrive.fileActions
+            const st = () => fa.pickerStateForTest()
+            if (step === 0) { rail.current = "onedrive"; oneDrive.open("myfiles") }
+            else if (step === 1) { const it = (d.items || []).find(i => i.name === "ost-share-test.txt"); if (!it) return; fa.actForTest(it, "Copy to") }
+            else if (step === 2 && st().loading) return
+            else if (step === 2) cap("list")
+            else if (step === 3) fa.pickerViewForTest("compact")
+            else if (step === 4) cap("compact")
+            else if (step === 5) fa.pickerViewForTest("tiles")
+            else if (step === 6) cap("tiles")
+            else if (step === 7) console.warn("PVIEW into", fa.pickerIntoForTest("Recordings"))
+            else if (step === 8 && st().loading) return
+            else if (step === 9) cap("tiles-videos")
+            else if (step === 10) { fa.pickerViewForTest("list"); cap("list-videos") }
+            else if (step === 11) { fa.closeAllForTest(); Qt.quit() }
+            step++
+        }
+    }
+
+    // --quick-access-test: Teams' Quick access in the OneDrive pane and the
+    // Copy to picker (pinned, then recent libraries), opening one; with
+    // --quick-access-live, OST Test Team is pinned and unpinned again.
+    Timer {
+        running: Qt.application.arguments.indexOf("--quick-access-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const log = (tag, x) => console.warn("QUICK", tag, JSON.stringify(x))
+            const live = Qt.application.arguments.indexOf("--quick-access-live") >= 0
+            const fa = oneDrive.fileActions, d = oneDrive.driveData
+            if (step === 0) { rail.current = "onedrive"; oneDrive.open("myfiles") }
+            else if (step === 1 && !fa.quickForTest().length) return
+            else if (step === 1) { log("pane", fa.quickForTest()); cap("pane") }
+            else if (step === 2) log("open", oneDrive.openQuickForTest("OST Test Team"))
+            else if (step === 3 && !(d.items || []).length) return
+            else if (step === 3) { log("in library", { trail: oneDrive.trail.map(t => t.name), items: (d.items || []).length }); cap("library") }
+            else if (step === 4) oneDrive.open("myfiles")
+            else if (step === 5) { const it = (d.items || []).find(i => i.name === "ost-share-test.txt"); if (!it) return; fa.actForTest(it, "Copy to") }
+            else if (step === 6) cap("picker")
+            else if (step === 7 && !live) { fa.closeAllForTest(); Qt.quit() }
+            else if (step === 7) log("pin", fa.pinForTest("OST Test Team", true))
+            else if (step === 9 && fa.quickForTest().indexOf("OST Test Team (pinned)") < 0) return
+            else if (step === 9) { log("pinned", fa.quickForTest()); cap("pinned") }
+            else if (step === 10) log("unpin", fa.pinForTest("OST Test Team", false))
+            else if (step === 12 && fa.quickForTest().indexOf("OST Test Team (pinned)") >= 0) return
+            else if (step === 12) { log("unpinned", fa.quickForTest()); cap("unpinned"); fa.closeAllForTest() }
+            else if (step === 13) Qt.quit()
             step++
         }
     }

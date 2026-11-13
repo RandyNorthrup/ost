@@ -106,6 +106,17 @@ Item {
         }
     }
     /// A folder, or several items: OneDrive's zip (docs/spec/zip-download.md).
+    /// Quick access (Teams': pinned libraries, then the ones used lately),
+    /// shared by the OneDrive pane and the picker; pin / unpin with
+    /// OneDrive's notices ("Updating {0}", "Pinned {0} to Quick access").
+    property var quickAccess: []
+    property var pendingPin: null
+    function loadQuickAccess() { backend.driveAction(tag + "quick_access", "{}", "{}") }
+    function pinLibrary(lib, pin) {
+        pendingPin = { title: lib.title || lib.label, pin: pin }
+        notice("progress", "Updating " + (lib.title || lib.label))
+        backend.driveAction(tag + "quick_pin", "{}", JSON.stringify({ lib: lib, pin: pin }))
+    }
     // Add shortcut: OneDrive's "Added {0} as a shortcut to {1}."
     property var pendingShortcut: null
     function addShortcut(it, place, placeName, extra) {
@@ -233,6 +244,14 @@ Item {
             const m = /^(\d+):(.*)$/.exec(kind)
             if (m) { if (Number(m[1]) === picker.seq) picker.reply(m[2], v, error); return }
             if (kind === "libraries") { picker.reply(kind, v, error); return }
+            if (kind === "thumb") { if (!error && v && v.path) { const t = Object.assign({}, picker.thumbs); t[v.id] = v.path; picker.thumbs = t } return }
+            if (kind === "quick_access") { if (!error) root.quickAccess = v || []; return }
+            if (kind === "quick_pin") {
+                const p = root.pendingPin || { title: "", pin: true }
+                if (error) root.notice("error", p.title + (p.pin ? " wasn't pinned" : " wasn't unpinned"), error)
+                else { root.quickAccess = v.items || root.quickAccess; root.notice("done", (p.pin ? "Pinned " : "Unpinned ") + p.title + (p.pin ? " to " : " from ") + "Quick access") }
+                return
+            }
             if (kind === "versions" || kind === "restore_version" || kind === "delete_version") { versions.reply(kind, v, error); return }
             if (kind === "shortcut") {
                 const p = root.pendingShortcut || { name: "", place: "" }
@@ -1004,6 +1023,20 @@ Item {
             open()
             load("", "")
             backend.driveAction(root.tag + "libraries", "{}", "{}")
+            root.loadQuickAccess()
+        }
+        /// The view switch: List, Compact List or Tiles (Teams' picker keeps
+        /// it while it's open).
+        property string view: "list"
+        readonly property var viewItems: [{ label: "List", icon: "list-16", checked: view === "list" },
+                                          { label: "Compact List", icon: "text-align-left-16", checked: view === "compact" },
+                                          { label: "Tiles", icon: "grid-16", checked: view === "tiles" }]
+        property var thumbs: ({})
+        property var thumbAsked: ({})
+        function wantThumb(it, size) {
+            if (thumbAsked[it.id] || it.is_folder) return
+            thumbAsked[it.id] = true
+            backend.driveAction(root.tag + "thumb", JSON.stringify(it), JSON.stringify({ size: size }))
         }
         property int seq: 0
         function ask(op, args) { seq++; backend.driveAction(root.tag + seq + ":" + op, "{}", JSON.stringify(args)) }
@@ -1095,15 +1128,22 @@ Item {
                 PlaceRow { label: "People"; icon: "person-16"; on: pk.place === "people"; onPicked: pk.openPlace("people", null) }
                 PlaceRow { label: "Meetings"; icon: "calendar-ltr-16"; on: pk.place === "meetings"; onPicked: pk.openPlace("meetings", null) }
                 Item { width: 1; height: 16 }
-                Text { x: 24; height: 18.67; visible: pk.libraries.length > 0; text: "Quick access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                Item { width: 1; height: 9.33; visible: pk.libraries.length > 0 }
+                // "Quick access" with its (i): "Frequently used team
+                // locations, …"; each library has a pin on hover (solid and
+                // always shown once pinned).
+                Row {
+                    x: 24; height: 18.67; spacing: 8; visible: root.quickAccess.length > 0
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Quick access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    InfoTip { anchors.verticalCenter: parent.verticalCenter }
+                }
+                Item { width: 1; height: 9.33; visible: root.quickAccess.length > 0 }
                 Repeater {
-                    model: pk.libraries
+                    model: root.quickAccess
                     PlaceRow {
                         required property var modelData
-                        label: modelData.site; site: true
-                        on: pk.place === modelData.drive_id
-                        onPicked: pk.openPlace(modelData.drive_id, modelData)
+                        label: modelData.label; site: true; lib: modelData
+                        on: !!modelData.drive_id && pk.place === modelData.drive_id
+                        onPicked: if (modelData.drive_id) pk.openPlace(modelData.drive_id, { name: modelData.label, drive_id: modelData.drive_id })
                     }
                 }
                 Item { width: 1; height: 6 }
@@ -1120,6 +1160,7 @@ Item {
         }
         // The folder
         Item {
+            id: pkBody
             x: 224; width: parent.width - 224; height: parent.height
             readonly property var listItems: !pk.shown ? [] : pk.shown.people
                 ? (pk.person ? (pk.shown.people.find(p => p.name === pk.person) || { items: [] }).items : [])
@@ -1177,6 +1218,29 @@ Item {
                     Accessible.role: Accessible.Button
                     Accessible.name: "New folder"
                 }
+                // The view switch (48 x 40): the view's glyph and a chevron;
+                // its menu (172 wide) ticks List, Compact List or Tiles.
+                Rectangle {
+                    visible: !(pk.place === "more" && !pk.searching) && !(pk.shown && pk.shown.people && !pk.person)
+                    width: 48; height: 32; radius: 4
+                    color: vsh.hovered || vsMenu.opened ? theme.menuHover : "transparent"
+                    Row {
+                        anchors.centerIn: parent; spacing: 4
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: pk.view === "tiles" ? "grid-16" : pk.view === "compact" ? "text-align-left-16" : "list-16"; size: 16; color: root.ink }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: root.ink }
+                    }
+                    HoverHandler { id: vsh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: vsMenu.open() }
+                    ToolTip.visible: vsh.hovered && !vsMenu.opened; ToolTip.delay: 300; ToolTip.text: "View options"
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Switch view options"
+                    MenuPopup {
+                        id: vsMenu; fabric: true; fabricWidth: 172
+                        x: parent.width - 172; y: parent.height + 4
+                        items: pk.viewItems
+                        onPicked: i => pk.view = ["list", "compact", "tiles"][i]
+                    }
+                }
             }
             // All files / My files under the results' title.
             Row {
@@ -1218,17 +1282,21 @@ Item {
             }
             Rectangle {
                 x: 16.67; y: 74.67; width: parent.width - 16.67 - 31.33; height: parent.height - y - 80 - 8
-                radius: 12; color: theme.surface; clip: true
+                // Tiles drop the white card, as in Teams.
+                radius: 12; color: pk.view === "tiles" && !pkMore.visible && !(pk.shown && pk.shown.people && !pk.person) ? "transparent" : theme.surface; clip: true
                 // Header: Type, Name, Modified, Modified By (14/600, 48 tall).
                 Row {
                     id: pkHead
-                    visible: !pkMore.visible
+                    visible: !pkMore.visible && pk.view !== "tiles"
                     height: 48
                     Item { width: 55; height: 48; FluentIcon { x: 22; anchors.verticalCenter: parent.verticalCenter; name: "document-16"; size: 16; color: root.strong } }
-                    PickHead { width: 270; label: "Name" }
-                    PickHead { width: 170; label: "Modified" }
+                    PickHead { width: pk.view === "compact" ? 300 : 270; label: "Name" }
+                    PickHead { width: pk.view === "compact" ? 150 : 170; label: "Modified" }
                     PickHead { width: 150; label: "Modified By" }
+                    PickHead { visible: pk.view === "compact"; width: 150; label: "File Size" }
+                    PickHead { visible: pk.view === "compact"; width: 170; label: "Sharing" }
                     PickHead { visible: pk.searching; width: 150; label: "Location" }
+                    PickHead { visible: pk.view === "list" && !pk.searching; width: 200; label: "Activity" }
                 }
                 Rectangle { visible: pkHead.visible; y: 48.67; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#333333") }
                 // New folder: a name row at the top (Enter creates it, Esc drops it).
@@ -1284,6 +1352,8 @@ Item {
                         x: 16; y: 24; width: parent.width - 32; spacing: 12
                         Repeater {
                             model: ["Recent", "Your Teams"]
+                            // Recent: Quick access's libraries; Your Teams:
+                            // your teams' default libraries.
                             Column {
                                 required property string modelData
                                 width: moreCol.width; spacing: 12
@@ -1291,20 +1361,23 @@ Item {
                                 Flow {
                                     width: parent.width; spacing: 16
                                     Repeater {
-                                        model: pk.libraries
+                                        model: parent.parent.modelData === "Recent"
+                                            ? root.quickAccess.map(q => ({ site: q.site_title, name: q.title, drive_id: q.drive_id, acronym: q.acronym, color: q.color }))
+                                            : pk.libraries
                                         Rectangle {
                                             required property var modelData
                                             width: Math.min(316, (moreCol.width - 16) / 2); height: 58; radius: 4
                                             color: lch.hovered ? theme.menuHover : theme.surface
                                             border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
-                                            Avatar { x: 9; anchors.verticalCenter: parent.verticalCenter; size: 40; name: parent.modelData.site; square: true }
+                                            SiteTile { visible: !!parent.modelData.color; x: 9; anchors.verticalCenter: parent.verticalCenter; size: 40; acronym: parent.modelData.acronym || ""; tint: parent.modelData.color || "" }
+                                            Avatar { visible: !parent.modelData.color; x: 9; anchors.verticalCenter: parent.verticalCenter; size: 40; name: parent.modelData.site; square: true }
                                             Column {
                                                 x: 62; width: parent.width - 70; anchors.verticalCenter: parent.verticalCenter
                                                 Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.site; font.family: theme.font; font.pixelSize: 14; color: root.ink }
                                                 Text { visible: parent.parent.modelData.name !== "Documents"; width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: 12; color: root.strong }
                                             }
                                             HoverHandler { id: lch; cursorShape: Qt.PointingHandCursor }
-                                            TapHandler { onTapped: pk.openPlace(parent.modelData.drive_id, parent.modelData) }
+                                            TapHandler { onTapped: if (parent.modelData.drive_id) pk.openPlace(parent.modelData.drive_id, { name: parent.modelData.site, drive_id: parent.modelData.drive_id }) }
                                             Accessible.role: Accessible.Button
                                             Accessible.name: modelData.site + " " + modelData.name
                                         }
@@ -1315,7 +1388,7 @@ Item {
                     }
                 }
                 ListView {
-                    visible: !(pk.shown && pk.shown.people && !pk.person) && !(pk.place === "more" && !pk.searching)
+                    visible: !(pk.shown && pk.shown.people && !pk.person) && !(pk.place === "more" && !pk.searching) && pk.view !== "tiles"
                     anchors { top: nfRowItem.bottom; topMargin: pk.newFolder ? 0 : 1.67; left: parent.left; right: parent.right; bottom: parent.bottom }
                     clip: true
                     model: parent.parent.listItems
@@ -1325,31 +1398,75 @@ Item {
                         id: prow
                         required property var modelData
                         readonly property bool folder: modelData.is_folder && modelData.id !== (pk.target ? pk.target.id : "")
-                        width: ListView.view.width; height: 59
+                        // List: 59 tall, a 32 px icon and the name over "n
+                        // items" or the size (• a people glyph when shared);
+                        // Compact List: 32 tall, a 20 px icon, plus File Size
+                        // and Sharing columns.
+                        readonly property bool compact: pk.view === "compact"
+                        readonly property string sizeLine: modelData.is_folder ? (modelData.child_count === 1 ? "1 item" : (modelData.child_count || 0) + " items") : root.sizeText(modelData.size)
+                        width: ListView.view.width; height: compact ? 32 : 59
                         color: folder && prh2.hovered ? theme.menuHover : "transparent"
                         opacity: folder ? 1 : 0.45
                         FluentIcon {
-                            x: 16; anchors.verticalCenter: parent.verticalCenter; size: 32
-                            name: prow.modelData.is_folder ? "folder-32-filled" : "document-16"
-                            color: prow.modelData.is_folder ? "#F2C94C" : root.strong
+                            x: prow.compact ? 22 : 16; anchors.verticalCenter: parent.verticalCenter; size: prow.compact ? 20 : 32
+                            name: prow.modelData.is_folder ? "ft-folder-32" : root.fileIcon(prow.modelData.kind)
                         }
                         Column {
-                            x: 67; width: 250; anchors.verticalCenter: parent.verticalCenter
+                            x: 67; width: (prow.compact ? 300 : 270) - 20; anchors.verticalCenter: parent.verticalCenter
                             Text { width: parent.width; elide: Text.ElideRight; text: prow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: root.ink }
-                            Text {
-                                visible: prow.modelData.is_folder
-                                text: prow.modelData.child_count + (prow.modelData.child_count === 1 ? " item" : " items")
-                                font.family: theme.font; font.pixelSize: 12; color: root.ink
+                            Row {
+                                visible: !prow.compact
+                                spacing: 4
+                                Text { text: prow.sizeLine + (prow.modelData.sharing === "Shared" && !prow.modelData.is_folder ? " •" : ""); font.family: theme.font; font.pixelSize: 12; color: root.ink }
+                                FluentIcon { visible: prow.modelData.sharing === "Shared" && !prow.modelData.is_folder; anchors.verticalCenter: parent.verticalCenter; name: "people-12"; size: 12; color: root.ink }
                             }
                         }
-                        Text { x: 337; width: 150; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: root.ago(prow.modelData.modified); font.family: theme.font; font.pixelSize: 14; color: root.strong }
-                        Text { x: 507; width: 130; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.modelData.modified_by; font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                        Text { x: prow.compact ? 367 : 337; width: 150 - 12; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.modelData.modified_text || root.ago(prow.modelData.modified); font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                        Text { x: prow.compact ? 517 : 507; width: 130; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.modelData.modified_by; font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                        Text { visible: prow.compact; x: 667; width: 138; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.sizeLine; font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                        Row {
+                            visible: prow.compact; x: 817; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                            FluentIcon { visible: prow.modelData.sharing === "Shared"; anchors.verticalCenter: parent.verticalCenter; name: "people-16"; size: 14; color: root.strong }
+                            Text { text: prow.modelData.sharing || ""; font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                        }
+                        // List: Activity (a 14 px #0078D4 glyph, the text and
+                        // its time in 14 px).
+                        Row {
+                            visible: !prow.compact && !pk.searching && !!prow.modelData.activity
+                            x: 657; width: parent.width - 657 - 16; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 14; color: "#0078D4"; name: prow.modelData.activity ? root.activityIcon(prow.modelData.activity.kind) : "" }
+                            Text {
+                                width: parent.width - 18; elide: Text.ElideRight
+                                text: prow.modelData.activity ? prow.modelData.activity.text + " " + prow.modelData.activity.time : ""
+                                font.family: theme.font; font.pixelSize: 14; color: root.strong
+                            }
+                        }
                         // Search results also say where each one is.
-                        Text { visible: pk.searching; x: 657; width: parent.width - 657 - 16; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.modelData.parent_name || ""; font.family: theme.font; font.pixelSize: 14; color: root.strong }
+                        Text { visible: pk.searching; x: prow.compact ? 987 : 657; width: parent.width - x - 16; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.modelData.parent_name || ""; font.family: theme.font; font.pixelSize: 14; color: root.strong }
                         HoverHandler { id: prh2; cursorShape: prow.folder ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler { enabled: prow.folder; onTapped: pk.into(prow.modelData) }
                         Accessible.role: Accessible.Button
                         Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+                    }
+                }
+                // Tiles: folders as in the OneDrive app's Tiles (176 x 171,
+                // the drawing with its count, name and date); videos as
+                // 304 x 171 pictures with the name and date on a dark
+                // nameplate; other files as their 74 x 96 picture. Files
+                // can't be picked (half opacity).
+                Flickable {
+                    visible: pk.view === "tiles" && !(pk.shown && pk.shown.people && !pk.person) && !(pk.place === "more" && !pk.searching)
+                    anchors { top: pk.newFolder ? nfRowItem.bottom : parent.top; topMargin: 8; left: parent.left; right: parent.right; bottom: parent.bottom }
+                    clip: true; contentHeight: pkTiles.height + 16
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    Flow {
+                        id: pkTiles
+                        width: parent.width - 8; spacing: 8
+                        Repeater {
+                            model: pkBody.listItems
+                            PickTile {}
+                        }
                     }
                 }
                 Text {
@@ -1388,20 +1505,33 @@ Item {
         }
     }
 
+    /// Quick access's (i): "Frequently used team locations, including
+    /// shared libraries and Teams channels."
+    component InfoTip: FluentIcon {
+        name: "info-16-regular"; size: 16; color: root.ink
+        HoverHandler { id: ith }
+        ToolTip.visible: ith.hovered; ToolTip.delay: 300
+        ToolTip.text: "Frequently used team locations, including shared libraries and Teams channels."
+        Accessible.name: ToolTip.text
+    }
+
     component PlaceRow: Rectangle {
         id: pr
         property string label
         property string icon
         property bool on: false
         property bool site: false
+        /// A Quick access library: its tile and pin.
+        property var lib: null
         signal picked()
         x: 16; width: 190; height: 36; radius: 8
         color: prh.hovered ? theme.menuHover : "transparent"
         Rectangle { visible: pr.on; x: -16; width: 3; height: 20; radius: 1.5; anchors.verticalCenter: parent.verticalCenter; color: root.accent }
         FluentIcon { visible: !pr.site; x: 12; anchors.verticalCenter: parent.verticalCenter; name: pr.icon; size: 16; color: pr.on ? root.accent : root.strong }
-        Avatar { visible: pr.site; x: 10; anchors.verticalCenter: parent.verticalCenter; size: 20; name: pr.label; square: true }
+        Avatar { visible: pr.site && !pr.lib; x: 10; anchors.verticalCenter: parent.verticalCenter; size: 20; name: pr.label; square: true }
+        SiteTile { visible: !!pr.lib; x: 8; anchors.verticalCenter: parent.verticalCenter; acronym: pr.lib ? pr.lib.acronym : ""; tint: pr.lib ? pr.lib.color : "" }
         Text {
-            x: 36; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter
+            x: 36; width: parent.width - 44 - (pr.lib ? 28 : 0); anchors.verticalCenter: parent.verticalCenter
             text: pr.label; elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: 14; font.weight: pr.on ? Font.DemiBold : Font.Normal; color: root.strong
         }
@@ -1409,6 +1539,79 @@ Item {
         TapHandler { onTapped: pr.picked() }
         Accessible.role: Accessible.Button
         Accessible.name: label
+        // Pin to Quick access: 24 px at the row's right (16 px glyph),
+        // shown on hover, and always (solid) once pinned.
+        PinButton { visible: !!pr.lib && (prh.hovered || pr.lib.pinned); x: 160; anchors.verticalCenter: parent.verticalCenter; lib: pr.lib }
+    }
+
+    component PinButton: Rectangle {
+        id: pb
+        property var lib: null
+        width: 24; height: 24; radius: 4
+        color: pbh.hovered ? theme.pick("#E0E0E0", "#3D3D3D") : "transparent"
+        readonly property bool pinned: !!lib && lib.pinned
+        FluentIcon { anchors.centerIn: parent; name: pb.pinned ? "pin-16-filled" : "pin-16"; size: 16; color: root.ink }
+        HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.pinLibrary(pb.lib, !pb.pinned) }
+        ToolTip.visible: pbh.hovered; ToolTip.delay: 300
+        ToolTip.text: lib ? (pinned ? "Unpin " + lib.label + " from Quick access" : "Pin " + lib.label + " to Quick access") : ""
+        Accessible.role: Accessible.Button
+        Accessible.name: "Pin to Quick access"
+    }
+
+    component PickTile: Item {
+        id: pt
+        required property var modelData
+        readonly property bool folder: modelData.is_folder && modelData.id !== (picker.target ? picker.target.id : "")
+        readonly property bool wide: !modelData.is_folder && root.isVideo(modelData.kind)
+        width: wide ? 304 : 176; height: 171
+        opacity: folder ? 1 : 0.5
+        FluentSurface { visible: pt.folder && pth.hovered; anchors.fill: parent; radius: 12; depth: 4; color: theme.surface }
+        Item {
+            visible: pt.modelData.is_folder
+            x: 32; y: 24; width: 112; height: 80; clip: true
+            FluentIcon { x: 0; y: -16; size: 112; name: "ft-folder-32" }
+            Text { x: 14; y: 56; text: pt.modelData.child_count || 0; font.family: theme.font; font.pixelSize: 14; color: "#8F3900" }
+        }
+        Rectangle {
+            visible: pt.wide
+            anchors.fill: parent; radius: 12; clip: true; color: theme.pick("#E0E0E0", "#3D3D3D")
+            Image { anchors.fill: parent; source: picker.thumbs[pt.modelData.id] || ""; fillMode: Image.PreserveAspectCrop; asynchronous: true }
+            Rectangle {
+                y: parent.height - 76; width: parent.width; height: 76
+                gradient: Gradient {
+                    GradientStop { position: 0; color: "#00000000" }
+                    GradientStop { position: 0.2; color: "#32000000" }
+                    GradientStop { position: 0.45; color: "#8D000000" }
+                    GradientStop { position: 1; color: "#A6000000" }
+                }
+            }
+            Text { x: 10; y: parent.height - 54; width: parent.width - 20; elide: Text.ElideRight; text: pt.modelData.name; font.family: theme.font; font.pixelSize: 14; color: "white" }
+            Text { x: 10; y: parent.height - 32; text: pt.modelData.modified_text || root.ago(pt.modelData.modified); font.family: theme.font; font.pixelSize: 12; color: "white" }
+        }
+        Rectangle {
+            visible: !pt.modelData.is_folder && !pt.wide
+            x: 51; y: 16; width: 74; height: 96; radius: 4
+            color: theme.surface; border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+            Image { id: ptImg; anchors.fill: parent; anchors.margins: 1; source: picker.thumbs[pt.modelData.id] || ""; fillMode: Image.PreserveAspectCrop; asynchronous: true }
+            FluentIcon { visible: !ptImg.source.toString(); anchors.centerIn: parent; size: 32; name: root.fileIcon(pt.modelData.kind) }
+        }
+        Text {
+            visible: !pt.wide
+            x: 8; y: 117; width: parent.width - 16; height: 30
+            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+            text: pt.modelData.name; font.family: theme.font; font.pixelSize: 14; color: root.ink
+        }
+        Text {
+            visible: pt.modelData.is_folder
+            x: 8; y: 141; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+            text: pt.modelData.modified_text || root.ago(pt.modelData.modified); font.family: theme.font; font.pixelSize: 12; color: root.strong
+        }
+        Component.onCompleted: if (!modelData.is_folder) picker.wantThumb(modelData, wide ? "c304x171" : "medium")
+        HoverHandler { id: pth; cursorShape: pt.folder ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        TapHandler { enabled: pt.folder; onTapped: picker.into(pt.modelData) }
+        Accessible.role: Accessible.Button
+        Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
     }
 
     component PickHead: Item {
@@ -1416,6 +1619,35 @@ Item {
         height: 48
         Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: parent.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
     }
+
+    // OneDrive's file size wording: "1 byte", "56 bytes", "26.0 KB",
+    // "7.66 MB" (two decimals under 10, one under 100, none above).
+    function sizeText(n) {
+        if (typeof n !== "number" || isNaN(n) || n < 0) return ""
+        if (n === 1) return "1 byte"
+        const f = v => v >= 100 || v === Math.floor(v) ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2)
+        if (n < 1024) return n + " bytes"
+        if (n < 1024e3) return f(n / 1024) + " KB"
+        if (n < 1048576e3) return f(n / 1048576) + " MB"
+        if (n < 1073741824e3) return f(n / 1073741824) + " GB"
+        return f(n / 1099511627776) + " TB"
+    }
+    /// OneDrive's file-type icon (32 px drawings).
+    function fileIcon(kind) {
+        const t = String(kind || "").toLowerCase()
+        const k = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
+                : t === "pdf" ? "pdf" : t === "one" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
+                : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(t) >= 0 ? "photo"
+                : isVideo(t) ? "video" : "genericfile"
+        return "ft-" + k + "-32"
+    }
+    // The Activity column's glyph (OneDrive: Edit, Comment, Reply, Share,
+    // Accounts, Groupedlist).
+    function activityIcon(kind) {
+        return ({ edit: "edit-16", comment: "comment-16", commentResponse: "arrow-reply-16", share: "share-16",
+                  mention: "mention-16", createTask: "task-list-ltr-20", completeTask: "task-list-ltr-20" })[kind] || "edit-16"
+    }
+    function isVideo(kind) { return ["mp4", "mov", "wmv", "avi", "mkv", "webm", "m4v"].indexOf(String(kind || "").toLowerCase()) >= 0 }
 
     function ago(t) {
         if (!t) return ""
@@ -1446,6 +1678,7 @@ Item {
                  people: sh.people ? sh.people.map(p => p.name + ":" + p.items.length) : null, libraries: picker.libraries.length, error: sh.error || "" }
     }
     function pickerSearchForTest(q, all) { picker.search(q, all) }
+    function pickerViewForTest(v) { picker.view = v }
     function pickerNewFolderForTest(name) { picker.createFolder(name) }
     function pickerIntoForTest(name) { const f = (picker.shown && picker.shown.items || []).find(i => i.name === name); if (f) picker.into(f); return !!f }
     function pickerDoneForTest() { picker.done() }
@@ -1457,6 +1690,8 @@ Item {
     function colorForTest(it, code) { item = it; backend.driveAction(tag + "folder_color", JSON.stringify(it), JSON.stringify({ code: code })) }
     function closeAllForTest() { menu.close(); fileRequest.close(); colorPicker.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close(); versions.close(); share.close() }
     function shareOpenForTest() { return share.opened }
+    function quickForTest() { return root.quickAccess.map(q => q.label + (q.pinned ? " (pinned)" : "") + (q.drive_id ? "" : " (no drive)")) }
+    function pinForTest(label, pin) { const q = root.quickAccess.find(x => x.label === label); if (q) root.pinLibrary(q, pin); return !!q }
     function copyForTest() { root.copy(copyLink.url); copyLink.copied = true }
     function linkForTest() { return { kind: copyLink.kind, share_id: copyLink.shareId, ref: copyLink.target ? ref(copyLink.target) : null } }
 }

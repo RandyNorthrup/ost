@@ -12975,6 +12975,15 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 Ok(match kind.as_str() {
                     "libraries" => json!(api::drive::libraries(&client).await?),
+                    // Quick access (pinned, then recent libraries) and its
+                    // pin / unpin.
+                    "quick_access" => json!(api::quick_access::items(&client).await?),
+                    "quick_pin" => {
+                        let lib: api::quick_access::QuickLibrary = serde_json::from_value(args["lib"].clone())?;
+                        let pin = args["pin"].as_bool().unwrap_or(true);
+                        api::quick_access::set_pinned(&client, &lib, pin).await?;
+                        json!({ "title": lib.title, "pin": pin, "items": api::quick_access::items(&client).await.unwrap_or_default() })
+                    }
                     "rename" => {
                         api::drive::rename(&client, &item.drive_id, &item.id, &s("name")).await?;
                         json!(null)
@@ -13126,7 +13135,7 @@ impl qobject::Backend {
                     "picker_new_folder" => json!(api::drive::new_folder(&client, &s("drive_id"), &s("item_id"), &s("name")).await?),
                     "folders" => {
                         let (d, i) = (s("drive_id"), s("item_id"));
-                        let (here, items) = tokio::join!(
+                        let (here, items, rows) = tokio::join!(
                             async {
                                 if i.is_empty() {
                                     api::drive::root(&client, &d).await
@@ -13134,9 +13143,21 @@ impl qobject::Backend {
                                     api::drive::item(&client, &d, &i).await
                                 }
                             },
-                            api::drive::children(&client, &d, &i)
+                            api::drive::children(&client, &d, &i),
+                            api::list_rows::for_folder(&client, &d, &i)
                         );
-                        json!({ "drive_id": d, "item_id": i, "here": here?, "items": items? })
+                        // Dates, sharing and Activity as Teams' lists show
+                        // them (SharePoint's rows; Graph's times otherwise).
+                        let rows = rows.unwrap_or_else(|e| {
+                            tracing::warn!("picker rows: {e:#}");
+                            Default::default()
+                        });
+                        let now = chrono::Local::now();
+                        let items: Vec<serde_json::Value> = items?
+                            .iter()
+                            .map(|it| api::list_rows::decorate(it, rows.get(&it.sp_item.to_ascii_lowercase()), now))
+                            .collect();
+                        json!({ "drive_id": d, "item_id": i, "here": here?, "items": items })
                     }
                     other => anyhow::bail!("unknown drive action {other}"),
                 })

@@ -60,7 +60,7 @@ Item {
     readonly property string title: ({ recent: "Home", shared: "Shared", libraries: "Libraries", favorites: "Favorites",
         recycle: "Recycle bin", meetings: "Meetings", media: "Media", people: person || "People" })[view]
         || (trail.length ? trail[0].name : "My files")
-    Component.onCompleted: open("recent")
+    Component.onCompleted: { open("recent"); actions.loadQuickAccess() }
 
     // Teams' OneDrive list colours.
     readonly property color ink: theme.pick("#616161", "#D6D6D6")
@@ -151,27 +151,10 @@ Item {
         return ["doc", "docx"].indexOf(k) >= 0 ? "ft-docx-20" : ["xls", "xlsx"].indexOf(k) >= 0 ? "ft-xlsx-20"
              : ["ppt", "pptx"].indexOf(k) >= 0 ? "ft-pptx-20" : k === "pdf" ? "ft-pdf-20" : ""
     }
-    // OneDrive's file size wording: "1 byte", "56 bytes", "26.0 KB",
-    // "7.66 MB" (two decimals under 10, one under 100, none above).
-    function size(n) {
-        if (typeof n !== "number" || isNaN(n) || n < 0) return ""
-        if (n === 1) return "1 byte"
-        const f = v => v >= 100 || v === Math.floor(v) ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2)
-        if (n < 1024) return n + " bytes"
-        if (n < 1024e3) return f(n / 1024) + " KB"
-        if (n < 1048576e3) return f(n / 1048576) + " MB"
-        if (n < 1073741824e3) return f(n / 1073741824) + " GB"
-        return f(n / 1099511627776) + " TB"
-    }
+    // OneDrive's file size wording (FileActions.sizeText).
+    function size(n) { return actions.sizeText(n) }
     function itemCount(n) { return n === 1 ? "1 item" : (n || 0) + " items" }
-    function fileIcon(kind) {
-        const t = String(kind || "").toLowerCase()
-        const k = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
-                : t === "pdf" ? "pdf" : t === "one" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
-                : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(t) >= 0 ? "photo"
-                : ["mp4", "mov", "wmv", "avi", "mkv", "webm", "m4v"].indexOf(t) >= 0 ? "video" : "genericfile"
-        return "ft-" + k + "-32"
-    }
+    function fileIcon(kind) { return actions.fileIcon(kind) }
     // The selection bar's Open: the file's app icon for Office files,
     // OneDrive's OpenFile glyph otherwise.
     function openIcon(kind) {
@@ -181,10 +164,7 @@ Item {
     }
     // The Activity column's glyph (OneDrive: Edit, Comment, Reply, Share,
     // Accounts, Groupedlist).
-    function activityIcon(kind) {
-        return ({ edit: "edit-16", comment: "comment-16", commentResponse: "arrow-reply-16", share: "share-16",
-                  mention: "mention-16", createTask: "task-list-ltr-20", completeTask: "task-list-ltr-20" })[kind] || "edit-16"
-    }
+    function activityIcon(kind) { return actions.activityIcon(kind) }
     function ago(t) {
         if (!t) return ""
         const d = new Date(t), s = (Date.now() - d) / 1000
@@ -262,11 +242,50 @@ Item {
             Item { width: 1; height: 16 }
             Text { x: 16; text: "Quick access"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
             Item { width: 1; height: 6 }
+            // Teams' Quick access: pinned libraries, then the ones used
+            // lately; the text only while there are none.
             Text {
+                visible: actions.quickAccess.length === 0
                 x: 16; width: parent.width - 16; wrapMode: Text.Wrap
                 text: "As you open files from shared libraries, they'll appear in this Quick access list."
                 font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong
             }
+            Repeater {
+                model: actions.quickAccess
+                QuickRow {}
+            }
+        }
+    }
+
+    /// A Quick access library: its 20 px tile, the name, and a pin at the
+    /// right on hover (solid, and always shown, once pinned).
+    component QuickRow: Rectangle {
+        id: qr
+        required property var modelData
+        readonly property bool sel: root.view === "folder" && root.trail.length > 0 && !!modelData.drive_id && root.trail[0].drive_id === modelData.drive_id
+        width: parent.width + 16; height: 36; radius: theme.radius
+        color: sel ? theme.selected : qh.hovered ? theme.rowHover : "transparent"
+        Rectangle { visible: qr.sel; x: -8; width: 3; height: 20; radius: 1.5; anchors.verticalCenter: parent.verticalCenter; color: theme.brand }
+        SiteTile { x: 16; anchors.verticalCenter: parent.verticalCenter; acronym: qr.modelData.acronym; tint: qr.modelData.color }
+        Text {
+            x: 44; width: parent.width - 44 - 36; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
+            text: qr.modelData.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: qr.sel ? Font.DemiBold : Font.Normal; color: theme.text
+        }
+        HoverHandler { id: qh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: if (qr.modelData.drive_id) { root.trail = []; root.openFolder(qr.modelData.label, qr.modelData.drive_id, "") } }
+        Accessible.role: Accessible.Button
+        Accessible.name: modelData.label
+        Rectangle {
+            visible: qh.hovered || qr.modelData.pinned
+            x: parent.width - 32; width: 24; height: 24; radius: 4; anchors.verticalCenter: parent.verticalCenter
+            color: qph.hovered ? theme.pick("#E0E0E0", "#3D3D3D") : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: qr.modelData.pinned ? "pin-16-filled" : "pin-16"; size: 16; color: root.ink }
+            HoverHandler { id: qph; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: actions.pinLibrary(qr.modelData, !qr.modelData.pinned) }
+            ToolTip.visible: qph.hovered; ToolTip.delay: 300
+            ToolTip.text: qr.modelData.pinned ? "Unpin " + qr.modelData.label + " from Quick access" : "Pin " + qr.modelData.label + " to Quick access"
+            Accessible.role: Accessible.Button
+            Accessible.name: "Pin to Quick access"
         }
     }
 
@@ -274,7 +293,8 @@ Item {
         id: nr
         required property var modelData
         readonly property bool sel: root.view === modelData.key || (modelData.key === "myfiles" && root.view === "folder" && root.trail.length && root.trail[0].name === "My files")
-            || (modelData.key === "libraries" && root.view === "folder" && root.trail.length && root.trail[0].name !== "My files")
+            || (modelData.key === "libraries" && root.view === "folder" && root.trail.length && root.trail[0].name !== "My files"
+                && !actions.quickAccess.some(q => q.drive_id && q.drive_id === root.trail[0].drive_id))
         width: parent.width + 16; height: 36; radius: theme.radius
         color: sel ? theme.selected : nh.hovered && !modelData.off ? theme.rowHover : "transparent"
         opacity: modelData.off ? 0.45 : 1
@@ -1106,6 +1126,7 @@ Item {
     /// Show row `i` as hovered (grabToImage has no pointer).
     property int hoverForTest: -1
     function selectForTest(names) { selectedIds = items.filter(i => names.indexOf(i.name) >= 0).map(i => i.id); return selectedIds.length }
+    function openQuickForTest(label) { const q = actions.quickAccess.find(x => x.label === label); if (q) { root.trail = []; root.openFolder(q.label, q.drive_id, "") } return !!q }
     function folderBarForTest() { return folderBar.visible ? folderBar.commands.map(c => c.label) : [] }
     function folderBarRunForTest(label) { actions.actMany([root.hereItem], label) }
     function barForTest() { return { commands: selBar.commands.map(c => c.label || "···"), more: selBar.more.map(c => c.label), count: root.selection.length } }
