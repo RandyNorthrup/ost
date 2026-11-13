@@ -11,7 +11,8 @@ import QtQuick.Controls.Basic
 // - buttons (at most 6): 32 tall, padding 0 20, a 0.67 px BrandStroke2
 //   (#C5CBFA) border, radius 4, white, 14/20 semibold brand text, 8 apart.
 // A thumbnail card puts a 100 x 100 image left of the title, subtitle and
-// text (12 px, line height 1.25), stacking it above below 360 wide.
+// text (12 px, line height 1.25, NeutralForeground2), stacking it above
+// below 360 wide.
 Rectangle {
     id: card
     property var content: ({})
@@ -86,7 +87,9 @@ Rectangle {
                 width: parent.width; wrapMode: Text.Wrap
                 text: card.content.text || ""
                 lineHeight: card.thumbnail ? 15 : 20; lineHeightMode: Text.FixedHeight
-                font.family: theme.font; font.pixelSize: card.thumbnail ? 12 : 14; color: theme.text
+                // Teams: a hero card's text NeutralForeground1, a thumbnail
+                // card's NeutralForeground2 (measured 2026-11-12).
+                font.family: theme.font; font.pixelSize: card.thumbnail ? 12 : 14; color: card.thumbnail ? theme.textStrong : theme.text
             }
         }
     }

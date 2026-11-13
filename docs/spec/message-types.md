@@ -458,6 +458,18 @@ Sent from Teams web into "OST group test" and read back raw. Both are plain `Ric
   - The title is 16/22, weight 600, #424242. The subtitle is 14/20, weight 600, #424242, 8 under the title.
   - The image is 16:9 (object-fit cover), 8 under the subtitle. The text is 14/20 #242424, 8 under the image.
   - The buttons come 4 under the text: 32 tall, padding 0 20, a 0.67 px #C5CBFA border, radius 4, white, 14/20 semibold #5B5FC7, 8 apart.
+- Thumbnail card (measured 2026-11-12, "OST TEST 114"): as the hero card, but its text is 12/15 #424242.
+- List card (`…teams.card.list`, measured 2026-11-12, "OST TEST 115"): the hero card's frame and title. Items start 26.7 under the title, 4 further in, and sit 19.7 apart:
+  - A result item has its title (14/18.67, weight 600, #424242), then 2 lower its subtitle (12/16 #424242). Its tap is clickable.
+  - A section is 12/16, weight 700, #616161.
+  - Buttons sit 26.7 under the last item.
+- O365 connector card (`…teams.card.o365connector`, measured 2026-11-12, "OST TEST 116"):
+  - A 3 px bar in its `themeColor` (radius 4 4 0 0) sits on top of the hero card's frame, 452 wide.
+  - The title is 16/22, weight 600, 26.7 down. The text is 14/20, 8 under it.
+  - Each section's activityTitle (600), activitySubtitle and activityText (14/20) come 8 after what's above, then 10 apart.
+  - Facts follow: the name (600), then the value 10 after the widest name.
+  - Everything is #424242, with 26.6 below the last line.
+  - An `OpenUri` potentialAction showed no button.
 - Card images arrive rewritten to Teams' URL proxy, `https://{region}.asyncgw.teams.microsoft.com/urlp/v1/url/content?url={encoded}`. It answers 401 without the skype token (`Authorization: skype_token …`, as AMS).
 - Important (`properties.importance: "high"`):
   - The name line gets "IMPORTANT" (12/16, weight 600, #D13438, uppercase), 8 after the time.
@@ -1124,7 +1136,7 @@ Sent from Teams web into "OST group test" and read back raw. Both are plain `Ric
 - Whether bot cards sit inside the coloured bubble or replace it.
 - The Fluent name of the card-button image-failure icon (`P6O`).
 - The single-card class `r4xauy`, which is missing from the CSS file.
-- The O365 connector card layout (lazy 388704).
+- The O365 connector card's potentialAction buttons (an OpenUri one showed none), markdown in its text, and section images.
 - Adaptive Cards renderer internals beyond the host config.
 
 **Smart cards**

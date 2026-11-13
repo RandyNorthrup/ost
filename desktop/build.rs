@@ -155,6 +155,8 @@ fn main() {
         "qml/OofPage.qml",
         "qml/ProfileCard.qml",
         "qml/HoverCard.qml",
+        "qml/ListCard.qml",
+        "qml/ConnectorCard.qml",
         "qml/ThreadsPane.qml",
         "qml/FindPane.qml",
         "qml/FeedbackWindow.qml",

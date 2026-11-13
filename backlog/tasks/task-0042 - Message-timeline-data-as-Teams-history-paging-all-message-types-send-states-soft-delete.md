@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-10T17:27:00Z'
+updated_date: '2026-11-13T05:26:00Z'
 labels:
   - desktop
   - messages
@@ -57,4 +57,6 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 - 2026-11-10: meeting recordings render as Teams' control rows (started, stopped, saved with "Remove expiration"). Transcript-only rows and legacy Media_CallTranscript are hidden outside 1:1, and Media_MeetingObjects is never shown (this was the raw {"scopeId"…} JSON). Meeting chats' call rows read "Meeting ended: {duration}" with the video icon. Verified side by side in OST calendar test.
 
 - Meeting chats' JSON member events (guests "left the chat" / "was invited to the meeting") now render, with Teams' Unverified badge after visitors' names. Call durations drop whole days as Teams does ("1h 28m 28s" for a 25h 28m meeting).
+
+- 2026-11-12: posted hero/thumbnail/list/O365 connector test cards (OST TEST 113–116) to OST group test and measured Teams' rendering. Hero/thumbnail were already built (thumbnail text colour fixed to #424242); built ListCard.qml and ConnectorCard.qml (were "Sent a card"). Added --chat-shot. Left: carousels, Action.Submit/Execute invokes and result footer, AMS images, contacts, polls, list-item icons, connector actions/markdown.
 <!-- SECTION:NOTES:END -->

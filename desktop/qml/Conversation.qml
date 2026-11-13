@@ -469,7 +469,8 @@ Rectangle {
         return m ? m.name : ""
     }
     // Card types drawn natively (Teams' supported set, so far).
-    readonly property var cardKinds: ["application/vnd.microsoft.card.adaptive", "application/vnd.microsoft.card.hero", "application/vnd.microsoft.card.thumbnail"]
+    readonly property var cardKinds: ["application/vnd.microsoft.card.adaptive", "application/vnd.microsoft.card.hero", "application/vnd.microsoft.card.thumbnail",
+        "application/vnd.microsoft.teams.card.list", "application/vnd.microsoft.teams.card.o365connector"]
     function jumpToMessage(id) {
         const i = (list.model || []).findIndex(m => m.id === id)
         if (i >= 0) list.positionViewAtIndex(i, ListView.Center)
@@ -2023,7 +2024,9 @@ Rectangle {
                         model: bubble.cards
                         Loader {
                             required property var modelData
-                            sourceComponent: modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp : heroComp
+                            sourceComponent: modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp
+                                : modelData.content_type === "application/vnd.microsoft.teams.card.list" ? listComp
+                                : modelData.content_type === "application/vnd.microsoft.teams.card.o365connector" ? connectorComp : heroComp
                             Component {
                                 id: adaptiveComp
                                 AdaptiveCard {
@@ -2049,6 +2052,21 @@ Rectangle {
                                     }
                                     // Tapping the card opens the app's details, as Teams.
                                     onOpenLink: link => root.openLink(link)
+                                }
+                            }
+                            Component {
+                                id: listComp
+                                ListCard {
+                                    content: modelData.content
+                                    cardWidth: list.width >= 720 ? 452 : 360
+                                    onImBack: t => root.send(t)
+                                }
+                            }
+                            Component {
+                                id: connectorComp
+                                ConnectorCard {
+                                    content: modelData.content
+                                    cardWidth: list.width >= 720 ? 452 : 360
                                 }
                             }
                             Component {
