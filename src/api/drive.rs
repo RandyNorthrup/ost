@@ -255,6 +255,27 @@ pub async fn set_favorite(
     Ok(())
 }
 
+/// Where OneDrive keeps your favorites for a file on `site_url`: your
+/// OneDrive's host ("{tenant}-my.sharepoint.com").
+pub fn favorites_host(site_url: &str) -> Option<String> {
+    let host = site_url.strip_prefix("https://")?.split('/').next()?;
+    let (tenant, rest) = host.split_once('.')?;
+    let tenant = tenant.strip_suffix("-my").unwrap_or(tenant);
+    Some(format!("https://{tenant}-my.{rest}"))
+}
+
+/// Teams' Favorite / Unfavorite on a message's file card: OneDrive's
+/// `favorites/followedListItems/oneDrive.add` (or `.remove`) with the
+/// file's site and address.
+pub async fn set_favorite_by_url(site_url: &str, url: &str, on: bool) -> Result<()> {
+    let host = favorites_host(site_url).ok_or_else(|| anyhow::anyhow!("Not a SharePoint address: {site_url}"))?;
+    let action = if on { "add" } else { "remove" };
+    let body = serde_json::json!({ "value": [{ "siteUrl": format!("{}/", site_url.trim_end_matches('/')), "url": url }] });
+    let json = [("accept", "application/json"), ("content-type", "application/json")];
+    super::sharing::post_with(&format!("{host}/_api/v2.1/favorites/followedListItems/oneDrive.{action}"), &body, &json).await?;
+    Ok(())
+}
+
 /// The Graph sharing id of a file's address (`u!` + its unpadded
 /// base64url), for `/shares/{id}`.
 pub fn share_id(url: &str) -> String {
@@ -893,6 +914,13 @@ pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn favorites_go_to_your_onedrive() {
+        assert_eq!(favorites_host("https://x-my.sharepoint.com/personal/a_x_com").as_deref(), Some("https://x-my.sharepoint.com"));
+        assert_eq!(favorites_host("https://x.sharepoint.com/sites/OSTTestTeam").as_deref(), Some("https://x-my.sharepoint.com"));
+        assert_eq!(favorites_host("not a url"), None);
+    }
 
     #[test]
     fn picker_search_asks_for_folders_as_teams_does() {

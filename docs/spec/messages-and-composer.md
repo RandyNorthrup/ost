@@ -1025,6 +1025,22 @@ Groups are separated by dividers; empty groups are skipped.
     - The service prefixes the element id with `x_`.
     - The AMS calls need a User-Agent with `Teams/{version}/{platform}` (Teams desktop sends …/49), or they fail with 400 "platform id could not be created".
 
+### A file in a message (measured on winpc, 2026-11-13, OST TEST 121)
+- **Card.** 320 x 229.33, radius 6, a 0.67 #E0E0E0 edge and the shadow (0 0 2 rgba(0,0,0,.12), 0 1 2 rgba(0,0,0,.14)), 16 in from the bubble's edge. A 48.67 #FAFAFA head with a 0.67 #E0E0E0 line under it, then the preview: 318.67 x 179.33 (16:9) on #F5F5F5, the c960x540 thumbnail top-aligned.
+- **Head.** "Main actions" is 238.67 x 44 at 8, 2, radius 8, and turns white on hover. Inside it:
+  - the 32 px file-type icon at 4, 6;
+  - the name (14/20 semibold) at 44, 4, cut at the end;
+  - the location under it (12/16 #616161), from `chicletBreadcrumbs`: "{team} > {channel}" ("personal > ost-test1_…" for a OneDrive file). A SharePoint list (splist) shows its team alone unless the team is "personal". The line is hidden unless both names are set. While a file uploads, or for an external file, Teams shows status text here instead.
+  - Clicking the head or the preview opens the file. Teams opens it full-pane in its own viewer, with Close and ··· (TASK-0131).
+- **Share** (`quick-share-action-button`): 32 x 31.33 at 246.67, 8.33, with a 20 px #616161 glyph. It opens Share this file. The card in that dialog starts from the file's default link, the `driveItem/commands` description ("Anyone with the link can edit" for ost-share-test.txt), and the box hints "Add a message (optional)".
+- **More actions (···):** the same size, radius 6. Its Fluent menu is 180 wide, padding 4, radius 4, with rows 32 tall and 2 apart. The label is 14/20 #424242 at 30; the menu's top-right sits under the button. Its items:
+  - **Open in Browser:** opens the file's link in the browser.
+  - **Download:** downloads the file.
+  - **Share:** as the Share button.
+  - **Copy link:** OneDrive's share dialog in copy mode, which goes straight to "Link copied" with what the link does ("Anyone with the link can edit") and Settings. It reuses the file's existing link.
+  - **Favorite / Unfavorite** (star / filled star): `POST {tenant}-my.sharepoint.com/_api/v2.1/favorites/followedListItems/oneDrive.add` (or `.remove`) with `{"value":[{"siteUrl":"<site>/","url":"<file>"}]}`. The toast reads `Added "{name}" to OneDrive Favorites`, or "Removed from OneDrive Favorites" with Undo. The menu then reads Unfavorite, and Graph's `/me/drive/following` agrees.
+- **Toast.** Teams' in-app toast is 288 wide. The title (14/20 semibold) wraps in 202.67 at 36.67, 12.67. Undo (14 px #4F52B2) sits 11 under it, and the card is then 12.67 deeper: 46 tall for one line, 65.33 for two, 96.33 with Undo.
+
 ## 18. Delivery options, schedule send, Enter, limits
 - **Delivery options** (648927, 871091):
 
@@ -1241,6 +1257,7 @@ Menu items show the shortcut text; hover-bar buttons expose it through `aria-key
 - [ ] Formatting bar groups and order; overflow taken from the end into "More options".
 - [ ] "+" flyout items; fun picker tabs.
 - [x] Attach menu (2026-11-13): the popover, the cloud file picker, the compose card, and the send in chats and channels, all as Teams. OST TEST 119 and 121 store the same records as Teams' 120 and 118. Not yet: the picker's command bar, People's collaborators, Media's headings and controls, the card's Link settings, and the suggestion rows (TASK-0130).
+- [x] A file in a message (2026-11-13): Teams' card with the location and preview, Share (Share this file from the default link), and the ··· menu (Open in Browser, Download, Share, Copy link, Favorite / Unfavorite with Teams' toasts and Undo). Not yet: opening the file in Teams' in-app viewer (TASK-0131).
 - [ ] Delivery options (Urgent disabled above 20 members), schedule send on right-click of Send, Enter behaviour and setting, hint text.
 - [ ] Pre-send checks, 90112-byte message limit and its error text, draft save, debounced at 400 ms.
 - [ ] @mention rules: Everyone limits (channel, team and tag mentions done).

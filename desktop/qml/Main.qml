@@ -1020,7 +1020,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -2902,6 +2902,55 @@ Window {
             else if (step === 31) { if (Qt.application.arguments.indexOf("--attach-send") < 0) Qt.quit(); else { conversation.setComposeText(chan ? "OST TEST 121 cloud file in a channel from OST" : "OST TEST 119 cloud file from OST"); } }
             else if (step === 32) conversation.sendForTest()
             else if (step === 36) { log("sent; status", backend.statusText); cap("sent"); Qt.quit() }
+            step++
+        }
+    }
+
+    // --filecard-test: in OST Test Team > OST layout test, OST TEST 121's
+    // file card (Teams' head, location and preview; hovered), its ··· menu,
+    // Copy link ("Link copied") and Share this file. --filecard-live also
+    // adds the file to OneDrive Favorites, reads the menu (Unfavorite) and
+    // takes it off again, then Undo and off once more: it ends as it began.
+    // Logs FILECARD lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--filecard-test") >= 0 && backend.signedIn && !!backend.teamsJson
+        interval: 2500; repeat: true
+        property int step: 0
+        property int waited: 0
+        property var file: null
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const log = (...a) => console.warn("FILECARD", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const live = Qt.application.arguments.indexOf("--filecard-live") >= 0
+            if (step === 0) {
+                const team = JSON.parse(backend.teamsJson).find(t => t.name === "OST Test Team")
+                const ch = team ? team.channels.find(c => c.name === "OST layout test") : null
+                if (!ch) return
+                backend.selectChat(ch.id, ch.name)
+            } else if (step === 3) {
+                const m = conversation.messages.filter(m => (m.files || []).some(f => f.name === "ost-share-test.txt")).pop()
+                if (!m) { if (waited++ < 10) return; log("no file message"); Qt.quit(); return }
+                file = m.files.find(f => f.name === "ost-share-test.txt")
+                log("file", file)
+            } else if (step === 5) { log("card", conversation.fileCardForTest(file.object_url)); cap("card") }
+            else if (step === 6) conversation.hoverFileCardForTest(file.object_url, true)
+            else if (step === 7) cap("hover")
+            else if (step === 8) { conversation.hoverFileCardForTest(file.object_url, false); conversation.openFileCardMenuForTest(file.object_url) }
+            else if (step === 10) { log("menu", conversation.fileCardMenuForTest(), conversation.fileCardKnownForTest(file.object_url) ? conversation.fileCardKnownForTest(file.object_url).favorite : null); cap("menu") }
+            else if (step === 11) { conversation.closeFileCardMenuForTest(); conversation.fileCardActForTest(file, "Copy link") }
+            else if (step === 14) { log("copied", conversation.copyLinkStateForTest()); cap("copied") }
+            else if (step === 15) { conversation.closeCopyLinkForTest(); conversation.fileCardActForTest(file, "Share") }
+            else if (step === 17) cap("share")
+            else if (step === 18) { conversation.closeCardShareForTest(); if (!live) { Qt.quit(); return } toast.toastData = null; conversation.fileCardActForTest(file, "Favorite") }
+            else if (step === 19) { if (!toast.toastData && waited++ < 12) return; waited = 0; log("favorite toast", toast.toastData ? toast.toastData.text : null); cap("fav-toast") }
+            else if (step === 20) conversation.openFileCardMenuForTest(file.object_url)
+            else if (step === 22) { log("menu after", conversation.fileCardMenuForTest().items); cap("menu-unfav") }
+            else if (step === 23) { conversation.closeFileCardMenuForTest(); toast.toastData = null; conversation.fileCardActForTest(file, "Unfavorite") }
+            else if (step === 24) { if (!toast.toastData && waited++ < 12) return; waited = 0; log("unfavorite toast", toast.toastData ? [toast.toastData.text, toast.toastData.action] : null); cap("unfav-toast") }
+            else if (step === 25) { const d = toast.toastData; toast.toastData = null; if (d && d.onAction) d.onAction() }
+            else if (step === 26) { if (!toast.toastData && waited++ < 12) return; waited = 0; log("undo toast", toast.toastData ? toast.toastData.text : null, "known", conversation.fileCardKnownForTest(file.object_url).favorite) }
+            else if (step === 27) { toast.toastData = null; conversation.fileCardActForTest(file, "Unfavorite") }
+            else if (step === 28) { if (!toast.toastData && waited++ < 12) return; log("end", toast.toastData ? toast.toastData.text : null, "known", conversation.fileCardKnownForTest(file.object_url).favorite); Qt.quit() }
             step++
         }
     }
@@ -6107,26 +6156,58 @@ Window {
         }
     }
 
-    // Teams' in-app toast (measured): a 288 x 46 card, radius 8, 83 from the
-    // window's left and 16 from its bottom. A 16 px intent icon at (13, 15),
-    // the title (14 semibold) at (37, 13), dismiss (24 x 20) at (251, 13).
-    // Success stays 5 s, errors 2 s.
+    // Teams' in-app toast (measured): a 288 wide card, radius 8, 83 from the
+    // window's left and 16 from its bottom. A 16 px intent icon at (12.67,
+    // 14.67), the title (14/20 semibold, wrapping in 202.67) at (36.67,
+    // 12.67), dismiss (24 x 20) at (251.33, 12.67); 46 tall for one line
+    // (65.33 for two). An action ("Undo", 14 px #4F52B2) sits 11 under the
+    // title, the card then 12.67 deeper. Success stays 5 s, errors 2 s.
+    // `toastData`: {text, intent, action?, onAction?} (onAction a function).
     Item {
         id: toast
         property var toastData: null
         visible: toastData !== null
         z: 200
         x: 83; y: window.height - 16 - height
-        width: 288; height: 46
+        width: 288
+        height: Math.max(46, 12.67 + toastTitle.height + (toastAction.visible ? 11 + 20 : 0) + 12.67)
         FluentSurface { anchors.fill: parent; depth: 16; radius: 8; color: theme.surface }
         FluentIcon {
-            x: 13; y: 15; size: 16
+            x: 12.67; y: 14.67; size: 16
             name: toast.toastData && toast.toastData.intent === "error" ? "error-circle-20-filled" : "checkmark-circle-20-filled"
             color: toast.toastData && toast.toastData.intent === "error" ? theme.redForeground1 : theme.successFg
         }
-        Text { x: 37; y: 13; height: 20; verticalAlignment: Text.AlignVCenter; text: toast.toastData ? toast.toastData.text : ""; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+        Text {
+            id: toastTitle
+            x: 36.67; y: 12.67; width: 202.67
+            wrapMode: Text.Wrap
+            text: toast.toastData ? toast.toastData.text : ""
+            font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+            lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.text
+        }
+        Text {
+            id: toastAction
+            visible: !!(toast.toastData && toast.toastData.action)
+            x: 36.67; y: toastTitle.y + toastTitle.height + 11; height: 20
+            verticalAlignment: Text.AlignVCenter
+            text: visible ? toast.toastData.action : ""
+            font.family: theme.font; font.pixelSize: theme.base
+            font.underline: toastActionHover.hovered
+            color: theme.brandLink
+            HoverHandler { id: toastActionHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler {
+                onTapped: {
+                    const d = toast.toastData
+                    toast.toastData = null
+                    if (d && typeof d.onAction === "function") d.onAction()
+                }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: text
+        }
         Rectangle {
-            x: 251; y: 13; width: 24; height: 20; radius: 4
+            x: 251.33; y: 12.67; width: 24; height: 20; radius: 4
             color: toastClose.hovered ? theme.menuHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
             HoverHandler { id: toastClose; cursorShape: Qt.PointingHandCursor }
@@ -6139,13 +6220,13 @@ Window {
         Accessible.name: toastData ? toastData.text : ""
         Connections {
             target: backend
-            function onToastJsonChanged() {
-                if (!backend.toastJson) return
-                toast.toastData = JSON.parse(backend.toastJson)
-                toastTimer.interval = toast.toastData.intent === "error" ? 2000 : 5000
-                toastTimer.restart()
-            }
+            function onToastJsonChanged() { if (backend.toastJson) window.showToast(JSON.parse(backend.toastJson)) }
         }
+    }
+    function showToast(d) {
+        toast.toastData = d
+        toastTimer.interval = d.intent === "error" ? 2000 : 5000
+        toastTimer.restart()
     }
 
     // Your status message as the presence service reports it.
@@ -6923,6 +7004,7 @@ Window {
     }
     Conversation {
         id: conversation
+        onToastRequested: d => window.showToast(d)
         onOpenAppDetails: id => appDetails.show(id)
         onShareApp: id => appShare.start(id)
         // Meeting details: the meeting in the calendar.

@@ -13177,6 +13177,20 @@ impl qobject::Backend {
                             other => anyhow::bail!("unknown place {other}"),
                         }
                     }
+                    // A message's file card: the file as a Files item (for
+                    // Share, Copy link and Download) and whether it is a
+                    // favorite; then Favorite / Unfavorite as Teams does.
+                    "card_item" => {
+                        let found = api::drive::item_by_url(&client, &s("url")).await?;
+                        let same = |i: &api::drive::DriveItem| i.id == found.id || i.web_url.eq_ignore_ascii_case(&found.web_url);
+                        let favorite = api::drive::favorites(&client).await.map(|l| l.iter().any(same)).unwrap_or(false);
+                        json!({ "url": s("url"), "item": found, "favorite": favorite })
+                    }
+                    "card_favorite" => {
+                        let on = args["on"].as_bool().unwrap_or(true);
+                        api::drive::set_favorite_by_url(&s("site"), &s("url"), on).await?;
+                        json!({ "url": s("url"), "name": s("name"), "on": on })
+                    }
                     "attach_prepare" => {
                         let f = api::cloud_attach::prepare(&client, &item).await?;
                         let pic = api::drive::DriveItem { id: f.item_id.clone(), drive_id: f.drive_id.clone(), ..Default::default() };

@@ -49,6 +49,10 @@ Item {
         menu.open()
     }
     function ref(it) { return { site: it.sp_site, list: it.sp_list, item: it.sp_item } }
+    /// Copy link straight to "Link copied" (a message's file card).
+    function copyLinkNow(it) { copyLink.auto = true; copyLink.start(it) }
+    function closeCopyLinkForTest() { copyLink.close() }
+    function copyLinkStateForTest() { return { open: copyLink.opened, copied: copyLink.copied, url: copyLink.url, sentence: copyLink.sentence, kind: copyLink.kind, shareId: copyLink.shareId } }
     function itemsFor(it) {
         const sp = !!it.sp_item
         const fav = root.favoriteIds.indexOf(it.id) >= 0
@@ -173,7 +177,7 @@ Item {
         else if (label === "Open in app") { notice("progress", "Opening " + it.name); backend.driveAction(tag + "open_app", JSON.stringify(it), "{}") }
         else if (label === "Share") share.openFor(ref(it), it.name, it.kind)
         else if (label === "Manage access") share.openManage(ref(it), it.name, it.kind)
-        else if (label === "Copy link") copyLink.start(it)
+        else if (label === "Copy link") { copyLink.auto = false; copyLink.start(it) }
         else if (label === "Delete") deleteDialog.openFor(it)
         else if (label === "Add to favorites") favoriteItem(it, true)
         else if (label === "Remove from favorites") favoriteItem(it, false)
@@ -887,6 +891,9 @@ Item {
         property string sentence: ""
         property bool copied: false
         property bool busy: false
+        /// Copy as soon as the link is made (a message's file card: Teams
+        /// goes straight to "Link copied").
+        property bool auto: false
         /// The link made (its kind and share id), for tests to delete.
         property int kind: 0
         property string shareId: ""
@@ -899,7 +906,7 @@ Item {
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         function start(it) {
             target = it; url = ""; copied = false; busy = true
-            if (!it.sp_item) { url = it.web_url; sentence = "People with existing access can use the link"; busy = false; open(); return }
+            if (!it.sp_item) { url = it.web_url; sentence = "People with existing access can use the link"; busy = false; show(); return }
             backend.shareAction(root.tag + "info", JSON.stringify(root.ref(it)), "{}")
         }
         Connections {
@@ -914,7 +921,7 @@ Item {
                     if (v.default_existing) {
                         copyLink.url = v.direct_url
                         copyLink.sentence = "People with existing access can use the link"
-                        copyLink.busy = false; copyLink.open()
+                        copyLink.busy = false; copyLink.show()
                         return
                     }
                     copyLink.sentence = v.default_scope === 0 ? "Anyone with the link can " + can
@@ -923,9 +930,13 @@ Item {
                     copyLink.kind = v.default_scope === 0 ? (v.default_edit ? 5 : 4) : v.default_scope === 1 ? (v.default_edit ? 3 : 2) : 6
                     backend.shareAction(root.tag + "link", JSON.stringify(root.ref(copyLink.target)), JSON.stringify({ scope: v.default_scope, edit: v.default_edit }))
                 } else if (kind === "link") {
-                    copyLink.url = v.url; copyLink.shareId = v.share_id || ""; copyLink.busy = false; copyLink.open()
+                    copyLink.url = v.url; copyLink.shareId = v.share_id || ""; copyLink.busy = false; copyLink.show()
                 }
             }
+        }
+        function show() {
+            if (auto) { root.copy(url); copied = true }
+            open()
         }
         Row {
             x: 24; y: 24; height: 32; spacing: 8

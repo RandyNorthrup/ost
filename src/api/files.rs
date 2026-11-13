@@ -31,6 +31,29 @@ pub struct FileAttachment {
     /// tab conversation post links its tab this way).
     #[serde(default)]
     pub item_id: String,
+    /// Where it lives, as Teams' card says under the name ("personal >
+    /// ost-test1_…", "{team} > {channel}"); empty when the record has no
+    /// breadcrumbs.
+    #[serde(default)]
+    pub location: String,
+    /// Its SharePoint site ("https://…/personal/…"), for Favorite.
+    #[serde(default)]
+    pub site_url: String,
+}
+
+/// Teams' location line under a file's name (FileChicletBreadcrumbs):
+/// "{team} > {channel}"; a SharePoint list names its team alone unless it
+/// is in your OneDrive ("personal"); nothing without both names.
+pub fn location(crumbs: &serde_json::Value, kind: &str) -> String {
+    let get = |k: &str| crumbs.get(k).and_then(|v| v.as_str()).unwrap_or_default();
+    let (team, channel) = (get("sourceTeamName"), get("sourceChannelName"));
+    if team.is_empty() || channel.is_empty() {
+        return String::new();
+    }
+    if matches!(kind, "splist" | "splistplaylist") && team != "personal" {
+        return team.to_string();
+    }
+    format!("{team} > {channel}")
 }
 
 /// The attachments in a message's `properties.files` (JSON text or array).
@@ -74,12 +97,24 @@ pub fn parse_files(files: &serde_json::Value) -> Vec<FileAttachment> {
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| ext_of(&name));
             let item_id = if file_type == "deeplink" { s("itemid") } else { String::new() };
+            let crumbs = f.get("chicletBreadcrumbs").cloned().unwrap_or_default();
+            let location = location(&crumbs, &file_type);
+            let site_url = [f.pointer("/fileInfo/siteUrl"), f.get("baseUrl"), f.pointer("/sharepointIds/siteUrl")]
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str())
+                .find(|u| u.starts_with("https://"))
+                .unwrap_or_default()
+                .trim_end_matches('/')
+                .to_string();
             Some(FileAttachment {
                 name,
                 file_type,
                 object_url,
                 share_url,
                 item_id,
+                location,
+                site_url,
             })
         })
         .collect()
@@ -521,6 +556,25 @@ mod tests {
         let tab = parse_files(&serde_json::json!(r#"[{"itemid":"tab::de38","fileName":"Notes","fileType":"deeplink","fileInfo":{"serverRelativeUrl":""},"type":"deeplink","title":"Notes"}]"#));
         assert_eq!((tab[0].name.as_str(), tab[0].file_type.as_str(), tab[0].item_id.as_str()), ("Notes", "deeplink", "tab::de38"));
         assert!(parse_files(&serde_json::json!([{ "fileType": "txt" }])).is_empty());
+    }
+
+    #[test]
+    fn cards_say_where_files_live_as_teams_does() {
+        // OST TEST 118's record (Teams, 2026-11-13) and Teams' own rule.
+        let got = parse_files(&serde_json::json!([{
+            "fileName": "ost-share-test.txt", "fileType": "txt",
+            "objectUrl": "https://x-my.sharepoint.com/personal/ost-test1_x_com/Documents/ost-share-test.txt",
+            "fileInfo": { "siteUrl": "https://x-my.sharepoint.com/personal/ost-test1_x_com/" },
+            "chicletBreadcrumbs": { "sourceChannelName": "ost-test1_x_com", "sourceTeamName": "personal" }
+        }]));
+        assert_eq!(got[0].location, "personal > ost-test1_x_com");
+        assert_eq!(got[0].site_url, "https://x-my.sharepoint.com/personal/ost-test1_x_com");
+        let crumbs = |t: &str, c: &str| serde_json::json!({ "sourceTeamName": t, "sourceChannelName": c });
+        assert_eq!(location(&crumbs("OST Test Team", "OST layout test"), "docx"), "OST Test Team > OST layout test");
+        assert_eq!(location(&crumbs("OST Test Team", "Lists"), "splist"), "OST Test Team");
+        assert_eq!(location(&crumbs("personal", "a"), "splist"), "personal > a");
+        assert_eq!(location(&crumbs("OST Test Team", ""), "txt"), "");
+        assert_eq!(location(&serde_json::Value::Null, "txt"), "");
     }
 
     #[test]

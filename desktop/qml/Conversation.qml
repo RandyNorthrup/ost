@@ -2346,98 +2346,74 @@ Rectangle {
                     Accessible.role: Accessible.Button
                     Accessible.name: "Undo"
                 }
-                // File cards, as Teams draws them: type icon, name, and
-                // share/download actions in a 48 px header.
+                // File cards (FileCard: Teams' card with its location, Share
+                // and More actions over the preview) and channel tab links.
                 Column {
                     id: fileCol
                     x: bubble.pad; y: bubble.filesTop
                     spacing: 8
                     Repeater {
                         model: bubble.files
-                        Rectangle {
+                        Item {
                             id: fc
                             required property var modelData
                             readonly property string t: (modelData.file_type || "").toLowerCase()
+                            readonly property bool tabLink: t === "deeplink"
+                            readonly property var linked: tabLink ? root.linkedTabs.find(x => x.id === modelData.item_id) || null : null
+                            width: tabLink ? tabCard.width : fileCard.width
+                            height: tabLink ? tabCard.height : fileCard.height
+                            FileCard {
+                                id: fileCard
+                                visible: !fc.tabLink
+                                width: Math.min(320, msg.maxBubble - 2 * bubble.pad)
+                                file: fc.modelData
+                                thumbnail: {
+                                    root.thumbsRev
+                                    return fc.tabLink ? "" : backend.fileThumbnail(fc.modelData.object_url || "")
+                                }
+                                onOpenRequested: backend.openFile(fc.modelData.share_url || fc.modelData.object_url, fc.modelData.name, "")
+                                onShareRequested: root.fileCardAct(fc.modelData, "Share")
+                                onMenuRequested: anchor => root.openFileCardMenu(fc.modelData, anchor)
+                                Component.onCompleted: if (!fc.tabLink) root.cardViewsForTest[fc.modelData.object_url] = fileCard
+                            }
                             // A channel tab's link (Teams' deep-link-chiclet, measured
                             // in a tab's conversation): white, radius 4, a #F0F0F0
                             // line and a soft shadow, padding 7 3 7 11; the app's
                             // icon (38, radius 4) and the tab's name (14 semibold)
                             // 11.5 after it. Clicking opens the tab.
-                            readonly property bool tabLink: t === "deeplink"
-                            readonly property var linked: tabLink ? root.linkedTabs.find(x => x.id === modelData.item_id) || null : null
-                            width: Math.min(318, msg.maxBubble - 2 * bubble.pad)
-                            height: tabLink ? 52.3 : 48
-                            radius: tabLink ? 4 : 8
-                            color: tabLink ? theme.surface : theme.searchFill
-                            border.color: tabLink ? theme.pick("#F0F0F0", "#3D3D3D") : theme.divider
-                            border.width: tabLink ? 0.67 : 1
-                            FluentSurface { visible: fc.tabLink; z: -1; anchors.fill: parent; depth: 2; radius: 4 }
-                            Image {
+                            Rectangle {
+                                id: tabCard
                                 visible: fc.tabLink
-                                x: 11.2; y: 7.1; width: 38; height: 38
-                                source: fc.linked ? fc.linked.icon : ""
-                                sourceSize: Qt.size(76, 76)
-                                RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
-                            }
-                            Text {
-                                visible: fc.tabLink
-                                x: 60.7; anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - 60.7 - 8
-                                elide: Text.ElideRight
-                                text: fc.modelData.name
-                                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                                lineHeight: 20; lineHeightMode: Text.FixedHeight
-                                color: theme.text
-                            }
-                            HoverHandler { id: tabLinkHover; enabled: fc.tabLink; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { enabled: fc.tabLink; onTapped: root.openLinkedTab(fc.modelData.item_id) }
-                            ToolTip.visible: fc.tabLink && tabLinkHover.hovered
-                            ToolTip.delay: 500
-                            ToolTip.text: fc.modelData.name
-                            FluentIcon {
-                                visible: !fc.tabLink
-                                x: 13; anchors.verticalCenter: parent.verticalCenter; size: 32
-                                name: ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(fc.t) >= 0 ? "file-image-32"
-                                    : ["mp4", "mov", "avi", "mkv", "webm"].indexOf(fc.t) >= 0 ? "file-video-32"
-                                    : ["txt", "md", "log", "csv", "json", "xml"].indexOf(fc.t) >= 0 ? "file-text-32"
-                                    : "file-32"
-                                color: theme.textSecondary
-                            }
-                            Text {
-                                visible: !fc.tabLink
-                                x: 52; anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - 52 - 80
-                                text: fc.modelData.name
-                                elide: Text.ElideMiddle
-                                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
-                                color: theme.text
-                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: backend.openFile(fc.modelData.share_url || fc.modelData.object_url, fc.modelData.name, "") }
-                            }
-                            Row {
-                                visible: !fc.tabLink
-                                anchors.right: parent.right; anchors.rightMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                Repeater {
-                                    model: [{ icon: "share-20", label: "Open in browser" }, { icon: "download-20", label: "Download" }]
-                                    Rectangle {
-                                        required property var modelData
-                                        width: 32; height: 32; radius: theme.radius
-                                        color: fah.hovered ? theme.rowHover : "transparent"
-                                        FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.textStrong }
-                                        HoverHandler { id: fah; cursorShape: Qt.PointingHandCursor }
-                                        TapHandler {
-                                            onTapped: parent.modelData.icon === "download-20"
-                                                ? backend.downloadFile(JSON.stringify(fc.modelData))
-                                                : backend.openFile(fc.modelData.share_url || fc.modelData.object_url, fc.modelData.name, "")
-                                        }
-                                        Accessible.role: Accessible.Button
-                                        Accessible.name: modelData.label + " " + fc.modelData.name
-                                    }
+                                width: Math.min(318, msg.maxBubble - 2 * bubble.pad)
+                                height: 52.3
+                                radius: 4
+                                color: theme.surface
+                                border.color: theme.pick("#F0F0F0", "#3D3D3D")
+                                border.width: 0.67
+                                FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 4 }
+                                Image {
+                                    x: 11.2; y: 7.1; width: 38; height: 38
+                                    source: fc.linked ? fc.linked.icon : ""
+                                    sourceSize: Qt.size(76, 76)
+                                    RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
                                 }
+                                Text {
+                                    x: 60.7; anchors.verticalCenter: parent.verticalCenter
+                                    width: parent.width - 60.7 - 8
+                                    elide: Text.ElideRight
+                                    text: fc.modelData.name
+                                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                    color: theme.text
+                                }
+                                HoverHandler { id: tabLinkHover; enabled: fc.tabLink; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { enabled: fc.tabLink; onTapped: root.openLinkedTab(fc.modelData.item_id) }
+                                ToolTip.visible: fc.tabLink && tabLinkHover.hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: fc.modelData.name
+                                Accessible.role: Accessible.Link
+                                Accessible.name: "Tab " + fc.modelData.name
                             }
-                            Accessible.role: Accessible.Link
-                            Accessible.name: (tabLink ? "Tab " : "File ") + modelData.name
                         }
                     }
                 }
@@ -3408,6 +3384,112 @@ Rectangle {
         id: cloudPicker
         onAttached: files => root.attachCloud(files)
     }
+    // A message's file card (FileCard): Teams' ··· menu (Open in Browser,
+    // Download, Share, Copy link, Favorite / Unfavorite), Share this file,
+    // Copy link's "Link copied" and the favorites toasts. The file is looked
+    // up as a Files item when its menu opens (card_item: its SharePoint
+    // address and whether it is a favorite).
+    signal toastRequested(var data)
+    property int thumbsRev: 0
+    property var cardItems: ({})
+    property var cardMenuFile: null
+    property var cardPending: null
+    readonly property string cardTag: "conv-card-" + Math.floor(Math.random() * 1e9) + ":"
+    Connections {
+        target: backend
+        function onThumbnailReady(url) { root.thumbsRev++ }
+        function onDriveActionDone(op, result, error) {
+            if (!op.startsWith(root.cardTag)) return
+            const kind = op.slice(root.cardTag.length)
+            const v = result ? JSON.parse(result) : null
+            if (kind === "card_item") {
+                if (error || !v) {
+                    if (root.cardPending) root.toastRequested({ text: "Something went wrong. Try again.", intent: "error" })
+                    root.cardPending = null
+                    return
+                }
+                const m = Object.assign({}, root.cardItems); m[v.url] = { item: v.item, favorite: v.favorite }; root.cardItems = m
+                if (cardMenu.opened && root.cardMenuFile && root.cardMenuFile.object_url === v.url) cardMenu.items = root.cardMenuItems(root.cardMenuFile)
+                const p = root.cardPending
+                if (p && p.file.object_url === v.url) { root.cardPending = null; root.fileCardAct(p.file, p.label) }
+            } else if (kind === "card_favorite") {
+                if (error || !v) { root.toastRequested({ text: "Something went wrong. Try again.", intent: "error" }); return }
+                const m = Object.assign({}, root.cardItems)
+                if (m[v.url]) { m[v.url] = Object.assign({}, m[v.url], { favorite: v.on }); root.cardItems = m }
+                const file = root.cardFileFor(v.url)
+                root.toastRequested(v.on ? { text: "Added \"" + v.name + "\" to OneDrive Favorites", intent: "success" }
+                    : { text: "Removed from OneDrive Favorites", intent: "success", action: "Undo",
+                        onAction: () => { if (file) root.setCardFavorite(file, true) } })
+            }
+        }
+    }
+    function cardFileFor(url) {
+        for (const m of root.messages) for (const f of (m.files || [])) if (f.object_url === url) return f
+        return root.cardMenuFile && root.cardMenuFile.object_url === url ? root.cardMenuFile : null
+    }
+    function cardMenuItems(file) {
+        const known = root.cardItems[file.object_url]
+        const fav = !!known && known.favorite
+        return [{ label: "Open in Browser", icon: "globe-20" }, { label: "Download", icon: "arrow-download-20" },
+                { label: "Share", icon: "share-20" }, { label: "Copy link", icon: "link-20" },
+                fav ? { label: "Unfavorite", icon: "star-20-filled" } : { label: "Favorite", icon: "star-20" }]
+    }
+    function lookUpCard(file) {
+        if (file.object_url) backend.driveAction(root.cardTag + "card_item", "{}", JSON.stringify({ url: file.object_url }))
+    }
+    /// Teams' menu, its top-right under the ··· button.
+    function openFileCardMenu(file, anchor) {
+        root.cardMenuFile = file
+        cardMenu.items = root.cardMenuItems(file)
+        const p = anchor.mapToItem(root, anchor.width, anchor.height)
+        cardMenu.x = Math.max(0, p.x - cardMenu.implicitWidth)
+        cardMenu.y = p.y + cardMenu.implicitHeight > root.height ? Math.max(0, p.y - anchor.height - cardMenu.implicitHeight) : p.y
+        cardMenu.open()
+        root.lookUpCard(file)
+    }
+    function setCardFavorite(file, on) {
+        const known = root.cardItems[file.object_url]
+        const site = file.site_url || (known && known.item ? known.item.sp_site : "")
+        backend.driveAction(root.cardTag + "card_favorite", "{}", JSON.stringify({ url: file.object_url, site: site, name: file.name, on: on }))
+    }
+    function fileCardAct(file, label) {
+        if (label === "Open in Browser") { Qt.openUrlExternally(file.share_url || file.object_url); return }
+        if (label === "Download") { backend.downloadFile(JSON.stringify(file)); return }
+        if (label === "Favorite" || label === "Unfavorite") { root.setCardFavorite(file, label === "Favorite"); return }
+        // Share and Copy link need the file's SharePoint address.
+        const known = root.cardItems[file.object_url]
+        if (!known) { root.cardPending = { file: file, label: label }; root.lookUpCard(file); return }
+        const it = known.item
+        if (label === "Share") cardShare.openFor({ site: it.sp_site, list: it.sp_list, item: it.sp_item }, file.name, file.file_type, file.object_url)
+        else if (label === "Copy link") cardActions.copyLinkNow(it)
+    }
+    MenuPopup {
+        id: cardMenu
+        minRowWidth: 172
+        onPicked: i => { if (root.cardMenuFile) root.fileCardAct(root.cardMenuFile, items[i].label) }
+    }
+    ShareFileDialog { id: cardShare }
+    FileActions { id: cardActions; anchors.fill: parent; z: -1 }
+    property var cardViewsForTest: ({})
+    function openFileCardMenuForTest(url) {
+        const v = root.cardViewsForTest[url]
+        if (v) root.openFileCardMenu(v.file, v.moreButtonForTest())
+        return !!v
+    }
+    function fileCardForTest(url) {
+        const v = root.cardViewsForTest[url]
+        if (!v) return null
+        const p = v.mapToItem(root, 0, 0)
+        return { x: p.x, y: p.y, width: v.width, height: v.height, preview: v.hasPreview, location: v.file.location, name: v.file.name }
+    }
+    function hoverFileCardForTest(url, on) { const v = root.cardViewsForTest[url]; if (v) v.hoverForTest = on }
+    function fileCardMenuForTest() { return { open: cardMenu.opened, items: cardMenu.items.map(i => i.label), x: cardMenu.x, y: cardMenu.y, width: cardMenu.width } }
+    function fileCardActForTest(file, label) { root.fileCardAct(file, label) }
+    function fileCardKnownForTest(url) { return root.cardItems[url] || null }
+    function closeFileCardMenuForTest() { cardMenu.close() }
+    function copyLinkStateForTest() { return cardActions.copyLinkStateForTest() }
+    function closeCopyLinkForTest() { cardActions.closeCopyLinkForTest() }
+    function closeCardShareForTest() { cardShare.close() }
     function attachMenuForTest() { return attachMenu }
     function cloudPickerForTest() { return cloudPicker }
     function cloudForTest() { return pendingCloud.map(c => ({ name: c.name, loading: !!c.loading, link: c.file ? c.file.link_description : "", thumb: !!c.thumbnail })) }

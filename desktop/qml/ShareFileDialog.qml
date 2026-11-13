@@ -68,6 +68,11 @@ Popup {
         info = null; picked = []; query = ""; suggestions = []; scope = 3; edit = true; expiration = ""; password = ""
         noAccess = []; sharing = false; error = ""; formatting = false
         thumb = backend.fileThumbnail(objectUrl)
+        linkTouched = false
+        // Teams starts from the file's default link (its driveItem/commands
+        // description, as the compose card's): "Anyone with the link can
+        // edit" once the file has one.
+        if (objectUrl) backend.driveAction(defaultTag + "attach_prepare", JSON.stringify({ web_url: objectUrl, name: fileName }), "{}")
         open()
         pickerInput.text = ""; note.text = ""
         pickerInput.forceActiveFocus()
@@ -93,6 +98,25 @@ Popup {
                 if (error) { root.error = error; return }
                 root.close()
             }
+        }
+    }
+    property bool linkTouched: false
+    readonly property string defaultTag: "sfd" + Math.floor(Math.random() * 1e9) + ":"
+    /// The starting choice from a default link's description.
+    function startFrom(description, write) {
+        const d = String(description || "")
+        if (!d || root.linkTouched) return
+        if (d.startsWith("Anyone with the link")) { scope = 0; edit = write }
+        else if (d.startsWith("People in ")) { scope = 1; edit = write }
+        else if (d.startsWith("Specific people") || d.startsWith("Only the people")) { scope = 2; edit = write }
+        else if (d.startsWith("People with existing access")) scope = 3
+    }
+    Connections {
+        target: backend
+        function onDriveActionDone(op, result, error) {
+            if (op !== root.defaultTag + "attach_prepare" || error || !result || !root.opened) return
+            const v = JSON.parse(result)
+            if (v.file && v.file.object_url === root.objectUrl) root.startFrom(v.file.link_description, v.file.role === "write")
         }
     }
     function same(a, b) { return a.kind === b.kind && (a.kind === "person" ? a.oid === b.oid : a.id === b.id) }
@@ -269,7 +293,8 @@ Popup {
             onCursorPositionChanged: root.refreshRichState()
             onTextChanged: root.refreshRichState()
             RichText { id: rich }
-            Text { visible: !parent.text; text: "Add a message (optional)"; font: parent.font; color: theme.textSecondary }
+            // A rich-text editor's text is never empty (it is HTML): its length is.
+            Text { visible: note.length === 0; text: "Add a message (optional)"; font: parent.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
             Accessible.name: "Add a message (optional)"
         }
@@ -404,7 +429,7 @@ Popup {
     // link line and Give access.
     OneDriveShare {
         id: outside
-        onLinkChosen: (s, e, x, p) => { root.scope = s; root.edit = e; root.expiration = x; root.password = p }
+        onLinkChosen: (s, e, x, p) => { root.linkTouched = true; root.scope = s; root.edit = e; root.expiration = x; root.password = p }
     }
 
     function refreshRichState() { try { richState = JSON.parse(rich.state(note.cursorPosition)) } catch (e) { richState = ({}) } }
