@@ -116,7 +116,10 @@ Below 10 it shows two decimals, below 100 one, and above that none. Examples:
   14/600 #616161 at 10.67. Type shows a 16 px document glyph.
 - Rows are 49 tall. Text is 14 px #616161, padded 14 8 11 12.
 - The Type column has a 32 px file-type icon at 6, 8. Folders use OneDrive's
-  yellow folder.
+  yellow folder. OneDrive's Shortcuts folder (Add shortcut's; ProgId
+  `AddToOneDrive.SpecialFolder`, Graph `specialFolder` "shortcuts") is
+  listed like any folder, with Fabric's blue `companyfolder` icon; the
+  Move/Copy picker shows it as a plain folder.
 - Hover gives the row an #EBEBEB background, inset 8 on both sides, radius 8,
   48 tall (a 1 px white gap above).
 - A selected row is #E9EAF6 with its name in 600.

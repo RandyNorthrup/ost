@@ -36,6 +36,10 @@ pub struct DriveItem {
     /// The folder it is in (search results' Location).
     #[serde(default)]
     pub parent_name: String,
+    /// OneDrive's special folder it is ("shortcuts" for Add shortcut's
+    /// Shortcuts folder), else empty.
+    #[serde(default)]
+    pub special: String,
 }
 
 /// A document library (a SharePoint site's drive, or your OneDrive).
@@ -142,6 +146,7 @@ fn parse_item(v: &serde_json::Value) -> Option<DriveItem> {
         sp_list: [s(v, "/sharepointIds/listId"), s(r, "/sharepointIds/listId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
         sp_item: [s(v, "/sharepointIds/listItemUniqueId"), s(r, "/sharepointIds/listItemUniqueId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
         parent_name: [s(v, "/parentReference/name"), s(r, "/parentReference/name")].into_iter().find(|n| !n.is_empty()).unwrap_or_default(),
+        special: s(v, "/specialFolder/name"),
         name,
         kind,
     })
@@ -152,9 +157,6 @@ fn parse_items(v: &serde_json::Value) -> Vec<DriveItem> {
         .and_then(|x| x.as_array())
         .into_iter()
         .flatten()
-        // OneDrive's Shortcuts folder (Add shortcut's) is hidden from the
-        // list, as Teams' OneDrive app hides it.
-        .filter(|x| x["specialFolder"]["name"].as_str() != Some("shortcuts"))
         .filter_map(parse_item)
         .collect()
 }
@@ -810,7 +812,9 @@ mod tests {
             { "id": "01S", "name": "Shortcuts", "folder": { "childCount": 0 }, "specialFolder": { "name": "shortcuts" } }
         ]});
         let items = parse_items(&v);
-        assert_eq!(items.len(), 2);
+        // Teams lists OneDrive's Shortcuts folder too (its own icon).
+        assert_eq!(items.len(), 3);
+        assert_eq!((items[2].name.as_str(), items[2].special.as_str()), ("Shortcuts", "shortcuts"));
         assert!(items[0].is_folder && items[0].child_count == 3 && items[0].sharing == "Private");
         assert_eq!(items[0].modified_by, "OST Test 1");
         assert_eq!(

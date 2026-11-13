@@ -676,8 +676,11 @@ Item {
                         }
                         FluentIcon {
                             x: frow.compact ? 66 : 62; y: frow.compact ? 7 : 8; size: frow.compact ? 20 : 32
-                            name: frow.modelData.is_folder ? "ft-folder-32" : root.fileIcon(frow.modelData.kind)
-                            swaps: frow.modelData.is_folder ? root.folderSwaps(frow.modelData.folder_color) : ({})
+                            // OneDrive's Shortcuts folder has its own icon
+                            // (Fabric's companyfolder).
+                            name: frow.modelData.special === "shortcuts" ? (frow.compact ? "ft-companyfolder-20" : "ft-companyfolder-32")
+                                : frow.modelData.is_folder ? "ft-folder-32" : root.fileIcon(frow.modelData.kind)
+                            swaps: frow.modelData.is_folder && frow.modelData.special !== "shortcuts" ? root.folderSwaps(frow.modelData.folder_color) : ({})
                         }
                         // Name: OneDrive's "New" mark, the name, then ···, Share and the star.
                         Item {

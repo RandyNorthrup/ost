@@ -288,8 +288,9 @@ with this body:
 The target depends on the choice:
 
 - **Shortcuts**: `drives/me/special/shortcuts`, on your OneDrive's host.
-  OneDrive makes this special folder the first time. Teams' list hides it,
-  and so does OST.
+  OneDrive makes this special folder the first time. From then on Teams
+  lists it in My files (with its own icon: docs/spec/onedrive-rows.md), and
+  so does OST.
 - **My files**: `drives/me/items/root`.
 - **Other locations**: OneDrive's "Pick a folder" picker with **Select** and
   **Cancel**. The target is the chosen folder (`items/{uniqueId}`), or the
