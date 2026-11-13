@@ -36,8 +36,30 @@ pub struct FeedItem {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub author_email: String,
     pub mine: bool,
+    /// A comment's text as typed (mentions as names), for Edit comment.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub source: String,
+    /// A comment changed since it was posted ("{time} • Edited").
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub edited: bool,
+    /// A comment's replies, oldest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub replies: Vec<Reply>,
     #[serde(skip)]
     pub at: i64,
+}
+
+/// A reply under a comment card: "You replied" / "{name} replied", the text
+/// and the time in the client's wording ("Just now").
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Reply {
+    pub id: String,
+    pub author: String,
+    pub author_email: String,
+    pub mine: bool,
+    pub text: String,
+    pub time: String,
+    pub edited: bool,
 }
 
 /// What the pane shows beyond the list's row.
@@ -245,46 +267,122 @@ pub fn tip(t: DateTime<Local>, now: DateTime<Local>) -> String {
     format!("{date} at {}", t.format("%-I:%M %p"))
 }
 
-/// The activities reply as the pane lists them.
+/// The activities reply as the pane lists them. Back-to-back edits by the
+/// same person read as one (comments, shown as their own cards, don't
+/// separate them), as in Teams.
 pub fn feed(reply: &Value, me: &str, name: &str, now: DateTime<Local>) -> Vec<FeedItem> {
+    let mut last_editor: Option<String> = None;
     reply["value"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|a| {
             let (kind, text) = describe(a, me, name)?;
+            match kind.as_str() {
+                "edit" => {
+                    let who = a["actor"]["user"]["email"].as_str().unwrap_or_default().to_ascii_lowercase();
+                    if last_editor.as_deref() == Some(who.as_str()) {
+                        return None;
+                    }
+                    last_editor = Some(who);
+                }
+                "comment" | "commentResponse" => {}
+                _ => last_editor = None,
+            }
             let when = a["times"]["recordedTime"].as_str().or(a["times"]["recordedDateTime"].as_str()).or(a["activityDateTime"].as_str())?;
             let t = DateTime::parse_from_rfc3339(when).ok()?.with_timezone(&Local);
             let time = match a["@sharePoint.localizedRelativeTime"].as_str() {
                 Some(code) if !code.is_empty() => friendly_display(code),
                 _ => super::list_rows::friendly_at(t, now),
             };
-            Some(FeedItem { kind, text, time, tip: tip(t, now), group: group(t, now), comment_id: String::new(), author: String::new(), author_email: String::new(), mine: false, at: t.timestamp() })
+            Some(FeedItem { kind, text, time, tip: tip(t, now), group: group(t, now), comment_id: String::new(), author: String::new(), author_email: String::new(), mine: false, source: String::new(), edited: false, replies: Vec::new(), at: t.timestamp() })
         })
         .collect()
 }
 
-/// The item's comments as the pane's comment cards (time in the client's
-/// wording: "Just now", "5m ago").
+/// A comment's text with its `@mention{n}` marks as the people's names
+/// (OneDrive's `_formatMentionedComment`), HTML-escaped.
+pub fn comment_text(c: &Value) -> String {
+    esc(&comment_source(c))
+}
+
+fn comment_source(c: &Value) -> String {
+    let text = c["text"].as_str().unwrap_or_default();
+    let names: Vec<String> = c["mentions"]["results"]
+        .as_array()
+        .or_else(|| c["mentions"].as_array())
+        .into_iter()
+        .flatten()
+        .map(|m| m["name"].as_str().unwrap_or_default().to_string())
+        .collect();
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("@mention{") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 9..];
+        match after.find('}').and_then(|j| after[..j].parse::<usize>().ok().map(|n| (j, n))) {
+            Some((j, n)) if n < names.len() => {
+                out.push_str(&names[n]);
+                rest = &after[j + 1..];
+            }
+            _ => {
+                out.push_str("@mention{");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn id_of(v: &Value) -> String {
+    v["id"].as_str().map(str::to_string).or(v["id"].as_i64().map(|n| n.to_string())).unwrap_or_default()
+}
+
+/// The item's comments as the pane's comment cards. A comment's time reads
+/// as the files list words it ("A few seconds ago", "About a minute ago"),
+/// a reply's in the client's wording ("Just now", "5m ago"); either is
+/// "Edited" once `modifiedDate` is set.
 pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedItem> {
+    let author = |c: &Value| {
+        let email = c["author"]["email"].as_str().unwrap_or_default().to_string();
+        let mine = !email.is_empty() && email.eq_ignore_ascii_case(me);
+        let name = if mine { "You".to_string() } else { c["author"]["name"].as_str().unwrap_or("Someone").to_string() };
+        (name, email, mine)
+    };
+    let edited = |c: &Value| c["modifiedDate"].as_str().is_some_and(|m| !m.is_empty());
+    let when = |c: &Value| DateTime::parse_from_rfc3339(c["createdDate"].as_str()?).ok().map(|t| t.with_timezone(&Local));
     reply["d"]["results"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|c| {
-            let t = DateTime::parse_from_rfc3339(c["createdDate"].as_str()?).ok()?.with_timezone(&Local);
-            let email = c["author"]["email"].as_str().unwrap_or_default().to_string();
-            let mine = !email.is_empty() && email.eq_ignore_ascii_case(me);
+            let t = when(c)?;
+            let (name, email, mine) = author(c);
+            let mut replies: Vec<(DateTime<Local>, Reply)> = c["replies"]["results"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|r| {
+                    let rt = when(r)?;
+                    let (name, email, mine) = author(r);
+                    Some((rt, Reply { id: id_of(r), author: name, author_email: email, mine, text: comment_text(r), time: super::list_rows::activity_time(rt, now), edited: edited(r) }))
+                })
+                .collect();
+            replies.sort_by_key(|(rt, _)| *rt);
             Some(FeedItem {
                 kind: "comment".into(),
-                text: esc(c["text"].as_str().unwrap_or_default()),
-                time: super::list_rows::activity_time(t, now),
+                text: comment_text(c),
+                source: comment_source(c),
+                time: super::list_rows::friendly_at(t, now),
                 tip: tip(t, now),
                 group: group(t, now),
-                comment_id: c["id"].as_str().map(str::to_string).or(c["id"].as_i64().map(|n| n.to_string())).unwrap_or_default(),
-                author: if mine { "You".into() } else { c["author"]["name"].as_str().unwrap_or("Someone").to_string() },
+                comment_id: id_of(c),
+                author: name,
                 author_email: email,
                 mine,
+                edited: edited(c),
+                replies: replies.into_iter().map(|(_, r)| r).collect(),
                 at: t.timestamp(),
             })
         })
@@ -292,9 +390,10 @@ pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedI
 }
 
 /// The activity feed with the comment cards in place of comment
-/// activities, newest first.
+/// activities (replies show under their comment, so their activities go
+/// too), newest first.
 pub fn merge(mut acts: Vec<FeedItem>, comments: Vec<FeedItem>) -> Vec<FeedItem> {
-    acts.retain(|a| a.kind != "comment");
+    acts.retain(|a| a.kind != "comment" && a.kind != "commentResponse");
     acts.extend(comments);
     acts.sort_by(|a, b| b.at.cmp(&a.at));
     acts
@@ -307,10 +406,7 @@ fn comments_url(item: &DriveItem, tail: &str) -> String {
 
 /// Delete one of the item's comments.
 pub async fn delete_comment(item: &DriveItem, id: &str) -> Result<()> {
-    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
-        bail!("Not a comment id");
-    }
-    super::sharing::delete(&comments_url(item, &format!("Comments({id})"))).await
+    super::sharing::delete(&comments_url(item, &format!("Comments({})", check_id(id)?))).await
 }
 
 /// One activity as a folder's Details pane words it (about the items in it:
@@ -413,7 +509,7 @@ pub fn folder_feed(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedIte
             Some(code) if !code.is_empty() => friendly_display(code),
             _ => super::list_rows::friendly_at(t, now),
         };
-        out.push(FeedItem { kind, text, time, tip: tip(t, now), group: group(t, now), comment_id: String::new(), author: String::new(), author_email: String::new(), mine: false, at: t.timestamp() });
+        out.push(FeedItem { kind, text, time, tip: tip(t, now), group: group(t, now), comment_id: String::new(), author: String::new(), author_email: String::new(), mine: false, source: String::new(), edited: false, replies: Vec::new(), at: t.timestamp() });
     }
     out
 }
@@ -448,7 +544,8 @@ pub async fn load(item: &DriveItem, me: &str) -> Result<Details> {
     let acts_url = format!("{base2}/activities?%24expand=driveItem(%24select%3Did%2Cname%2CwebUrl%2CparentReference%2Cfile%2Cfolder)&%24top=25");
     let prefs_url = format!("{base21}/?%24expand=notificationPreferences");
     let ua = [("user-agent", super::client::TEAMS_WEB_UA), ("accept", "application/json")];
-    let comments = comments_url(item, "GetComments()") + "&$top=25";
+    // As Teams asks: with each comment's replies and likes.
+    let comments = comments_url(item, "GetComments()") + "&$top=25&$expand=replies,likedBy,replies/likedBy";
     let disabled_url = comments_url(item, "CommentsDisabled");
     let (acts, prefs, comments, disabled) = tokio::join!(
         get_with(&acts_url, &ua),
@@ -516,13 +613,49 @@ pub async fn set_notify(item: &DriveItem, file_url: &str, on: bool) -> Result<()
 /// Add a comment to the item (OneDrive's comment box: at most 2000
 /// characters).
 pub async fn add_comment(item: &DriveItem, text: &str) -> Result<()> {
+    let text = check_text(text)?;
+    post(
+        &comments_url(item, "Comments()"),
+        &json!({ "__metadata": { "type": "Microsoft.SharePoint.Comments.comment" }, "text": text }),
+    )
+    .await?;
+    Ok(())
+}
+
+fn check_text(text: &str) -> Result<&str> {
     let text = text.trim();
     if text.is_empty() || text.chars().count() > 2000 {
         bail!("Maximum character limit exceeded");
     }
-    post(
-        &comments_url(item, "Comments()"),
-        &json!({ "__metadata": { "type": "Microsoft.SharePoint.Comments.comment" }, "text": text }),
+    Ok(text)
+}
+
+fn check_id(id: &str) -> Result<&str> {
+    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+        bail!("Not a comment id");
+    }
+    Ok(id)
+}
+
+/// Edit comment: `PATCH …/Comments({id})` with the new text (and no
+/// mentions, as Teams' box sends), 204.
+pub async fn edit_comment(item: &DriveItem, id: &str, text: &str) -> Result<()> {
+    super::sharing::send_with(
+        reqwest::Method::PATCH,
+        &comments_url(item, &format!("Comments({})", check_id(id)?)),
+        &json!({ "mentions": [], "text": check_text(text)? }),
+        &[("content-type", "application/json;charset=UTF-8"), ("accept", "application/json")],
+    )
+    .await?;
+    Ok(())
+}
+
+/// The Reply box: `POST …/Comments({id})/replies` with `{"text":…}`, 201.
+pub async fn add_reply(item: &DriveItem, id: &str, text: &str) -> Result<()> {
+    super::sharing::post_with(
+        &comments_url(item, &format!("Comments({})/replies", check_id(id)?)),
+        &json!({ "text": check_text(text)? }),
+        &[("content-type", "application/json;charset=UTF-8"), ("accept", "application/json")],
     )
     .await?;
     Ok(())
@@ -575,13 +708,42 @@ mod tests {
         let now = Local::now();
         let reply = json!({"d": {"results": [{"author": {"email": "ost-test1@x.com", "name": "OST Test 1"}, "createdDate": (now - Duration::seconds(30)).to_rfc3339(), "id": "1", "text": "OST test 111 <b>"}]}});
         let cards = comment_cards(&reply, me(), now);
-        assert_eq!((cards[0].author.as_str(), cards[0].text.as_str(), cards[0].time.as_str(), cards[0].comment_id.as_str()), ("You", "OST test 111 &lt;b&gt;", "Just now", "1"));
+        assert_eq!((cards[0].author.as_str(), cards[0].text.as_str(), cards[0].time.as_str(), cards[0].comment_id.as_str()), ("You", "OST test 111 &lt;b&gt;", "A few seconds ago", "1"));
         let mut act = feed(&json!({"value": [{"action": {"comment": {}}, "actor": you(), "times": {"recordedTime": now.to_rfc3339()}},
+            {"action": {"comment": {"isReply": true}}, "actor": you(), "times": {"recordedTime": now.to_rfc3339()}},
             {"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(1)).to_rfc3339()}}]}), me(), "x", now);
-        assert_eq!(act.len(), 2);
+        assert_eq!(act.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(), ["comment", "commentResponse", "edit"]);
+        // Two edits in a row by one person read as one; a move between them
+        // keeps both.
+        let e = |h: i64| json!({"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(h)).to_rfc3339()}});
+        let mv = json!({"action": {"move": {"From": "personal/a/Documents/x.txt"}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(4)).to_rfc3339()}});
+        let kinds = |v: Value| feed(&v, me(), "x", now).iter().map(|a| a.kind.clone()).collect::<Vec<_>>();
+        assert_eq!(kinds(json!({"value": [e(1), e(2), mv.clone(), e(5)]})), ["edit", "move", "edit"]);
         act = merge(act, cards);
         assert_eq!(act.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(), ["comment", "edit"]);
         assert_eq!(act[0].comment_id, "1");
+    }
+
+    #[test]
+    fn comments_carry_replies_edits_and_mention_names() {
+        // ost-share-test.txt's comment 3 on 2026-11-12 (Teams' $expand=replies).
+        let now = Local::now();
+        let t = |s: i64| (now - Duration::seconds(s)).to_rfc3339();
+        let reply = json!({"d": {"results": [{
+            "author": {"email": "ost-test1@x.com", "name": "OST Test 1"}, "createdDate": t(90), "modifiedDate": t(10), "id": "3",
+            "text": "OST comment test 1 edited", "mentions": {"results": []},
+            "replies": {"results": [
+                {"author": {"email": "t2@x.com", "name": "OST Test 2"}, "createdDate": t(20), "modifiedDate": null, "id": "5",
+                 "text": "thanks @mention{0}", "mentions": {"results": [{"name": "OST Test 1", "email": "ost-test1@x.com"}]}},
+                {"author": {"email": "ost-test1@x.com", "name": "OST Test 1"}, "createdDate": t(40), "modifiedDate": null, "id": "4", "text": "OST reply test 1"}
+            ]}
+        }]}});
+        let c = &comment_cards(&reply, me(), now)[0];
+        assert!(c.edited);
+        assert_eq!(c.time, "About a minute ago");
+        assert_eq!(c.replies.iter().map(|r| (r.id.as_str(), r.author.as_str(), r.text.as_str(), r.time.as_str())).collect::<Vec<_>>(),
+            [("4", "You", "OST reply test 1", "Just now"), ("5", "OST Test 2", "thanks OST Test 1", "Just now")]);
+        assert_eq!(comment_text(&json!({"text": "@mention{3} hi", "mentions": []})), "@mention{3} hi");
     }
 
     #[test]

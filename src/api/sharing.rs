@@ -165,6 +165,12 @@ pub(crate) async fn post(url: &str, body: &Value) -> Result<Value> {
 
 /// `post` with extra headers.
 pub(crate) async fn post_with(url: &str, body: &Value, headers: &[(&str, &str)]) -> Result<Value> {
+    send_with(reqwest::Method::POST, url, body, headers).await
+}
+
+/// A SharePoint REST call with a body, by any method (OneDrive edits a
+/// comment with PATCH).
+pub(crate) async fn send_with(method: reqwest::Method, url: &str, body: &Value, headers: &[(&str, &str)]) -> Result<Value> {
     let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
     if !host.starts_with("https://") {
         bail!("Not a SharePoint address: {url}");
@@ -174,7 +180,7 @@ pub(crate) async fn post_with(url: &str, body: &Value, headers: &[(&str, &str)])
     // (SharePoint's v2.x API takes plain JSON).
     let pick = |name: &str| headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| *v).unwrap_or("application/json;odata=verbose");
     let resp = reqwest::Client::new()
-        .post(url)
+        .request(method, url)
         .bearer_auth(token)
         .header("accept", pick("accept"))
         .header("content-type", pick("content-type"));

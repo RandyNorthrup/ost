@@ -13110,6 +13110,15 @@ impl qobject::Backend {
                         api::item_details::delete_comment(&item, &s("id")).await?;
                         json!(null)
                     }
+                    // Edit comment, and the Reply box under a comment.
+                    "edit_comment" => {
+                        api::item_details::edit_comment(&item, &s("id"), &s("text")).await?;
+                        json!(null)
+                    }
+                    "reply_comment" => {
+                        api::item_details::add_reply(&item, &s("id"), &s("text")).await?;
+                        json!(null)
+                    }
                     "restore_version" | "delete_version" => {
                         let file = api::copy_jobs::absolute_url(&sp).await?;
                         api::versions::act(&sp.site, &file, &s("label"), kind == "restore_version").await?;

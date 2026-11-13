@@ -57,6 +57,10 @@ Rectangle {
             } else if (kind === "delete_comment") {
                 if (err) root.commentError = err
                 else root.load()
+            } else if (kind === "edit_comment" || kind === "reply_comment") {
+                root.sending = false
+                if (err) root.commentError = err
+                else { root.editingId = ""; root.load() }
             } else if (kind === "notify") {
                 root.notifyError = err ? "Notifications couldn't be turned " + (root.notify ? "on" : "off") + ". " + err : ""
                 if (err) root.notify = !root.notify
@@ -64,6 +68,19 @@ Rectangle {
         }
     }
     property bool sending: false
+    /// The comment being edited (its card becomes the edit box).
+    property string editingId: ""
+    function sendEdit(id, text) {
+        if (!text.trim() || sending) return
+        sending = true; commentError = ""
+        backend.driveAction(tag + "edit_comment", JSON.stringify(item), JSON.stringify({ id: id, text: text.trim() }))
+    }
+    function sendReply(id, text) {
+        if (!text.trim() || sending) return false
+        sending = true; commentError = ""
+        backend.driveAction(tag + "reply_comment", JSON.stringify(item), JSON.stringify({ id: id, text: text.trim() }))
+        return true
+    }
     property string notifyError: ""
     property string commentError: ""
 
@@ -296,9 +313,47 @@ Rectangle {
                             // A comment (OneDrive's comment card): the author's
                             // 32 px picture, the name, the comment (padding 4 0 6),
                             // the time, and Show actions (Delete comment).
+                            // Edit comment: a 272 x 68 box (2 px brand border)
+                            // with the text, Cancel and Submit comment.
+                            Rectangle {
+                                visible: !!parent.modelData.comment_id && root.editingId === parent.modelData.comment_id
+                                width: parent.width; height: visible ? Math.max(68, editText.contentHeight + 12 + 36) : 0
+                                radius: 2; color: theme.surface
+                                border.width: 2; border.color: root.brand
+                                TextEdit {
+                                    id: editText
+                                    x: 8; y: 6; width: parent.width - 16
+                                    wrapMode: TextEdit.Wrap; selectByMouse: true
+                                    font.family: theme.font; font.pixelSize: 14; color: root.ink
+                                    Keys.onEscapePressed: root.editingId = ""
+                                    Accessible.role: Accessible.EditableText
+                                    Accessible.name: "Comment input"
+                                }
+                                Row {
+                                    anchors.right: parent.right; anchors.rightMargin: 6; anchors.bottom: parent.bottom; anchors.bottomMargin: 6
+                                    Rectangle {
+                                        width: 32; height: 32; radius: 4; color: ech.hovered ? theme.menuHover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: root.brand }
+                                        HoverHandler { id: ech; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.editingId = "" }
+                                        ToolTip.visible: ech.hovered; ToolTip.text: "Cancel"; ToolTip.delay: 300
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Cancel"
+                                    }
+                                    Rectangle {
+                                        width: 32; height: 32; radius: 4; color: esh.hovered ? theme.menuHover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: "send-16"; size: 16; color: editText.text.trim() ? root.brand : theme.pick("#BDBDBD", "#5C5C5C") }
+                                        HoverHandler { id: esh; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.sendEdit(root.editingId, editText.text) }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Submit comment"
+                                    }
+                                }
+                                onVisibleChanged: if (visible) { editText.text = parent.modelData.source || ""; editText.cursorPosition = editText.text.length; editText.forceActiveFocus() }
+                            }
                             Rectangle {
                                 id: ccard
-                                visible: !!parent.modelData.comment_id
+                                visible: !!parent.modelData.comment_id && root.editingId !== parent.modelData.comment_id
                                 readonly property var c: parent.modelData
                                 width: parent.width; height: visible ? cText.y + cText.height + 6 + 18 + 14 : 0
                                 radius: 4; color: theme.pick("#FAFAFA", "#292929")
@@ -313,7 +368,8 @@ Rectangle {
                                 }
                                 Text {
                                     x: 64; y: cText.y + cText.height + 6 + 2
-                                    text: ccard.c.time
+                                    // OneDrive's "{0} • Edited".
+                                    text: ccard.c.time + (ccard.c.edited ? " \u2022 Edited" : "")
                                     font.family: theme.font; font.pixelSize: 10; color: root.strong
                                     HoverHandler { id: ctth }
                                     ToolTip.visible: ctth.hovered
@@ -333,12 +389,78 @@ Rectangle {
                                         id: cmenu
                                         fabric: true
                                         x: parent.width - width; y: parent.height + 4
-                                        items: [{ label: "Delete comment", icon: "delete-16" }]
-                                        onPicked: i => { deleteComment.target = ccard.c.comment_id; deleteComment.open() }
+                                        items: [{ label: "Edit comment", icon: "edit-16" }, { label: "Delete comment", icon: "delete-16" }]
+                                        onPicked: i => {
+                                            if (i === 0) root.editingId = ccard.c.comment_id
+                                            else { deleteComment.target = ccard.c.comment_id; deleteComment.open() }
+                                        }
                                     }
                                 }
                                 Accessible.role: Accessible.ListItem
                                 Accessible.name: ccard.c.author + ": " + ccard.c.text + " " + ccard.c.time
+                            }
+                            // Replies, 8 in and 256 wide (padding 8 8 8 24): the
+                            // 32 px picture, "You replied" / "{name} replied",
+                            // the text and the time.
+                            Item { visible: !!parent.modelData.comment_id && (parent.modelData.replies || []).length > 0; width: 1; height: 8 }
+                            Repeater {
+                                model: parent.modelData.comment_id ? (parent.modelData.replies || []) : []
+                                Item {
+                                    required property var modelData
+                                    x: 8; width: actCol.width - 16; height: rText.y + rText.height + 2 + 18 + 8
+                                    Avatar { x: 24; y: 16; size: 32; name: parent.modelData.mine ? root.myName : parent.modelData.author; photoId: root.info && root.info.oids ? (root.info.oids[(parent.modelData.author_email || "").toLowerCase()] || "") : "" }
+                                    Text { x: 72; y: 8; width: parent.width - 72 - 8; height: 16; elide: Text.ElideRight; text: parent.modelData.author + " replied"; font.family: theme.font; font.pixelSize: 12; color: root.strong }
+                                    Text {
+                                        id: rText
+                                        x: 72; y: 24 + 4; width: parent.width - 72 - 8
+                                        wrapMode: Text.Wrap; textFormat: Text.StyledText
+                                        text: parent.modelData.text
+                                        font.family: theme.font; font.pixelSize: 12; color: root.ink
+                                    }
+                                    Text { x: 72; y: rText.y + rText.height + 4; text: parent.modelData.time + (parent.modelData.edited ? " \u2022 Edited" : ""); font.family: theme.font; font.pixelSize: 10; color: root.strong }
+                                    Accessible.role: Accessible.ListItem
+                                    Accessible.name: parent.modelData.author + " replied: " + parent.modelData.text + " " + parent.modelData.time
+                                }
+                            }
+                            // The Reply box under each comment: 256 x 32 on
+                            // white, padding 8; Cancel and Submit comment.
+                            Item {
+                                visible: !!parent.modelData.comment_id && root.editingId !== parent.modelData.comment_id && !root.commentsDisabled
+                                width: parent.width; height: visible ? 48 : 0
+                                readonly property string cid: parent.modelData.comment_id || ""
+                                Rectangle {
+                                    x: 8; y: 8; width: 256; height: 32; radius: 4
+                                    color: theme.surface
+                                    border.width: 0.67; border.color: replyBox.activeFocus ? root.brand : theme.pick("#D1D1D1", "#666666")
+                                    TextInput {
+                                        id: replyBox
+                                        x: 12; width: parent.width - 12 - 72; anchors.verticalCenter: parent.verticalCenter
+                                        clip: true; maximumLength: 2000
+                                        font.family: theme.font; font.pixelSize: 14; color: root.ink
+                                        Text { visible: !replyBox.text; text: "Reply"; color: theme.textTertiary; font: replyBox.font }
+                                        Keys.onReturnPressed: if (root.sendReply(parent.parent.cid, text)) text = ""
+                                        Accessible.role: Accessible.EditableText
+                                        Accessible.name: "Comment input"
+                                    }
+                                    Rectangle {
+                                        x: parent.width - 72; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32; radius: 4
+                                        color: rch.hovered ? theme.menuHover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: root.brand }
+                                        HoverHandler { id: rch; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: replyBox.text = "" }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Cancel"
+                                    }
+                                    Rectangle {
+                                        x: parent.width - 36; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32; radius: 4
+                                        color: rsh.hovered ? theme.menuHover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: "send-16"; size: 16; color: replyBox.text.trim() ? root.brand : theme.pick("#BDBDBD", "#5C5C5C") }
+                                        HoverHandler { id: rsh; cursorShape: replyBox.text.trim() ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                                        TapHandler { onTapped: if (root.sendReply(parent.parent.parent.cid, replyBox.text)) replyBox.text = "" }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Submit comment"
+                                    }
+                                }
                             }
                             Rectangle {
                                 visible: !parent.modelData.comment_id
@@ -503,6 +625,10 @@ Rectangle {
     }
     function bellForTest() { notify = !notify; backend.driveAction(tag + "notify", JSON.stringify(item), JSON.stringify({ on: notify })) }
     function commentForTest(text) { commentBox.text = text; send() }
-    function deleteCommentForTest(text) { const c = feed.find(a => a.comment_id && a.text === text); if (c) backend.driveAction(tag + "delete_comment", JSON.stringify(item), JSON.stringify({ id: c.comment_id })); return !!c }
+    function editCommentForTest(text, to) { const c = feed.find(a => a.comment_id && a.source === text); if (c) sendEdit(c.comment_id, to); return !!c }
+    function replyForTest(text, reply) { const c = feed.find(a => a.comment_id && a.source === text); if (c) sendReply(c.comment_id, reply); return !!c }
+    function startEditForTest(text) { const c = feed.find(a => a.comment_id && a.source === text); if (c) editingId = c.comment_id; return !!c }
+    function commentsForTest() { return feed.filter(a => a.comment_id).map(a => a.author + ": " + a.source + " · " + a.time + (a.edited ? " • Edited" : "") + (a.replies || []).map(r => " | " + r.author + " replied: " + r.text + " · " + r.time).join("")) }
+    function deleteCommentForTest(text) { const c = feed.find(a => a.comment_id && (a.source === text || a.text === text)); if (c) backend.driveAction(tag + "delete_comment", JSON.stringify(item), JSON.stringify({ id: c.comment_id })); return !!c }
     function scrollForTest(y) { flick.contentY = Math.min(y, Math.max(0, flick.contentHeight - flick.height)) }
 }

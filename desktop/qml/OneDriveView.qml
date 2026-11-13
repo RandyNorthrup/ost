@@ -1143,6 +1143,10 @@ Item {
     function detailsReloadForTest() { details.load() }
     function detailsCommentForTest(t) { details.commentForTest(t) }
     function detailsDeleteCommentForTest(t) { return details.deleteCommentForTest(t) }
+    function detailsCommentsForTest() { return details.commentsForTest() }
+    function detailsEditCommentForTest(t, to) { return details.editCommentForTest(t, to) }
+    function detailsReplyForTest(t, r) { return details.replyForTest(t, r) }
+    function detailsStartEditForTest(t) { return details.startEditForTest(t) }
     function openDetailsForTest(name) { const it = items.find(i => i.name === name); details.item = it || null; return !!it }
     function barCloseForTest() { openMenu.close(); moreMenu.close() }
     function rowsForTest() { return items.map(i => [i.name, i.modified_text, i.modified_title, i.modified_by, i.is_folder ? itemCount(i.child_count) : size(i.size), i.sharing, i.is_new ? "new" : "", i.activity ? i.activity.text + " " + i.activity.time : ""].join(" | ")) }

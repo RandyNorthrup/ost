@@ -150,15 +150,28 @@ not measured: OneDrive's actual breakpoint hasn't been found.
 ## Comments
 
 - Comments come from
-  `GET {site}/_api/web/lists(@a1)/GetItemByUniqueId(@a2)/GetComments()`.
-  Each has `id`, `text`, `createdDate` and `author{name,email}`.
-- In the feed a comment is its own card, in place of the comment activity:
-  - the author's 32 px picture at 16;
+  `GET {site}/_api/web/lists(@a1)/GetItemById(@a2)/GetComments()?$top=25&$expand=replies,likedBy,replies/likedBy`.
+  Each has `id`, `text`, `mentions`, `createdDate`, `modifiedDate` (set once
+  edited), `author{name,email}`, `replyCount`, `likeCount` and its
+  `replies`. OST asks the same through `GetItemByUniqueId`.
+- In the feed a comment is its own card (272 wide, #FAFAFA, radius 4,
+  padding 14 16), in place of the comment activity:
+  - the author's 32 px picture at 16, 22;
   - at 64, "You" or the author's name (12 px), then the comment (12 px,
-    padding 4 0 6), then the time in the client wording ("Just now",
-    "8m ago");
-  - your own comments have a 32 px brand "Show actions" ··· at the top right.
-- Under each card is a "Reply" box (256 x 32, on white with padding 8).
+    padding 4 0 6), then the time (10 px) worded as the files list words it
+    ("A few seconds ago", "About a minute ago", "12 minutes ago"), plus
+    " • Edited" once `modifiedDate` is set;
+  - your own comments have a 32 px brand "Show actions" ··· at the top right
+    with **Edit comment** and **Delete comment** (16 px glyphs).
+  - `@mention{n}` in the text reads as the n-th mentioned person's name.
+- **Replies** follow their comment, oldest first: 8 in, 256 wide, padding 8
+  8 8 24, no background. The 32 px picture at 24, 16; at 72 "You replied" /
+  "{name} replied" (12 px), the text (12 px) and the time in the client
+  wording ("Just now", "11m ago"; 10 px). Replies have no menu.
+- Under each comment (and its replies) is a "Reply" box: 256 x 32 at 8, 8,
+  like the comment box (placeholder "Reply", Cancel ✕ and Submit comment).
+- The feed leaves out the comment and reply activities (their cards stand in
+  for them) and shows back-to-back edits by one person once.
 - **Comments** shows only these cards. It reads "This item has no comments."
   when there are none.
 - **Add:**
@@ -167,6 +180,18 @@ not measured: OneDrive's actual breakpoint hasn't been found.
   This returns 201.
 - **Delete comment** asks "Delete comment" / "Do you want to delete this
   comment?" with Yes and Cancel, then sends `DELETE …/Comments({id})`.
+- **Edit comment** turns the card into a 272 x 68 box with a 2 px brand
+  border (radius 2), the text in it, focused, with Cancel and Submit comment
+  (32 x 32 at 194 and 234, 30 down). Submit sends
+  `PATCH …/Comments({id})` with `{"mentions":[],"text":…}` (204), then the
+  comments are read again.
+- **Reply** sends `POST …/Comments({id})/replies` with `{"text":…}` (201).
+- **Likes and @mentions:** Teams' pane offers neither. There is no like
+  control on comments or replies, and the comment box is a plain text field
+  with no mention picker ("@OST" brings up nothing and asks nothing). OneDrive's
+  code has both (`likeComment`, a mention picker) for other hosts. OST matches
+  Teams: no like control and no picker, but mentions made elsewhere show as
+  names.
 
 ## What OST does differently
 
@@ -179,8 +204,6 @@ not measured: OneDrive's actual breakpoint hasn't been found.
   treats the bell as on.
 - **Change requires the site's ids.** `FeedbackDirect` needs `SiteId` and
   `WebId` in its `json`. OST reads them from `_api/site/id` and `_api/web/id`.
-- **Comment features not yet in OST:** Edit comment, replies (the Reply
-  box), likes and @mentions in comments (TASK-0121).
 - **Pictures.** The 320 x 180 picture comes from Graph's
   `thumbnails/0/c320x180/content`.
 - **Has access.** It lists the people with direct access, without the owner,
