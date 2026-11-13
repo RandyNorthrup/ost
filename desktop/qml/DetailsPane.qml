@@ -357,8 +357,8 @@ Rectangle {
                                 readonly property var c: parent.modelData
                                 width: parent.width; height: visible ? cText.y + cText.height + 6 + 18 + 14 : 0
                                 radius: 4; color: theme.pick("#FAFAFA", "#292929")
-                                Avatar { x: 16; y: 22; size: 32; name: ccard.c.mine ? root.myName : ccard.c.author; photoId: root.info && root.info.oids ? (root.info.oids[(ccard.c.author_email || "").toLowerCase()] || "") : "" }
-                                Text { x: 64; y: 14; width: parent.width - 64 - 40; height: 16; elide: Text.ElideRight; text: ccard.c.author; font.family: theme.font; font.pixelSize: 12; color: root.strong }
+                                Avatar { x: 16; y: 22; size: 32; name: ccard.c.mine ? root.myName : (ccard.c.author || ""); photoId: root.info && root.info.oids ? (root.info.oids[(ccard.c.author_email || "").toLowerCase()] || "") : "" }
+                                Text { x: 64; y: 14; width: parent.width - 64 - 40; height: 16; elide: Text.ElideRight; text: ccard.c.author || ""; font.family: theme.font; font.pixelSize: 12; color: root.strong }
                                 Text {
                                     id: cText
                                     x: 64; y: 30 + 4; width: parent.width - 64 - 16
@@ -619,7 +619,7 @@ Rectangle {
     }
     // Test hooks
     function stateForTest() {
-        return { loading: loading, error: error, notify: notify, people: info && info.people ? info.people.length : -1, links: info ? !!info.links : false,
+        return { loading: loading, error: error, notify: notify, notifyError: notifyError, people: info && info.people ? info.people.length : -1, links: info ? !!info.links : false,
                  thumbnail: info ? !!info.thumbnail : false, groups: feed.map(a => a.group + ": " + (a.comment_id ? a.author + " commented: " : "") + a.text.replace(/<[^>]+>/g, "") + " · " + a.time),
                  more: info && !folderMode ? [info.details.type_text, info.details.modified, info.details.created, info.details.path.join(" › ")] : [], folder: folderMode }
     }

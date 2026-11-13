@@ -195,11 +195,12 @@ not measured: OneDrive's actual breakpoint hasn't been found.
 
 ## What OST does differently
 
-- **The bell.** OST shows the bell's state and can turn notifications off.
-  Turning them back on fails: SharePoint answers OST's token with "Failure :
-  Action could not be performed." Teams sends the same request with cookies
-  and a request digest, and that works. OST then shows the error and leaves
-  the bell as it was (TASK-0122). SharePoint also leaves
+- **The bell.** OST shows the bell's state and turns notifications off and
+  back on with the same `FeedbackDirect` request and its own token (no
+  cookies or request digest needed; checked 2026-11-13, `--bell-test`). On
+  2026-11-12 turning them on failed with "Failure : Action could not be
+  performed." during that day's Microsoft 365 outage; if SharePoint
+  refuses, OST shows the error and leaves the bell as it was. SharePoint also leaves
   `notificationPreferences` out of some replies to OST's token; then OST
   treats the bell as on.
 - **Change requires the site's ids.** `FeedbackDirect` needs `SiteId` and
