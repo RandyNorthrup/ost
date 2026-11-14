@@ -90,6 +90,9 @@ fn main() {
         "qml/LockMeetingDialog.qml",
         "qml/RoleChangeDialog.qml",
         "qml/VideoFlyout.qml",
+        "qml/EffectTile.qml",
+        "qml/VideoEffectsState.qml",
+        "qml/VideoEffectsPane.qml",
         "qml/NetworkPopover.qml",
         "qml/AiPopover.qml",
         "qml/MeetingInfoPane.qml",
@@ -271,6 +274,7 @@ fn main() {
             cc.file("src/richtext.cpp");
             cc.file("src/clipframes.cpp");
             cc.file("src/clipedit.cpp");
+            cc.file("src/vfxplayer.cpp");
         })
     };
     println!("cargo::rerun-if-changed=src/webengine.cpp");
@@ -278,9 +282,10 @@ fn main() {
     println!("cargo::rerun-if-changed=src/richtext.cpp");
     println!("cargo::rerun-if-changed=src/clipframes.cpp");
     println!("cargo::rerun-if-changed=src/clipedit.cpp");
-    // The clip editor renders with FFmpeg's libraries (as Qt Multimedia
-    // does).
-    for lib in ["avfilter", "avformat", "avcodec", "avutil"] {
+    println!("cargo::rerun-if-changed=src/vfxplayer.cpp");
+    // The clip editor renders, and video backgrounds play, with FFmpeg's
+    // libraries (as Qt Multimedia does).
+    for lib in ["avfilter", "avformat", "avcodec", "avutil", "swscale"] {
         println!("cargo::rustc-link-lib={lib}");
     }
     builder.build();

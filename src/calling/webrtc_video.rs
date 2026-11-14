@@ -344,8 +344,11 @@ impl CameraPreview {
             .name("ost-camera-preview".into())
             .spawn(move || {
                 let _camera = camera;
+                // The preview shows the video effects as they'll be sent.
+                let mut effects = ost_vfx::Processor::new();
                 while !stop2.load(Ordering::Relaxed) {
-                    if let Ok(f) = frames.recv_timeout(std::time::Duration::from_millis(250)) {
+                    if let Ok(mut f) = frames.recv_timeout(std::time::Duration::from_millis(250)) {
+                        effects.process(f.width, f.height, &mut f.data);
                         super::frames::publish(
                             "self",
                             f.width / 2,
@@ -373,8 +376,8 @@ pub struct VideoSender {
 }
 
 /// What we send: 640x360 at 15 fps, about 600 kbit/s, a keyframe every 2 s.
-const SEND_W: u32 = 640;
-const SEND_H: u32 = 360;
+pub const SEND_W: u32 = 640;
+pub const SEND_H: u32 = 360;
 const SEND_FPS: u32 = 15;
 const SEND_KBPS: u32 = 600;
 
@@ -390,6 +393,9 @@ struct SendConfig {
     repeat: Option<std::time::Duration>,
     /// What Call health counts it as.
     health: super::call_health::Kind,
+    /// Apply the chosen video effects (background, brightness): the
+    /// camera's picture, not a shared screen.
+    effects: bool,
 }
 
 const CAMERA: SendConfig = SendConfig {
@@ -398,6 +404,7 @@ const CAMERA: SendConfig = SendConfig {
     preview: Some("self"),
     repeat: None,
     health: super::call_health::Kind::VideoSend,
+    effects: true,
 };
 
 /// A shared screen: up to 1280x720 at 10 fps, sharper (more bits a
@@ -409,6 +416,7 @@ const SCREEN: SendConfig = SendConfig {
     preview: None,
     repeat: Some(std::time::Duration::from_secs(1)),
     health: super::call_health::Kind::ShareSend,
+    effects: false,
 };
 
 /// What a meeting's media processor asks our camera for (Teams' `vdclc`):
@@ -628,6 +636,7 @@ fn send_loop(
     let mut seq: u16 = (ssrc >> 7) as u16;
     let mut sent = 0u64;
     let mut last_frame: Option<std::time::Instant> = None;
+    let mut effects = cfg.effects.then(ost_vfx::Processor::new);
     while !stop.load(Ordering::Relaxed) {
         // A meeting's processor may ask for less (Teams' vdclc).
         let limits = control.as_ref().and_then(|c| c.get());
@@ -665,6 +674,11 @@ fn send_loop(
         }
         last_frame = Some(now);
         last_sent = now;
+        // Your background and brightness, as chosen in Video effects.
+        let mut f = f;
+        if let Some(fx) = effects.as_mut() {
+            fx.process(f.width, f.height, &mut f.data);
+        }
         if let Some(key) = cfg.preview {
             super::frames::publish(
                 key,

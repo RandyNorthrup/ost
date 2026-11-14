@@ -370,7 +370,6 @@ Window {
     function hasVideo(p) { return p.self ? cameraOn : !!videoKeys[p.id] }
     /// The others in gallery order (videos first, when asked).
     readonly property var othersOrdered: videosFirst ? others.filter(p => hasVideo(p)).concat(others.filter(p => !hasVideo(p))) : others
-    signal deviceSettings()
     /// Meetings: Teams' meeting options page (Controls) and the meeting
     /// chat on the web (Notes), and opening an app from Apps.
     property string optionsUrl: ""
@@ -619,7 +618,7 @@ Window {
         }
         else if (name === "DialpadButton") { if (dialPad.visible) dialPad.close(); else { dialPad.parent = barItem(name); dialPad.open() } }
         else if (name === "HoldButton" || name === "ResumeButton") toggleHold()
-        else if (name === "CameraEffectsButton") deviceSettings()
+        else if (name === "CameraEffectsButton") side = side === "video" ? "" : "video"
         else if (name === "AudioSettingsButton") side = side === "audio" ? "" : "audio"
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
         else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
@@ -1642,7 +1641,7 @@ Window {
                 source: "self"
                 anchors.fill: parent; anchors.margins: 1
                 visible: win.cameraOn && hasFrame
-                transform: Scale { origin.x: selfVideo.width / 2; xScale: -1 }
+                transform: Scale { origin.x: selfVideo.width / 2; xScale: videoEffects.mirror ? -1 : 1 }
             }
             Timer {
                 interval: 66; repeat: true
@@ -1667,7 +1666,7 @@ Window {
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         width: 360
-        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" || win.side === "rooms" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" || win.side === "rooms" || win.side === "video" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -1706,6 +1705,14 @@ Window {
             onReact: (id, key, on) => backend.toggleReaction(id, key, on)
             onEditMessage: (id, text) => backend.editMessage(id, text)
             onDeleteMessage: id => backend.deleteMessage(id)
+        }
+        VideoEffectsPane {
+            id: videoEffectsPane
+            visible: win.side === "video"
+            anchors.fill: parent
+            cameraOn: win.cameraOn
+            onClosed: win.side = ""
+            onTurnOnVideo: if (!win.cameraOn) win.runControl("VideoButton")
         }
         AudioSettingsPane {
             id: audioSettingsPane
@@ -2318,10 +2325,12 @@ Window {
         cameraOn: win.cameraOn
         x: parent ? parent.width - width : 0
         y: 60
-        // Teams opens its Video effects and settings pane (TASK-0062).
-        onMoreVideoSettings: win.deviceSettings()
+        // Teams opens its Video effects and settings pane.
+        onMoreVideoSettings: win.side = "video"
     }
     function videoOptionsForTest() { videoFlyout.parent = barItem("VideoButton"); videoFlyout.open() }
+    function videoFlyoutForTest() { return videoFlyout }
+    function videoEffectsPaneForTest() { return videoEffectsPane }
 
     // React (reaction-menu-button-toolbox, measured on winpc): a 249.3 x
     // 73.3 surface under the React button, padding 16, five 32 px buttons

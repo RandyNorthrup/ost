@@ -842,6 +842,11 @@ pub mod qobject {
         /// (url, local file URL or "") follows.
         #[qinvokable]
         fn fetch_music(self: Pin<&mut Backend>, url: &QString);
+        /// Teams' background catalog ([{id, name, animated, thumb}]) as
+        /// loaded; when it isn't yet, loading starts and
+        /// video_backgrounds_ready follows.
+        #[qinvokable]
+        fn video_backgrounds(self: Pin<&mut Backend>) -> QString;
         /// Send the compose box with a recorded clip before its text
         /// (`clip_json`: {id, duration (ms), width, height}), as Teams'
         /// message carries it.
@@ -1100,6 +1105,9 @@ pub mod qobject {
         /// A fetch_music finished.
         #[qsignal]
         fn music_ready(self: Pin<&mut Backend>, url: QString, path: QString);
+        /// Teams' background catalog loaded (video_backgrounds).
+        #[qsignal]
+        fn video_backgrounds_ready(self: Pin<&mut Backend>);
 
         /// A video_clip_upload finished: the recording's path and {id,
         /// url, error}.
@@ -2947,7 +2955,7 @@ const RING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 /// How many chats to load per request.
 const CHAT_LIMIT: usize = 50;
 
-fn runtime() -> &'static tokio::runtime::Runtime {
+pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RT.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
@@ -3040,7 +3048,7 @@ fn read_at_open() -> &'static std::sync::Mutex<HashMap<String, Option<u64>>> {
     MAP.get_or_init(Default::default)
 }
 
-fn cache_base() -> std::path::PathBuf {
+pub(crate) fn cache_base() -> std::path::PathBuf {
     std::env::var_os("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
@@ -4633,6 +4641,7 @@ impl qobject::Backend {
             .to_string();
         self.as_mut().set_theme_mode(QString::from(theme.as_str()));
         apply_audio_devices(&load_settings());
+        crate::video_effects::apply(&load_settings());
         self.as_mut().publish_drafts();
         let stored = teams_cli::auth::has_credentials();
         self.as_mut().set_has_credentials(stored);
@@ -5292,6 +5301,23 @@ impl qobject::Backend {
             let v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) })).to_string();
             let _ = qt.queue(move |mut this| this.as_mut().clip_rendered(QString::from(v.as_str())));
         });
+    }
+
+    pub fn video_backgrounds(self: Pin<&mut Self>) -> QString {
+        let list = crate::video_effects::catalog();
+        if list.is_empty() {
+            static LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !LOADING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                let qt = self.qt_thread();
+                runtime().spawn(async move {
+                    crate::video_effects::load_catalog().await;
+                    LOADING.store(false, std::sync::atomic::Ordering::SeqCst);
+                    let _ = qt.queue(|this| this.video_backgrounds_ready());
+                });
+            }
+        }
+        let json: Vec<serde_json::Value> = list.iter().map(|e| e.json()).collect();
+        QString::from(serde_json::Value::Array(json).to_string().as_str())
     }
 
     pub fn fetch_music(self: Pin<&mut Self>, url: &QString) {
@@ -10976,6 +11002,9 @@ impl qobject::Backend {
         }
         if name == "micDevice" || name == "speakerDevice" {
             apply_audio_devices(&map);
+        }
+        if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus"].contains(&name.as_str()) {
+            crate::video_effects::apply(&map);
         }
         if name == "autoStart"
             && let Err(e) = set_autostart(value == "true")

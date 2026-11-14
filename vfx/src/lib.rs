@@ -1,0 +1,534 @@
+//! Video effects, as Teams applies them to your camera: Standard and
+//! Portrait blur, a background picture (still or animated), Adjust
+//! brightness (low light) and Soft focus, on I420 frames. A person segmentation model (PP-HumanSeg, Apache-2.0, run with
+//! tract) finds you in the picture on a worker thread; each frame uses the
+//! newest mask, smoothed over time, so the camera never waits for it.
+
+use std::sync::{Arc, Mutex, mpsc};
+
+use tract_onnx::prelude::*;
+
+/// The model's input and mask size.
+pub const MASK: usize = 192;
+
+static MODEL: &[u8] = include_bytes!("../human_segmentation_pphumanseg_2023mar.onnx");
+
+/// What is behind you.
+#[derive(Clone, Default)]
+pub enum Background {
+    #[default]
+    None,
+    /// Teams' Standard blur (strong) or Portrait blur (lighter, more like a
+    /// camera's shallow focus).
+    Blur(Blur),
+    /// A picture (I420, any size; fitted to cover the frame).
+    Picture(Arc<Picture>),
+    /// A moving picture: its newest frame, kept up to date by its player.
+    Animated(Arc<Animated>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Blur {
+    #[default]
+    Standard,
+    Portrait,
+}
+
+/// An animated background's current frame.
+#[derive(Default)]
+pub struct Animated {
+    frame: Mutex<Option<Arc<Picture>>>,
+    /// When a camera frame last asked for it (ms since the epoch): its
+    /// player rests while no camera is using it.
+    wanted: std::sync::atomic::AtomicU64,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+impl Animated {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// The player's newest frame.
+    pub fn set_frame(&self, p: Picture) {
+        *self.frame.lock().unwrap() = Some(Arc::new(p));
+    }
+
+    pub fn frame(&self) -> Option<Arc<Picture>> {
+        self.wanted.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
+        self.frame.lock().unwrap().clone()
+    }
+
+    /// Whether a camera used it in the last two seconds.
+    pub fn in_use(&self) -> bool {
+        now_ms().saturating_sub(self.wanted.load(std::sync::atomic::Ordering::Relaxed)) < 2000
+    }
+}
+
+/// A background picture as I420.
+pub struct Picture {
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
+}
+
+impl Picture {
+    /// I420 data as it is (`data` holds width x height x 3/2 bytes).
+    pub fn from_i420(width: u32, height: u32, data: Vec<u8>) -> Self {
+        Self { width, height, data }
+    }
+
+    /// From RGBA pixels.
+    pub fn from_rgba(width: u32, height: u32, rgba: &[u8]) -> Self {
+        let (w, h) = (width as usize & !1, height as usize & !1);
+        let mut data = vec![0u8; w * h * 3 / 2];
+        let (yp, uv) = data.split_at_mut(w * h);
+        let (up, vp) = uv.split_at_mut(w * h / 4);
+        for y in 0..h {
+            for x in 0..w {
+                let i = (y * width as usize + x) * 4;
+                let (r, g, b) = (rgba[i] as f32, rgba[i + 1] as f32, rgba[i + 2] as f32);
+                yp[y * w + x] = (0.257 * r + 0.504 * g + 0.098 * b + 16.0).clamp(0.0, 255.0) as u8;
+                if y % 2 == 0 && x % 2 == 0 {
+                    let c = (y / 2) * (w / 2) + x / 2;
+                    up[c] = (-0.148 * r - 0.291 * g + 0.439 * b + 128.0).clamp(0.0, 255.0) as u8;
+                    vp[c] = (0.439 * r - 0.368 * g - 0.071 * b + 128.0).clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+        Self { width: w as u32, height: h as u32, data }
+    }
+}
+
+/// The effects chosen (shared by the camera paths).
+#[derive(Clone, Default)]
+pub struct Settings {
+    pub background: Background,
+    /// Teams' Adjust brightness.
+    pub brightness: bool,
+    /// Teams' Soft focus: your skin smoothed.
+    pub soft_focus: bool,
+}
+
+fn settings() -> &'static Mutex<Settings> {
+    static S: std::sync::OnceLock<Mutex<Settings>> = std::sync::OnceLock::new();
+    S.get_or_init(|| Mutex::new(Settings::default()))
+}
+
+/// Choose the effects for every camera picture from now on.
+pub fn set(s: Settings) {
+    *settings().lock().unwrap() = s;
+}
+
+pub fn current() -> Settings {
+    settings().lock().unwrap().clone()
+}
+
+/// Person segmentation: a 192 x 192 RGB picture in, the chance that each
+/// point is a person (0–1) out.
+pub struct Segmenter {
+    model: Arc<TypedRunnableModel>,
+}
+
+impl Segmenter {
+    pub fn new() -> anyhow::Result<Self> {
+        let model = tract_onnx::onnx()
+            .model_for_read(&mut &MODEL[..])?
+            .with_input_fact(0, f32::fact([1, 3, MASK, MASK]).into())?
+            .into_optimized()?
+            .into_runnable()?;
+        Ok(Self { model })
+    }
+
+    /// `rgb`: MASK x MASK x 3 bytes. The mask, MASK x MASK.
+    pub fn segment(&self, rgb: &[u8]) -> anyhow::Result<Vec<f32>> {
+        // PP-HumanSeg's input: RGB scaled to −1..1 (mean 0.5, std 0.5).
+        let input: Tensor = tract_ndarray::Array4::<f32>::from_shape_fn((1, 3, MASK, MASK), |(_, c, y, x)| {
+            rgb[(y * MASK + x) * 3 + c] as f32 / 127.5 - 1.0
+        })
+        .into();
+        let out = self.model.run(tvec!(input.into()))?;
+        let logits = out[0].to_plain_array_view::<f32>()?;
+        let mut mask = vec![0f32; MASK * MASK];
+        for y in 0..MASK {
+            for x in 0..MASK {
+                // Two classes (background, person): the person's softmax.
+                let (b, p) = (logits[[0, 0, y, x]], logits[[0, 1, y, x]]);
+                mask[y * MASK + x] = 1.0 / (1.0 + (b - p).exp());
+            }
+        }
+        Ok(mask)
+    }
+}
+
+/// An I420 frame's colours at a point (nearest), as RGB.
+fn rgb_at(data: &[u8], w: usize, h: usize, x: usize, y: usize) -> [u8; 3] {
+    let yv = data[y * w + x] as f32 - 16.0;
+    let c = (y / 2) * (w / 2) + x / 2;
+    let u = data[w * h + c] as f32 - 128.0;
+    let v = data[w * h + w * h / 4 + c] as f32 - 128.0;
+    let r = 1.164 * yv + 1.596 * v;
+    let g = 1.164 * yv - 0.392 * u - 0.813 * v;
+    let b = 1.164 * yv + 2.017 * u;
+    [r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8]
+}
+
+/// The frame shrunk to the model's input.
+pub fn model_input(data: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let (w, h) = (w as usize, h as usize);
+    let mut rgb = vec![0u8; MASK * MASK * 3];
+    for my in 0..MASK {
+        for mx in 0..MASK {
+            let x = (mx * w + w / 2) / MASK;
+            let y = (my * h + h / 2) / MASK;
+            let p = rgb_at(data, w, h, x.min(w - 1), y.min(h - 1));
+            rgb[(my * MASK + mx) * 3..][..3].copy_from_slice(&p);
+        }
+    }
+    rgb
+}
+
+/// Applies the chosen effects to camera frames.
+pub struct Processor {
+    to_worker: Option<mpsc::SyncSender<Vec<u8>>>,
+    newest: Arc<Mutex<Option<Vec<f32>>>>,
+    /// The mask used, eased towards each new one.
+    mask: Vec<f32>,
+    have_mask: bool,
+    /// The background picture fitted to the frame size (cached).
+    fitted: Option<(usize, usize, *const Picture, Vec<u8>)>,
+    blur: Vec<u8>,
+}
+
+// The cached picture pointer is only compared, never read through.
+unsafe impl Send for Processor {}
+
+impl Default for Processor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Processor {
+    pub fn new() -> Self {
+        Self { to_worker: None, newest: Arc::new(Mutex::new(None)), mask: vec![0.0; MASK * MASK], have_mask: false, fitted: None, blur: Vec::new() }
+    }
+
+    fn worker(&mut self) -> Option<&mpsc::SyncSender<Vec<u8>>> {
+        if self.to_worker.is_none() {
+            let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(1);
+            let newest = self.newest.clone();
+            let spawned = std::thread::Builder::new().name("ost-vfx-segment".into()).spawn(move || {
+                let seg = match Segmenter::new() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("ost-vfx: the segmentation model didn't load: {e}");
+                        return;
+                    }
+                };
+                while let Ok(rgb) = rx.recv() {
+                    if let Ok(mask) = seg.segment(&rgb) {
+                        *newest.lock().unwrap() = Some(mask);
+                    }
+                }
+            });
+            if spawned.is_ok() {
+                self.to_worker = Some(tx);
+            }
+        }
+        self.to_worker.as_ref()
+    }
+
+    /// Apply the chosen effects to an I420 frame in place.
+    pub fn process(&mut self, width: u32, height: u32, data: &mut [u8]) {
+        let s = current();
+        let (w, h) = (width as usize, height as usize);
+        if data.len() < w * h * 3 / 2 || w < 2 || h < 2 {
+            return;
+        }
+        if s.brightness {
+            brighten(&mut data[..w * h]);
+        }
+        if matches!(s.background, Background::None) && !s.soft_focus {
+            self.have_mask = false;
+            return;
+        }
+        // A new picture for the model when it is free (the newest frame).
+        let input = model_input(data, width, height);
+        if let Some(tx) = self.worker() {
+            let _ = tx.try_send(input);
+        }
+        if let Some(m) = self.newest.lock().unwrap().take() {
+            if self.have_mask {
+                for (a, b) in self.mask.iter_mut().zip(m.iter()) {
+                    *a = *a * 0.4 + *b * 0.6;
+                }
+            } else {
+                self.mask = m;
+                self.have_mask = true;
+            }
+        }
+        if !self.have_mask {
+            return;
+        }
+        if s.soft_focus {
+            soften(&mut data[..w * h], &self.mask, w, h, &mut self.blur);
+        }
+        // What goes behind you.
+        let picture = match &s.background {
+            Background::Picture(p) => Some(p.clone()),
+            Background::Animated(a) => a.frame(),
+            _ => None,
+        };
+        let back: &[u8] = match (&s.background, picture) {
+            (Background::Blur(kind), _) => {
+                blur_i420(data, w, h, if *kind == Blur::Portrait { 4 } else { 8 }, &mut self.blur);
+                &self.blur
+            }
+            (_, Some(p)) => {
+                let key = Arc::as_ptr(&p);
+                if !matches!(&self.fitted, Some((fw, fh, k, _)) if *fw == w && *fh == h && *k == key) {
+                    self.fitted = Some((w, h, key, fit_cover(&p, w, h)));
+                }
+                &self.fitted.as_ref().unwrap().3
+            }
+            _ => return,
+        };
+        composite(data, back, &self.mask, w, h);
+    }
+}
+
+/// The mask at a frame point (bilinear), eased so edges are soft but firm.
+fn alpha_at(mask: &[f32], w: usize, h: usize, x: usize, y: usize) -> f32 {
+    let fx = (x as f32 + 0.5) * MASK as f32 / w as f32 - 0.5;
+    let fy = (y as f32 + 0.5) * MASK as f32 / h as f32 - 0.5;
+    let x0 = fx.floor().clamp(0.0, (MASK - 1) as f32) as usize;
+    let y0 = fy.floor().clamp(0.0, (MASK - 1) as f32) as usize;
+    let (x1, y1) = ((x0 + 1).min(MASK - 1), (y0 + 1).min(MASK - 1));
+    let (tx, ty) = ((fx - x0 as f32).clamp(0.0, 1.0), (fy - y0 as f32).clamp(0.0, 1.0));
+    let a = mask[y0 * MASK + x0] * (1.0 - tx) + mask[y0 * MASK + x1] * tx;
+    let b = mask[y1 * MASK + x0] * (1.0 - tx) + mask[y1 * MASK + x1] * tx;
+    let p = a * (1.0 - ty) + b * ty;
+    // Smoothstep from 0.3 to 0.7.
+    let t = ((p - 0.3) / 0.4).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// You over `back` (both I420, the same size), by the mask.
+pub fn composite(data: &mut [u8], back: &[u8], mask: &[f32], w: usize, h: usize) {
+    for y in 0..h {
+        for x in 0..w {
+            let a = alpha_at(mask, w, h, x, y);
+            let i = y * w + x;
+            data[i] = (data[i] as f32 * a + back[i] as f32 * (1.0 - a)) as u8;
+        }
+    }
+    let (cw, ch) = (w / 2, h / 2);
+    for y in 0..ch {
+        for x in 0..cw {
+            let a = alpha_at(mask, w, h, x * 2 + 1, y * 2 + 1);
+            for plane in [w * h, w * h + cw * ch] {
+                let i = plane + y * cw + x;
+                data[i] = (data[i] as f32 * a + back[i] as f32 * (1.0 - a)) as u8;
+            }
+        }
+    }
+}
+
+/// A blur of the whole frame: each plane shrunk by `f` (8 for Standard
+/// blur, 4 for Portrait blur's lighter one), box-blurred twice, and
+/// stretched back.
+pub fn blur_i420(data: &[u8], w: usize, h: usize, f: usize, out: &mut Vec<u8>) {
+    out.resize(w * h * 3 / 2, 0);
+    let planes = [(0, w, h), (w * h, w / 2, h / 2), (w * h + w * h / 4, w / 2, h / 2)];
+    for (off, pw, ph) in planes {
+        let f = f.max(1);
+        let (sw, sh) = (pw.div_ceil(f).max(1), ph.div_ceil(f).max(1));
+        let mut small = vec![0f32; sw * sh];
+        for sy in 0..sh {
+            for sx in 0..sw {
+                let (mut sum, mut n) = (0f32, 0f32);
+                for y in sy * f..((sy + 1) * f).min(ph) {
+                    for x in sx * f..((sx + 1) * f).min(pw) {
+                        sum += data[off + y * pw + x] as f32;
+                        n += 1.0;
+                    }
+                }
+                small[sy * sw + sx] = if n > 0.0 { sum / n } else { 0.0 };
+            }
+        }
+        for _ in 0..2 {
+            let src = small.clone();
+            for sy in 0..sh {
+                for sx in 0..sw {
+                    let (mut sum, mut n) = (0f32, 0f32);
+                    for dy in -2i32..=2 {
+                        for dx in -2i32..=2 {
+                            let (x, y) = (sx as i32 + dx, sy as i32 + dy);
+                            if x >= 0 && y >= 0 && (x as usize) < sw && (y as usize) < sh {
+                                sum += src[y as usize * sw + x as usize];
+                                n += 1.0;
+                            }
+                        }
+                    }
+                    small[sy * sw + sx] = sum / n;
+                }
+            }
+        }
+        for y in 0..ph {
+            for x in 0..pw {
+                let fx = ((x as f32 + 0.5) / f as f32 - 0.5).max(0.0);
+                let fy = ((y as f32 + 0.5) / f as f32 - 0.5).max(0.0);
+                let (x0, y0) = ((fx as usize).min(sw - 1), (fy as usize).min(sh - 1));
+                let (x1, y1) = ((x0 + 1).min(sw - 1), (y0 + 1).min(sh - 1));
+                let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                let a = small[y0 * sw + x0] * (1.0 - tx) + small[y0 * sw + x1] * tx;
+                let b = small[y1 * sw + x0] * (1.0 - tx) + small[y1 * sw + x1] * tx;
+                out[off + y * pw + x] = (a * (1.0 - ty) + b * ty) as u8;
+            }
+        }
+    }
+}
+
+/// The picture scaled to cover w x h (centred, cropped), as I420.
+pub fn fit_cover(p: &Picture, w: usize, h: usize) -> Vec<u8> {
+    let (pw, ph) = (p.width as usize, p.height as usize);
+    let scale = (w as f32 / pw as f32).max(h as f32 / ph as f32);
+    let (ox, oy) = ((pw as f32 * scale - w as f32) / 2.0, (ph as f32 * scale - h as f32) / 2.0);
+    let mut out = vec![0u8; w * h * 3 / 2];
+    let sample = |plane_off: usize, plane_w: usize, plane_h: usize, x: f32, y: f32| -> u8 {
+        let (xi, yi) = ((x as usize).min(plane_w - 1), (y as usize).min(plane_h - 1));
+        p.data[plane_off + yi * plane_w + xi]
+    };
+    for y in 0..h {
+        for x in 0..w {
+            out[y * w + x] = sample(0, pw, ph, (x as f32 + ox) / scale, (y as f32 + oy) / scale);
+        }
+    }
+    let (cw, ch, pcw, pch) = (w / 2, h / 2, pw / 2, ph / 2);
+    for y in 0..ch {
+        for x in 0..cw {
+            let (sx, sy) = ((x as f32 * 2.0 + ox) / scale / 2.0, (y as f32 * 2.0 + oy) / scale / 2.0);
+            out[w * h + y * cw + x] = sample(pw * ph, pcw, pch, sx, sy);
+            out[w * h + cw * ch + y * cw + x] = sample(pw * ph + pcw * pch, pcw, pch, sx, sy);
+        }
+    }
+    out
+}
+
+/// Soft focus: on you (by the mask), small differences in brightness are
+/// evened out (skin smoothed) while edges, eyes and hair stay sharp.
+pub fn soften(yplane: &mut [u8], mask: &[f32], w: usize, h: usize, scratch: &mut Vec<u8>) {
+    // A 5 x 5 box mean from an integral image.
+    let mut sum = vec![0u32; (w + 1) * (h + 1)];
+    for y in 0..h {
+        let mut row = 0u32;
+        for x in 0..w {
+            row += yplane[y * w + x] as u32;
+            sum[(y + 1) * (w + 1) + x + 1] = sum[y * (w + 1) + x + 1] + row;
+        }
+    }
+    scratch.resize(w * h, 0);
+    scratch.copy_from_slice(&yplane[..w * h]);
+    let r = 2usize;
+    for y in 0..h {
+        let (y0, y1) = (y.saturating_sub(r), (y + r + 1).min(h));
+        for x in 0..w {
+            let a = alpha_at(mask, w, h, x, y);
+            if a <= 0.0 {
+                continue;
+            }
+            let (x0, x1) = (x.saturating_sub(r), (x + r + 1).min(w));
+            let total = sum[y1 * (w + 1) + x1] + sum[y0 * (w + 1) + x0] - sum[y0 * (w + 1) + x1] - sum[y1 * (w + 1) + x0];
+            let mean = total as f32 / ((y1 - y0) * (x1 - x0)) as f32;
+            let v = scratch[y * w + x] as f32;
+            // Only small differences are smoothed (an edge is kept).
+            let d = (v - mean).abs();
+            let k = (1.0 - d / 18.0).clamp(0.0, 1.0) * 0.8 * a;
+            yplane[y * w + x] = (v + (mean - v) * k).round() as u8;
+        }
+    }
+}
+
+/// Adjust brightness: a dim picture is lifted (gamma), a well-lit one left
+/// as it is.
+pub fn brighten(yplane: &mut [u8]) {
+    if yplane.is_empty() {
+        return;
+    }
+    let mean = yplane.iter().step_by(7).map(|&v| v as u32).sum::<u32>() as f32 / yplane.iter().step_by(7).count() as f32;
+    if mean >= 110.0 {
+        return;
+    }
+    // Bring the mean towards 120: y' = 255 (y / 255)^g.
+    let g = ((120.0f32 / 255.0).ln() / (mean.max(8.0) / 255.0).ln()).clamp(0.45, 1.0);
+    let lut: Vec<u8> = (0..256).map(|v| (255.0 * (v as f32 / 255.0).powf(g)).round() as u8).collect();
+    for v in yplane.iter_mut() {
+        *v = lut[*v as usize];
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dim_picture_is_brightened_and_a_bright_one_kept() {
+        let mut dim = vec![40u8; 64];
+        brighten(&mut dim);
+        assert!(dim[0] > 80, "{}", dim[0]);
+        let mut bright = vec![150u8; 64];
+        brighten(&mut bright);
+        assert_eq!(bright[0], 150);
+    }
+
+    #[test]
+    fn the_background_shows_where_no_one_is() {
+        let (w, h) = (8usize, 8usize);
+        let mut frame = vec![200u8; w * h * 3 / 2];
+        let back = vec![50u8; w * h * 3 / 2];
+        composite(&mut frame, &back, &vec![0.0; MASK * MASK], w, h);
+        assert!(frame.iter().all(|&v| v == 50));
+        let mut frame = vec![200u8; w * h * 3 / 2];
+        composite(&mut frame, &back, &vec![1.0; MASK * MASK], w, h);
+        assert!(frame.iter().all(|&v| v == 200));
+    }
+
+    #[test]
+    fn soft_focus_evens_out_skin_but_keeps_edges() {
+        let (w, h) = (16usize, 16usize);
+        // Gentle noise on the left, a hard edge in the middle.
+        let mut y: Vec<u8> = (0..w * h).map(|i| if i % w < 8 { 120 + (i % 3) as u8 * 6 } else { 240 }).collect();
+        let before = y.clone();
+        soften(&mut y, &vec![1.0; MASK * MASK], w, h, &mut Vec::new());
+        let spread = |v: &[u8]| (0..h).flat_map(|r| v[r * w + 2..r * w + 5].to_vec()).fold((255u8, 0u8), |(lo, hi), p| (lo.min(p), hi.max(p)));
+        let (lo0, hi0) = spread(&before);
+        let (lo1, hi1) = spread(&y);
+        assert!(hi1 - lo1 < hi0 - lo0, "{lo1}..{hi1} vs {lo0}..{hi0}");
+        assert_eq!(y[5 * w + 12], 240);
+        assert!(y[5 * w + 7] < 140, "{}", y[5 * w + 7]);
+    }
+
+    #[test]
+    fn portrait_blur_is_lighter_than_standard() {
+        let (w, h) = (64usize, 64usize);
+        let data: Vec<u8> = (0..w * h * 3 / 2).map(|i| if (i / 4) % 2 == 0 { 0 } else { 255 }).collect();
+        let (mut a, mut b) = (Vec::new(), Vec::new());
+        blur_i420(&data, w, h, 8, &mut a);
+        blur_i420(&data, w, h, 4, &mut b);
+        let dev = |v: &[u8]| v[..w * h].iter().map(|&p| (p as i32 - 128).abs()).sum::<i32>();
+        assert!(dev(&b) >= dev(&a));
+    }
+
+    #[test]
+    fn a_picture_covers_the_frame() {
+        let rgba = vec![255u8; 4 * 4 * 4];
+        let p = Picture::from_rgba(4, 4, &rgba);
+        let out = fit_cover(&p, 8, 6);
+        assert_eq!(out.len(), 8 * 6 * 3 / 2);
+        assert!(out[..48].iter().all(|&v| v > 200));
+    }
+}

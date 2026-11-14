@@ -1,0 +1,434 @@
+import QtQuick
+import QtQuick.Window
+import QtQuick.Controls
+import com.ost.desktop
+
+// Teams' Video effects and settings pane (calling-right-side-panel,
+// measured in a call on winpc, 2026-11-14): 360 wide, #F5F5F5. A 58 px
+// header ("Video effects and settings", 16/700, 20.7 in; Close 32 x 30),
+// then in a call the tabs Video effects | Settings (44 high, 8.7 in, 14 px,
+// the chosen one 600 with a brand underline). Before joining Teams titles
+// it "Video effects" and has no tabs.
+// - Video effects: the "Backgrounds" accordion (32 px, 12 px title) over a
+//   grid of 88 x 50 tiles, three to a 109.1 x 58 cell row from 16.7 in:
+//   None, the blur tile (its menu picks Standard or Portrait blur), Teams'
+//   catalog — 15 of it, then "Show all" for the rest.
+// - Settings: accordions Camera (the cameras as radios), Appearance
+//   (Adjust brightness, Soft focus) and Advanced settings (Mirror my
+//   video), each row a 14 px #424242 label with Teams' info button and a
+//   Fluent switch at the row's end.
+// With the camera off in a call Teams adds a footer: "Others won't see
+// your video while you preview." (12 px, an info glyph before it), Preview
+// (white, 339.3 x 32) — which shows your preview (325.3 x 183) above the
+// footer and becomes "Stop preview" — and "Apply and turn on video"
+// (brand). Teams' Add new, Green screen settings and Filters (TASK-0138,
+// TASK-0139) and the Avatars tab (TASK-0140) aren't offered yet.
+Rectangle {
+    id: root
+    /// In a call (tabs and the footer) or before joining.
+    property bool inCall: true
+    property bool cameraOn: false
+    signal closed()
+    /// Apply and turn on video.
+    signal turnOnVideo()
+    color: theme.pane
+
+    property string tab: "effects"
+    property bool showAll: false
+    property bool previewing: false
+    property var cameras: []
+    property string currentCamera: ""
+    property var expanded: ({ backgrounds: true, camera: true, appearance: true, advanced: true })
+
+    function reload() {
+        const d = JSON.parse(backend.videoDevices())
+        cameras = d.devices || []
+        currentCamera = d.current || ""
+        videoEffects.load()
+    }
+    function setPreview(on) {
+        if (on === previewing) return
+        previewing = on && backend.setCameraPreview(true)
+        if (!on) backend.setCameraPreview(false)
+    }
+    onVisibleChanged: {
+        if (visible) { reload(); flick.contentY = 0 }
+        else setPreview(false)
+    }
+    // Turning the camera on ends the private preview (the call's video
+    // shows the effects now).
+    onCameraOnChanged: if (cameraOn) setPreview(false)
+    Component.onDestruction: if (previewing) backend.setCameraPreview(false)
+
+    readonly property bool footer: inCall && !cameraOn
+
+    Item {
+        id: header
+        y: 3; width: parent.width; height: 58
+        Text {
+            x: 20.67; y: 17.67; height: 22
+            verticalAlignment: Text.AlignVCenter
+            text: root.inCall ? "Video effects and settings" : "Video effects"
+            font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+            color: theme.text
+            Accessible.role: Accessible.Heading
+            Accessible.name: text
+        }
+        Rectangle {
+            x: parent.width - 52; y: 13.67; width: 32; height: 30; radius: 4
+            color: closeHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+            HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.closed() }
+            ToolTip.visible: closeHover.hovered
+            ToolTip.delay: 250
+            ToolTip.text: "Close video effects and settings pane"
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close video effects and settings pane"
+        }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+    }
+
+    // Fluent's TabList: 44 px tabs, 10 px padding, the chosen one's text
+    // 600 over a 3 px brand bar the text's width.
+    Row {
+        id: tabs
+        visible: root.inCall
+        x: 8.67; y: header.y + header.height + 2
+        height: visible ? 44 : 0
+        Repeater {
+            model: [{ k: "effects", t: "Video effects" }, { k: "settings", t: "Settings" }]
+            Item {
+                id: tb
+                required property var modelData
+                readonly property bool chosen: root.tab === modelData.k
+                width: tabText.implicitWidth + 20; height: 44
+                Text {
+                    id: tabText
+                    x: 10; anchors.verticalCenter: parent.verticalCenter
+                    text: tb.modelData.t
+                    font.family: theme.font; font.pixelSize: 14; font.weight: tb.chosen ? Font.DemiBold : Font.Normal
+                    color: tb.chosen || tbHover.hovered ? theme.text : theme.textStrong
+                }
+                Rectangle {
+                    visible: tb.chosen || tbHover.hovered
+                    x: 10; y: 44 - 3 - 4; width: tabText.implicitWidth; height: 3; radius: 1.5
+                    color: tb.chosen ? theme.brand : theme.strokeHover
+                }
+                HoverHandler { id: tbHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.tab = tb.modelData.k }
+                Accessible.role: Accessible.PageTab
+                Accessible.name: tb.modelData.t
+                Accessible.selected: tb.chosen
+            }
+        }
+    }
+
+    Flickable {
+        id: flick
+        anchors { top: tabs.visible ? tabs.bottom : header.bottom; topMargin: 10; left: parent.left; right: parent.right; bottom: foot.top }
+        contentHeight: (root.tab === "effects" || !root.inCall ? effectsCol.implicitHeight : settingsCol.implicitHeight) + 10
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        // Video effects.
+        Column {
+            id: effectsCol
+            visible: root.tab === "effects" || !root.inCall
+            x: 2; width: 341.3
+            SectionHeader { key: "backgrounds"; title: "Backgrounds" }
+            Grid {
+                visible: root.expanded.backgrounds
+                x: 14.7; columns: 3
+                bottomPadding: 20
+                Cell {
+                    EffectTile {
+                        x: 4; y: 4
+                        kind: "none"; label: "None"; accessibleName: "No background effect"
+                        selected: videoEffects.background === "none"
+                        onPicked: videoEffects.setBackground("none")
+                    }
+                }
+                Cell {
+                    EffectTile {
+                        x: 4; y: 4
+                        kind: "blur"; label: videoEffects.blurLabel
+                        blurKind: videoEffects.blurKind
+                        selected: videoEffects.background === "blur"
+                        onPicked: videoEffects.setBackground("blur")
+                        onBlurPicked: kind => videoEffects.setBlur(kind)
+                    }
+                }
+                Repeater {
+                    model: root.showAll ? videoEffects.catalog : videoEffects.catalog.slice(0, 15)
+                    Cell {
+                        required property var modelData
+                        EffectTile {
+                            x: 4; y: 4
+                            thumb: parent.modelData.thumb; animated: parent.modelData.animated
+                            label: parent.modelData.name; accessibleName: parent.modelData.name + " background effect"
+                            selected: videoEffects.background === parent.modelData.id
+                            onPicked: videoEffects.setBackground(parent.modelData.id)
+                        }
+                    }
+                }
+                Cell {
+                    visible: !root.showAll && videoEffects.catalog.length > 15
+                    EffectTile {
+                        x: 4; y: 4
+                        kind: "showall"; label: "Show all"; accessibleName: "Show all background effects"
+                        onPicked: root.showAll = true
+                    }
+                }
+            }
+        }
+
+        // Settings.
+        Column {
+            id: settingsCol
+            visible: root.inCall && root.tab === "settings"
+            x: 4; width: 337.3
+            SectionHeader { key: "camera"; title: "Camera" }
+            Column {
+                visible: root.expanded.camera
+                x: 16.7; width: 321.3
+                Repeater {
+                    model: root.cameras
+                    Item {
+                        id: cam
+                        required property var modelData
+                        readonly property bool chosen: root.currentCamera === modelData.path
+                        width: 321.3; height: 34.3
+                        FluentIcon { x: 4; anchors.verticalCenter: parent.verticalCenter; name: cam.chosen ? "radio-on-20" : "radio-off-20"; size: 20; color: cam.chosen ? theme.brand : theme.textSecondary }
+                        Text {
+                            x: 26; anchors.verticalCenter: parent.verticalCenter; width: 290
+                            elide: Text.ElideRight
+                            text: cam.modelData.name
+                            font.family: theme.font; font.pixelSize: 14
+                            color: cam.chosen ? theme.text : theme.textSecondary
+                        }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler {
+                            onTapped: {
+                                if (cam.chosen) return
+                                root.currentCamera = cam.modelData.path
+                                backend.setCameraDevice(cam.modelData.path)
+                                if (root.previewing) { backend.setCameraPreview(false); backend.setCameraPreview(true) }
+                            }
+                        }
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.name: cam.modelData.name
+                        Accessible.checked: cam.chosen
+                    }
+                }
+                Item { width: 1; height: 16 }
+            }
+            SectionHeader { key: "appearance"; title: "Appearance" }
+            Column {
+                visible: root.expanded.appearance
+                x: 16.7; width: 321.3
+                spacing: 8
+                SettingSwitch {
+                    label: "Adjust brightness"
+                    info: "Enhance the quality of your video in low light conditions."
+                    checked: videoEffects.brightness
+                    onToggled: videoEffects.setBrightness(!checked)
+                }
+                SettingSwitch {
+                    label: "Soft focus"
+                    info: "Smoothen your appearance for a polished look."
+                    checked: videoEffects.softFocus
+                    onToggled: videoEffects.setSoftFocus(!checked)
+                }
+                Item { width: 1; height: 0 }
+            }
+            SectionHeader { key: "advanced"; title: "Advanced settings" }
+            Column {
+                visible: root.expanded.advanced
+                x: 16.7; width: 321.3
+                SettingSwitch {
+                    label: "Mirror my video"
+                    info: "Changing this setting will only change the view for you. This setting doesn’t currently work in Together mode."
+                    checked: videoEffects.mirror
+                    onToggled: videoEffects.setMirror(!checked)
+                }
+            }
+        }
+    }
+
+    // The footer while your camera is off in a call.
+    Column {
+        id: foot
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom; bottomMargin: root.footer ? 25 : 0 }
+        height: root.footer ? implicitHeight : 0
+        visible: root.footer
+        Item {
+            visible: root.previewing
+            x: 10.7; width: 325.3; height: visible ? 196 : 0
+            Rectangle {
+                width: 325.3; height: 183; radius: 4
+                color: theme.stage
+                clip: true
+                VideoFrame {
+                    id: preview
+                    anchors.fill: parent
+                    visible: hasFrame
+                    source: root.previewing ? "self" : ""
+                    radius: 4
+                    transform: Scale { origin.x: preview.width / 2; xScale: videoEffects.mirror ? -1 : 1 }
+                    Timer { interval: 33; repeat: true; running: root.previewing; onTriggered: preview.refresh() }
+                }
+            }
+        }
+        Item {
+            x: 10.7; width: 339.3; height: 26
+            FluentIcon { y: 0; name: "info-16-regular"; size: 16; color: theme.text }
+            Text {
+                x: 24; y: 0; height: 16; verticalAlignment: Text.AlignVCenter
+                text: root.previewing && videoEffects.mirror ? "Others will see this image reversed." : "Others won't see your video while you preview."
+                font.family: theme.font; font.pixelSize: 12
+                color: theme.text
+            }
+        }
+        Rectangle {
+            x: 10.7; width: 339.3; height: 32; radius: 4
+            color: root.previewing ? theme.pane : pvHover.hovered ? theme.menuHover : theme.surface
+            border.color: pvHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+            Text {
+                anchors.centerIn: parent
+                text: root.previewing ? "Stop preview" : "Preview"
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                color: theme.text
+            }
+            HoverHandler { id: pvHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.setPreview(!root.previewing) }
+            Accessible.role: Accessible.Button
+            Accessible.name: root.previewing ? "Stop preview" : "Preview"
+        }
+        Item { width: 1; height: 10 }
+        Rectangle {
+            x: 10.7; width: 339.3; height: 32; radius: 4
+            color: apHover.hovered ? theme.brandHover : theme.brandFill
+            Text {
+                anchors.centerIn: parent
+                text: "Apply and turn on video"
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                color: theme.textOnBrand
+            }
+            HoverHandler { id: apHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.setPreview(false); root.turnOnVideo() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Apply and turn on video"
+        }
+    }
+
+    component Cell: Item { width: 109.1; height: 58 }
+
+    // A Fluent accordion header: 32 tall, the caret (down when open) at the
+    // start and the 12 px title 16 in.
+    component SectionHeader: Item {
+        id: sh
+        property string key
+        property string title
+        readonly property bool open: !!root.expanded[key]
+        width: 337.3; height: 32
+        FluentIcon {
+            x: 0; y: 8; name: "accordion-caret"; size: 16; color: theme.text
+            rotation: sh.open ? 0 : -90
+        }
+        Text {
+            x: 16; anchors.verticalCenter: parent.verticalCenter
+            text: sh.title
+            font.family: theme.font; font.pixelSize: 12
+            color: theme.text
+        }
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        TapHandler {
+            onTapped: {
+                const e = Object.assign({}, root.expanded)
+                e[sh.key] = !sh.open
+                root.expanded = e
+            }
+        }
+        Accessible.role: Accessible.Button
+        Accessible.name: sh.title
+        Accessible.checkable: true
+        Accessible.checked: sh.open
+    }
+
+    // A 14 px #424242 label with Teams' info button after it and a Fluent
+    // switch (40 x 20) at the row's end; rows 36 tall.
+    component SettingSwitch: Item {
+        id: ss
+        property string label
+        property string info: ""
+        property bool checked: false
+        signal toggled()
+        width: 321.3; height: 36
+        Row {
+            y: 8.7
+            Text {
+                height: 18.67
+                verticalAlignment: Text.AlignVCenter
+                text: ss.label
+                font.family: theme.font; font.pixelSize: 14
+                color: theme.textStrong
+            }
+            InfoButton { y: -2.67; visible: ss.info.length > 0; info: ss.info }
+        }
+        Rectangle {
+            x: ss.width - 40; y: 8; width: 40; height: 20; radius: 10
+            color: ss.checked ? (swHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+            border.color: ss.checked ? "transparent" : theme.textSecondary
+            border.width: 0.67
+            Rectangle {
+                width: 14.4; height: 14.4; radius: 7.2
+                anchors.verticalCenter: parent.verticalCenter
+                x: (ss.checked ? 20.67 : 0.67) + 9 - 7.2
+                color: ss.checked ? "white" : theme.textSecondary
+            }
+            HoverHandler { id: swHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: ss.toggled() }
+        }
+        Accessible.role: Accessible.CheckBox
+        Accessible.name: ss.label
+        Accessible.checked: ss.checked
+        Accessible.onToggleAction: ss.toggled()
+    }
+
+    // Fluent's InfoButton: 24 px with the 16 px info glyph; its popover
+    // (241.3 wide here, padding 12, 12 px text) opens above it, inside the
+    // pane.
+    component InfoButton: Rectangle {
+        id: ib
+        property string info
+        width: 24; height: 24; radius: 4
+        color: "transparent"
+        FluentIcon { anchors.centerIn: parent; name: ibHover.hovered || pop.visible ? "info-16" : "info-16-regular"; size: 16; color: ibHover.hovered || pop.visible ? theme.brand : theme.textStrong }
+        HoverHandler { id: ibHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: pop.visible ? pop.close() : pop.open() }
+        Accessible.role: Accessible.Button
+        Accessible.name: "information"
+        Popup {
+            id: pop
+            parent: Overlay.overlay
+            width: 241.3; padding: 12
+            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+            onAboutToShow: {
+                const p = ib.mapToItem(Overlay.overlay, 0, 0)
+                const paneRight = root.mapToItem(Overlay.overlay, root.width, 0).x
+                x = Math.min(p.x, paneRight - width - 0.67)
+                y = p.y - implicitHeight - 6.24
+            }
+            contentItem: Text {
+                text: ib.info
+                wrapMode: Text.Wrap
+                font.family: theme.font; font.pixelSize: 12
+                lineHeight: 16; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+        }
+    }
+}

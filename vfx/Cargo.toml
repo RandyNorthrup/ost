@@ -1,0 +1,10 @@
+[package]
+name = "ost-vfx"
+version = "0.1.0"
+edition = "2024"
+description = "OST's video background effects: person segmentation, blur, background pictures and brightness on I420 camera frames"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+tract-onnx = "0.23"

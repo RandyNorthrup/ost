@@ -67,6 +67,13 @@ Window {
     }
     property bool lobbyPaneOpen: false
     readonly property real lobbyPaneW: lobbyPaneOpen && lobby ? 360 : 0
+    /// Teams' effects picker under the camera panel ("Video effects"), and
+    /// its "More video effects" pane at the right (instead of the lobby's).
+    property bool effectsOpen: false
+    property bool effectsPaneOpen: false
+    onEffectsPaneOpenChanged: if (effectsPaneOpen) lobbyPaneOpen = false
+    onLobbyPaneOpenChanged: if (lobbyPaneOpen) effectsPaneOpen = false
+    readonly property real sidePaneW: lobbyPaneW > 0 ? lobbyPaneW : effectsPaneOpen ? 360 : 0
     // Teams opens the pane when the first message arrives.
     onLobbyMessagesChanged: if (lobbyMessages.length > 0 && !lobbySeen) { lobbySeen = true; lobbyPaneOpen = true }
     property bool lobbySeen: false
@@ -82,7 +89,7 @@ Window {
         }
     }
     // The pre-join content shrinks to fit beside the pane, as Teams' does.
-    readonly property real fit: Math.min(1, (width - lobbyPaneW - 48) / (508 + 16 + 449))
+    readonly property real fit: Math.min(1, (width - sidePaneW - 48) / (508 + 16 + 449))
 
     width: 1280; height: 680
     minimumWidth: 1000; minimumHeight: 640
@@ -92,6 +99,7 @@ Window {
     function openMeetNow(channel, subj) {
         meetNow = true; meetChannel = channel; joinUrl = ""; subject = subj
         micOn = true; audio = "computer"; cameraOn = false
+        effectsOpen = false; effectsPaneOpen = false
         show(); raise(); requestActivate()
         titleField.forceActiveFocus(); titleField.cursorPosition = titleField.text.length
     }
@@ -102,6 +110,7 @@ Window {
         endTime = end ? new Date(end) : new Date()
         timesKnown = !!start && !!end
         micOn = true; audio = "computer"; cameraOn = false
+        effectsOpen = false; effectsPaneOpen = false
         retryReason = ""
         show(); raise(); requestActivate()
     }
@@ -120,7 +129,7 @@ Window {
 
     Column {
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.horizontalCenterOffset: -win.lobbyPaneW / 2
+        anchors.horizontalCenterOffset: -win.sidePaneW / 2
         y: 73
         spacing: 6
         Image {
@@ -173,7 +182,7 @@ Window {
     Row {
         id: panels
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.horizontalCenterOffset: -win.lobbyPaneW / 2
+        anchors.horizontalCenterOffset: -win.sidePaneW / 2
         scale: win.fit
         transformOrigin: Item.Top
         y: 211
@@ -182,27 +191,29 @@ Window {
         // preview: mirrored, filling the panel above its bar, inside the
         // 1 px edge).
         Rectangle {
-            width: 508; height: 329; radius: 4
+            id: cameraPanel
+            width: 508; height: 329 + (win.effectsOpen ? picker.height : 0); radius: 4
             color: theme.surface; border.color: theme.dividerSoft
             VideoFrame {
                 id: preview
                 visible: win.cameraOn && hasFrame
                 source: win.cameraOn ? "self" : ""
-                x: 1; y: 1; width: parent.width - 2; height: parent.height - 45
+                x: 1; y: 1; width: parent.width - 2; height: 329 - 45
                 radius: 3
-                transform: Scale { origin.x: preview.width / 2; xScale: -1 }
+                transform: Scale { origin.x: preview.width / 2; xScale: videoEffects.mirror ? -1 : 1 }
                 Timer { interval: 33; repeat: true; running: win.visible && win.cameraOn; onTriggered: preview.refresh() }
             }
             Column {
                 visible: !preview.visible
-                anchors.centerIn: parent; anchors.verticalCenterOffset: -22
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: (329 - 44 - height) / 2
                 spacing: 8
                 FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "video-off"; size: 20; color: theme.textStrong }
                 Text { text: win.cameraOn ? "Starting your camera…" : "Your camera is turned off"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
             }
-            Rectangle { y: parent.height - 44; width: parent.width; height: 1; color: theme.dividerSoft }
+            Rectangle { y: 329 - 44; width: parent.width; height: 1; color: theme.dividerSoft }
             Row {
-                x: 16; y: parent.height - 44; height: 44
+                x: 16; y: 329 - 44; height: 44
                 spacing: 12
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: win.cameraOn ? "video-20-filled" : "video-off"; size: 20; color: theme.textStrong }
                 Toggle {
@@ -211,10 +222,119 @@ Window {
                     onToggled: v => win.cameraOn = v
                     Accessible.name: "Camera"
                 }
+                // Teams' divider (18 x 32) and its effects button (14/600,
+                // brand while the picker is open). Teams calls it "Effects
+                // and avatars"; OST has no avatars (TASK-0140).
+                Item {
+                    width: 18; height: 32
+                    anchors.verticalCenter: parent.verticalCenter
+                    Rectangle { anchors.centerIn: parent; width: 1; height: 20; color: theme.divider }
+                }
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: fxRow.implicitWidth + 24; height: 31.3; radius: 4
+                    color: fxHover.hovered ? theme.rowHover : "transparent"
+                    Row {
+                        id: fxRow
+                        anchors.centerIn: parent
+                        spacing: 8
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-background-effect-20"; size: 20; color: win.effectsOpen ? theme.brand : theme.textStrong }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Video effects"
+                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                            color: win.effectsOpen ? theme.brand : theme.textStrong
+                        }
+                    }
+                    HoverHandler { id: fxHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { win.effectsOpen = !win.effectsOpen; if (win.effectsOpen) videoEffects.load() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: win.effectsOpen ? "Hide video effects" : "Show video effects"
+                }
+            }
+            // Teams' quick picker (video-effects-quick-picker): "Backgrounds"
+            // (12 px) over a row of 74 x 42 tiles in 82 x 50 cells from 10
+            // in (None, the blur tile, Teams' first four backgrounds) and
+            // "More video effects" (12 px, brand) at the end; with the
+            // camera off, "To enable video effects, turn on camera".
+            Rectangle {
+                id: picker
+                visible: win.effectsOpen
+                x: 1; y: 329; width: parent.width - 2; height: 114
+                color: theme.inputFilledDark
+                radius: 3
+                Rectangle { width: parent.width; height: 4; color: parent.color }
+                Text {
+                    visible: !win.cameraOn
+                    anchors.centerIn: parent
+                    text: "To enable video effects, turn on camera"
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                }
+                Column {
+                    visible: win.cameraOn
+                    y: 12; width: parent.width
+                    Text {
+                        x: 12; height: 18; verticalAlignment: Text.AlignVCenter
+                        text: "Backgrounds"
+                        font.family: theme.font; font.pixelSize: 12
+                        color: theme.text
+                    }
+                    Row {
+                        x: 9; height: 53.2
+                        Cell {
+                            EffectTile {
+                                x: 4; y: 4; width: 74; height: 42
+                                kind: "none"; label: "None"; accessibleName: "No background effect"
+                                selected: videoEffects.background === "none"
+                                onPicked: videoEffects.setBackground("none")
+                            }
+                        }
+                        Cell {
+                            EffectTile {
+                                x: 4; y: 4; width: 74; height: 42
+                                kind: "blur"; label: videoEffects.blurLabel
+                                blurKind: videoEffects.blurKind
+                                selected: videoEffects.background === "blur"
+                                onPicked: videoEffects.setBackground("blur")
+                                onBlurPicked: kind => videoEffects.setBlur(kind)
+                            }
+                        }
+                        Repeater {
+                            model: videoEffects.catalog.slice(0, 4)
+                            Cell {
+                                required property var modelData
+                                EffectTile {
+                                    x: 4; y: 4; width: 74; height: 42
+                                    thumb: parent.modelData.thumb; animated: parent.modelData.animated
+                                    label: parent.modelData.name; accessibleName: parent.modelData.name + " background effect"
+                                    selected: videoEffects.background === parent.modelData.id
+                                    onPicked: videoEffects.setBackground(parent.modelData.id)
+                                }
+                            }
+                        }
+                    }
+                    Item {
+                        width: parent.width; height: 20.8
+                        Text {
+                            anchors.right: parent.right; anchors.rightMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "More video effects"
+                            font.family: theme.font; font.pixelSize: 12
+                            font.underline: mveHover.hovered
+                            color: theme.brand
+                            HoverHandler { id: mveHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: win.effectsPaneOpen = true }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "More video effects"
+                        }
+                    }
+                }
             }
         }
         // Audio
         Column {
+            id: audioColumn
             width: 449
             spacing: 8
             Rectangle {
@@ -282,7 +402,8 @@ Window {
 
     Row {
         x: panels.x + panels.width / 2 + panels.width * win.fit / 2 - width
-        y: panels.y + Math.max(329, panels.height) * win.fit + 24
+        // Under the audio choices (the effects picker may reach lower).
+        y: panels.y + Math.max(329, audioColumn.height) * win.fit + 24
         spacing: 8
         Rectangle {
             width: 96; height: 32; radius: theme.radius
@@ -359,6 +480,16 @@ Window {
         Accessible.name: label
         Accessible.checked: on
     }
+    // Teams' "More video effects" pane before joining.
+    VideoEffectsPane {
+        visible: win.effectsPaneOpen && win.lobbyPaneW === 0
+        anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+        width: 360
+        inCall: false
+        cameraOn: win.cameraOn
+        onClosed: win.effectsPaneOpen = false
+    }
+    component Cell: Item { width: 82; height: 50 }
     // The Lobby pane.
     Rectangle {
         visible: win.lobbyPaneW > 0

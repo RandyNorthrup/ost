@@ -9,6 +9,7 @@ mod launcher_badge;
 mod lock_watch;
 mod rich_text;
 mod tray;
+mod video_effects;
 mod video_item;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
