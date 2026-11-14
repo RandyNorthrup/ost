@@ -75,8 +75,10 @@ pub fn message_query(keywords: &str, f: &Filters, my_oid: &str, all_tab: bool) -
             terms.push(format!("clientthreadid:{}", f.in_thread));
             terms.push(format!("NOT ({THREAD_TYPE})"));
         }
-        // (A channel: its thread only; the team goes in a filter term.)
-        ("channel", _) if !f.in_thread.is_empty() => terms.push(format!("clientthreadid:{}", f.in_thread)),
+        // A channel or a team: its thread only (a team's is its General
+        // channel's); the team goes in a filter term (both captured from
+        // Teams, 2026-11-11 and 2026-11-13).
+        ("channel" | "team", _) if !f.in_thread.is_empty() => terms.push(format!("clientthreadid:{}", f.in_thread)),
         ("team", _) => terms.push(format!("({THREAD_TYPE})")),
         (_, "chat") => terms.push(format!("NOT ({THREAD_TYPE})")),
         (_, "channel") => terms.push(format!("({THREAD_TYPE})")),
@@ -682,6 +684,10 @@ mod tests {
         let inchan = Filters { in_kind: "channel".into(), in_thread: "19:7826@thread.tacv2".into(), in_group: "1fac3ae3".into(), ..Default::default() };
         assert_eq!(message_query("OST test", &inchan, "", false), "clientthreadid:19:7826@thread.tacv2 AND NOT (isClientSoftDeleted:TRUE) OST test");
         assert_eq!(bodies("messages", "OST test", &inchan, 0, "UTC", "", "")[0]["entityRequests"][0]["Filter"], serde_json::json!({"Term": {"GroupId": "1fac3ae3"}}));
+        // In ▸ a team (as Teams sent it for OST Test Team, 2026-11-13).
+        let inteam = Filters { in_kind: "team".into(), in_thread: "19:ekCPvoD9@thread.tacv2".into(), in_group: "1fac3ae3".into(), ..Default::default() };
+        assert_eq!(message_query("channel reply", &inteam, "", false), "clientthreadid:19:ekCPvoD9@thread.tacv2 AND NOT (isClientSoftDeleted:TRUE) channel reply");
+        assert_eq!(bodies("messages", "channel reply", &inteam, 0, "UTC", "", "")[0]["entityRequests"][0]["Filter"], serde_json::json!({"Term": {"GroupId": "1fac3ae3"}}));
         let from = Filters { person_mail: "a@b.c".into(), person_oid: "o1".into(), person_from: true, ..Default::default() };
         assert_eq!(message_query("OST test", &from, "", false), "NOT (isClientSoftDeleted:TRUE) a@b.c OST test");
         let b = bodies("messages", "OST test", &from, 0, "UTC", "", "t1");
