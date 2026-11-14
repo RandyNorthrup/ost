@@ -7,7 +7,8 @@ import QtQuick.Controls.Basic
 //   16.7 in, the title 26.7 down; 452 wide in a chat at least 720 wide;
 // - title 16/22 semibold, subtitle 14/20 semibold (both NeutralForeground2),
 //   each 8 apart; the hero image 16:9, cropped to fill; the text 14/20
-//   NeutralForeground1; the buttons 4 under it;
+//   NeutralForeground1; the buttons 8 under it (161.33 tall with a
+//   title, subtitle, text and one row of buttons);
 // - buttons (at most 6): 32 tall, padding 0 20, a 0.67 px BrandStroke2
 //   (#C5CBFA) border, radius 4, white, 14/20 semibold brand text, 8 apart.
 // A thumbnail card puts a 100 x 100 image left of the title, subtitle and
@@ -23,7 +24,7 @@ Rectangle {
     readonly property var buttons: content && content.buttons ? content.buttons.slice(0, 6) : []
     readonly property bool stacked: thumbnail && cardWidth < 360
     width: cardWidth
-    height: col.y + col.height + (buttonRow.visible ? 4 + buttonRow.height : 0) + 16.6
+    height: col.y + col.height + (buttonRow.visible ? 8 + buttonRow.height : 0) + 16.6
     radius: 4
     color: theme.surface
     border.color: theme.divider; border.width: 0.67
@@ -96,7 +97,7 @@ Rectangle {
     Flow {
         id: buttonRow
         visible: card.buttons.length > 0
-        x: 16.7; y: col.y + col.height + 4 + 4
+        x: 16.7; y: col.y + col.height + 8
         width: card.cardWidth - 33.4
         spacing: 8
         Repeater {

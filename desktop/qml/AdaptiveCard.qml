@@ -239,6 +239,7 @@ Item {
         case "icon": return iconEl
         case "imageset": return imageSet
         case "container": return container
+        case "carousel": return carousel
         case "columnset": return columnSet
         case "factset": return factSet
         case "actionset": return actionSet
@@ -452,6 +453,88 @@ Item {
                 parentStyle: cont.myStyle
             }
             TapHandler { enabled: !!cont.e.selectAction; onTapped: card.run(cont.e.selectAction) }
+        }
+    }
+    // Carousel (Adaptive Cards 1.6; Teams' enableAdaptiveCardCarousel),
+    // measured on winpc 2026-11-13 ("OST TEST 125"): one page at a time (the
+    // tallest page's height), then 12 lower a 24 px row centred: Previous
+    // (‹, #424242), the dots (24 x 24 each: the current a 16 x 8 pill, the
+    // others 8 x 8 at 65%, #242424) and Next (›), 6 apart; 16 under it.
+    // Previous and Next wrap around; "timer" (ms) turns the pages itself.
+    Component {
+        id: carousel
+        Item {
+            id: car
+            property var e: ({})
+            property string parentStyle
+            property int page: 0
+            readonly property var pages: (e.pages || []).filter(p => card.shown(p))
+            property real pageH: 0
+            function measure() { let h = 0; for (let i = 0; i < pageRep.count; i++) { const it = pageRep.itemAt(i); if (it) h = Math.max(h, it.height) } pageH = h }
+            width: parent ? parent.width : 0
+            height: pageH + 12 + 24 + 16
+            function step(d) { if (pages.length) page = (page + d + pages.length) % pages.length }
+            Repeater {
+                id: pageRep
+                model: car.pages
+                ElementList {
+                    required property var modelData
+                    required property int index
+                    // Every page stays laid out (the tallest sets the height);
+                    // only the current one shows and takes input.
+                    opacity: index === car.page ? 1 : 0
+                    enabled: index === car.page
+                    width: car.width
+                    items: modelData.items || []
+                    parentStyle: car.parentStyle
+                    onHeightChanged: car.measure()
+                    Component.onCompleted: car.measure()
+                    TapHandler { enabled: !!parent.modelData.selectAction; onTapped: card.run(parent.modelData.selectAction) }
+                }
+            }
+            Timer {
+                running: car.pages.length > 1 && Number(car.e.timer) > 0 && car.visible
+                interval: Math.max(1000, Number(car.e.timer) || 5000); repeat: true
+                onTriggered: car.step(1)
+            }
+            Row {
+                visible: car.pages.length > 1
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: car.pageH + 12
+                spacing: 6
+                component NavButton: Rectangle {
+                    id: nb
+                    property bool next: false
+                    width: 24; height: 24; radius: 4
+                    color: nbh.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: nb.next ? "chevron-right-20" : "chevron-left-20"; color: theme.textStrong }
+                    HoverHandler { id: nbh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: car.step(nb.next ? 1 : -1) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: next ? "Next page" : "Previous page"
+                }
+                NavButton {}
+                Row {
+                    Repeater {
+                        model: car.pages.length
+                        Item {
+                            required property int index
+                            width: 24; height: 24
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: parent.index === car.page ? 16 : 8; height: 8; radius: 4
+                                color: theme.text
+                                opacity: parent.index === car.page ? 1 : 0.65
+                            }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: car.page = parent.index }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Page " + (index + 1) + " of " + car.pages.length
+                        }
+                    }
+                }
+                NavButton { next: true }
+            }
         }
     }
     Component {

@@ -3,7 +3,8 @@
 //! for comparing renderers (debugging aid):
 //! `cargo run --example post_card -- <chat id> <card.json> [type]`.
 //! The JSON file is the card's content; `type` defaults to
-//! `application/vnd.microsoft.card.adaptive`.
+//! `application/vnd.microsoft.card.adaptive`. A JSON array of
+//! `{contentType, content}` posts several cards in one message.
 use teams_cli::api::client::TeamsClient;
 
 #[tokio::main]
@@ -16,8 +17,15 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| "application/vnd.microsoft.card.adaptive".into());
     let card: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(file)?)?;
     let id = format!("ostcard{}", std::process::id());
-    let cards =
-        serde_json::json!([{ "cardClientId": id, "contentType": content_type, "content": card }]);
+    let cards = match card.as_array() {
+        Some(list) => serde_json::Value::Array(
+            list.iter()
+                .enumerate()
+                .map(|(i, c)| serde_json::json!({ "cardClientId": format!("{id}-{i}"), "contentType": c["contentType"], "content": c["content"] }))
+                .collect(),
+        ),
+        None => serde_json::json!([{ "cardClientId": id, "contentType": content_type, "content": card }]),
+    };
     let client = TeamsClient::new().await?;
     let url = format!(
         "{}/v1/users/ME/conversations/{}/messages",
@@ -28,7 +36,10 @@ async fn main() -> anyhow::Result<()> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis();
     let body = serde_json::json!({
-        "content": format!("<span itemid=\"{id}\" itemscope=\"\" itemtype=\"http://schema.skype.com/InputExtension\"><span itemprop=\"cardId\" content=\"{id}\"></span></span>"),
+        "content": cards.as_array().into_iter().flatten().map(|c| {
+            let id = c["cardClientId"].as_str().unwrap_or_default();
+            format!("<span itemid=\"{id}\" itemscope=\"\" itemtype=\"http://schema.skype.com/InputExtension\"><span itemprop=\"cardId\" content=\"{id}\"></span></span>")
+        }).collect::<String>(),
         "messagetype": "RichText/Html",
         "contenttype": "text",
         "clientmessageid": now.to_string(),

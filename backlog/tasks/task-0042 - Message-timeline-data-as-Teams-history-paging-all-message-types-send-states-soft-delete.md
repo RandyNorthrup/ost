@@ -3,11 +3,11 @@ id: TASK-0042
 title: >-
   Message timeline data as Teams: history paging, all message types, send
   states, soft delete
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-13T05:26:00Z'
+updated_date: '2026-11-14T01:44:00Z'
 labels:
   - desktop
   - messages
@@ -25,7 +25,7 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Older messages load on scroll-up (Teams' paging)
-- [ ] #2 Every message type Teams shows per chat kind renders (system/control events incl. member added and rename, call rows with bold duration, cards, files, media)
+- [x] #2 Every message type Teams shows per chat kind renders (system/control events incl. member added and rename, call rows with bold duration, cards, files, media)
 - [x] #3 Delete is Teams' soft delete with the tombstone and Undo
 - [x] #4 Read receipts: Teams' Seen rule (at most two icons, 2-20 members); typing indicator with Teams' timeouts and multiple typers
 - [x] #5 Optimistic send as Teams' pipeline: Sending/Retrying/failed states, transport retries and offline queue replays, Teams' failure texts, Retry and Delete
@@ -59,4 +59,25 @@ Timeline data gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/me
 - Meeting chats' JSON member events (guests "left the chat" / "was invited to the meeting") now render, with Teams' Unverified badge after visitors' names. Call durations drop whole days as Teams does ("1h 28m 28s" for a 25h 28m meeting).
 
 - 2026-11-12: posted hero/thumbnail/list/O365 connector test cards (OST TEST 113–116) to OST group test and measured Teams' rendering. Hero/thumbnail were already built (thumbnail text colour fixed to #424242); built ListCard.qml and ConnectorCard.qml (were "Sent a card"). Added --chat-shot. Left: carousels, Action.Submit/Execute invokes and result footer, AMS images, contacts, polls, list-item icons, connector actions/markdown.
+
+- 2026-11-13: OST TEST 122 (two hero cards), 123 (list items with icons), 124 (connector card: markdown, activity image, lists, section images), 125 (Adaptive Card Carousel) measured in Teams. Built: cards 8 apart, hero height fix (buttons 8 under the text), list item icons, ConnectorCard rewritten (HTML text from the chat service, sections in Teams' order, images, lists), Carousel element (pages, dots, wrap-around, timer). App add/remove rows and AMS card images were already handled. Bot actions (Submit/Execute invokes, result footer, Polls voting) moved to TASK-0132.
+
+- 2026-11-13: "Report a problem" now follows the 404 text (CONVERSATION_DELETED) and opens OST's feedback window (GitHub). Checked with --send-test to a missing chat.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The message timeline now carries everything Teams shows.
+
+What it covers:
+- History paging with Teams' backward links (200 a page).
+- Every message kind per chat type: control events (members, renames, pictures, apps), call and meeting rows with bold durations, recordings, files (Teams' card and viewer), media, and cards. Cards cover Adaptive (with Carousel), hero and thumbnail, list (with item icons) and O365 connector (markdown, activity images, lists, section images). Several cards stack 8 apart.
+- Soft delete with the tombstone and Undo.
+- Seen and typing as Teams.
+- The optimistic send pipeline: Sending/Retrying/failed, retries, the offline queue, Teams' failure texts, and Report a problem.
+
+Tests: library tests, live checks against OST group test (OST TEST 26/27, 113–116, 122–125), the --send-test and --chat-shot harnesses, compared with Teams on winpc.
+
+Follow-up: TASK-0132 (bot card actions: Submit/Execute invokes, result footer, Polls voting).
+<!-- SECTION:FINAL_SUMMARY:END -->

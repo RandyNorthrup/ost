@@ -1046,6 +1046,21 @@ Groups are separated by dividers; empty groups are skipped.
   - Office files are Word / Excel / PowerPoint for the web inside the embed. OST shows them as PDF pages (Graph's conversion), as its Preview does.
 - **Toast.** Teams' in-app toast is 288 wide. The title (14/20 semibold) wraps in 202.67 at 36.67, 12.67. Undo (14 px #4F52B2) sits 11 under it, and the card is then 12.67 deeper: 46 tall for one line, 65.33 for two, 96.33 with Undo.
 
+### Cards in a message (measured on winpc, 2026-11-13, OST TEST 122–125)
+- **Several cards** in one message stack 8 apart, each 452 wide (hero, thumbnail, list and connector cards). A hero card with a title, subtitle, text and one row of buttons is 161.33 tall; its buttons sit 8 under the text.
+- **List card item icons:** 32 x 32 (stretched) at the item's start, 0.4 below its title's top. The text sits 12 after the icon (44 in). Rows keep their height (60 for a result item).
+- **Connector card:**
+  - The chat service stores its markdown as HTML (`<p>`, `<strong>`, `<em>`, `<a>`, `<ul><li>`). Links are #4F52B2 without an underline. Lists are indented 40, with 14 above and below.
+  - The body is a column 8 apart: title, text, sections. The frame ends 16.6 under the last item.
+  - A section is a column 10 apart, in this order:
+    - its title;
+    - the activity row, which stays (0 tall) in a section without an activity. The activityImage is 52 x 52, stretched, and the three lines sit 62 in, 30 apart;
+    - its text;
+    - its images (160 x 120, stretched, 10 apart);
+    - its facts, with 10 more under the last.
+  - potentialAction (OpenUri, ActionCard) shows no buttons.
+- **Adaptive Card Carousel** (`enableAdaptiveCardCarousel`): one page at a time, at the tallest page's height. 12 lower comes a 24 px row, centred, with 6 between its parts: Previous (‹ 20 px #424242), the dots, and Next (›). Each dot is a 24 x 24 button: the current one a 16 x 8 pill, the others 8 x 8 at 65% opacity, #242424. The element ends 16 under the row. Previous and Next wrap around.
+
 ## 18. Delivery options, schedule send, Enter, limits
 - **Delivery options** (648927, 871091):
 

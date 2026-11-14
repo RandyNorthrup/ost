@@ -10,7 +10,9 @@ import QtQuick.Controls.Basic
 // - a section: 12/16 bold #616161;
 // items are 19.7 apart; the buttons (as the hero card's) 26.7 under the
 // last, 16.6 above the bottom.
-// Items' icons aren't measured yet (the test list had none).
+// An item's icon ("OST TEST 123", 2026-11-13): 32 x 32 at the item's
+// start, 0.4 below its title's top, the text 12 after it (44 in); rows
+// keep their height.
 Rectangle {
     id: card
     property var content: ({})
@@ -46,26 +48,43 @@ Rectangle {
         spacing: 19.7
         Repeater {
             model: card.items
-            Column {
+            Item {
                 id: item
                 required property var modelData
                 readonly property bool section: String(modelData.type || "") === "section"
+                readonly property string icon: !section && modelData.icon ? String(modelData.icon) : ""
                 width: col.width
-                spacing: 2
-                Text {
-                    width: parent.width; wrapMode: Text.Wrap
-                    text: item.modelData.title || ""
-                    lineHeight: item.section ? 16 : 18.67; lineHeightMode: Text.FixedHeight
-                    font.family: theme.font; font.pixelSize: item.section ? 12 : 14
-                    font.weight: item.section ? Font.Bold : Font.DemiBold
-                    color: item.section ? theme.pick("#616161", "#ADADAD") : theme.textStrong
+                height: Math.max(texts.height, icon ? 32.4 : 0)
+                // An item's icon: 32 x 32, stretched, its text 12 after it.
+                Image {
+                    visible: item.icon !== ""
+                    y: 0.4; width: 32; height: 32
+                    source: { backend.emoticonsVersion; return item.icon ? backend.cardImage(item.icon) : "" }
+                    fillMode: Image.Stretch
+                    asynchronous: true
+                    Accessible.role: Accessible.Graphic
+                    Accessible.name: item.modelData.title || ""
                 }
-                Text {
-                    visible: !item.section && !!item.modelData.subtitle
-                    width: parent.width; wrapMode: Text.Wrap
-                    text: item.modelData.subtitle || ""
-                    lineHeight: 16; lineHeightMode: Text.FixedHeight
-                    font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
+                Column {
+                    id: texts
+                    x: item.icon ? 44 : 0
+                    width: parent.width - x
+                    spacing: 2
+                    Text {
+                        width: parent.width; wrapMode: Text.Wrap
+                        text: item.modelData.title || ""
+                        lineHeight: item.section ? 16 : 18.67; lineHeightMode: Text.FixedHeight
+                        font.family: theme.font; font.pixelSize: item.section ? 12 : 14
+                        font.weight: item.section ? Font.Bold : Font.DemiBold
+                        color: item.section ? theme.pick("#616161", "#ADADAD") : theme.textStrong
+                    }
+                    Text {
+                        visible: !item.section && !!item.modelData.subtitle
+                        width: parent.width; wrapMode: Text.Wrap
+                        text: item.modelData.subtitle || ""
+                        lineHeight: 16; lineHeightMode: Text.FixedHeight
+                        font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
+                    }
                 }
                 HoverHandler { enabled: !!item.modelData.tap; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: !!item.modelData.tap; onTapped: card.act(item.modelData.tap) }

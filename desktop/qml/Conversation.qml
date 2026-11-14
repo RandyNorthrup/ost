@@ -1784,6 +1784,20 @@ Rectangle {
                     Accessible.role: Accessible.StaticText
                     Accessible.name: text
                 }
+                // Teams adds "Report a problem" to the 404 text
+                // (CONVERSATION_DELETED; docs/spec/send-pipeline.md): OST's
+                // feedback window, sent to OST's GitHub.
+                Text {
+                    visible: msg.sendFailed && (msg.modelData.send_note || "").indexOf("Message didn't send.") === 0
+                    text: "Report a problem"
+                    font.family: theme.font; font.pixelSize: theme.small
+                    font.underline: reportHover.hovered
+                    color: theme.brandLink
+                    HoverHandler { id: reportHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: backend.requestFeedback("problem", "Chat", "Message didn't send (CONVERSATION_DELETED)") }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: text
+                }
                 Text {
                     id: metaText
                     // Compact: the name semibold in NeutralForeground1, as Teams.
@@ -2014,12 +2028,13 @@ Rectangle {
                         HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     }
                 }
+                // Several cards stack 8 apart (Teams, OST TEST 122).
                 Column {
                     id: cardCol
                     visible: bubble.cards.length > 0
                     x: 17.3; y: bubble.cardsTop
                     width: bubble.cardW
-                    spacing: 12
+                    spacing: 8
                     Repeater {
                         model: bubble.cards
                         Loader {
