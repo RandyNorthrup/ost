@@ -80,6 +80,22 @@ pub struct Card {
     pub app_id: String,
 }
 
+/// The person a bot message was sent for (`properties.onbehalfof`, an
+/// array or its JSON text): the first entry's displayName.
+pub fn on_behalf_of_name(v: Option<&serde_json::Value>) -> String {
+    let list = match v {
+        Some(serde_json::Value::String(t)) => serde_json::from_str::<serde_json::Value>(t).unwrap_or_default(),
+        Some(other) => other.clone(),
+        None => return String::new(),
+    };
+    list.as_array()
+        .and_then(|a| a.first())
+        .and_then(|e| e.get("displayName"))
+        .and_then(|d| d.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
 /// The SWIFT payload of a `RichText/Media_Card` message: `<Swift b64="…"/>`
 /// (base64 UTF-8 JSON), else the first text child of `<URIObject>` when it
 /// is JSON (Teams 49385). Element and attribute names match case-
@@ -699,6 +715,10 @@ pub struct MessageView {
     pub thread_read_to: i64,
     #[serde(default)]
     pub thread_bookmark: i64,
+    /// A bot message sent for someone (`properties.onbehalfof`): their name,
+    /// which Teams shows as "{name} via {bot}".
+    #[serde(default)]
+    pub on_behalf_of: String,
     /// For system events (kind "event"): what happened, as Teams' control
     /// message renderer reads it; `text` then holds Teams' sentence.
     #[serde(default)]
@@ -1446,6 +1466,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         first_unread: false,
         files: Vec::new(),
         root_id: s("/rootMessageId"),
+        on_behalf_of: on_behalf_of_name(m.pointer("/properties/onbehalfof")),
         shared_in_main: matches!(m.pointer("/properties/isSharedInMain"), Some(serde_json::Value::Bool(true)))
             || m.pointer("/properties/isSharedInMain").and_then(|v| v.as_str()) == Some("true"),
         mentions_me: false,
@@ -4430,6 +4451,15 @@ mod quote_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn polls_cards_name_who_sent_them() {
+        // OST TEST 126: the Polls bot's card, sent for OST Test 1.
+        let v = serde_json::json!([{ "displayName": "OST Test 1", "itemid": 0, "mentionType": "person", "mri": "8:orgid:4287e791" }]);
+        assert_eq!(super::on_behalf_of_name(Some(&v)), "OST Test 1");
+        assert_eq!(super::on_behalf_of_name(Some(&serde_json::json!(v.to_string()))), "OST Test 1");
+        assert_eq!(super::on_behalf_of_name(None), "");
+    }
+
     #[test]
     fn conversation_facts_read_clear_time_and_layout() {
         let v = serde_json::json!({"properties": {"clearHistoryTime": "1794433826361"}, "threadProperties": {"chatModalityType": "Conversational"}});

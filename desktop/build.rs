@@ -160,6 +160,7 @@ fn main() {
         "qml/AttachMenu.qml",
         "qml/CloudPicker.qml",
         "qml/FileCard.qml",
+        "qml/CardResponseBar.qml",
         "qml/FileViewer.qml",
         "qml/PreviewBody.qml",
         "qml/ThreadsPane.qml",

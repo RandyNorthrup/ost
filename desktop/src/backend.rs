@@ -795,6 +795,16 @@ pub mod qobject {
         /// answer comes back in share_done.
         #[qinvokable]
         fn share_action(self: Pin<&mut Backend>, op: &QString, item_json: &QString, args_json: &QString);
+
+        /// A bot card's action as Teams sends it (api::bot_invoke): the
+        /// message ({thread_id, server_message_id, client_message_id,
+        /// bot_mri, app_id, message_type}), the action (an invoke
+        /// Action.Submit, an Action.Execute or a card's refresh action) and
+        /// the card's inputs; `automatic` for a refresh. The outcome
+        /// ({kind: sent | card | message | error, card?, message?}) comes
+        /// back in card_invoke_done.
+        #[qinvokable]
+        fn card_invoke(self: Pin<&mut Backend>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool);
         /// Teams' Download in the Attendance view: save the report file
         /// (the service's name) to Downloads.
         #[qinvokable]
@@ -1029,6 +1039,10 @@ pub mod qobject {
         /// A share_action finished: its op, its result (JSON) and an error.
         #[qsignal]
         fn share_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
+
+        /// A card_invoke finished: its op, the outcome (JSON) and an error.
+        #[qsignal]
+        fn card_invoke_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
 
         /// A drive_action finished: its op, its result (JSON) and an error.
         #[qsignal]
@@ -5053,6 +5067,48 @@ impl qobject::Backend {
     fn call_meeting_link(&self) -> Option<outgoing::MeetingLink> {
         outgoing::MeetingLink::parse(&self.rust().last_join.0.to_string())
             .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
+    }
+
+    pub fn card_invoke(self: Pin<&mut Self>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool) {
+        let op = op.to_string();
+        let target: api::bot_invoke::Target = serde_json::from_str(&target_json.to_string()).unwrap_or_default();
+        let action: serde_json::Value = serde_json::from_str(&action_json.to_string()).unwrap_or_default();
+        let inputs: serde_json::Value = serde_json::from_str(&inputs_json.to_string()).unwrap_or(json!({}));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut target = target;
+            let result: anyhow::Result<serde_json::Value> = async {
+                let client = TeamsClient::new().await?;
+                // Teams names the bot's app when it knows it.
+                if target.app_id.is_empty() {
+                    if let Some((app, _, _)) = api::app_details::app_for_bot(&client, &target.bot_mri).await {
+                        target.app_id = app;
+                    }
+                }
+                let kind = action["type"].as_str().unwrap_or_default().to_ascii_lowercase();
+                let (name, value) = if kind == "action.execute" {
+                    (Some("adaptiveCard/action"), api::bot_invoke::execute_value(&action, &inputs, automatic))
+                } else {
+                    (None, api::bot_invoke::submit_value(&action["data"], &inputs))
+                };
+                let reply = api::bot_invoke::invoke(&client, &target, name, value, automatic).await?;
+                Ok(match api::bot_invoke::outcome(&reply) {
+                    api::bot_invoke::Outcome::Sent => json!({ "kind": "sent" }),
+                    api::bot_invoke::Outcome::Card(card) => json!({ "kind": "card", "card": card }),
+                    api::bot_invoke::Outcome::Message(m) => json!({ "kind": "message", "message": m }),
+                    api::bot_invoke::Outcome::Error(e) => json!({ "kind": "error", "message": e }),
+                })
+            }
+            .await;
+            let (value, error) = match result {
+                Ok(v) => (v.to_string(), String::new()),
+                Err(e) => {
+                    tracing::warn!("card invoke {op}: {}", short_error(&e));
+                    (String::new(), short_error(&e))
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().card_invoke_done(QString::from(op.as_str()), QString::from(value.as_str()), QString::from(error.as_str())));
+        });
     }
 
     pub fn share_action(self: Pin<&mut Self>, op: &QString, item_json: &QString, args_json: &QString) {
@@ -10269,6 +10325,30 @@ impl qobject::Backend {
         let id_key = format!("{id}\u{1f}{name}");
         if let Some(known) = self.rust().photos.get(&id_key) {
             return QString::from(known.as_deref().unwrap_or(""));
+        }
+        // A bot (28:…): Teams shows its app's icon.
+        if id.starts_with("28:") {
+            if self.as_mut().rust_mut().photo_fetching.insert(id_key.clone()) {
+                let qt = self.qt_thread();
+                let id2 = id.clone();
+                runtime().spawn(async move {
+                    let result = async {
+                        let client = TeamsClient::new().await?;
+                        let (_, _, icon) = api::app_details::app_for_bot(&client, &id2).await.ok_or_else(|| anyhow::anyhow!("no app for {id2}"))?;
+                        anyhow::ensure!(!icon.is_empty(), "no icon");
+                        let path = api::emoticons::remote_image_file(&icon, &cache_base(), None).await?;
+                        anyhow::Ok(format!("file://{}", path.display()))
+                    }
+                    .await;
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().rust_mut().photo_fetching.remove(&id_key);
+                        let url = result.map_err(|e| tracing::debug!("bot icon unavailable: {}", short_error(&e))).ok();
+                        this.as_mut().rust_mut().photos.insert(id_key, url);
+                        this.as_mut().photo_ready(QString::from(id2.as_str()));
+                    });
+                });
+            }
+            return QString::default();
         }
         let my_oid = self
             .rust()

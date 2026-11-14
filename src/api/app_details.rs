@@ -1412,6 +1412,27 @@ pub async fn details(client: &TeamsClient, app_id: &str) -> Result<AppDetails> {
     ))
 }
 
+/// The app a bot belongs to (its `28:` MRI or bare id), from the catalog:
+/// (app id, name, icon URL). Teams uses it for the bot's picture and the
+/// appId of its invokes.
+pub async fn app_for_bot(client: &TeamsClient, bot: &str) -> Option<(String, String, String)> {
+    let id = bot.strip_prefix("28:").unwrap_or(bot).to_ascii_lowercase();
+    let defs = catalog(client).await.ok()?;
+    let def = defs.iter().find(|d| bot_of(d).iter().any(|b| *b == id))?;
+    Some((str_at(def, "id").to_string(), str_at(def, "name").to_string(), super::tabs::https_only(str_at(def, "largeImageUrl"))))
+}
+
+/// A definition's bot ids, lowercase.
+fn bot_of(def: &serde_json::Value) -> Vec<String> {
+    def.get("bots")
+        .and_then(|b| b.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|b| b.get("id").or_else(|| b.get("botId")).and_then(|v| v.as_str()))
+        .map(|v| v.strip_prefix("28:").unwrap_or(v).to_ascii_lowercase())
+        .collect()
+}
+
 /// The middle tier's catalog of apps (Teams' definitionsv2), kept for the
 /// session.
 pub async fn catalog(client: &TeamsClient) -> Result<std::sync::Arc<Vec<serde_json::Value>>> {

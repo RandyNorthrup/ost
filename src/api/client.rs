@@ -611,6 +611,30 @@ impl TeamsClient {
         Ok(id)
     }
 
+    /// `chat_request` with extra headers.
+    pub async fn chat_request_with(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat {} {}", method, url);
+        let req = self
+            .http
+            .request(method.clone(), url)
+            .header("Authentication", format!("skypetoken={}", token));
+        let resp = headers
+            .iter()
+            .fold(req, |r, (k, v)| r.header(*k, *v))
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Chat {} {} failed", method, url))?;
+        check_response(resp, url).await
+    }
+
     /// Any method with `Authentication: skypetoken=...` (native chat API).
     pub async fn chat_request(
         &self,

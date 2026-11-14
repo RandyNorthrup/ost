@@ -1061,6 +1061,28 @@ Groups are separated by dividers; empty groups are skipped.
   - potentialAction (OpenUri, ActionCard) shows no buttons.
 - **Adaptive Card Carousel** (`enableAdaptiveCardCarousel`): one page at a time, at the tallest page's height. 12 lower comes a 24 px row, centred, with 6 between its parts: Previous (‹ 20 px #424242), the dots, and Next (›). Each dot is a 24 x 24 button: the current one a 16 x 8 pill, the others 8 x 8 at 65% opacity, #242424. The element ends 16 under the row. Previous and Next wrap around.
 
+### Bot card actions (captured on winpc, 2026-11-13, OST TEST 126: a Polls poll)
+- **Invoke.** `POST {chat service}/v1/agents/{bot MRI}/invoke` with the skype token. The body is `{name?, appId?, messageType, value, imdisplayname, userAadToken, serverMessageId, clientMessageId, conversation: {id}}`.
+  - Nulls are dropped.
+  - `appId` is the bot's app from the catalog (definitionsv2 `bots[].id`).
+  - `userAadToken` is the middle tier's token (api.spaces.skype.com).
+  - An automatic refresh adds `X-MS-AutoRefreshRequestInThread: {thread}`.
+- **Action.Submit with `msteams.type: "invoke"`.** There is no name. The value is the action's data without `msteams`, with the card's inputs merged over it (the poll: `{data: {Type: "QuickPoll.SubmitVote", …}, choice: "1"}`).
+  - The reply is an empty 200.
+  - The card then gets Teams' response bar: 28 tall, #E6E6E6, a 0.67 #E0E0E0 line on top, an info icon at 16, "Your response was sent to the app" (14 px #424242) at 41.33, and Close.
+  - The bot edits its results message, which then shows "Edited".
+- **Action.Execute and `refresh`.** The name is `adaptiveCard/action` and the value is `{action: {type: "Action.Execute", verb, data, title?}, trigger: "automatic" | "manual"}`. The reply is `{statusCode, type, value}`:
+  - `application/vnd.microsoft.card.adaptive`: a card that replaces the message's. The meta line then adds "Updated".
+  - `…activity.message`: text for the bar.
+  - `…error`: an error for the bar.
+- **When a card refreshes.** It refreshes once a session, for the users in `refresh.userIds` (everyone when it lists none). The Polls card lists only its author, who gets `fetchAuthorVoteCard`.
+- **How the message looks.**
+  - The sender line reads "{onbehalfof name} via {bot}" ("OST Test 1 via Polls").
+  - The bot's picture is its app's icon in a 32 px square with 4 px corners.
+  - A bot's card alone has no bubble: just the 448-wide card (#FAFAFA, radius 6, a soft shadow).
+  - A grouped message that was edited shows "Edited" (12 px #616161) above its bubble.
+- **Not yet in OST:** a plain Action.Submit (not an invoke), messageBack, and Action.Submit/Execute from a task module.
+
 ## 18. Delivery options, schedule send, Enter, limits
 - **Delivery options** (648927, 871091):
 

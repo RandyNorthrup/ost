@@ -31,6 +31,10 @@ Item {
     /// What Teams adds under some cards inside the frame (a shared app's
     /// links and buttons).
     property Component footer: null
+    /// Room at the frame's bottom for a host's bar (a bot card's response
+    /// bar): the card's 16 px bottom padding gives way to it (Teams leaves
+    /// 10.67 above the bar).
+    property real bottomExtra: 0
     /// Links the host opens itself (openLink) instead of the browser
     /// (Teams opens its own app links in place).
     property bool hostsLinks: false
@@ -128,6 +132,7 @@ Item {
         height: body.y + body.height + (actions.visible ? 12 + actions.height : 0)
             + (showCardHost.visible ? 16 + showCardHost.height : 16)
             + (footerSlot.item ? footerSlot.item.height : 0)
+            + (card.bottomExtra > 0 ? card.bottomExtra - 5.33 : 0)
         depth: card.framed ? 2 : 0; radius: 6
         color: card.framed ? card.styleBg("default") : "transparent"
         ElementList {

@@ -1611,7 +1611,11 @@ Rectangle {
             readonly property int dividerH: (modelData.dayDivider ? 30 : 0) + (modelData.lastRead ? 36 : 0)
             // Control and call rows sit flush, as in Teams (28 / 36 px rows).
             readonly property int topPad: dividerH + (isRow ? 0 : grouped ? 2 : 12)
-            readonly property int bubbleY: root.compact && !isRow ? topPad + (showMeta ? 26 : 2) : topPad + (!showMeta || isCall ? 0 : meta.height + 2)
+            // A grouped message that was edited: Teams puts "Edited" (12 px
+            // #616161) over its bubble, 2 under the group's previous one and
+            // 3 above its own (OST TEST 126's results, edited by Polls).
+            readonly property bool groupedEdited: !root.compact && !isRow && !showMeta && grouped && modelData.edited === true && !modelData.deleted
+            readonly property int bubbleY: root.compact && !isRow ? topPad + (showMeta ? 26 : 2) : topPad + (groupedEdited ? 21 : !showMeta || isCall ? 0 : meta.height + 2)
             // A thread starter's replies line (Threads layout), 28 tall.
             readonly property real threadLineH: root.threadsLayout && (modelData.thread_replies || 0) > 0 ? 30 : 0
             // A thread pane's "{N} replies" divider under its first message
@@ -1764,9 +1768,20 @@ Rectangle {
                 x: root.compact ? 16 : root.gutL; y: root.compact ? msg.topPad + 8 : msg.bubbleY
                 size: root.compact ? 36 : 32; name: msg.modelData.sender
                 photoId: msg.modelData.sender_mri || ""
-                opensProfile: true
+                // A bot: its app's icon in a square with 4 px corners (Teams).
+                square: String(msg.modelData.sender_mri || "").startsWith("28:")
+                squareRadius: 4
+                opensProfile: !square
                 // Teams shows the sender's presence on message avatars too.
                 presence: msg.modelData.sender_mri && msg.modelData.sender_mri === root.chatPhotoId ? root.chatPresence : ""
+            }
+            Text {
+                visible: msg.groupedEdited
+                x: msg.mine ? bubble.x + bubble.width - width : bubble.x
+                y: msg.topPad + 2; height: 16
+                text: "Edited"
+                font.family: theme.font; font.pixelSize: theme.small
+                color: theme.textSecondary
             }
             // Name line: [failed text] sender, time, details. A failed
             // message's text replaces the details (Teams' statusMessage).
@@ -1803,9 +1818,10 @@ Rectangle {
                     // Compact: the name semibold in NeutralForeground1, as Teams.
                     textFormat: root.compact ? Text.StyledText : Text.PlainText
                     text: root.compact
-                        ? "<b><font color=\"" + theme.text + "\">" + (msg.modelData.sender || "").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;Edited" : "")
-                        : (msg.mine ? "" : msg.modelData.sender + "  ") + root.stamp(msg.modelData.time)
+                        ? "<b><font color=\"" + theme.text + "\">" + root.senderLabel(msg.modelData).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;Edited" : "") + (root.cardUpdated(msg.modelData.id) ? "&nbsp;&nbsp;&nbsp;Updated" : "")
+                        : (msg.mine ? "" : root.senderLabel(msg.modelData) + "  ") + root.stamp(msg.modelData.time)
                         + (msg.modelData.edited && !msg.sendFailed ? "   Edited" : "")
+                        + (root.cardUpdated(msg.modelData.id) ? "   Updated" : "")
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                     // The sender's name opens their profile card, as in Teams.
@@ -1907,7 +1923,11 @@ Rectangle {
                 readonly property bool imageOnly: imgs.length > 0 && msg.modelData.text === "Image"
                 // A picture on its own, or big emoticons, show bare, without
                 // the bubble (as in Teams).
-                readonly property bool bare: (imageOnly || bigEmoticons) && !root.postsLayout
+                // A bot's card alone (OST TEST 126, Polls): Teams draws the card
+                // itself, with no bubble around it.
+                readonly property bool botCard: !msg.mine && !root.postsLayout && cards.length > 0 && !showBody
+                    && (msg.modelData.files || []).length === 0 && (msg.modelData.images || []).length === 0 && String(msg.modelData.sender_mri || "").startsWith("28:")
+                readonly property bool bare: (imageOnly || bigEmoticons || botCard) && !root.postsLayout
                 readonly property real pad: bare || root.compact ? 0 : 15.7
                 readonly property var files: msg.modelData.files || []
                 // Cards (Adaptive Cards rendered natively; Teams' frame).
@@ -1963,13 +1983,15 @@ Rectangle {
                 readonly property real filesTop: hasPics ? picsEnd + 8 : (showBody ? body.y + bodyH + 8 : 8)
                 // Measured: a card sits 8 under the bubble's top (or the text),
                 // 17.3 in, and the bubble ends 10.7 under it.
-                readonly property real cardsTop: showBody ? body.y + bodyH + 8 : 8
+                readonly property real cardsTop: botCard ? 0 : showBody ? body.y + bodyH + 8 : 8
                 width: root.postsLayout ? msg.maxBubble
+                    : botCard ? cardCol.width
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
                     : hasCode ? msg.maxBubble
                     : Math.min(msg.maxBubble, Math.max(msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
-                height: cards.length > 0 ? cardsTop + cardCol.height + 10.7
+                height: botCard ? cardCol.height
+                    : cards.length > 0 ? cardsTop + cardCol.height + 10.7
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
@@ -2032,13 +2054,15 @@ Rectangle {
                 Column {
                     id: cardCol
                     visible: bubble.cards.length > 0
-                    x: 17.3; y: bubble.cardsTop
+                    x: bubble.botCard ? 0 : 17.3; y: bubble.cardsTop
                     width: bubble.cardW
                     spacing: 8
                     Repeater {
                         model: bubble.cards
                         Loader {
+                            id: cardLoader
                             required property var modelData
+                            required property int index
                             sourceComponent: modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp
                                 : modelData.content_type === "application/vnd.microsoft.teams.card.list" ? listComp
                                 : modelData.content_type === "application/vnd.microsoft.teams.card.o365connector" ? connectorComp : heroComp
@@ -2046,12 +2070,30 @@ Rectangle {
                                 id: adaptiveComp
                                 AdaptiveCard {
                                     id: ac
+                                    // A bot's card: what its actions and refresh
+                                    // returned replaces it (cardOverrides), and
+                                    // Teams' response bar sits under it.
+                                    readonly property string cardKey: msg.modelData.id + ":" + cardLoader.index
+                                    readonly property var override: root.cardOverrides[cardKey] || null
+                                    readonly property var footerState: root.cardFooters[cardKey] || null
+                                    onAction: (a, inputs) => root.cardAction(msg.modelData, cardLoader.index, a, inputs)
+                                    Component.onCompleted: root.maybeRefreshCard(msg.modelData, cardLoader.index, modelData.content)
+                                    CardResponseBar {
+                                        visible: !!ac.footerState
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        busy: !!ac.footerState && ac.footerState.busy === true
+                                        text: ac.footerState ? ac.footerState.text : ""
+                                        error: !!ac.footerState && ac.footerState.error === true
+                                        onDismissed: root.setCardFooter(ac.cardKey, null)
+                                    }
                                     // A shared app's card (Teams' app-store link preview):
                                     // 16 from the top and Teams' links and buttons under it.
                                     readonly property string sharedApp: String(modelData.app_id).toUpperCase() === "08648EF4-F8B6-45DA-AB44-74F21AABD840"
                                         && modelData.content && modelData.content.selectAction ? String(modelData.content.selectAction.id || "") : ""
-                                    content: modelData.content
+                                    content: override || modelData.content
                                     cardWidth: sharedApp ? 356 : (list.width >= 720 ? 448 : 360)
+                                    bottomExtra: footerState ? 28.67 : 0
                                     topInset: sharedApp ? 16 : 26
                                     hostsLinks: true
                                     footer: sharedApp ? appCardFooter : null
@@ -3399,6 +3441,83 @@ Rectangle {
         id: cloudPicker
         onAttached: files => root.attachCloud(files)
     }
+    // Bot cards' actions (api::bot_invoke, docs/spec/messages-and-composer.md
+    // "Bot card actions"): an invoke Action.Submit or an Action.Execute goes
+    // to the message's bot; a card's refresh runs once a session for the
+    // people it names. What comes back replaces the card (shown "Updated")
+    // or fills Teams' response bar under it.
+    property var cardOverrides: ({})
+    property var cardFooters: ({})
+    property var cardRefreshed: ({})
+    readonly property string cardInvokeTag: "conv-invoke-" + Math.floor(Math.random() * 1e9) + ":"
+    function senderLabel(m) { return m.on_behalf_of ? m.on_behalf_of + " via " + (m.sender || "") : (m.sender || "") }
+    function cardUpdated(id) { for (const k in root.cardOverrides) if (k.indexOf(id + ":") === 0) return true; return false }
+    function setCardFooter(key, state) { const f = Object.assign({}, root.cardFooters); if (state) f[key] = state; else delete f[key]; root.cardFooters = f }
+    function cardTarget(m) {
+        return { thread_id: root.chatId, server_message_id: m.id, client_message_id: m.client_message_id || "",
+                 bot_mri: m.sender_mri || "", app_id: "", message_type: "RichText/Media_Card" }
+    }
+    function cardAction(m, index, a, inputs) {
+        const t = String(a.type || "").toLowerCase()
+        const key = m.id + ":" + index
+        if (t === "action.submit") {
+            const ms = a.data && a.data.msteams ? a.data.msteams : null
+            const mtype = ms ? String(ms.type || "").toLowerCase() : ""
+            if (mtype === "imback") { root.send(String(ms.value || a.title || "")); return }
+            if (mtype !== "invoke") { console.warn("card: Action.Submit without an invoke isn't sent", JSON.stringify(a.data || {})); return }
+        } else if (t !== "action.execute") return
+        if (!String(m.sender_mri || "").startsWith("28:")) return
+        root.setCardFooter(key, { busy: true, text: "" })
+        backend.cardInvoke(root.cardInvokeTag + key, JSON.stringify(root.cardTarget(m)), JSON.stringify(a), JSON.stringify(inputs || {}), false)
+    }
+    function maybeRefreshCard(m, index, content) {
+        const r = content && content.refresh
+        if (!r || !r.action || !String(m.sender_mri || "").startsWith("28:")) return
+        const key = m.id + ":" + index
+        if (root.cardRefreshed[key]) return
+        // Teams refreshes for the people the card names (all, if it names none).
+        const ids = r.userIds || []
+        if (ids.length && ids.indexOf(backend.userMri) < 0) return
+        const done = Object.assign({}, root.cardRefreshed); done[key] = true; root.cardRefreshed = done
+        backend.cardInvoke(root.cardInvokeTag + "refresh:" + key, JSON.stringify(root.cardTarget(m)), JSON.stringify(r.action), "{}", true)
+    }
+    Connections {
+        target: backend
+        function onCardInvokeDone(op, result, error) {
+            if (!op.startsWith(root.cardInvokeTag)) return
+            let key = op.slice(root.cardInvokeTag.length)
+            const refresh = key.startsWith("refresh:")
+            if (refresh) key = key.slice("refresh:".length)
+            const v = result ? JSON.parse(result) : null
+            if (v && v.kind === "card") {
+                const o = Object.assign({}, root.cardOverrides); o[key] = v.card; root.cardOverrides = o
+                if (!refresh) root.setCardFooter(key, null)
+                return
+            }
+            if (refresh) return
+            if (error) root.setCardFooter(key, { error: true, text: "Something went wrong. Please try again." })
+            else if (v && v.kind === "message") root.setCardFooter(key, { text: v.message })
+            else if (v && v.kind === "error") root.setCardFooter(key, { error: true, text: v.message })
+            else root.setCardFooter(key, { text: "Your response was sent to the app" })
+        }
+    }
+    /// Run a card's action by its title, with the given inputs (tests).
+    function cardActionForTest(id, index, title, inputs) {
+        const m = root.messages.find(x => x.id === id)
+        if (!m || !m.cards || !m.cards[index]) return "no card"
+        const content = root.cardOverrides[id + ":" + index] || m.cards[index].content
+        const a = (content.actions || []).find(x => x.title === title)
+        if (!a) return "no action " + title
+        root.cardAction(m, index, a, inputs)
+        return "sent"
+    }
+    function cardStateForTest(id) {
+        const out = {}
+        for (const k in root.cardOverrides) if (k.indexOf(id + ":") === 0) out[k] = "override"
+        for (const k in root.cardFooters) if (k.indexOf(id + ":") === 0) out[k + ":footer"] = root.cardFooters[k]
+        return out
+    }
+
     // A message's file card (FileCard): Teams' ··· menu (Open in Browser,
     // Download, Share, Copy link, Favorite / Unfavorite), Share this file,
     // Copy link's "Link copied" and the favorites toasts. The file is looked
