@@ -74,6 +74,40 @@ Window {
     Shortcut { sequence: "Alt+Left"; onActivated: window.goBack() }
     Shortcut { sequence: "Alt+Right"; onActivated: window.goForward() }
     // Rail apps, as in Teams desktop.
+    // Teams' keyboard shortcut profile (Settings ▸ General; the synced
+    // keyboardShortcutsSettings.shortcutProfile): "default" (Teams only),
+    // "chats_alt" (Teams + Slack), "meetings_alt" (Teams + Zoom) or
+    // "chats_meetings_alt" (combined), with Teams' Windows desktop key maps.
+    readonly property var syncedProps: backend.settingsJson ? (JSON.parse(backend.settingsJson).props || {}) : ({})
+    readonly property string shortcutProfile: {
+        let v = syncedProps.keyboardShortcutsSettings
+        if (typeof v === "string") { try { v = JSON.parse(v) } catch (e) { v = null } }
+        return (v && v.shortcutProfile) || "default"
+    }
+    readonly property bool slackShortcuts: shortcutProfile === "chats_alt" || shortcutProfile === "chats_meetings_alt"
+    readonly property bool zoomShortcuts: shortcutProfile === "meetings_alt" || shortcutProfile === "chats_meetings_alt"
+    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) backend.loadSettings() } }
+    // Teams + Slack: Ctrl+Shift+1… the app bar's apps, Ctrl+; shortcuts,
+    // Ctrl+K Go to, Ctrl+. the info pane, Ctrl+Alt+A unread, Ctrl+Alt+U
+    // channels.
+    Repeater {
+        model: window.slackShortcuts ? ["activity", "chat", "calendar", "calls", "onedrive"] : []
+        Item { required property string modelData; required property int index
+            Shortcut { sequence: "Ctrl+Shift+" + (index + 1); onActivated: rail.current = modelData } }
+    }
+    Shortcut { enabled: window.slackShortcuts; sequence: "Ctrl+;"; onActivated: shortcutsDialog.open() }
+    Shortcut { enabled: window.slackShortcuts; sequence: "Ctrl+K"; onActivated: titleBar.focusSearch() }
+    // Teams + Zoom: Ctrl+U the message pane, Alt+H the chat list, Alt+A mute,
+    // Alt+V video, Alt+Y raise hand, Alt+S share, Alt+Q / Ctrl+Shift+E leave,
+    // Ctrl+Shift+V / Ctrl+Shift+A answer with video / audio.
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Ctrl+U"; onActivated: { rail.current = "chat"; conversation.focusCompose() } }
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+H"; onActivated: rail.current = "chat" }
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+A"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") backend.toggleMute() }
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+V"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected" && backend.callCanVideo) backend.toggleCamera() }
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+Y"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.runControl("RaiseHandsButton") }
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+S"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.runControl("ShareButton") }
+    Shortcut { enabled: window.zoomShortcuts; sequences: ["Alt+Q", "Ctrl+Shift+E"]; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.leaveAsked() }
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Ctrl+Shift+V"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(backend.callVideoOffered) }
     Shortcut { sequence: "Ctrl+1"; onActivated: rail.current = "activity" }
     Shortcut { sequence: "Ctrl+2"; onActivated: rail.current = "chat" }
     Shortcut { sequence: "Ctrl+3"; onActivated: rail.current = "calendar" }
@@ -83,7 +117,7 @@ Window {
     Shortcut { sequence: "Ctrl+N"; onActivated: { rail.current = "chat"; chatList.draftsOpen = false; chatList.mentionsOpen = false; window.composing = true } }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
     // The rest of Teams' shortcuts that OST supports (listed by Ctrl+.).
-    Shortcut { sequence: "Ctrl+."; onActivated: shortcutsDialog.open() }
+    Shortcut { sequence: "Ctrl+."; onActivated: if (window.slackShortcuts) { if (conversation.visible) conversation.toggleDetails() } else shortcutsDialog.open() }
     Shortcut { sequence: "Ctrl+Shift+F"; onActivated: { rail.current = "chat"; chatList.openFilter() } }
     Shortcut { sequence: "Ctrl+R"; onActivated: { rail.current = "chat"; conversation.focusCompose() } }
     Shortcut { sequence: "Ctrl+F"; onActivated: if (conversation.visible) conversation.openFind() }
@@ -127,8 +161,8 @@ Window {
     Shortcut { sequence: "Shift+Esc"; onActivated: backend.markAllRead() }
     Shortcut { sequence: "Ctrl+Alt+Z"; onActivated: chatList.clearFilters() }
     Shortcut { sequence: "Ctrl+Alt+C"; onActivated: { rail.current = "chat"; chatList.setChip("chats") } }
-    Shortcut { sequence: "Ctrl+Alt+A"; onActivated: { rail.current = "chat"; chatList.setChip("channels") } }
-    Shortcut { sequence: "Ctrl+Alt+U"; onActivated: { rail.current = "chat"; chatList.setChip("unread") } }
+    Shortcut { sequence: "Ctrl+Alt+A"; onActivated: { rail.current = "chat"; chatList.setChip(window.slackShortcuts ? "unread" : "channels") } }
+    Shortcut { sequence: "Ctrl+Alt+U"; onActivated: { rail.current = "chat"; chatList.setChip(window.slackShortcuts ? "channels" : "unread") } }
     Shortcut { sequence: "Ctrl+Alt+B"; onActivated: { rail.current = "chat"; chatList.setChip("meetings") } }
     Shortcut { sequence: "Ctrl+Alt+Z"; onActivated: { rail.current = "chat"; chatList.clearFilters() } }
     Repeater {
@@ -1052,7 +1086,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3415,6 +3449,28 @@ Window {
             else if (step === 8) { chatList.closeRowMenuForTest(); backend.setChatMuted(c.id, false) }
             else if (step === 10) backend.refresh()
             else if (step === 12) { console.warn("MUTE unmuted", c.muted); cap("unmuted"); Qt.quit() }
+            step++
+        }
+    }
+
+    // --shortcut-profile-test: Settings ▸ General's Keyboard shortcuts
+    // card, the Teams + Slack profile picked (synced) and read back, then
+    // Teams only again. Logs KBPROFILE lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--shortcut-profile-test") >= 0 && backend.signedIn && backend.settingsJson.length > 0
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const log = (...a) => console.warn("KBPROFILE", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            switch (step) {
+            case 0: rail.current = "settings"; settingsView.pageForTest("general"); log("start", window.shortcutProfile); break
+            case 1: settingsView.scrollForTest(); break
+            case 2: window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-kb.png"))); settingsView.setPropForTest("keyboardShortcutsSettings", "shortcutProfile", "chats_alt"); break
+            case 5: log("slack", window.shortcutProfile, window.slackShortcuts, window.zoomShortcuts); backend.loadSettings(); break
+            case 7: log("reloaded", window.shortcutProfile); window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-kb-slack.png"))); settingsView.setPropForTest("keyboardShortcutsSettings", "shortcutProfile", "default"); break
+            case 10: backend.loadSettings(); break
+            case 12: log("back", window.shortcutProfile); Qt.quit(); return
+            }
             step++
         }
     }

@@ -868,6 +868,12 @@ Item {
                     if (shift && event.key === Qt.Key_X) root.formatting = !root.formatting
                     else if (shift && event.key === Qt.Key_C) root.format("code", "")
                     else if (shift && event.key === Qt.Key_B) root.format("codeblock", "")
+                    // Teams' Slack-style shortcuts (Settings ▸ General ▸
+                    // Keyboard shortcuts): Ctrl+E Insert link, Ctrl+Alt+
+                    // Shift+C code block, Ctrl+Shift+9 quote.
+                    else if (window.slackShortcuts && alt && shift && event.key === Qt.Key_C) root.format("codeblock", "")
+                    else if (window.slackShortcuts && shift && (event.key === Qt.Key_9 || event.key === Qt.Key_ParenLeft)) root.format("quote", "")
+                    else if (window.slackShortcuts && !shift && !alt && event.key === Qt.Key_E) formatBar.showLink(input)
                     else if (shift && event.key === Qt.Key_I && root.deliveryOptions) root.importance = root.importance === "high" ? "" : "high"
                     else if (alt && event.key === Qt.Key_X) root.format("strike", "")
                     else if (!shift && !alt && event.key === Qt.Key_B) root.wrapSelection("b")

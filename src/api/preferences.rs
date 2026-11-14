@@ -145,11 +145,14 @@ pub async fn update_call_accessibility_settings(
 
 /// Settings kept as user properties whose value is a JSON object in a
 /// string (Teams merges the changed keys into the whole object).
-pub const JSON_PROPERTIES: [&str; 4] = [
+pub const JSON_PROPERTIES: [&str; 5] = [
     PROPERTY,
     CALL_ACCESSIBILITY,
     "simpleCollabUserSettings",
     "suggestedRepliesSettings",
+    // Settings ▸ General ▸ Keyboard shortcuts: {shortcutProfile,
+    // customShortcuts}.
+    "keyboardShortcutsSettings",
 ];
 
 /// Settings kept as plain string user properties ("true", "COMFY", …),

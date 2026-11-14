@@ -86,6 +86,9 @@ Item {
         return { shown: shown, over: over, moreX: x }
     }
 
+    /// Insert link from a shortcut (Teams + Slack's Ctrl+E): under the
+    /// bar's own button when it shows, else under the compose box.
+    function showLink(anchor) { link.show(anchor) }
     function act(it, button) {
         if (it.popup) {
             if (it.k === "highlight") colors.show(button, true)

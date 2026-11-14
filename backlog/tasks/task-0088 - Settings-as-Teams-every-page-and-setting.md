@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-14T22:21:00Z'
+updated_date: '2026-11-14T22:58:00Z'
 labels:
   - desktop
   - settings
@@ -37,4 +37,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 
 - 2026-11-14 General page, part 1 (Teams measured on winpc): Meeting card with "Ask me to confirm when I leave a meeting" (client preference meeting.enableLeaveConfirmationDialog → local setting leaveConfirmation) and Teams' Stay/Leave popover under Leave (also for Ctrl+Shift+H); Time zone card (the system's IANA zone). Verified with --leave-confirm-test in a Meet now.
 - General page still to do (storage found in Teams' settings bundle): Starting chats (userPersonalSettings.messagingSettings.alwaysPopOutNewChat; needs a new-chat window), the existing "Opening content" setting's behaviour (client preference windowing.shouldOpenContentInNewWindow; currently saved only), Language and regional formats (locale user property + host formatting locale), Translation (translationSettings V2: targetLanguageCode, translationMode SUGGEST/ALWAYS/NEVER, knownLanguages — not stored in user properties when changed on winpc; service still to find), Editor spellcheck (Manage), Keyboard shortcuts profile (keyboardShortcutsSettings), Use Enter or Spacebar to show content (messagingSettings.disableAutomaticConvSwitchOnKeyboardNav; OST's chat list needs arrow-key navigation first), Efficiency mode (client preference optimizedPerf). New meeting controls switches Teams to another toolbar (not measured). Teams' call quality survey after leaving was captured (scratchpad callsurvey-dom.txt / callsurvey.png) for TASK-0104.
+
+- 2026-11-14 General part 2: Keyboard shortcuts profile (Teams only / + Slack / + Zoom / + combined) saved to the synced keyboardShortcutsSettings {shortcutProfile: default|chats_alt|meetings_alt|chats_meetings_alt} (added to preferences::JSON_PROPERTIES); Teams' Windows desktop key maps from its bundle: Slack set (Ctrl+Shift+1… apps, Ctrl+; shortcuts, Ctrl+K go to, Ctrl+. info pane, Ctrl+Alt+A unread, Ctrl+Alt+U channels, compose Ctrl+E link, Ctrl+Alt+Shift+C code block, Ctrl+Shift+9 quote), Zoom set (Ctrl+U message pane, Alt+H chat list, Alt+A mute, Alt+V video, Alt+Y raise hand, Alt+S share, Alt+Q/Ctrl+Shift+E leave, Ctrl+Shift+V answer with video). Verified with --shortcut-profile-test (synced to the service and read back; left at default). Not yet: ReactToLastMessage (Ctrl+Shift+\), AnnounceActiveSpeaker (Ctrl+2), the profile choice inside the Keyboard shortcuts dialog.
 <!-- SECTION:NOTES:END -->

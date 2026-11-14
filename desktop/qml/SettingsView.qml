@@ -226,11 +226,28 @@ Rectangle {
                 trailingY: 29
                 trailing: Component { SettingsParts.Button { label: "Schedule"; onClicked: root.subPage = "oof" } }
             }
+            // Teams' Keyboard shortcuts card: its profile dropdown (248.7 x
+            // 30) — Teams only, + Slack, + Zoom, + combined — saved to the
+            // synced keyboardShortcutsSettings.shortcutProfile.
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "keyboard-20"; title: "Keyboard shortcuts"
-                subtitle: "Use OST shortcuts. <a href=\"shortcuts\">See available keyboard shortcuts</a>"
+                subtitle: "Use OST shortcuts, or combine them with those of other apps. <a href=\"shortcuts\">See available keyboard shortcuts</a>"
                 onLinkActivated: root.showShortcuts()
+                OutlineDropdown {
+                    width: 248.7; height: 30
+                    readonly property var keys: ["default", "chats_alt", "meetings_alt", "chats_meetings_alt"]
+                    readonly property string current_: {
+                        let v = root.props.keyboardShortcutsSettings
+                        if (typeof v === "string") { try { v = JSON.parse(v) } catch (e) { v = null } }
+                        return (v && v.shortcutProfile) || "default"
+                    }
+                    options: [{ label: "OST only (Default)" }, { label: "OST + Slack shortcuts" }, { label: "OST + Zoom shortcuts" }, { label: "OST + combined shortcuts" }]
+                    current: Math.max(0, keys.indexOf(current_))
+                    accessibleName: "Keyboard shortcuts"
+                    onPicked: i => root.setProp("keyboardShortcutsSettings", "shortcutProfile", keys[i])
+                }
+                SettingsParts.Gap { size: 8 }
             }
 
             // ---- General ▸ Out of office ----
@@ -1155,6 +1172,7 @@ Rectangle {
         Accessible.name: text
     }
     Component.onCompleted: backend.loadReadReceipts()
+    function setPropForTest(name, path, value) { setProp(name, path, value) }
     function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
     /// Teams' "Green screen settings" (the effects pane's link): Devices,
     /// scrolled to Green Screen.
