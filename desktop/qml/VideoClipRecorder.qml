@@ -123,13 +123,15 @@ Popup {
         const file = cacheFile("recording-" + Date.now() + ".mp4")
         // The camera and the screen are recorded straight from the device
         // (at full frame rate); Record audio records its picture.
-        engine = audioMode ? "frames" : screenMode ? "screen" : "camera"
+        // The screen is recorded as the picture shows it (with what is
+        // drawn over it), so pausing keeps sound and picture together.
+        engine = audioMode || screenMode ? "frames" : "camera"
         if (engine === "frames") {
             if (!framesReady) prepareFrames()
             if (!frames.start(file)) { console.warn("RECORDER couldn't start"); return }
             framesReady = false
         } else {
-            const r = engine === "screen" ? screenRecorder : camRecorder
+            const r = camRecorder
             r.outputLocation = "file://" + file
             r.record()
         }
@@ -142,15 +144,15 @@ Popup {
     // open), so recording starts at once.
     property bool framesReady: false
     function prepareFrames() { framesReady = frames.prepare(micId, micOn && !testSilent, 1280, 720) }
-    readonly property bool wantFrames: opened && audioMode && stage === "setup"
+    readonly property bool wantFrames: opened && (audioMode || screenMode) && stage === "setup"
     onWantFramesChanged: if (wantFrames) prepareFrames(); else if (stage === "setup" && framesReady) { frames.release(); framesReady = false }
     onMicOnChanged: if (wantFrames) prepareFrames()
     onTestSilentChanged: if (wantFrames) prepareFrames()
     /// What records: "camera", "screen" or "frames" (Record audio).
     property string engine: ""
-    function enginePause() { if (engine === "frames") frames.pause(); else (engine === "screen" ? screenRecorder : camRecorder).pause() }
-    function engineResume() { if (engine === "frames") frames.resume(); else (engine === "screen" ? screenRecorder : camRecorder).record() }
-    function engineStop() { if (engine === "frames") frames.stop(); else (engine === "screen" ? screenRecorder : camRecorder).stop() }
+    function enginePause() { if (engine === "frames") frames.pause(); else camRecorder.pause() }
+    function engineResume() { if (engine === "frames") frames.resume(); else camRecorder.record() }
+    function engineStop() { if (engine === "frames") frames.stop(); else camRecorder.stop() }
     function recorded(path) {
         screen.active = false
         if (discardOnStop) {
@@ -343,17 +345,6 @@ Popup {
             id: screen
             active: false
             onErrorOccurred: (e, s) => { console.warn("RECORDER screen", s); rec.waitingForScreen = false; active = false }
-        }
-        audioInput: AudioInput {
-            muted: !rec.micOn || rec.testSilent
-            device: rec.micDevice
-        }
-        recorder: MediaRecorder {
-            id: screenRecorder
-            mediaFormat { fileFormat: MediaFormat.MPEG4; videoCodec: MediaFormat.VideoCodec.H264; audioCodec: MediaFormat.AudioCodec.AAC }
-            quality: MediaRecorder.HighQuality
-            onRecorderStateChanged: if (recorderState === MediaRecorder.StoppedState && rec.engine === "screen") rec.recorded(String(actualLocation))
-            onErrorOccurred: (e, s) => { console.warn("RECORDER screen", s); rec.stage = "setup" }
         }
         videoOutput: screenPreview
     }

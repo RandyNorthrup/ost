@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T09:43:00Z'
-updated_date: '2026-11-14T16:10:00Z'
+updated_date: '2026-11-14T16:35:00Z'
 labels:
   - messages
   - video
@@ -28,7 +28,7 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - [x] #4 Sending stores the clip in the media store and sends Teams' AMSVideo message; Teams shows and plays it
 - [x] #5 Review editing as Teams: Trim, Split, Record more and Music
 - [ ] #6 Verified side by side with Teams on winpc
-- [ ] #7 Pausing a screen recording keeps its video and sound in step
+- [x] #7 Pausing a screen recording keeps its video and sound in step
 - [x] #8 Script (teleprompter) as Teams: type or paste, play/scroll by words per minute, font size, speed, move and resize
 <!-- AC:END -->
 
@@ -49,4 +49,6 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - Backdrop and the Effects menu (Text, Draw, Stickers, Filter, Frame, Board, Photo) moved to TASK-0137; AC6 is now the teleprompter (Script).
 
 - 2026-11-14 Script: Stream's teleprompter measured (panel, controls, 24-64 font, 50-400 wpm vertical slider) and its timing read from 288.js (linear scroll over words/wpm minutes; word marker timed by letters, +5 after punctuation). Built in VideoClipRecorder.qml, over the picture and not recorded; font size and speed kept in OST's settings. Verified with --teleprompter-test on linuxlt.
+
+- 2026-11-14 screen pause: screen mode now records through ClipFrames (the picture, as Record audio does) instead of Qt's screen MediaRecorder, whose clock ran on through a pause. Verified locally on Hyprland (kitty test window via the portal picker, with a pause): video 10.05 s, audio 9.98 s, 1280x720. Record audio still 11.9 s on linuxlt. This path also carries what TASK-0137 will draw over the screen.
 <!-- SECTION:NOTES:END -->
