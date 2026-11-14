@@ -2371,7 +2371,7 @@ Rectangle {
                                     root.thumbsRev
                                     return fc.tabLink ? "" : backend.fileThumbnail(fc.modelData.object_url || "")
                                 }
-                                onOpenRequested: backend.openFile(fc.modelData.share_url || fc.modelData.object_url, fc.modelData.name, "")
+                                onOpenRequested: root.openFileRequested(fc.modelData)
                                 onShareRequested: root.fileCardAct(fc.modelData, "Share")
                                 onMenuRequested: anchor => root.openFileCardMenu(fc.modelData, anchor)
                                 Component.onCompleted: if (!fc.tabLink) root.cardViewsForTest[fc.modelData.object_url] = fileCard
@@ -3390,6 +3390,8 @@ Rectangle {
     // up as a Files item when its menu opens (card_item: its SharePoint
     // address and whether it is a favorite).
     signal toastRequested(var data)
+    /// Open a message's file in Teams' viewer (Main's FileViewer).
+    signal openFileRequested(var file)
     property int thumbsRev: 0
     property var cardItems: ({})
     property var cardMenuFile: null
@@ -3438,10 +3440,11 @@ Rectangle {
         if (file.object_url) backend.driveAction(root.cardTag + "card_item", "{}", JSON.stringify({ url: file.object_url }))
     }
     /// Teams' menu, its top-right under the ··· button.
-    function openFileCardMenu(file, anchor) {
+    /// `gap`: room under the button (the viewer's menu sits 4 below it).
+    function openFileCardMenu(file, anchor, gap) {
         root.cardMenuFile = file
         cardMenu.items = root.cardMenuItems(file)
-        const p = anchor.mapToItem(root, anchor.width, anchor.height)
+        const p = anchor.mapToItem(root, anchor.width, anchor.height + (gap || 0))
         cardMenu.x = Math.max(0, p.x - cardMenu.implicitWidth)
         cardMenu.y = p.y + cardMenu.implicitHeight > root.height ? Math.max(0, p.y - anchor.height - cardMenu.implicitHeight) : p.y
         cardMenu.open()

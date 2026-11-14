@@ -56,96 +56,17 @@ Item {
     Keys.onRightPressed: step(1)
 
     // The content
-    Item {
+    PreviewBody {
         id: body
         x: 0; y: 45; width: parent.width; height: parent.height - 45
-        // Text: a white page, 75% wide, the name strip and numbered lines.
-        Rectangle {
-            visible: !!root.preview && root.preview.kind === "text"
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width * 0.75; height: parent.height
-            color: "#FFFFFE"
-            Text {
-                x: 15; height: 30; verticalAlignment: Text.AlignVCenter
-                text: root.item ? root.item.name : ""
-                font.family: theme.font; font.pixelSize: 14; color: "#242424"
-            }
-            ListView {
-                id: lines
-                x: 0; y: 30; width: parent.width; height: parent.height - 30
-                clip: true
-                model: root.preview && root.preview.kind === "text" ? root.preview.text.split("\n") : []
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                delegate: Item {
-                    required property string modelData
-                    required property int index
-                    width: lines.width; height: Math.max(19, lt.implicitHeight)
-                    Text { width: 52; horizontalAlignment: Text.AlignRight; text: index + 1; font.family: theme.mono; font.pixelSize: 14; color: "#237893" }
-                    Text { id: lt; x: 72; width: parent.width - 72 - 16; text: modelData.replace(/\r$/, ""); wrapMode: Text.WrapAnywhere; font.family: theme.mono; font.pixelSize: 14; lineHeight: 19; lineHeightMode: Text.FixedHeight; color: "#000000"; textFormat: Text.PlainText }
-                }
-            }
-        }
-        // A picture, fitted.
-        Image {
-            visible: !!root.preview && root.preview.kind === "image"
-            anchors.fill: parent; anchors.margins: 24
-            source: root.preview && root.preview.kind === "image" ? root.preview.path : ""
-            fillMode: Image.PreserveAspectFit
-            asynchronous: true
-        }
-        // PDF pages (and Office files as PDF), with the status line.
-        PdfDocument { id: pdf; source: root.preview && root.preview.kind === "pdf" ? root.preview.path : "" }
-        ListView {
-            id: pages
-            visible: !!root.preview && root.preview.kind === "pdf"
-            x: 0; y: 10; width: parent.width; height: parent.height - 10 - 22
-            clip: true; spacing: 10
-            model: visible ? pdf.pageCount : 0
-            boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-            readonly property real pageWidth: Math.min(818, width - 80)
-            delegate: Item {
-                required property int index
-                width: pages.width
-                height: page.height
-                PdfPageImage {
-                    id: page
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    document: pdf
-                    currentFrame: parent.index
-                    width: pages.pageWidth
-                    height: implicitWidth > 0 ? width * implicitHeight / implicitWidth : width * 1.294
-                    sourceSize.width: width * 2
-                    fillMode: Image.PreserveAspectFit
-                    Rectangle { anchors.fill: parent; z: -1; color: "white" }
-                }
-            }
-        }
-        Rectangle {
-            visible: pages.visible
-            anchors.bottom: parent.bottom; width: parent.width; height: 22
-            color: "#2B2B2B"
-            FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 16; name: root.appIcon() }
-            Text {
-                x: 46; anchors.verticalCenter: parent.verticalCenter
-                text: "PAGE " + (Math.min(pdf.pageCount, pages.indexAt(10, pages.contentY + 10) + 1) || 1) + " OF " + pdf.pageCount
-                font.family: theme.font; font.pixelSize: 11; color: "#FFFFFF"
-            }
-            Text {
-                anchors.right: parent.right; anchors.rightMargin: 104; anchors.verticalCenter: parent.verticalCenter
-                text: "100%"
-                font.family: theme.font; font.pixelSize: 11; color: "#FFFFFF"
-            }
-        }
-        // No preview
-        Column {
-            visible: !root.loading && (!!root.error || (!!root.preview && root.preview.kind === "none"))
-            anchors.centerIn: parent; spacing: 12
-            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; size: 32; name: root.item ? root.fileIcon(root.item.kind) : "" }
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.error || "No preview available"; font.family: theme.font; font.pixelSize: 16; color: root.ink }
-        }
-        BusyIndicator { anchors.centerIn: parent; running: root.loading; visible: root.loading }
+        preview: root.preview
+        name: root.item ? root.item.name : ""
+        kind: root.item ? root.item.kind : ""
+        loading: root.loading
+        error: root.error
+        iconName: root.item ? root.fileIcon(root.item.kind) : ""
+        appIconName: root.appIcon()
+        ink: root.ink
     }
 
     // Previous / Next: 40 px circles at the edges, halfway down.
@@ -274,6 +195,6 @@ Item {
     }
     function stateForTest() {
         return { item: item ? item.name : "", loading: loading, error: error, kind: preview ? preview.kind : "",
-                 lines: preview && preview.kind === "text" ? preview.text.split("\n").length : 0, pages: pdf.pageCount, at: at, files: files.length }
+                 lines: preview && preview.kind === "text" ? preview.text.split("\n").length : 0, pages: body.pageCount, at: at, files: files.length }
     }
 }
