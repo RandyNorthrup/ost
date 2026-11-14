@@ -375,6 +375,22 @@ pub struct VideoSender {
     pub keyframe: Arc<AtomicBool>,
 }
 
+/// Teams' Efficiency mode (Settings ▸ General): "reduces processor,
+/// memory and network usage … may affect some functionality such as camera
+/// resolution". On, the camera is sent at no more than 424x240
+/// (EFFICIENT_FS macroblocks) and 300 kbit/s.
+static EFFICIENCY: AtomicBool = AtomicBool::new(false);
+const EFFICIENT_FS: u32 = (424 / 16 + 1) * (240 / 16);
+const EFFICIENT_KBPS: u32 = 300;
+
+pub fn set_efficiency(on: bool) {
+    EFFICIENCY.store(on, Ordering::Relaxed);
+}
+
+pub fn efficiency() -> bool {
+    EFFICIENCY.load(Ordering::Relaxed)
+}
+
 /// What we send: 640x360 at 15 fps, about 600 kbit/s, a keyframe every 2 s.
 pub const SEND_W: u32 = 640;
 pub const SEND_H: u32 = 360;
@@ -649,6 +665,9 @@ fn send_loop(
             0 => kbps,
             bps => kbps.min((((bps as f64 - 64_000.0) * 0.85) / 1000.0).max(50.0) as u32),
         };
+        // Efficiency mode: the camera at a lower resolution and bitrate.
+        let efficient = cfg.effects && efficiency();
+        let kbps = if efficient { kbps.min(EFFICIENT_KBPS) } else { kbps };
         // A little under the frame interval, so 15 fps cameras aren't halved.
         let min_gap = std::time::Duration::from_millis(1000 / fps as u64 * 8 / 10);
         let f = match frames.recv_timeout(std::time::Duration::from_millis(250)) {
@@ -691,6 +710,7 @@ fn send_loop(
         let (tw, th) = limits.map_or((f.width, f.height), |l| {
             fit_to_fs(f.width, f.height, l.max_fs)
         });
+        let (tw, th) = if efficient { fit_to_fs(tw, th, EFFICIENT_FS) } else { (tw, th) };
         let f = if (tw, th) != (f.width, f.height) {
             super::camera::YuvFrame {
                 width: tw,
@@ -832,6 +852,13 @@ mod tests {
                 .unwrap()
                 .1
         );
+    }
+
+    #[test]
+    fn efficiency_mode_sends_at_most_424x240() {
+        let (w, h) = fit_to_fs(640, 360, EFFICIENT_FS);
+        assert!(w <= 432 && h <= 240, "{w}x{h}");
+        assert!(w >= 400, "{w}x{h}");
     }
 
     #[test]

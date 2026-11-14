@@ -4486,6 +4486,13 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     // Teams' Secondary Ringer and "Automatically adjust mic sensitivity".
     teams_cli::calling::ringtone::set_secondary(get("secondaryRinger").filter(|d| d != "none"));
     teams_cli::calling::apm::set_auto_gain(map.get("autoGainControl").and_then(|v| v.as_str()) != Some("off"));
+    // Teams' Efficiency mode: "auto" (the default) when this device is low
+    // on resources, "on" always, "off" never.
+    teams_cli::calling::webrtc_video::set_efficiency(match map.get("efficiencyMode").and_then(|v| v.as_str()) {
+        Some("on") => true,
+        Some("off") => false,
+        _ => low_end_device(),
+    });
     // Teams' Noise suppression switch (on unless turned off).
     teams_cli::calling::apm::set_noise_level(
         if map.get("noiseSuppression").and_then(|v| v.as_str()) == Some("off") {
@@ -11123,7 +11130,7 @@ impl qobject::Backend {
         if name == "theme" {
             self.as_mut().set_theme_mode(QString::from(value.as_str()));
         }
-        if name == "micDevice" || name == "speakerDevice" || name == "secondaryRinger" || name == "autoGainControl" {
+        if ["micDevice", "speakerDevice", "secondaryRinger", "autoGainControl", "efficiencyMode"].contains(&name.as_str()) {
             apply_audio_devices(&map);
         }
         if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {
@@ -14744,5 +14751,30 @@ mod time_zone_tests {
         assert_eq!(super::zone_from_path("/usr/share/zoneinfo/America/Los_Angeles").as_deref(), Some("America/Los_Angeles"));
         assert_eq!(super::zone_from_path("../usr/share/zoneinfo/posix/Europe/Berlin").as_deref(), Some("Europe/Berlin"));
         assert_eq!(super::zone_from_path("/etc/foo"), None);
+    }
+}
+
+/// A device with few resources (Efficiency mode's "Use only when resources
+/// are low"): fewer than 4 processors or less than 8 GB of memory.
+fn low_end_device() -> bool {
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let mem_kb = std::fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|m| m.lines().find(|l| l.starts_with("MemTotal:")).and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok()))
+        .unwrap_or(u64::MAX);
+    is_low_end(cores, mem_kb)
+}
+
+fn is_low_end(cores: usize, mem_kb: u64) -> bool {
+    cores < 4 || mem_kb < 7_500_000
+}
+
+#[cfg(test)]
+mod low_end_tests {
+    #[test]
+    fn small_machines_are_low_end() {
+        assert!(super::is_low_end(2, 16_000_000));
+        assert!(super::is_low_end(8, 4_000_000));
+        assert!(!super::is_low_end(8, 31_000_000));
     }
 }

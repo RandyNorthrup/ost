@@ -250,6 +250,21 @@ Rectangle {
                 SettingsParts.Gap { size: 8 }
             }
 
+            // Teams' Efficiency mode card (measured on winpc 2026-11-14):
+            // three radios with second lines; "auto" is Teams' default.
+            SettingsParts.Card {
+                id: efficiencyCard
+                visible: root.page === "general" && !root.subPage
+                icon: "top-speed-20"; title: "Efficiency mode"
+                subtitle: "This mode reduces processor, memory and network usage and is ideal for lower performance devices or those under heavy load. Turning this on may affect some functionality such as camera resolution."
+                property string mode: root.local("efficiencyMode", "auto")
+                function pick(m) { mode = m; backend.setSetting("efficiencyMode", m) }
+                SettingsParts.RadioRow { label: "Use only when resources are low (Default)"; sublabel: "Reduce processor and memory usage when reduced resources are detected."; checked: efficiencyCard.mode === "auto"; onPicked: efficiencyCard.pick("auto") }
+                SettingsParts.RadioRow { label: "Never use efficiency mode"; sublabel: "Prioritize a richer experience, using more system resources."; checked: efficiencyCard.mode === "off"; onPicked: efficiencyCard.pick("off") }
+                SettingsParts.RadioRow { label: "Always use efficiency mode"; sublabel: "Reduce processor and memory use at all times."; checked: efficiencyCard.mode === "on"; onPicked: efficiencyCard.pick("on") }
+                SettingsParts.Gap { size: 8 }
+            }
+
             // ---- General ▸ Out of office ----
             OofPage {
                 id: oofPage
