@@ -4480,6 +4480,9 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
             .map(str::to_string)
     };
     teams_cli::calling::audio::set_preferred_devices(get("micDevice"), get("speakerDevice"));
+    // Teams' Secondary Ringer and "Automatically adjust mic sensitivity".
+    teams_cli::calling::ringtone::set_secondary(get("secondaryRinger").filter(|d| d != "none"));
+    teams_cli::calling::apm::set_auto_gain(map.get("autoGainControl").and_then(|v| v.as_str()) != Some("off"));
     // Teams' Noise suppression switch (on unless turned off).
     teams_cli::calling::apm::set_noise_level(
         if map.get("noiseSuppression").and_then(|v| v.as_str()) == Some("off") {
@@ -11113,7 +11116,7 @@ impl qobject::Backend {
         if name == "theme" {
             self.as_mut().set_theme_mode(QString::from(value.as_str()));
         }
-        if name == "micDevice" || name == "speakerDevice" {
+        if name == "micDevice" || name == "speakerDevice" || name == "secondaryRinger" || name == "autoGainControl" {
             apply_audio_devices(&map);
         }
         if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {

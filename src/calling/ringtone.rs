@@ -25,22 +25,43 @@ pub struct Ringtone {
     stop: Arc<AtomicBool>,
 }
 
+/// Teams' Secondary Ringer: another output device that rings too (its
+/// name), or `None`.
+static SECONDARY: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+pub fn set_secondary(device: Option<String>) {
+    *SECONDARY.write().unwrap() = device;
+}
+
+pub fn secondary() -> Option<String> {
+    SECONDARY.read().unwrap().clone()
+}
+
 impl Ringtone {
-    /// Start ringing; `None` if there is no output device.
+    /// Start ringing (on the speaker, and on the Secondary Ringer when one
+    /// is chosen); `None` if there is no output device.
     pub fn start() -> Option<Self> {
-        let (playback, tx) = AudioPlayback::start()?;
         let stop = Arc::new(AtomicBool::new(false));
-        let flag = stop.clone();
-        std::thread::spawn(move || {
-            let _playback = playback;
-            while !flag.load(Ordering::Relaxed) {
-                for frame in ring_cycle() {
-                    if flag.load(Ordering::Relaxed) || tx.send(frame).is_err() {
-                        return;
+        let main = AudioPlayback::start();
+        let second = secondary()
+            .filter(|d| Some(d.as_str()) != super::audio::preferred_devices().1.as_deref())
+            .and_then(|d| AudioPlayback::start_on(&d));
+        if main.is_none() && second.is_none() {
+            return None;
+        }
+        for (playback, tx) in [main, second].into_iter().flatten() {
+            let flag = stop.clone();
+            std::thread::spawn(move || {
+                let _playback = playback;
+                while !flag.load(Ordering::Relaxed) {
+                    for frame in ring_cycle() {
+                        if flag.load(Ordering::Relaxed) || tx.send(frame).is_err() {
+                            return;
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
         Some(Self { stop })
     }
 }

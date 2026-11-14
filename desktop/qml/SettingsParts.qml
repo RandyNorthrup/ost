@@ -191,17 +191,19 @@ Item {
         property string label
         property string sublabel
         property bool checked
+        /// Off: Teams' disabled radio (#BDBDBD).
+        property bool usable: true
         signal picked()
         width: parent ? parent.width : 0
         height: sublabel ? 48 : 32
-        Dot { y: 8; checked: rr.checked; hovered: rh.hovered }
+        Dot { y: 8; checked: rr.checked; hovered: rh.hovered; opacity: rr.usable ? 1 : 0.4 }
         Column {
             x: 28; y: 6; width: parent.width - 28
-            Text { width: parent.width; text: rr.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: rr.checked || rh.hovered ? theme.text : theme.textSecondary }
-            Text { visible: !!rr.sublabel; width: parent.width; text: rr.sublabel; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            Text { width: parent.width; text: rr.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: !rr.usable ? theme.disabled : rr.checked || rh.hovered ? theme.text : theme.textSecondary }
+            Text { visible: !!rr.sublabel; width: parent.width; text: rr.sublabel; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: rr.usable ? theme.textSecondary : theme.disabled }
         }
-        HoverHandler { id: rh; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: rr.picked() }
+        HoverHandler { id: rh; enabled: rr.usable; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: rr.usable; onTapped: rr.picked() }
         Accessible.role: Accessible.RadioButton
         Accessible.name: label
         Accessible.checked: checked

@@ -342,6 +342,16 @@ impl AudioPlayback {
 
     /// The same for mono frames at `rate` Hz.
     pub fn start_at(call_rate: u32) -> Option<(Self, mpsc::SyncSender<Vec<i16>>)> {
+        Self::start_with(call_rate, None)
+    }
+
+    /// Play on the output device named `device` (Teams' Secondary Ringer),
+    /// at the usual frame rate; `None` if it isn't there.
+    pub fn start_on(device: &str) -> Option<(Self, mpsc::SyncSender<Vec<i16>>)> {
+        Self::start_with(TARGET_RATE, Some(device.to_string()))
+    }
+
+    fn start_with(call_rate: u32, device: Option<String>) -> Option<(Self, mpsc::SyncSender<Vec<i16>>)> {
         let (frame_tx, frame_rx) = mpsc::sync_channel::<Vec<i16>>(50);
         let (keep_tx, keep_rx) = mpsc::channel::<()>();
 
@@ -388,7 +398,7 @@ impl AudioPlayback {
         thread::spawn(move || {
             loop {
                 let generation = GENERATION.load(std::sync::atomic::Ordering::SeqCst);
-                let Some(stream) = open_playback(ring.clone(), device_rate.clone(), call_rate) else {
+                let Some(stream) = open_playback(ring.clone(), device_rate.clone(), call_rate, device.as_deref()) else {
                     if !park_until_switch(&keep_rx, generation) {
                         return;
                     }
@@ -509,15 +519,21 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
     Some(stream)
 }
 
-/// Open the chosen (else default) speaker, draining `ring` (filled at the
-/// rate stored in `device_rate`) with the call's volume applied.
+/// Open the chosen (else default) speaker, or the output named `only`,
+/// draining `ring` (filled at the rate stored in `device_rate`) with the
+/// call's volume applied.
 fn open_playback(
     ring: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<i16>>>,
     device_rate: std::sync::Arc<std::sync::atomic::AtomicU32>,
     target: u32,
+    only: Option<&str>,
 ) -> Option<cpal::Stream> {
     let host = cpal::default_host();
-    let Some(device) = pick_device(&host, false) else {
+    let device = match only {
+        Some(name) => endpoints(&host, false).into_iter().find(|d| device_name(d).as_deref() == Some(name)),
+        None => pick_device(&host, false),
+    };
+    let Some(device) = device else {
         tracing::warn!("No audio output device found — speaker playback disabled");
         return None;
     };

@@ -125,6 +125,19 @@ pub fn set_music_mode(on: bool, echo_cancellation: bool) {
     reconfigure();
 }
 
+static AUTO_GAIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Teams' "Automatically adjust mic sensitivity" (automatic gain control,
+/// on unless turned off).
+pub fn set_auto_gain(on: bool) {
+    AUTO_GAIN.store(on, std::sync::atomic::Ordering::Relaxed);
+    reconfigure();
+}
+
+pub fn auto_gain() -> bool {
+    AUTO_GAIN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The processing the settings call for: (echo, noise, gain).
 fn wanted() -> (bool, NoiseLevel, bool) {
     if music_mode() {
@@ -132,7 +145,7 @@ fn wanted() -> (bool, NoiseLevel, bool) {
         // when music mode starts, and lets you turn it back on).
         (MUSIC_ECHO.load(std::sync::atomic::Ordering::Relaxed), noise_level(), false)
     } else {
-        (true, noise_level(), true)
+        (true, noise_level(), auto_gain())
     }
 }
 

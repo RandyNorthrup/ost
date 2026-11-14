@@ -568,32 +568,94 @@ Rectangle {
                 }
             }
 
-            // ---- Devices (OST's own for now) ----
+            // ---- Devices: Audio (Teams' Settings ▸ Devices, measured on
+            // winpc 2026-11-14) ----
+            // "Audio" (14/700) over the "Audio settings" card: Speaker and
+            // Microphone (292.7 px dropdowns), Automatically adjust mic
+            // sensitivity, a divider, Noise suppression with its two
+            // choices (Voice isolation needs Microsoft's voice profile, so
+            // Teams shows it disabled), a divider and Secondary Ringer.
+            // Teams' "Sync device buttons" (headset HID buttons), "Make a
+            // test call" (TASK-0141), Spatial audio (OST can't render it)
+            // and the Devices section (Teams Rooms' connected devices) aren't
+            // offered.
+            Text {
+                visible: root.page === "devices"
+                width: parent.width; height: 44
+                verticalAlignment: Text.AlignVCenter
+                text: "Audio"
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
             SettingsParts.Card {
                 id: devices
                 visible: root.page === "devices"
-                icon: "headset-20"; title: "Audio devices"
-                subtitle: "Used for calls you start or answer after changing them."
+                icon: "speaker-settings-20"; title: "Audio settings"
                 readonly property var list: root.page === "devices" ? JSON.parse(backend.audioDevices()) : { inputs: [], outputs: [] }
+                property bool noise: root.local("noiseSuppression", "on") !== "off"
                 SettingsParts.SubHeading { text: "Speaker" }
-                SettingsParts.Gap { size: 8 }
+                SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
-                    width: 360
+                    width: 292.7; height: 30
                     readonly property var values: ["default"].concat(devices.list.outputs)
                     options: values.map(v => ({ label: v === "default" ? "Default" : v }))
                     current: Math.max(0, values.indexOf(root.local("speakerDevice", "default")))
                     accessibleName: "Speaker"
                     onPicked: i => backend.setSetting("speakerDevice", values[i])
                 }
-                SettingsParts.SubHeading { text: "Microphone"; gapAbove: 16 }
-                SettingsParts.Gap { size: 8 }
+                SettingsParts.Gap { size: 30.7 }
+                SettingsParts.SubHeading { text: "Microphone" }
+                SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
-                    width: 360
+                    width: 292.7; height: 30
                     readonly property var values: ["default"].concat(devices.list.inputs)
                     options: values.map(v => ({ label: v === "default" ? "Default" : v }))
                     current: Math.max(0, values.indexOf(root.local("micDevice", "default")))
                     accessibleName: "Microphone"
                     onPicked: i => backend.setSetting("micDevice", values[i])
+                }
+                SettingsParts.Gap { size: 22 }
+                SettingsParts.SwitchRow {
+                    id: agcRow
+                    label: "Automatically adjust mic sensitivity"
+                    on: root.local("autoGainControl", "on") !== "off"
+                    onToggled: v => { backend.setSetting("autoGainControl", v ? "on" : "off"); agcRow.on = v }
+                }
+                SettingsParts.Gap { size: 8 }
+                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D") }
+                SettingsParts.Gap { size: 22 }
+                SettingsParts.SwitchRow {
+                    label: "Noise suppression"
+                    on: devices.noise
+                    onToggled: v => { devices.noise = v; backend.setNoiseSuppression(v) }
+                }
+                SettingsParts.RadioRow {
+                    label: "Background noise only"
+                    sublabel: "Enable this to enhance your microphone audio quality by removing background noise."
+                    checked: true
+                    usable: devices.noise
+                }
+                SettingsParts.Gap { size: 4 }
+                SettingsParts.RadioRow {
+                    label: "Voice isolation"
+                    sublabel: "Isolate your voice from background noise and other voices while speaking. Only your voice will be audible."
+                    checked: false
+                    usable: false
+                }
+                SettingsParts.Gap { size: 24 }
+                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D") }
+                SettingsParts.Gap { size: 30 }
+                SettingsParts.SubHeading { text: "Secondary Ringer" }
+                SettingsParts.Gap { size: 16.7 }
+                OutlineDropdown {
+                    width: 292.7; height: 30
+                    readonly property var values: ["none"].concat(devices.list.outputs)
+                    options: values.map(v => ({ label: v === "none" ? "None" : v }))
+                    current: Math.max(0, values.indexOf(root.local("secondaryRinger", "none")))
+                    accessibleName: "Secondary Ringer"
+                    onPicked: i => backend.setSetting("secondaryRinger", values[i])
                 }
                 SettingsParts.Gap { size: 8 }
             }
