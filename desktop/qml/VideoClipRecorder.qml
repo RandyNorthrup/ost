@@ -600,7 +600,8 @@ Popup {
             toolWidth: 59; leftHalf: true
             icon: rec.cameraOn ? "video-20" : "video-off-20"
             label: "Camera"; spoken: rec.cameraOn ? "Camera is on" : "Camera is off"
-            off: !rec.cameraOn
+            // (Teams marks it off only before recording.)
+            off: !rec.cameraOn && !rec.live
             onClicked: rec.cameraOn = !rec.cameraOn
         }
         Chevron {
@@ -869,7 +870,7 @@ Popup {
         bottomLeftRadius: 8; bottomRightRadius: 8
         Row {
             x: 16; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 16; color: theme.textStrong }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16-regular"; size: 16; color: theme.textStrong }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Only people in this chat can view your clip. By creating a clip, you’re consenting to be recorded. <a href=\"https://go.microsoft.com/fwlink/p/?linkid=857875\">Privacy statement</a>"
@@ -918,6 +919,12 @@ Popup {
             return l.x + l.w * at.offset / Math.max(1, len)
         }
         readonly property real headX: trimSeg ? timelineX(player.position) : timelineX(rec.playhead)
+        property bool stripHovered: false
+        // The strip's area (hover shows the playhead's time).
+        Item {
+            x: reviewUi.stripX - 8; y: 430; width: reviewUi.stripW + 16; height: 52
+            HoverHandler { onHoveredChanged: reviewUi.stripHovered = hovered }
+        }
         SquareButton {
             x: 100.8; y: 442.9; height: 32
             icon: rec.playing ? "pause-20" : "play-20"
@@ -991,7 +998,10 @@ Popup {
         // The playhead and its time (m:ss:cc).
         Rectangle { visible: !reviewUi.trimSeg || true; x: reviewUi.headX - 1.5; y: 438.9; width: 3; height: 40; radius: 1.5; color: theme.brand }
         Rectangle { x: reviewUi.headX - 6; y: 432; width: 12; height: 12; radius: 6; color: theme.brand }
+        // The playhead's time shows while it plays, or while the pointer is
+        // on the strip (Teams).
         Rectangle {
+            visible: rec.playing || reviewUi.stripHovered || reviewUi.trimSeg !== null
             x: reviewUi.headX - width / 2; y: 400
             width: headTime.implicitWidth + 16; height: 28; radius: 4
             color: theme.surface; border.color: theme.stroke; border.width: 0.67

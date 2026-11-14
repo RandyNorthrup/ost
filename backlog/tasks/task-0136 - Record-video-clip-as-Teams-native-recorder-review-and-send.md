@@ -1,11 +1,11 @@
 ---
 id: TASK-0136
 title: 'Record video clip as Teams: native recorder, review and send'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-14T09:43:00Z'
-updated_date: '2026-11-14T16:35:00Z'
+updated_date: '2026-11-14T16:48:00Z'
 labels:
   - messages
   - video
@@ -27,7 +27,7 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - [x] #3 Review your clips: playback with the filmstrip and time, Delete clip, Download recording, Back, and Continue putting the clip in the compose box (Processing…, then Teams' card with Remove video clip)
 - [x] #4 Sending stores the clip in the media store and sends Teams' AMSVideo message; Teams shows and plays it
 - [x] #5 Review editing as Teams: Trim, Split, Record more and Music
-- [ ] #6 Verified side by side with Teams on winpc
+- [x] #6 Verified side by side with Teams on winpc
 - [x] #7 Pausing a screen recording keeps its video and sound in step
 - [x] #8 Script (teleprompter) as Teams: type or paste, play/scroll by words per minute, font size, speed, move and resize
 <!-- AC:END -->
@@ -51,4 +51,31 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - 2026-11-14 Script: Stream's teleprompter measured (panel, controls, 24-64 font, 50-400 wpm vertical slider) and its timing read from 288.js (linear scroll over words/wpm minutes; word marker timed by letters, +5 after punctuation). Built in VideoClipRecorder.qml, over the picture and not recorded; font size and speed kept in OST's settings. Verified with --teleprompter-test on linuxlt.
 
 - 2026-11-14 screen pause: screen mode now records through ClipFrames (the picture, as Record audio does) instead of Qt's screen MediaRecorder, whose clock ran on through a pause. Verified locally on Hyprland (kitty test window via the portal picker, with a pause): video 10.05 s, audio 9.98 s, 1280x720. Record audio still 11.9 s on linuxlt. This path also carries what TASK-0137 will draw over the screen.
+
+- 2026-11-14 side by side (Teams on winpc vs OST on linuxlt, same states: Record audio, Screen recording, Script, recording, paused, review, split, music, close question). Fixed from it: the consent strip's info icon is the outlined one; Camera's off shading shows only before recording; the playhead's time shows only while playing or with the pointer on the strip.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST records video clips natively, as Teams' "+" ▸ Record video clip (and a clip's "Reply with a video clip") does. Teams runs Microsoft Stream's recorder, which only Microsoft's sites may frame.
+
+Changes:
+- desktop/qml/VideoClipRecorder.qml (new): Teams' recorder at its measured layout.
+  - Modes: camera, Record audio and Screen, with the camera and mic menus.
+  - Recording: the pill (pause, record again, the 5:00 left across all parts) and the close question.
+  - Review: the strip of parts with Split, Delete clip, Rearrange, Trim and Record more; Music (Stream's 24 tracks, looped at a level, 15 at first).
+  - Script: Stream's teleprompter.
+- desktop/src/clipframes.cpp + clip_frames.rs: records what the recorder's picture shows (Record audio, Screen) through QVideoFrameInput. Camera mode uses Qt's MediaRecorder at full rate. Works around three Qt 6.10 quirks (muxer needs audio, encoder needs a pause/resume, frames timed by count).
+- desktop/src/clipedit.cpp + clip_edit.rs, api::video_clips::edit_graph: an edited clip is rendered with FFmpeg (cut, joined, music mixed) into one 1280x720 H.264/AAC MP4. Only the finished clip is uploaded, never cut-out footage.
+- api: video_clips::{upload, clip_html, new_card_id, fetch_music}; client.ams_upload_video (sharing/videototranscode + thumbnail/original/transcript_info); Outgoing.ams_references.
+- Compose: the clip card ("Processing...", Remove video clip, Re-upload video clip); send_with_clip sends Teams' AMSVideo element and amsreferences.
+- Docs: spec §17 (the recorder, editing, music, Script); docs/desktop.md lists FFmpeg's libraries and Qt Multimedia.
+
+Tests:
+- cargo test --lib (505), incl. a_recorded_clip_is_sent_as_teams_sends_it and edits_render_as_one_clip.
+- Harnesses on linuxlt: --recorder-test [--recorder-camera], --recorder-edit-test, --teleprompter-test. Screen mode tested locally through the Hyprland portal picker, sharing a kitty test window.
+- Sent and played in Teams on winpc: OST TEST 136 (Record audio), 137 (camera, test pattern), 138 (edited, with music).
+
+Follow-ups: Backdrop and the Effects menu (Text, Draw, Stickers, Filter, Frame, Board, Photo) are TASK-0137.
+<!-- SECTION:FINAL_SUMMARY:END -->
