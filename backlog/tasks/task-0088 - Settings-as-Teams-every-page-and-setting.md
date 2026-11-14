@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-14T21:59:00Z'
+updated_date: '2026-11-14T22:21:00Z'
 labels:
   - desktop
   - settings
@@ -34,4 +34,7 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - 2026-11-13: App permissions built (measured on winpc): the list by Teams' installedAppsPermissions rule (personal entitlements + every app in your teams' entitlements + changed apps, with device permissions; app_details::permission_apps — OST Test 1 gets Teams' exact 22), Teams' card/expander layout, switches kept on the device via the existing appDevicePermissions store (no Teams request on flip). Recognition (voice/face enrolment) split to TASK-0134. Harness --app-permissions-test; settings-pages harness includes the page.
 
 - 2026-11-14 Devices page as Teams (measured on winpc by DOM; the page's camera preview was never screenshotted): Audio section ("Audio settings": Speaker, Microphone, Automatically adjust mic sensitivity → apm::set_auto_gain, Noise suppression with Background noise only / Voice isolation (disabled, needs Microsoft's voice profile), Secondary Ringer → ringtone::set_secondary rings a second output device) and Video section ("Video settings": preview with Teams' bar, Camera, Green Screen, Mirror my video, Adjust brightness, Soft focus; from TASK-0139). Not offered: Sync device buttons (headset HID), Make a test call (TASK-0141), Spatial audio (no renderer), Devices section (Teams Rooms connected devices / meeting room mode).
+
+- 2026-11-14 General page, part 1 (Teams measured on winpc): Meeting card with "Ask me to confirm when I leave a meeting" (client preference meeting.enableLeaveConfirmationDialog → local setting leaveConfirmation) and Teams' Stay/Leave popover under Leave (also for Ctrl+Shift+H); Time zone card (the system's IANA zone). Verified with --leave-confirm-test in a Meet now.
+- General page still to do (storage found in Teams' settings bundle): Starting chats (userPersonalSettings.messagingSettings.alwaysPopOutNewChat; needs a new-chat window), the existing "Opening content" setting's behaviour (client preference windowing.shouldOpenContentInNewWindow; currently saved only), Language and regional formats (locale user property + host formatting locale), Translation (translationSettings V2: targetLanguageCode, translationMode SUGGEST/ALWAYS/NEVER, knownLanguages — not stored in user properties when changed on winpc; service still to find), Editor spellcheck (Manage), Keyboard shortcuts profile (keyboardShortcutsSettings), Use Enter or Spacebar to show content (messagingSettings.disableAutomaticConvSwitchOnKeyboardNav; OST's chat list needs arrow-key navigation first), Efficiency mode (client preference optimizedPerf). New meeting controls switches Teams to another toolbar (not measured). Teams' call quality survey after leaving was captured (scratchpad callsurvey-dom.txt / callsurvey.png) for TASK-0104.
 <!-- SECTION:NOTES:END -->

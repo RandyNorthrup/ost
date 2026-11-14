@@ -386,6 +386,11 @@ Window {
     function toggleFullScreen() { visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
     /// The open side pane: "", "chat" or "people".
     property string side: ""
+    /// Leave, asking first when Settings ▸ General says to (meetings).
+    function leaveAsked() {
+        if (win.meeting && backend.setting("leaveConfirmation") === "true") leaveConfirm.open()
+        else win.leave()
+    }
     /// The effects pane's "Green screen settings" (Main shows Settings ▸
     /// Devices).
     signal greenScreenSettings()
@@ -1023,8 +1028,53 @@ Window {
                 split: win.meeting && win.leaveItems.length > 1
                 chevronLabel: "More options"
                 chevronChecked: leaveMenu.visible
-                onClicked: win.heldMeeting ? win.leaveRoom(true) : win.leave()
+                onClicked: win.heldMeeting ? win.leaveRoom(true) : win.leaveAsked()
                 onChevronClicked: leaveMenu.open()
+            }
+        }
+        // Teams' "Ask me to confirm when I leave a meeting" (Settings ▸
+        // General; measured on winpc 2026-11-14): a 287.3 x 156 surface
+        // right-aligned under Leave, 5.3 below it, padding 23.7: "Are you
+        // sure you want to leave?" (14 px), then Stay (secondary) and Leave
+        // (#C50F1F), 240 x 31.3 each, 8 apart.
+        Popup {
+            id: leaveConfirm
+            parent: Overlay.overlay
+            width: 287.3; height: 156; padding: 23.7
+            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+            onAboutToShow: {
+                const p = leaveButton.mapToItem(Overlay.overlay, leaveButton.width, leaveButton.height)
+                x = p.x - width; y = p.y + 5.3
+            }
+            Column {
+                spacing: 0
+                Text {
+                    width: 240; height: 20; verticalAlignment: Text.AlignVCenter
+                    text: "Are you sure you want to leave?"
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                }
+                Item { width: 1; height: 18 }
+                Rectangle {
+                    width: 240; height: 31.3; radius: 4
+                    color: stayHover.hovered ? theme.menuHover : theme.surface
+                    border.color: theme.stroke; border.width: 0.67
+                    Text { anchors.centerIn: parent; text: "Stay"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    HoverHandler { id: stayHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: leaveConfirm.close() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Stay"
+                }
+                Item { width: 1; height: 8 }
+                Rectangle {
+                    width: 240; height: 31.3; radius: 4
+                    color: goHover.hovered ? "#A80C1A" : "#C50F1F"
+                    Text { anchors.centerIn: parent; text: "Leave"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                    HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { leaveConfirm.close(); win.leave() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Leave"
+                }
             }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }

@@ -870,6 +870,9 @@ pub mod qobject {
         /// WebSocket with a secret path).
         #[qinvokable]
         fn video_filter_socket(self: Pin<&mut Backend>) -> QString;
+        /// The system's time zone (IANA name, "America/Los_Angeles").
+        #[qinvokable]
+        fn time_zone_name(self: Pin<&mut Backend>) -> QString;
         /// Green Screen's colour picking: your preview without effects.
         #[qinvokable]
         fn set_green_screen_picking(self: Pin<&mut Backend>, on: bool);
@@ -5393,6 +5396,10 @@ impl qobject::Backend {
 
     pub fn set_video_filter_active(self: Pin<&mut Self>, on: bool) {
         ost_vfx::filter::set_active(on);
+    }
+
+    pub fn time_zone_name(self: Pin<&mut Self>) -> QString {
+        QString::from(system_time_zone().as_str())
     }
 
     pub fn set_green_screen_picking(self: Pin<&mut Self>, on: bool) {
@@ -14707,4 +14714,35 @@ fn office_app() -> Option<(String, String)> {
         Some((id, name))
     })
     .clone()
+}
+
+/// The system's time zone as an IANA name: $TZ, else /etc/localtime's
+/// target under zoneinfo, else /etc/timezone, else "UTC".
+fn system_time_zone() -> String {
+    if let Ok(tz) = std::env::var("TZ")
+        && !tz.is_empty()
+    {
+        return tz.trim_start_matches(':').to_string();
+    }
+    if let Ok(target) = std::fs::read_link("/etc/localtime")
+        && let Some(name) = zone_from_path(&target.to_string_lossy())
+    {
+        return name;
+    }
+    std::fs::read_to_string("/etc/timezone").map(|s| s.trim().to_string()).ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "UTC".into())
+}
+
+/// ".../zoneinfo/America/Los_Angeles" → "America/Los_Angeles".
+fn zone_from_path(p: &str) -> Option<String> {
+    p.split_once("zoneinfo/").map(|(_, z)| z.trim_start_matches("posix/").to_string()).filter(|z| !z.is_empty())
+}
+
+#[cfg(test)]
+mod time_zone_tests {
+    #[test]
+    fn zone_names_come_from_the_zoneinfo_link() {
+        assert_eq!(super::zone_from_path("/usr/share/zoneinfo/America/Los_Angeles").as_deref(), Some("America/Los_Angeles"));
+        assert_eq!(super::zone_from_path("../usr/share/zoneinfo/posix/Europe/Berlin").as_deref(), Some("Europe/Berlin"));
+        assert_eq!(super::zone_from_path("/etc/foo"), None);
+    }
 }

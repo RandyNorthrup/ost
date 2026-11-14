@@ -198,6 +198,27 @@ Rectangle {
                     SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
                 }
             }
+            // Teams' Meeting card. Its "New meeting controls" switches Teams
+            // to a different meeting toolbar; OST has Teams' current one.
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "video-20"; title: "Meeting"
+                SettingsParts.SwitchRow {
+                    id: leaveRow
+                    label: "Ask me to confirm when I leave a meeting"
+                    on: root.local("leaveConfirmation", "false") === "true"
+                    onToggled: v => { backend.setSetting("leaveConfirmation", v ? "true" : "false"); leaveRow.on = v }
+                }
+            }
+            // Teams' Time zone card (its "Manage Windows settings" link is
+            // Windows' own).
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "globe-20"; title: "Time zone"
+                subtitle: "You can adjust the time zone from your OS settings."
+                SettingsParts.SubHeading { text: "Current time zone: " + backend.timeZoneName() }
+                SettingsParts.Gap { size: 8 }
+            }
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "calendar-arrow-right-20"; title: "Out of office"
