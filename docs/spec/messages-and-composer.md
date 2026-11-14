@@ -1097,6 +1097,32 @@ Groups are separated by dividers; empty groups are skipped.
   - OST draws the row 8 above the compose box.
 - **Not in OST:** the "Share file" (file_sharing), meeting, workflow, app and Viva Topics suggestions, and the feedback button.
 
+### A video clip in a message (measured on winpc, 2026-11-14, OST TEST 135)
+Teams' "+" ▸ Record video clip embeds Microsoft Stream's recorder
+(`{OneDrive}/_layouts/15/StreamCameraEmbed.aspx?channelId=…&referrerScenario=Chat-Compose&captureMode=camera`).
+It hands the recording (WebM) to Teams, which stores it in the media store and sends it.
+- **Storing it:**
+  - `POST {asyncgw}/v1/objects/` `{type: "sharing/videototranscode", permissions: {<chat>: ["read"]}, sharingMode: "Unknown"}`;
+  - then `PUT …/content/thumbnail` (JPEG), `…/content/original` (the WebM) and `…/content/transcript_info` (the body is the text `transcript_info`).
+  - The store transcodes the clip. `…/views/video` becomes an H.264 MP4, and `…/views/video.mpd` a DASH manifest with renditions `video_original` (720p), `video_480p`, `video_360p` and `video_cellular`. Each rendition is `…/views/{rendition}/videoSegment/0` (init) followed by segments 1…n.
+  - `…/views/thumbnail` is the poster, and `…/views/video/status` reports readiness.
+- **The message:** `<p>&nbsp;</p><video src="https://us-api.asm.skype.com/v1/objects/{id}/views/video" cardId="…" itemscope itemtype="http://schema.skype.com/AMSVideo" data-duration="PT16.309S" width="1280" height="720">Video-Clip</video>` followed by the text, with `amsreferences: [id]`.
+- **Card** (`video-placeholder`):
+  - It has the clip's shape, 400 wide at most (400 × 225), rounded 4, with 2 px margins at top, bottom and start. The empty first paragraph is drawn as a 20 px line above it.
+  - Play circle: 48 px, black at 40 %, 12 in from left and bottom (aria "Play video. 16 seconds long").
+  - Length pill: 14 px white on black at 40 %, padding 5/8, rounded 4, 12 in from right and bottom.
+  - Hovering adds Options (32 × 30, black at 40 %, 12 in at the top right). Its menu is "Download video", which saves `…/views/video` as "MicrosoftTeams-video".
+- **Player** (Teams' media player, inline):
+  - Progress bar: 384 × 12, 8 in, 4 above the buttons.
+  - Buttons: 32 px, 8 from the bottom.
+    - From the left: Play/Pause, Skip 10 seconds backward, Skip 10 seconds forward, and sound ("This video has no sound" when it has none).
+    - From the right, 8 in: closed captions ("This video doesn't contain closed captions."), Playback speed ("1x"), Playback options, Full screen.
+  - Menus: #292827 at 80 %, rounded 2, padding 3, 32 px rows of white 14 px text, 20 above the buttons, no taller than the room above (the rest scrolls; Speed is 88.7 × 157).
+    - Speed: 2x, 1.8x, 1.5x, 1.2x, 1x, 0.8x.
+    - Playback options (269 wide): Quality ▸ (Auto and the renditions) and Keyboard shortcuts.
+  - Keyboard shortcuts: a white panel ("Keyboard shortcuts", Close) with a two-column table (Alt + K play/pause, Esc, Alt + Enter full screen, Alt + M mute, Alt + ↑/↓ volume, Alt + X/Z speed, Alt + L/J ±10 s, Alt + →/← ±15 s, Alt + 0–9, Alt + G, and the captions, audio-track and noise-suppression rows).
+- **End screen:** the poster dimmed and blurred, then "Reply with a video clip" (brand, 31.3 tall) and, 10 under it, "Play again" with the replay icon.
+
 ## 18. Delivery options, schedule send, Enter, limits
 - **Delivery options** (648927, 871091):
 

@@ -131,7 +131,8 @@ meetings, transfer, hold and the dial pad. Their buttons are shown disabled rath
 ## Build
 
 Requirements: Rust (stable), Qt 6.9 or newer (developed on 6.11) with
-Qt Quick, Qt Quick Controls and Qt WebEngine (embedded apps), a C++
+Qt Quick, Qt Quick Controls, Qt Multimedia (video clips in messages) and
+Qt WebEngine (embedded apps), a C++
 compiler and CMake (for CXX-Qt),
 the ALSA development files (calls), NASM (openh264, video), and the
 PipeWire development files plus clang (screen sharing; at run time an
@@ -139,11 +140,11 @@ xdg-desktop-portal backend for your desktop).
 
 ```bash
 # Arch
-sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-webengine alsa-lib cmake nasm \
+sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-multimedia qt6-webengine alsa-lib cmake nasm \
   pipewire clang xdg-desktop-portal
 # Debian / Ubuntu
 sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-qtquick-controls \
-  qml6-module-qtquick-window libqt6svg6 qt6-webengine-dev qml6-module-qtwebengine \
+  qml6-module-qtquick-window libqt6svg6 qml6-module-qtmultimedia qt6-webengine-dev qml6-module-qtwebengine \
   libasound2-dev cmake nasm libpipewire-0.3-dev clang xdg-desktop-portal
 
 cargo build --release -p ost-desktop

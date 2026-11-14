@@ -403,6 +403,10 @@ Rectangle {
         else Qt.openUrlExternally(link)
     }
     signal scheduleMeeting()
+    /// A clip's "Reply with a video clip": record one for this chat (only
+    /// offered once OST can record clips).
+    signal replyWithVideoClip()
+    property bool canRecordClips: false
     /// The header's More chat options: Open in new window (Ctrl+O), Share
     /// screen (Ctrl+Shift+E: a call to the chat, sharing once it connects)
     /// and a meeting chat's Report a concern.
@@ -2147,7 +2151,7 @@ Rectangle {
                     x: bubble.pad; y: bubble.picsTop
                     spacing: bubble.inFlow ? 0 : 4
                     Repeater {
-                        model: bubble.inFlow ? bubble.flow.map(p => p.pic !== undefined ? bubble.imgs[p.pic] : p.quote !== undefined ? { flowQuote: p.quote } : p.code ? { flowCode: p.code } : { flowText: p.html }) : bubble.imgs
+                        model: bubble.inFlow ? bubble.flow.map(p => p.pic !== undefined ? bubble.imgs[p.pic] : p.video !== undefined ? { flowVideo: (msg.modelData.videos || [])[p.video] || {} } : p.quote !== undefined ? { flowQuote: p.quote } : p.code ? { flowCode: p.code } : { flowText: p.html }) : bubble.imgs
                         Item {
                             id: part
                             required property var modelData
@@ -2155,15 +2159,31 @@ Rectangle {
                             readonly property bool isText: modelData.flowText !== undefined
                             readonly property bool isQuote: modelData.flowQuote !== undefined
                             readonly property bool isCode: modelData.flowCode !== undefined
-                            readonly property bool isPic: !isText && !isQuote && !isCode
+                            readonly property bool isVideo: modelData.flowVideo !== undefined
+                            readonly property bool isPic: !isText && !isQuote && !isCode && !isVideo
                             readonly property bool richText: isText && /line-height:|<h[123]>|<hr|<table/.test(modelData.flowText)
                             // Teams: a picture after text or another picture
                             // sits 4 below it (the GIF's margin); text follows
                             // a picture directly; a code card 6 under text.
-                            readonly property real gap: !bubble.inFlow ? 0 : isPic && (index > 0 || bubble.showBody) ? 4 : isCode && (index > 0 || bubble.showBody) ? 6 : 0
-                            width: isText ? flowText.width : isQuote ? quoteBox.width : isCode ? codeCard.width : pic.width
+                            readonly property real gap: !bubble.inFlow ? 0 : isVideo ? 2 : isPic && (index > 0 || bubble.showBody) ? 4 : isCode && (index > 0 || bubble.showBody) ? 6 : 0
+                            width: isText ? flowText.width : isQuote ? quoteBox.width : isCode ? codeCard.width : isVideo ? (clipCard.item ? 2 + clipCard.item.width : 0) : pic.width
                             height: gap + (isText ? (richText ? flowText.contentHeight : Math.max(1, flowText.lineCount) * 20)
-                                : isQuote ? 7 + quoteBox.height + 7 : isCode ? codeCard.height : pic.height)
+                                : isQuote ? 7 + quoteBox.height + 7 : isCode ? codeCard.height : isVideo ? (clipCard.item ? clipCard.item.height + 2 : 0) : pic.height)
+                            // A video clip (Teams' video message), its player
+                            // made only for clips; Teams gives it 2 px
+                            // margins (top, bottom and start).
+                            Loader {
+                                id: clipCard
+                                x: 2; y: part.gap
+                                active: part.isVideo
+                                sourceComponent: VideoClipCard {
+                                    clip: part.modelData.flowVideo
+                                    maxWidth: msg.maxBubble - 2 * bubble.pad - 2
+                                    background: bubble.bare ? root.color : bubble.color
+                                    canReply: root.canRecordClips
+                                    onReplyWithClip: root.replyWithVideoClip()
+                                }
+                            }
                             // Teams' quote: white, a #D1D1D1 hairline, rounded
                             // 4, 7/15 in, a 2.67 bar 3 in; 7 above and below.
                             Rectangle {

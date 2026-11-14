@@ -123,6 +123,7 @@ fn main() {
         "qml/ChannelEmailDialog.qml",
         "qml/ChannelWindow.qml",
         "qml/WorkflowsDialog.qml",
+        "qml/VideoClipCard.qml",
         "qml/ManageChannel.qml",
         "qml/ChannelModeration.qml",
         "qml/ModeratorsDialog.qml",

@@ -517,12 +517,33 @@ pub struct MessageMedia {
     pub alt: String,
 }
 
+/// A video clip in a message (Teams' `<video itemtype="…/AMSVideo">`: a
+/// clip recorded in Teams, stored in the media store and transcoded there).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct VideoClip {
+    /// The media-store object id (safe for a file name).
+    pub id: String,
+    /// Its playable MP4 (`…/views/video`; needs the Skype token).
+    pub url: String,
+    /// Its poster picture (`…/views/thumbnail`).
+    pub thumb_url: String,
+    /// Its length in seconds (`data-duration`, ISO 8601).
+    pub duration: f64,
+    pub width: u32,
+    pub height: u32,
+    /// The poster once cached locally (filled in by the client).
+    pub thumb_local: String,
+}
+
 /// One part of a message's flow: a picture (`pic`, its index in `images`
-/// followed by `media`) or text (`html`).
+/// followed by `media`), a video clip (`video`, its index in `videos`) or
+/// text (`html`).
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FlowPart {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pic: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video: Option<usize>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub html: String,
     /// A quote (`<blockquote>`): its HTML, drawn in Teams' quote box.
@@ -629,6 +650,9 @@ pub struct MessageView {
     pub reactions: Vec<Reaction>,
     /// Inline images (Teams' AMS objects), in order.
     pub images: Vec<InlineImage>,
+    /// Video clips, in order (shown where they were written, in `flow`).
+    #[serde(default)]
+    pub videos: Vec<VideoClip>,
     /// GIFs and stickers, shown animated.
     #[serde(default)]
     pub media: Vec<MessageMedia>,
@@ -1608,6 +1632,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     } else {
         message_media(&content)
     };
+    let videos = if deleted { Vec::new() } else { inline_videos(&content) };
     let files = if deleted {
         Vec::new()
     } else {
@@ -1629,12 +1654,16 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
             && text.is_empty()
             && images.is_empty()
             && media.is_empty()
+            && videos.is_empty()
             && files.is_empty()
             && cards.is_empty())
     {
         return None;
     }
-    let text = if text.is_empty() && (!images.is_empty() || !media.is_empty()) {
+    let text = if text.is_empty() && !videos.is_empty() {
+        // Teams' default text for a clip (videoMessage.video_preview_default_text).
+        "Video Clip".to_string()
+    } else if text.is_empty() && (!images.is_empty() || !media.is_empty()) {
         "Image".to_string()
     } else if text.is_empty() && !cards.is_empty() {
         // Teams' preview of a message that is only cards.
@@ -1647,7 +1676,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let cards = if deleted { Vec::new() } else { cards };
     // Files, cards, pictures, GIFs and stickers keep emoticons small (as in
     // Teams, where any other image counts).
-    let may_be_big = files.is_empty() && cards.is_empty() && images.is_empty() && media.is_empty();
+    let may_be_big = files.is_empty() && cards.is_empty() && images.is_empty() && media.is_empty() && videos.is_empty();
     let (marked, pic_tags) = if deleted {
         (String::new(), Vec::new())
     } else {
@@ -1657,12 +1686,19 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     // Pictures stay where they were written (Teams keeps the order).
     let (head, flow) = split_flow(&marked, &pic_tags, |tag| {
         let src = attr(tag, "src")?;
-        images.iter().position(|i| i.url == src).or_else(|| {
-            media
-                .iter()
-                .position(|m| m.url == src)
-                .map(|k| images.len() + k)
-        })
+        if tag.starts_with("video") {
+            return videos.iter().position(|v| v.url == src).map(FlowRef::Video);
+        }
+        images
+            .iter()
+            .position(|i| i.url == src)
+            .or_else(|| {
+                media
+                    .iter()
+                    .position(|m| m.url == src)
+                    .map(|k| images.len() + k)
+            })
+            .map(FlowRef::Pic)
     });
     let head = if flow.is_empty() {
         without_empty_paragraphs(&head)
@@ -1679,6 +1715,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         forward,
         images,
         media,
+        videos,
         files,
         cards,
         carousel,
@@ -2031,6 +2068,28 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
             }
             continue;
         }
+        // A video clip is shown by the client from `videos`; its fallback
+        // text ("Video-Clip") goes with it.
+        if name == "video" {
+            if !closing {
+                if mark_pics && attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/AMSVideo")) {
+                    out.push_str(&pic_marker(pics.len()));
+                    pics.push(tag.to_string());
+                }
+                if !tag.ends_with('/') {
+                    match rest.to_ascii_lowercase().find("</video") {
+                        Some(i) => {
+                            rest = &rest[i..];
+                            if let Some(e) = rest.find('>') {
+                                rest = &rest[e + 1..];
+                            }
+                        }
+                        None => rest = "",
+                    }
+                }
+            }
+            continue;
+        }
         if name == "img" {
             // Inline pictures, GIFs and stickers are shown by the client
             // from `images` and `media`.
@@ -2304,7 +2363,7 @@ fn flow_text(html: &str) -> String {
 fn split_flow(
     marked: &str,
     pics: &[String],
-    index: impl Fn(&str) -> Option<usize>,
+    index: impl Fn(&str) -> Option<FlowRef>,
 ) -> (String, Vec<FlowPart>) {
     let lead = format!("<img src=\"{PIC_SRC}");
     // The next picture marker, quote or code block.
@@ -2322,11 +2381,28 @@ fn split_flow(
         ..Default::default()
     };
     let mut flow = Vec::new();
+    // Teams draws a clip's empty paragraphs before it (Teams' recorder
+    // sends `<p>&nbsp;</p><video …>`): one blank 20 px line.
+    let is_video = |at: &str| -> bool {
+        let end = at.find('>').unwrap_or(at.len());
+        at[lead.len().min(end)..end]
+            .split('"')
+            .next()
+            .and_then(|n| n.parse::<usize>().ok())
+            .and_then(|n| pics.get(n))
+            .is_some_and(|t| t.starts_with("video"))
+    };
+    let blank_before = |before: &str, at: &str| at.starts_with(&lead) && is_video(at) && before.contains("<p") && flow_text(before).is_empty();
+    if blank_before(&marked[..first], &marked[first..]) {
+        flow.push(text_part("<p>&nbsp;</p>".to_string()));
+    }
     let mut rest = &marked[first..];
     while let Some(j) = next(rest) {
         let text = flow_text(&rest[..j]);
         if !text.is_empty() {
             flow.push(text_part(text));
+        } else if j > 0 && blank_before(&rest[..j], &rest[j..]) {
+            flow.push(text_part("<p>&nbsp;</p>".to_string()));
         }
         let at = &rest[j..];
         if at.starts_with("<blockquote>") {
@@ -2367,11 +2443,16 @@ fn split_flow(
                 .split('"')
                 .next()
                 .and_then(|n| n.parse::<usize>().ok());
-            if let Some(k) = n.and_then(|n| pics.get(n)).and_then(|t| index(t)) {
-                flow.push(FlowPart {
+            match n.and_then(|n| pics.get(n)).and_then(|t| index(t)) {
+                Some(FlowRef::Pic(k)) => flow.push(FlowPart {
                     pic: Some(k),
                     ..Default::default()
-                });
+                }),
+                Some(FlowRef::Video(k)) => flow.push(FlowPart {
+                    video: Some(k),
+                    ..Default::default()
+                }),
+                None => {}
             }
             rest = &at[end..];
         }
@@ -2384,6 +2465,13 @@ fn split_flow(
         flow.clear();
     }
     (marked[..first].to_string(), flow)
+}
+
+/// What a picture marker stands for: a picture (its index in `images` +
+/// `media`) or a video clip (its index in `videos`).
+enum FlowRef {
+    Pic(usize),
+    Video(usize),
 }
 
 /// Where an element opened at the start of `html` ends (after its closing
@@ -2872,6 +2960,63 @@ fn inline_images(html: &str) -> Vec<InlineImage> {
         });
     }
     out
+}
+
+/// Teams video clips: `<video itemtype="…/AMSVideo" src="https://*.asm.skype.com/v1/objects/{id}/views/video" data-duration="PT16.3S">`.
+/// Only media-store addresses are accepted, since fetching them sends our token.
+fn inline_videos(html: &str) -> Vec<VideoClip> {
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find("<video") {
+        let end = rest[i..].find('>').map(|e| i + e).unwrap_or(rest.len());
+        let tag = &rest[i..end];
+        rest = &rest[end..];
+        if !attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/AMSVideo")) {
+            continue;
+        }
+        let Some(url) = attr(tag, "src").filter(|u| is_ams_url(u)) else {
+            continue;
+        };
+        let Some(base) = url.strip_suffix("/views/video") else {
+            continue;
+        };
+        let id = base.rsplit('/').next().unwrap_or_default().to_string();
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            continue;
+        }
+        let num = |k: &str| attr(tag, k).and_then(|v| v.parse().ok()).unwrap_or(0);
+        out.push(VideoClip {
+            thumb_url: format!("{base}/views/thumbnail"),
+            duration: attr(tag, "data-duration").map(|d| iso_seconds(&d)).unwrap_or_default(),
+            width: num("width"),
+            height: num("height"),
+            id,
+            url,
+            thumb_local: String::new(),
+        });
+    }
+    out
+}
+
+/// An ISO 8601 duration ("PT1M16.309S") in seconds.
+fn iso_seconds(d: &str) -> f64 {
+    let Some(t) = d.trim().strip_prefix("PT").or_else(|| d.trim().strip_prefix("pt")) else {
+        return 0.0;
+    };
+    let (mut total, mut num) = (0.0, String::new());
+    for c in t.chars() {
+        match c.to_ascii_uppercase() {
+            'H' => total += num.parse::<f64>().unwrap_or(0.0) * 3600.0,
+            'M' => total += num.parse::<f64>().unwrap_or(0.0) * 60.0,
+            'S' => total += num.parse::<f64>().unwrap_or(0.0),
+            c => {
+                num.push(c);
+                continue;
+            }
+        }
+        num.clear();
+    }
+    total
 }
 
 /// Whether a URL is on Teams' media store (where our token may go).
@@ -4851,6 +4996,34 @@ mod tests {
             "{}",
             g.html
         );
+    }
+
+    #[test]
+    fn video_clips_show_where_teams_put_them() {
+        // OST TEST 135, recorded in Teams on winpc.
+        let m = serde_json::json!({
+            "id": "1", "messagetype": "RichText/Html", "from": "8:orgid:x", "imdisplayname": "OST Test 1",
+            "composetime": "2026-11-14T06:03:08.930Z", "originalarrivaltime": "2026-11-14T06:03:08.930Z",
+            "content": "<p>&nbsp;</p><video src=\"https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/video\" cardId=\"3fa8\" itemscope itemtype=\"http://schema.skype.com/AMSVideo\" data-duration=\"PT16.309S\" width=\"1280\" height=\"720\">Video-Clip</video><p>OST TEST 135: video clip</p>"
+        });
+        let v = message_view(&m, "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.videos.len(), 1);
+        let c = &v.videos[0];
+        assert_eq!((c.id.as_str(), c.width, c.height), ("0-wus-d12-8635", 1280, 720));
+        assert_eq!(c.thumb_url, "https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/thumbnail");
+        assert!((c.duration - 16.309).abs() < 1e-9);
+        assert_eq!(v.flow.len(), 3);
+        assert_eq!(v.flow[0].html, "<p>&nbsp;</p>");
+        assert_eq!(v.flow[1].video, Some(0));
+        assert!(v.flow[2].html.contains("OST TEST 135"));
+        assert!(!v.text.contains("Video-Clip") && v.text.contains("OST TEST 135"));
+        // A clip alone still shows, with Teams' default text.
+        let mut alone = m.clone();
+        alone["content"] = serde_json::json!("<video src=\"https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/video\" itemtype=\"http://schema.skype.com/AMSVideo\" data-duration=\"PT1M2S\">Video-Clip</video>");
+        let a = message_view(&alone, "8:orgid:me", "Me").unwrap();
+        assert_eq!((a.text.as_str(), a.flow.len(), a.videos[0].duration), ("Video Clip", 1, 62.0));
+        // Only Teams' media store is fetched with our token.
+        assert!(inline_videos("<video src=\"https://evil.example/v1/objects/x/views/video\" itemtype=\"http://schema.skype.com/AMSVideo\">").is_empty());
     }
 
     #[test]

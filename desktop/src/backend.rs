@@ -808,6 +808,16 @@ pub mod qobject {
         /// newest set, or null, in smart_replies_ready.
         #[qinvokable]
         fn load_smart_replies(self: Pin<&mut Backend>, chat_id: &QString);
+        /// A message's video clip as Teams' player plays it
+        /// (api::video_clips): `quality` "" for Auto (Teams' MP4) or a
+        /// rendition id ("video_480p"). The cached file and the clip's
+        /// qualities come back in video_clip_ready.
+        #[qinvokable]
+        fn video_clip_load(self: Pin<&mut Backend>, id: &QString, url: &QString, quality: &QString);
+        /// The clip's ··· ▸ Download video: Teams' MP4 saved as
+        /// "MicrosoftTeams-video.mp4".
+        #[qinvokable]
+        fn video_clip_download(self: Pin<&mut Backend>, url: &QString);
 
         #[qinvokable]
         fn card_invoke(self: Pin<&mut Backend>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool);
@@ -1049,6 +1059,11 @@ pub mod qobject {
         /// A chat's suggested replies arrived (JSON SuggestionSet or "null").
         #[qsignal]
         fn smart_replies_ready(self: Pin<&mut Backend>, chat_id: QString, json: QString);
+
+        /// A video_clip_load finished: {id, quality, path (file URL),
+        /// qualities: [{id, height}], error}.
+        #[qsignal]
+        fn video_clip_ready(self: Pin<&mut Backend>, id: QString, json: QString);
 
         /// A card_invoke finished: its op, the outcome (JSON) and an error.
         #[qsignal]
@@ -1763,6 +1778,8 @@ pub mod qobject {
 enum PendingSave {
     Drive(api::drive::DriveItem),
     File(api::files::FileAttachment),
+    /// A video clip (its `…/views/video` address).
+    Clip(String),
     Zip { op: String, items: Vec<api::drive::DriveItem>, name: String },
 }
 
@@ -2729,6 +2746,9 @@ fn health_sampler() -> &'static std::sync::Mutex<teams_cli::calling::call_health
 /// How many calls the Calls history shows.
 const CALL_HISTORY_LIMIT: usize = 100;
 
+/// The name Teams gives a downloaded clip ("MicrosoftTeams-video", an MP4).
+const CLIP_DOWNLOAD_NAME: &str = "MicrosoftTeams-video.mp4";
+
 /// Where downloads go: Settings ▸ Files and links' location, else
 /// $XDG_DOWNLOAD_DIR, else ~/Downloads.
 fn download_dir() -> Option<std::path::PathBuf> {
@@ -3166,6 +3186,7 @@ async fn load_thread(thread: &str) -> anyhow::Result<()> {
     }
     for m in timeline.iter_mut() {
         localize_banner(&client, m).await;
+        localize_videos(&client, m).await;
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
@@ -3283,6 +3304,7 @@ async fn load_messages(
     }
     for m in timeline.iter_mut() {
         localize_banner(&client, m).await;
+        localize_videos(&client, m).await;
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
@@ -4131,6 +4153,29 @@ fn swap_src(m: &mut api::messages::MessageView, from: &str, to: &str) {
 }
 
 /// An announcement's banner picture, cached like the message's pictures.
+/// A message's video clips with their posters cached (`thumb_local`).
+async fn localize_videos(client: &TeamsClient, m: &mut api::messages::MessageView) {
+    for v in m.videos.iter_mut() {
+        let img = api::messages::InlineImage { id: format!("{}-thumb", v.id), url: v.thumb_url.clone(), width: 0, height: 0, local_path: String::new() };
+        match cached_image(client, &img).await {
+            Ok(path) => v.thumb_local = format!("file://{}", path.display()),
+            Err(e) => tracing::warn!("clip poster download failed: {}", short_error(&e)),
+        }
+    }
+}
+
+/// Where played clips are kept: the cache's ost/videos (owner-only).
+fn clip_cache_path(id: &str, quality: &str) -> anyhow::Result<std::path::PathBuf> {
+    anyhow::ensure!(!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'), "Bad clip id");
+    anyhow::ensure!(quality.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'), "Bad quality");
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .ok_or_else(|| anyhow::anyhow!("No cache directory"))?;
+    let name = if quality.is_empty() { format!("{id}.mp4") } else { format!("{id}-{quality}.mp4") };
+    Ok(base.join("ost").join("videos").join(name))
+}
+
 async fn localize_banner(client: &TeamsClient, m: &mut api::messages::MessageView) {
     let Some(a) = m.announcement.as_mut() else { return };
     if a.image_url.is_empty() {
@@ -5083,6 +5128,65 @@ impl qobject::Backend {
     fn call_meeting_link(&self) -> Option<outgoing::MeetingLink> {
         outgoing::MeetingLink::parse(&self.rust().last_join.0.to_string())
             .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
+    }
+
+    pub fn video_clip_load(self: Pin<&mut Self>, id: &QString, url: &QString, quality: &QString) {
+        let (id, url, quality) = (id.to_string(), url.to_string(), quality.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let path = clip_cache_path(&id, &quality)?;
+                let client = TeamsClient::new().await?;
+                let mpd = api::video_clips::manifest(&client, &url).await.ok();
+                if !path.exists() {
+                    let bytes = api::video_clips::playable(&client, &url, Some(quality.as_str()).filter(|q| !q.is_empty()), mpd.as_deref()).await?;
+                    if let Some(dir) = path.parent() {
+                        std::fs::create_dir_all(dir)?;
+                    }
+                    write_private(&path, &bytes)?;
+                }
+                let qualities = mpd.as_deref().map(api::video_clips::renditions).unwrap_or_default();
+                anyhow::Ok(json!({ "path": format!("file://{}", path.display()), "qualities": qualities }))
+            }
+            .await;
+            let mut v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) }));
+            v["id"] = json!(id);
+            v["quality"] = json!(quality);
+            let s = v.to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().video_clip_ready(QString::from(id.as_str()), QString::from(s.as_str())));
+        });
+    }
+
+    pub fn video_clip_download(mut self: Pin<&mut Self>, url: &QString) {
+        let url = url.to_string();
+        if !api::messages::is_ams_url(&url) {
+            return;
+        }
+        if ask_where_to_save() {
+            self.as_mut().ask_save(PendingSave::Clip(url), CLIP_DOWNLOAD_NAME);
+            return;
+        }
+        let Some(dir) = download_dir() else { return };
+        self.as_mut().run_clip_download(url, dir, None);
+    }
+
+    fn run_clip_download(mut self: Pin<&mut Self>, url: String, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
+        self.as_mut().set_status_text(QString::from(format!("Downloading {CLIP_DOWNLOAD_NAME}…").as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let bytes = api::video_clips::playable(&client, &url, None, None).await?;
+                let saved = api::files::save_unique(&dir, CLIP_DOWNLOAD_NAME, &bytes)?;
+                anyhow::Ok(place_download(saved, target.as_deref()))
+            }
+            .await;
+            let msg = match result {
+                Ok(path) => format!("Saved {} to {}", path.file_name().and_then(|n| n.to_str()).unwrap_or(CLIP_DOWNLOAD_NAME), path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
+                Err(e) => short_error(&e),
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+        });
     }
 
     pub fn load_smart_replies(self: Pin<&mut Self>, chat_id: &QString) {
@@ -12908,6 +13012,7 @@ impl qobject::Backend {
         match pending {
             PendingSave::Drive(item) => self.as_mut().run_drive_download(item, dir, Some(target)),
             PendingSave::File(file) => self.as_mut().run_file_download(file, dir, Some(target)),
+            PendingSave::Clip(url) => self.as_mut().run_clip_download(url, dir, Some(target)),
             PendingSave::Zip { op, items, name } => {
                 let qt = self.qt_thread();
                 runtime().spawn(async move {
