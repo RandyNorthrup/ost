@@ -638,6 +638,12 @@ Popup {
             enabledTool: !rec.live
             onClicked: rec.screenOn = !rec.screenMode
         }
+        Item { width: 20; height: 51.3; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
+        Tool {
+            icon: "slide-text-20"; label: "Script"
+            off: teleprompter.visible
+            onClicked: teleprompter.visible = !teleprompter.visible
+        }
     }
     MenuPopup {
         id: camMenu
@@ -679,6 +685,190 @@ Popup {
     }
     SquareButton { visible: rec.live; x: 16; y: 500.3; icon: "arrow-counterclockwise-20"; label: "Record again"; onClicked: rec.recordAgain() }
     SquareButton { visible: rec.live; x: 752; y: 500.3; primary: true; icon: "chevron-right-20"; label: "Next. Continue to review step."; onClicked: rec.stopAndReview() }
+
+    // ---- Script: Teams' teleprompter (Stream's), over the picture and not
+    // recorded. 701.3 x 345.3 at (49.3, 100), white at 80 %, a #D1D1D1
+    // hairline, rounded 6; a move handle at the top centre, then Play, font
+    // smaller / larger (24–64 by 2, 48 at first), the scroll speed (a
+    // vertical slider, 50–400 words a minute, 100 at first) and Close; the
+    // script at the font size on lines twice as tall, 1em in. Playing
+    // scrolls it at the speed and marks the word being read. ----
+    // The font size and speed stay as set (Teams keeps them on the device).
+    QtObject {
+        id: promptSettings
+        property int fontSize: parseInt(backend.setting("teleprompterFontSize")) || 48
+        property int speed: parseInt(backend.setting("teleprompterScrollSpeed")) || 100
+        onFontSizeChanged: backend.setSetting("teleprompterFontSize", String(fontSize))
+        onSpeedChanged: backend.setSetting("teleprompterScrollSpeed", String(speed))
+    }
+    property string script: ""
+    onScriptChanged: teleprompter.word = 0
+    Rectangle {
+        id: teleprompter
+        visible: false
+        x: 49.3; y: 100; width: 701.3; height: 345.3; radius: 6
+        color: Qt.rgba(1, 1, 1, 0.8)
+        border.color: "#D1D1D1"; border.width: 0.67
+        z: 5
+        property bool playing: false
+        property int word: 0
+        readonly property var words: rec.script.split(/[ \n]/)
+        onVisibleChanged: if (!visible) playing = false
+        onPlayingChanged: {
+            if (playing) { promptScroll.restart(); wordTimer.restart() }
+            else { promptScroll.stop(); wordTimer.stop() }
+        }
+        Item {
+            width: parent.width; height: 32
+            FluentIcon {
+                anchors.horizontalCenter: parent.horizontalCenter; y: 7.7; name: "re-order-dots-horizontal-20"; size: 18; color: theme.text
+                DragHandler { target: teleprompter; xAxis.minimum: -40; xAxis.maximum: rec.width - 80; yAxis.minimum: 0; yAxis.maximum: rec.height - 80; cursorShape: Qt.ClosedHandCursor }
+                HoverHandler { cursorShape: Qt.OpenHandCursor }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Move the teleprompter using the keyboard arrow keys"
+            }
+            Row {
+                anchors.right: parent.right; anchors.rightMargin: 0.7; y: 0.7
+                HeadButton {
+                    y: 0; height: 32
+                    icon: teleprompter.playing ? "pause-20" : "play-20"
+                    label: teleprompter.playing ? "Pause" : "Play"
+                    opacity: rec.script.length ? 1 : 0.4
+                    onClicked: if (rec.script.length) teleprompter.playing = !teleprompter.playing
+                }
+                HeadButton { y: 0; height: 32; icon: "font-decrease-20"; label: "Decrease font size"; opacity: promptSettings.fontSize > 24 ? 1 : 0.4; onClicked: promptSettings.fontSize = Math.max(24, promptSettings.fontSize - 2) }
+                HeadButton { y: 0; height: 32; icon: "font-increase-20"; label: "Increase font size"; opacity: promptSettings.fontSize < 64 ? 1 : 0.4; onClicked: promptSettings.fontSize = Math.min(64, promptSettings.fontSize + 2) }
+                HeadButton { id: speedBtn; y: 0; icon: "top-speed-20"; label: "Change scroll speed"; color: speedPop.visible ? Qt.rgba(1, 1, 1, 0.2) : "transparent"; onClicked: rec.toggleSpeed(!speedPop.visible) }
+                Item { width: 0.67; height: 32; Rectangle { y: 6; width: 0.67; height: 20; color: theme.divider } }
+                HeadButton { y: 0; height: 32; icon: "dismiss-20"; label: "Close"; onClicked: teleprompter.visible = false }
+            }
+        }
+        // Writing the script.
+        Flickable {
+            id: promptEdit
+            visible: !teleprompter.playing
+            x: 0.67; y: 32.7; width: parent.width - 1.33; height: parent.height - 33.3
+            contentHeight: promptArea.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            // Rich text only for Teams' double-height lines (a block format
+            // that new lines inherit); the script itself is plain text.
+            // (A plain child: TextArea.flickable would add the padding twice.)
+            TextArea {
+                id: promptArea
+                width: promptEdit.width
+                textFormat: TextEdit.RichText
+                property bool loading: false
+                function load(t) {
+                    loading = true
+                    text = t ? "<div style=\"line-height:200%\">" + t.replace(/&/g, "&amp;").replace(/</g, "&lt;").split("\n").join("</div><div style=\"line-height:200%\">") + "</div>" : "<div style=\"line-height:200%\"></div>"
+                    loading = false
+                }
+                Component.onCompleted: load(rec.script)
+                onTextChanged: if (!loading) rec.script = getText(0, length).replace(/\u2029/g, "\n")
+                placeholderText: "Type or paste your script here"
+                placeholderTextColor: "#707070"
+                wrapMode: TextEdit.Wrap
+                padding: promptSettings.fontSize
+                leftPadding: promptSettings.fontSize; rightPadding: promptSettings.fontSize
+                topPadding: promptSettings.fontSize; bottomPadding: promptSettings.fontSize
+                leftInset: 0; rightInset: 0; topInset: 0; bottomInset: 0
+                textMargin: 0
+                font.family: theme.font; font.pixelSize: promptSettings.fontSize
+                color: "#242424"
+                background: null
+                selectByMouse: true
+            }
+        }
+        // Reading it: lines twice as tall, the current word marked.
+        Flickable {
+            id: promptRead
+            visible: teleprompter.playing
+            x: 0.67; y: 32.7; width: parent.width - 1.33; height: parent.height - 33.3
+            contentHeight: promptText.implicitHeight
+            clip: true
+            interactive: false
+            Text {
+                id: promptText
+                width: promptRead.width
+                padding: promptSettings.fontSize
+                wrapMode: Text.Wrap
+                textFormat: Text.RichText
+                font.family: theme.font; font.pixelSize: promptSettings.fontSize
+                color: "#242424"
+                text: {
+                    const esc = w => w.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                    let k = 0
+                    const lines = rec.script.split("\n").map(line => line.split(" ").map(w => {
+                        const html = k === teleprompter.word ? "<span style=\"background-color:#242424; color:#FFFFFF\">" + esc(w) + "</span>" : esc(w)
+                        k++
+                        return html
+                    }).join(" "))
+                    return "<div style=\"line-height:200%\">" + lines.join("<br>") + "</div>"
+                }
+            }
+            NumberAnimation on contentY {
+                id: promptScroll
+                running: false
+                to: Math.max(0, promptRead.contentHeight - promptRead.height)
+                // The whole script takes (words / speed) minutes; what is
+                // left, its share of that.
+                duration: {
+                    const all = Math.max(1, promptRead.contentHeight - promptRead.height)
+                    const left = 1 - promptRead.contentY / all
+                    return Math.max(1, 60000 / promptSettings.speed * teleprompter.words.length * left)
+                }
+            }
+        }
+        // The word being read moves on as Teams times it: the minute's share
+        // of the script, by each word's length (longer after punctuation).
+        Timer {
+            id: wordTimer
+            repeat: false
+            interval: {
+                const w = teleprompter.words[teleprompter.word] || ""
+                const unit = 60000 / promptSettings.speed * teleprompter.words.length / Math.max(1, rec.script.length)
+                return Math.max(1, (w.length + 1) * unit + (/[.?!,]/.test(w) ? 5 * unit : 0))
+            }
+            onTriggered: if (teleprompter.word + 1 < teleprompter.words.length) { teleprompter.word++; restart() }
+        }
+        // Resize from the bottom right corner.
+        Item {
+            x: parent.width - 14; y: parent.height - 14; width: 14; height: 14
+            Canvas {
+                anchors.fill: parent
+                onPaint: { const c = getContext("2d"); c.strokeStyle = "#616161"; c.lineWidth = 1; c.beginPath(); c.moveTo(4, 12); c.lineTo(12, 4); c.moveTo(8, 12); c.lineTo(12, 8); c.stroke() }
+            }
+            DragHandler {
+                target: null
+                property real w0: 0; property real h0: 0
+                onActiveChanged: if (active) { w0 = teleprompter.width; h0 = teleprompter.height }
+                onTranslationChanged: { teleprompter.width = Math.max(401.3, w0 + translation.x); teleprompter.height = Math.max(343, h0 + translation.y) }
+                cursorShape: Qt.SizeFDiagCursor
+            }
+            HoverHandler { cursorShape: Qt.SizeFDiagCursor }
+            Accessible.role: Accessible.Grip
+            Accessible.name: "Resize the teleprompter container using the keyboard arrow keys while holding down ctrl"
+        }
+        // The scroll speed.
+        Rectangle {
+            id: speedPop
+            visible: false
+            y: 32; width: 32; height: 195.9; radius: 16
+            color: "white"
+            FluentSurface { z: -1; anchors.fill: parent; depth: 8; radius: 16 }
+            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 8; name: "add-16"; size: 16; color: theme.text }
+            Slider {
+                anchors.horizontalCenter: parent.horizontalCenter; y: 31.5; height: 129
+                orientation: Qt.Vertical
+                from: 50; to: 400
+                value: promptSettings.speed
+                onMoved: promptSettings.speed = Math.round(value)
+                Accessible.name: "Scroll speed"
+            }
+            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: parent.height - 24; name: "subtract-16"; size: 16; color: theme.text }
+        }
+    }
 
     // The consent strip.
     Rectangle {
@@ -1101,6 +1291,10 @@ Popup {
     function resumeForTest() { engineResume(); stage = "recording"; frameTimer.start() }
     function continueForTest() { finishClip() }
     function editForTest() { return { segments: segments.map(sg => ({ start: sg.start, end: sg.end, length: sg.length })), selected: selected, playhead: playhead, total: total, canSplit: canSplit, music: music, trimming: trimming } }
+    function teleprompterForTest(on, text, play) { teleprompter.visible = on; if (text !== undefined) { script = text; promptArea.load(text) } if (play !== undefined) teleprompter.playing = play; return { visible: teleprompter.visible, playing: teleprompter.playing, word: teleprompter.word, words: teleprompter.words.length, fontSize: promptSettings.fontSize, speed: promptSettings.speed, contentY: promptRead.contentY } }
+    function toggleSpeed(on) { speedPop.x = speedBtn.mapToItem(teleprompter, 0, 0).x; speedPop.visible = on }
+    function teleprompterSpeedForTest(on) { toggleSpeed(on); return { edit: promptArea.mapToItem(teleprompter, promptArea.positionToRectangle(0).x, 0).x, read: promptText.mapToItem(teleprompter, promptText.leftPadding, 0).x, pad: [promptArea.leftPadding, promptArea.topPadding, promptArea.leftInset] } }
+    function teleprompterFontForTest(d) { promptSettings.fontSize = Math.max(24, Math.min(64, promptSettings.fontSize + d)) }
     function playerForTest() { return { status: player.mediaStatus, state: player.playbackState, pos: player.position, dur: player.duration, src: String(player.source).split("/").pop(), seg: playingSeg, pending: pendingPos, playing: playing, playhead: playhead, music: musicPlayer.playbackState } }
     function seekForTest(t) { playing = false; player.pause(); seekTimeline(t) }
     function trimForTest(a, b) { selected = Math.max(0, selected); const sg = segments[selected]; trimStart = a; trimEnd = b; trimming = true }

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T09:43:00Z'
-updated_date: '2026-11-14T13:52:00Z'
+updated_date: '2026-11-14T16:10:00Z'
 labels:
   - messages
   - video
@@ -27,9 +27,9 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - [x] #3 Review your clips: playback with the filmstrip and time, Delete clip, Download recording, Back, and Continue putting the clip in the compose box (Processing…, then Teams' card with Remove video clip)
 - [x] #4 Sending stores the clip in the media store and sends Teams' AMSVideo message; Teams shows and plays it
 - [x] #5 Review editing as Teams: Trim, Split, Record more and Music
-- [ ] #6 Backdrop (None, Upload, Blur, images and videos), Script, Draw and Effects as Teams
-- [ ] #7 Verified side by side with Teams on winpc
-- [ ] #8 Pausing a screen recording keeps its video and sound in step
+- [ ] #6 Verified side by side with Teams on winpc
+- [ ] #7 Pausing a screen recording keeps its video and sound in step
+- [x] #8 Script (teleprompter) as Teams: type or paste, play/scroll by words per minute, font size, speed, move and resize
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -45,4 +45,8 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - Music: Stream's catalog (24 tracks, 5 categories) from its public CDN; level 15 by default; tracks cached in ~/.cache/ost/music.
 - Verified: --recorder-edit-test on linuxlt (split at 4 s, trim to 1-3 s, record more, rearrange, In a dream). OST TEST 138 (rendered 12.8 s, music at -30 dB mean) was sent and plays in Teams on winpc.
 - FFmpeg (libavfilter/format/codec/util) is now a build dependency of the desktop app; docs/desktop.md lists it.
+
+- Backdrop and the Effects menu (Text, Draw, Stickers, Filter, Frame, Board, Photo) moved to TASK-0137; AC6 is now the teleprompter (Script).
+
+- 2026-11-14 Script: Stream's teleprompter measured (panel, controls, 24-64 font, 50-400 wpm vertical slider) and its timing read from 288.js (linear scroll over words/wpm minutes; word marker timed by letters, +5 after punctuation). Built in VideoClipRecorder.qml, over the picture and not recorded; font size and speed kept in OST's settings. Verified with --teleprompter-test on linuxlt.
 <!-- SECTION:NOTES:END -->
