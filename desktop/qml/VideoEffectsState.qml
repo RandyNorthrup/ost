@@ -17,14 +17,32 @@ QtObject {
     property var catalog: []
     /// Your own backgrounds (Add new), oldest first: [{id, thumb}].
     property var uploads: []
+    /// The chosen filter (Teams' Custom Filters app), "" for none.
+    property string filter: backend.setting("videoFilter") || ""
+    /// The app's page and filters: {url, filters: [{id, name, category,
+    /// thumb}]}.
+    property var filters: ({})
+    /// Teams' quick-picker filters (videoEffectsQuickPickerFilters, the
+    /// Custom Filters ones: Sweet, Animated purple gradient, Blue waves).
+    readonly property var quickFilterIds: ["a0d54440-381e-4328-baf9-bf0323b4b39c", "8e94f1b1-4eca-49a2-96ba-80485b8d17e9", "b46b3bf9-f679-4547-9787-e5731deb6fc5"]
+    readonly property var quickFilters: (filters.filters || []).filter(f => quickFilterIds.indexOf(f.id) >= 0)
+        .sort((a, b) => quickFilterIds.indexOf(a.id) - quickFilterIds.indexOf(b.id))
 
     function load() {
         if (catalog.length === 0) catalog = JSON.parse(backend.videoBackgrounds())
         uploads = JSON.parse(backend.videoUploads())
+        if (!filters.url) filters = JSON.parse(backend.videoFilters())
     }
     property Connections watch: Connections {
         target: backend
         function onVideoBackgroundsReady() { fx.catalog = JSON.parse(backend.videoBackgrounds()) }
+        function onVideoFiltersReady() { fx.filters = JSON.parse(backend.videoFilters()) }
+    }
+    // A filter chosen in an earlier run needs the app's page.
+    Component.onCompleted: if (filter.length > 0) filters = JSON.parse(backend.videoFilters())
+    function setFilter(id) {
+        filter = id
+        backend.setSetting("videoFilter", id)
     }
 
     function setBackground(id) {

@@ -242,8 +242,14 @@ impl Processor {
         self.to_worker.as_ref()
     }
 
-    /// Apply the chosen effects to an I420 frame in place.
+    /// Apply the chosen effects to an I420 frame in place: brightness,
+    /// soft focus and the background, then a video app's filter.
     pub fn process(&mut self, width: u32, height: u32, data: &mut [u8]) {
+        self.own_effects(width, height, data);
+        filter::apply(width, height, data);
+    }
+
+    fn own_effects(&mut self, width: u32, height: u32, data: &mut [u8]) {
         let s = current();
         let (w, h) = (width as usize, height as usize);
         if data.len() < w * h * 3 / 2 || w < 2 || h < 2 {
@@ -298,6 +304,132 @@ impl Processor {
             _ => return,
         };
         composite(data, back, &self.mask, w, h);
+    }
+}
+
+/// A video app's filter (Teams' Filters: Frames, Styles): the app runs
+/// elsewhere (the desktop hosts Teams' Custom Filters web app); camera
+/// frames are handed to it as NV12 and its newest processed frame comes
+/// back. The camera never waits: each frame goes out, and the latest
+/// result (when recent and the same size) replaces it.
+pub mod filter {
+    use std::sync::{Condvar, Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    /// A frame in NV12 (Y plane, then interleaved UV), as Teams' video apps
+    /// take them.
+    #[derive(Clone)]
+    pub struct Frame {
+        pub width: u32,
+        pub height: u32,
+        pub seq: u64,
+        pub data: Vec<u8>,
+    }
+
+    #[derive(Default)]
+    struct State {
+        active: bool,
+        next_seq: u64,
+        /// The newest camera frame waiting for the app.
+        inbound: Option<Frame>,
+        /// The app's newest result, and when it came.
+        outbound: Option<(Frame, Instant)>,
+    }
+
+    fn state() -> &'static (Mutex<State>, Condvar) {
+        static S: OnceLock<(Mutex<State>, Condvar)> = OnceLock::new();
+        S.get_or_init(|| (Mutex::new(State::default()), Condvar::new()))
+    }
+
+    /// Turn the filter path on (a filter is chosen and its app runs) or off.
+    pub fn set_active(on: bool) {
+        let (m, cv) = state();
+        let mut s = m.lock().unwrap();
+        s.active = on;
+        if !on {
+            s.inbound = None;
+            s.outbound = None;
+        }
+        cv.notify_all();
+    }
+
+    pub fn active() -> bool {
+        state().0.lock().unwrap().active
+    }
+
+    /// How long a result stays usable (the app's last frame is shown no
+    /// longer than this when it stalls).
+    const FRESH: Duration = Duration::from_millis(400);
+
+    /// The camera side: hand this frame to the app and replace it with the
+    /// app's newest result.
+    pub fn apply(width: u32, height: u32, i420: &mut [u8]) {
+        let (m, cv) = state();
+        let mut s = m.lock().unwrap();
+        if !s.active {
+            return;
+        }
+        s.next_seq += 1;
+        let seq = s.next_seq;
+        s.inbound = Some(Frame { width, height, seq, data: i420_to_nv12(i420, width as usize, height as usize) });
+        cv.notify_all();
+        if let Some((f, at)) = &s.outbound
+            && f.width == width
+            && f.height == height
+            && at.elapsed() < FRESH
+        {
+            nv12_to_i420(&f.data, width as usize, height as usize, i420);
+        }
+    }
+
+    /// The app side: the next camera frame newer than `after`, waiting up
+    /// to `wait` for one.
+    pub fn next_frame(after: u64, wait: Duration) -> Option<Frame> {
+        let (m, cv) = state();
+        let deadline = Instant::now() + wait;
+        let mut s = m.lock().unwrap();
+        loop {
+            if let Some(f) = &s.inbound
+                && f.seq > after
+            {
+                return Some(f.clone());
+            }
+            let now = Instant::now();
+            if now >= deadline || !s.active {
+                return None;
+            }
+            s = cv.wait_timeout(s, deadline - now).unwrap().0;
+        }
+    }
+
+    /// The app side: a processed frame (NV12).
+    pub fn put_processed(f: Frame) {
+        let (m, _) = state();
+        let mut s = m.lock().unwrap();
+        if s.active && f.data.len() >= (f.width * f.height * 3 / 2) as usize {
+            s.outbound = Some((f, Instant::now()));
+        }
+    }
+
+    pub fn i420_to_nv12(i420: &[u8], w: usize, h: usize) -> Vec<u8> {
+        let (ys, cs) = (w * h, (w / 2) * (h / 2));
+        let mut out = Vec::with_capacity(ys + 2 * cs);
+        out.extend_from_slice(&i420[..ys]);
+        let (u, v) = (&i420[ys..ys + cs], &i420[ys + cs..ys + 2 * cs]);
+        for i in 0..cs {
+            out.push(u[i]);
+            out.push(v[i]);
+        }
+        out
+    }
+
+    pub fn nv12_to_i420(nv12: &[u8], w: usize, h: usize, out: &mut [u8]) {
+        let (ys, cs) = (w * h, (w / 2) * (h / 2));
+        out[..ys].copy_from_slice(&nv12[..ys]);
+        for i in 0..cs {
+            out[ys + i] = nv12[ys + 2 * i];
+            out[ys + cs + i] = nv12[ys + 2 * i + 1];
+        }
     }
 }
 
@@ -510,6 +642,28 @@ mod tests {
         assert!(hi1 - lo1 < hi0 - lo0, "{lo1}..{hi1} vs {lo0}..{hi0}");
         assert_eq!(y[5 * w + 12], 240);
         assert!(y[5 * w + 7] < 140, "{}", y[5 * w + 7]);
+    }
+
+    #[test]
+    fn nv12_round_trips_and_the_filter_result_replaces_the_frame() {
+        let (w, h) = (4usize, 2usize);
+        let i420: Vec<u8> = (0..(w * h * 3 / 2) as u8).collect();
+        let nv12 = filter::i420_to_nv12(&i420, w, h);
+        assert_eq!(&nv12[8..], &[8, 10, 9, 11]);
+        let mut back = vec![0u8; i420.len()];
+        filter::nv12_to_i420(&nv12, w, h, &mut back);
+        assert_eq!(back, i420);
+
+        filter::set_active(true);
+        let mut frame = i420.clone();
+        filter::apply(w as u32, h as u32, &mut frame);
+        assert_eq!(frame, i420, "no result yet: the frame is unchanged");
+        let f = filter::next_frame(0, std::time::Duration::from_millis(10)).expect("a frame for the app");
+        filter::put_processed(filter::Frame { data: vec![200; f.data.len()], ..f });
+        filter::apply(w as u32, h as u32, &mut frame);
+        assert!(frame.iter().all(|&v| v == 200));
+        filter::set_active(false);
+        assert!(filter::next_frame(0, std::time::Duration::from_millis(5)).is_none());
     }
 
     #[test]

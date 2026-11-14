@@ -858,6 +858,18 @@ pub mod qobject {
         /// Remove one of your backgrounds.
         #[qinvokable]
         fn remove_video_background(self: Pin<&mut Backend>, id: &QString) -> bool;
+        /// Teams' Filters from its Custom Filters app: {url, filters: [{id,
+        /// name, category, thumb}]}, empty until loaded (video_filters_ready
+        /// follows the first call).
+        #[qinvokable]
+        fn video_filters(self: Pin<&mut Backend>) -> QString;
+        /// The filter app is ready (or stopped): camera frames go to it.
+        #[qinvokable]
+        fn set_video_filter_active(self: Pin<&mut Backend>, on: bool);
+        /// Where the filter app's page gets camera frames (a localhost
+        /// WebSocket with a secret path).
+        #[qinvokable]
+        fn video_filter_socket(self: Pin<&mut Backend>) -> QString;
         /// Send the compose box with a recorded clip before its text
         /// (`clip_json`: {id, duration (ms), width, height}), as Teams'
         /// message carries it.
@@ -1119,6 +1131,9 @@ pub mod qobject {
         /// Teams' background catalog loaded (video_backgrounds).
         #[qsignal]
         fn video_backgrounds_ready(self: Pin<&mut Backend>);
+        /// The Custom Filters app's definition loaded (video_filters).
+        #[qsignal]
+        fn video_filters_ready(self: Pin<&mut Backend>);
 
         /// A video_clip_upload finished: the recording's path and {id,
         /// url, error}.
@@ -5329,6 +5344,46 @@ impl qobject::Backend {
         }
         let json: Vec<serde_json::Value> = list.iter().map(|e| e.json()).collect();
         QString::from(serde_json::Value::Array(json).to_string().as_str())
+    }
+
+    pub fn video_filters(self: Pin<&mut Self>) -> QString {
+        static CACHE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        static LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if let Some(json) = CACHE.lock().unwrap().clone() {
+            return QString::from(json.as_str());
+        }
+        if !LOADING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                let result = async {
+                    let client = TeamsClient::new().await?;
+                    teams_cli::api::app_details::definition(&client, crate::video_effects::FILTERS_APP).await
+                }
+                .await;
+                match result {
+                    Ok(def) => {
+                        let (url, list) = crate::video_effects::parse_filters(&def);
+                        let filters: Vec<serde_json::Value> = list
+                            .iter()
+                            .map(|f| serde_json::json!({ "id": f.id, "name": f.name, "category": f.category, "thumb": f.thumb }))
+                            .collect();
+                        *CACHE.lock().unwrap() = Some(serde_json::json!({ "url": url, "filters": filters }).to_string());
+                    }
+                    Err(e) => tracing::warn!("filters app: {}", short_error(&e)),
+                }
+                LOADING.store(false, std::sync::atomic::Ordering::SeqCst);
+                let _ = qt.queue(|this| this.video_filters_ready());
+            });
+        }
+        QString::from("{}")
+    }
+
+    pub fn set_video_filter_active(self: Pin<&mut Self>, on: bool) {
+        ost_vfx::filter::set_active(on);
+    }
+
+    pub fn video_filter_socket(self: Pin<&mut Self>) -> QString {
+        QString::from(crate::video_effects::filter_socket().as_str())
     }
 
     pub fn video_uploads(self: Pin<&mut Self>) -> QString {

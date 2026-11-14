@@ -110,6 +110,20 @@ fn main() {
     // only thread.
     unsafe { std::env::set_var("QML_XHR_ALLOW_FILE_READ", "1") };
 
+    // Teams' video filter app runs in a view nobody looks at (and keeps
+    // running while OST's main window is hidden): Chromium must not slow
+    // its timers or rendering then.
+    {
+        let mut flags = std::env::var("QTWEBENGINE_CHROMIUM_FLAGS").unwrap_or_default();
+        for f in ["--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"] {
+            if !flags.contains(f) {
+                flags = format!("{flags} {f}").trim().to_string();
+            }
+        }
+        // SAFETY: set before Qt or the Tokio runtime start, while main is
+        // the only thread.
+        unsafe { std::env::set_var("QTWEBENGINE_CHROMIUM_FLAGS", flags) };
+    }
     // Before the application: Teams' web apps (Whiteboard…) are embedded.
     // SAFETY: a plain Qt call with no arguments, made once, before Qt starts.
     unsafe { ost_webengine_initialize() };

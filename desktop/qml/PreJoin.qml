@@ -254,13 +254,14 @@ Window {
             }
             // Teams' quick picker (video-effects-quick-picker): "Backgrounds"
             // (12 px) over a row of 74 x 42 tiles in 82 x 50 cells from 10
-            // in (None, the blur tile, Teams' first four backgrounds) and
+            // in (None, the blur tile, Teams' first four backgrounds),
+            // "Filters" and its row (None, Teams' quick-picker filters) and
             // "More video effects" (12 px, brand) at the end; with the
             // camera off, "To enable video effects, turn on camera".
             Rectangle {
                 id: picker
                 visible: win.effectsOpen
-                x: 1; y: 329; width: parent.width - 2; height: 114
+                x: 1; y: 329; width: parent.width - 2; height: win.cameraOn && videoEffects.quickFilters.length > 0 ? 194 : 114
                 color: theme.inputFilledDark
                 radius: 3
                 Rectangle { width: parent.width; height: 4; color: parent.color }
@@ -310,6 +311,39 @@ Window {
                                     label: parent.modelData.name; accessibleName: parent.modelData.name + " background effect"
                                     selected: videoEffects.background === parent.modelData.id
                                     onPicked: videoEffects.setBackground(parent.modelData.id)
+                                }
+                            }
+                        }
+                    }
+                    // Teams' Filters row: None and its quick-picker filters.
+                    Text {
+                        visible: videoEffects.quickFilters.length > 0
+                        x: 12; height: visible ? 30 : 0; verticalAlignment: Text.AlignVCenter
+                        text: "Filters"
+                        font.family: theme.font; font.pixelSize: 12
+                        color: theme.text
+                    }
+                    Row {
+                        visible: videoEffects.quickFilters.length > 0
+                        x: 9; height: visible ? 50 : 0
+                        Cell {
+                            EffectTile {
+                                x: 4; y: 4; width: 74; height: 42
+                                kind: "none"; label: "None"; accessibleName: "No video effect selected"
+                                selected: videoEffects.filter === ""
+                                onPicked: videoEffects.setFilter("")
+                            }
+                        }
+                        Repeater {
+                            model: videoEffects.quickFilters
+                            Cell {
+                                required property var modelData
+                                EffectTile {
+                                    x: 4; y: 4; width: 74; height: 42
+                                    thumb: parent.modelData.thumb
+                                    label: parent.modelData.name; accessibleName: parent.modelData.name
+                                    selected: videoEffects.filter === parent.modelData.id
+                                    onPicked: videoEffects.setFilter(parent.modelData.id)
                                 }
                             }
                         }

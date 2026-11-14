@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use ost_vfx::{Animated, Background, Blur, Picture, Settings};
 use teams_cli::calling::webrtc_video::{SEND_H, SEND_W};
@@ -265,6 +266,136 @@ impl Drop for Player {
     }
 }
 
+/// Teams' Custom Filters video app (Frames and Styles).
+pub const FILTERS_APP: &str = "73d49226-b5c0-42f0-b918-acd20e8a22d8";
+
+/// One of the app's filters: Teams shows its name without the category
+/// prefix ("Frames_Crystal" is "Crystal" under Frames).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Filter {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub thumb: String,
+}
+
+/// The app's page and filters from its definition
+/// (meetingExtensionDefinition: videoAppContentUrl, filters).
+pub fn parse_filters(def: &serde_json::Value) -> (String, Vec<Filter>) {
+    let m = &def["meetingExtensionDefinition"];
+    let url = m["videoAppContentUrl"].as_str().unwrap_or_default().to_string();
+    let list = m["filters"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|f| {
+                    let full = f["name"].as_str()?;
+                    let (category, name) = full.split_once('_').unwrap_or(("", full));
+                    Some(Filter {
+                        id: f["id"].as_str()?.to_string(),
+                        name: name.to_string(),
+                        category: category.to_string(),
+                        thumb: f["thumbnail"].as_str().unwrap_or_default().to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    (url, list)
+}
+
+// The filter app's frames: its page (qml/VideoFilterHost.qml) connects to
+// a WebSocket on 127.0.0.1 with a secret path; each camera frame goes to it
+// as a binary message (a 16-byte header — u32 width, u32 height, u64
+// sequence, little endian — then NV12) and comes back processed the same
+// way, one at a time.
+
+/// The page's address for the frames (`ws://127.0.0.1:<port>/<secret>`),
+/// starting the server on first use.
+pub fn filter_socket() -> String {
+    static URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    URL.get_or_init(|| {
+        let secret = uuid::Uuid::new_v4().simple().to_string();
+        let std_listener = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::warn!("filter frames: {e}");
+                return String::new();
+            }
+        };
+        let port = std_listener.local_addr().map(|a| a.port()).unwrap_or(0);
+        let _ = std_listener.set_nonblocking(true);
+        let path = format!("/{secret}");
+        crate::backend::runtime().spawn(async move {
+            let Ok(listener) = tokio::net::TcpListener::from_std(std_listener) else { return };
+            while let Ok((stream, _)) = listener.accept().await {
+                let path = path.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = serve_filter_page(stream, &path).await {
+                        tracing::debug!("filter frames: {e:#}");
+                    }
+                });
+            }
+        });
+        format!("ws://127.0.0.1:{port}/{secret}")
+    })
+    .clone()
+}
+
+/// A frame as the page takes it.
+pub fn encode_frame(f: &ost_vfx::filter::Frame) -> Vec<u8> {
+    let mut out = Vec::with_capacity(16 + f.data.len());
+    out.extend_from_slice(&f.width.to_le_bytes());
+    out.extend_from_slice(&f.height.to_le_bytes());
+    out.extend_from_slice(&f.seq.to_le_bytes());
+    out.extend_from_slice(&f.data);
+    out
+}
+
+/// A processed frame from the page.
+pub fn decode_frame(b: &[u8]) -> Option<ost_vfx::filter::Frame> {
+    if b.len() <= 16 {
+        return None;
+    }
+    let width = u32::from_le_bytes(b[0..4].try_into().ok()?);
+    let height = u32::from_le_bytes(b[4..8].try_into().ok()?);
+    let seq = u64::from_le_bytes(b[8..16].try_into().ok()?);
+    let data = b[16..].to_vec();
+    (data.len() >= width as usize * height as usize * 3 / 2).then_some(ost_vfx::filter::Frame { width, height, seq, data })
+}
+
+async fn serve_filter_page(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::{Message, handshake::server::{ErrorResponse, Request, Response}};
+    // Only the page that was given the secret path.
+    let check = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
+        if req.uri().path() == path {
+            Ok(resp)
+        } else {
+            Err(Response::builder().status(404).body(None).unwrap())
+        }
+    };
+    let mut ws = tokio_tungstenite::accept_hdr_async(stream, check).await?;
+    let mut after = 0u64;
+    loop {
+        let frame = tokio::task::spawn_blocking(move || ost_vfx::filter::next_frame(after, Duration::from_millis(500))).await?;
+        let Some(frame) = frame else { continue };
+        after = frame.seq;
+        ws.send(Message::Binary(encode_frame(&frame).into())).await?;
+        // The app's result (or give up on this frame after a second).
+        match tokio::time::timeout(Duration::from_secs(1), ws.next()).await {
+            Ok(Some(Ok(Message::Binary(b)))) => {
+                if let Some(f) = decode_frame(&b) {
+                    ost_vfx::filter::put_processed(f);
+                }
+            }
+            Ok(Some(Ok(Message::Close(_)))) | Ok(None) => return Ok(()),
+            Ok(Some(Err(e))) => return Err(e.into()),
+            _ => {}
+        }
+    }
+}
+
 /// Each apply's number: a background still loading or playing stops when a
 /// newer choice is made.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -408,6 +539,30 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!is_upload_id("../x"));
         assert_eq!(add_upload(Path::new("/tmp/a.gif")), Err(AddError::InvalidType));
+    }
+
+    #[test]
+    fn the_filters_app_lists_frames_and_styles() {
+        let def = serde_json::json!({ "meetingExtensionDefinition": {
+            "videoAppContentUrl": "https://res.cdn.office.net/midgard/1.latest/custom-filters/index.html",
+            "filters": [
+                { "id": "a0d54440-381e-4328-baf9-bf0323b4b39c", "name": "Styles_Sweet", "thumbnail": "https://x/s.png" },
+                { "id": "f1adab11-0a32-46e1-ad15-347e699bb1bd", "name": "Frames_Crystal", "thumbnail": "https://x/c.png" },
+                { "name": "broken" }
+            ] } });
+        let (url, list) = parse_filters(&def);
+        assert!(url.ends_with("/custom-filters/index.html"));
+        assert_eq!(list.len(), 2);
+        assert_eq!((list[0].category.as_str(), list[0].name.as_str()), ("Styles", "Sweet"));
+        assert_eq!((list[1].category.as_str(), list[1].name.as_str()), ("Frames", "Crystal"));
+    }
+
+    #[test]
+    fn filter_frames_round_trip_through_the_wire_format() {
+        let f = ost_vfx::filter::Frame { width: 4, height: 2, seq: 7, data: vec![1; 12] };
+        let back = decode_frame(&encode_frame(&f)).unwrap();
+        assert_eq!((back.width, back.height, back.seq, back.data), (4, 2, 7, vec![1; 12]));
+        assert!(decode_frame(&[0; 16]).is_none());
     }
 
     #[test]

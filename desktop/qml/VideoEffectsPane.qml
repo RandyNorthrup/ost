@@ -27,8 +27,10 @@ import com.ost.desktop
 // your video while you preview." (12 px, an info glyph before it), Preview
 // (white, 339.3 x 32) — which shows your preview (325.3 x 183) above the
 // footer and becomes "Stop preview" — and "Apply and turn on video"
-// (brand). Teams' Green screen settings and Filters (TASK-0139) and the
-// Avatars tab (TASK-0140) aren't offered yet.
+// (brand). The Filters accordion holds Teams' Custom Filters app's Frames
+// and Styles (the app runs in VideoFilterHost.qml); Teams' Snapchat and
+// Maybelline categories are third-party apps and aren't offered, nor are
+// Green screen settings (TASK-0139) and the Avatars tab (TASK-0140).
 Rectangle {
     id: root
     /// In a call (tabs and the footer) or before joining.
@@ -47,7 +49,9 @@ Rectangle {
     property bool previewing: false
     property var cameras: []
     property string currentCamera: ""
-    property var expanded: ({ backgrounds: true, camera: true, appearance: true, advanced: true })
+    property var expanded: ({ backgrounds: true, filters: true, camera: true, appearance: true, advanced: true })
+    /// The Filters category shown (Teams' chips: Frames, Styles).
+    property string filterCategory: "Frames"
 
     function reload() {
         const d = JSON.parse(backend.videoDevices())
@@ -264,6 +268,67 @@ Rectangle {
                         x: 4; y: 4
                         kind: "showall"; label: "Show all"; accessibleName: "Show all background effects"
                         onPicked: { root.showAll = true; flick.contentY = 0 }
+                    }
+                }
+            }
+            // Teams' Filters (its Custom Filters app): None, the category
+            // chips (24 px pills, 12 px/500, brand when chosen, #E6E6E6
+            // not; 20 in, 13 below) and the category's filters in the
+            // same 88 x 50 grid.
+            SectionHeader { visible: !root.showAll && (videoEffects.filters.filters || []).length > 0; key: "filters"; title: "Filters" }
+            Column {
+                visible: !root.showAll && root.expanded.filters && (videoEffects.filters.filters || []).length > 0
+                width: 341.3
+                Item {
+                    width: 341.3; height: 54
+                    EffectTile {
+                        x: 18.7; y: 4
+                        kind: "none"; label: "None"; accessibleName: "No video effect selected"
+                        selected: videoEffects.filter === ""
+                        onPicked: videoEffects.setFilter("")
+                    }
+                }
+                Row {
+                    x: 18.7; spacing: 5
+                    bottomPadding: 13; topPadding: 12
+                    Repeater {
+                        model: ["Frames", "Styles"]
+                        Rectangle {
+                            id: chip
+                            required property string modelData
+                            readonly property bool chosen: root.filterCategory === modelData
+                            width: chipText.implicitWidth + 14; height: 24; radius: 12
+                            color: chosen ? theme.brandForeground1 : chipHover.hovered ? theme.hover : theme.effectTile
+                            Text {
+                                id: chipText
+                                anchors.centerIn: parent
+                                text: chip.modelData
+                                font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium
+                                color: chip.chosen ? theme.pick("#FAFAFA", "#FFFFFF") : theme.textStrong
+                            }
+                            HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.filterCategory = chip.modelData }
+                            Accessible.role: Accessible.RadioButton
+                            Accessible.name: chip.modelData
+                            Accessible.checked: chip.chosen
+                        }
+                    }
+                }
+                Grid {
+                    x: 14.7; columns: 3
+                    bottomPadding: 20
+                    Repeater {
+                        model: (videoEffects.filters.filters || []).filter(f => f.category === root.filterCategory)
+                        Cell {
+                            required property var modelData
+                            EffectTile {
+                                x: 4; y: 4
+                                thumb: parent.modelData.thumb
+                                label: parent.modelData.name; accessibleName: parent.modelData.name
+                                selected: videoEffects.filter === parent.modelData.id
+                                onPicked: videoEffects.setFilter(parent.modelData.id)
+                            }
+                        }
                     }
                 }
             }
