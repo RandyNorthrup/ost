@@ -363,6 +363,13 @@ pub struct Hit {
     /// The file's site and list, for SharePoint's sharing methods.
     pub file_site: String,
     pub file_list: String,
+    /// The team a channel's file belongs to (ChannelGroupId), which
+    /// Teams' place line names first.
+    #[serde(default)]
+    pub file_group_id: String,
+    /// Shared with you but never opened (no Path): Teams shows no place.
+    #[serde(default)]
+    pub file_unredeemed: bool,
 }
 
 /// A page of results.
@@ -457,6 +464,8 @@ pub fn found_from(reply: &serde_json::Value) -> Found {
                 file_folder: s(&src["ParentLink"]),
                 file_site: [&src["SpWebUrl"], &src["SiteName"]].iter().map(|v| s(v)).find(|u| !u.is_empty()).unwrap_or_default(),
                 file_list: s(&src["ListId"]),
+                file_group_id: s(&src["ChannelGroupId"]),
+                file_unredeemed: src["Path"].is_null(),
                 text: plain(&s(&r["HitHighlightedSummary"])),
                 file_name: s(&src["FileName"]),
                 file_type: [&src["FileType"], &src["FileExtension"], &src["SecondaryFileExtension"]]
@@ -662,6 +671,18 @@ mod tests {
             b["entityRequests"][0]["query"]["queryAnnotations"],
             serde_json::json!([{"type": "People", "text": "someone@example.com", "userId": "5050c9d6-0000-0000-0000-000000000000", "tenantId": "t1"}])
         );
+    }
+
+    #[test]
+    fn file_hits_carry_what_teams_place_line_needs() {
+        let reply = serde_json::json!({"EntitySets": [{"ResultSets": [{"Results": [
+            {"Type": "File", "Source": {"FileName": "a.loop", "ChannelGroupId": "g1", "Path": "https://x/sites/T/Shared Documents/General/a.loop",
+                                         "SpWebUrl": "https://x/sites/T", "DefaultEncodingUrl": "https://x/sites/T/Shared Documents/General/a.loop"}},
+            {"Type": "File", "Source": {"FileName": "b.docx", "SpWebUrl": "https://x/sites/T"}}
+        ]}]}]});
+        let f = found_from(&reply);
+        assert_eq!((f.hits[0].file_group_id.as_str(), f.hits[0].file_unredeemed), ("g1", false));
+        assert_eq!((f.hits[1].file_group_id.as_str(), f.hits[1].file_unredeemed), ("", true));
     }
 
     #[test]

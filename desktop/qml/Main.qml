@@ -647,7 +647,7 @@ Window {
             const arg = (Qt.application.arguments.find(a => a.startsWith("--search-grid-test=")) || "").slice(19) || "OST"
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
             const log = tag => console.warn("GRID", tag, searchView.fileLayout, JSON.stringify(searchView.rowsForTest().map(r => r.t)),
-                                            JSON.stringify(searchView.page && searchView.page.files ? searchView.page.files.hits.slice(0, 8).map(h => [h.file_name, h.file_action, h.file_by, h.file_when]) : null))
+                                            JSON.stringify(searchView.page && searchView.page.files ? searchView.page.files.hits.slice(0, 8).map(h => [h.file_name, h.file_action, h.file_by, h.file_when, searchView.filePlace(h).join(" › ")]) : null))
             if (step === 0) { searchView.setFileLayout("list"); window.openSearch(arg) }
             else if (step === 2) searchView.setTab("files")
             else if (step === 4) { log("list"); cap("grid-list") }

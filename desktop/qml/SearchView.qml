@@ -1073,12 +1073,24 @@ Rectangle {
     }
     // The grid's "OST T." (the first word and the second's initial).
     function gridName(n) { const p = String(n || "").split(" "); return p[0] + " " + (p[1] ? p[1][0] + "." : "") }
-    // Where a file is, as Teams' place line shows it: its site, then the
-    // folders under its library (the folder's link, ParentLink).
+    // Where a file is, as Teams' place line shows it: team › channel.
+    // The team is the channel file's team (ChannelGroupId), else the joined
+    // team whose site (or a channel's own site) is the file's, else the
+    // site address's name; the channel is the first folder under the
+    // library in the file's address, else "Shared Documents". A file never
+    // opened (no Path) has no place.
     function filePlace(f) {
-        const m = String(f.file_folder || "").match(/^https:\/\/[^/]+\/(?:sites|personal|teams|contentstorage)\/([^/]+)(?:\/[^/]+)?((?:\/[^/]+)*)$/)
-        if (!m) return []
-        return [m[1]].concat(m[2].split("/").filter(x => !!x)).map(x => { try { return decodeURIComponent(x) } catch (e) { return x } })
+        if (!f || f.file_unredeemed) return []
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const site = String(f.file_site || "").toLowerCase()
+        let t = f.file_group_id ? teams.find(t => t.id === f.file_group_id) : null
+        if (!t && site) t = teams.find(t => String(t.site_url || "").toLowerCase() === site || (t.channels || []).some(c => String(c.site_url || "").toLowerCase() === site))
+        const team = t ? t.name : String(f.file_site || "").split("/")[4]
+        if (!team) return []
+        let url = ""
+        try { url = decodeURI(f.file_url || "") } catch (e) { url = "" }
+        const m = url.match(/^https:\/\/[^\/]+\/[^\/]+\/(:w:\/|:v:\/)?(r\/)?([^\/]+)\/([^\/]+)\/([^\/]+)\/([^\/]+)/)
+        return [team, (m && m[5]) || qsTr("Shared Documents")]
     }
     // Teams' place line: the parts (12/16 #616161, capitalized) between
     // 8 px chevrons 8 apart, all within 320; parts too long share the room.

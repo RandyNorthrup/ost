@@ -142,6 +142,9 @@ pub struct ListChannel {
     /// Teams' channelType: 0 standard, 1 private, 2 shared.
     pub channel_type: u8,
     pub archived: bool,
+    /// Its own SharePoint site, for private and shared channels
+    /// (sharepointSiteUrl; empty for standard ones).
+    pub site_url: String,
     /// Shared into this team from another one.
     pub shared_in: bool,
     /// Recommended for everyone's list (Teams' isFavoriteByDefault;
@@ -248,6 +251,9 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                         .to_string(),
                     channel_type: c.get("channelType").and_then(|v| v.as_u64()).unwrap_or(0).min(2) as u8,
                     archived: b(c, "isArchived"),
+                    // A private or shared channel's own site (Teams names
+                    // a file's team from it in search).
+                    site_url: s(c, "sharepointSiteUrl"),
                     shared_in: b(c, "isShared") && !s(c, "parentTeamId").is_empty() && s(c, "parentTeamId") != thread,
                     recommended: b(c, "isFavoriteByDefault") && !b(c, "isGeneral"),
                 };
