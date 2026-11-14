@@ -3,11 +3,11 @@ id: TASK-0105
 title: >-
   Search page: result preview pane, Communities, Files grid view, unverified
   filter terms
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T03:01:00Z'
-updated_date: '2026-11-14T03:40:00Z'
+updated_date: '2026-11-14T03:59:00Z'
 labels:
   - search
 dependencies: []
@@ -22,7 +22,7 @@ Teams' search results page (TASK-0051) leaves these to do: clicking a message re
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A message result opens Teams' preview pane beside the results (measured), with Go to chat/channel
-- [ ] #2 The Communities tab searches Viva Engage as Teams does, or is omitted only if the account has no Viva Engage
+- [x] #2 The Communities tab searches Viva Engage as Teams does, or is omitted only if the account has no Viva Engage
 - [x] #3 Files has Grid view and List view as Teams
 - [x] #4 Type ▸ Channel and In ▸ channel / team send the terms Teams sends (captured)
 <!-- AC:END -->
@@ -40,4 +40,20 @@ Teams' search results page (TASK-0051) leaves these to do: clicking a message re
 - Follow-ups: TASK-0112 (Share this file dialog; Share left out of the grid menu until then), TASK-0113 (team-site titles in the place line).
 
 - 2026-11-13: In ▸ team captured (OST Test Team, Messages tab, searchservice/api/v2/query): "clientthreadid:{team thread, its General channel} AND NOT (isClientSoftDeleted:TRUE) {kw}" with Filter {"Term":{"GroupId": team}} — same shape as In ▸ channel. OST now sends that (search.rs message_query; test).
+
+- 2026-11-13: Communities captured: Teams' tab (under +3 with Meetings and Images; no filter row; no "is:" in the box) asks Viva Engage — POST www.yammer.com/graphql, CommunitySearchTeams {query} (groups first 25: id, displayName, description, avatarUrlTemplate, isOfficial, viewerMembershipStatus, privacy, hasDefaultAvatar), Bearer token aud https://web.yammer.com/teams (Teams' client id; OST gets the same token). Built: api::search::communities + CommunityHit, the tab and a result card. The tenant has no communities, so both show Teams' empty state; the card's look follows the channel card (not measurable). Harness --search-communities-test.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' search results page is complete in OST: the preview pane, Files grid/list views, the filters' exact search terms, and the Communities tab.
+
+This round:
+- In ▸ team sends Teams' terms (clientthreadid of the team's thread with its GroupId filter), captured from Teams.
+- Communities: Teams' tab under +3 searches Viva Engage with Teams' own GraphQL query and token audience; results show as cards, and the empty state and search box wording match Teams.
+
+Tests: cargo test --lib (search tests for In ▸ team and the Engage reply), --search-communities-test on linuxlt, compared with Teams on winpc.
+
+Known: the test tenant has no Viva Engage communities, so the result card's look couldn't be measured.
+<!-- SECTION:FINAL_SUMMARY:END -->

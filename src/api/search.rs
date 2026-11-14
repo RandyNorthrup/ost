@@ -297,6 +297,69 @@ pub struct Page {
     pub people_total: u64,
     pub events: Vec<EventHit>,
     pub events_total: u64,
+    /// Communities (Viva Engage's groups).
+    #[serde(default)]
+    pub communities: Vec<CommunityHit>,
+}
+
+/// A Viva Engage community found by Teams' Communities tab.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct CommunityHit {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// The picture's address template ("{width}x{height}" to fill in).
+    pub avatar: String,
+    pub official: bool,
+    /// "MEMBER", "NOT_MEMBER", "PENDING"…
+    pub membership: String,
+    /// "PUBLIC" / "PRIVATE".
+    pub privacy: String,
+}
+
+/// Teams' Communities search (captured 2026-11-13): Viva Engage's GraphQL
+/// `CommunitySearchTeams` at www.yammer.com/graphql with the user's token for
+/// https://web.yammer.com/teams.
+pub const COMMUNITY_SEARCH: &str = "\n  query CommunitySearchTeams($query: String!) {\n    search(query: $query) {\n      groups(first: 25) {\n        edges {\n          node {\n            id\n            displayName\n            description\n            avatarUrlTemplate\n            isOfficial\n            viewerMembershipStatus\n            privacy\n            hasDefaultAvatar\n          }\n        }\n        pageInfo {\n          hasNextPage\n          endCursor\n        }\n      }\n    }\n  }\n";
+
+/// The communities in a CommunitySearchTeams reply.
+pub fn read_communities(reply: &serde_json::Value) -> Vec<CommunityHit> {
+    reply
+        .pointer("/data/search/groups/edges")
+        .and_then(|e| e.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let n = e.get("node")?;
+            Some(CommunityHit {
+                id: s(&n["id"]),
+                name: s(&n["displayName"]),
+                description: s(&n["description"]),
+                avatar: if n["hasDefaultAvatar"].as_bool() == Some(true) { String::new() } else { s(&n["avatarUrlTemplate"]) },
+                official: n["isOfficial"].as_bool().unwrap_or(false),
+                membership: s(&n["viewerMembershipStatus"]),
+                privacy: s(&n["privacy"]),
+            })
+        })
+        .collect()
+}
+
+/// Search Viva Engage's communities as Teams' Communities tab does.
+pub async fn communities(keywords: &str) -> Result<Vec<CommunityHit>> {
+    let token = crate::auth::oauth::access_token_for("https://web.yammer.com/teams/.default").await?;
+    let body = serde_json::json!({ "query": COMMUNITY_SEARCH, "operationName": "CommunitySearchTeams", "variables": { "query": keywords } });
+    let reply: serde_json::Value = reqwest::Client::new()
+        .post("https://www.yammer.com/graphql")
+        .bearer_auth(token)
+        .header("content-type", "application/json")
+        .header("referer", "https://teams.microsoft.com/")
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(read_communities(&reply))
 }
 
 fn s(v: &serde_json::Value) -> String {
@@ -549,6 +612,10 @@ pub async fn search(
 ) -> Result<Page> {
     let anchor = if my_oid.is_empty() || tenant.is_empty() { String::new() } else { format!("OID:{my_oid}@{tenant}") };
     let mut page = Page::default();
+    if tab == "communities" {
+        page.communities = communities(keywords).await?;
+        return Ok(page);
+    }
     for body in bodies(tab, keywords, f, from, timezone, my_oid, tenant) {
         let reply = find::search_raw(&body, &anchor).await?;
         read_reply(&mut page, &reply, tab == "images");
@@ -598,6 +665,20 @@ async fn fill_by_thread(client: &super::client::TeamsClient, found: &mut Found) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn communities_read_engages_reply() {
+        let reply = serde_json::json!({"data": {"search": {"groups": {"edges": [
+            {"node": {"id": "g1", "displayName": "OST community", "description": "A test", "avatarUrlTemplate": "https://x/{width}x{height}", "isOfficial": true, "viewerMembershipStatus": "MEMBER", "privacy": "PUBLIC", "hasDefaultAvatar": false}},
+            {"node": {"id": "g2", "displayName": "Other", "description": "", "avatarUrlTemplate": "https://x/d", "isOfficial": false, "viewerMembershipStatus": "NOT_MEMBER", "privacy": "PRIVATE", "hasDefaultAvatar": true}}
+        ], "pageInfo": {"hasNextPage": false, "endCursor": null}}}}});
+        let c = read_communities(&reply);
+        assert_eq!(c.len(), 2);
+        assert_eq!((c[0].name.as_str(), c[0].avatar.as_str(), c[0].official), ("OST community", "https://x/{width}x{height}", true));
+        assert_eq!(c[1].avatar, "");
+        assert!(read_communities(&serde_json::json!({"data": {"search": {"groups": {"edges": []}}}})).is_empty());
+        assert!(COMMUNITY_SEARCH.contains("query CommunitySearchTeams($query: String!)"));
+    }
 
     #[test]
     fn every_tab_has_teams_request() {

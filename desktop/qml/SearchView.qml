@@ -78,9 +78,9 @@ Rectangle {
     readonly property var terms: page && page.terms && page.terms.length ? page.terms : query.split(/\s+/).filter(t => !!t)
     readonly property bool hasFilters: !!kind || !!inPlace || !!person || !!dateKey || mentions || attachment || hideBots || !!fileType
 
-    readonly property var tabNames: ({ all: "All", messages: "Messages", files: "Files", people: "People", channels: "Channels", groupchats: "Group chats", meetings: "Meetings", images: "Images" })
+    readonly property var tabNames: ({ all: "All", messages: "Messages", files: "Files", people: "People", channels: "Channels", groupchats: "Group chats", meetings: "Meetings", images: "Images", communities: "Communities" })
     readonly property var mainTabs: ["all", "messages", "files", "people", "channels", "groupchats"]
-    readonly property var moreTabs: ["meetings", "images"]
+    readonly property var moreTabs: ["meetings", "images", "communities"]
     // An overflow tab picked takes the last slot before +3, as in Teams.
     readonly property var shownTabs: moreTabs.indexOf(tab) >= 0 ? mainTabs.slice(0, 5).concat([tab]) : mainTabs
     readonly property var hiddenTabs: mainTabs.concat(moreTabs).filter(t => shownTabs.indexOf(t) < 0)
@@ -666,6 +666,10 @@ Rectangle {
         } else if (tab === "meetings") {
             if (page.events.length) heading("", true)
             for (const e of page.events) out.push({ t: "event", e: e })
+        } else if (tab === "communities") {
+            const cs = page.communities || []
+            if (cs.length) heading("", true)
+            for (const c of cs) out.push({ t: "community", c: c })
         } else if (tab === "images") {
             const imgs = page.images ? page.images.hits : []
             if (imgs.length) heading("", true)
@@ -696,7 +700,7 @@ Rectangle {
             width: list.width
             sourceComponent: ({ heading: headingRow, message: messageCard, chat: chatCard, channel: channelCard, file: fileCard, person: personCard,
                                 event: eventCard, more: moreLink, none: noneRow, chatrow: chatRowCards, channelrow: channelRowCards, "image-row": imageRow,
-                                "grid-heading": gridHeading, "file-grid": fileGridRow })[modelData.t]
+                                "grid-heading": gridHeading, "file-grid": fileGridRow, community: communityCard })[modelData.t]
             property var row: modelData
         }
     }
@@ -909,6 +913,38 @@ Rectangle {
         return first.length === 1 ? "You and " + first[0] : "You, " + first.slice(0, -1).join(", ") + " and " + first[first.length - 1]
     }
     // A channel row (Channels tab: 64 tall).
+    // A Viva Engage community (Teams' Communities tab; the service's
+    // CommunitySearchTeams). The test tenant has none, so this follows the
+    // channel card: the community's picture, its name (the match bold) and
+    // its description; it opens in Viva Engage on the web.
+    Component {
+        id: communityCard
+        Item {
+            readonly property var c: row.c
+            height: 64 + 16
+            Card {
+                height: 64
+                Avatar {
+                    x: 16; y: 16; size: 32; square: true; squareRadius: 4
+                    name: parent.parent.c.name
+                    visible: !parent.parent.c.avatar
+                }
+                Image {
+                    visible: !!parent.parent.c.avatar
+                    x: 16; y: 16; width: 32; height: 32
+                    source: { backend.emoticonsVersion; const a = parent.parent.c.avatar; return a ? backend.cardImage(a.replace("{width}", "64").replace("{height}", "64")) : "" }
+                    fillMode: Image.PreserveAspectCrop
+                    RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
+                }
+                Text { x: 60; y: 11.3; width: parent.width - 76; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.c.name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 60; y: 32; width: parent.width - 76; elide: Text.ElideRight; text: parent.parent.c.description || (parent.parent.c.privacy === "PRIVATE" ? "Private community" : "Public community"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                TapHandler { onTapped: Qt.openUrlExternally("https://web.yammer.com/main/groups/" + encodeURIComponent(parent.parent.c.id)) }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+            }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: c.name + " community"
+        }
+    }
     Component {
         id: channelCard
         Item {
