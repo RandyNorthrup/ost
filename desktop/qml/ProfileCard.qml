@@ -30,7 +30,16 @@ Popup {
     readonly property var card: backend.profileCardJson ? JSON.parse(backend.profileCardJson) : ({})
     readonly property string mri: card.id ? "8:orgid:" + card.id : who
     readonly property var p: card.presence || ({})
-    function show(id) { who = id; tab = "overview"; moreContact = false; quick.text = ""; backend.loadProfileCard(id); open() }
+    function show(id) { who = id; tab = "overview"; moreContact = false; quick.text = ""; history = [id]; historyAt = 0; backend.loadProfileCard(id); open() }
+    // The org chart's people: Home, Back to previous profile and Next
+    // profile walk this list (Teams' org chart navigation).
+    property var history: []
+    property int historyAt: -1
+    function visit(id) {
+        history = history.slice(0, historyAt + 1).concat([id]); historyAt = history.length - 1
+        who = id; backend.loadProfileCard(id)
+    }
+    function stepTo(i) { if (i < 0 || i >= history.length) return; historyAt = i; who = history[i]; backend.loadProfileCard(who) }
     parent: Overlay.overlay
     modal: true; focus: true
     x: (parent.width - width) / 2; y: 47.5
@@ -109,19 +118,26 @@ Popup {
                     { icon: "chat-20", label: "Start a chat with ", act: "chat" },
                     { icon: "org-20", label: "Navigate to the org chart of ", act: "org" },
                     { icon: "video-20", label: "Start a video call with ", act: "video" },
-                    { icon: "call-20", label: "Start an audio call with ", act: "call" }
+                    { icon: "call-20", label: "Start an audio call with ", act: "call" },
+                    // LinkedIn's logo (16 px, #1177B3): its people search for the name.
+                    { icon: "linkedin-logo", label: "Find LinkedIn profile for ", act: "linkedin" }
                 ]
                 Rectangle {
                     required property var modelData
                     width: 44; height: 32; radius: 4
                     color: ah.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: modelData.icon; size: 20; color: ah.hovered ? theme.brand : theme.textStrong }
+                    FluentIcon {
+                        anchors.centerIn: parent; name: modelData.icon
+                        size: modelData.act === "linkedin" ? 16 : 20
+                        color: modelData.act === "linkedin" ? "#1177B3" : ah.hovered ? theme.brand : theme.textStrong
+                    }
                     HoverHandler { id: ah; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
                             const n = root.card.displayName || ""
                             if (modelData.act === "chat") { root.close(); root.startChat(root.mri, n) }
                             else if (modelData.act === "org") root.tab = "organization"
+                            else if (modelData.act === "linkedin") Qt.openUrlExternally("https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(n))
                             else { root.close(); root.startCall(root.mri, n, modelData.act === "video") }
                         }
                     }
@@ -144,7 +160,7 @@ Popup {
         Row {
             x: 20.7; y: 148.7
             Repeater {
-                model: [{ key: "overview", label: "Overview" }, { key: "profile", label: "Profile" }, { key: "organization", label: "Organization" }]
+                model: [{ key: "overview", label: "Overview" }, { key: "profile", label: "Profile" }, { key: "organization", label: "Organization" }, { key: "linkedin", label: "LinkedIn" }]
                 Item {
                     required property var modelData
                     readonly property bool on: root.tab === modelData.key
@@ -164,7 +180,7 @@ Popup {
         Flickable {
             id: body
             y: 194; width: parent.width; height: parent.height - y
-            contentHeight: (root.tab === "overview" ? overview.height : root.tab === "profile" ? profileTab.height : orgTab.height) + 32
+            contentHeight: (root.tab === "overview" ? overview.height : root.tab === "profile" ? profileTab.height : root.tab === "linkedin" ? linkedInTab.height : orgTab.y + orgTab.height) + 32
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -323,18 +339,148 @@ Popup {
                 }
             }
 
-            // ---- Organization ----
+            // ---- Organization (measured on winpc 2026-11-13, OST Test 2) ----
+            // #FAFAFA under the tabs; Home (40), Back to previous profile
+            // (80) and Next profile (112): 32 px buttons 8 down, 20 px glyphs,
+            // #BDBDBD while there's nowhere to go. Without a manager or
+            // reports Teams says so in a #F5F5F5 bar (0.67 #E0E0E0, radius 4,
+            // padding 12 16, 758.67 wide) 42 down: a 24 px glyph, then the
+            // text at 48 (14/20 #424242).
+            Rectangle {
+                visible: root.tab === "organization"
+                y: -1.3; width: body.width; height: Math.max(body.height, orgTab.y + orgTab.height + 32) + 1.3
+                color: theme.pick("#FAFAFA", "#1F1F1F")
+            }
+            Row {
+                visible: root.tab === "organization"
+                x: 40; y: 6.6
+                component NavButton: Rectangle {
+                    id: nbtn
+                    property string icon
+                    property string label
+                    property bool can: false
+                    signal go()
+                    width: 32; height: 32; radius: 4
+                    color: can && nbh.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: nbtn.icon; color: nbtn.can ? theme.textStrong : theme.pick("#BDBDBD", "#5C5C5C") }
+                    HoverHandler { id: nbh; enabled: nbtn.can; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: nbtn.can; onTapped: nbtn.go() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: label
+                }
+                NavButton { icon: "home-20"; label: "Home"; can: root.historyAt > 0; onGo: root.stepTo(0) }
+                Item { width: 8; height: 1 }
+                NavButton { icon: "chevron-left-20"; label: "Back to previous profile"; can: root.historyAt > 0; onGo: root.stepTo(root.historyAt - 1) }
+                NavButton { icon: "chevron-right-20"; label: "Next profile"; can: root.historyAt < root.history.length - 1; onGo: root.stepTo(root.historyAt + 1) }
+            }
             Column {
                 id: orgTab
                 visible: root.tab === "organization"
-                x: 29.7; y: 16; width: 773; spacing: 12
+                readonly property bool noOrg: !root.card.loading && !root.card.manager && !(root.card.reports || []).length
+                x: 40; y: 40.6; width: 758.67; spacing: 12
+                Rectangle {
+                    visible: orgTab.noOrg
+                    width: parent.width; height: noOrgText.height + 24
+                    radius: 4
+                    color: theme.pick("#F5F5F5", "#292929")
+                    border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 24; name: "error-circle-24"; color: theme.textStrong }
+                    Text {
+                        id: noOrgText
+                        x: 48; y: 12; width: parent.width - 48 - 16
+                        wrapMode: Text.Wrap
+                        text: "We don't have the necessary details to show the organization chart for " + (root.card.displayName || "") + ". Organization details are provided by your admin or human resources department."
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.textStrong
+                    }
+                }
                 Heading { visible: !!root.card.manager; text: "Reports to" }
                 PersonTile { visible: !!root.card.manager; person: root.card.manager || ({}) }
-                Heading { text: root.card.displayName || "" }
+                Heading { visible: !orgTab.noOrg; text: root.card.displayName || "" }
                 Heading { visible: (root.card.reports || []).length > 0; text: "People reporting to " + (root.card.displayName || "") + " (" + (root.card.reports || []).length + ")" }
                 Flow {
                     width: parent.width; spacing: 8
                     Repeater { model: root.card.reports || []; PersonTile { required property var modelData; person: modelData } }
+                }
+            }
+
+            // ---- LinkedIn (measured on winpc 2026-11-13, OST Test 2, who
+            // shares no LinkedIn profile) ----
+            // Centred, ~400 wide: LinkedIn's logo (64) 100 down; "Learn more
+            // on LinkedIn" (24 semibold) 24 under it; the two paragraphs
+            // (14, line 18.67) 24 and 16 under that, the second with its
+            // "privacy setting" and "Learn more" links; "Check your own
+            // settings" (a brand button, 32 tall, radius 4, 14 semibold
+            // white) and "Connect your account" (14 brand) with its info
+            // glyph. The links open LinkedIn's settings and Microsoft's help
+            // as the card's code names them.
+            Column {
+                id: linkedInTab
+                visible: root.tab === "linkedin"
+                width: body.width
+                topPadding: 98.7
+                spacing: 0
+                FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; size: 64; name: "linkedin-logo"; color: "#1177B3" }
+                Item { width: 1; height: 24 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Learn more on LinkedIn"
+                    font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; lineHeight: 32; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                Item { width: 1; height: 24 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 400; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter
+                    text: (root.card.displayName || "") + " isn't sharing LinkedIn profile information here or doesn't have a LinkedIn profile."
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 18.67; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                }
+                Item { width: 1; height: 16 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 360; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.RichText
+                    readonly property string link: theme.brandForeground1
+                    text: "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act <a href=\"https://aka.ms/LinkedInDMAVisibility\" style=\"color:" + link + ";text-decoration:none\">privacy setting</a> for you and others to see their LinkedIn profile here. <a href=\"https://aka.ms/LinkedInPrivacyHelp\" style=\"color:" + link + ";text-decoration:none\">Learn more</a>"
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 18.67; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                    onLinkActivated: l => Qt.openUrlExternally(l)
+                    HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                }
+                Item { width: 1; height: 34.7 }
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: settingsLabel.implicitWidth + 41.33; height: 32; radius: 4
+                    color: setHover.pressed ? theme.pick("#444791", "#444791") : setHover.hovered ? theme.brandHover : theme.brand
+                    Text { id: settingsLabel; anchors.centerIn: parent; text: "Check your own settings"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
+                    HoverHandler { id: setHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/LinkedInVisibility") }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: settingsLabel.text
+                }
+                Item { width: 1; height: 17.3 }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 4
+                    Text {
+                        text: "Connect your account"
+                        font.family: theme.font; font.pixelSize: 14
+                        font.underline: connectHover.hovered
+                        color: theme.brandForeground1
+                        HoverHandler { id: connectHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Qt.openUrlExternally("https://www.linkedin.com/psettings/microsoft-accounts") }
+                        Accessible.role: Accessible.Link
+                        Accessible.name: text
+                    }
+                    FluentIcon {
+                        anchors.verticalCenter: parent.verticalCenter; size: 12; name: "info-16"; color: theme.textStrong
+                        HoverHandler { id: infoHover }
+                        ToolTip.visible: infoHover.hovered
+                        ToolTip.text: "Securely connect your LinkedIn account to bring your professional network into Microsoft apps."
+                    }
                 }
             }
         }
@@ -372,7 +518,7 @@ Popup {
         Text { x: 8; y: 68; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: pt.person.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
         Text { x: 8; y: 112; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: pt.person.jobTitle || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
         HoverHandler { id: pth; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: if (pt.person.mri) root.show(pt.person.mri) }
+        TapHandler { onTapped: if (pt.person.mri) root.visit(pt.person.mri) }
         Accessible.role: Accessible.Button
         Accessible.name: (pt.person.name || "") + (pt.person.jobTitle ? ", " + pt.person.jobTitle : "")
     }

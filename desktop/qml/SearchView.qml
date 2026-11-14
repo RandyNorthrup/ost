@@ -1094,7 +1094,8 @@ Rectangle {
             height: 64 + 16
             Card {
                 height: 64
-                Avatar { x: 16; y: 16; size: 32; name: parent.parent.p.name; photoId: parent.parent.p.mri; presence: root.presenceOf(parent.parent.p.mri) }
+                // Teams: hovering the picture opens the person's card.
+                Avatar { x: 16; y: 16; size: 32; name: parent.parent.p.name; photoId: parent.parent.p.mri; presence: root.presenceOf(parent.parent.p.mri); opensProfile: true }
                 Text { x: 60; y: 11.3; width: parent.width - 76; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.p.name) + (root.isMe(parent.parent.p.mri) ? " (You)" : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Text { x: 60; y: 32; width: parent.width - 76; elide: Text.ElideRight; text: [parent.parent.p.title, parent.parent.p.department, parent.parent.p.mail].filter(x => !!x).join(" · "); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                 TapHandler { onTapped: root.openPerson(parent.parent.p.mri, parent.parent.p.name) }

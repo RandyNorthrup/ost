@@ -134,19 +134,22 @@ Popup {
                         { icon: "chat-20", label: "Start a chat with ", act: "chat" },
                         { icon: "org-20", label: "Navigate to the org chart of ", act: "org" },
                         { icon: "video-20", label: "Start a video call with ", act: "video" },
-                        { icon: "call-20", label: "Start an audio call with ", act: "call" }
+                        { icon: "call-20", label: "Start an audio call with ", act: "call" },
+                        // LinkedIn's logo, as the full card's: its people search.
+                        { icon: "linkedin-logo", label: "Find LinkedIn profile for ", act: "linkedin" }
                     ]
                     Rectangle {
                         required property var modelData
                         width: 44; height: 32; radius: 4
                         color: hah.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: modelData.icon; size: 16; color: hah.hovered ? theme.brand : theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: modelData.icon; size: 16; color: modelData.act === "linkedin" ? "#1177B3" : hah.hovered ? theme.brand : theme.textStrong }
                         HoverHandler { id: hah; cursorShape: Qt.PointingHandCursor }
                         TapHandler {
                             onTapped: {
                                 const n = root.displayName
                                 if (modelData.act === "chat") { root.close(); root.startChat(root.mri, n) }
                                 else if (modelData.act === "org") root.full("organization")
+                                else if (modelData.act === "linkedin") Qt.openUrlExternally("https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(n))
                                 else { root.close(); root.startCall(root.mri, n, modelData.act === "video") }
                             }
                         }

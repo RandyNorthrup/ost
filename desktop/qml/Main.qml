@@ -5339,7 +5339,8 @@ Window {
                 step++; return
             }
             // =profile:<mri>: open that person's profile card (pc-overview),
-            // its Profile (pc-profile) and Organization (pc-org) tabs.
+            // its Profile (pc-profile), Organization (pc-org) and LinkedIn
+            // (pc-linkedin) tabs.
             if (mode.indexOf("profile:") === 0) {
                 if (step === 1) backend.requestProfile(mode.slice(8))
                 else if (step === 4) { console.warn("PC", backend.profileCardJson.slice(0, 600)); shot("pc-overview") }
@@ -5347,7 +5348,9 @@ Window {
                 else if (step === 6) shot("pc-profile")
                 else if (step === 7) profileCard.tab = "organization"
                 else if (step === 8) shot("pc-org")
-                else if (step === 9) { profileCard.close(); Qt.quit() }
+                else if (step === 9) profileCard.tab = "linkedin"
+                else if (step === 10) shot("pc-linkedin")
+                else if (step === 11) { profileCard.close(); Qt.quit() }
                 step++; return
             }
             // =landing: mark the 1:1 with Randy unread, open it (lr-open).
