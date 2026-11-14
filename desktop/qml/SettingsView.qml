@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
+import com.ost.desktop
 
 // Settings (Ctrl+,), laid out as Teams desktop's (measured on winpc
 // 2026-11-10):
@@ -597,6 +598,170 @@ Rectangle {
                 SettingsParts.Gap { size: 8 }
             }
 
+            // Teams' Video section (Settings ▸ Devices, measured on winpc
+            // 2026-11-14): "Video" (14/700, 44 high) over the "Video
+            // settings" card: your preview (640 x 360 from 44.7 in) with a
+            // 24 px rgba(0,0,0,0.5) bar ("Preview", 12/600 white; with
+            // Green Screen on, "What is your background color?" and a 14 px
+            // swatch in a 22 px white frame at its right — pressing it
+            // turns the preview into an eyedropper: click your backdrop),
+            // Camera, Green Screen, Mirror my video, Adjust brightness and
+            // Soft focus. Teams' "Automatically adjust camera controls" and
+            // "Open camera settings" are Windows camera controls, and Super
+            // resolution is TASK-0139's.
+            Text {
+                visible: root.page === "devices"
+                width: parent.width; height: 44
+                verticalAlignment: Text.AlignVCenter
+                text: "Video"
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            SettingsParts.Card {
+                id: videoCard
+                visible: root.page === "devices"
+                icon: "video-20"; title: "Video settings"
+                readonly property bool showing: visible && root.visible
+                property bool previewing: false
+                property bool picking: false
+                property var cameras: []
+                property string currentCamera: ""
+                onShowingChanged: {
+                    if (showing) {
+                        const d = JSON.parse(backend.videoDevices())
+                        cameras = d.devices || []
+                        currentCamera = d.current || ""
+                        previewing = backend.callState !== "connected" && cameras.length > 0 && backend.setCameraPreview(true)
+                    } else {
+                        if (picking) { picking = false; backend.setGreenScreenPicking(false) }
+                        if (previewing) { previewing = false; backend.setCameraPreview(false) }
+                    }
+                }
+                // Green Screen's detected backdrop until you pick one.
+                Timer {
+                    interval: 500; repeat: true
+                    running: videoCard.showing && videoEffects.greenScreen && videoEffects.greenScreenColor === ""
+                    onTriggered: { const c = backend.greenScreenDetected(); if (c) videoEffects.detectedColor = c }
+                }
+                Item {
+                    x: -12.3; width: 640; height: 360 + 30
+                    Rectangle {
+                        id: devicePreview
+                        width: 640; height: 360
+                        color: theme.stage
+                        clip: true
+                        VideoFrame {
+                            id: deviceFrame
+                            anchors.fill: parent
+                            visible: hasFrame
+                            source: videoCard.showing && (videoCard.previewing || backend.callState === "connected") ? "self" : ""
+                            transform: Scale { origin.x: deviceFrame.width / 2; xScale: videoEffects.mirror ? -1 : 1 }
+                            Timer { interval: 33; repeat: true; running: videoCard.showing; onTriggered: deviceFrame.refresh() }
+                        }
+                        // The eyedropper (Teams' picker cursor, hotspot 2,19)
+                        // while picking.
+                        Image {
+                            visible: videoCard.picking && pickHover.hovered
+                            x: pickHover.point.position.x - 2; y: pickHover.point.position.y - 19
+                            width: 24; height: 24; sourceSize: Qt.size(48, 48)
+                            source: "../assets/icons/eyedropper-cursor.svg"
+                            z: 2
+                        }
+                        HoverHandler { id: pickHover; enabled: videoCard.picking; cursorShape: videoCard.picking ? Qt.BlankCursor : Qt.ArrowCursor }
+                        TapHandler {
+                            enabled: videoCard.picking
+                            onTapped: ev => {
+                                // The picture is shown mirrored when Mirror my video is on.
+                                let fx = ev.position.x / devicePreview.width
+                                if (videoEffects.mirror) fx = 1 - fx
+                                const c = backend.previewColorAt(fx, ev.position.y / devicePreview.height)
+                                if (c) videoEffects.setGreenScreenColor(c)
+                                videoCard.picking = false
+                                backend.setGreenScreenPicking(false)
+                            }
+                        }
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            width: parent.width; height: 24
+                            color: Qt.rgba(0, 0, 0, 0.5)
+                            Text {
+                                anchors.centerIn: parent
+                                text: videoEffects.greenScreen ? "What is your background color?" : "Preview"
+                                font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                                color: "white"
+                            }
+                            Rectangle {
+                                visible: videoEffects.greenScreen
+                                x: parent.width - 23; y: 1; width: 22; height: 22; radius: 5
+                                color: "transparent"; border.color: "white"; border.width: 2
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width: 14; height: 14; radius: 3
+                                    color: videoCard.picking ? theme.pick("#F5F5F5", "#3D3D3D") : (videoEffects.greenScreenColor || videoEffects.detectedColor || "#FFFFFF")
+                                    border.color: theme.stroke; border.width: 0.67
+                                }
+                                HoverHandler { id: swatchHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler {
+                                    onTapped: {
+                                        videoCard.picking = !videoCard.picking
+                                        backend.setGreenScreenPicking(videoCard.picking)
+                                    }
+                                }
+                                ToolTip.visible: swatchHover.hovered
+                                ToolTip.text: "Select a color"
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Select a color"
+                            }
+                        }
+                    }
+                }
+                SettingsParts.SubHeading { text: "Camera" }
+                SettingsParts.Gap { size: 10.7 }
+                OutlineDropdown {
+                    width: 292.7; height: 30
+                    options: videoCard.cameras.map(c => ({ label: c.name }))
+                    current: Math.max(0, videoCard.cameras.findIndex(c => c.path === videoCard.currentCamera))
+                    accessibleName: "Camera"
+                    onPicked: i => {
+                        const c = videoCard.cameras[i]
+                        if (!c || c.path === videoCard.currentCamera) return
+                        videoCard.currentCamera = c.path
+                        backend.setCameraDevice(c.path)
+                        if (videoCard.previewing) { backend.setCameraPreview(false); backend.setCameraPreview(true) }
+                    }
+                }
+                SettingsParts.Gap { size: 30 }
+                SettingsParts.SwitchRow {
+                    id: greenScreenRow
+                    label: "Green Screen"
+                    sublabel: "Turn on Green screen for a better look when you're using a virtual background."
+                    on: videoEffects.greenScreen
+                    onToggled: v => {
+                        if (!v && videoCard.picking) { videoCard.picking = false; backend.setGreenScreenPicking(false) }
+                        videoEffects.setGreenScreen(v)
+                    }
+                }
+                SettingsParts.SwitchRow {
+                    label: "Mirror my video"
+                    sublabel: "Changing this setting will only change the view for you. This setting doesn’t currently work in Together mode."
+                    on: videoEffects.mirror
+                    onToggled: v => videoEffects.setMirror(v)
+                }
+                SettingsParts.SwitchRow {
+                    label: "Adjust brightness"
+                    sublabel: "Enhance the quality of your video in low light conditions."
+                    on: videoEffects.brightness
+                    onToggled: v => videoEffects.setBrightness(v)
+                }
+                SettingsParts.SwitchRow {
+                    label: "Soft focus"
+                    sublabel: "Smoothen your appearance for a polished look."
+                    on: videoEffects.softFocus
+                    onToggled: v => videoEffects.setSoftFocus(v)
+                }
+            }
             // ---- Calls ----
             // Teams' call handling (voicesettings' callRedirectionSettings)
             // and voicemail settings (measured and captured on winpc
@@ -908,6 +1073,12 @@ Rectangle {
     }
     Component.onCompleted: backend.loadReadReceipts()
     function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
+    /// Teams' "Green screen settings" (the effects pane's link): Devices,
+    /// scrolled to Green Screen.
+    function showGreenScreen() {
+        page = "devices"; subPage = ""
+        Qt.callLater(() => { content.contentY = Math.max(0, greenScreenRow.mapToItem(content.contentItem, 0, 0).y - 40) })
+    }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
 }

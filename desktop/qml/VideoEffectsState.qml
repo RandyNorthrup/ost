@@ -56,6 +56,13 @@ QtObject {
     }
     function setBrightness(on) { brightness = on; backend.setSetting("adjustBrightness", on ? "true" : "false") }
     function setSoftFocus(on) { softFocus = on; backend.setSetting("softFocus", on ? "true" : "false") }
+    /// Teams' Green Screen (Settings ▸ Devices) and your backdrop colour
+    /// ("#RRGGBB", "" until you pick one: then the detected one is used).
+    property bool greenScreen: backend.setting("greenScreen") === "true"
+    property string greenScreenColor: backend.setting("greenScreenColor") || ""
+    property string detectedColor: ""
+    function setGreenScreen(on) { greenScreen = on; backend.setSetting("greenScreen", on ? "true" : "false") }
+    function setGreenScreenColor(c) { greenScreenColor = c; backend.setSetting("greenScreenColor", c) }
     function setMirror(on) { mirror = on; backend.setSetting("mirrorMyVideo", on ? "true" : "false") }
     /// Teams' Add new with the chosen file's URL: the picture becomes one
     /// of your backgrounds and is applied. Teams' message for the banner.

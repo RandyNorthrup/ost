@@ -522,7 +522,10 @@ Window {
         inCall: false
         cameraOn: win.cameraOn
         onClosed: win.effectsPaneOpen = false
+        onGreenScreenSettings: win.greenScreenSettings()
     }
+    /// The effects pane's "Green screen settings".
+    signal greenScreenSettings()
     component Cell: Item { width: 82; height: 50 }
     // The Lobby pane.
     Rectangle {

@@ -870,6 +870,16 @@ pub mod qobject {
         /// WebSocket with a secret path).
         #[qinvokable]
         fn video_filter_socket(self: Pin<&mut Backend>) -> QString;
+        /// Green Screen's colour picking: your preview without effects.
+        #[qinvokable]
+        fn set_green_screen_picking(self: Pin<&mut Backend>, on: bool);
+        /// The colour ("#RRGGBB", or "") at (`fx`, `fy`), 0–1 across your
+        /// preview's picture.
+        #[qinvokable]
+        fn preview_color_at(self: Pin<&mut Backend>, fx: f64, fy: f64) -> QString;
+        /// The backdrop colour Green Screen found ("#RRGGBB", or "").
+        #[qinvokable]
+        fn green_screen_detected(self: Pin<&mut Backend>) -> QString;
         /// Send the compose box with a recorded clip before its text
         /// (`clip_json`: {id, duration (ms), width, height}), as Teams'
         /// message carries it.
@@ -5380,6 +5390,18 @@ impl qobject::Backend {
 
     pub fn set_video_filter_active(self: Pin<&mut Self>, on: bool) {
         ost_vfx::filter::set_active(on);
+    }
+
+    pub fn set_green_screen_picking(self: Pin<&mut Self>, on: bool) {
+        ost_vfx::set_picking(on);
+    }
+
+    pub fn preview_color_at(self: Pin<&mut Self>, fx: f64, fy: f64) -> QString {
+        QString::from(crate::video_effects::preview_colour_at(fx, fy).map(crate::video_effects::hex).unwrap_or_default().as_str())
+    }
+
+    pub fn green_screen_detected(self: Pin<&mut Self>) -> QString {
+        QString::from(ost_vfx::detected_backdrop().map(crate::video_effects::hex).unwrap_or_default().as_str())
     }
 
     pub fn video_filter_socket(self: Pin<&mut Self>) -> QString {
@@ -11094,7 +11116,7 @@ impl qobject::Backend {
         if name == "micDevice" || name == "speakerDevice" {
             apply_audio_devices(&map);
         }
-        if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus"].contains(&name.as_str()) {
+        if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {
             crate::video_effects::apply(&map);
         }
         if name == "autoStart"

@@ -111,6 +111,44 @@ pub struct Settings {
     pub brightness: bool,
     /// Teams' Soft focus: your skin smoothed.
     pub soft_focus: bool,
+    /// Teams' Green Screen: with a background on, what is your backdrop's
+    /// colour is keyed out (sharper edges, things you hold stay). `None`
+    /// keeps the person mask alone.
+    pub green_screen: Option<GreenScreen>,
+}
+
+static PICKING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Green Screen's colour picking: the camera picture without effects
+/// meanwhile.
+pub fn set_picking(on: bool) {
+    PICKING.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Green Screen's backdrop colour (RGB), or `None` to detect it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GreenScreen {
+    pub color: Option<[u8; 3]>,
+}
+
+fn detected_cell() -> &'static Mutex<Option<[u8; 3]>> {
+    static D: std::sync::OnceLock<Mutex<Option<[u8; 3]>>> = std::sync::OnceLock::new();
+    D.get_or_init(|| Mutex::new(None))
+}
+
+/// The backdrop colour Green Screen found behind you (RGB), once it has.
+pub fn detected_backdrop() -> Option<[u8; 3]> {
+    *detected_cell().lock().unwrap()
+}
+
+pub fn rgb_to_yuv(c: [u8; 3]) -> [f32; 3] {
+    let (r, g, b) = (c[0] as f32, c[1] as f32, c[2] as f32);
+    [0.257 * r + 0.504 * g + 0.098 * b + 16.0, -0.148 * r - 0.291 * g + 0.439 * b + 128.0, 0.439 * r - 0.368 * g - 0.071 * b + 128.0]
+}
+
+pub fn yuv_to_rgb(y: f32, u: f32, v: f32) -> [u8; 3] {
+    let (y, u, v) = (y - 16.0, u - 128.0, v - 128.0);
+    [(1.164 * y + 1.596 * v).clamp(0.0, 255.0) as u8, (1.164 * y - 0.392 * u - 0.813 * v).clamp(0.0, 255.0) as u8, (1.164 * y + 2.017 * u).clamp(0.0, 255.0) as u8]
 }
 
 fn settings() -> &'static Mutex<Settings> {
@@ -245,6 +283,10 @@ impl Processor {
     /// Apply the chosen effects to an I420 frame in place: brightness,
     /// soft focus and the background, then a video app's filter.
     pub fn process(&mut self, width: u32, height: u32, data: &mut [u8]) {
+        // While you pick Green Screen's colour you see your real backdrop.
+        if PICKING.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
         self.own_effects(width, height, data);
         filter::apply(width, height, data);
     }
@@ -303,7 +345,72 @@ impl Processor {
             }
             _ => return,
         };
-        composite(data, back, &self.mask, w, h);
+        match s.green_screen {
+            Some(GreenScreen { color: Some(c) }) => {
+                let yuv = rgb_to_yuv(c);
+                composite_keyed(data, back, w, h, [yuv[1], yuv[2]]);
+            }
+            Some(GreenScreen { color: None }) => {
+                // Find the backdrop: the average of what the mask calls
+                // background.
+                if let Some(c) = backdrop_colour(data, &self.mask, w, h) {
+                    *detected_cell().lock().unwrap() = Some(c);
+                }
+                composite(data, back, &self.mask, w, h);
+            }
+            None => composite(data, back, &self.mask, w, h),
+        }
+    }
+}
+
+/// The average colour (RGB) where the mask is sure there's no one.
+pub fn backdrop_colour(data: &[u8], mask: &[f32], w: usize, h: usize) -> Option<[u8; 3]> {
+    let (mut sy, mut su, mut sv, mut n) = (0f64, 0f64, 0f64, 0f64);
+    let (cw, ch) = (w / 2, h / 2);
+    for y in (0..ch).step_by(2) {
+        for x in (0..cw).step_by(2) {
+            if alpha_at(mask, w, h, x * 2, y * 2) > 0.02 {
+                continue;
+            }
+            sy += data[(y * 2) * w + x * 2] as f64;
+            su += data[w * h + y * cw + x] as f64;
+            sv += data[w * h + cw * ch + y * cw + x] as f64;
+            n += 1.0;
+        }
+    }
+    (n > 50.0).then(|| yuv_to_rgb((sy / n) as f32, (su / n) as f32, (sv / n) as f32))
+}
+
+/// Green Screen: what is close to the backdrop's chroma (`key` U, V)
+/// becomes the background, the rest stays; a soft band between keeps edges
+/// clean.
+pub fn composite_keyed(data: &mut [u8], back: &[u8], w: usize, h: usize, key: [f32; 2]) {
+    let (cw, ch) = (w / 2, h / 2);
+    let mut alpha = vec![0f32; cw * ch];
+    for y in 0..ch {
+        for x in 0..cw {
+            let u = data[w * h + y * cw + x] as f32 - key[0];
+            let v = data[w * h + cw * ch + y * cw + x] as f32 - key[1];
+            let d = (u * u + v * v).sqrt();
+            let t = ((d - 10.0) / 18.0).clamp(0.0, 1.0);
+            alpha[y * cw + x] = t * t * (3.0 - 2.0 * t);
+        }
+    }
+    for y in 0..h {
+        for x in 0..w {
+            let a = alpha[(y / 2) * cw + x / 2];
+            let i = y * w + x;
+            data[i] = (data[i] as f32 * a + back[i] as f32 * (1.0 - a)) as u8;
+        }
+    }
+    for y in 0..ch {
+        for x in 0..cw {
+            let a = alpha[y * cw + x];
+            for plane in [w * h, w * h + cw * ch] {
+                let i = plane + y * cw + x;
+                data[i] = (data[i] as f32 * a + back[i] as f32 * (1.0 - a)) as u8;
+            }
+        }
     }
 }
 
@@ -664,6 +771,34 @@ mod tests {
         assert!(frame.iter().all(|&v| v == 200));
         filter::set_active(false);
         assert!(filter::next_frame(0, std::time::Duration::from_millis(5)).is_none());
+    }
+
+    #[test]
+    fn green_screen_keys_out_the_backdrop_colour() {
+        let (w, h) = (8usize, 8usize);
+        let green = rgb_to_yuv([0, 200, 0]);
+        let red = rgb_to_yuv([200, 0, 0]);
+        // Left half green backdrop, right half a red thing held up.
+        let mut frame = vec![0u8; w * h * 3 / 2];
+        for y in 0..h {
+            for x in 0..w {
+                frame[y * w + x] = if x < 4 { green[0] } else { red[0] } as u8;
+            }
+        }
+        for y in 0..h / 2 {
+            for x in 0..w / 2 {
+                let c = if x < 2 { green } else { red };
+                frame[w * h + y * 4 + x] = c[1] as u8;
+                frame[w * h + 16 + y * 4 + x] = c[2] as u8;
+            }
+        }
+        let back = vec![128u8; w * h * 3 / 2];
+        let before = frame.clone();
+        composite_keyed(&mut frame, &back, w, h, [green[1], green[2]]);
+        assert_eq!(frame[0], 128, "the backdrop is replaced");
+        assert_eq!(frame[7], before[7], "the red thing stays");
+        let c = yuv_to_rgb(green[0], green[1], green[2]);
+        assert!(c[1] > 180 && c[0] < 30, "{c:?}");
     }
 
     #[test]

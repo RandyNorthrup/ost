@@ -29,8 +29,9 @@ import com.ost.desktop
 // footer and becomes "Stop preview" — and "Apply and turn on video"
 // (brand). The Filters accordion holds Teams' Custom Filters app's Frames
 // and Styles (the app runs in VideoFilterHost.qml); Teams' Snapchat and
-// Maybelline categories are third-party apps and aren't offered, nor are
-// Green screen settings (TASK-0139) and the Avatars tab (TASK-0140).
+// Maybelline categories are third-party apps and aren't offered, nor is
+// the Avatars tab (TASK-0140). "Green screen settings" opens Settings ▸
+// Devices at Green Screen.
 Rectangle {
     id: root
     /// In a call (tabs and the footer) or before joining.
@@ -39,6 +40,8 @@ Rectangle {
     signal closed()
     /// Apply and turn on video.
     signal turnOnVideo()
+    /// Teams' "Green screen settings": Settings ▸ Devices at Green Screen.
+    signal greenScreenSettings()
     color: theme.pane
 
     property string tab: "effects"
@@ -269,6 +272,27 @@ Rectangle {
                         kind: "showall"; label: "Show all"; accessibleName: "Show all background effects"
                         onPicked: { root.showAll = true; flick.contentY = 0 }
                     }
+                }
+            }
+            // "Green screen settings" (14/500, brand) and Teams' info
+            // button, 8 above the grid's bottom padding ends.
+            Item {
+                visible: !root.showAll && root.expanded.backgrounds
+                width: 341.3; height: visible ? 28 : 0
+                Row {
+                    x: 18.7; y: -8
+                    Text {
+                        height: 24; verticalAlignment: Text.AlignVCenter
+                        text: "Green screen settings"
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.Medium
+                        font.underline: gsHover.hovered
+                        color: theme.brand
+                        HoverHandler { id: gsHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.greenScreenSettings() }
+                        Accessible.role: Accessible.Link
+                        Accessible.name: text
+                    }
+                    InfoButton { info: "Turn on Green screen for a better look when you're using a virtual background." }
                 }
             }
             // Teams' Filters (its Custom Filters app): None, the category

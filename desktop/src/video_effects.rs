@@ -404,6 +404,34 @@ fn flag(map: &serde_json::Map<String, serde_json::Value>, key: &str) -> bool {
     map.get(key).and_then(|v| v.as_str()) == Some("true")
 }
 
+/// "#RRGGBB" as RGB.
+pub fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.strip_prefix('#')?;
+    if h.len() != 6 {
+        return None;
+    }
+    let b = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([b(0)?, b(2)?, b(4)?])
+}
+
+pub fn hex(c: [u8; 3]) -> String {
+    format!("#{:02X}{:02X}{:02X}", c[0], c[1], c[2])
+}
+
+/// The colour at (`fx`, `fy`) (0–1 across the picture) of the frame your
+/// preview shows.
+pub fn preview_colour_at(fx: f64, fy: f64) -> Option<[u8; 3]> {
+    let f = teams_cli::calling::frames::latest("self")?;
+    let (w, h) = (f.width as usize, f.height as usize);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let x = ((fx.clamp(0.0, 1.0) * (w - 1) as f64).round() as usize).min(w - 1);
+    let y = ((fy.clamp(0.0, 1.0) * (h - 1) as f64).round() as usize).min(h - 1);
+    let i = (y * w + x) * 4;
+    f.rgba.get(i..i + 3).map(|p| [p[0], p[1], p[2]])
+}
+
 /// What background a setting value names.
 #[derive(Debug, PartialEq)]
 pub enum Choice {
@@ -424,7 +452,12 @@ pub fn choice(map: &serde_json::Map<String, serde_json::Value>) -> Choice {
 /// Apply the effects chosen in `map`.
 pub fn apply(map: &serde_json::Map<String, serde_json::Value>) {
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-    let mut s = Settings { brightness: flag(map, "adjustBrightness"), soft_focus: flag(map, "softFocus"), background: ost_vfx::current().background };
+    let mut s = Settings {
+        brightness: flag(map, "adjustBrightness"),
+        soft_focus: flag(map, "softFocus"),
+        green_screen: flag(map, "greenScreen").then(|| ost_vfx::GreenScreen { color: map.get("greenScreenColor").and_then(|v| v.as_str()).and_then(parse_hex) }),
+        background: ost_vfx::current().background,
+    };
     match choice(map) {
         Choice::None => s.background = Background::None,
         Choice::Blur(kind) => s.background = Background::Blur(kind),
@@ -563,6 +596,13 @@ mod tests {
         let back = decode_frame(&encode_frame(&f)).unwrap();
         assert_eq!((back.width, back.height, back.seq, back.data), (4, 2, 7, vec![1; 12]));
         assert!(decode_frame(&[0; 16]).is_none());
+    }
+
+    #[test]
+    fn colours_read_and_write_as_teams_hex() {
+        assert_eq!(parse_hex("#00B294"), Some([0, 0xB2, 0x94]));
+        assert_eq!(parse_hex("00B294"), None);
+        assert_eq!(hex([0, 0xB2, 0x94]), "#00B294");
     }
 
     #[test]

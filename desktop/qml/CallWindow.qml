@@ -386,6 +386,9 @@ Window {
     function toggleFullScreen() { visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
     /// The open side pane: "", "chat" or "people".
     property string side: ""
+    /// The effects pane's "Green screen settings" (Main shows Settings ▸
+    /// Devices).
+    signal greenScreenSettings()
     // Breakout rooms. As organizer: the meeting's rooms (its call lists
     // them), their settings and Teams' alerts for what you do; as a
     // participant (Main.qml moves you): whether your room is open to join,
@@ -1713,6 +1716,7 @@ Window {
             cameraOn: win.cameraOn
             onClosed: win.side = ""
             onTurnOnVideo: if (!win.cameraOn) win.runControl("VideoButton")
+            onGreenScreenSettings: win.greenScreenSettings()
         }
         AudioSettingsPane {
             id: audioSettingsPane
