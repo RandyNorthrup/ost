@@ -833,6 +833,15 @@ pub mod qobject {
         /// is done; video_clip_uploaded(path, {id, error}) follows.
         #[qinvokable]
         fn video_clip_upload(self: Pin<&mut Backend>, chat_id: &QString, path: &QString, thumb: &QString);
+        /// Render the recorder's edit (`spec_json`: {segments: [{path,
+        /// start_ms, end_ms}], music: {path, level} | null}) into one MP4;
+        /// clip_rendered({path, duration, error}) follows.
+        #[qinvokable]
+        fn render_clip(self: Pin<&mut Backend>, spec_json: &QString);
+        /// A track of the recorder's music library, cached; music_ready
+        /// (url, local file URL or "") follows.
+        #[qinvokable]
+        fn fetch_music(self: Pin<&mut Backend>, url: &QString);
         /// Send the compose box with a recorded clip before its text
         /// (`clip_json`: {id, duration (ms), width, height}), as Teams'
         /// message carries it.
@@ -1084,6 +1093,13 @@ pub mod qobject {
         /// qualities: [{id, height}], error}.
         #[qsignal]
         fn video_clip_ready(self: Pin<&mut Backend>, id: QString, json: QString);
+
+        /// A render_clip finished: {path, duration, error}.
+        #[qsignal]
+        fn clip_rendered(self: Pin<&mut Backend>, json: QString);
+        /// A fetch_music finished.
+        #[qsignal]
+        fn music_ready(self: Pin<&mut Backend>, url: QString, path: QString);
 
         /// A video_clip_upload finished: the recording's path and {id,
         /// url, error}.
@@ -5244,6 +5260,62 @@ impl qobject::Backend {
             .await;
             let v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) })).to_string();
             let _ = qt.queue(move |mut this| this.as_mut().video_clip_uploaded(QString::from(path.as_str()), QString::from(v.as_str())));
+        });
+    }
+
+    pub fn render_clip(self: Pin<&mut Self>, spec_json: &QString) {
+        let spec: serde_json::Value = serde_json::from_str(&spec_json.to_string()).unwrap_or_default();
+        let qt = self.qt_thread();
+        let out = self.recorder_file(&QString::from(format!("clip-{}.mp4", chrono::Utc::now().timestamp_millis()).as_str())).to_string();
+        runtime().spawn_blocking(move || {
+            let result = (|| {
+                let local = |p: &str| p.strip_prefix("file://").unwrap_or(p).to_string();
+                let segments: Vec<api::video_clips::Segment> = spec["segments"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|s| {
+                        Some(api::video_clips::Segment {
+                            path: local(s["path"].as_str()?),
+                            start_ms: s["start_ms"].as_f64()?.max(0.0) as u64,
+                            end_ms: s["end_ms"].as_f64()?.max(0.0) as u64,
+                        })
+                    })
+                    .collect();
+                anyhow::ensure!(!segments.is_empty(), "Nothing to render");
+                let music = spec["music"]["path"].as_str().map(|p| api::video_clips::Music { path: local(p), level: spec["music"]["level"].as_f64().unwrap_or(0.15) });
+                let graph = api::video_clips::edit_graph(&segments, music.as_ref(), 1280, 720);
+                crate::clip_edit::render(&graph, &out, 1280, 720)?;
+                let duration: u64 = segments.iter().map(|s| s.end_ms.saturating_sub(s.start_ms)).sum();
+                anyhow::Ok(json!({ "path": format!("file://{out}"), "duration": duration }))
+            })();
+            let v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) })).to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().clip_rendered(QString::from(v.as_str())));
+        });
+    }
+
+    pub fn fetch_music(self: Pin<&mut Self>, url: &QString) {
+        let url = url.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let name = url.rsplit('/').next().unwrap_or_default().to_string();
+                anyhow::ensure!(!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'), "Bad track name");
+                let base = std::env::var_os("XDG_CACHE_HOME")
+                    .map(std::path::PathBuf::from)
+                    .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+                    .context("No cache directory")?;
+                let path = base.join("ost").join("music").join(&name);
+                if !path.exists() {
+                    let bytes = api::video_clips::fetch_music(&url).await?;
+                    std::fs::create_dir_all(path.parent().unwrap())?;
+                    std::fs::write(&path, bytes)?;
+                }
+                anyhow::Ok(format!("file://{}", path.display()))
+            }
+            .await;
+            let path = result.unwrap_or_else(|e| { tracing::warn!("music: {}", short_error(&e)); String::new() });
+            let _ = qt.queue(move |mut this| this.as_mut().music_ready(QString::from(url.as_str()), QString::from(path.as_str())));
         });
     }
 

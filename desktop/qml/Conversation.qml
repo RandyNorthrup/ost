@@ -413,8 +413,23 @@ Rectangle {
     VideoClipRecorder {
         id: clipRecorder
         onFinished: clip => {
-            compose.clip = Object.assign({}, clip, { uploading: true, id: "", url: "" })
-            backend.videoClipUpload(chatId, clip.path, clip.thumb)
+            compose.clip = Object.assign({}, clip, { uploading: true, id: "", url: "", rendering: !!clip.spec })
+            // An edited clip is made into one file first (Teams' recorder
+            // does the same before it hands the clip over).
+            if (clip.spec) backend.renderClip(JSON.stringify(clip.spec))
+            else backend.videoClipUpload(chatId, clip.path, clip.thumb)
+        }
+    }
+    Connections {
+        target: backend
+        function onClipRendered(json) {
+            if (!compose.clip || !compose.clip.rendering) return
+            const r = JSON.parse(json)
+            if (r.error) { console.warn("CLIP render failed", r.error); compose.clip = Object.assign({}, compose.clip, { uploading: false, rendering: false, error: r.error }); return }
+            // The parts' recordings are no longer needed.
+            for (const sg of compose.clip.spec.segments) backend.removeRecorderFile(sg.path)
+            compose.clip = Object.assign({}, compose.clip, { rendering: false, path: r.path, duration: r.duration })
+            backend.videoClipUpload(root.chatId, r.path, compose.clip.thumb)
         }
     }
     Connections {
@@ -4000,8 +4015,18 @@ Rectangle {
         // Record video clip: in a chat's or channel's own compose box.
         canRecordClip: root.canRecordClips
         onRecordClipRequested: clipRecorder.openFor(root.chatId)
-        onClipRemoved: { if (compose.clip) backend.removeRecorderFile(compose.clip.path); compose.clip = null }
-        onClipRetry: { compose.clip = Object.assign({}, compose.clip, { uploading: true, error: "" }); backend.videoClipUpload(root.chatId, compose.clip.path, compose.clip.thumb) }
+        onClipRemoved: {
+            if (compose.clip) {
+                if (compose.clip.path) backend.removeRecorderFile(compose.clip.path)
+                if (compose.clip.spec) for (const sg of compose.clip.spec.segments) backend.removeRecorderFile(sg.path)
+            }
+            compose.clip = null
+        }
+        onClipRetry: {
+            compose.clip = Object.assign({}, compose.clip, { uploading: true, error: "", rendering: !compose.clip.path })
+            if (compose.clip.path) backend.videoClipUpload(root.chatId, compose.clip.path, compose.clip.thumb)
+            else backend.renderClip(JSON.stringify(compose.clip.spec))
+        }
         onSettingsRequested: root.openChatSettings()
         onTyped: root.typing()
         onSubmit: root.sendCompose()

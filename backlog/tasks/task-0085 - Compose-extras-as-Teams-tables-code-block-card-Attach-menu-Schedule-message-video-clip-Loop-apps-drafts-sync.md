@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-13T21:54:00Z'
+updated_date: '2026-11-14T12:07:00Z'
 labels:
   - desktop
   - messages
@@ -62,4 +62,6 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
   - src/api/cloud_attach.rs: the shares and commands reads, the invite with Teams' prefer getDefaultLink header, and the record.
   - Verified on linuxlt with --attach-test [--attach-channel] [--attach-send]. OST TEST 119 (chat) and OST TEST 121 (channel) store records identical to Teams' 120 and 118, and Teams on winpc draws them the same.
   - The rest is in TASK-0130 (command bar, People's collaborators, Media headings, Link settings, suggestion rows, PostThread). Teams' received file card is TASK-0129.
+
+- 2026-11-14: Record video clip is now TASK-0136 (native recorder; recording, review, compose card and send done and verified). Received clips are TASK-0135. AC4 still waits on the rest of 0136, Loop components and the installed apps' actions in "+".
 <!-- SECTION:NOTES:END -->

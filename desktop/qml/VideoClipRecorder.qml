@@ -88,6 +88,12 @@ Popup {
         screen.active = false
         player.stop()
         player.source = ""
+        for (const sg of segments) backend.removeRecorderFile(sg.path)
+        segments = []
+        selected = -1
+        playhead = 0
+        music = null
+        trimming = false
         stage = "setup"
         recordedMs = 0
         shots = []
@@ -155,11 +161,115 @@ Popup {
             return
         }
         if (stage === "review") {
-            clipPath = "file://" + String(path).replace(/^file:\/\//, "")
-            player.source = clipPath
-            player.pause()
+            // The recording joins the clip as its last part.
+            const file = "file://" + String(path).replace(/^file:\/\//, "")
+            clipPath = file
+            segments = segments.concat([{ path: file, length: Math.round(recordedMs), start: 0, end: Math.round(recordedMs), shots: shots.slice() }])
+            selected = segments.length - 1
+            seekTimeline(0)
         }
     }
+
+    // ---- The edit (Teams' review): the parts of the recordings in order,
+    // played straight from them, with the music under them. ----
+    /// [{path, length (the recording's), start, end, shots}]
+    property var segments: []
+    property int selected: -1
+    /// Where the edit is (ms from its start) and whether it plays.
+    property real playhead: 0
+    property bool playing: false
+    property bool trimming: false
+    /// The music: {id, name, artist, url, cover, path, level} or null.
+    property var music: null
+    readonly property real total: segments.reduce((t, sg) => t + (sg.end - sg.start), 0)
+    function segStartAt(i) { let t = 0; for (let k = 0; k < i; k++) t += segments[k].end - segments[k].start; return t }
+    function segAt(t) {
+        let acc = 0
+        for (let i = 0; i < segments.length; i++) {
+            const len = segments[i].end - segments[i].start
+            if (t < acc + len || i === segments.length - 1) return { i: i, offset: Math.max(0, Math.min(len, t - acc)) }
+            acc += len
+        }
+        return { i: -1, offset: 0 }
+    }
+    property int playingSeg: -1
+    property real pendingPos: -1
+    function seekTimeline(t) {
+        playhead = Math.max(0, Math.min(total, t))
+        const at = segAt(playhead)
+        if (at.i < 0) return
+        const sg = segments[at.i]
+        playingSeg = at.i
+        if (String(player.source) !== sg.path) { pendingPos = sg.start + at.offset; player.source = sg.path }
+        else player.position = sg.start + at.offset
+        if (musicPlayer.source != "" && musicPlayer.duration > 0) musicPlayer.position = playhead % musicPlayer.duration
+    }
+    function togglePlay() {
+        if (playing) { playing = false; player.pause(); musicPlayer.pause(); return }
+        if (playhead >= total - 30) seekTimeline(0)
+        playing = true
+        player.play()
+        if (music && music.path) { musicPlayer.position = playhead % Math.max(1, musicPlayer.duration); musicPlayer.play() }
+    }
+    Timer {
+        interval: 30; repeat: true
+        running: rec.playing && rec.stage === "review"
+        onTriggered: {
+            const i = rec.playingSeg
+            if (i < 0 || i >= rec.segments.length) return
+            const sg = rec.segments[i]
+            if (player.mediaStatus === MediaPlayer.LoadingMedia || rec.pendingPos >= 0) return
+            rec.playhead = rec.segStartAt(i) + Math.max(0, player.position - sg.start)
+            if (player.position >= sg.end - 15 || player.mediaStatus === MediaPlayer.EndOfMedia) {
+                if (i + 1 < rec.segments.length) rec.seekTimeline(rec.segStartAt(i + 1))
+                else { rec.playing = false; player.pause(); musicPlayer.pause(); rec.playhead = rec.total }
+            }
+        }
+    }
+    // Split, as Teams: at the playhead, inside a part (not at its ends).
+    readonly property bool canSplit: {
+        if (playing || segments.length === 0) return false
+        const at = segAt(playhead), sg = segments[at.i]
+        return at.offset > 300 && at.offset < (sg.end - sg.start) - 300
+    }
+    function splitAtPlayhead() {
+        if (!canSplit) return
+        const at = segAt(playhead), sg = segments[at.i]
+        const cut = sg.start + at.offset
+        const a = Object.assign({}, sg, { end: cut }), b = Object.assign({}, sg, { start: cut })
+        const list = segments.slice()
+        list.splice(at.i, 1, a, b)
+        segments = list
+        selected = at.i + 1
+    }
+    function deleteSelected() {
+        if (selected < 0) return
+        const gone = segments[selected]
+        const list = segments.filter((_, k) => k !== selected)
+        // A recording no part uses any more goes.
+        if (!list.some(x => x.path === gone.path)) backend.removeRecorderFile(gone.path)
+        if (list.length === 0) { segments = []; player.stop(); player.source = ""; selected = -1; stage = "setup"; return }
+        segments = list
+        selected = Math.min(selected, list.length - 1)
+        seekTimeline(segStartAt(selected))
+    }
+    function moveSelected(dir) {
+        const j = selected + dir
+        if (selected < 0 || j < 0 || j >= segments.length) return
+        const list = segments.slice()
+        const t = list[selected]; list[selected] = list[j]; list[j] = t
+        segments = list
+        selected = j
+        seekTimeline(segStartAt(j))
+    }
+    /// The edit for the renderer (and whether there is anything to do).
+    function editSpec() {
+        return {
+            segments: segments.map(sg => ({ path: sg.path, start_ms: sg.start, end_ms: sg.end })),
+            music: music && music.path ? { path: music.path, level: music.level / 100 } : null
+        }
+    }
+    readonly property bool untouched: segments.length === 1 && segments[0].start === 0 && segments[0].end === segments[0].length && !(music && music.path)
     function stopAndReview() {
         frameTimer.stop()
         stage = "review"
@@ -198,7 +308,7 @@ Popup {
         onRunningChanged: if (running) rec.segmentStart = Date.now(); else if (rec.segmentStart > 0) { rec.recordedBefore += Date.now() - rec.segmentStart; rec.segmentStart = 0 }
         onTriggered: {
             rec.recordedMs = rec.recordedBefore + (Date.now() - rec.segmentStart)
-            if (rec.recordedMs >= rec.limitMs) rec.stopAndReview()
+            if (rec.total + rec.recordedMs >= rec.limitMs) rec.stopAndReview()
         }
     }
 
@@ -250,10 +360,25 @@ Popup {
     MediaPlayer {
         id: player
         videoOutput: review
-        onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) {
+        audioOutput: AudioOutput {}
+        onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
             const r = metaData.value(MediaMetaData.Resolution)
             if (r) { rec.clipW = r.width; rec.clipH = r.height }
+            if (rec.pendingPos >= 0) { position = rec.pendingPos; rec.pendingPos = -1; if (rec.playing) play(); else pause() }
         }
+    }
+    // The music under the preview, looping, at its level.
+    MediaPlayer {
+        id: musicPlayer
+        source: rec.music && rec.music.path ? rec.music.path : ""
+        loops: MediaPlayer.Infinite
+        audioOutput: AudioOutput { volume: rec.music ? rec.music.level / 100 : 0 }
+    }
+    // A song's preview in the Music panel.
+    MediaPlayer {
+        id: songPreview
+        property string url: ""
+        audioOutput: AudioOutput {}
     }
 
     // ---- Header ----
@@ -279,13 +404,16 @@ Popup {
     HeadButton {
         visible: rec.stage === "review"
         x: 696; icon: "arrow-download-20"; label: "Download recording"
-        onClicked: backend.saveRecording(String(rec.clipPath))
+        onClicked: {
+            if (rec.untouched) backend.saveRecording(rec.segments[0].path)
+            else { rec.saveAfterRender = true; backend.renderClip(JSON.stringify(rec.editSpec())) }
+        }
     }
     Rectangle { visible: rec.stage === "review"; x: 741.7; y: 18; width: 0.67; height: 20; color: theme.divider }
     HeadButton {
         x: 756; icon: "dismiss-20"; label: "Close camera"
         onClicked: {
-            if (rec.stage === "setup") { rec.reset(); rec.close() }
+            if (rec.stage === "setup" && rec.segments.length === 0) { rec.reset(); rec.close() }
             else rec.confirmClose = true
         }
     }
@@ -423,7 +551,7 @@ Popup {
         }
         Text {
             x: 397 - 294.3; y: 19.3; height: 21.3; verticalAlignment: Text.AlignVCenter
-            text: rec.clock(rec.limitMs - rec.recordedMs)
+            text: rec.clock(rec.limitMs - rec.total - rec.recordedMs)
             font.family: theme.font; font.pixelSize: 16; color: theme.text
             Accessible.role: Accessible.StaticText
         }
@@ -581,82 +709,343 @@ Popup {
         RoundedCorners { anchors.fill: parent; radius: 8; background: theme.surface }
     }
     Item {
+        id: reviewUi
         visible: rec.stage === "review"
         anchors.fill: parent
-        readonly property real frac: player.duration > 0 ? player.position / player.duration : 0
-        SquareButton {
-            x: 98.4; y: 442.9; height: 32
-            icon: player.playbackState === MediaPlayer.PlayingState ? "pause-20" : "play-20"
-            label: player.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
-            onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()
+        // Trimming shows only the chosen part's recording (all of it).
+        readonly property var trimSeg: rec.trimming && rec.selected >= 0 ? rec.segments[rec.selected] : null
+        readonly property real stripX: 136.8
+        readonly property real stripW: 560.6
+        // Each part's place on the strip (3 apart), in proportion to its length.
+        readonly property var layout: {
+            const out = [], n = rec.segments.length, gap = 3
+            const usable = stripW - gap * Math.max(0, n - 1)
+            let x = stripX
+            for (let i = 0; i < n; i++) {
+                const len = rec.segments[i].end - rec.segments[i].start
+                const w = rec.total > 0 ? usable * len / rec.total : usable
+                out.push({ x: x, w: w })
+                x += w + gap
+            }
+            return out
         }
-        // The filmstrip.
-        Rectangle {
-            id: strip
-            x: 134.4; y: 442.9; width: 563.1; height: 32; radius: 10
-            color: "black"
-            clip: true
-            Row {
-                x: 3; y: 3
-                Repeater {
-                    model: 10
-                    Image {
-                        required property int index
-                        width: (strip.width - 6) / 10; height: 26
-                        fillMode: Image.PreserveAspectCrop
-                        source: rec.shots.length ? rec.shots[Math.min(rec.shots.length - 1, Math.floor(index * rec.shots.length / 10))] : ""
-                        asynchronous: true
+        function timelineX(t) {
+            if (trimSeg) return stripX + stripW * t / Math.max(1, trimSeg.length)
+            const at = rec.segAt(t), l = layout[at.i]
+            if (!l) return stripX
+            const len = rec.segments[at.i].end - rec.segments[at.i].start
+            return l.x + l.w * at.offset / Math.max(1, len)
+        }
+        readonly property real headX: trimSeg ? timelineX(player.position) : timelineX(rec.playhead)
+        SquareButton {
+            x: 100.8; y: 442.9; height: 32
+            icon: rec.playing ? "pause-20" : "play-20"
+            label: rec.playing ? "Pause" : "Play"
+            onClicked: rec.togglePlay()
+        }
+        // The parts.
+        Repeater {
+            model: reviewUi.trimSeg ? [reviewUi.trimSeg] : rec.segments
+            Rectangle {
+                id: part
+                required property var modelData
+                required property int index
+                readonly property var l: reviewUi.trimSeg ? ({ x: reviewUi.stripX, w: reviewUi.stripW }) : reviewUi.layout[index] || ({ x: 0, w: 0 })
+                readonly property bool chosen: !reviewUi.trimSeg && index === rec.selected
+                x: l.x; y: 442.9; width: l.w; height: 32; radius: 10
+                color: "black"
+                clip: true
+                Row {
+                    x: 3; y: 3
+                    Repeater {
+                        model: Math.max(1, Math.round((part.width - 6) / 56))
+                        Image {
+                            required property int index
+                            width: (part.width - 6) / Math.max(1, Math.round((part.width - 6) / 56)); height: 26
+                            fillMode: Image.PreserveAspectCrop
+                            readonly property var shots: part.modelData.shots || []
+                            source: shots.length ? shots[Math.min(shots.length - 1, Math.floor(index * shots.length / Math.max(1, Math.round((part.width - 6) / 56))))] : ""
+                            asynchronous: true
+                        }
                     }
                 }
+                Rectangle { anchors.fill: parent; radius: 10; color: "transparent"; border.width: 2.67; border.color: part.chosen || reviewUi.trimSeg ? theme.pick("#242424", "#FFFFFF") : theme.pick("#8A8886", "#8A8886") }
+                TapHandler {
+                    onTapped: ev => {
+                        if (reviewUi.trimSeg) { player.position = reviewUi.trimSeg.length * ev.position.x / part.width; return }
+                        rec.selected = part.index
+                        const len = part.modelData.end - part.modelData.start
+                        rec.seekTimeline(rec.segStartAt(part.index) + len * ev.position.x / part.width)
+                    }
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Video segment"
             }
-            Rectangle { anchors.fill: parent; radius: 10; color: "transparent"; border.color: theme.pick("#242424", "#ADADAD"); border.width: 2 }
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                function seek(mx) { if (player.duration > 0) player.position = Math.max(0, Math.min(1, mx / width)) * player.duration }
-                onPressed: m => seek(m.x)
-                onPositionChanged: m => { if (pressed) seek(m.x) }
+        }
+        // Trim: brand handles at the kept part's ends.
+        Repeater {
+            model: reviewUi.trimSeg ? 2 : 0
+            Rectangle {
+                required property int index
+                readonly property real t: index === 0 ? rec.trimStart : rec.trimEnd
+                x: reviewUi.timelineX(t) - (index === 0 ? 9.3 : 9.3); y: 438.2; width: 18.6; height: 41.3; radius: 4
+                color: theme.brand
+                DragHandler {
+                    target: null; yAxis.enabled: false
+                    property real from: 0
+                    onActiveChanged: if (active) from = parent.t
+                    onTranslationChanged: {
+                        const len = reviewUi.trimSeg.length
+                        const t = Math.max(0, Math.min(len, from + translation.x / reviewUi.stripW * len))
+                        if (parent.index === 0) rec.trimStart = Math.min(t, rec.trimEnd - 500)
+                        else rec.trimEnd = Math.max(t, rec.trimStart + 500)
+                        player.position = parent.index === 0 ? rec.trimStart : rec.trimEnd
+                    }
+                }
+                HoverHandler { cursorShape: Qt.SizeHorCursor }
+                Accessible.role: Accessible.Slider
+                Accessible.name: index === 0 ? "Start trim handle" : "End trim handle"
             }
-            Accessible.role: Accessible.Slider
-            Accessible.name: "Use the left and right arrow keys to seek, seekbar"
         }
         // The playhead and its time (m:ss:cc).
-        Rectangle { x: strip.x + strip.width * parent.frac - 1.5; y: strip.y - 4; width: 3; height: strip.height + 8; radius: 1.5; color: theme.brand }
-        Rectangle { x: strip.x + strip.width * parent.frac - 7; y: strip.y - 11; width: 14; height: 14; radius: 7; color: theme.brand }
+        Rectangle { visible: !reviewUi.trimSeg || true; x: reviewUi.headX - 1.5; y: 438.9; width: 3; height: 40; radius: 1.5; color: theme.brand }
+        Rectangle { x: reviewUi.headX - 6; y: 432; width: 12; height: 12; radius: 6; color: theme.brand }
         Rectangle {
-            x: strip.x + strip.width * parent.frac - width / 2; y: 400
+            x: reviewUi.headX - width / 2; y: 400
             width: headTime.implicitWidth + 16; height: 28; radius: 4
             color: theme.surface; border.color: theme.stroke; border.width: 0.67
             Text {
                 id: headTime; anchors.centerIn: parent
-                text: { const ms = player.position; return Math.floor(ms / 60000) + ":" + String(Math.floor(ms / 1000) % 60).padStart(2, "0") + ":" + String(Math.floor(ms / 10) % 100).padStart(2, "0") }
+                text: { const ms = reviewUi.trimSeg ? player.position : rec.playhead; return Math.floor(ms / 60000) + ":" + String(Math.floor(ms / 1000) % 60).padStart(2, "0") + ":" + String(Math.floor(ms / 10) % 100).padStart(2, "0") }
                 font.family: theme.font; font.pixelSize: 12; color: theme.text
             }
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: 482.9; height: 20
-            text: rec.clock(player.position) + " / " + rec.clock(player.duration)
+            text: reviewUi.trimSeg ? rec.clock(rec.trimEnd - rec.trimStart) + " / " + rec.clock(reviewUi.trimSeg.length) : rec.clock(rec.playhead) + " / " + rec.clock(rec.total)
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text
         }
-        SquareButton { x: 16; y: 536.3; icon: "chevron-left-20"; label: "Back"; onClicked: { player.stop(); rec.reset() } }
-        Row {
-            anchors.horizontalCenter: parent.horizontalCenter; y: 526
-            Tool {
-                toolWidth: 71.9; icon: "delete-20"; label: "Delete clip"; spoken: "Delete this clip. Your recording will be lost."
-                onClicked: { backend.removeRecorderFile(String(rec.clipPath)); rec.reset() }
+        // The tools.
+        SquareButton {
+            x: 16; y: 536.3
+            icon: rec.trimming ? "delete-20" : "chevron-left-20"
+            label: rec.trimming ? "Delete this clip. Your recording will be lost." : "Back"
+            onClicked: {
+                if (rec.trimming) { rec.trimming = false; rec.deleteSelected(); return }
+                player.stop(); rec.playing = false; rec.reset()
             }
         }
+        Row {
+            visible: !rec.trimming
+            anchors.horizontalCenter: parent.horizontalCenter; y: 526
+            Tool {
+                icon: "cut-20"; label: "Trim"
+                enabledTool: rec.selected >= 0
+                onClicked: { rec.playing = false; player.pause(); musicPlayer.pause(); const sg = rec.segments[rec.selected]; rec.trimStart = sg.start; rec.trimEnd = sg.end; player.source = sg.path; player.position = sg.start; rec.trimming = true }
+            }
+            Tool { icon: "split-vertical-20"; label: "Split"; spoken: "Split Clip"; enabledTool: rec.canSplit; onClicked: rec.splitAtPlayhead() }
+            Tool { toolWidth: 71.9; icon: "delete-20"; label: "Delete clip"; spoken: "Delete this clip. Your recording will be lost."; onClicked: rec.deleteSelected() }
+            Tool { toolWidth: 82; icon: "video-add-20"; label: "Record more"; onClicked: { player.pause(); rec.playing = false; musicPlayer.pause(); rec.stage = "setup" } }
+            Tool {
+                id: rearrangeTool
+                visible: rec.segments.length > 1
+                toolWidth: 70.2; icon: "arrow-swap-20"; label: "Rearrange"
+                off: rearrangeMenu.opened
+                onClicked: { const p = rearrangeTool.mapToItem(rec.contentItem, 0, 0); rearrangeMenu.x = p.x; rearrangeMenu.y = p.y - rearrangeMenu.height - 1; rearrangeMenu.open() }
+            }
+            Item { width: 20; height: 51.3; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
+            Tool {
+                toolWidth: rec.music ? Math.max(56, musicLabel.implicitWidth + 25) : 56
+                icon: rec.music ? "data-bar-vertical-20" : "music-note-2-20"
+                label: rec.music ? rec.music.name : "Music"
+                spoken: rec.music ? "Add music Selected " + rec.music.name : "Add music"
+                onClicked: { rec.playing = false; player.pause(); musicPlayer.pause(); musicPanel.visible = true }
+                Text { id: musicLabel; visible: false; text: rec.music ? rec.music.name : ""; font.family: theme.font; font.pixelSize: 10 }
+            }
+        }
+        MenuPopup {
+            id: rearrangeMenu
+            items: [{ label: "Move left", enabled: rec.selected > 0 }, { label: "Move right", enabled: rec.selected >= 0 && rec.selected < rec.segments.length - 1 }]
+            onPicked: i => rec.moveSelected(i === 0 ? -1 : 1)
+        }
         SquareButton {
-            x: 752; y: 536.3; primary: true; icon: "chevron-right-20"; label: "Continue"
+            x: 752; y: 536.3; primary: true
+            icon: rec.trimming ? "checkmark-20" : "chevron-right-20"
+            label: rec.trimming ? "Confirm trim" : "Continue"
             onClicked: {
-                player.stop()
-                rec.finished({ path: String(rec.clipPath), thumb: rec.thumbPath ? "file://" + rec.thumbPath : "", width: rec.clipW || 1280, height: rec.clipH || 720, duration: player.duration })
-                rec.stage = "setup"
-                rec.close()
+                if (rec.trimming) {
+                    const list = rec.segments.slice()
+                    list[rec.selected] = Object.assign({}, list[rec.selected], { start: Math.round(rec.trimStart), end: Math.round(rec.trimEnd) })
+                    rec.segments = list
+                    rec.trimming = false
+                    rec.seekTimeline(rec.segStartAt(rec.selected))
+                    return
+                }
+                rec.finishClip()
             }
         }
     }
+    property real trimStart: 0
+    property real trimEnd: 0
+    // Continue: the edit goes to the compose box (rendered there when it
+    // was edited).
+    function finishClip() {
+        player.stop(); musicPlayer.stop(); playing = false
+        const spec = editSpec()
+        const first = segments[0].shots && segments[0].shots.length ? segments[0].shots[0] : (thumbPath ? "file://" + thumbPath : "")
+        const clip = { path: untouched ? segments[0].path : "", spec: untouched ? null : spec, thumb: first, width: untouched ? (clipW || 1280) : 1280, height: untouched ? (clipH || 720) : 720, duration: Math.round(total) }
+        // The parts' recordings now belong to the compose box.
+        segments = []
+        finished(clip)
+        stage = "setup"
+        close()
+    }
 
+    // ---- Music (Teams' Music panel: Microsoft Stream's library) ----
+    readonly property string musicBase: "https://res.public.onecdn.static.microsoft/files/odsp-web-prod_2026-10-30.005/streamcameraembed/"
+    readonly property var library: [
+        { name: "Chill", cover: "images/chill_bf376ec6.png", songs: [["In a dream", "Dario Comuzzi, Paolo Catoni", "in_a_dream_bebabb7f"], ["Open field", "Keir Schmidt", "open_field_ce1cac4e"], ["Rain in Japan", "Dario Comuzzi, Claudio Tristano", "rain_in_japan_1d666880"], ["Supernova", "Dario Comuzzi, Claudio Tristano", "supernova_026875ac"], ["Waves", "Keir Schmidt", "waves_49f1aea6"]] },
+        { name: "Energetic", cover: "images/energetic_64845ed2.png", songs: [["Bring up the energy", "Philip Anderson", "bring_up_the_energy_4ce0710c"], ["By the shoreline", "Dario Comuzzi, Claudio Tristano", "by_the_shoreline_1ded4322"], ["Feelin' fresh", "Nancy Louise Lee", "feelin_fresh_ac86f5f0"], ["Get excited", "Joseph Capalbo", "get_excited_abc9da1a"], ["Pump it up", "Prong Praison", "pump_it_up_8c1abf13"]] },
+        { name: "Fun", cover: "images/fun_8e188be4.png", songs: [["Block party", "Dario Comuzzi, Paolo Catoni", "block_party_14e4d31d"], ["Chill and wavey", "Dario Comuzzi, Paolo Catoni", "chill_and_wavey_a8d04d78"], ["Cloud walk", "Prong Praison", "cloud_walk_5d05ac98"], ["Fearless funk", "Nancy Louise Lee", "fearless_funk_e9c6e8e0"], ["Laid back vibe", "Philip Anderson", "laid_back_vibe_9c992a9d"], ["Liquid", "Philip Anderson", "liquid_afae8da8"], ["Spectra", "Joseph Capalbo", "spectra_83927b63"], ["The bounce", "Dario Comuzzi, Paolo Catoni", "the_bounce_df96a30f"]] },
+        { name: "High Tech", cover: "images/high_tech_b3672869.png", songs: [["Awakenings", "Dario Comuzzi, Paolo Catoni", "awakenings_8ad3f4ed"], ["Closed circuits", "Philip Anderson", "closed_circuits_68d3b36e"], ["Cutting edge", "Philip Anderson", "cutting_edge_0b882323"], ["Isotope", "Nancy Louise Lee", "isotope_671ef6b9"], ["Tinkering", "Keir Schmidt", "tinkering_f88de5a4"]] },
+        { name: "Inspiring", cover: "images/inspiring_b3672869.png", songs: [["Driving force", "Nancy Louise Lee", "driving_force_8c84bafa"], ["Morning coffee", "", "morning_coffee_91eed28f"]] }
+    ]
+    function pickSong(cat, song) {
+        const url = musicBase + "audio/" + song[2] + ".aac"
+        music = { id: song[2], name: song[0], artist: song[1], url: url, cover: musicBase + cat.cover, path: "", level: music ? music.level : 15 }
+        backend.fetchMusic(url)
+        songPreview.stop()
+        musicPanel.visible = false
+    }
+    Connections {
+        target: backend
+        function onMusicReady(url, path) {
+            if (!rec.music || rec.music.url !== url) return
+            if (!path) { rec.music = null; return }
+            rec.music = Object.assign({}, rec.music, { path: path })
+            if (rec.stage === "review") { rec.seekTimeline(0); rec.togglePlay() }
+        }
+    }
+    Rectangle {
+        id: musicPanel
+        visible: false
+        x: 152; y: 240.3; width: 496; height: 323.3; radius: 8
+        color: theme.surface
+        FluentSurface { z: -1; anchors.fill: parent; depth: 16; radius: 8 }
+        MouseArea { anchors.fill: parent }
+        Text { x: 64.7; y: 24.6; width: 358.7; height: 20; horizontalAlignment: Text.AlignHCenter; text: "Music"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        HeadButton { x: 447.3; y: 14.6; height: 40; icon: "dismiss-20"; label: "Close Music"; onClicked: { songPreview.stop(); musicPanel.visible = false } }
+        Row {
+            x: 22.7; y: 65.6; spacing: 0
+            Repeater {
+                model: rec.library
+                Item {
+                    required property var modelData
+                    required property int index
+                    width: tabText.implicitWidth + 12 + (index < rec.library.length - 1 ? 30 : 0); height: 32
+                    Text { id: tabText; x: 6; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: musicList.section === parent.index ? Font.DemiBold : Font.Normal; color: theme.text }
+                    Rectangle { visible: musicList.section === parent.index; x: 6; y: 30; width: tabText.implicitWidth; height: 2; radius: 1; color: theme.brand }
+                    TapHandler { onTapped: musicList.contentY = musicList.sectionY[parent.index] }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: modelData.name
+                }
+            }
+        }
+        Flickable {
+            id: musicList
+            x: 16.7; y: 108; width: 462.7; height: rec.music ? 158 : 200
+            contentHeight: musicCol.height
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar {}
+            property var sectionY: []
+            readonly property int section: { let k = 0; for (let i = 0; i < sectionY.length; i++) if (contentY + 4 >= sectionY[i]) k = i; return k }
+            Column {
+                id: musicCol
+                width: parent.width
+                Repeater {
+                    model: rec.library
+                    Column {
+                        id: catCol
+                        required property var modelData
+                        required property int index
+                        width: musicCol.width
+                        Component.onCompleted: Qt.callLater(() => { const ys = musicList.sectionY.slice(); ys[index] = catCol.y; musicList.sectionY = ys })
+                        onYChanged: { const ys = musicList.sectionY.slice(); ys[index] = y; musicList.sectionY = ys }
+                        Text { x: 2; height: 32; verticalAlignment: Text.AlignVCenter; text: catCol.modelData.name; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                        Flow {
+                            width: parent.width; spacing: 16
+                            topPadding: 0; bottomPadding: 16
+                            Repeater {
+                                model: catCol.modelData.songs
+                                Item {
+                                    id: song
+                                    required property var modelData
+                                    readonly property bool chosen: !!rec.music && rec.music.id === modelData[2]
+                                    readonly property string url: rec.musicBase + "audio/" + modelData[2] + ".aac"
+                                    width: 207.3; height: 55
+                                    Rectangle {
+                                        x: 4; y: 4; width: 46; height: 46; radius: 4
+                                        clip: true
+                                        Image { anchors.fill: parent; source: rec.musicBase + catCol.modelData.cover; fillMode: Image.PreserveAspectCrop; asynchronous: true }
+                                        FluentIcon { anchors.centerIn: parent; name: songPreview.url === song.url && songPreview.playbackState === MediaPlayer.PlayingState ? "pause-20-filled" : "play-20-filled"; size: 20; color: "white" }
+                                        TapHandler {
+                                            onTapped: {
+                                                if (songPreview.url === song.url && songPreview.playbackState === MediaPlayer.PlayingState) { songPreview.stop(); return }
+                                                songPreview.url = song.url; songPreview.source = song.url; songPreview.play()
+                                            }
+                                        }
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Play " + song.modelData[0] + (song.modelData[1] ? " by " + song.modelData[1] : "")
+                                    }
+                                    Column {
+                                        x: 65; anchors.verticalCenter: parent.verticalCenter; width: 86
+                                        Text { width: parent.width; text: song.modelData[0]; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                                        Text { width: parent.width; text: song.modelData[1]; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                                    }
+                                    Rectangle {
+                                        x: 171.6; y: 11.5; width: 32; height: 32; radius: 4
+                                        color: song.chosen ? "transparent" : addHover.hovered ? theme.menuHover : theme.surface
+                                        border.color: song.chosen ? "transparent" : theme.stroke; border.width: 0.67
+                                        FluentIcon { anchors.centerIn: parent; name: song.chosen ? "data-bar-vertical-20" : "add-20"; size: 20; color: theme.text }
+                                        HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { enabled: !song.chosen; onTapped: rec.pickSong(catCol.modelData, song.modelData) }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: "Download " + song.modelData[0]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The chosen song: its name, its level and Remove.
+        Rectangle {
+            visible: !!rec.music
+            y: parent.height - 60; width: parent.width; height: 60
+            bottomLeftRadius: 8; bottomRightRadius: 8
+            color: theme.surface
+            Rectangle { width: parent.width; height: 0.67; color: theme.divider }
+            Text { x: 20.7; anchors.verticalCenter: parent.verticalCenter; width: 180; elide: Text.ElideRight; text: rec.music ? rec.music.name : ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+            Row {
+                x: 236.7; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "speaker-2-20"; size: 20; color: theme.text }
+                Slider {
+                    id: levelSlider
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 110; from: 0; to: 100; stepSize: 1
+                    value: rec.music ? rec.music.level : 15
+                    onMoved: if (rec.music) rec.music = Object.assign({}, rec.music, { level: Math.round(value) })
+                    Accessible.name: "Active song volume"
+                }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: rec.music ? rec.music.level : ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+            }
+            HeadButton { x: 433.3; y: 14.4; icon: "dismiss-20"; label: "Remove music"; onClicked: { rec.music = null; musicPlayer.stop() } }
+        }
+    }
     // ---- Close your recording? ----
     Rectangle {
         visible: rec.confirmClose
@@ -694,14 +1083,31 @@ Popup {
         }
     }
 
+    property bool saveAfterRender: false
+    Connections {
+        target: backend
+        function onClipRendered(json) {
+            if (!rec.saveAfterRender) return
+            rec.saveAfterRender = false
+            const r = JSON.parse(json)
+            if (r.path) { backend.saveRecording(r.path); backend.removeRecorderFile(r.path) }
+        }
+    }
     // Test hooks (--recorder-test). `testSilent` records without the
     // microphone, so a test never captures the room.
     property bool testSilent: false
     function pickCameraForTest(name) { const c = devices.videoInputs.find(d => d.description === name); if (c) { cameraId = String(c.id); cameraOn = true } }
     function pauseForTest() { enginePause(); stage = "paused"; frameTimer.stop() }
     function resumeForTest() { engineResume(); stage = "recording"; frameTimer.start() }
-    function continueForTest() { player.stop(); finished({ path: String(clipPath), thumb: thumbPath ? "file://" + thumbPath : "", width: clipW || 1280, height: clipH || 720, duration: player.duration }); stage = "setup"; close() }
-    function stateForTest() { return { stage: stage, cameraOn: cameraOn, micOn: micOn, recordedMs: recordedMs, clip: String(clipPath), frames: shots.length, screen: screenMode, audio: audioMode, thumb: thumbPath, cams: devices.videoInputs.map(c => c.description), mics: devices.audioInputs.length, duration: player.duration, size: [clipW, clipH] } }
+    function continueForTest() { finishClip() }
+    function editForTest() { return { segments: segments.map(sg => ({ start: sg.start, end: sg.end, length: sg.length })), selected: selected, playhead: playhead, total: total, canSplit: canSplit, music: music, trimming: trimming } }
+    function playerForTest() { return { status: player.mediaStatus, state: player.playbackState, pos: player.position, dur: player.duration, src: String(player.source).split("/").pop(), seg: playingSeg, pending: pendingPos, playing: playing, playhead: playhead, music: musicPlayer.playbackState } }
+    function seekForTest(t) { playing = false; player.pause(); seekTimeline(t) }
+    function trimForTest(a, b) { selected = Math.max(0, selected); const sg = segments[selected]; trimStart = a; trimEnd = b; trimming = true }
+    function confirmTrimForTest() { const list = segments.slice(); list[selected] = Object.assign({}, list[selected], { start: Math.round(trimStart), end: Math.round(trimEnd) }); segments = list; trimming = false; seekTimeline(segStartAt(selected)) }
+    function pickSongForTest(cat, idx) { pickSong(library[cat], library[cat].songs[idx]) }
+    function musicPanelForTest(on) { musicPanel.visible = on }
+    function stateForTest() { return { stage: stage, cameraOn: cameraOn, micOn: micOn, recordedMs: recordedMs, clip: String(clipPath), segments: segments.length, frames: shots.length, screen: screenMode, audio: audioMode, thumb: thumbPath, cams: devices.videoInputs.map(c => c.description), mics: devices.audioInputs.length, duration: player.duration, size: [clipW, clipH] } }
     function openCamMenuForTest() { camMenu.popupAt(camMenuBtn) }
     function openMicMenuForTest() { micMenu.popupAt(micMenuBtn) }
     function closeMenusForTest() { camMenu.close(); micMenu.close() }

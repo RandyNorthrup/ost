@@ -270,11 +270,18 @@ fn main() {
             cc.file("src/native.cpp");
             cc.file("src/richtext.cpp");
             cc.file("src/clipframes.cpp");
+            cc.file("src/clipedit.cpp");
         })
     };
     println!("cargo::rerun-if-changed=src/webengine.cpp");
     println!("cargo::rerun-if-changed=src/native.cpp");
     println!("cargo::rerun-if-changed=src/richtext.cpp");
     println!("cargo::rerun-if-changed=src/clipframes.cpp");
+    println!("cargo::rerun-if-changed=src/clipedit.cpp");
+    // The clip editor renders with FFmpeg's libraries (as Qt Multimedia
+    // does).
+    for lib in ["avfilter", "avformat", "avcodec", "avutil"] {
+        println!("cargo::rustc-link-lib={lib}");
+    }
     builder.build();
 }

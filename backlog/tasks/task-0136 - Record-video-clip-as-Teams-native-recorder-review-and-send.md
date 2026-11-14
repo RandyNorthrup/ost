@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T09:43:00Z'
-updated_date: '2026-11-14T12:05:00Z'
+updated_date: '2026-11-14T13:52:00Z'
 labels:
   - messages
   - video
@@ -26,7 +26,7 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - [x] #2 Start recording, Recording in progress / paused with the time left of 5:00, Stop and review, Pause/Resume, Record again, and Close asking "Close your recording?" as Teams
 - [x] #3 Review your clips: playback with the filmstrip and time, Delete clip, Download recording, Back, and Continue putting the clip in the compose box (Processing…, then Teams' card with Remove video clip)
 - [x] #4 Sending stores the clip in the media store and sends Teams' AMSVideo message; Teams shows and plays it
-- [ ] #5 Review editing as Teams: Trim, Split, Record more and Music
+- [x] #5 Review editing as Teams: Trim, Split, Record more and Music
 - [ ] #6 Backdrop (None, Upload, Blur, images and videos), Script, Draw and Effects as Teams
 - [ ] #7 Verified side by side with Teams on winpc
 - [ ] #8 Pausing a screen recording keeps its video and sound in step
@@ -40,4 +40,9 @@ Teams' + ▸ Record video clip (and a clip's "Reply with a video clip") opens Mi
 - Qt 6.10 gotchas: the MP4 muxer stalls without an audio track (a muted microphone always goes in); the frame-input encoder stays paused until one pause/resume (done right after record); frames are timed by count (the newest picture is sent every 33 ms); the microphone must be open before recording.
 - Verified: on linuxlt, Record audio (silent mic) 11.9 s and camera mode on test camera A 12.0 s at 30 fps; locally on Hyprland, screen mode through the portal picker (a kitty test window). OST TEST 136 (Record audio) was sent and plays in Teams on winpc (1280x720). OST TEST 137 (camera, test pattern) is stored and ready in AMS and the chat service; winpc Teams has not synced it yet.
 - Known: in screen mode a pause leaves the video track longer than the audio (Qt's screen capture keeps its clock running).
+
+- 2026-11-14 editing: Split, segment selection, Delete clip, Rearrange (Move left/right), Trim, Record more and Music measured on winpc and built. The preview plays the parts straight from the recordings, with the music looping at its level. Continue renders an edited clip (desktop/src/clipedit.cpp: an FFmpeg filter graph from api::video_clips::edit_graph, cut + concat + amix, 1280x720 H.264/AAC) before storing it: the edit is what gets uploaded, never the parts. Download recording renders the same way.
+- Music: Stream's catalog (24 tracks, 5 categories) from its public CDN; level 15 by default; tracks cached in ~/.cache/ost/music.
+- Verified: --recorder-edit-test on linuxlt (split at 4 s, trim to 1-3 s, record more, rearrange, In a dream). OST TEST 138 (rendered 12.8 s, music at -30 dB mean) was sent and plays in Teams on winpc.
+- FFmpeg (libavfilter/format/codec/util) is now a build dependency of the desktop app; docs/desktop.md lists it.
 <!-- SECTION:NOTES:END -->

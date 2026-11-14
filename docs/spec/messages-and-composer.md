@@ -1151,7 +1151,21 @@ Teams' recorder is Microsoft Stream's `StreamCameraEmbed.aspx`. Its frame-ancest
   - Along the bottom: Back (16, 536.3), Trim, Split, Delete clip ("Delete this clip. Your recording will be lost."), Record more, separator, Music, and Continue (brand, 752).
   - Trim: "Trim your clip", with brand start and end handles, Delete and Confirm trim.
   - Music: tabs Chill, Energetic, Fun, High Tech, Inspiring, each with its tracks.
-- **Close** (anything recorded): "Close your recording?" / "This will delete your recording clips." with Close recording (brand) and Cancel, over the recorder whitened at 95 %.
+- **Editing** (measured 2026-11-14):
+  - Split (at the playhead, inside a part; disabled while playing) makes two parts, the second selected.
+  - Parts sit side by side on the strip in proportion to their length, 3 apart, rounded 10, with a 2.67 border: dark when selected, grey otherwise.
+  - Clicking a part selects it and seeks there.
+  - Delete clip removes the selected part.
+  - Rearrange (shown with two or more parts) opens Move left / Move right.
+  - Trim ("Trim your clip") shows the selected part's whole recording with brand handles (18.6 × 41.3), Delete at the left and Confirm trim at the right.
+  - Record more goes back to recording, and its clip joins as the last part. The 5:00 counts across all parts.
+- **Music:** a 496 × 323.3 panel with tabs Chill, Energetic, Fun, High Tech and Inspiring over sections of 207 × 55 songs.
+  - Each song has its category's cover with Play (preview), its name and artist, and "+" to add it.
+  - Picking one closes the panel, starts playing with the music, and the tool then shows the song's name with a waveform.
+  - Its footer: the song, "Active song volume" (default 15) and Remove.
+  - The tracks are Stream's (`…/streamcameraembed/audio/*.aac` on res.public.onecdn.static.microsoft), looped under the clip at their level.
+- **Sending an edit:** Teams uploads the finished clip, not the parts. OST renders the parts, cut and joined, with the music, to one 1280 × 720 H.264/AAC MP4 (clipedit.cpp, FFmpeg) before it stores it, so no cut footage reaches the chat.
+ / "This will delete your recording clips." with Close recording (brand) and Cancel, over the recorder whitened at 95 %.
 - **Continue:**
   - The clip goes into the compose box (`video-placeholder` 400 × 225, 14 in and 32 down in the editor, the text 2 under it), with "Processing..." (`video-loader-wrapper`, black at 40 %, a 62 px spinner at the bottom left).
   - Teams stores it at once: `sharing/videototranscode`, then PUT thumbnail, original and transcript_info.
