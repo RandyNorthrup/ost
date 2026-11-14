@@ -1165,7 +1165,14 @@ Teams' recorder is Microsoft Stream's `StreamCameraEmbed.aspx`. Its frame-ancest
   - Its footer: the song, "Active song volume" (default 15) and Remove.
   - The tracks are Stream's (`…/streamcameraembed/audio/*.aac` on res.public.onecdn.static.microsoft), looped under the clip at their level.
 - **Sending an edit:** Teams uploads the finished clip, not the parts. OST renders the parts, cut and joined, with the music, to one 1280 × 720 H.264/AAC MP4 (clipedit.cpp, FFmpeg) before it stores it, so no cut footage reaches the chat.
- / "This will delete your recording clips." with Close recording (brand) and Cancel, over the recorder whitened at 95 %.
+- **Script** (Stream's teleprompter; measured 2026-11-14): it sits over the picture and isn't recorded.
+  - The panel: 701.3 × 345.3 at (49.3, 100), white at 80 %, a 0.67 #D1D1D1 border, rounded 6.
+  - A move handle (18 px dots) at the top centre. Along the top right, 32 px buttons: Play/Pause, Decrease font size, Increase font size (24–64 in steps of 2, 48 at first), Change scroll speed, a separator and Close.
+  - Scroll speed: a 32 × 196 round popover with a vertical slider of 50–400 words a minute (100 at first), + at the top and − at the bottom.
+  - The script: "Type or paste your script here", at the font size, lines twice as tall, 1em in. Resize from the bottom-right corner (at least 400 wide).
+  - Playing scrolls the whole script linearly in (words ÷ speed) minutes. The word being read is marked (#242424 behind, white text) and moves on after (its letters + 1) × (one minute's share per letter), five more after punctuation.
+  - The font size and speed are kept on the device.
+- **Close** (anything recorded): "Close your recording?" / "This will delete your recording clips." with Close recording (brand) and Cancel, over the recorder whitened at 95 %.
 - **Continue:**
   - The clip goes into the compose box (`video-placeholder` 400 × 225, 14 in and 32 down in the editor, the text 2 under it), with "Processing..." (`video-loader-wrapper`, black at 40 %, a 62 px spinner at the bottom left).
   - Teams stores it at once: `sharing/videototranscode`, then PUT thumbnail, original and transcript_info.
