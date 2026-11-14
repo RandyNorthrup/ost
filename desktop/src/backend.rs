@@ -1144,6 +1144,10 @@ pub mod qobject {
         /// Teams' background catalog loaded (video_backgrounds).
         #[qsignal]
         fn video_backgrounds_ready(self: Pin<&mut Backend>);
+        /// Open this chat in a window of its own (a notification, with
+        /// Settings ▸ General's "Opening content" on New window).
+        #[qsignal]
+        fn open_chat_window_requested(self: Pin<&mut Backend>, chat_id: QString, name: QString);
         /// The Custom Filters app's definition loaded (video_filters).
         #[qsignal]
         fn video_filters_ready(self: Pin<&mut Backend>);
@@ -7657,6 +7661,13 @@ impl qobject::Backend {
                 Ok(handle) => handle.wait_for_action(|action| {
                     if action == "default" {
                         let _ = qt.queue(move |mut this| {
+                            // Settings ▸ General ▸ Opening content in OST
+                            // windows: the chat in a window of its own, or in
+                            // the main window.
+                            if load_settings().get("openContentIn").and_then(|v| v.as_str()) == Some("popout") {
+                                this.as_mut().open_chat_window_requested(QString::from(chat_id.as_str()), QString::from(chat_name.as_str()));
+                                return;
+                            }
                             this.as_mut().select_chat(
                                 &QString::from(chat_id.as_str()),
                                 &QString::from(chat_name.as_str()),

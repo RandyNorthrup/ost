@@ -198,6 +198,19 @@ Rectangle {
                     SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
                 }
             }
+            // Teams' Starting chats card: new chats in the main window or a
+            // new window (the synced alwaysPopOutNewChat).
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "compose-20"; title: "Starting chats"
+                subtitle: "Create new chats in the main window or a new window. This will only apply to this account."
+                Row {
+                    spacing: 12.7
+                    readonly property bool popout: root.prop("userPersonalSettings", ["messagingSettings", "alwaysPopOutNewChat"], false) === true
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark") + ".svg"; checked: !parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", false) }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark") + ".svg"; checked: parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true) }
+                }
+            }
             // Teams' Meeting card. Its "New meeting controls" switches Teams
             // to a different meeting toolbar; OST has Teams' current one.
             SettingsParts.Card {

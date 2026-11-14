@@ -93,6 +93,7 @@ fn main() {
         "qml/EffectTile.qml",
         "qml/VideoEffectsState.qml",
         "qml/VideoFilterHost.qml",
+        "qml/NewChatWindow.qml",
         "qml/VideoEffectsPane.qml",
         "qml/NetworkPopover.qml",
         "qml/AiPopover.qml",

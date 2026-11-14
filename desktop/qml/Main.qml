@@ -87,6 +87,35 @@ Window {
     readonly property bool slackShortcuts: shortcutProfile === "chats_alt" || shortcutProfile === "chats_meetings_alt"
     readonly property bool zoomShortcuts: shortcutProfile === "meetings_alt" || shortcutProfile === "chats_meetings_alt"
     Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) backend.loadSettings() } }
+    // Settings ▸ General ▸ Starting chats (Teams' synced
+    // userPersonalSettings.messagingSettings.alwaysPopOutNewChat): a new
+    // chat in the main window, or in Teams' "New Message" window; once
+    // sent, the chat opens in its own chat window.
+    readonly property bool newChatInWindow: ((syncedProps.userPersonalSettings || {}).messagingSettings || {}).alwaysPopOutNewChat === true
+    property var newChatWin: null
+    property string popOutChatName: ""
+    function startNewChat() {
+        if (!window.newChatInWindow) { rail.current = "chat"; window.composing = true; return }
+        if (window.newChatWin) { window.newChatWin.raise(); window.newChatWin.requestActivate(); return }
+        const c = Qt.createComponent("NewChatWindow.qml")
+        const w = c.createObject(null, { people: Qt.binding(() => backend.peopleJson ? JSON.parse(backend.peopleJson) : []) })
+        w.search.connect(q => backend.searchPeople(q))
+        w.chosen.connect((oid, name, text) => { window.popOutChatName = name; w.close(); backend.openChatWith(oid, name); if (text) backend.sendMessage(text) })
+        w.group.connect((oids, topic, text) => { window.popOutChatName = topic || "Group chat"; w.close(); backend.createGroupChat(oids, topic, text) })
+        w.closing.connect(() => { window.newChatWin = null; w.destroy() })
+        window.newChatWin = w
+        w.show()
+    }
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() {
+            if (!window.popOutChatName || !backend.currentChatId) return
+            window.openChatWindow(backend.currentChatId, backend.currentChatName || window.popOutChatName, "", "")
+            window.popOutChatName = ""
+        }
+    }
+    // Settings ▸ General ▸ Opening content in OST windows: New window.
+    Connections { target: backend; function onOpenChatWindowRequested(id, name) { window.openChatWindow(id, name, "", "") } }
     // Teams + Slack: Ctrl+Shift+1… the app bar's apps, Ctrl+; shortcuts,
     // Ctrl+K Go to, Ctrl+. the info pane, Ctrl+Alt+A unread, Ctrl+Alt+U
     // channels.
@@ -114,7 +143,7 @@ Window {
     Shortcut { sequence: "Ctrl+4"; onActivated: rail.current = "calls" }
     Shortcut { sequence: "Ctrl+5"; onActivated: rail.current = "onedrive" }
     Shortcut { sequence: "Ctrl+,"; onActivated: rail.current = "settings" }
-    Shortcut { sequence: "Ctrl+N"; onActivated: { rail.current = "chat"; chatList.draftsOpen = false; chatList.mentionsOpen = false; window.composing = true } }
+    Shortcut { sequence: "Ctrl+N"; onActivated: { chatList.draftsOpen = false; chatList.mentionsOpen = false; window.startNewChat() } }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
     // The rest of Teams' shortcuts that OST supports (listed by Ctrl+.).
     Shortcut { sequence: "Ctrl+."; onActivated: if (window.slackShortcuts) { if (conversation.visible) conversation.toggleDetails() } else shortcutsDialog.open() }
@@ -1086,7 +1115,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3449,6 +3478,30 @@ Window {
             else if (step === 8) { chatList.closeRowMenuForTest(); backend.setChatMuted(c.id, false) }
             else if (step === 10) backend.refresh()
             else if (step === 12) { console.warn("MUTE unmuted", c.muted); cap("unmuted"); Qt.quit() }
+            step++
+        }
+    }
+
+    // --new-chat-window-test: Settings ▸ General ▸ Starting chats on New
+    // window (synced), Ctrl+N's window captured with a person picked (never
+    // sent), then the window closed and the setting put back. Logs NEWWIN
+    // lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--new-chat-window-test") >= 0 && backend.signedIn && backend.settingsJson.length > 0
+        interval: 2500; repeat: true
+        property int step: 0
+        property bool before: false
+        onTriggered: {
+            const log = (...a) => console.warn("NEWWIN", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            switch (step) {
+            case 0: before = window.newChatInWindow; rail.current = "settings"; settingsView.pageForTest("general"); break
+            case 2: settingsView.setPropForTest("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true); break
+            case 4: window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-setting.png"))); log("in window", window.newChatInWindow, typeof window.syncedProps.userPersonalSettings, JSON.stringify((window.syncedProps.userPersonalSettings || {}).messagingSettings || null).slice(0, 300)); window.startNewChat(); break
+            case 5: backend.searchPeople("OST Test 2"); break
+            case 7: log("window", !!window.newChatWin); if (window.newChatWin) window.newChatWin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-window.png"))); break
+            case 8: if (window.newChatWin) window.newChatWin.close(); settingsView.setPropForTest("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", before); break
+            case 11: log("back", window.newChatInWindow); Qt.quit(); return
+            }
             step++
         }
     }
@@ -7436,7 +7489,7 @@ Window {
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         currentId: backend.currentChatId
         onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
-        onNewChat: { draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.composing = true }
+        onNewChat: { draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() }
         onOpenYourTeams: window.openYourTeams("teams")
         onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
         onManageChatApps: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; if (backend.currentChatId !== id) backend.selectChat(id, name); conversation.manageApps = true }

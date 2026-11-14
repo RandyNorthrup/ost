@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-14T23:17:00Z'
+updated_date: '2026-11-14T23:40:00Z'
 labels:
   - desktop
   - settings
@@ -41,4 +41,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - 2026-11-14 General part 2: Keyboard shortcuts profile (Teams only / + Slack / + Zoom / + combined) saved to the synced keyboardShortcutsSettings {shortcutProfile: default|chats_alt|meetings_alt|chats_meetings_alt} (added to preferences::JSON_PROPERTIES); Teams' Windows desktop key maps from its bundle: Slack set (Ctrl+Shift+1… apps, Ctrl+; shortcuts, Ctrl+K go to, Ctrl+. info pane, Ctrl+Alt+A unread, Ctrl+Alt+U channels, compose Ctrl+E link, Ctrl+Alt+Shift+C code block, Ctrl+Shift+9 quote), Zoom set (Ctrl+U message pane, Alt+H chat list, Alt+A mute, Alt+V video, Alt+Y raise hand, Alt+S share, Alt+Q/Ctrl+Shift+E leave, Ctrl+Shift+V answer with video). Verified with --shortcut-profile-test (synced to the service and read back; left at default). Not yet: ReactToLastMessage (Ctrl+Shift+\), AnnounceActiveSpeaker (Ctrl+2), the profile choice inside the Keyboard shortcuts dialog.
 
 - 2026-11-14 General part 3: Efficiency mode card (Teams' three radios; local efficiencyMode auto|off|on, Teams' client preference optimizedPerf). On (or auto on a low-end device: <4 processors or <8 GB memory — Teams' own isLowEndDevice rule isn't known) the camera is sent at no more than 424x240 and 300 kbit/s (webrtc_video::set_efficiency).
+
+- 2026-11-14 General part 4: Starting chats card (synced messagingSettings.alwaysPopOutNewChat) with Teams' "New Message" window (588x493, measured on winpc; NewChatWindow.qml hosts OST's new-chat form; once sent the chat opens in its own chat window); "Opening content in OST windows" now acts: with New window, a notification's chat opens in a chat window. Verified with --new-chat-window-test (setting synced and put back; nothing sent). Teams' new-chat form itself (the note before anyone is picked, the compose always shown) is OST's own still.
 <!-- SECTION:NOTES:END -->
