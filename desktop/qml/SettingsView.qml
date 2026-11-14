@@ -33,9 +33,15 @@ Rectangle {
         { key: "devices", label: "Devices", icon: "headset-20" },
         { key: "calls", label: "Calls", icon: "call-20" },
         { key: "files", label: "Files and links", icon: "document-20" },
+        { key: "apppermissions", label: "App permissions", icon: "shield-20" },
     ]
     property string filter: ""
-    onPageChanged: subPage = ""
+    function appPermsForTest() { return { n: (appPerms.data_.apps || []).length, names: (appPerms.data_.apps || []).map(a => a.name), loading: !!appPerms.data_.loading } }
+    function openAppPermForTest(name) { const a = (appPerms.data_.apps || []).find(x => x.name === name); appPerms.open = a ? a.id : "" }
+    onPageChanged: {
+        subPage = ""
+        if (page === "apppermissions") backend.loadPermissionApps(JSON.stringify((backend.teamsJson ? JSON.parse(backend.teamsJson) : []).map(t => t.thread_id).filter(t => !!t)))
+    }
     onVisibleChanged: if (visible) backend.loadSettings()
 
     // Synced settings (user properties parsed; the middle tier's).
@@ -685,6 +691,114 @@ Rectangle {
                 SettingsParts.Gap { size: 6 }
                 SettingsParts.CheckRow { label: "All the time"; checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
                 SettingsParts.CheckRow { label: "When Outlook automatic replies are on"; checked: calls.vm.vmUseAutoRepliesForOof === true; onToggled: v => calls.setVm("vmUseAutoRepliesForOof", v) }
+            }
+
+            // ---- App permissions (measured on winpc 2026-11-13) ----
+            // One card (790, a 0.67 #F0F0F0 edge, radius 8): the shield (20)
+            // at 18.7, 22.7, "App permissions" (14/20) at 68.5, 5.5 over the
+            // explanation (12, line 17.14) with Learn more (#4F52B2). Then an
+            // expander per app, 65.33 tall and 75 apart from 64.7: its icon
+            // (32, a 0.67 #F0F0F0 edge, radius 6) at 19.3, 16.6, the name
+            // (14/20) at 69.3, 22.6 and a 20 px chevron at 754.7. Open, each
+            // permission it asks for: Teams' glyphs at 59.3 and 94.3, the
+            // title (14/20) at 129.3 and its subtitle (12/16, light) under
+            // it, a switch at 698.7; then "Note: Permission updates will be
+            // applied the next time you open or refresh this app." The apps:
+            // api::app_details::permission_apps (Teams' rule); the switches
+            // stay on this device, as Teams keeps them, and OST's app views
+            // honour them.
+            Rectangle {
+                id: appPerms
+                visible: root.page === "apppermissions"
+                readonly property var data_: backend.permissionAppsJson ? JSON.parse(backend.permissionAppsJson) : ({ apps: [] })
+                property string open: ""
+                property int rev: 0
+                width: parent ? parent.width : 790
+                height: 64.7 + permList.height + 10
+                radius: 8; color: "transparent"
+                border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D")
+                FluentIcon { x: 18.7; y: 22.7; size: 20; name: "shield-20"; color: theme.text }
+                Text { x: 68.5; y: 5.5; text: "App permissions"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text {
+                    x: 68.5; y: 25.5; width: parent.width - 68.5 - 1
+                    wrapMode: Text.Wrap
+                    textFormat: Text.RichText
+                    text: "Control what your apps can access when using Teams. Some apps have permissions enabled by default for your convenience. <a href=\"https://go.microsoft.com/fwlink/?linkid=2166702&clcid=0x409\" style=\"color:" + theme.brandLink + ";text-decoration:none\">Learn more</a>"
+                    font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                    onLinkActivated: l => Qt.openUrlExternally(l)
+                }
+                Column {
+                    id: permList
+                    x: 0.7; y: 64.7; width: parent.width - 1.4
+                    spacing: 9.7
+                    Repeater {
+                        model: appPerms.data_.apps || []
+                        Item {
+                            id: appRow
+                            required property var modelData
+                            required property int index
+                            readonly property bool expanded: appPerms.open === modelData.id
+                            width: permList.width
+                            height: expanded ? 94.6 + modelData.permissions.length * 48 + 2.5 + 20 + 13 : 65.33
+                            Rectangle {
+                                visible: appRow.index > 0
+                                x: 18.6; y: -5.3; width: parent.width - 37.2; height: 0.67
+                                color: theme.pick("#EBEBEB", "#3D3D3D")
+                            }
+                            Item {
+                                width: parent.width; height: 65.33
+                                Image {
+                                    x: 18.6; y: 16.6; width: 32; height: 32
+                                    source: appRow.modelData.icon || ""
+                                    sourceSize: Qt.size(64, 64); fillMode: Image.PreserveAspectFit; asynchronous: true
+                                    Rectangle { anchors.fill: parent; radius: 6; color: "transparent"; border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D") }
+                                }
+                                Text { x: 68.6; y: 22.6; width: parent.width - 68.6 - 60; elide: Text.ElideRight; text: appRow.modelData.name; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+                                FluentIcon { x: 754; y: 22.6; size: 20; name: appRow.expanded ? "chevron-up-20" : "chevron-down-20"; color: theme.textStrong }
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: appPerms.open = appRow.expanded ? "" : appRow.modelData.id }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "App permissions for " + appRow.modelData.name
+                            }
+                            Column {
+                                visible: appRow.expanded
+                                x: 58.6; y: 94.6; width: parent.width - 58.6 - 40
+                                Repeater {
+                                    model: appRow.expanded ? appRow.modelData.permissions : []
+                                    Item {
+                                        id: permRow
+                                        required property var modelData
+                                        readonly property var glyph: ({ media: "camera", geolocation: "location", notifications: "alert", midi: "music-note-2", openExternal: "open" })[modelData.kind] || "shield"
+                                        width: parent.width; height: 48
+                                        FluentIcon { x: 0; y: 7.3; size: 20; name: permRow.glyph + "-20-filled"; color: theme.text }
+                                        FluentIcon { x: 35; y: 7.3; size: 20; name: permRow.glyph + "-20"; color: theme.text }
+                                        Text { x: 70.7; y: 0; text: permRow.modelData.title; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                                        Text { visible: !!permRow.modelData.subtitle; x: 70.7; y: 22.5; text: permRow.modelData.subtitle; font.family: theme.font; font.pixelSize: 12; font.weight: Font.ExtraLight; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+                                        SettingsParts.Toggle {
+                                            x: 640.1; y: 9.3
+                                            stateLabel: false
+                                            on: { appPerms.rev; return backend.appPermission(appRow.modelData.id, permRow.modelData.kind) }
+                                            accessibleName: permRow.modelData.title + " for " + appRow.modelData.name
+                                            onToggled: v => { backend.setAppPermission(appRow.modelData.id, permRow.modelData.kind, v); appPerms.rev++ }
+                                        }
+                                    }
+                                }
+                                Text {
+                                    y: 2.5
+                                    textFormat: Text.StyledText
+                                    text: "<b>Note:</b> Permission updates will be applied the next time you open or refresh this app."
+                                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                    color: theme.text
+                                }
+                            }
+                        }
+                    }
+                }
+                Text {
+                    visible: !!appPerms.data_.loading
+                    x: 68.5; y: 72; text: "Loading…"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                }
             }
 
             // ---- Files and links ----

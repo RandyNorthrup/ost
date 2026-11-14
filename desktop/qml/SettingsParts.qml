@@ -86,10 +86,13 @@ Item {
         property bool on
         property bool usable: true
         property string accessibleName
+        /// "On" / "Off" before the switch (App permissions' switches have none).
+        property bool stateLabel: true
         signal toggled(bool on)
-        width: 40 + 12 + stateText.implicitWidth; height: 20
+        width: 40 + (stateLabel ? 12 + stateText.implicitWidth : 0); height: 20
         Text {
             id: stateText
+            visible: tg.stateLabel
             anchors.verticalCenter: parent.verticalCenter
             text: tg.on ? "On" : "Off"
             font.family: theme.font; font.pixelSize: 14

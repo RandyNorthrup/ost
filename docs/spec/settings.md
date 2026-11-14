@@ -153,6 +153,30 @@ Everything below is in userPersonalSettings unless marked local.
   - Meeting chat: chatSettings.meetingChatNotificationFor{Accepted,Tentative}Meetings.
 - **Calendar:** userGraphSettings.{app id}.{toastSettings,activityGenerationSettings}.privateMeeting….
 
+## App permissions (measured 2026-11-13)
+
+- One card (790 wide, a 0.67 #F0F0F0 edge, radius 8): the shield at 18.7, 22.7, "App
+  permissions" (14/20) at 68.5, 5.5, then "Control what your apps can access when using Teams.
+  Some apps have permissions enabled by default for your convenience. Learn more" (12, line
+  17.14).
+- An expander per app, 65.33 tall and 75 apart from 64.7: the icon (32, a 0.67 #F0F0F0 edge,
+  radius 6) at 19.3, 16.6, the name (14/20) at 69.3, 22.6 and a chevron at 754.7. Open, each
+  permission the manifest asks for: the filled and regular glyphs at 59.3 and 94.3, the title
+  (14/20) at 129.3 over its subtitle (12/16, light: "Always" for Notifications, "Only when app
+  is open and in view" for the others), a switch at 698.7 with no On/Off label; then "Note:
+  Permission updates will be applied the next time you open or refresh this app."
+- The apps (worker resolver `installedAppsPermissions`): your installed apps (aggregated
+  entitlements) that ask for device permissions, every app in your teams' entitlements
+  (whatever its state, so suggested ones like ScrumGenius show), and any app whose permissions
+  were changed; by name, 100 at most. On OST Test 1 that is the same 22 apps Teams lists.
+- The switches stay on the device (Teams made no request when one was flipped).
+
+## Recognition (seen 2026-11-13)
+
+- Voice Recognition and Face Recognition cards with Microsoft's biometric consent text and Start
+  voice capture / Start face capture (face: "Create my face profile now", "Takes about 30
+  seconds"). Not built: the enrolment protocol is unresearched (TASK-0134).
+
 ## OST status
 
 - Built: the left pane and header, General (System, opening content, Out of office, keyboard
@@ -175,8 +199,9 @@ Everything below is in userPersonalSettings unless marked local.
   - Not built: the sound choices, position and size (OST uses the desktop's notifications,
     not Teams' toast windows), posts in shown channels, meeting chat, Presence ▸ Manage
     notifications and Calendar.
-- Still to build: App permissions,
-  Recognition, and the remaining items on built pages.
+- App permissions: built (the list by Teams' rule, the expanders and switches, kept on the
+  device and honoured by OST's app views).
+- Still to build: Recognition (TASK-0134) and the remaining items on built pages.
 - Chat list (measured with the settings on):
   - Previews: chat rows are 52 tall, with a 36 px picture at 16, 8, the name at 64 and the
     preview (12/16 #616161) at 64, 26. It reads "You: …" for yours and "Name: …" in groups.
@@ -185,5 +210,6 @@ Everything below is in userPersonalSettings unless marked local.
   - Time stamps: 12/16 #616161, 12 from the row's right, on chats and channels alike: the
     time today, else M/d.
   - Filters off: no pills, and the list starts right under the header.
-- Saved but not yet acted on by OST: Copilot row, compact density, auto-follow, suggested
-  replies, chat landing, sign language mode.
+- Saved and acted on (TASK-0090): compact density, auto-follow (the service's), suggested
+  replies and chat landing. Saved but not yet acted on: the Copilot row and sign language
+  mode.

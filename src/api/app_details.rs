@@ -1876,6 +1876,60 @@ pub fn device_permissions(def: &serde_json::Value) -> Vec<DevicePermission> {
         .collect()
 }
 
+/// An app on Settings ▸ App permissions.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PermissionApp {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+    pub permissions: Vec<DevicePermission>,
+}
+
+/// The apps Settings ▸ App permissions lists, by Teams' rule (worker
+/// `installedAppsPermissions`): your installed apps that ask for device
+/// permissions, the ones installed in your teams, and any app whose
+/// permissions you changed; by name, 100 at most.
+pub async fn permission_apps(client: &TeamsClient, team_threads: &[String], changed: &[String]) -> Result<Vec<PermissionApp>> {
+    let defs = catalog(client).await?;
+    let by_id: HashMap<String, &serde_json::Value> = defs.iter().filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d))).collect();
+    let mut ids: Vec<String> = entitlements(client).await.unwrap_or_default().into_keys().collect();
+    // Your teams' apps, whatever their state (Teams lists suggested ones
+    // too), with the definitions their reply carries.
+    let mut team_defs: HashMap<String, serde_json::Value> = HashMap::new();
+    for (id, d) in super::store_content::teams_entitled_definitions(client, team_threads).await.unwrap_or_default() {
+        ids.push(id.clone());
+        if d.is_object() {
+            team_defs.insert(id, d);
+        }
+    }
+    ids.extend(changed.iter().map(|c| c.to_lowercase()));
+    ids.sort();
+    ids.dedup();
+    let mut out = Vec::new();
+    for id in ids {
+        let def = match by_id.get(&id).map(|d| (*d).clone()).or_else(|| team_defs.get(&id).cloned()) {
+            Some(d) => d,
+            None => match definition(client, &id).await {
+                Ok(d) => d,
+                Err(_) => continue,
+            },
+        };
+        let permissions = device_permissions(&def);
+        if permissions.is_empty() {
+            continue;
+        }
+        out.push(PermissionApp {
+            id,
+            name: str_at(&def, "name").to_string(),
+            icon: super::tabs::https_only(str_at(&def, "largeImageUrl")),
+            permissions,
+        });
+    }
+    out.sort_by_key(|a| a.name.to_lowercase());
+    out.truncate(100);
+    Ok(out)
+}
+
 /// Whether Teams turns an app's device permissions on by default (ECS
 /// extensibility.autoApprovedDevicePermissionApps).
 pub fn device_permissions_preapproved(app_id: &str) -> bool {

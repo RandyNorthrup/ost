@@ -1220,6 +1220,46 @@ pub async fn team_apps(client: &TeamsClient, team_thread: &str) -> Result<Vec<Te
     Ok(apps)
 }
 
+/// Every app in your teams' entitlements, whatever its state (as Teams'
+/// App permissions reads them), with its definition: (id, definition).
+pub async fn teams_entitled_definitions(client: &TeamsClient, team_threads: &[String]) -> Result<Vec<(String, serde_json::Value)>> {
+    if team_threads.is_empty() {
+        return Ok(Vec::new());
+    }
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned"))
+        .bearer_auth(token)
+        .json(&serde_json::json!(team_threads))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Team apps")?
+        .json()
+        .await
+        .context("Team apps")?;
+    Ok(entitled_definitions_from(&v))
+}
+
+/// The (id, definition) pairs in a teams aggregatedEntitlements reply.
+pub fn entitled_definitions_from(v: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
+    let defs = &v["value"]["definitions"];
+    let mut out: Vec<(String, serde_json::Value)> = Vec::new();
+    for list in v["value"]["teamsEntitlements"].as_object().into_iter().flat_map(|m| m.values()) {
+        for e in list.as_array().into_iter().flatten() {
+            let Some(id) = e["id"].as_str() else { continue };
+            if out.iter().any(|(i, _)| i.eq_ignore_ascii_case(id)) {
+                continue;
+            }
+            let d = defs.get(id).cloned().unwrap_or(serde_json::Value::Null);
+            out.push((id.to_lowercase(), d));
+        }
+    }
+    out
+}
+
 /// The installed apps of one team in an aggregatedEntitlements reply.
 pub fn team_apps_from_aggregated(v: &serde_json::Value, team_thread: &str) -> Vec<TeamApp> {
     let val = &v["value"];

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-10T09:57:00Z'
+updated_date: '2026-11-14T04:29:00Z'
 labels:
   - desktop
   - settings
@@ -30,4 +30,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 
 <!-- SECTION:NOTES:BEGIN -->
 - Phase 1 (d9ca83d): layout, General/Appearance/Chats/Privacy/Accessibility/Devices pages, synced storage (user properties + MT) captured per setting, Out of office page. Still: Notifications page as Teams, Accounts and orgs, Calls, Files and links, App permissions, Recognition, remaining items; OST behaviour for saved-only settings (Copilot row, compact density, auto-follow, suggested replies, chat landing, list previews/time stamps, sign language mode).
+
+- 2026-11-13: App permissions built (measured on winpc): the list by Teams' installedAppsPermissions rule (personal entitlements + every app in your teams' entitlements + changed apps, with device permissions; app_details::permission_apps — OST Test 1 gets Teams' exact 22), Teams' card/expander layout, switches kept on the device via the existing appDevicePermissions store (no Teams request on flip). Recognition (voice/face enrolment) split to TASK-0134. Harness --app-permissions-test; settings-pages harness includes the page.
 <!-- SECTION:NOTES:END -->

@@ -112,6 +112,7 @@ pub mod qobject {
         /// {app, name, icon, preapproved, items: [{kind, title, subtitle,
         /// on}]}.
         #[qproperty(QString, app_permissions_json)]
+        #[qproperty(QString, permission_apps_json)]
         /// The Store's search: {query, loading | results}.
         #[qproperty(QString, store_search_json)]
         /// The agent Store's search: {query, results: [app], loading}.
@@ -1295,6 +1296,11 @@ pub mod qobject {
         /// Load a Store page (a collection's See all, or a menu entry).
         #[qinvokable]
         fn store_page_load(self: Pin<&mut Backend>, id: &QString);
+        /// Settings ▸ App permissions' apps (api::app_details::permission_apps)
+        /// for your teams (thread ids, JSON array), into permission_apps_json.
+        #[qinvokable]
+        fn load_permission_apps(self: Pin<&mut Backend>, team_threads_json: &QString);
+
         /// Load an app's App permissions into app_permissions_json.
         #[qinvokable]
         fn app_permissions_load(self: Pin<&mut Backend>, app_id: &QString);
@@ -1830,6 +1836,7 @@ pub struct BackendRust {
     agent_store_json: QString,
     store_page_json: QString,
     app_permissions_json: QString,
+    permission_apps_json: QString,
     store_search_json: QString,
     agent_search_json: QString,
     app_added_json: QString,
@@ -10817,6 +10824,32 @@ impl qobject::Backend {
                     Err(e) => json!({ "error": short_error(&e) }).to_string(),
                 };
                 this.as_mut().set_store_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    pub fn load_permission_apps(mut self: Pin<&mut Self>, team_threads_json: &QString) {
+        let teams: Vec<String> = serde_json::from_str(&team_threads_json.to_string()).unwrap_or_default();
+        let changed: Vec<String> = self.as_mut().saved_app_permissions().as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+        self.as_mut().set_permission_apps_json(QString::from(json!({ "loading": true, "apps": [] }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::app_details::permission_apps(&TeamsClient::new().await?, &teams, &changed).await }.await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(apps) => {
+                        let apps: Vec<serde_json::Value> = apps
+                            .into_iter()
+                            .map(|a| {
+                                let pre = api::app_details::device_permissions_preapproved(&a.id);
+                                json!({ "id": a.id, "name": a.name, "icon": a.icon, "preapproved": pre, "permissions": a.permissions })
+                            })
+                            .collect();
+                        json!({ "loading": false, "apps": apps })
+                    }
+                    Err(e) => json!({ "loading": false, "apps": [], "error": short_error(&e) }),
+                };
+                this.as_mut().set_permission_apps_json(QString::from(v.to_string().as_str()));
             });
         });
     }

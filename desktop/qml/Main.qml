@@ -5264,7 +5264,7 @@ Window {
         running: Qt.application.arguments.indexOf("--settings-pages-test") >= 0 && backend.signedIn
         interval: 2500; repeat: true
         property int step: 0
-        readonly property var pages: ["general", "appearance", "chats", "notifications", "accounts", "privacy", "accessibility", "devices", "calls", "files", "about"]
+        readonly property var pages: ["general", "appearance", "chats", "notifications", "accounts", "privacy", "accessibility", "devices", "calls", "files", "apppermissions", "about"]
         onTriggered: {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
@@ -5277,6 +5277,25 @@ Window {
             } else if (step === 1 + pages.length * 3) { console.warn("ST settings", backend.settingsJson.slice(0, 1500)); settingsView.pageForTest("general", "oof") }
             else if (step === 2 + pages.length * 3) shot("st-oof")
             else if (step === 3 + pages.length * 3) Qt.quit()
+            step++
+        }
+    }
+
+    // --app-permissions-test --shots=<dir>: Settings ▸ App permissions (its
+    // apps, Teams' rule), Bookable desks opened (ap-open). Logs APPPERMS.
+    Timer {
+        running: Qt.application.arguments.indexOf("--app-permissions-test") >= 0 && backend.signedIn && !!backend.teamsJson
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (step === 0) rail.current = "settings"
+            else if (step === 1) settingsView.pageForTest("apppermissions")
+            else if (step === 4) { console.warn("APPPERMS", JSON.stringify(settingsView.appPermsForTest())); shot("ap-list") }
+            else if (step === 5) settingsView.openAppPermForTest("Bookable desks")
+            else if (step === 6) shot("ap-open")
+            else if (step === 7) Qt.quit()
             step++
         }
     }
