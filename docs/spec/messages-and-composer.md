@@ -1083,6 +1083,20 @@ Groups are separated by dividers; empty groups are skipped.
   - A grouped message that was edited shows "Edited" (12 px #616161) above its bubble.
 - **Not yet in OST:** a plain Action.Submit (not an invoke), messageBack, and Action.Submit/Execute from a task module.
 
+### Suggested replies (read 2026-11-13: live data plus Teams' code and CSS)
+- **Where they come from.** Cortana (`28:30005246-…`) writes them to the conversation's `quickReplyAugmentation` property, a few seconds after a message lands. The property holds `{suggestedActivities: [{id, timestamp, replyToId, suggestedActions: {actions: [{type: "imBack" | "custom", title, value, channelData: {type: "reply" | "file_sharing", utcTime, targetMessageId}}]}}]}`.
+- **Who gets them.** OST Test 2 gets them for questions from OST or Teams alike. OST Test 1, the account Teams runs as on winpc, gets none, so Teams' chips couldn't be measured live. Request headers make no difference (tested OST TEST 130–132).
+- **When Teams shows them** (142420 `q` / `ie` / `oe`):
+  - It takes the newest set that has a "reply" suggestion.
+  - Only while its target is the chat's newest message, not deleted and not edited after the suggestion's time.
+  - Only in chats, with Settings ▸ Chats ▸ Suggested replies on (`suggestedRepliesSettings.suggestionsEnabled`) and the messaging policy's allowSmartReply.
+  - Clicking one sends it.
+- **The row** ("smart-replies-renderer"): right-aligned, one row, as many chips as fit, 3 at most.
+  - Each chip is a small Fluent Button: 24 tall, radius 4, a 1 px BrandForeground1 edge, 12 px semibold brand text, padding 0 14, margin 0 4.
+  - Hover: NeutralBackground3Hover, with NeutralForeground2BrandHover text and a BrandBackgroundHover edge. Pressed: BrandBackground2.
+  - OST draws the row 8 above the compose box.
+- **Not in OST:** the "Share file" (file_sharing), meeting, workflow, app and Viva Topics suggestions, and the feedback button.
+
 ## 18. Delivery options, schedule send, Enter, limits
 - **Delivery options** (648927, 871091):
 

@@ -803,6 +803,11 @@ pub mod qobject {
         /// the card's inputs; `automatic` for a refresh. The outcome
         /// ({kind: sent | card | message | error, card?, message?}) comes
         /// back in card_invoke_done.
+        /// Teams' suggested replies for a chat (api::smart_replies): the
+        /// newest set, or null, in smart_replies_ready.
+        #[qinvokable]
+        fn load_smart_replies(self: Pin<&mut Backend>, chat_id: &QString);
+
         #[qinvokable]
         fn card_invoke(self: Pin<&mut Backend>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool);
         /// Teams' Download in the Attendance view: save the report file
@@ -1039,6 +1044,10 @@ pub mod qobject {
         /// A share_action finished: its op, its result (JSON) and an error.
         #[qsignal]
         fn share_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
+
+        /// A chat's suggested replies arrived (JSON SuggestionSet or "null").
+        #[qsignal]
+        fn smart_replies_ready(self: Pin<&mut Backend>, chat_id: QString, json: QString);
 
         /// A card_invoke finished: its op, the outcome (JSON) and an error.
         #[qsignal]
@@ -5067,6 +5076,25 @@ impl qobject::Backend {
     fn call_meeting_link(&self) -> Option<outgoing::MeetingLink> {
         outgoing::MeetingLink::parse(&self.rust().last_join.0.to_string())
             .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
+    }
+
+    pub fn load_smart_replies(self: Pin<&mut Self>, chat_id: &QString) {
+        let chat = chat_id.to_string();
+        if chat.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let set = match TeamsClient::new().await {
+                Ok(client) => api::smart_replies::for_chat(&client, &chat).await.unwrap_or_else(|e| {
+                    tracing::debug!("suggested replies unavailable: {}", short_error(&e));
+                    None
+                }),
+                Err(_) => None,
+            };
+            let json = serde_json::to_string(&set).unwrap_or_else(|_| "null".into());
+            let _ = qt.queue(move |mut this| this.as_mut().smart_replies_ready(QString::from(chat.as_str()), QString::from(json.as_str())));
+        });
     }
 
     pub fn card_invoke(self: Pin<&mut Self>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool) {

@@ -1,5 +1,6 @@
 //! Post a plain message with a delivery option into a chat (debugging aid):
 //! `cargo run --example post_text -- <chat id> <text> [high|urgent]`.
+//! OST_POST_HEADERS="name: value;; name: value" adds request headers.
 use teams_cli::api::client::TeamsClient;
 
 #[tokio::main]
@@ -25,8 +26,14 @@ async fn main() -> anyhow::Result<()> {
         "imdisplayname": client.display_name().unwrap_or_default(),
         "properties": { "importance": importance, "formatVariant": "TEAMS" },
     });
+    let extra = std::env::var("OST_POST_HEADERS").unwrap_or_default();
+    let headers: Vec<(&str, &str)> = extra
+        .split(";;")
+        .filter_map(|h| h.split_once(':'))
+        .map(|(k, v)| (k.trim(), v.trim()))
+        .collect();
     let resp = client
-        .chat_request(reqwest::Method::POST, &url, &body)
+        .chat_request_with(reqwest::Method::POST, &url, &body, &headers)
         .await?;
     println!("{}", resp.status());
     Ok(())

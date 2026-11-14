@@ -513,6 +513,8 @@ Rectangle {
     function chatAppsForTest() { return chatApps }
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
+        smartReplies = null
+        if (chatId && !isChannel) backend.loadSmartReplies(chatId)
         postViewRoot = ""
         channelAttendance = null
         attendanceTab = false; attendanceCall = ""
@@ -2629,6 +2631,81 @@ Rectangle {
             }
         }
     }
+
+    // Suggested replies (Teams' smart replies; api::smart_replies): the
+    // service's newest set, for its target message only while that is the
+    // chat's newest (not yours, not deleted, not edited since), when
+    // Settings ▸ Chats ▸ Suggested replies is on. Teams' row (142420
+    // "smart-replies-renderer", read from its code and Griffel CSS; the
+    // test account Teams runs as gets none to measure): right-aligned
+    // above the compose box, small Fluent buttons (24 tall, radius 4) with
+    // a 1 px BrandForeground1 edge, 12 px semibold brand text, padding 0
+    // 14, 4 either side; hover NeutralBackground3Hover with the brand-hover
+    // text and edge, pressed BrandBackground2; as many as fit, 3 at most.
+    // Clicking one sends it.
+    property var smartReplies: null
+    readonly property bool smartRepliesOn: {
+        const s = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}
+        const v = ((s.props || {}).suggestedRepliesSettings || {}).suggestionsEnabled
+        return v !== false
+    }
+    readonly property var newestMessage: { for (let i = root.messages.length - 1; i >= 0; i--) { const m = root.messages[i]; if (m.kind === "message") return m } return null }
+    readonly property var smartReplyChips: {
+        const set = root.smartReplies, m = root.newestMessage
+        if (!set || !m || !root.smartRepliesOn || root.isChannel || root.pane || m.mine || m.deleted || m.id !== set.target) return []
+        return set.replies.filter(r => r.kind === "reply").slice(0, 3)
+    }
+    Connections {
+        target: backend
+        function onSmartRepliesReady(chatId, json) { if (chatId === root.chatId) root.smartReplies = JSON.parse(json) }
+    }
+    // The service writes suggestions a moment after a message lands: ask on
+    // opening the chat and again shortly after someone else's message.
+    onNewestMessageChanged: if (newestMessage && !newestMessage.mine && !isChannel) { smartReplyRetry.count = 0; smartReplyRetry.restart() }
+    Timer {
+        id: smartReplyRetry
+        property int count: 0
+        interval: count === 0 ? 2500 : 5000
+        onTriggered: { backend.loadSmartReplies(root.chatId); if (++count < 3 && !(root.smartReplies && root.newestMessage && root.smartReplies.target === root.newestMessage.id)) restart() }
+    }
+    Row {
+        id: smartReplyRow
+        visible: root.smartReplyChips.length > 0 && compose.visible && root.typingText.length === 0
+        anchors.right: compose.right
+        y: compose.y - 8 - height
+        height: 24
+        layoutDirection: Qt.RightToLeft
+        Accessible.role: Accessible.ToolBar
+        Accessible.name: "Suggested replies"
+        Repeater {
+            model: root.smartReplyChips
+            Rectangle {
+                id: chip
+                required property var modelData
+                readonly property bool fits: x >= 0
+                width: chipText.implicitWidth + 28 + 8; height: 24
+                color: "transparent"
+                Rectangle {
+                    x: 4; width: parent.width - 8; height: 24; radius: 4
+                    color: chipTap.pressed ? theme.pick("#E8EBFA", "#2B2B40") : chipHover.hovered ? theme.pick("#EBEBEB", "#383838") : theme.surface
+                    border.width: 1
+                    border.color: chipHover.hovered || chipTap.pressed ? theme.brandHover : theme.brand
+                    Text {
+                        id: chipText
+                        anchors.centerIn: parent
+                        text: chip.modelData.title
+                        font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                        color: chipHover.hovered || chipTap.pressed ? theme.brandHover : theme.brand
+                    }
+                    HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { id: chipTap; onTapped: { root.send(chip.modelData.value); root.smartReplies = null } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: chip.modelData.title
+                }
+            }
+        }
+    }
+    function smartRepliesForTest() { return { set: root.smartReplies, chips: root.smartReplyChips.map(c => c.title), shown: smartReplyRow.visible } }
 
     // Typing indicator, as Teams draws it (chat-pane gutter box): the
     // latest typer's avatar, 16 px into the compose box and 24 px above it,
