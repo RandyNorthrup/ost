@@ -847,6 +847,17 @@ pub mod qobject {
         /// video_backgrounds_ready follows.
         #[qinvokable]
         fn video_backgrounds(self: Pin<&mut Backend>) -> QString;
+        /// Your own backgrounds ([{id, thumb (file URL)}], oldest first).
+        #[qinvokable]
+        fn video_uploads(self: Pin<&mut Backend>) -> QString;
+        /// Teams' Add new: keep the picture at `url` (a decoded file URL or
+        /// a path) as one of your backgrounds: {id} or {error: Teams'
+        /// message}.
+        #[qinvokable]
+        fn add_video_background(self: Pin<&mut Backend>, url: &QString) -> QString;
+        /// Remove one of your backgrounds.
+        #[qinvokable]
+        fn remove_video_background(self: Pin<&mut Backend>, id: &QString) -> bool;
         /// Send the compose box with a recorded clip before its text
         /// (`clip_json`: {id, duration (ms), width, height}), as Teams'
         /// message carries it.
@@ -5318,6 +5329,31 @@ impl qobject::Backend {
         }
         let json: Vec<serde_json::Value> = list.iter().map(|e| e.json()).collect();
         QString::from(serde_json::Value::Array(json).to_string().as_str())
+    }
+
+    pub fn video_uploads(self: Pin<&mut Self>) -> QString {
+        let list: Vec<serde_json::Value> = crate::video_effects::uploads()
+            .iter()
+            .map(|u| serde_json::json!({ "id": u.id, "thumb": format!("file://{}", u.thumb.display()) }))
+            .collect();
+        QString::from(serde_json::Value::Array(list).to_string().as_str())
+    }
+
+    pub fn add_video_background(self: Pin<&mut Self>, url: &QString) -> QString {
+        let raw = url.to_string();
+        let path = raw.strip_prefix("file://").map(str::to_string).unwrap_or(raw);
+        let out = match crate::video_effects::add_upload(std::path::Path::new(&path)) {
+            Ok(id) => serde_json::json!({ "id": id }),
+            Err(e) => {
+                tracing::warn!("adding a background: {e:?}");
+                serde_json::json!({ "error": e.message() })
+            }
+        };
+        QString::from(out.to_string().as_str())
+    }
+
+    pub fn remove_video_background(self: Pin<&mut Self>, id: &QString) -> bool {
+        crate::video_effects::remove_upload(&id.to_string())
     }
 
     pub fn fetch_music(self: Pin<&mut Self>, url: &QString) {

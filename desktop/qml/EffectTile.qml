@@ -9,10 +9,12 @@ import QtQuick.Controls
 // left); None, Standard blur and Show all show a 16 px glyph over a
 // 10 px/600 label, the pair centred. Standard blur's glyph sits left of a
 // 16 px chevron that opens the blur menu. The chosen tile has a 2 px brand
-// ring outside it and Teams' Checkmark12 at its top right.
+// ring outside it (hovering shows the same ring) and Teams' Checkmark12 at
+// its top right. Add new shows the ArrowUpload glyph; your own uploads get
+// a ··· menu with Remove.
 Item {
     id: tile
-    /// "none", "blur", "showall" or "image".
+    /// "none", "blur", "add", "showall" or "image".
     property string kind: "image"
     property string label: ""
     property string thumb: ""
@@ -20,6 +22,10 @@ Item {
     property bool selected: false
     /// The name read out (Teams' aria-label).
     property string accessibleName: label
+    /// One of your own backgrounds: hovering shows Teams' ··· button with
+    /// Remove.
+    property bool removable: false
+    signal removeRequested()
     /// The blur tile's kind: "standard" or "portrait".
     property string blurKind: "standard"
     signal picked()
@@ -30,15 +36,16 @@ Item {
     // Glyph (16) + 5 + label (12), centred, a pixel low as Teams draws it.
     readonly property real glyphY: Math.round((height - 33) / 2 + 1)
 
+    // The ring: the chosen tile's, and Teams' hover outline.
     Rectangle {
-        visible: tile.selected
+        visible: tile.selected || hover.hovered
         x: -2; y: -2; width: tile.width + 4; height: tile.height + 4; radius: 4
         color: "transparent"
         border.color: theme.brand; border.width: 2
     }
     Rectangle {
         anchors.fill: parent; radius: 2
-        color: hover.hovered && tile.kind !== "image" ? theme.hover : theme.effectTile
+        color: theme.effectTile
     }
     Image {
         visible: tile.kind === "image"
@@ -48,7 +55,6 @@ Item {
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         smooth: true
-        opacity: hover.hovered ? 0.9 : 1
     }
     FluentIcon {
         visible: tile.kind === "image" && tile.animated
@@ -56,9 +62,9 @@ Item {
         name: "video-clip-20"; size: 20; color: "white"
     }
     FluentIcon {
-        visible: tile.kind === "none" || tile.kind === "showall"
+        visible: tile.kind === "none" || tile.kind === "showall" || tile.kind === "add"
         x: (tile.width - 16) / 2; y: tile.glyphY
-        name: tile.kind === "none" ? "prohibited-20" : "more-horizontal-20-filled"
+        name: tile.kind === "none" ? "prohibited-20" : tile.kind === "add" ? "arrow-upload-20" : "more-horizontal-20-filled"
         size: 16; color: theme.text
     }
     FluentIcon {
@@ -95,8 +101,51 @@ Item {
         FluentIcon { anchors.fill: parent; name: "tile-check-outline"; size: 16; color: "white" }
     }
 
+    // An upload's ··· (16 px, 3.5 from the top right), shown on hover or
+    // while its menu is open.
+    Rectangle {
+        id: more
+        visible: tile.removable && (hover.hovered || removeMenu.opened)
+        x: tile.width - 19.8; y: 3.5; width: 16; height: 16; radius: 4
+        color: moreHover.hovered ? theme.menuHover : theme.surface
+        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-16"; size: 16; color: theme.textStrong }
+        HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: removeMenu.opened ? removeMenu.close() : removeMenu.open() }
+        Accessible.role: Accessible.ButtonMenu
+        Accessible.name: "More options"
+    }
+
     HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-    TapHandler { onTapped: if (!chevHover.hovered) tile.picked() }
+    TapHandler { onTapped: if (!chevHover.hovered && !moreHover.hovered) tile.picked() }
+
+    // The upload's menu (measured: 128.7 x 32 plus Fluent's 4 px padding,
+    // 4.9 right of the ··· and 4.5 below it): Remove, a 20 px delete glyph
+    // 6 in and 14 px text 30 in.
+    Popup {
+        id: removeMenu
+        parent: Overlay.overlay
+        width: 136.67; height: 40; padding: 4
+        background: FluentSurface { depth: 16; radius: 4; color: theme.menu }
+        onAboutToShow: {
+            const p = more.mapToItem(Overlay.overlay, 0, 0)
+            x = p.x + 4.9 - 4; y = p.y + more.height + 4.5 - 4
+        }
+        Rectangle {
+            width: 128.67; height: 32; radius: 4
+            color: rmHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { x: 6; y: 6; name: "delete-20"; size: 20; color: theme.textStrong }
+            Text {
+                x: 30; anchors.verticalCenter: parent.verticalCenter
+                text: "Remove"
+                font.family: theme.font; font.pixelSize: 14
+                color: theme.textStrong
+            }
+            HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { removeMenu.close(); tile.removeRequested() } }
+            Accessible.role: Accessible.MenuItem
+            Accessible.name: "Remove"
+        }
+    }
 
     // The blur menu (measured: 128.7 x 66, padding 4; 32 px radio items
     // with a 16 px checkmark 6 in and 14 px text 26 in), 4.8 below the
@@ -137,7 +186,7 @@ Item {
     ToolTip.visible: hover.hovered && tile.kind === "image" && tile.label.length > 0
     ToolTip.delay: 500
     ToolTip.text: tile.label
-    Accessible.role: tile.kind === "showall" ? Accessible.MenuItem : Accessible.CheckBox
+    Accessible.role: tile.kind === "showall" || tile.kind === "add" ? Accessible.MenuItem : Accessible.CheckBox
     Accessible.name: tile.accessibleName
     Accessible.checked: tile.selected
 }

@@ -3409,7 +3409,9 @@ Window {
     // picture and an animated background, Adjust brightness and Soft focus,
     // then the "More video effects" pane. With --video-effects-call it then
     // starts a Meet now in "OST group test" with the camera on, opens
-    // Camera ▾ and the Video effects and settings pane (both tabs) and
+    // Camera ▾ and the Video effects and settings pane (both tabs), adds
+    // /tmp/ost-bg-test.jpg with Add new (and the too small
+    // /tmp/ost-bg-small.png), opens Show all, removes the upload and
     // hangs up (--video-effects-hold: after two minutes with a catalog
     // picture behind you). The effects are put back as they were. Logs VFX
     // lines.
@@ -3451,7 +3453,7 @@ Window {
             case 29: capPre("pane"); break
             case 30: preJoin.effectsPaneOpen = false; preJoin.cameraOn = false; break
             case 31: capPre("cameraoff"); break
-            case 32: preJoin.cancel(); if (!inCall) step = 51; break
+            case 32: preJoin.cancel(); if (!inCall) step = 61; break
             case 33: { const c = chatList.chats.find(c => c.name === "OST group test"); backend.selectChat(c.id, c.name); break }
             case 34: backend.meetNow(); break
             case 40: log("call", backend.callState); if (!callWindow.cameraOn) callWindow.runControl("VideoButton"); break
@@ -3460,10 +3462,20 @@ Window {
             case 46: callWindow.videoFlyoutForTest().close(); callWindow.side = "video"; break
             case 48: capCall("callpane"); break
             case 49: callWindow.videoEffectsPaneForTest().tab = "settings"; break
-            case 50: capCall("settings"); if (hold) { callWindow.side = ""; fx.setBackground(pic().id); log("holding with", pic().name) } break
-            case 51: if (hold && holdSteps++ < 60) return; if (inCall) backend.hangUp(); break
-            case 52: fx.setBlur(before.k); fx.setBackground(before.b); fx.setBrightness(before.br); fx.setSoftFocus(before.sf); fx.setMirror(before.m); break
-            case 54: log("after", backend.callState, { b: fx.background, k: fx.blurKind }); Qt.quit(); return
+            case 50: capCall("settings"); break
+            case 51: { const pane = callWindow.videoEffectsPaneForTest(); pane.tab = "effects"; log("add", pane.addForTest("/tmp/ost-bg-test.jpg"), fx.background) } break
+            case 52: capCall("added"); break
+            case 53: callWindow.videoOptionsForTest(); break
+            case 54: capCall("uploadflyout"); break
+            case 55: callWindow.videoFlyoutForTest().close(); log("upload too small", callWindow.videoEffectsPaneForTest().addForTest("/tmp/ost-bg-small.png")); break
+            case 56: capCall("toosmall"); break
+            case 57: callWindow.videoEffectsPaneForTest().showAll = true; break
+            case 58: capCall("showall"); break
+            case 59: { const u = fx.uploads[fx.uploads.length - 1]; log("uploads", fx.uploads.length); callWindow.videoEffectsPaneForTest().notice = fx.removeUpload(u.id) } break
+            case 60: capCall("removed"); log("after remove", fx.uploads.length, fx.background); if (hold) { callWindow.side = ""; fx.setBackground(pic().id); log("holding with", pic().name) } break
+            case 61: if (hold && holdSteps++ < 60) return; if (inCall) backend.hangUp(); break
+            case 62: fx.setBlur(before.k); fx.setBackground(before.b); fx.setBrightness(before.br); fx.setSoftFocus(before.sf); fx.setMirror(before.m); break
+            case 64: log("after", backend.callState, { b: fx.background, k: fx.blurKind }); Qt.quit(); return
             }
             step++
         }

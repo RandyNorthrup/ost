@@ -275,6 +275,7 @@ fn main() {
             cc.file("src/clipframes.cpp");
             cc.file("src/clipedit.cpp");
             cc.file("src/vfxplayer.cpp");
+            cc.file("src/vfxpicture.cpp");
         })
     };
     println!("cargo::rerun-if-changed=src/webengine.cpp");
@@ -283,6 +284,7 @@ fn main() {
     println!("cargo::rerun-if-changed=src/clipframes.cpp");
     println!("cargo::rerun-if-changed=src/clipedit.cpp");
     println!("cargo::rerun-if-changed=src/vfxplayer.cpp");
+    println!("cargo::rerun-if-changed=src/vfxpicture.cpp");
     // The clip editor renders, and video backgrounds play, with FFmpeg's
     // libraries (as Qt Multimedia does).
     for lib in ["avfilter", "avformat", "avcodec", "avutil", "swscale"] {

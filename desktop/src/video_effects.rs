@@ -1,6 +1,6 @@
 //! Teams' video effects on your camera: the background (None, Standard or
-//! Portrait blur, or one of Teams' catalog backgrounds, still or animated),
-//! Adjust brightness and Soft focus. The choices are settings (shared with
+//! Portrait blur, one of Teams' catalog backgrounds, still or animated, or
+//! a picture of your own), Adjust brightness and Soft focus. The choices are settings (shared with
 //! the QML through backend.setting / setSetting); applying them hands the
 //! engine (ost-vfx) what to do, downloading and playing a catalog
 //! background (src/vfxplayer.cpp) when one is chosen.
@@ -100,6 +100,110 @@ pub async fn load_catalog() -> Vec<Entry> {
     let list = parse_catalog(&text);
     *catalog_cell().lock().unwrap() = list.clone();
     list
+}
+
+/// Your own backgrounds (Teams desktop's Add new keeps them on the device:
+/// `<uuid>.jpeg` and `<uuid>_thumb.jpeg`).
+pub fn uploads_dir() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ost/backgrounds/uploads")
+}
+
+/// One of your own backgrounds: its id (Teams names it by its uuid) and
+/// thumbnail.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Upload {
+    pub id: String,
+    pub thumb: PathBuf,
+}
+
+/// Your backgrounds, oldest first.
+pub fn uploads() -> Vec<Upload> {
+    uploads_in(&uploads_dir())
+}
+
+fn uploads_in(dir: &Path) -> Vec<Upload> {
+    let mut list: Vec<(std::time::SystemTime, Upload)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let id = name.strip_suffix(".jpeg")?;
+            if id.ends_with("_thumb") || !is_upload_id(id) {
+                return None;
+            }
+            let when = e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+            Some((when, Upload { id: id.to_string(), thumb: dir.join(format!("{id}_thumb.jpeg")) }))
+        })
+        .collect();
+    list.sort_by_key(|(when, _)| *when);
+    list.into_iter().map(|(_, u)| u).collect()
+}
+
+/// A uuid (an upload's id), never a path.
+pub fn is_upload_id(id: &str) -> bool {
+    uuid::Uuid::parse_str(id).is_ok()
+}
+
+/// Why Add new turned a picture down (Teams' messages).
+#[derive(Debug, PartialEq)]
+pub enum AddError {
+    InvalidType,
+    InvalidSize,
+    Failed,
+}
+
+impl AddError {
+    pub fn message(&self) -> &'static str {
+        match self {
+            AddError::InvalidType => "Couldn't add background: Invalid image type.",
+            AddError::InvalidSize => "Couldn't add background: Invalid image size.",
+            AddError::Failed => "Couldn't add background.",
+        }
+    }
+}
+
+unsafe extern "C" {
+    fn ost_vfx_import_picture(src: *const core::ffi::c_char, dst: *const core::ffi::c_char, thumb: *const core::ffi::c_char) -> i32;
+}
+
+/// Add the picture at `src` as one of your backgrounds; its id.
+pub fn add_upload(src: &Path) -> Result<String, AddError> {
+    // Teams' file picker offers these; anything else isn't an image to it.
+    let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if !["png", "jpeg", "jpg", "bmp"].contains(&ext.as_str()) {
+        return Err(AddError::InvalidType);
+    }
+    let dir = uploads_dir();
+    std::fs::create_dir_all(&dir).map_err(|_| AddError::Failed)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let c = |p: &Path| std::ffi::CString::new(p.to_string_lossy().as_bytes()).map_err(|_| AddError::Failed);
+    let (s, d, t) = (c(src)?, c(&dir.join(format!("{id}.jpeg")))?, c(&dir.join(format!("{id}_thumb.jpeg")))?);
+    // SAFETY: NUL-terminated paths.
+    match unsafe { ost_vfx_import_picture(s.as_ptr(), d.as_ptr(), t.as_ptr()) } {
+        0 => Ok(id),
+        1 => Err(AddError::InvalidType),
+        2 => Err(AddError::InvalidSize),
+        _ => {
+            remove_upload(&id);
+            Err(AddError::Failed)
+        }
+    }
+}
+
+/// Remove one of your backgrounds.
+pub fn remove_upload(id: &str) -> bool {
+    if !is_upload_id(id) {
+        return false;
+    }
+    let dir = uploads_dir();
+    let gone = std::fs::remove_file(dir.join(format!("{id}.jpeg"))).is_ok();
+    let _ = std::fs::remove_file(dir.join(format!("{id}_thumb.jpeg")));
+    gone
 }
 
 /// Where a background is kept once downloaded.
@@ -208,6 +312,11 @@ pub fn apply(map: &serde_json::Map<String, serde_json::Value>) {
 }
 
 async fn load_background(id: &str, generation: u64) -> anyhow::Result<()> {
+    if is_upload_id(id) {
+        let path = uploads_dir().join(format!("{id}.jpeg"));
+        anyhow::ensure!(path.exists(), "removed");
+        return tokio::task::spawn_blocking(move || play(&path, generation)).await?;
+    }
     let mut list = catalog();
     if list.is_empty() {
         list = load_catalog().await;
@@ -281,6 +390,24 @@ mod tests {
         assert!(list[0].animated && !list[1].animated);
         assert_eq!(list[1].src, "https://statics.teams.cdn.office.net/evergreen-assets/backgroundimages/goldShimmerHoliday.jpg?v=0.1");
         assert_eq!(local_path(&list[1]).file_name().unwrap(), "goldShimmerHoliday.jpg");
+    }
+
+    #[test]
+    fn uploads_are_listed_by_their_uuid_oldest_first() {
+        let dir = std::env::temp_dir().join(format!("ost-uploads-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = ("7dfbac61-4292-4c1a-b3ba-abf4ce314c8b", "0a1b2c3d-4292-4c1a-b3ba-abf4ce314c8b");
+        for name in [format!("{a}.jpeg"), format!("{a}_thumb.jpeg"), "notes.jpeg".into(), "x.png".into()] {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join(format!("{b}.jpeg")), b"x").unwrap();
+        let list = uploads_in(&dir);
+        assert_eq!(list.iter().map(|u| u.id.as_str()).collect::<Vec<_>>(), [a, b]);
+        assert_eq!(list[0].thumb, dir.join(format!("{a}_thumb.jpeg")));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!is_upload_id("../x"));
+        assert_eq!(add_upload(Path::new("/tmp/a.gif")), Err(AddError::InvalidType));
     }
 
     #[test]

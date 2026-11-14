@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
+import QtQuick.Dialogs
 import com.ost.desktop
 
 // Teams' Video effects and settings pane (calling-right-side-panel,
@@ -11,8 +12,13 @@ import com.ost.desktop
 // it "Video effects" and has no tabs.
 // - Video effects: the "Backgrounds" accordion (32 px, 12 px title) over a
 //   grid of 88 x 50 tiles, three to a 109.1 x 58 cell row from 16.7 in:
-//   None, the blur tile (its menu picks Standard or Portrait blur), Teams'
-//   catalog — 15 of it, then "Show all" for the rest.
+//   None, the blur tile (its menu picks Standard or Portrait blur), Add
+//   new, 14 of Teams' catalog, then "Show all". Show all opens Teams'
+//   Backgrounds view: a back button (32 x 25, "Back to all video effects")
+//   and "Backgrounds" (14 px), then None, blur, Add new, your uploads and
+//   the whole catalog. Add new takes a .png, .jpeg, .jpg or .bmp picture;
+//   Teams' info bar over the grid (#EBEBEB, a #D1D1D1 edge, 37.3 high)
+//   says "Background added.", "Background removed." or why it couldn't.
 // - Settings: accordions Camera (the cameras as radios), Appearance
 //   (Adjust brightness, Soft focus) and Advanced settings (Mirror my
 //   video), each row a 14 px #424242 label with Teams' info button and a
@@ -21,8 +27,8 @@ import com.ost.desktop
 // your video while you preview." (12 px, an info glyph before it), Preview
 // (white, 339.3 x 32) — which shows your preview (325.3 x 183) above the
 // footer and becomes "Stop preview" — and "Apply and turn on video"
-// (brand). Teams' Add new, Green screen settings and Filters (TASK-0138,
-// TASK-0139) and the Avatars tab (TASK-0140) aren't offered yet.
+// (brand). Teams' Green screen settings and Filters (TASK-0139) and the
+// Avatars tab (TASK-0140) aren't offered yet.
 Rectangle {
     id: root
     /// In a call (tabs and the footer) or before joining.
@@ -34,7 +40,10 @@ Rectangle {
     color: theme.pane
 
     property string tab: "effects"
+    /// Teams' Show all view (the Backgrounds list with your uploads).
     property bool showAll: false
+    /// The info bar's text ("" hides it).
+    property string notice: ""
     property bool previewing: false
     property var cameras: []
     property string currentCamera: ""
@@ -53,7 +62,7 @@ Rectangle {
     }
     onVisibleChanged: {
         if (visible) { reload(); flick.contentY = 0 }
-        else setPreview(false)
+        else { setPreview(false); showAll = false; notice = "" }
     }
     // Turning the camera on ends the private preview (the call's video
     // shows the effects now).
@@ -137,9 +146,61 @@ Rectangle {
             id: effectsCol
             visible: root.tab === "effects" || !root.inCall
             x: 2; width: 341.3
-            SectionHeader { key: "backgrounds"; title: "Backgrounds" }
+            // Show all: back to the main view.
+            Item {
+                visible: root.showAll
+                width: 341.3; height: visible ? 31 : 0
+                Rectangle {
+                    x: 3; width: 32; height: 25; radius: 4
+                    color: backHover.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.textStrong }
+                    HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { root.showAll = false; flick.contentY = 0 } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Back to all video effects"
+                }
+                Text {
+                    x: 35; y: 2.5; height: 20; verticalAlignment: Text.AlignVCenter
+                    text: "Backgrounds"
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                }
+            }
+            SectionHeader { visible: !root.showAll; key: "backgrounds"; title: "Backgrounds" }
+            // Teams' info bar (Fluent MessageBar).
+            Item {
+                visible: root.notice.length > 0 && (root.expanded.backgrounds || root.showAll)
+                width: 341.3; height: visible ? bar.height + 0.7 : 0
+                Rectangle {
+                    id: bar
+                    x: 18.7; y: 0; width: 319.3; height: Math.max(37.3, noticeText.implicitHeight + 17.3); radius: 4
+                    color: theme.pick("#EBEBEB", "#2E2E2E")
+                    border.color: theme.stroke; border.width: 0.67
+                    FluentIcon { x: 12; y: 8.67; name: "info-20-filled"; size: 20; color: theme.textSecondary }
+                    Text {
+                        id: noticeText
+                        x: 40; width: parent.width - 76; anchors.verticalCenter: parent.verticalCenter
+                        wrapMode: Text.Wrap
+                        text: root.notice
+                        font.family: theme.font; font.pixelSize: 14
+                        color: theme.text
+                    }
+                    Rectangle {
+                        x: parent.width - 30; y: 8.67
+                        width: 20; height: 20; radius: 4
+                        color: nxHover.hovered ? theme.menuHover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+                        HoverHandler { id: nxHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.notice = "" }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Dismiss"
+                    }
+                    Accessible.role: Accessible.AlertMessage
+                    Accessible.name: root.notice
+                }
+            }
             Grid {
-                visible: root.expanded.backgrounds
+                visible: root.expanded.backgrounds || root.showAll
                 x: 14.7; columns: 3
                 bottomPadding: 20
                 Cell {
@@ -160,8 +221,32 @@ Rectangle {
                         onBlurPicked: kind => videoEffects.setBlur(kind)
                     }
                 }
+                Cell {
+                    EffectTile {
+                        x: 4; y: 4
+                        kind: "add"; label: "Add new"
+                        accessibleName: "Add new background. Image requirements: Minimal size: 360 × 360 pixels; Maximal size: 2048 × 2048 pixels; File type: jpeg, jpg, png, bmp; Aspect ratio: Less than 4."
+                        onPicked: chooser.open()
+                    }
+                }
+                // Your uploads (Show all only), as Teams names them.
                 Repeater {
-                    model: root.showAll ? videoEffects.catalog : videoEffects.catalog.slice(0, 15)
+                    model: root.showAll ? videoEffects.uploads : []
+                    Cell {
+                        required property var modelData
+                        EffectTile {
+                            x: 4; y: 4
+                            thumb: parent.modelData.thumb
+                            label: parent.modelData.id; accessibleName: parent.modelData.id + " background effect"
+                            removable: true
+                            selected: videoEffects.background === parent.modelData.id
+                            onPicked: videoEffects.setBackground(parent.modelData.id)
+                            onRemoveRequested: root.notice = videoEffects.removeUpload(parent.modelData.id)
+                        }
+                    }
+                }
+                Repeater {
+                    model: root.showAll ? videoEffects.catalog : videoEffects.catalog.slice(0, 14)
                     Cell {
                         required property var modelData
                         EffectTile {
@@ -174,11 +259,11 @@ Rectangle {
                     }
                 }
                 Cell {
-                    visible: !root.showAll && videoEffects.catalog.length > 15
+                    visible: !root.showAll && videoEffects.catalog.length > 14
                     EffectTile {
                         x: 4; y: 4
                         kind: "showall"; label: "Show all"; accessibleName: "Show all background effects"
-                        onPicked: root.showAll = true
+                        onPicked: { root.showAll = true; flick.contentY = 0 }
                     }
                 }
             }
@@ -322,6 +407,16 @@ Rectangle {
             Accessible.name: "Apply and turn on video"
         }
     }
+
+    // Teams' Add new picker ("Open", its "Custom files" filter).
+    FileDialog {
+        id: chooser
+        title: "Open"
+        nameFilters: ["Custom files (*.png *.jpeg *.jpg *.bmp)"]
+        onAccepted: root.notice = videoEffects.addUpload(selectedFile)
+    }
+    /// Test hook: Add new with `path`, as if picked.
+    function addForTest(path) { root.notice = videoEffects.addUpload("file://" + path); return root.notice }
 
     component Cell: Item { width: 109.1; height: 58 }
 
