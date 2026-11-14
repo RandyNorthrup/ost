@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-14T23:40:00Z'
+updated_date: '2026-11-14T23:55:00Z'
 labels:
   - desktop
   - settings
@@ -43,4 +43,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - 2026-11-14 General part 3: Efficiency mode card (Teams' three radios; local efficiencyMode auto|off|on, Teams' client preference optimizedPerf). On (or auto on a low-end device: <4 processors or <8 GB memory — Teams' own isLowEndDevice rule isn't known) the camera is sent at no more than 424x240 and 300 kbit/s (webrtc_video::set_efficiency).
 
 - 2026-11-14 General part 4: Starting chats card (synced messagingSettings.alwaysPopOutNewChat) with Teams' "New Message" window (588x493, measured on winpc; NewChatWindow.qml hosts OST's new-chat form; once sent the chat opens in its own chat window); "Opening content in OST windows" now acts: with New window, a notification's chat opens in a chat window. Verified with --new-chat-window-test (setting synced and put back; nothing sent). Teams' new-chat form itself (the note before anyone is picked, the compose always shown) is OST's own still.
+
+- 2026-11-14 General part 5: chat list keyboard navigation (Up/Down through the shown chats and channels, Fluent focus ring while using the keyboard; Teams opens each as you arrive) and "Use Enter or Spacebar to show content" (synced messagingSettings.disableAutomaticConvSwitchOnKeyboardNav: then Up/Down only move, Enter/Space opens). Verified with --chatlist-keys-test (setting synced and put back). Not yet: the same in @mentions and other lists.
 <!-- SECTION:NOTES:END -->

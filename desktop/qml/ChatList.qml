@@ -30,6 +30,53 @@ Rectangle {
     signal openQuick(string kind)
     signal openMentions()
     signal chatSelected(string id, string name)
+    // Keyboard: Up / Down move through the chats and channels shown (a
+    // focus ring on the row). Teams opens each as you arrive; with Settings
+    // ▸ General's "Use Enter or Spacebar to show content" on, Enter or Space
+    // opens it.
+    property bool enterToOpen: false
+    property string focusId: ""
+    /// The ring shows while you use the keyboard (not after a click).
+    property bool keyboardNav: false
+    readonly property var navItems: {
+        const out = []
+        for (const sec of root.sections) {
+            if (!sec.folder.expanded) continue
+            for (const r of sec.rows) {
+                if (r.type === "chat" && r.chat) out.push({ id: r.chat.id, name: r.chat.name })
+                else if (r.type === "channel" && r.channel) out.push({ id: r.channel.id, name: r.channel.name })
+            }
+        }
+        return out
+    }
+    function moveFocus(step) {
+        const items = navItems
+        if (items.length === 0) return
+        keyboardNav = true
+        let i = items.findIndex(x => x.id === (focusId || currentId))
+        i = i < 0 ? (step > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, i + step))
+        focusId = items[i].id
+        if (!enterToOpen) chatSelected(items[i].id, items[i].name)
+        const row = rowsForTest[focusId]
+        if (row) {
+            const y = row.mapToItem(listCol, 0, 0).y
+            if (y < list.contentY) list.contentY = y
+            else if (y + row.height > list.contentY + list.height) list.contentY = y + row.height - list.height
+        }
+    }
+    function openFocused() {
+        const it = navItems.find(x => x.id === focusId)
+        if (it) chatSelected(it.id, it.name)
+    }
+    Keys.onUpPressed: moveFocus(-1)
+    Keys.onDownPressed: moveFocus(1)
+    Keys.onReturnPressed: openFocused()
+    Keys.onEnterPressed: openFocused()
+    Keys.onSpacePressed: openFocused()
+    onCurrentIdChanged: if (!activeFocus) focusId = ""
+    // A click on a row hands the list the keyboard (Up / Down from there).
+    onChatSelected: (id, name) => { focusId = id; if (!activeFocus) forceActiveFocus() }
+    onActiveFocusChanged: if (!activeFocus) keyboardNav = false
     signal newChat()
     signal openDrafts()
     signal markAllRead()
@@ -525,6 +572,8 @@ Rectangle {
         Rectangle {
             x: 16; width: parent.width - 32; height: parent.height; radius: theme.radius
             color: row.selected ? theme.selected : (hover.hovered ? theme.rowHover : "transparent")
+            // Fluent's keyboard focus ring.
+            border.color: theme.text; border.width: root.activeFocus && root.keyboardNav && root.focusId === row.chat.id ? 2 : 0
         }
         Avatar {
             visible: !row.chat.muted
@@ -607,7 +656,7 @@ Rectangle {
             Accessible.name: "More chat options"
         }
         HoverHandler { id: hover }
-        TapHandler { onTapped: if (!moreHover.hovered) root.chatSelected(row.chat.id, row.chat.name) }
+        TapHandler { onTapped: if (!moreHover.hovered) { root.keyboardNav = false; root.chatSelected(row.chat.id, row.chat.name) } }
         TapHandler { acceptedButtons: Qt.RightButton; onTapped: ev => row.openMenu(ev.position.x, ev.position.y) }
         // Teams' chat menu (measured on winpc 2026-11-09), in Teams' order:
         // Open in new window | Mark as read/unread, Move to section ▸,
@@ -778,10 +827,13 @@ Rectangle {
         property int indent: 64
         readonly property bool selected: channel.id === root.currentId
         readonly property bool unread: channel.unread === true && !selected
+        Component.onCompleted: if (channel && channel.id && !root.rowsForTest[channel.id]) root.rowsForTest[channel.id] = chRow
+        Component.onDestruction: if (channel && root.rowsForTest[channel.id] === chRow) delete root.rowsForTest[channel.id]
         width: list.width; height: 28
         Rectangle {
             x: 16; width: parent.width - 32; height: 28; radius: theme.radius
             color: chRow.selected ? theme.selected : (chHover.hovered ? theme.rowHover : "transparent")
+            border.color: theme.text; border.width: root.activeFocus && root.keyboardNav && root.focusId === chRow.channel.id ? 2 : 0
         }
         Text {
             id: chName
@@ -805,7 +857,7 @@ Rectangle {
             color: chRow.unread ? theme.text : theme.textSecondary
         }
         HoverHandler { id: chHover }
-        TapHandler { onTapped: root.chatSelected(chRow.channel.id, chRow.channel.name) }
+        TapHandler { onTapped: { root.keyboardNav = false; root.chatSelected(chRow.channel.id, chRow.channel.name) } }
         // Its menu: ··· on hover (and while open), or a right-click (Teams'
         // channel row menu, as in the channel's header).
         readonly property bool menuOpen: channelMenu.menu.opened && channelMenu.channel.id === chRow.channel.id

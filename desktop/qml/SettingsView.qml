@@ -263,6 +263,21 @@ Rectangle {
                 SettingsParts.Gap { size: 8 }
             }
 
+            // Teams' "Use Enter or Spacebar to show content" (the synced
+            // messagingSettings.disableAutomaticConvSwitchOnKeyboardNav):
+            // the chat list's Up / Down then only move, Enter or Space opens.
+            SettingsParts.Card {
+                visible: root.page === "general" && !root.subPage
+                icon: "keyboard-20"; title: "Use Enter or Spacebar to show content"
+                subtitle: "Press Enter or Spacebar to open an item in a list (like @mentions, chats, or channels) and view its content."
+                trailing: Component {
+                    SettingsParts.Toggle {
+                        on: root.prop("userPersonalSettings", ["messagingSettings", "disableAutomaticConvSwitchOnKeyboardNav"], false) === true
+                        accessibleName: "Use Enter or Spacebar to show content"
+                        onToggled: v => root.setProp("userPersonalSettings", "messagingSettings.disableAutomaticConvSwitchOnKeyboardNav", v)
+                    }
+                }
+            }
             // Teams' Efficiency mode card (measured on winpc 2026-11-14):
             // three radios with second lines; "auto" is Teams' default.
             SettingsParts.Card {
