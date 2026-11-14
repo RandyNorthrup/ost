@@ -818,6 +818,26 @@ pub mod qobject {
         /// "MicrosoftTeams-video.mp4".
         #[qinvokable]
         fn video_clip_download(self: Pin<&mut Backend>, url: &QString);
+        /// A file for the clip recorder in OST's cache (ost/recordings,
+        /// owner-only): the path to write `name` to.
+        #[qinvokable]
+        fn recorder_file(self: Pin<&mut Backend>, name: &QString) -> QString;
+        /// Remove one of the recorder's files (a discarded recording).
+        #[qinvokable]
+        fn remove_recorder_file(self: Pin<&mut Backend>, path: &QString);
+        /// The recorder's Download recording: a copy in Downloads.
+        #[qinvokable]
+        fn save_recording(self: Pin<&mut Backend>, path: &QString);
+        /// Store a recorded clip (`path`, its poster `thumb`) in the media
+        /// store for `chat_id`'s members, as Teams does once the recorder
+        /// is done; video_clip_uploaded(path, {id, error}) follows.
+        #[qinvokable]
+        fn video_clip_upload(self: Pin<&mut Backend>, chat_id: &QString, path: &QString, thumb: &QString);
+        /// Send the compose box with a recorded clip before its text
+        /// (`clip_json`: {id, duration (ms), width, height}), as Teams'
+        /// message carries it.
+        #[qinvokable]
+        fn send_with_clip(self: Pin<&mut Backend>, clip_json: &QString, editor_html: &QString, media_json: &QString);
 
         #[qinvokable]
         fn card_invoke(self: Pin<&mut Backend>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool);
@@ -1064,6 +1084,11 @@ pub mod qobject {
         /// qualities: [{id, height}], error}.
         #[qsignal]
         fn video_clip_ready(self: Pin<&mut Backend>, id: QString, json: QString);
+
+        /// A video_clip_upload finished: the recording's path and {id,
+        /// url, error}.
+        #[qsignal]
+        fn video_clip_uploaded(self: Pin<&mut Backend>, path: QString, json: QString);
 
         /// A card_invoke finished: its op, the outcome (JSON) and an error.
         #[qsignal]
@@ -2048,6 +2073,8 @@ pub struct BackendRust {
     /// The message the next send quotes.
     reply_quote: Option<api::messages::Quote>,
     next_importance: String,
+    /// The media-store objects the next message carries (a recorded clip).
+    next_ams_refs: Vec<String>,
     /// The next channel post's subject, headline and banner colour.
     next_post: Option<NextPost>,
     last_typing_sent: Option<std::time::Instant>,
@@ -2745,6 +2772,9 @@ fn health_sampler() -> &'static std::sync::Mutex<teams_cli::calling::call_health
 
 /// How many calls the Calls history shows.
 const CALL_HISTORY_LIMIT: usize = 100;
+
+/// What the recorder's Download recording saves.
+const RECORDING_DOWNLOAD_NAME: &str = "Recording.mp4";
 
 /// The name Teams gives a downloaded clip ("MicrosoftTeams-video", an MP4).
 const CLIP_DOWNLOAD_NAME: &str = "MicrosoftTeams-video.mp4";
@@ -5155,6 +5185,95 @@ impl qobject::Backend {
             let s = v.to_string();
             let _ = qt.queue(move |mut this| this.as_mut().video_clip_ready(QString::from(id.as_str()), QString::from(s.as_str())));
         });
+    }
+
+    pub fn recorder_file(self: Pin<&mut Self>, name: &QString) -> QString {
+        let name = name.to_string();
+        let safe = std::path::Path::new(&name).file_name().and_then(|n| n.to_str()).unwrap_or("recording").to_string();
+        let Some(base) = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        else {
+            return QString::default();
+        };
+        let dir = base.join("ost").join("recordings");
+        if std::fs::create_dir_all(&dir).is_err() {
+            return QString::default();
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+        }
+        QString::from(dir.join(safe).display().to_string().as_str())
+    }
+
+    pub fn remove_recorder_file(self: Pin<&mut Self>, path: &QString) {
+        let path = path.to_string();
+        let path = std::path::PathBuf::from(path.strip_prefix("file://").unwrap_or(&path));
+        // Only the recorder's own files.
+        if path.parent().is_some_and(|d| d.ends_with("ost/recordings")) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    pub fn save_recording(mut self: Pin<&mut Self>, path: &QString) {
+        let path = path.to_string();
+        let src = std::path::PathBuf::from(path.strip_prefix("file://").unwrap_or(&path));
+        let Some(dir) = download_dir() else { return };
+        let msg = match std::fs::read(&src).map_err(anyhow::Error::from).and_then(|b| api::files::save_unique(&dir, RECORDING_DOWNLOAD_NAME, &b)) {
+            Ok(p) => format!("Saved {} to {}", p.file_name().and_then(|n| n.to_str()).unwrap_or(RECORDING_DOWNLOAD_NAME), dir.display()),
+            Err(e) => short_error(&e),
+        };
+        self.as_mut().set_status_text(QString::from(msg.as_str()));
+    }
+
+    pub fn video_clip_upload(self: Pin<&mut Self>, chat_id: &QString, path: &QString, thumb: &QString) {
+        let (chat, path, thumb) = (chat_id.to_string(), path.to_string(), thumb.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let file = |p: &str| std::path::PathBuf::from(p.strip_prefix("file://").unwrap_or(p));
+                let original = std::fs::read(file(&path)).context("Reading the recording")?;
+                let poster = std::fs::read(file(&thumb)).unwrap_or_default();
+                let client = TeamsClient::new().await?;
+                let id = api::video_clips::upload(&client, &chat, original, poster).await?;
+                let base = client.ams_url().context("No media store address")?;
+                anyhow::Ok(json!({ "id": id, "url": format!("{base}/v1/objects/{id}/views/video") }))
+            }
+            .await;
+            let v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) })).to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().video_clip_uploaded(QString::from(path.as_str()), QString::from(v.as_str())));
+        });
+    }
+
+    pub fn send_with_clip(mut self: Pin<&mut Self>, clip_json: &QString, editor_html: &QString, media_json: &QString) {
+        let clip: serde_json::Value = serde_json::from_str(&clip_json.to_string()).unwrap_or_default();
+        let id = clip["id"].as_str().unwrap_or_default().to_string();
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return;
+        }
+        // The media store's address, from the uploaded clip's own.
+        let url = clip["url"].as_str().unwrap_or_default().to_string();
+        let Some(base) = url.split_once("/v1/objects/").map(|(b, _)| b.to_string()).filter(|_| api::messages::is_ams_url(&url)) else { return };
+        let media: Vec<api::messages::ComposeMedia> = serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (text, mentions) = api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        let card = api::video_clips::new_card_id();
+        let html = api::video_clips::clip_html(
+            &base,
+            &id,
+            &card,
+            clip["duration"].as_f64().unwrap_or(0.0).max(0.0) as u64,
+            clip["width"].as_u64().unwrap_or(1280) as u32,
+            clip["height"].as_u64().unwrap_or(720) as u32,
+        ) + &text;
+        let chat_id = self.rust().current_chat_id.to_string();
+        if chat_id.is_empty() {
+            return;
+        }
+        let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
+        self.as_mut().rust_mut().next_ams_refs = vec![id];
+        self.enqueue_with(chat_id, html, mentions);
     }
 
     pub fn video_clip_download(mut self: Pin<&mut Self>, url: &QString) {
@@ -8954,6 +9073,7 @@ impl qobject::Backend {
         let quote = self.as_mut().rust_mut().reply_quote.take();
         let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
         let mut o = self.outgoing(&chat_id, conversation, content, mentions, quote, importance);
+        o.ams_references = std::mem::take(&mut self.as_mut().rust_mut().next_ams_refs);
         self.as_mut().apply_next_post(&mut o);
         // Sent: the draft for this chat is done.
         self.as_mut()
@@ -9016,6 +9136,7 @@ impl qobject::Backend {
             banner_image: None,
             shared_in_main: false,
             threads_layout: false,
+            ams_references: Vec::new(),
         }
     }
 

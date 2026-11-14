@@ -91,6 +91,33 @@ pub async fn playable(client: &TeamsClient, clip_url: &str, rendition: Option<&s
     Ok(out)
 }
 
+/// A recorded clip as Teams' message carries it (captured on winpc,
+/// 2026-11-14, OST TEST 135): an empty paragraph, then the AMSVideo element
+/// with its card id, length (ISO 8601, ms precision) and size, the text
+/// following it.
+pub fn clip_html(ams_base: &str, id: &str, card_id: &str, duration_ms: u64, width: u32, height: u32) -> String {
+    let secs = duration_ms as f64 / 1000.0;
+    let mut dur = format!("{secs:.3}");
+    while dur.contains('.') && (dur.ends_with('0') || dur.ends_with('.')) {
+        dur.pop();
+    }
+    format!(
+        "<p>&nbsp;</p><video src=\"{}/v1/objects/{id}/views/video\" cardId=\"{card_id}\" itemscope itemtype=\"http://schema.skype.com/AMSVideo\" data-duration=\"PT{dur}S\" width=\"{width}\" height=\"{height}\">Video-Clip</video>",
+        ams_base.trim_end_matches('/')
+    )
+}
+
+/// A new clip's card id (32 hex digits, as Teams' `cardId`).
+pub fn new_card_id() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+
+/// Upload a recorded clip (its file and poster) for `conv`'s members and
+/// return the media-store object id.
+pub async fn upload(client: &TeamsClient, conv: &str, original: Vec<u8>, thumbnail: Vec<u8>) -> Result<String> {
+    client.ams_upload_video(conv, original, thumbnail).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +131,13 @@ mod tests {
       <Representation bandwidth="35768" codecs="avc1.4d401f" frameRate="30/1" height="360" id="video_360p" mimeType="video/mp4" width="640" />
       <Representation bandwidth="32379" codecs="avc1.4d401f" frameRate="30/1" height="360" id="video_cellular" mimeType="video/mp4" width="640" />
     </AdaptationSet></Period></MPD>"#;
+
+    #[test]
+    fn a_recorded_clip_is_sent_as_teams_sends_it() {
+        let h = clip_html("https://us-api.asm.skype.com", "0-wus-d12-8635", "3fa840bc60ba4f07915f9df495c20daf", 16309, 1280, 720);
+        assert_eq!(h, r#"<p>&nbsp;</p><video src="https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/video" cardId="3fa840bc60ba4f07915f9df495c20daf" itemscope itemtype="http://schema.skype.com/AMSVideo" data-duration="PT16.309S" width="1280" height="720">Video-Clip</video>"#);
+        assert!(clip_html("https://x", "i", "c", 21000, 1, 1).contains("data-duration=\"PT21S\""));
+    }
 
     #[test]
     fn a_clips_qualities_are_its_renditions() {

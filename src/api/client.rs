@@ -611,6 +611,68 @@ impl TeamsClient {
         Ok(id)
     }
 
+    /// Store a recorded video clip in AMS for the members of `conv`, as
+    /// Teams does after its recorder (captured on winpc, 2026-11-14):
+    /// `POST {ams}/v1/objects/` with type `sharing/videototranscode`, then
+    /// `PUT …/content/thumbnail` (the poster), `…/content/original` (the
+    /// recording) and `…/content/transcript_info`. AMS then transcodes it
+    /// (`…/views/video`). Returns the object id.
+    pub async fn ams_upload_video(
+        &self,
+        conv: &str,
+        original: Vec<u8>,
+        thumbnail: Vec<u8>,
+    ) -> Result<String> {
+        let token = self.skype_token()?;
+        let base = self
+            .ams_url()
+            .context("No media store address for this account")?;
+        let auth = format!("skype_token {}", token);
+        const UA: &str = TEAMS_WEB_UA;
+        let created = self
+            .http
+            .post(format!("{base}/v1/objects/"))
+            .header("Authorization", &auth)
+            .header(reqwest::header::USER_AGENT, UA)
+            .json(&serde_json::json!({
+                "type": "sharing/videototranscode",
+                "permissions": { conv: ["read"] },
+                "sharingMode": "Unknown",
+            }))
+            .send()
+            .await
+            .context("Media create failed")?;
+        let created = check_response(created, &base).await?;
+        let v: serde_json::Value = created.json().await.context("Media create reply")?;
+        let id = v
+            .get("id")
+            .and_then(|i| i.as_str())
+            .context("No media object id")?
+            .to_string();
+        anyhow::ensure!(
+            id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "Unexpected media object id"
+        );
+        for (content, bytes) in [
+            ("thumbnail", thumbnail),
+            ("original", original),
+            ("transcript_info", b"transcript_info".to_vec()),
+        ] {
+            let put = self
+                .http
+                .put(format!("{base}/v1/objects/{id}/content/{content}"))
+                .header("Authorization", &auth)
+                .header(reqwest::header::USER_AGENT, UA)
+                .header("Content-Type", "application/octet-stream")
+                .body(bytes)
+                .send()
+                .await
+                .context("Media upload failed")?;
+            check_response(put, &base).await?;
+        }
+        Ok(id)
+    }
+
     /// `chat_request` with extra headers.
     pub async fn chat_request_with(
         &self,

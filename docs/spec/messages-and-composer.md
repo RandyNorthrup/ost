@@ -1123,6 +1123,41 @@ It hands the recording (WebM) to Teams, which stores it in the media store and s
   - Keyboard shortcuts: a white panel ("Keyboard shortcuts", Close) with a two-column table (Alt + K play/pause, Esc, Alt + Enter full screen, Alt + M mute, Alt + ↑/↓ volume, Alt + X/Z speed, Alt + L/J ±10 s, Alt + →/← ±15 s, Alt + 0–9, Alt + G, and the captions, audio-track and noise-suppression rows).
 - **End screen:** the poster dimmed and blurred, then "Reply with a video clip" (brand, 31.3 tall) and, 10 under it, "Play again" with the replay icon.
 
+### Record video clip: the recorder (measured on winpc, 2026-11-14)
+Teams' recorder is Microsoft Stream's `StreamCameraEmbed.aspx`. Its frame-ancestors allow only Microsoft's own sites, so OST builds it natively (VideoClipRecorder.qml; clipframes.cpp).
+- **Dialog:** 800 × 584, rounded 8.
+  - Header 56: the title (16/600 at 16, 17) and Close (32 × 31.3 at 756, 12.3).
+  - Picture: 760.9 × 428 at (19.6, 56), rounded 8.
+  - Tools: a 64 px band under the picture.
+  - Consent strip: #FAFAFA, 36 tall, with info 16, "Only people in this chat can view your clip. By creating a clip, you're consenting to be recorded." and "Privacy statement" (https://go.microsoft.com/fwlink/p/?linkid=857875).
+- **Modes:**
+  - Camera: "Record a video clip".
+  - Camera off with the mic on: "Record audio", a 108 px white circle with the microphone on #E6E6E6.
+  - Screen pressed, or nothing on: "Screen recording", with Stream's screen picture (70 px) and "You'll pick a screen, window, or tab. Recording will start automatically. For optimal quality, ensure this tab is in view while recording."
+  - A big soft shadow lies under the start button and the pill (box-shadow −5 −5 250 #4D4D4D).
+- **Tools** (51.3 tall, a 20 px icon over a 10 px label, centred):
+  - Camera (59 wide, plus a 24 px settings chevron) and Mic (56 + 24), then Screen; then a separator and Backdrop, Script, Effects (Screen mode: Script, Draw, Effects).
+  - Camera's menu: None, the cameras and Mirror video.
+  - Mic's menu: None and the microphones. Rows are 32 tall, 52 for two-line names.
+- **Recording:** "Start recording" (156.6 × 50, brand, round, a 4.67 white ring, at 321.7, 411) starts at once, with no countdown.
+  - The pill: 211.3 × 60 at (294.3, 406), #D6D6D6 at 65 % with the white ring. It holds Stop and review (40, brand), Pause Video Recording / Resume (brand while paused), the time left of 5:00 (16 px) and, after a 30 px line, Record again.
+  - Record again (32 × 31.3) sits at (16, 500.3) and "Next. Continue to review step." (brand) at (752, 500.3).
+  - Mic and Screen are greyed while recording.
+  - Titles: "Recording in progress" and "Recording paused".
+- **Review your clips:**
+  - The clip at 647.1 × 364 (76.4, 57.1), rounded 8.
+  - Play/Pause (32) and the filmstrip (563.1 × 32, rounded 10) at y 442.9, with the playhead's time above it ("0:02:95", m:ss:cc) and "0:02 / 0:21" (16/600) at 482.9.
+  - Download recording (beside Close, after a 12 px separator).
+  - Along the bottom: Back (16, 536.3), Trim, Split, Delete clip ("Delete this clip. Your recording will be lost."), Record more, separator, Music, and Continue (brand, 752).
+  - Trim: "Trim your clip", with brand start and end handles, Delete and Confirm trim.
+  - Music: tabs Chill, Energetic, Fun, High Tech, Inspiring, each with its tracks.
+- **Close** (anything recorded): "Close your recording?" / "This will delete your recording clips." with Close recording (brand) and Cancel, over the recorder whitened at 95 %.
+- **Continue:**
+  - The clip goes into the compose box (`video-placeholder` 400 × 225, 14 in and 32 down in the editor, the text 2 under it), with "Processing..." (`video-loader-wrapper`, black at 40 %, a 62 px spinner at the bottom left).
+  - Teams stores it at once: `sharing/videototranscode`, then PUT thumbnail, original and transcript_info.
+  - Hovering shows Remove video clip at the top right.
+  - Send carries the AMSVideo element before the text, and `amsreferences: [id]`.
+
 ## 18. Delivery options, schedule send, Enter, limits
 - **Delivery options** (648927, 871091):
 

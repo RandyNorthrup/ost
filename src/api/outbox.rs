@@ -76,6 +76,10 @@ pub struct Outgoing {
     /// a post type (measured on winpc 2026-11-10, "OST TEST 85").
     #[serde(default)]
     pub threads_layout: bool,
+    /// Media-store objects the message carries (Teams' `amsreferences`):
+    /// a video clip's.
+    #[serde(default)]
+    pub ams_references: Vec<String>,
 }
 
 /// An announcement banner's picture.
@@ -377,7 +381,7 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         "callId": "",
         "state": 0,
         "version": "0",
-        "amsreferences": [],
+        "amsreferences": o.ams_references,
         "properties": {
             "importance": o.importance,
             "cards": "[]",
@@ -987,6 +991,7 @@ mod tests {
             banner_image: None,
             shared_in_main: false,
             threads_layout: false,
+            ams_references: Vec::new(),
         };
         let b = post_body(&o);
         assert!(b.get("postType").is_none(), "chats have no post type");
@@ -1015,6 +1020,7 @@ mod tests {
         let root = Outgoing {
             conversation_id: "19:c@thread.tacv2".into(),
             threads_layout: true,
+            ams_references: Vec::new(),
             ..o.clone()
         };
         let b = post_body(&root);
@@ -1072,6 +1078,7 @@ mod tests {
             banner_image: None,
             shared_in_main: false,
             threads_layout: false,
+            ams_references: Vec::new(),
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");

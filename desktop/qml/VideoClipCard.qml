@@ -37,6 +37,16 @@ Item {
     /// OST can record a clip (`canReply`).
     signal replyWithClip()
     property bool canReply: false
+    /// In the compose box: a recording on this computer (played from the
+    /// file), "Processing..." while it is stored, and Remove video clip in
+    /// place of Options.
+    property string localPath: ""
+    property bool processing: false
+    property bool removable: false
+    signal removeRequested()
+    /// Storing it failed: Teams' "Re-upload video clip".
+    property bool uploadFailed: false
+    signal retryUpload()
 
     readonly property real cardW: Math.min(400, maxWidth)
     width: cardW
@@ -62,6 +72,7 @@ Item {
     function play(fromQuality) {
         error = ""
         if (state_ === "ended") { player.position = 0; player.play(); state_ = "playback"; return }
+        if (localPath) { player.source = localPath; state_ = "playback"; player.play(); surface.forceActiveFocus(); return }
         state_ = "loading"
         backend.videoClipLoad(clip.id || "", clip.url || "", fromQuality === undefined ? quality : fromQuality)
     }
@@ -181,7 +192,7 @@ Item {
 
     // ---- Preview ----
     Rectangle {
-        visible: root.state_ === "preview" || root.state_ === "loading"
+        visible: (root.state_ === "preview" || root.state_ === "loading") && !root.processing
         x: 12; y: parent.height - 12 - 48
         width: 48; height: 48; radius: 24
         color: "#66000000"
@@ -194,7 +205,7 @@ Item {
         Accessible.onPressAction: root.play()
     }
     Rectangle {
-        visible: root.state_ === "preview" || root.state_ === "loading"
+        visible: (root.state_ === "preview" || root.state_ === "loading") && !root.processing
         anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12
         width: lengthText.implicitWidth + 16; height: 32; radius: 4
         color: "#66000000"
@@ -207,10 +218,49 @@ Item {
         font.family: theme.font; font.pixelSize: 12; color: "white"; wrapMode: Text.Wrap
         style: Text.Raised; styleColor: "#80000000"
     }
+    // Being stored (compose box): Teams' video-loader-wrapper.
+    Rectangle {
+        visible: root.processing
+        anchors.fill: parent
+        color: "#66000000"
+        BusyIndicator { x: 0; y: parent.height - 62; width: 62; height: 62; running: root.processing; padding: 15; palette.dark: "white" }
+        Text { x: 62; y: parent.height - 62; height: 34; verticalAlignment: Text.AlignVCenter; text: "Processing..."; font.family: theme.font; font.pixelSize: 14; color: "white" }
+        Accessible.role: Accessible.Indicator
+        Accessible.name: "Video processing"
+    }
+    Rectangle {
+        visible: root.uploadFailed && !root.processing
+        anchors.fill: parent
+        color: "#66000000"
+        Rectangle {
+            anchors.centerIn: parent
+            width: retryText.implicitWidth + 24; height: 31.3; radius: 4
+            color: retryHover.hovered ? theme.brandHover : theme.brand
+            Text { id: retryText; anchors.centerIn: parent; text: "Re-upload video clip"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+            HoverHandler { id: retryHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.retryUpload() }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Re-upload video clip"
+        }
+    }
+    // Remove video clip (compose box, hover).
+    Rectangle {
+        visible: root.removable && (cardHover.hovered || removeHover.hovered)
+        anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 12
+        width: 32; height: 30; radius: 4
+        color: "#66000000"
+        z: 7
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: "white" }
+        HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: { player.stop(); root.removeRequested() } }
+        ToolTip.visible: removeHover.hovered; ToolTip.delay: 500; ToolTip.text: "Remove video clip"
+        Accessible.role: Accessible.Button
+        Accessible.name: "Remove video clip"
+    }
     // Options (hover): Download video.
     Rectangle {
         id: optionsBtn
-        visible: root.state_ !== "ended" && (cardHover.hovered || clipMenu.opened)
+        visible: !root.removable && root.state_ !== "ended" && (cardHover.hovered || clipMenu.opened)
         anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 12
         width: 32; height: 30; radius: 4
         color: "#66000000"

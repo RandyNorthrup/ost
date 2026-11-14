@@ -208,6 +208,7 @@ mod tests {
             banner_image: None,
             shared_in_main: false,
             threads_layout: false,
+            ams_references: Vec::new(),
         }
     }
 

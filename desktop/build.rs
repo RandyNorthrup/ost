@@ -124,6 +124,7 @@ fn main() {
         "qml/ChannelWindow.qml",
         "qml/WorkflowsDialog.qml",
         "qml/VideoClipCard.qml",
+        "qml/VideoClipRecorder.qml",
         "qml/ManageChannel.qml",
         "qml/ChannelModeration.qml",
         "qml/ModeratorsDialog.qml",
@@ -256,9 +257,11 @@ fn main() {
         .file("src/video_item.rs")
         .file("src/key_typer.rs")
         .file("src/rich_text.rs")
+        .file("src/clip_frames.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
         .qt_module("WebEngineQuick")
+        .qt_module("Multimedia")
         .qrc_resources(resources);
     // SAFETY: only adds a source file to the C++ build.
     let builder = unsafe {
@@ -266,10 +269,12 @@ fn main() {
             cc.file("src/webengine.cpp");
             cc.file("src/native.cpp");
             cc.file("src/richtext.cpp");
+            cc.file("src/clipframes.cpp");
         })
     };
     println!("cargo::rerun-if-changed=src/webengine.cpp");
     println!("cargo::rerun-if-changed=src/native.cpp");
     println!("cargo::rerun-if-changed=src/richtext.cpp");
+    println!("cargo::rerun-if-changed=src/clipframes.cpp");
     builder.build();
 }

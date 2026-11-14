@@ -406,7 +406,27 @@ Rectangle {
     /// A clip's "Reply with a video clip": record one for this chat (only
     /// offered once OST can record clips).
     signal replyWithVideoClip()
-    property bool canRecordClips: false
+    readonly property bool canRecordClips: !root.popout && !root.threadRoot && !root.pane
+    onReplyWithVideoClip: clipRecorder.openFor(root.chatId)
+    // Teams' recorder; its clip goes into the compose box and is stored at
+    // once (Teams uploads it as the recorder closes).
+    VideoClipRecorder {
+        id: clipRecorder
+        onFinished: clip => {
+            compose.clip = Object.assign({}, clip, { uploading: true, id: "", url: "" })
+            backend.videoClipUpload(chatId, clip.path, clip.thumb)
+        }
+    }
+    Connections {
+        target: backend
+        function onVideoClipUploaded(path, json) {
+            if (!compose.clip || compose.clip.path !== path) return
+            const r = JSON.parse(json)
+            if (r.error) { console.warn("CLIP upload failed", r.error); compose.clip = Object.assign({}, compose.clip, { uploading: false, error: r.error }); return }
+            compose.clip = Object.assign({}, compose.clip, { uploading: false, id: r.id, url: r.url })
+        }
+    }
+    function clipRecorderForTest() { return clipRecorder }
     /// The header's More chat options: Open in new window (Ctrl+O), Share
     /// screen (Ctrl+Shift+E: a call to the chat, sharing once it connects)
     /// and a meeting chat's Report a concern.
@@ -3761,6 +3781,9 @@ Rectangle {
             compose.formatting = false
             return
         }
+        // A recorded clip goes once it is stored (Teams shows
+        // "Processing..." until then).
+        if (compose.clip && !compose.clip.id) return
         // Teams' tracked action: a message sent in a threads channel's main
         // view (it ends the threads-layout banner).
         if (root.threadsLayout && !root.pane) backend.recordEngagementAction("ThreadedChannelInteraction")
@@ -3772,7 +3795,11 @@ Rectangle {
         // A new channel post: Teams' subject, headline and banner colour.
         backend.setNextPost(compose.post && !root.hasFiles
             ? compose.postFields() : root.threadsLayout ? JSON.stringify({ threads: true, subject: compose.formatting ? compose.subject : "" }) : "")
-        if (root.hasFiles) {
+        if (compose.clip) {
+            const c = compose.clip
+            backend.sendWithClip(JSON.stringify({ id: c.id, url: c.url, duration: c.duration, width: c.width, height: c.height }), input.getFormattedText(0, input.length), JSON.stringify(compose.mediaInUse()))
+            compose.clip = null
+        } else if (root.hasFiles) {
             backend.sendFiles(root.fileLines(), root.plainText())
             root.clearFiles()
         } else if (compose.mediaInUse().length > 0) {
@@ -3970,6 +3997,11 @@ Rectangle {
         cloudFiles: root.pendingCloud
         onCloudRemoved: key => root.pendingCloud = root.pendingCloud.filter(c => c.key !== key)
         onAttachRequested: a => root.openAttach(a)
+        // Record video clip: in a chat's or channel's own compose box.
+        canRecordClip: root.canRecordClips
+        onRecordClipRequested: clipRecorder.openFor(root.chatId)
+        onClipRemoved: { if (compose.clip) backend.removeRecorderFile(compose.clip.path); compose.clip = null }
+        onClipRetry: { compose.clip = Object.assign({}, compose.clip, { uploading: true, error: "" }); backend.videoClipUpload(root.chatId, compose.clip.path, compose.clip.thumb) }
         onSettingsRequested: root.openChatSettings()
         onTyped: root.typing()
         onSubmit: root.sendCompose()

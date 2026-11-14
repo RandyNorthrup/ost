@@ -131,7 +131,7 @@ Item {
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
     readonly property alias editor: input
-    readonly property bool empty: input.length === 0 && files.length === 0 && cloudFiles.length === 0 && !quote
+    readonly property bool empty: input.length === 0 && files.length === 0 && cloudFiles.length === 0 && !quote && !clip
     // Once the text wraps the box stays multiline until it is empty again
     // (Teams 461103 / 458473).
     property bool grown: false
@@ -139,7 +139,7 @@ Item {
     /// Teams' compact compose (pane under 480 px): the editor across the
     /// box and the tools in the bottom row.
     property bool compact: false
-    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || grown
+    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -170,6 +170,14 @@ Item {
     signal attachRequested(Item anchor)
     /// A cloud file's card closed (Remove attachment).
     signal cloudRemoved(string key)
+    /// "+" ▸ Record video clip (offered where `canRecordClip`).
+    signal recordClipRequested()
+    property bool canRecordClip: false
+    /// A recorded clip in the box (Teams puts it before the text):
+    /// {path, thumb, width, height, duration, id, url, uploading, error}.
+    property var clip: null
+    signal clipRemoved()
+    signal clipRetry()
     signal typed()
     signal settingsRequested()
     width: 748
@@ -630,6 +638,7 @@ Item {
             y: root.headerH + (root.fmtOn ? 43 : 0.67) + root.subjectRowH
             width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
             height: cloudCards.visible ? cloudCards.y + cloudCards.height + 13.9
+                : clipCardBox.visible ? input.y + input.contentHeight + 8
                 : Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
             // Teams' quote box and code card behind the text's quote and
             // code runs (RichText marks them; their margins make room).
@@ -702,6 +711,26 @@ Item {
                 dismissable: true
                 maxWidth: editorArea.width - 28
                 onDismissed: { root.quoteDismissed(); input.forceActiveFocus() }
+            }
+            // A recorded clip, as Teams' editor shows it: after an empty
+            // line, 14 in and 32 down, Teams' clip card ("Processing..."
+            // while it is stored; Remove video clip on hover); the text
+            // follows 2 under it.
+            Loader {
+                id: clipCardBox
+                visible: !!root.clip
+                active: !!root.clip
+                x: 14; y: quoteCard.visible ? 14 + quoteCard.height + 4 + 22 : 32
+                sourceComponent: VideoClipCard {
+                    clip: ({ id: "", url: "", duration: (root.clip ? root.clip.duration : 0) / 1000, width: root.clip ? root.clip.width : 1280, height: root.clip ? root.clip.height : 720, thumb_local: root.clip ? root.clip.thumb : "" })
+                    localPath: root.clip ? root.clip.path : ""
+                    processing: !!root.clip && !!root.clip.uploading
+                    removable: true
+                    uploadFailed: !!root.clip && !!root.clip.error
+                    background: theme.surface
+                    onRemoveRequested: root.clipRemoved()
+                    onRetryUpload: root.clipRetry()
+                }
             }
             Flow {
                 id: fileChips
@@ -807,7 +836,7 @@ Item {
             TextEdit {
                 id: input
                 x: 12
-                y: quoteCard.visible ? 14 + quoteCard.height + 4 : fileChips.visible ? fileChips.y + fileChips.height + 8 : 10
+                y: clipCardBox.visible ? clipCardBox.y + clipCardBox.height + 2 : quoteCard.visible ? 14 + quoteCard.height + 4 : fileChips.visible ? fileChips.y + fileChips.height + 8 : 10
                 width: parent.width - 12 - 16
                 wrapMode: TextEdit.Wrap
                 textFormat: TextEdit.RichText
@@ -818,7 +847,8 @@ Item {
                 selectionColor: theme.selectionFill
                 selectedTextColor: theme.text
                 Text {
-                    visible: input.length === 0 && !input.preeditText
+                    // (A clip in the box is content: Teams hides it then.)
+                    visible: input.length === 0 && !input.preeditText && !root.clip
                     text: root.placeholder
                     font: input.font; color: theme.textSecondary
                 }
@@ -1087,7 +1117,8 @@ Item {
         readonly property var items: [
             { key: "schedule", label: "Schedule message", icon: "send-clock-20", hidden: !root.scheduleAllowed },
             { key: "delivery", label: "Set delivery options", icon: "important-20", hidden: !root.deliveryOptions },
-            { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" }
+            { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" },
+            { key: "clip", label: "Record video clip", icon: "video-clip-20", hidden: !root.canRecordClip }
         ].filter(i => !i.hidden && i.label.toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         Rectangle {
             x: 14.7; y: 17.3; width: 310; height: 30.7; radius: 4
@@ -1121,6 +1152,7 @@ Item {
                             plusFlyout.close()
                             if (parent.modelData.key === "delivery") { deliveryPopup.anchorItem = plusFlyout.anchorItem; deliveryPopup.open() }
                             else if (parent.modelData.key === "schedule") schedulePopup.openFor(plusFlyout.anchorItem, false)
+                            else if (parent.modelData.key === "clip") root.recordClipRequested()
                             else root.scheduleMeetingRequested()
                         }
                     }
