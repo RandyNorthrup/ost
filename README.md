@@ -4,7 +4,7 @@ A command-line client for Microsoft Teams written in Rust.
 
 *Ost* means cheese in Danish.
 
-![OST Logo](docs/logo_ost.jpg)
+<img src="docs/logo_ost.png" alt="OST logo" width="160">
 
 ![TUI Screenshot](docs/tui-screenshot.svg)
 
