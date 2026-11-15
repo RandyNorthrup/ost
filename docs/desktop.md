@@ -122,6 +122,11 @@ Microsoft branding.
   On GNOME's Wayland, which has no layer shell, (or with
   OST_SYSTEM_NOTIFICATIONS=1) the desktop's own notifications are used
   instead. Channel posts notify only when they mention you.
+- **Updates**: OST is released on GitHub (RandyNorthrup/ost releases).
+  It checks for a newer release soon after starting and then daily, and
+  Settings ▸ About OST shows Teams' line ("You've got the latest
+  version. It was last checked on …" or "An update is available." with
+  Update now, which opens the release).
 - **Settings**: theme (follow the system, light, dark), read receipts,
   Enter to send or to start a new line, notifications, audio devices,
   start with the computer.
@@ -259,6 +264,7 @@ account.
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
+| `--about-test` | About OST after a real update check, then with an update shown (set locally): ABOUT lines and pictures. |
 | `--recognition-states` | Settings ▸ Recognition in each of Teams' card states (set locally, nothing sent): CARDS and CARDROWS lines and pictures. |
 | `--recognition-test=<photo.jpg>,<voice.wav>` | Teams' face capture fed that photo and the voice capture fed that 16 kHz WAV, to the completion step; enrolls them (remove afterwards with `examples/biometric`). |
 | `--notif-banner-test[=hold]` | Teams' notification banners in each corner and size (test, chat message with quick reply, @mention, meeting started), BANNERS lines and a picture of each; puts the position and size back. `=hold`: shows them bottom right for 45 s, for clicking. |

@@ -48,6 +48,7 @@ pub mod editor;
 pub mod regional;
 pub mod tabs;
 pub mod translation;
+pub mod updates;
 pub mod teams;
 pub mod quick_views;
 pub mod scheduled;

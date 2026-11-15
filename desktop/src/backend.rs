@@ -362,6 +362,9 @@ pub mod qobject {
         #[qproperty(QString, recognition_json)]
         /// An incoming call is ringing here (the ringer plays).
         #[qproperty(bool, ringer_on)]
+        /// About OST's update line: {state: checking|latest|available|error,
+        /// checkedAt (ms), latest, url}.
+        #[qproperty(QString, update_json)]
         #[qproperty(QString, typing_text)]
         /// The typer whose avatar the typing indicator shows (the latest).
         #[qproperty(QString, typing_avatar)]
@@ -1946,6 +1949,9 @@ pub mod qobject {
         /// Recognition's face "Opt out": remove the face profile.
         #[qinvokable]
         fn recognition_remove_face(self: Pin<&mut Backend>);
+        /// Check OST's release channel for a newer version (update_json).
+        #[qinvokable]
+        fn check_for_updates(self: Pin<&mut Backend>);
         /// Recognition's voice "Opt out" with a profile made by hand: remove
         /// the voice profile.
         #[qinvokable]
@@ -2279,6 +2285,7 @@ pub struct BackendRust {
     quick_reactions_json: QString,
     recognition_json: QString,
     ringer_on: bool,
+    update_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
     window_active: bool,
@@ -15280,6 +15287,35 @@ impl qobject::Backend {
                 tracing::warn!("removing the face profile: {}", short_error(e));
             }
             let _ = qt.queue(move |mut this| this.as_mut().load_recognition());
+        });
+    }
+
+    pub fn check_for_updates(mut self: Pin<&mut Self>) {
+        let checked: i64 = load_settings().get("updateCheckedAt").and_then(|v| v.as_str()).and_then(|v| v.parse().ok()).unwrap_or(0);
+        self.as_mut().set_update_json(QString::from(json!({ "state": "checking", "checkedAt": checked }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let http = reqwest::Client::new();
+            let result = api::updates::latest_release(&http).await;
+            let now = chrono::Utc::now().timestamp_millis();
+            let v = match result {
+                Ok(release) => {
+                    let mut map = load_settings();
+                    map.insert("updateCheckedAt".into(), serde_json::Value::String(now.to_string()));
+                    let _ = save_settings(&map);
+                    match release {
+                        Some(r) if api::updates::is_newer(&r.version, env!("CARGO_PKG_VERSION")) => {
+                            json!({ "state": "available", "checkedAt": now, "latest": r.version, "url": r.url })
+                        }
+                        _ => json!({ "state": "latest", "checkedAt": now }),
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("update check: {}", short_error(&e));
+                    json!({ "state": "error", "checkedAt": checked })
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_update_json(QString::from(v.to_string().as_str())));
         });
     }
 

@@ -416,6 +416,17 @@ Rectangle {
                 Accessible.name: text
             }
         }
+        // Teams' About header button when an update is available: Update
+        // now (OST: the release's page, to get it).
+        SettingsParts.Button {
+            readonly property var u: backend.updateJson ? JSON.parse(backend.updateJson) : ({})
+            visible: root.page === "about" && u.state === "available"
+            primary: true
+            anchors.right: parent.right; anchors.rightMargin: Math.max(22, content.width - pageCol.x - pageCol.width)
+            y: 14.8
+            label: "Update now"
+            onClicked: if (u.url) Qt.openUrlExternally(u.url)
+        }
     }
 
     // The page.
@@ -2527,8 +2538,8 @@ Rectangle {
             // Four cards, 20.7 padding, the 20 px glyph at 18.7 centred on
             // the text: Version (the app's mark), Legal information, Privacy
             // and cookies, Third party notice. OST's own documents stand in
-            // for Microsoft's; Teams' "Web" notices have no OST counterpart,
-            // and OST has no release channel to check for updates yet.
+            // for Microsoft's; Teams' "Web" notices have no OST counterpart.
+            // The update line checks OST's GitHub releases.
             AboutCard {
                 title: "Version"
                 Text {
@@ -2537,10 +2548,27 @@ Rectangle {
                     text: "You have OST version <b>" + Qt.application.version + "</b>."
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
-                Text {
-                    width: parent.width; wrapMode: Text.Wrap
-                    text: "An open-source client for Microsoft Teams. Not affiliated with or endorsed by Microsoft."
-                    font.family: theme.font; font.pixelSize: 14; lineHeight: 18.7; lineHeightMode: Text.FixedHeight; color: theme.textSecondary
+                // Teams' update line (settings-app `vd`), from OST's release
+                // channel (api::updates): checking, up to date with the day
+                // of the last check, an update, or the check's error.
+                Item {
+                    width: parent.width; height: 18.7
+                    readonly property var u: backend.updateJson ? JSON.parse(backend.updateJson) : ({ state: "checking" })
+                    Row {
+                        visible: parent.u.state === "checking"
+                        spacing: 8; anchors.verticalCenter: parent.verticalCenter
+                        BusyIndicator { width: 16; height: 16; running: parent.visible }
+                        Text { text: "Checking for updates"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                    }
+                    Text {
+                        visible: parent.u.state !== "checking"
+                        width: parent.width; height: 18.7; verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        text: parent.u.state === "error" ? "Issue occurred while checking for updates."
+                            : parent.u.state === "available" ? "An update is available."
+                            : "You've got the latest version." + (parent.u.checkedAt ? " It was last checked on " + Qt.formatDate(new Date(parent.u.checkedAt), Qt.locale(), Locale.ShortFormat) + "." : "")
+                        font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                    }
                 }
             }
             AboutCard {
