@@ -3005,6 +3005,31 @@ fn banners_available() -> bool {
     })
 }
 
+/// Someone's short name for group chat banners (Teams' rule,
+/// api::directory::short_name), from their profile, remembered.
+async fn sender_short_name(mri: &str, display: &str) -> String {
+    static NAMES: OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
+    let names = NAMES.get_or_init(Default::default);
+    if let Some(n) = names.lock().ok().and_then(|n| n.get(mri).cloned()) {
+        return n;
+    }
+    let record = async {
+        let client = TeamsClient::new().await?;
+        api::directory::short_profile_records(&client, &[mri.to_string()]).await
+    }
+    .await
+    .ok()
+    .and_then(|r| r.into_iter().next());
+    let Some(p) = record else { return display.to_string() };
+    let field = |k: &str| p[k].as_str().unwrap_or_default().to_string();
+    let full = Some(field("displayName")).filter(|d| !d.is_empty()).unwrap_or_else(|| display.to_string());
+    let short = api::directory::short_name(&app_locale(), &field("surname"), &field("givenName"), &full);
+    if let Ok(mut n) = names.lock() {
+        n.insert(mri.to_string(), short.clone());
+    }
+    short
+}
+
 /// The desktop sound theme's sound for a new instant message (the one a
 /// notification server plays for "im.received"), as a file URL.
 fn theme_message_sound() -> Option<String> {
@@ -8190,10 +8215,10 @@ impl qobject::Backend {
                 format!("{sender} @mentioned you")
             };
             let place = if chat_name.is_empty() { format!("Chat with {sender}") } else { chat_name.clone() };
-            (title, place, preview)
+            (title, place, preview.clone())
         } else if one_on_one {
             let title = if m.urgent { format!("{sender} sent an urgent message") } else { sender.clone() };
-            (title, String::new(), preview)
+            (title, String::new(), preview.clone())
         } else {
             let title = if chat_name.is_empty() { "Unknown".to_string() } else { chat_name.clone() };
             (title, String::new(), format!("{sender}: {preview}"))
@@ -8226,6 +8251,20 @@ impl qobject::Backend {
                 "seconds": prefs.seconds,
                 "silent": silent,
             });
+            // A group chat's banner names the sender as Teams does: "OST:
+            // hello" (their short name, which needs their profile once).
+            let group = !mention && !one_on_one && decision != Toast::Redacted;
+            if group && !m.sender_mri.is_empty() {
+                let (mri, display, preview) = (m.sender_mri.clone(), sender.clone(), preview.clone());
+                let qt = self.qt_thread();
+                runtime().spawn(async move {
+                    let short = sender_short_name(&mri, &display).await;
+                    let mut banner = banner;
+                    banner["text"] = serde_json::Value::String(format!("{short}: {preview}"));
+                    let _ = qt.queue(move |mut this| this.as_mut().banner_requested(QString::from(banner.to_string().as_str())));
+                });
+                return;
+            }
             self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
             return;
         }

@@ -112,6 +112,16 @@ pub async fn privacy_statement_url(client: &TeamsClient) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn short_names_as_teams() {
+        use super::short_name;
+        assert_eq!(short_name("en-us", "Test 2", "OST", "OST Test 2"), "OST");
+        assert_eq!(short_name("en-us", "Northrup", "Randy", "Randy Northrup"), "Randy");
+        assert_eq!(short_name("en-us", "Northrup", "Randy", "Northrup, Randy (IT)"), "Northrup, Randy");
+        assert_eq!(short_name("en-us", "", "", "Someone"), "Someone");
+        assert_eq!(short_name("ja-jp", "山田（営業）", "太郎", "山田 太郎"), "山田");
+    }
+
     use super::*;
 
     #[test]
@@ -246,6 +256,27 @@ pub async fn short_profile_records(client: &TeamsClient, mris: &[String]) -> Res
         .json()
         .await?;
     Ok(v["value"].as_array().cloned().unwrap_or_default())
+}
+
+/// The short name Teams uses for someone in a group chat's notification
+/// ("OST: hello" for OST Test 2; Teams' 99234 `ob`): the given name when
+/// the display name starts with it (and not with the surname); the display
+/// name up to any "(" when it starts with the surname instead; in Japanese
+/// the surname; otherwise the display name.
+pub fn short_name(locale: &str, surname: &str, given: &str, display: &str) -> String {
+    let before_paren = |s: &str| s.split(['(', '\u{FF08}']).next().unwrap_or_default().trim().to_string();
+    let starts_given = !given.is_empty() && display.starts_with(given);
+    let starts_surname = !surname.is_empty() && display.starts_with(surname);
+    let name = if !surname.is_empty() && locale.eq_ignore_ascii_case("ja-jp") {
+        before_paren(surname)
+    } else if starts_given && !starts_surname {
+        given.to_string()
+    } else if starts_surname && !starts_given {
+        before_paren(display)
+    } else {
+        String::new()
+    };
+    if name.is_empty() { display.to_string() } else { name }
 }
 
 /// People's display names by MRI (short_profile_records' `displayName`).

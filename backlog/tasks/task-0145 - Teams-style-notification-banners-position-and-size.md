@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T03:46:00Z'
-updated_date: '2026-11-15T16:13:00Z'
+updated_date: '2026-11-15T16:36:00Z'
 labels:
   - desktop
   - settings
@@ -33,6 +33,8 @@ Teams desktop shows its own notification banners (NotificationStyleList Win10: "
 - Wayland placement through LayerShellQt loaded at run time (dlopen); X11 moves the window. GNOME Wayland (no layer shell) keeps the desktop's notifications.
 - Verified on linuxlt (KDE Wayland): all four corners, Comfy and Compact, a real message from OST Test 2 (OST TEST 146) answered from the banner (heart + OST TEST 147 quick reply), Dismiss clicks via uinput.
 - Follow-up: TASK-0160 (compact incoming-call card).
+
+- 2026-11-15 later: turned Windows notifications on on winpc (user OK) and measured real chat banners: 1:1 with quick reply (176 window), group chat ("OST group test" / "OST: text": Teams' short name, 99234 `ob`), the quick-reaction popover (138 x 32 under the button) and compact hover Reply / replying states. OST adjusted to match (labels "Send reaction" / "Reply", 20 px send and reply icons, popover place, compact reply box at y 36). OST Test 2 added to OST group test for group tests.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

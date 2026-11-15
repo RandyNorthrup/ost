@@ -274,12 +274,13 @@ Window {
         property string label
         property bool small: false
         property bool open: false
+        property int iconSize: 16
         signal clicked()
         width: small ? 24 : 32; height: small ? 23.33 : 31.33
         FluentIcon {
             anchors.centerIn: parent
             name: hb.icon + ((hbHover.hovered || hb.open) ? "-filled" : "")
-            size: 16; color: "white"
+            size: hb.iconSize; color: "white"
         }
         HoverHandler { id: hbHover; cursorShape: Qt.PointingHandCursor }
         MouseArea { anchors.fill: parent; onClicked: hb.clicked() }
@@ -325,18 +326,19 @@ Window {
         id: rb
         property var toast
         signal reacted(string key)
-        icon: "emoji-20"; label: "React"
+        icon: "emoji-20"; label: "Send reaction"
         open: reactMenu.opened
         onClicked: reactMenu.open()
         HoverHandler { onHoveredChanged: if (hovered) reactMenu.open() }
         Popup {
             id: reactMenu
-            // Teams: below the button, its end aligned.
-            x: rb.width - width; y: rb.height + 2
+            // Teams (measured): right under the button, right edges level;
+            // 138 x 32 for four reactions.
+            x: rb.width - width; y: rb.height
             padding: 0
             background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
             contentItem: Row {
-                leftPadding: 2; rightPadding: 2; height: 32
+                leftPadding: 4.67; rightPadding: 5.33; topPadding: 0.67; height: 32
                 Repeater {
                     // With a skin tone set, Like goes in it (Teams' `oa`).
                     model: {
@@ -347,7 +349,7 @@ Window {
                     delegate: Rectangle {
                         required property var modelData
                         readonly property string key: typeof modelData === "string" ? modelData : (modelData.key || modelData.id || "")
-                        width: 32; height: 32; radius: 4
+                        width: 32; height: 31.33; radius: 4
                         color: emoHover.hovered ? theme.menuHover : "transparent"
                         Emoticon { anchors.centerIn: parent; size: 20; key: parent.key }
                         HoverHandler { id: emoHover; cursorShape: Qt.PointingHandCursor }
@@ -389,7 +391,7 @@ Window {
         color: "#383966"
         TextInput {
             id: field
-            x: 12; width: parent.width - 12 - 30; height: parent.height
+            x: 12.67; width: parent.width - 12.67 - 34; height: parent.height
             verticalAlignment: TextInput.AlignVCenter
             clip: true
             font.family: theme.font; font.pixelSize: 14
@@ -412,8 +414,8 @@ Window {
         }
         HeadButton {
             small: true
-            anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter
-            icon: "send-20"; label: "Send"
+            anchors.right: parent.right; anchors.rightMargin: 6.67; anchors.verticalCenter: parent.verticalCenter
+            icon: "send-20"; iconSize: 20; label: "Reply"
             onClicked: qr.send()
         }
         function send() {
@@ -496,7 +498,8 @@ Window {
             Picture { visible: root.compact; x: 16; y: 14; toast: sc.toast }
             Item {
                 visible: root.compact
-                x: 76; y: 10; width: 272; height: 23.33
+                // Replying, the line holds the message (24 tall).
+                x: 76; y: 10; width: 272; height: sc.replying ? 24 : 23.33
                 UrgentBadge { id: compactUrgent; visible: !!sc.toast && !!sc.toast.urgent; x: 0; anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     x: compactUrgent.visible ? 20 : 0
@@ -532,13 +535,13 @@ Window {
                     id: replyButton
                     visible: sc.quick && sc.held
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    width: replyRow.implicitWidth + 16; height: 24; radius: 4
+                    width: replyRow.implicitWidth + 17.33; height: 23.33; radius: 4
                     color: "transparent"
                     border.width: 1; border.color: replyHover.hovered ? "white" : Qt.rgba(1, 1, 1, 0.2)
                     Row {
                         id: replyRow
                         anchors.centerIn: parent; spacing: 4
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "arrow-reply-20"; size: 16; color: "white" }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "arrow-reply-20"; size: 20; color: "white" }
                         Text { anchors.verticalCenter: parent.verticalCenter; text: "Reply"; font.family: theme.font; font.pixelSize: 12; color: "white" }
                     }
                     HoverHandler { id: replyHover; cursorShape: Qt.PointingHandCursor }
@@ -550,7 +553,7 @@ Window {
             QuickReply {
                 id: compactReply
                 visible: root.compact && sc.replying
-                x: 76; y: 35.33; width: 268
+                x: 76; y: 36; width: 268
                 toast: sc.toast
                 onSent: root.dismiss(sc.toast.id)
             }
