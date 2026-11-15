@@ -3602,7 +3602,9 @@ Window {
             else if (step === 6) { const d = settingsView.greetingDialogForTest(); d.oof = false; d.show("") }
             else if (step === 7) shot("greeting")
             else if (step === 8) { settingsView.greetingDialogForTest().close(); settingsView.pageForTest("accessibility") }
-            else if (step === 9) shot("accessibility")
+            else if (step === 9) { shot("accessibility"); }
+            else if (step === 10) settingsView.pageForTest("about")
+            else if (step === 11) { shot("about"); console.warn("CALLS notices", backend.thirdPartyNoticesUrl()) }
             else { Qt.quit(); return }
             step++
         }

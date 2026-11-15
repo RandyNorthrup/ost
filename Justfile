@@ -29,6 +29,10 @@ build-full:
 # --- Quality ---
 
 # Run clippy lints
+# Regenerate desktop/THIRD-PARTY-NOTICES.md (Settings ▸ About ▸ Third party notice) after changing dependencies
+notices:
+    python3 desktop/third_party_notices.py
+
 lint:
     cargo clippy --all-targets --all-features
 

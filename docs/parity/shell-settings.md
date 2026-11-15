@@ -396,6 +396,12 @@ Measured on winpc 2026-11-14, in Teams' order:
 - [x] "Choose what happens when the call is redirected to voicemail".
 - [x] "Set up text-to-speech customized greeting option" and Out-of-office "Your custom greeting": Write / Edit custom greeting opens "Your custom greeting" (500 x 264.67), saved as vmDefaultGreetingPromptOverwrite / vmDefaultOofGreetingPromptOverwrite. Voicemail settings have no read endpoint; Teams shows them unset until changed, and so does OST.
 
+### 10.3c Files and links, App permissions, Recognition, About (checked on winpc 2026-11-14)
+- [x] Files and links: Downloads (location, Change, Always ask), open Office files in Desktop app / Browser, Links open preference, File previews. Teams' third choice, "Teams" (Office for the web in the window), is part of the embedding work (TASK-0038).
+- [x] App permissions (measured 2026-11-13).
+- [ ] Recognition (voice and face profiles): biometric enrollment, needs a user decision before it can be built and tested (TASK-0153).
+- [x] About: Version ("You have OST version **x**."), Legal information, Privacy and cookies, Third party notice ▸ Desktop (desktop/THIRD-PARTY-NOTICES.md from `just notices`, opened locally as Teams opens its notices). Teams' update line ("You've got the latest version…") needs an OST release channel (TASK-0154); Teams' "Web" notices have no OST counterpart.
+
 ### 10.4 Notifications and activity
 - [ ] General:
   - "Mute all notifications (except for calls and meetings)";

@@ -676,6 +676,10 @@ pub mod qobject {
         /// {appLanguage, dateFormat, timeFormat}} (.NET patterns).
         #[qinvokable]
         fn regional_options_json(self: Pin<&mut Backend>) -> QString;
+        /// Settings ▸ About OST ▸ Third party notice ▸ Desktop: OST's notices
+        /// written out to the cache, as a local file URL to open.
+        #[qinvokable]
+        fn third_party_notices_url(self: &Backend) -> QString;
         /// A Teams ECS setting as JSON ("" when ECS doesn't set it).
         #[qinvokable]
         fn ecs_setting(self: &Backend, area: &QString, key: &QString) -> QString;
@@ -10559,6 +10563,23 @@ impl qobject::Backend {
         editor().set_languages(l);
         if let Some(qt) = QT_THREAD.get() {
             let _ = qt.queue(|mut this| this.as_mut().editor_settings_changed());
+        }
+    }
+
+    pub fn third_party_notices_url(&self) -> QString {
+        const NOTICES: &str = include_str!("../THIRD-PARTY-NOTICES.md");
+        let dir = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .unwrap_or_else(std::env::temp_dir)
+            .join("ost");
+        let path = dir.join("THIRD-PARTY-NOTICES.md");
+        match std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, NOTICES)) {
+            Ok(()) => QString::from(format!("file://{}", path.display()).as_str()),
+            Err(e) => {
+                tracing::warn!("third-party notices: {e}");
+                QString::default()
+            }
         }
     }
 

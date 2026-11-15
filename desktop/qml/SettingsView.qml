@@ -61,6 +61,39 @@ Rectangle {
     function local(name, dflt) { const v = backend.setting(name); return v === "" ? dflt : v }
     signal settingsChanged()
 
+    component AboutCard: Rectangle {
+        id: ac
+        property string icon
+        property string title
+        default property alias rows: acCol.data
+        visible: root.page === "about"
+        width: parent ? parent.width : 0
+        height: 20.7 + 20 + acCol.height + 20.6
+        radius: 8; color: "transparent"
+        border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+        FluentIcon { visible: !!ac.icon; x: 18.7; y: (ac.height - 20) / 2; name: ac.icon; size: 20; color: theme.text }
+        Image { visible: !ac.icon; x: 18.7; y: (ac.height - 20) / 2; width: 20; height: 20; source: "../assets/logo.png"; sourceSize: Qt.size(40, 40); smooth: true }
+        Text { x: 56.7; y: 20.7; text: ac.title; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Column { id: acCol; x: 56.7; y: 40.7; width: ac.width - 113.4 }
+        Accessible.role: Accessible.Grouping
+        Accessible.name: title
+    }
+    component AboutLink: Row {
+        id: al
+        property string label
+        property string url
+        property bool external: true
+        signal activated()
+        height: 20; spacing: 8
+        Text { anchors.verticalCenter: parent.verticalCenter; text: al.label; font.family: theme.font; font.pixelSize: 14; color: alHover.hovered ? theme.brandHover : theme.brandForeground1; font.underline: alHover.hovered }
+        FluentIcon { visible: al.external; anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 16; color: theme.brandForeground1 }
+        HoverHandler { id: alHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: { if (al.url) Qt.openUrlExternally(al.url); else al.activated() } }
+        Accessible.role: Accessible.Link
+        Accessible.name: label + (external ? " (opens in new window)" : "")
+        Accessible.onPressAction: { if (al.url) Qt.openUrlExternally(al.url); else al.activated() }
+    }
+
     // Left: title, find box, pages.
     Rectangle {
         id: nav
@@ -2033,11 +2066,37 @@ Rectangle {
                 trailing: Component { SettingsParts.Toggle { on: root.prop("userPersonalSettings", ["filesSettings", "enableThumbnailPreview"], true) !== false; accessibleName: "File previews"; onToggled: v => root.setProp("userPersonalSettings", "filesSettings.enableThumbnailPreview", v) } }
             }
 
-            // ---- About ----
-            SettingsParts.Card {
-                visible: root.page === "about"
-                icon: "info-20"; title: "OST"
-                subtitle: "An open-source client for Microsoft Teams. Not affiliated with Microsoft. Version " + Qt.application.version
+            // ---- About (Teams' About Teams, measured on winpc 2026-11-14) ----
+            // Four cards, 20.7 padding, the 20 px glyph at 18.7 centred on
+            // the text: Version (the app's mark), Legal information, Privacy
+            // and cookies, Third party notice. OST's own documents stand in
+            // for Microsoft's; Teams' "Web" notices have no OST counterpart,
+            // and OST has no release channel to check for updates yet.
+            AboutCard {
+                title: "Version"
+                Text {
+                    width: parent.width; height: 20.7; verticalAlignment: Text.AlignVCenter
+                    textFormat: Text.StyledText
+                    text: "You have OST version <b>" + Qt.application.version + "</b>."
+                    font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                }
+                Text {
+                    width: parent.width; wrapMode: Text.Wrap
+                    text: "An open-source client for Microsoft Teams. Not affiliated with or endorsed by Microsoft."
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 18.7; lineHeightMode: Text.FixedHeight; color: theme.textSecondary
+                }
+            }
+            AboutCard {
+                icon: "info-20"; title: "Legal information"
+                AboutLink { label: "OST Legal Information"; url: "https://github.com/RandyNorthrup/ost/blob/main/LICENSE" }
+            }
+            AboutCard {
+                icon: "cookies-20"; title: "Privacy and cookies"
+                AboutLink { label: "OST Privacy Statement"; url: "https://github.com/RandyNorthrup/ost/blob/main/PRIVACY.md" }
+            }
+            AboutCard {
+                icon: "document-text-20"; title: "Third party notice"
+                AboutLink { label: "Desktop"; external: false; onActivated: { const u = backend.thirdPartyNoticesUrl(); if (u) Qt.openUrlExternally(u) } }
             }
 
             // A failed save, as Teams' Settings says it.
