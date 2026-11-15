@@ -194,3 +194,125 @@ extern "C" void ost_quit_application()
 {
     QGuiApplication::quit();
 }
+
+#include <QtCore/QMargins>
+#include <QtGui/QScreen>
+#include <dlfcn.h>
+
+// Teams' notification banners (its "custom notifications" window, measured
+// on winpc 2026-11-15): a 372-wide window flush with the screen's left or
+// right edge and 90 px from the top or bottom of its work area, in the
+// corner Settings ▸ Notifications ▸ Position on the screen picks. On X11
+// OST moves its banner window there. A Wayland client can't place its own
+// windows; there the window becomes a wlr-layer-shell surface anchored to
+// that corner, through KDE's LayerShellQt when it is installed (its 6.x
+// library, loaded at run time, so OST doesn't need it to build or run).
+namespace {
+struct LayerShell {
+    void *(*get)(QWindow *);
+    void (*setAnchors)(void *, int);
+    void (*setMargins)(void *, const QMargins &);
+    void (*setLayer)(void *, int);
+    void (*setKeyboardInteractivity)(void *, int);
+    void (*setActivateOnShow)(void *, bool);
+    void (*setScope)(void *, const QString &);
+};
+
+const LayerShell *layer_shell()
+{
+    static LayerShell ls {};
+    static const bool ok = [] {
+        void *lib = dlopen("libLayerShellQtInterface.so.6", RTLD_NOW | RTLD_GLOBAL);
+        if (!lib)
+            return false;
+        auto sym = [lib](const char *name) { return dlsym(lib, name); };
+        ls.get = reinterpret_cast<void *(*)(QWindow *)>(sym("_ZN12LayerShellQt6Window3getEP7QWindow"));
+        ls.setAnchors = reinterpret_cast<void (*)(void *, int)>(sym("_ZN12LayerShellQt6Window10setAnchorsE6QFlagsINS0_6AnchorEE"));
+        ls.setMargins = reinterpret_cast<void (*)(void *, const QMargins &)>(sym("_ZN12LayerShellQt6Window10setMarginsERK8QMargins"));
+        ls.setLayer = reinterpret_cast<void (*)(void *, int)>(sym("_ZN12LayerShellQt6Window8setLayerENS0_5LayerE"));
+        ls.setKeyboardInteractivity = reinterpret_cast<void (*)(void *, int)>(sym("_ZN12LayerShellQt6Window24setKeyboardInteractivityENS0_21KeyboardInteractivityE"));
+        ls.setActivateOnShow = reinterpret_cast<void (*)(void *, bool)>(sym("_ZN12LayerShellQt6Window17setActivateOnShowEb"));
+        ls.setScope = reinterpret_cast<void (*)(void *, const QString &)>(sym("_ZN12LayerShellQt6Window8setScopeERK7QString"));
+        return ls.get && ls.setAnchors && ls.setMargins && ls.setLayer && ls.setKeyboardInteractivity && ls.setActivateOnShow && ls.setScope;
+    }();
+    return ok ? &ls : nullptr;
+}
+
+QWindow *window_titled(const char *title)
+{
+    const QString t = QString::fromUtf8(title);
+    for (QWindow *w : QGuiApplication::allWindows())
+        if (w->title() == t)
+            return w;
+    return nullptr;
+}
+
+// GNOME's compositor has no layer shell.
+bool gnome_family()
+{
+    const QByteArray d = qgetenv("XDG_CURRENT_DESKTOP").toLower();
+    return d.contains("gnome") || d.contains("unity") || d.contains("pantheon");
+}
+}
+
+// How OST can place its banner window: 2 on X11 (it moves it), 1 on
+// Wayland with a layer shell, 0 where it can't (then the desktop's own
+// notifications are used).
+extern "C" int ost_banner_support()
+{
+    const QString p = QGuiApplication::platformName();
+    if (p == QLatin1String("xcb"))
+        return 2;
+    if (p.startsWith(QLatin1String("wayland")) && !gnome_family() && layer_shell())
+        return 1;
+    return 0;
+}
+
+// Ready the window titled `title` before it is first shown: it appears
+// without taking focus; on Wayland it becomes a layer-shell surface above
+// windows that takes the keyboard only when clicked (the quick reply).
+extern "C" bool ost_banner_prepare(const char *title)
+{
+    QWindow *w = window_titled(title);
+    if (!w || w->isVisible())
+        return false;
+    // X11: appear without taking focus from the window you're in.
+    w->setProperty("_q_showWithoutActivating", true);
+    const LayerShell *ls = layer_shell();
+    if (!ls || !QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
+        return false;
+    void *s = ls->get(w);
+    if (!s)
+        return false;
+    ls->setLayer(s, 2);                     // LayerTop
+    ls->setKeyboardInteractivity(s, 2);     // KeyboardInteractivityOnDemand
+    ls->setActivateOnShow(s, false);
+    ls->setScope(s, QStringLiteral("ost-notifications"));
+    return true;
+}
+
+// Put the window titled `title` in `corner` ("BR", "TR", "BL", "TL"),
+// `margin` px from the top or bottom of the work area.
+extern "C" void ost_banner_place(const char *title, const char *corner, int margin)
+{
+    QWindow *w = window_titled(title);
+    if (!w)
+        return;
+    const QByteArray c(corner);
+    const bool top = c.startsWith('T'), left = c.endsWith('L');
+    if (QGuiApplication::platformName() == QLatin1String("xcb")) {
+        QScreen *screen = w->screen() ? w->screen() : QGuiApplication::primaryScreen();
+        const QRect area = screen->availableGeometry();
+        const int x = left ? area.left() : area.right() + 1 - w->width();
+        const int y = top ? area.top() + margin : area.bottom() + 1 - margin - w->height();
+        w->setPosition(x, y);
+        return;
+    }
+    const LayerShell *ls = layer_shell();
+    if (!ls)
+        return;
+    void *s = ls->get(w);
+    // Anchors: top 1, bottom 2, left 4, right 8.
+    ls->setAnchors(s, (top ? 1 : 2) | (left ? 4 : 8));
+    ls->setMargins(s, QMargins(0, top ? margin : 0, 0, top ? 0 : margin));
+}

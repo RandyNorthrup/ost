@@ -887,6 +887,9 @@ Rectangle {
             Item {
                 id: notif
                 visible: false
+                /// OST draws Teams' banners here (else the desktop's own
+                /// notifications show, and place themselves).
+                readonly property bool ownBanners: backend.bannerSupport() > 0
                 function ts(k, d) { return root.prop("userPersonalSettings", ["toastSettings", k], d) }
                 function setTs(k, v) { root.setProp("userPersonalSettings", "toastSettings." + k, v) }
                 function setMany(o) { backend.changeSetting("prop", "userPersonalSettings", JSON.stringify(o)) }
@@ -928,11 +931,11 @@ Rectangle {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "eye-20"; title: "Display"
                 trailing: Component { SettingsParts.Button { label: "Test notification"; onClicked: backend.testNotification() } }
-                SettingsParts.CheckRow { label: "Show message and content previews in notifications"; checked: notif.ts("ShowPreviewInToasts", "On") !== "Off"; onToggled: v => notif.setTs("ShowPreviewInToasts", v ? "On" : "Off") }
-                SettingsParts.CheckRow { label: "Show notifications during calls and meetings"; checked: notif.ts("MuteNotificationsDuringMeetings", "Off") !== "On"; onToggled: v => notif.setTs("MuteNotificationsDuringMeetings", v ? "Off" : "On") }
-                SettingsParts.CheckRow { label: "Flash taskbar when notifications are received"; checked: root.local("flashTaskbar", "true") !== "false"; onToggled: v => { backend.setSetting("flashTaskbar", v ? "true" : "false"); checked = v } }
+                SettingsParts.CheckRow { rowHeight: 44; label: "Show message and content previews in notifications"; checked: notif.ts("ShowPreviewInToasts", "On") !== "Off"; onToggled: v => notif.setTs("ShowPreviewInToasts", v ? "On" : "Off") }
+                SettingsParts.CheckRow { rowHeight: 44; label: "Show notifications during calls and meetings"; checked: notif.ts("MuteNotificationsDuringMeetings", "Off") !== "On"; onToggled: v => notif.setTs("MuteNotificationsDuringMeetings", v ? "Off" : "On") }
+                SettingsParts.CheckRow { rowHeight: 44; label: "Flash taskbar when notifications are received"; checked: root.local("flashTaskbar", "true") !== "false"; onToggled: v => { backend.setSetting("flashTaskbar", v ? "true" : "false"); checked = v } }
                 SettingsParts.SubHeading { text: "Dismiss notifications after this amount of time"; gapAbove: 4 }
-                SettingsParts.Gap { size: 10 }
+                SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
                     width: 293.3; height: 30
                     readonly property var secs: [5, 7, 15, 30, 60, 300]
@@ -941,7 +944,48 @@ Rectangle {
                     accessibleName: "Dismiss notifications after this amount of time"
                     onPicked: i => backend.setSetting("toastSeconds", String(secs[i]))
                 }
-                SettingsParts.Gap { size: 20 }
+                // Where OST's banners go and how big they are (Teams' own
+                // pictures; only where OST draws its banners itself, see
+                // NotificationBanners.qml).
+                SettingsParts.SubHeading { visible: notif.ownBanners; text: "Position on the screen"; gapAbove: 12.7 }
+                SettingsParts.Gap { visible: notif.ownBanners; size: 12 }
+                Grid {
+                    id: cornerTiles
+                    visible: notif.ownBanners
+                    columns: 3; columnSpacing: 12; rowSpacing: 12
+                    property string corner: root.local("notificationCorner", "BR")
+                    Repeater {
+                        model: [{ key: "BR", label: "Bottom right" }, { key: "TR", label: "Top right" }, { key: "BL", label: "Bottom left" }, { key: "TL", label: "Top left" }]
+                        delegate: SettingsParts.ImageRadio {
+                            required property var modelData
+                            imageHeight: 80
+                            label: modelData.label
+                            checked: cornerTiles.corner === modelData.key
+                            image: "../assets/settings/notification-position-" + modelData.key.toLowerCase() + "-" + theme.pick("default", "dark") + "-" + (checked ? "active" : "inactive") + ".svg"
+                            onPicked: { backend.setSetting("notificationCorner", modelData.key); cornerTiles.corner = modelData.key }
+                        }
+                    }
+                }
+                SettingsParts.SubHeading { visible: notif.ownBanners; text: "Size"; gapAbove: 12 }
+                SettingsParts.Gap { visible: notif.ownBanners; size: 12 }
+                Row {
+                    id: sizeTiles
+                    visible: notif.ownBanners
+                    spacing: 12
+                    property string size: root.local("notificationSize", "COMFY")
+                    Repeater {
+                        model: [{ key: "COMFY", label: "Comfy" }, { key: "COMPACT", label: "Compact" }]
+                        delegate: SettingsParts.ImageRadio {
+                            required property var modelData
+                            imageHeight: 80
+                            label: modelData.label
+                            checked: sizeTiles.size === modelData.key
+                            image: "../assets/settings/notification-style-" + modelData.key.toLowerCase() + "-" + theme.pick("default", "dark") + "-" + (checked ? "active" : "inactive") + ".svg"
+                            onPicked: { backend.setSetting("notificationSize", modelData.key); sizeTiles.size = modelData.key }
+                        }
+                    }
+                }
+                SettingsParts.Gap { size: notif.ownBanners ? 1.1 : 20 }
             }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
@@ -2194,6 +2238,23 @@ Rectangle {
             out.push([Math.round(c.mapToItem(null, 0, 0).y * 10) / 10, Math.round(c.height * 10) / 10, t])
         }
         return out
+    }
+    /// The visible texts of the card titled `title` as [y, height, text]
+    /// relative to the card (rows compared with Teams' cardrows dump).
+    function cardRowsForTest(title) {
+        const card = [...pageCol.children].find(c => c.visible && c.radius === 8 && c.title === title)
+        if (!card) return []
+        const out = []
+        const walk = it => {
+            for (const ch of it.children) {
+                if (!ch.visible) continue
+                if (ch.text !== undefined && typeof ch.text === "string" && ch.text.length && ch.width > 0)
+                    out.push([Math.round(ch.mapToItem(card, 0, 0).y * 10) / 10, Math.round(ch.height * 10) / 10, ch.text.slice(0, 40)])
+                walk(ch)
+            }
+        }
+        walk(card)
+        return out.sort((a, b) => a[0] - b[0])
     }
     function scrollToForTest(y) { content.contentY = y }
     /// Editor spellcheck (the Editor card's links): General scrolled to it,

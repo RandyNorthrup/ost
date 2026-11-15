@@ -193,11 +193,16 @@ Everything below is in userPersonalSettings unless marked local.
   (TASK-0119; docs/spec/file-actions.md).
 - Accounts and orgs: the account card (picture, name, e-mail, Manage) and the organisation;
   not "Refresh license and restart".
-- Notifications and activity: OST's desktop notifications follow mute all (with urgent
-  allowed), chat and personal-mention banners, previews, calls and meetings, sounds, the
-  dismiss time, taskbar flash and Meet now start notifications.
-  - Not built: the sound choices, position and size (OST uses the desktop's notifications,
-    not Teams' toast windows), posts in shown channels, meeting chat, Presence ▸ Manage
+- Notifications and activity: OST's banners follow mute all (with urgent allowed), chat and
+  personal-mention banners, previews, calls and meetings, sounds, the dismiss time, taskbar
+  flash and Meet now start notifications.
+  - Display ▸ Position on the screen and Size (TASK-0145): kept on the device as
+    `notificationCorner` (BR, TR, BL, TL) and `notificationSize` (COMFY, COMPACT), as Teams
+    keeps them in its device-wide notificationCrossCloudSettings. Shown only where OST draws
+    its own banners (not on GNOME's Wayland).
+  - Display ▸ Flash taskbar has no "taskbar flashing setting in your Windows OS settings"
+    line: that setting is Windows'.
+  - Not built: the sound choices, posts in shown channels, meeting chat, Presence ▸ Manage
     notifications and Calendar.
 - App permissions: built (the list by Teams' rule, the expanders and switches, kept on the
   device and honoured by OST's app views).

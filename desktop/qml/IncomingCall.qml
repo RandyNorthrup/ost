@@ -1,12 +1,12 @@
 import QtQuick
-import QtQuick.Window
 
 // The incoming-call toast, as Teams desktop shows it (measured at 1x): a
-// 360 x 240 card in the screen's corner over a dark, blurred image of the
+// 360 x 240 card (in NotificationBanners' window, the screen's corner
+// Settings picks, above messages) over a dark, blurred image of the
 // caller, with their picture, "<name> is calling you", and wide Accept
 // (with video, when offered) and Decline buttons. The close button
 // ignores the call: the ringing stops here but the call isn't declined.
-Window {
+Item {
     id: toast
     property string peer
     property bool videoOffered
@@ -17,12 +17,6 @@ Window {
     signal ignore()
 
     width: 360; height: 240
-    flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-    color: "transparent"
-    title: peer + " is calling you | OST"
-    x: Screen.desktopAvailableWidth - width - 16
-    y: Screen.desktopAvailableHeight - height - 16
-    onVisibleChanged: if (visible) ignored = false
 
     Rectangle {
         id: card

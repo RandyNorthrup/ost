@@ -50,7 +50,18 @@ unsafe extern "C" {
     /// Teams' taskbar badge on the window icon (src/native.cpp): the
     /// unread count, or with none, the presence glyph of `kind`.
     fn ost_set_taskbar_badge(count: i32, kind: *const core::ffi::c_char);
+    /// How the banner window can be placed (src/native.cpp).
+    fn ost_banner_support() -> i32;
+    /// Make the banner window a layer-shell surface (src/native.cpp).
+    fn ost_banner_prepare(title: *const core::ffi::c_char) -> bool;
+    /// Put the banner window in a corner (src/native.cpp).
+    fn ost_banner_place(title: *const core::ffi::c_char, corner: *const core::ffi::c_char, margin: i32);
 }
+
+/// The banner window's title (how native.cpp finds it).
+const BANNER_WINDOW_TITLE: &core::ffi::CStr = c"OST notifications";
+/// Teams' banner window sits 90 px from the top or bottom of the work area.
+const BANNER_EDGE_MARGIN: i32 = 90;
 use teams_cli::calling::incoming::{ActiveCall, CallAuth, IncomingCall};
 use teams_cli::calling::outgoing::{self, OutgoingCall};
 use teams_cli::calling::webrtc_audio::Reoffer;
@@ -1890,6 +1901,39 @@ pub mod qobject {
         /// A notification went out: flash the taskbar (if that's on).
         #[qsignal]
         fn flash_requested(self: Pin<&mut Backend>);
+        /// Show Teams' notification banner (NotificationBanners.qml): a JSON
+        /// object {id, kind ("standard", "msn", "test"), title, subtitle,
+        /// text, chatId, chatName, messageId, senderMri, senderName, urgent,
+        /// quickReply, seconds, silent, actions:[{id, label}]}.
+        #[qsignal]
+        fn banner_requested(self: Pin<&mut Backend>, json: QString);
+        /// Whether OST draws its own banners here: 2 on X11, 1 on Wayland
+        /// with a layer shell, 0 (the desktop's notifications instead).
+        #[qinvokable]
+        fn banner_support(self: &Backend) -> i32;
+        /// Make the (not yet shown) banner window a layer-shell surface.
+        #[qinvokable]
+        fn prepare_banner_window(self: &Backend) -> bool;
+        /// Put the banner window in Teams' place for `corner` (BR, TR, BL,
+        /// TL).
+        #[qinvokable]
+        fn place_banner_window(self: &Backend, corner: &QString);
+        /// A banner's quick reply: send `text` to `chat_id`.
+        #[qinvokable]
+        fn banner_reply(self: Pin<&mut Backend>, chat_id: &QString, text: &QString);
+        /// A banner's quick reaction: react with `key` to the message.
+        #[qinvokable]
+        fn banner_react(self: Pin<&mut Backend>, chat_id: &QString, message_id: &QString, key: &QString);
+        /// The desktop sound theme's new-message sound (a file URL), or "".
+        #[qinvokable]
+        fn notification_sound(self: &Backend) -> QString;
+        /// A notification was opened: its chat, where Settings ▸ General ▸
+        /// Opening content says (a window of its own, or the main window).
+        #[qinvokable]
+        fn open_from_notification(self: Pin<&mut Backend>, chat_id: &QString, chat_name: &QString);
+        /// A meeting-started notification's Join.
+        #[qinvokable]
+        fn join_from_notification(self: Pin<&mut Backend>, chat_id: &QString, chat_name: &QString);
         /// Where downloads are saved now (Settings ▸ Files and links).
         #[qinvokable]
         fn download_location(self: Pin<&mut Backend>) -> QString;
@@ -2947,6 +2991,37 @@ fn camera_device() -> Option<String> {
         .and_then(|v| v.as_str())
         .filter(|d| d.starts_with("/dev/video") && d[10..].bytes().all(|b| b.is_ascii_digit()))
         .map(str::to_string)
+}
+
+/// Whether OST draws Teams' banners itself (src/native.cpp knows how to
+/// place its window here); else the desktop's notifications are used.
+/// OST_SYSTEM_NOTIFICATIONS=1 asks for the desktop's.
+fn banners_available() -> bool {
+    static SUPPORT: OnceLock<bool> = OnceLock::new();
+    *SUPPORT.get_or_init(|| {
+        std::env::var_os("OST_SYSTEM_NOTIFICATIONS").is_none()
+            // SAFETY: called on the Qt thread, once the application exists.
+            && unsafe { ost_banner_support() } > 0
+    })
+}
+
+/// The desktop sound theme's sound for a new instant message (the one a
+/// notification server plays for "im.received"), as a file URL.
+fn theme_message_sound() -> Option<String> {
+    let dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+    let home = std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"));
+    let roots: Vec<std::path::PathBuf> = home.into_iter().chain(dirs.split(':').map(std::path::PathBuf::from)).collect();
+    for theme in ["ocean", "freedesktop"] {
+        for root in &roots {
+            for ext in ["oga", "ogg", "wav"] {
+                let p = root.join(format!("sounds/{theme}/stereo/message-new-instant.{ext}"));
+                if p.is_file() {
+                    return Some(format!("file://{}", p.display()));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Whether a pushed message gets a desktop notification, as Teams decides
@@ -8094,28 +8169,39 @@ impl qobject::Backend {
                 .and_then(|c| c["name"].as_str().map(str::to_string))
                 .unwrap_or_default()
         };
-        // Teams: "<name> mentioned you" for mentions, else the sender.
-        let title = match (m.sender_name.is_empty(), mentioned) {
-            (false, true) => format!("{} mentioned you", m.sender_name),
-            (false, false) => m.sender_name.clone(),
-            (true, _) => chat_name.clone(),
-        };
-        // Previews off: Teams' "Message preview hidden".
-        let text: String = if prefs.previews {
+        // Teams' wording (react-web-client 1920 `ir`): a 1:1 chat's
+        // banner is the sender (or "<sender> sent an urgent message") and
+        // the message; a group chat's is its name and "<sender>: <text>";
+        // an @mention is "<sender> @mentioned you" (in a thread, for a
+        // channel reply) over where it was said. Previews off: "Message
+        // preview hidden".
+        let one_on_one = m.conversation_id.ends_with("@unq.gbl.spaces");
+        let sender = if m.sender_name.is_empty() { "Unknown User".to_string() } else { m.sender_name.clone() };
+        let preview: String = if prefs.previews {
             m.text.chars().take(NOTIFICATION_BODY_CHARS).collect()
         } else {
             "Message preview hidden".to_string()
         };
-        // Where it was said, for channels and named chats.
-        let body = if channel && !chat_name.is_empty() {
-            format!("{chat_name}\n{text}")
+        let mention = mentioned && prefs.personal_mention_banners;
+        let (title, subtitle, text) = if mention {
+            let title = if m.root_id.is_some() {
+                format!("{sender} @mentioned you in a thread")
+            } else {
+                format!("{sender} @mentioned you")
+            };
+            let place = if chat_name.is_empty() { format!("Chat with {sender}") } else { chat_name.clone() };
+            (title, place, preview)
+        } else if one_on_one {
+            let title = if m.urgent { format!("{sender} sent an urgent message") } else { sender.clone() };
+            (title, String::new(), preview)
         } else {
-            text
+            let title = if chat_name.is_empty() { "Unknown".to_string() } else { chat_name.clone() };
+            (title, String::new(), format!("{sender}: {preview}"))
         };
-        let (title, body) = if decision == Toast::Redacted {
-            ("You have a new notification".to_string(), String::new())
+        let (title, subtitle, text) = if decision == Toast::Redacted {
+            ("You have a new notification".to_string(), String::new(), String::new())
         } else {
-            (title, body)
+            (title, subtitle, text)
         };
         let chat_id = m.conversation_id.clone();
         let busy = matches!(availability.as_str(), "Busy" | "DoNotDisturb" | "InACall" | "InAMeeting") || in_call;
@@ -8124,6 +8210,26 @@ impl qobject::Backend {
         if prefs.flash {
             self.as_mut().flash_requested();
         }
+        if banners_available() {
+            // Teams offers a quick reply on chat messages it previews
+            // (not on @mentions, nor in channels).
+            let quick_reply = !mention && !channel && prefs.previews && decision != Toast::Redacted;
+            let banner = serde_json::json!({
+                "id": format!("msg:{}:{}", m.conversation_id, m.message_id),
+                "kind": "standard",
+                "title": title, "subtitle": subtitle, "text": text,
+                "chatId": chat_id, "chatName": chat_name,
+                "messageId": m.message_id,
+                "senderMri": m.sender_mri, "senderName": m.sender_name,
+                "urgent": m.urgent,
+                "quickReply": quick_reply,
+                "seconds": prefs.seconds,
+                "silent": silent,
+            });
+            self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
+            return;
+        }
+        let body = if subtitle.is_empty() { text } else { format!("{subtitle}\n{text}") };
         std::thread::spawn(move || {
             let shown = notify_rust::Notification::new()
                 .appname("OST")
@@ -8224,6 +8330,22 @@ impl qobject::Backend {
             (chat_name.clone(), format!("{who} started a meeting"))
         };
         let chat_id = start.thread_id.clone();
+        if banners_available() {
+            // Teams' meeting-started banner (notifications-app `st`): on
+            // screen 20 seconds, with Join and Message.
+            let banner = serde_json::json!({
+                "id": format!("msn:{}", start.call_id),
+                "kind": "msn",
+                "title": title, "text": body,
+                "chatId": chat_id, "chatName": chat_name,
+                "senderMri": start.initiator, "senderName": who,
+                "seconds": 20,
+                "silent": !prefs.sound,
+                "actions": [{ "id": "join", "label": "Join" }, { "id": "message", "label": "Message" }],
+            });
+            self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
+            return;
+        }
         std::thread::spawn(move || {
             let shown = notify_rust::Notification::new()
                 .appname("OST")
@@ -14865,11 +14987,24 @@ impl qobject::Backend {
         });
     }
 
-    pub fn test_notification(self: Pin<&mut Self>) {
+    pub fn test_notification(mut self: Pin<&mut Self>) {
         let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
         let body = if prefs.previews { "Message preview." } else { "Message preview hidden" };
         let timeout = prefs.seconds * 1000;
         let silent = !prefs.sound;
+        if banners_available() {
+            // Teams' test banner (id "testNotification"): its bell picture,
+            // no actions.
+            let banner = serde_json::json!({
+                "id": "testNotification",
+                "kind": "test",
+                "title": "This is a test notification", "text": body,
+                "seconds": prefs.seconds,
+                "silent": silent,
+            });
+            self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
+            return;
+        }
         std::thread::spawn(move || {
             let _ = notify_rust::Notification::new()
                 .appname("OST")
@@ -14881,6 +15016,83 @@ impl qobject::Backend {
                 .timeout(notify_rust::Timeout::Milliseconds(timeout))
                 .show();
         });
+    }
+
+    pub fn banner_support(&self) -> i32 {
+        if banners_available() {
+            // SAFETY: on the Qt thread.
+            unsafe { ost_banner_support() }
+        } else {
+            0
+        }
+    }
+
+    pub fn prepare_banner_window(&self) -> bool {
+        // SAFETY: on the Qt thread; the title is a C string.
+        unsafe { ost_banner_prepare(BANNER_WINDOW_TITLE.as_ptr()) }
+    }
+
+    pub fn place_banner_window(&self, corner: &QString) {
+        let corner = match corner.to_string().as_str() {
+            c @ ("BR" | "TR" | "BL" | "TL") => std::ffi::CString::new(c).unwrap_or_default(),
+            _ => c"BR".to_owned(),
+        };
+        // SAFETY: on the Qt thread; both are C strings.
+        unsafe { ost_banner_place(BANNER_WINDOW_TITLE.as_ptr(), corner.as_ptr(), BANNER_EDGE_MARGIN) }
+    }
+
+    pub fn banner_reply(self: Pin<&mut Self>, chat_id: &QString, text: &QString) {
+        let (chat, body) = (chat_id.to_string(), text.to_string());
+        if chat.is_empty() || body.trim().is_empty() {
+            return;
+        }
+        self.enqueue(chat, api::outbox::plain_html(&body));
+    }
+
+    pub fn banner_react(self: Pin<&mut Self>, chat_id: &QString, message_id: &QString, key: &QString) {
+        let (chat, message, key) = (chat_id.to_string(), message_id.to_string(), key.to_string());
+        if chat.is_empty() || message.is_empty() || key.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let wire = api::emoticons::server_key(&key);
+                api::messages::set_reaction(&client, &chat, &message, wire, true).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().reload_where(&chat),
+                Err(e) => tracing::warn!("reaction from a notification not sent: {}", short_error(&e)),
+            });
+        });
+    }
+
+    pub fn open_from_notification(mut self: Pin<&mut Self>, chat_id: &QString, chat_name: &QString) {
+        if chat_id.is_empty() {
+            return;
+        }
+        if load_settings().get("openContentIn").and_then(|v| v.as_str()) == Some("popout") {
+            self.as_mut().open_chat_window_requested(chat_id.clone(), chat_name.clone());
+            return;
+        }
+        self.as_mut().select_chat(chat_id, chat_name);
+        self.as_mut().activate_requested();
+    }
+
+    pub fn join_from_notification(mut self: Pin<&mut Self>, chat_id: &QString, chat_name: &QString) {
+        if chat_id.is_empty() {
+            return;
+        }
+        self.as_mut().select_chat(chat_id, chat_name);
+        self.as_mut().activate_requested();
+        self.as_mut().join_group_call();
+    }
+
+    pub fn notification_sound(&self) -> QString {
+        static SOUND: OnceLock<String> = OnceLock::new();
+        QString::from(SOUND.get_or_init(|| theme_message_sound().unwrap_or_default()).as_str())
     }
 
     pub fn office_app_name(self: Pin<&mut Self>) -> QString {

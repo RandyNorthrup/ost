@@ -1147,7 +1147,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && Qt.application.arguments.indexOf("--cards-test") < 0 && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -1227,16 +1227,27 @@ Window {
         }
     }
 
-    IncomingCall {
-        id: incomingCall
-        visible: backend.callState === "ringing" && !ignored
-        peer: backend.callPeer
-        videoOffered: backend.callVideoOffered
-        onAcceptVideo: backend.acceptCall(true)
-        onAcceptAudio: backend.acceptCall(false)
-        onDecline: backend.declineCall()
+    // Teams' notification banners: messages, meetings that started, the
+    // test banner, and the incoming call, in the corner Settings picks.
+    NotificationBanners {
+        id: banners
+        onOpenChat: (chatId, chatName) => backend.openFromNotification(chatId, chatName)
+        onJoinMeeting: (chatId, chatName) => backend.joinFromNotification(chatId, chatName)
+        onOpenSettings: {
+            rail.current = "settings"; settingsView.page = "notifications"
+            window.show(); window.raise(); window.requestActivate()
+        }
+        onAcceptCall: video => backend.acceptCall(video)
+        onDeclineCall: backend.declineCall()
         // Ignore: stop ringing here; the call isn't declined.
-        onIgnore: backend.setRinger(false)
+        onIgnoreCall: backend.setRinger(false)
+    }
+    Connections { target: backend; function onBannerRequested(json) { banners.add(json) } }
+    // The incoming call is a banner while it rings.
+    readonly property bool ringing: backend.callState === "ringing"
+    onRingingChanged: {
+        if (ringing) banners.add({ id: "call", kind: "call", title: backend.callPeer, video: backend.callVideoOffered, silent: true })
+        else banners.dismiss("call")
     }
     // Teams' Rejoin: back into the meeting last joined.
     function rejoinMeeting() { backend.rejoinMeeting() }
@@ -1517,7 +1528,7 @@ Window {
         interval: 4000
         onTriggered: {
             if (step === "ring") {
-                incomingCall.contentItem.grabToImage(r => {
+                (banners.callCardItem() || banners.contentItem).grabToImage(r => {
                     r.saveToFile(window.shotPath.replace(".png", "-toast.png"))
                     // --accept-video: answer with video when it's offered.
                     backend.acceptCall(Qt.application.arguments.indexOf("--accept-video") >= 0 && backend.callVideoOffered)
@@ -3585,10 +3596,100 @@ Window {
         }
     }
 
+    // --notif-banner-live-test: the first real chat banner is answered from the
+    // banner: BANNER-LIVE logs it, 4 s later it reacts with a heart and
+    // sends a quick reply naming --notif-banner-live-test=<text>.
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.some(a => a.startsWith("--notif-banner-live-test"))
+        property bool done: false
+        function onBannerRequested(json) {
+            const t = JSON.parse(json)
+            console.warn("BANNER-LIVE", json)
+            if (done || t.kind !== "standard" || !t.quickReply) return
+            done = true
+            liveBannerTimer.chat = t.chatId
+            liveBannerTimer.message = t.messageId
+            liveBannerTimer.banner = t.id
+            liveBannerTimer.start()
+        }
+    }
+    Timer {
+        id: liveBannerTimer
+        property string chat
+        property string message
+        property string banner
+        interval: 4000
+        onTriggered: {
+            const text = (Qt.application.arguments.find(a => a.startsWith("--notif-banner-live-test=")) || "").slice(25) || "OST quick reply"
+            backend.bannerReact(chat, message, "heart")
+            backend.bannerReply(chat, text)
+            banners.dismiss(banner)
+            console.warn("BANNER-LIVE answered", chat, message)
+        }
+    }
+
+    // --notif-banner-test: Teams' notification banners, step by step every 3 s
+    // (photograph the screen at each BANNERS line): the test banner, a chat
+    // message with its quick reply, an @mention and a meeting that started
+    // (BR, Comfy); then the same Compact in the top left, then the top
+    // right. BANNERS lines give each card's place in the window. Puts the
+    // position and size settings back as they were.
+    Timer {
+        id: bannerTest
+        running: Qt.application.arguments.some(a => a === "--notif-banner-test" || a === "--notif-banner-test=hold")
+        interval: 3000; repeat: true
+        property int step: 0
+        property string corner0
+        property string size0
+        function fill() {
+            backend.testNotification()
+            banners.add({ id: "t1", kind: "standard", title: "OST Test 2", text: "Here is a longer message that needs two lines to show all of it in the banner, and then some more", chatId: "19:x@unq.gbl.spaces", messageId: "1", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", quickReply: true, seconds: 300, silent: true })
+            banners.add({ id: "t2", kind: "msn", title: "OST group test", text: "OST Test 2 started a meeting", chatId: "19:y@thread.v2", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", seconds: 300, silent: true, actions: [{ id: "join", label: "Join" }, { id: "message", label: "Message" }] })
+        }
+        function report(tag) {
+            const cards = []
+            for (let i = 0; i < banners.contentItem.children.length; i++) {
+                const col = banners.contentItem.children[i]
+                for (let j = 0; j < (col.children ? col.children.length : 0); j++) {
+                    const c = col.children[j]
+                    if (c.toast) cards.push([c.toast.id, Math.round(c.mapToItem(banners.contentItem, 0, 0).x * 10) / 10, Math.round(c.mapToItem(banners.contentItem, 0, 0).y * 10) / 10, c.width, c.height])
+                }
+            }
+            console.warn("BANNERS", tag, banners.corner, banners.compact, banners.width, banners.height, JSON.stringify(cards))
+            banners.contentItem.grabToImage(r => r.saveToFile("/tmp/act/banner-" + tag + ".png"))
+        }
+        onTriggered: {
+            const st = step++
+            const clear = () => { for (const id of Object.keys(banners.toasts)) banners.dismiss(id) }
+            // --notif-banner-test=hold: show them (BR, Comfy) and report every
+            // 3 s for 45 s, for clicking at them.
+            if (Qt.application.arguments.indexOf("--notif-banner-test=hold") >= 0 && st > 0) {
+                if (st < 16) { report("hold-" + st); return }
+                clear(); backend.setSetting("notificationCorner", corner0); backend.setSetting("notificationSize", size0); Qt.quit(); return
+            }
+            if (st === 0) {
+                corner0 = backend.setting("notificationCorner"); size0 = backend.setting("notificationSize")
+                backend.setSetting("notificationCorner", "BR"); backend.setSetting("notificationSize", "COMFY")
+                fill()
+            } else if (st === 1) report("br-comfy")
+            else if (st === 2) banners.add({ id: "t3", kind: "standard", title: "OST Test 2 @mentioned you", subtitle: "OST group test", text: "@OST Test 1 have a look", urgent: true, chatId: "19:y@thread.v2", messageId: "2", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", seconds: 300, silent: true })
+            else if (st === 3) report("br-comfy-3")
+            else if (st === 4) { clear(); backend.setSetting("notificationCorner", "TL"); backend.setSetting("notificationSize", "COMPACT"); fill() }
+            else if (st === 5) report("tl-compact")
+            else if (st === 6) { clear(); backend.setSetting("notificationCorner", "BL"); fill() }
+            else if (st === 7) report("bl-compact")
+            else if (st === 8) { clear(); backend.setSetting("notificationCorner", "TR"); backend.setSetting("notificationSize", "COMFY"); fill() }
+            else if (st === 9) report("tr-comfy")
+            else if (st === 10) { clear(); backend.setSetting("notificationCorner", corner0); backend.setSetting("notificationSize", size0) }
+            else Qt.quit()
+        }
+    }
+
     // --cards-test: every Settings page's cards as CARDS lines (geometry
     // compared with Teams'). Changes nothing.
     Timer {
-        running: Qt.application.arguments.indexOf("--cards-test") >= 0 && backend.signedIn && backend.orgName.length > 0
+        running: Qt.application.arguments.some(a => a === "--cards-test" || a.startsWith("--cards-test=")) && backend.signedIn && backend.orgName.length > 0
         interval: 1500; repeat: true
         property int step: 0
         readonly property var keys: settingsView.pages.map(p => p.key).concat(["about"])
@@ -3603,7 +3704,12 @@ Window {
                 step++; return
             }
             if (step % 2 === 0) { rail.current = "settings"; settingsView.pageForTest(keys[i]) }
-            else console.warn("CARDS", keys[i], JSON.stringify(settingsView.cardsForTest()))
+            else {
+                console.warn("CARDS", keys[i], JSON.stringify(settingsView.cardsForTest()))
+                // --cards-test=<title>: that card's rows too.
+                const rows = (Qt.application.arguments.find(a => a.startsWith("--cards-test=")) || "").slice(13)
+                if (rows) console.warn("CARDROWS", keys[i], JSON.stringify(settingsView.cardRowsForTest(rows)))
+            }
             step++
         }
     }

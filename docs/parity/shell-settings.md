@@ -416,7 +416,8 @@ Measured on winpc 2026-11-14, in Teams' order:
   - "Play sounds while I'm busy or in a meeting" (call-waiting beep);
   - one sound dropdown per notification type, with a ▶ preview button; custom sounds on Windows.
   Source: https://support.microsoft.com/en-gb/topic/6992a279-09d6-4c93-be51-f45ddb277827 ; https://support.microsoft.com/office/manage-your-call-settings-in-microsoft-teams-456cb611-3477-496f-b31a-6ab752a7595f
-- [ ] Display: Position (Bottom right / Top right / Bottom left / Top left). Preview size (Comfy / Compact).
+- [x] Display: Position (Bottom right / Top right / Bottom left / Top left). Preview size (Comfy / Compact).
+  OST draws Teams' banner window itself (TASK-0145): 372 wide, 90 px from the top or bottom of the work area, flush with the screen's side; cards 360 wide, Comfy 124/164 (quick reply), Compact 76, meeting started 260/130; three at once.
   Source: https://support.microsoft.com/en-gb/topic/6992a279-09d6-4c93-be51-f45ddb277827
 - [ ] Email: "Missed activity emails" frequency dropdown (including Off). Daily digest email.
   Source: same ; https://learn.microsoft.com/en-us/training/modules/collaborate-teams-channels-microsoft-teams/7-manage-notifications

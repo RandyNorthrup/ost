@@ -192,6 +192,7 @@ fn main() {
         "qml/MeetingTimerStrip.qml",
         "qml/CallHealthPane.qml",
         "qml/TimerSpin.qml",
+        "qml/NotificationBanners.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

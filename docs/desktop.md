@@ -111,9 +111,17 @@ Microsoft branding.
   browser.
 - **Presence**: your status (set, reset, shown everywhere) and everyone
   else's on their pictures.
-- **Notifications**: desktop notifications for new messages, titled
-  "<name> mentioned you" for mentions; channel posts notify only when
-  they mention you; "Only mentions" in Settings.
+- **Notifications**: Teams' own banners (NotificationBanners.qml), in
+  the screen corner and size Settings ▸ Notifications ▸ Display picks:
+  chat messages (with Teams' quick reply and quick reaction), @mentions
+  ("<name> @mentioned you" over where it was said), meetings that started
+  (Join, Message), the test banner and the incoming call. Up to three at
+  once, queued and timed as Teams does; hovering holds one. On X11 OST
+  places the window itself; on Wayland it is a layer-shell surface through
+  KDE's LayerShellQt (KDE, Hyprland, sway and other wlroots desktops).
+  On GNOME's Wayland, which has no layer shell, (or with
+  OST_SYSTEM_NOTIFICATIONS=1) the desktop's own notifications are used
+  instead. Channel posts notify only when they mention you.
 - **Settings**: theme (follow the system, light, dark), read receipts,
   Enter to send or to start a new line, notifications, audio devices,
   start with the computer.
@@ -251,6 +259,8 @@ account.
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
+| `--notif-banner-test[=hold]` | Teams' notification banners in each corner and size (test, chat message with quick reply, @mention, meeting started), BANNERS lines and a picture of each; puts the position and size back. `=hold`: shows them bottom right for 45 s, for clicking. |
+| `--notif-banner-live-test=<text>` | The first real chat banner is answered from it: a heart reaction and a quick reply saying `<text>`. |
 | `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |
 | `--share-test` | In a call (with `--call-test --remote-hangup`): share a screen once connected (the portal's picker asks what), capture it after 30 s, then stop. |
 | `--tab=<name>` | With `--open-chat`, open that tab of the chat or channel before capturing. |

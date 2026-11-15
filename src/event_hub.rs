@@ -114,6 +114,10 @@ pub struct PushedMessage {
     /// Sent as Urgent (`properties.importance`): Teams lets it through Do
     /// not disturb.
     pub urgent: bool,
+    /// The message's id (for reacting to it from a notification).
+    pub message_id: String,
+    /// A channel reply: the post it replies to (its thread).
+    pub root_id: Option<String>,
 }
 
 /// The MRIs a message mentions, from `properties.mentions` (a JSON array,
@@ -171,6 +175,16 @@ pub fn message_events(json: &str) -> Vec<PushedMessage> {
                 .split(['/', ';'])
                 .next()?
                 .to_string();
+            let message_id = r
+                .get("id")
+                .and_then(|i| i.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let root_id = link
+                .split(";messageid=")
+                .nth(1)
+                .map(|m| m.split('/').next().unwrap_or_default().to_string())
+                .filter(|m| !m.is_empty() && *m != message_id);
             let text = crate::api::strip_html(r.get("content")?.as_str()?)
                 .trim()
                 .to_string();
@@ -197,6 +211,8 @@ pub fn message_events(json: &str) -> Vec<PushedMessage> {
                 text,
                 mentions,
                 urgent,
+                message_id,
+                root_id,
             })
         })
         .collect()
@@ -274,6 +290,7 @@ mod tests {
         let ev = serde_json::json!({ "eventMessages": [{
             "resourceType": "NewMessage",
             "resource": {
+                "id": "1793889790000",
                 "messagetype": "RichText/Html",
                 "conversationLink": "https://x/v1/users/ME/conversations/19:abc@thread.tacv2;messageid=1793889784763",
                 "from": "https://x/v1/users/ME/contacts/8:orgid:them",
@@ -286,6 +303,9 @@ mod tests {
         assert_eq!(m.conversation_id, "19:abc@thread.tacv2");
         assert_eq!(m.mentions, vec!["8:orgid:me-oid".to_string()]);
         assert_eq!(m.text, "hello OST Test 1");
+        // A reply: its own id, and the post it replies to.
+        assert_eq!(m.message_id, "1793889790000");
+        assert_eq!(m.root_id.as_deref(), Some("1793889784763"));
         assert!(mentions_of(None).is_empty());
         assert!(mentions_of(Some(&serde_json::json!({ "mentions": "not json" }))).is_empty());
     }
@@ -331,6 +351,7 @@ mod tests {
         assert_eq!(got[0].text, "Hi & bye");
         assert_eq!(got[0].sender_mri, "8:orgid:abc");
         assert_eq!(got[0].conversation_id, "19:a_b@unq.gbl.spaces");
+        assert_eq!(got[0].root_id, None);
         let typing = m.replace("RichText/Html", "Control/Typing");
         assert!(message_events(&typing).is_empty());
     }
