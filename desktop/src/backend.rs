@@ -1929,9 +1929,6 @@ pub mod qobject {
         /// A banner's quick reaction: react with `key` to the message.
         #[qinvokable]
         fn banner_react(self: Pin<&mut Backend>, chat_id: &QString, message_id: &QString, key: &QString);
-        /// The desktop sound theme's new-message sound (a file URL), or "".
-        #[qinvokable]
-        fn notification_sound(self: &Backend) -> QString;
         /// A notification was opened: its chat, where Settings ▸ General ▸
         /// Opening content says (a window of its own, or the main window).
         #[qinvokable]
@@ -3104,25 +3101,6 @@ fn face_session() -> &'static std::sync::Mutex<Vec<(Vec<u8>, serde_json::Value)>
 fn voice_capture() -> &'static std::sync::Mutex<Option<VoiceCapture>> {
     static SLOT: OnceLock<std::sync::Mutex<Option<VoiceCapture>>> = OnceLock::new();
     SLOT.get_or_init(Default::default)
-}
-
-/// The desktop sound theme's sound for a new instant message (the one a
-/// notification server plays for "im.received"), as a file URL.
-fn theme_message_sound() -> Option<String> {
-    let dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-    let home = std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"));
-    let roots: Vec<std::path::PathBuf> = home.into_iter().chain(dirs.split(':').map(std::path::PathBuf::from)).collect();
-    for theme in ["ocean", "freedesktop"] {
-        for root in &roots {
-            for ext in ["oga", "ogg", "wav"] {
-                let p = root.join(format!("sounds/{theme}/stereo/message-new-instant.{ext}"));
-                if p.is_file() {
-                    return Some(format!("file://{}", p.display()));
-                }
-            }
-        }
-    }
-    None
 }
 
 /// Whether a pushed message gets a desktop notification, as Teams decides
@@ -15521,11 +15499,6 @@ impl qobject::Backend {
                 this.as_mut().load_recognition();
             });
         });
-    }
-
-    pub fn notification_sound(&self) -> QString {
-        static SOUND: OnceLock<String> = OnceLock::new();
-        QString::from(SOUND.get_or_init(|| theme_message_sound().unwrap_or_default()).as_str())
     }
 
     pub fn office_app_name(self: Pin<&mut Self>) -> QString {
