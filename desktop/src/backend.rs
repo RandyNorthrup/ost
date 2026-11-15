@@ -362,6 +362,9 @@ pub mod qobject {
         #[qproperty(QString, recognition_json)]
         /// An incoming call is ringing here (the ringer plays).
         #[qproperty(bool, ringer_on)]
+        /// Your messaging policy turns link previews off (Teams'
+        /// allowUrlPreviews false).
+        #[qproperty(bool, url_previews_blocked)]
         /// About OST's update line: {state: checking|latest|available|error,
         /// checkedAt (ms), latest, url}.
         #[qproperty(QString, update_json)]
@@ -1957,6 +1960,22 @@ pub mod qobject {
         /// Check OST's release channel for a newer version (update_json).
         #[qinvokable]
         fn check_for_updates(self: Pin<&mut Backend>);
+        /// A link's preview from Teams' URL preview service, for compose:
+        /// url_preview_fetched(url, json) ("" when there is none).
+        #[qinvokable]
+        fn fetch_url_preview(self: Pin<&mut Backend>, url: &QString);
+        #[qsignal]
+        fn url_preview_fetched(self: Pin<&mut Backend>, url: QString, json: QString);
+        /// The next message's link preview (compose's, shown or removed),
+        /// "fetch" to get it as the message goes, or "".
+        #[qinvokable]
+        fn set_next_url_preview(self: Pin<&mut Backend>, json: &QString);
+        /// Remove the preview from your sent message (Teams' X).
+        #[qinvokable]
+        fn remove_url_preview(self: Pin<&mut Backend>, message_json: &QString);
+        /// Read whether your messaging policy allows link previews.
+        #[qinvokable]
+        fn load_url_preview_policy(self: Pin<&mut Backend>);
         /// Recognition's voice "Opt out" with a profile made by hand: remove
         /// the voice profile.
         #[qinvokable]
@@ -2290,6 +2309,7 @@ pub struct BackendRust {
     quick_reactions_json: QString,
     recognition_json: QString,
     ringer_on: bool,
+    url_previews_blocked: bool,
     update_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
@@ -2330,6 +2350,10 @@ pub struct BackendRust {
     /// The message the next send quotes.
     reply_quote: Option<api::messages::Quote>,
     next_importance: String,
+    /// The next message's link preview (compose's).
+    next_url_preview: Option<teams_cli::api::url_preview::UrlPreview>,
+    /// Compose had none yet: fetch it as the message goes.
+    next_url_preview_on_send: bool,
     /// The media-store objects the next message carries (a recorded clip).
     next_ams_refs: Vec<String>,
     /// The next channel post's subject, headline and banner colour.
@@ -9225,6 +9249,8 @@ impl qobject::Backend {
         self.as_mut().rust_mut().typers.clear();
         self.as_mut().rust_mut().reply_quote = None;
         self.as_mut().rust_mut().next_importance.clear();
+        self.as_mut().rust_mut().next_url_preview = None;
+        self.as_mut().rust_mut().next_url_preview_on_send = false;
         self.as_mut().rust_mut().next_post = None;
         self.as_mut().rust_mut().next_schedule_ms = None;
         self.as_mut().rust_mut().typing_generation += 1;
@@ -10125,6 +10151,9 @@ impl qobject::Backend {
             shared_in_main: false,
             threads_layout: false,
             ams_references: Vec::new(),
+            // Compose sets it before each send (none when it has none).
+            url_preview: self.rust().next_url_preview.clone(),
+            url_preview_on_send: self.rust().next_url_preview_on_send,
         }
     }
 
@@ -15298,6 +15327,55 @@ impl qobject::Backend {
                 tracing::warn!("removing the face profile: {}", short_error(e));
             }
             let _ = qt.queue(move |mut this| this.as_mut().load_recognition());
+        });
+    }
+
+    pub fn fetch_url_preview(self: Pin<&mut Self>, url: &QString) {
+        let url = url.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let found = async {
+                let client = TeamsClient::new().await?;
+                api::url_preview::fetch(&client, &url).await
+            }
+            .await;
+            let json = match found {
+                Ok(Some(p)) => serde_json::to_string(&p).unwrap_or_default(),
+                Ok(None) => String::new(),
+                Err(e) => {
+                    tracing::info!("no link preview: {}", short_error(&e));
+                    String::new()
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+            });
+        });
+    }
+
+    pub fn set_next_url_preview(mut self: Pin<&mut Self>, json: &QString) {
+        let json = json.to_string();
+        self.as_mut().rust_mut().next_url_preview_on_send = json == "fetch";
+        self.as_mut().rust_mut().next_url_preview = serde_json::from_str(&json).ok();
+    }
+
+    pub fn remove_url_preview(self: Pin<&mut Self>, message_json: &QString) {
+        let m: serde_json::Value = serde_json::from_str(&message_json.to_string()).unwrap_or_default();
+        let Some(preview) = m.get("url_preview").cloned().and_then(|p| serde_json::from_value::<api::url_preview::UrlPreview>(p).ok()) else { return };
+        let id = m.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let message_id = id.clone();
+        self.message_action(&message_id, move |client, chat| {
+            Box::pin(async move { api::url_preview::remove_from_message(&client, &chat, &id, &preview).await })
+        });
+    }
+
+    pub fn load_url_preview_policy(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let Ok(client) = TeamsClient::new().await else { return };
+            let policy = api::custom_emoji::messaging_policy(&client).await.unwrap_or_default();
+            let blocked = api::custom_emoji::find_bool(&policy, "allowUrlPreviews") == Some(false);
+            let _ = qt.queue(move |mut this| this.as_mut().set_url_previews_blocked(blocked));
         });
     }
 

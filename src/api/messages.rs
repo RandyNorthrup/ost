@@ -802,6 +802,10 @@ pub struct MessageView {
     /// A channel announcement's banner.
     #[serde(default)]
     pub announcement: Option<Announcement>,
+    /// The sender's link preview for the message's first link (Teams'
+    /// properties.links), when it is shown.
+    #[serde(default)]
+    pub url_preview: Option<super::url_preview::UrlPreview>,
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module
@@ -1757,6 +1761,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         deleted,
         reactions,
         follow_explicit,
+        url_preview: if deleted { None } else { super::url_preview::from_message(props, &content) },
         ..base
     })
 }

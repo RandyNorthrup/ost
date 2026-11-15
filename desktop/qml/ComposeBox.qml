@@ -135,11 +135,107 @@ Item {
     // Once the text wraps the box stays multiline until it is empty again
     // (Teams 461103 / 458473).
     property bool grown: false
+    // Teams' link preview (TASK-0148): the first link in the message gets
+    // one from Teams' URL preview service, 125 ms after the text changes.
+    // {url, title, description, thumbnail, thumbnail_meta, enabled}; the
+    // X turns it off for that link (it is sent with previewenabled false),
+    // a different first link fetches again. Off with Optional connected
+    // experiences or the messaging policy, in a forwarded message and in
+    // edits.
+    property var urlPreview: null
+    /// The first link the preview is for ("" while there is none).
+    property string previewUrl: ""
+    /// Link previews are allowed here (the conversation decides).
+    property bool previewsAllowed: true
+    readonly property bool previewShown: !!urlPreview && urlPreview.enabled && previewsAllowed && !editing && cloudFiles.length === 0 && !clip
+    function firstLink() {
+        const m = String(formattedText()).match(/<a\s+href="([^"]+)"/g) || []
+        for (const a of m) {
+            const href = a.replace(/^<a\s+href="/, "").replace(/"$/, "").replace(/&amp;/g, "&")
+            if (!href.startsWith("mention")) return href
+        }
+        return ""
+    }
+    Timer {
+        id: linkWatch
+        interval: 125
+        onTriggered: {
+            if (!root.previewsAllowed || root.editing) { root.previewUrl = ""; root.urlPreview = null; return }
+            const url = root.firstLink()
+            if (url === root.previewUrl) return
+            root.previewUrl = url
+            root.urlPreview = null
+            if (url) backend.fetchUrlPreview(url)
+        }
+    }
+    Connections {
+        target: backend
+        function onUrlPreviewFetched(url, json) {
+            if (url !== root.previewUrl || !json) return
+            try { root.urlPreview = JSON.parse(json) } catch (e) {}
+        }
+    }
+    /// What goes with the message: the preview (on or removed), or "".
+    function previewForSend() {
+        if (!previewsAllowed || editing) return ""
+        const link = firstLink()
+        if (!link) return ""
+        if (urlPreview && link === previewUrl) return JSON.stringify(urlPreview)
+        // Not fetched yet (sent at once): Teams gets it as it sends.
+        return "fetch"
+    }
+    // Teams' AutoLink: a web address becomes a link when Space or Enter
+    // follows it (more than 5 characters; trailing punctuation and an
+    // unmatched closing bracket stay outside), or when the whole pasted
+    // text is one.
+    readonly property var webLink: /^(?:https?:\/\/|www\.)(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?::[0-9]+)?(?:[\/?]\S*)?$/i
+    readonly property var badLink: /^[^?]+%[^0-9a-f]+|^[^?]+%[0-9a-f][^0-9a-f]+|^[^?]+%00|^[^?]+%$|^https?:\/\/[^?\/]+@|^www\.[^?\/]+@/i
+    function linkHref(word) {
+        if (!webLink.test(word) || badLink.test(word)) return ""
+        return /^www\./i.test(word) ? "http://" + word : word
+    }
+    function linkRange(a, b) {
+        const word = input.getText(a, b)
+        const href = linkHref(word)
+        if (!href || JSON.parse(rich.state(b)).link) return false
+        rich.apply(a, b, "link", href + "\t" + word)
+        return true
+    }
+    function autoLinkBeforeCursor() {
+        const end = input.cursorPosition
+        const before = input.getText(Math.max(0, end - 2048), end)
+        const m = before.match(/\S+$/)
+        if (!m) return
+        let word = m[0]
+        if (word.length <= 5) return
+        let start = end - word.length
+        word = word.replace(/[.+=\s:;"',>]+$/i, "")
+        for (const [o, c] of [["(", ")"], ["{", "}"], ["[", "]"]])
+            while (word.endsWith(c) && word.split(o).length < word.split(c).length) word = word.slice(0, -1)
+        if (linkRange(start, start + word.length)) {
+            input.cursorPosition = end
+            // The Space or Enter that follows is not part of the link.
+            const after = end
+            Qt.callLater(() => { if (input.cursorPosition > after) { rich.apply(after, input.cursorPosition, "unlink", ""); input.cursorPosition = after + 1 } })
+        }
+    }
+    property int pasteFrom: -1
+    function autoLinkPaste() {
+        const a = pasteFrom, b = input.cursorPosition
+        pasteFrom = -1
+        if (a < 0 || b <= a) return
+        const text = input.getText(a, b)
+        const t = text.trim()
+        if (!t || /\s/.test(t)) return
+        const lead = text.indexOf(t)
+        linkRange(a + lead, a + lead + t.length)
+        input.cursorPosition = b
+    }
     // Editing always uses the multiline layout (Teams, measured).
     /// Teams' compact compose (pane under 480 px): the editor across the
     /// box and the tools in the bottom row.
     property bool compact: false
-    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown
+    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -325,7 +421,7 @@ Item {
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
-    function clear() { input.clear(); media = [] }
+    function clear() { input.clear(); media = []; urlPreview = null; previewUrl = "" }
     // One of your messages to edit: its edit form keeps the emoticons,
     // custom emoji and pictures (as Teams' edit does); else its text.
     function setMessage(m) {
@@ -702,6 +798,7 @@ Item {
             y: root.headerH + (root.fmtOn ? 43 : 0.67) + root.subjectRowH
             width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
             height: cloudCards.visible ? cloudCards.y + cloudCards.height + 13.9
+                : previewCard.visible ? previewCard.y + previewCard.height + 6
                 : clipCardBox.visible ? input.y + input.contentHeight + 8
                 : Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
             // Teams' quote box and code card behind the text's quote and
@@ -827,6 +924,16 @@ Item {
                     }
                 }
             }
+            // Teams' link preview in compose (url-preview-card, measured on
+            // winpc 2026-11-15): 11.4 in, 11 under the text.
+            UrlPreviewCard {
+                id: previewCard
+                visible: root.previewShown
+                x: 11.4; y: input.y + input.contentHeight + 11
+                preview: root.urlPreview
+                removable: true
+                onRemoveRequested: { const p = Object.assign({}, root.urlPreview); p.enabled = false; root.urlPreview = p }
+            }
             // Teams' attachment card for a cloud file (file-well, measured
             // on winpc 2026-11-13): 320 x 237.3 under the text (13 in, 15
             // under its line), radius 6, 0.67 #E0E0E0 and a soft shadow; a
@@ -916,7 +1023,7 @@ Item {
                     text: root.placeholder
                     font: input.font; color: theme.textSecondary
                 }
-                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention(); root.refreshRichState(); root.checkSpelling() }
+                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention(); root.refreshRichState(); root.checkSpelling(); linkWatch.restart() }
                 onCursorPositionChanged: { root.checkMention(); root.refreshRichState() }
                 // The formatting bar's commands act on this text's document.
                 RichText { id: rich }
@@ -970,6 +1077,8 @@ Item {
                 onLineCountChanged: if (lineCount > 1) root.grown = true
                 onActiveFocusChanged: if (activeFocus) root.enterKey = backend.setting("enterKey") || "send"
                 Keys.onPressed: event => {
+                    if (event.key === Qt.Key_Space && !(event.modifiers & Qt.ControlModifier)) { root.autoLinkBeforeCursor(); return }
+                    if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) { root.pasteFrom = input.selectionStart; Qt.callLater(root.autoLinkPaste); return }
                     if (!(event.modifiers & Qt.ControlModifier)) return
                     const shift = event.modifiers & Qt.ShiftModifier
                     const alt = event.modifiers & Qt.AltModifier
@@ -997,6 +1106,7 @@ Item {
                     if (mentionPicker.opened) { mentionPicker.pick(); return }
                     // Teams: Enter on an empty quote line leaves the quote.
                     if (root.richState.quote && root.richState.empty && !(event.modifiers & Qt.ControlModifier)) { root.format("quote", ""); return }
+                    root.autoLinkBeforeCursor()
                     root.enterPressed(event)
                 }
                 Keys.onEnterPressed: event => { if (mentionPicker.opened) { mentionPicker.pick(); return } root.enterPressed(event) }

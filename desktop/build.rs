@@ -80,6 +80,7 @@ fn main() {
         "qml/GalleryGrid.qml",
         "qml/SharedDisplayWindow.qml",
         "qml/RoomNotice.qml",
+        "qml/UrlPreviewCard.qml",
         "qml/MutedNotice.qml",
         "qml/CompactCallWindow.qml",
         "qml/AdmitSuspectedDialog.qml",

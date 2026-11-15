@@ -508,6 +508,9 @@ Rectangle {
         return m ? m.name : ""
     }
     // Card types drawn natively (Teams' supported set, so far).
+    /// Link previews show (Teams): Optional connected experiences on and
+    /// your messaging policy allowing them.
+    readonly property bool previewsShown: { const st = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; return (st.props || {}).controllerConnectedServicesEnabled !== "false" && !backend.urlPreviewsBlocked }
     readonly property var cardKinds: ["application/vnd.microsoft.card.adaptive", "application/vnd.microsoft.card.hero", "application/vnd.microsoft.card.thumbnail",
         "application/vnd.microsoft.teams.card.list", "application/vnd.microsoft.teams.card.o365connector"]
     function jumpToMessage(id) {
@@ -2003,6 +2006,11 @@ Rectangle {
                 readonly property bool bare: (imageOnly || bigEmoticons || botCard) && !root.postsLayout
                 readonly property real pad: bare || root.compact ? 0 : 15.7
                 readonly property var files: msg.modelData.files || []
+                // The sender's link preview (Teams' url-preview, measured on
+                // winpc 2026-11-15): 6 under the text, the bubble ending
+                // 14.6 under it. Shown with Optional connected experiences
+                // on and the messaging policy allowing previews.
+                readonly property var urlPreview: msg.modelData.url_preview && !msg.modelData.deleted && root.previewsShown && files.length === 0 && cards.length === 0 && !hasPics ? msg.modelData.url_preview : null
                 // Cards (Adaptive Cards rendered natively; Teams' frame).
                 readonly property var cards: (msg.modelData.cards || []).filter(c => root.cardKinds.indexOf(c.content_type) >= 0)
                 readonly property real cardW: list.width >= 720 ? (cards.some(c => c.content_type !== "application/vnd.microsoft.card.adaptive") ? 452 : 448) : 360
@@ -2061,13 +2069,14 @@ Rectangle {
                     : botCard ? cardCol.width
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
                     : hasCode ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: botCard ? cardCol.height
                     : cards.length > 0 ? cardsTop + cardCol.height + 10.7
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
+                    : urlPreview ? body.y + bodyH + 6 + 96 + (root.compact ? 2 : 14.6)
                     : root.compact ? bodyH + 2 + quoteShift
                     : bodyH + 15.3 + quoteShift
                 // Teams: 6 px corners, squared on the inner side where a
@@ -2491,6 +2500,14 @@ Rectangle {
                     TapHandler { onTapped: backend.undoDeleteMessage(msg.modelData.id) }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Undo"
+                }
+                UrlPreviewCard {
+                    visible: !!bubble.urlPreview
+                    x: bubble.pad; y: bubble.showBody ? body.y + bubble.bodyH + 6 : 8
+                    preview: bubble.urlPreview
+                    clickable: true
+                    removable: msg.mine
+                    onRemoveRequested: backend.removeUrlPreview(JSON.stringify(msg.modelData))
                 }
                 // File cards (FileCard: Teams' card with its location, Share
                 // and More actions over the preview) and channel tab links.
@@ -3807,6 +3824,9 @@ Rectangle {
     }
     // Send what's in the compose box: text, files, or both.
     function sendCompose() {
+        // The first link's preview goes with the message (Teams'
+        // properties.links), shown or removed.
+        backend.setNextUrlPreview(compose.previewForSend())
         if (root.popout) {
             // A chat window sends to its own chat.
             if (root.hasFiles) {
@@ -4014,6 +4034,9 @@ Rectangle {
     // 72 in on each side, 6 above the bottom, its hint row included.
     ComposeBox {
         id: compose
+        // Link previews: Optional connected experiences on, your messaging
+        // policy allowing them, and not in your notes to self.
+        previewsAllowed: root.previewsShown && root.chatId !== "48:notes"
         visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && root.tab !== "Attendance" && !root.readOnly
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop

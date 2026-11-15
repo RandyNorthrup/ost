@@ -80,6 +80,14 @@ pub struct Outgoing {
     /// a video clip's.
     #[serde(default)]
     pub ams_references: Vec<String>,
+    /// The first link's preview (Teams' `properties.links`), shown or
+    /// removed in compose; None when there is none.
+    #[serde(default)]
+    pub url_preview: Option<super::url_preview::UrlPreview>,
+    /// Compose had no preview yet for the message's first link: Teams
+    /// fetches one as it sends (within 3 s), when previews are allowed.
+    #[serde(default)]
+    pub url_preview_on_send: bool,
 }
 
 /// An announcement banner's picture.
@@ -385,7 +393,7 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         "properties": {
             "importance": o.importance,
             "cards": "[]",
-            "links": "[]",
+            "links": super::url_preview::links_property(o.url_preview.as_ref()),
             "mentions": if o.mentions.is_empty() { "[]".to_string() } else { o.mentions.clone() },
             "onbehalfof": null,
             "files": "[]",
@@ -453,6 +461,23 @@ pub async fn post(o: &Outgoing) -> PostResult {
                 body: String::new(),
             };
         }
+    };
+    // Teams' send-time preview (URLPreviewSerializer): the first link,
+    // within postSendTimeoutInMs (3 s).
+    let filled;
+    let o = if o.url_preview.is_none() && o.url_preview_on_send {
+        let found = match super::url_preview::first_link(&o.content) {
+            Some(link) => tokio::time::timeout(std::time::Duration::from_secs(3), super::url_preview::fetch(&client, &link))
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+                .flatten(),
+            None => None,
+        };
+        filled = Outgoing { url_preview: found, ..o.clone() };
+        &filled
+    } else {
+        o
     };
     let body = post_body(o);
     let mut counts = Counts::default();
@@ -992,6 +1017,8 @@ mod tests {
             shared_in_main: false,
             threads_layout: false,
             ams_references: Vec::new(),
+            url_preview: None,
+            url_preview_on_send: false,
         };
         let b = post_body(&o);
         assert!(b.get("postType").is_none(), "chats have no post type");
@@ -1021,6 +1048,8 @@ mod tests {
             conversation_id: "19:c@thread.tacv2".into(),
             threads_layout: true,
             ams_references: Vec::new(),
+            url_preview: None,
+            url_preview_on_send: false,
             ..o.clone()
         };
         let b = post_body(&root);
@@ -1079,6 +1108,8 @@ mod tests {
             shared_in_main: false,
             threads_layout: false,
             ams_references: Vec::new(),
+            url_preview: None,
+            url_preview_on_send: false,
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");

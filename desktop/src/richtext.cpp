@@ -951,6 +951,21 @@ extern "C" void ost_rich_apply(void *helper, int a, int b, const char *op_utf8, 
         plain.setAnchorHref(QString());
         plain.clearForeground();
         at.setCharFormat(plain);
+    } else if (op == u"unlink") {
+        // Text typed after a link stays outside it (Teams' AutoLink).
+        QTextCursor at(doc);
+        at.setPosition(qMin(a, b));
+        at.setPosition(qMax(a, b), QTextCursor::KeepAnchor);
+        QTextCharFormat f;
+        f.setAnchor(false);
+        f.setAnchorHref(QString());
+        f.clearForeground();
+        at.mergeCharFormat(f);
+        QTextCharFormat plain = at.charFormat();
+        plain.setAnchor(false);
+        plain.setAnchorHref(QString());
+        plain.clearForeground();
+        at.setCharFormat(plain);
     } else if (op == u"newblock") {
         // A new plain paragraph at the end (as Enter after the last line).
         QTextCursor at(doc);
@@ -1007,7 +1022,7 @@ extern "C" char *ost_rich_state(void *helper, int pos)
         if (i > 0)
             prev = QString::number(t->cellAt((i - 1) / t->columns(), (i - 1) % t->columns()).lastCursorPosition().position());
     }
-    return dup(QStringLiteral("{\"table\":%12,\"nextCell\":%13,\"prevCell\":%14,\"empty\":%11,\"bold\":%1,\"italic\":%2,\"underline\":%3,\"strike\":%4,\"code\":%5,\"heading\":%6,\"quote\":%7,\"codeBlock\":%8,\"lang\":\"%9\",\"list\":\"%10\"}")
+    return dup(QStringLiteral("{\"link\":%15,\"table\":%12,\"nextCell\":%13,\"prevCell\":%14,\"empty\":%11,\"bold\":%1,\"italic\":%2,\"underline\":%3,\"strike\":%4,\"code\":%5,\"heading\":%6,\"quote\":%7,\"codeBlock\":%8,\"lang\":\"%9\",\"list\":\"%10\"}")
                    .arg(!headingWeight && f.fontWeight() >= QFont::DemiBold ? "true" : "false",
                         f.fontItalic() ? "true" : "false",
                         f.fontUnderline() && !f.isAnchor() ? "true" : "false",
@@ -1019,7 +1034,8 @@ extern "C" char *ost_rich_state(void *helper, int pos)
                         code ? blk.blockFormat().stringProperty(BlockLang) : QString(),
                         list)
                    .arg(blk.length() <= 1 ? "true" : "false")
-                   .arg(table, next, prev));
+                   .arg(table, next, prev)
+                   .arg(f.isAnchor() ? "true" : "false"));
 }
 
 // The document as clean HTML: p/h1-3/hr/blockquote/pre/ul/ol, b/i/u/s,
