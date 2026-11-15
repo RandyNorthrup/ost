@@ -144,7 +144,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? "Out of office" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "oof" ? "Out of office" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -843,9 +843,9 @@ Rectangle {
                 }
                 readonly property var levels: [{ label: "Show in Activity and banner" }, { label: "Show in Activity" }, { label: "Off" }]
             }
-            SectionTitle { visible: root.page === "notifications"; text: "General" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "General" }
             SettingsParts.Card {
-                visible: root.page === "notifications"
+                visible: root.page === "notifications" && !root.subPage
                 icon: "alert-off-20"; title: "Mute all notifications (except for calls and meetings)"
                 readonly property bool muted: notif.ts("muteGenericNotifications", "Off") === "On"
                 trailing: Component { SettingsParts.Toggle { on: notif.ts("muteGenericNotifications", "Off") === "On"; accessibleName: "Mute all notifications (except for calls and meetings)"; onToggled: v => notif.setTs("muteGenericNotifications", v ? "On" : "Off") } }
@@ -857,7 +857,7 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "notifications"
+                visible: root.page === "notifications" && !root.subPage
                 icon: "speaker-2-20"; title: "Sound"
                 SettingsParts.CheckRow { label: "Play sounds with notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "alertSound"], "All") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.alertSound", v ? "All" : "Off") }
                 SettingsParts.CheckRow { label: "Play sounds with urgent and priority contact notifications"; checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
@@ -865,7 +865,7 @@ Rectangle {
                 SettingsParts.CheckRow { label: "Play sounds when I'm busy or in a meeting"; checked: notif.ts("PlayNotificationSoundsWhenBusyOrInMeetings", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsWhenBusyOrInMeetings", v ? "On" : "Off") }
             }
             SettingsParts.Card {
-                visible: root.page === "notifications"
+                visible: root.page === "notifications" && !root.subPage
                 icon: "eye-20"; title: "Display"
                 trailingY: 29
                 trailing: Component { SettingsParts.Button { label: "Test notification"; onClicked: backend.testNotification() } }
@@ -885,7 +885,7 @@ Rectangle {
                 SettingsParts.Gap { size: 20 }
             }
             SettingsParts.Card {
-                visible: root.page === "notifications"
+                visible: root.page === "notifications" && !root.subPage
                 icon: "mail-20"; title: "Missed activity emails"
                 trailingY: 22
                 trailing: Component {
@@ -899,9 +899,9 @@ Rectangle {
                     }
                 }
             }
-            SectionTitle { visible: root.page === "notifications"; text: "Chats and channels" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Chats and channels" }
             SettingsParts.Card {
-                visible: root.page === "notifications"
+                visible: root.page === "notifications" && !root.subPage
                 icon: "chat-20"; title: "Chat message notifications"
                 trailingY: 22
                 trailing: Component {
@@ -915,7 +915,7 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "notifications"
+                visible: root.page === "notifications" && !root.subPage
                 icon: "mention-20"; title: "@Mentions"
                 Repeater {
                     model: [
@@ -946,7 +946,7 @@ Rectangle {
                 ]
                 SettingsParts.Card {
                     required property var modelData
-                    visible: root.page === "notifications"
+                    visible: root.page === "notifications" && !root.subPage
                     icon: modelData.icon; title: modelData.title
                     trailingY: 22
                     trailing: Component {
@@ -960,14 +960,200 @@ Rectangle {
                     }
                 }
             }
-            SectionTitle { visible: root.page === "notifications"; text: "Meetings" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Meetings" }
+            // Teams' "Posts in all shown channels" (Visible_ChannelNewMessage_v2)
+            // with "Include replies" (Visible_ChannelReplyMessage_v2), measured.
             SettingsParts.Card {
-                visible: root.page === "notifications"
+                id: shownPosts
+                visible: root.page === "notifications" && !root.subPage
+                icon: "channel-20"; title: "Posts in all shown channels"
+                readonly property int lvl: notif.level(["Visible_ChannelNewMessage_v2"], 2)
+                trailingY: 22
+                trailing: Component {
+                    OutlineDropdown {
+                        width: 249.3; height: 30
+                        options: notif.levels
+                        current: shownPosts.lvl
+                        accessibleName: "Posts in all shown channels"
+                        onPicked: i => {
+                            notif.setLevel(["Visible_ChannelNewMessage_v2"], i)
+                            // Teams: replies follow the posts (off when the posts are).
+                            if (i === 2) notif.setLevel(["Visible_ChannelReplyMessage_v2"], 2)
+                        }
+                    }
+                }
+                SettingsParts.CheckRow {
+                    label: "Include replies"
+                    usable: shownPosts.lvl !== 2
+                    checked: root.prop("userPersonalSettings", ["activityGenerationSettings", "Visible_ChannelReplyMessage_v2"], false) === true
+                    onToggled: v => notif.setLevel(["Visible_ChannelReplyMessage_v2"], v ? shownPosts.lvl : 2)
+                }
+            }
+            SettingsParts.Card {
+                visible: root.page === "notifications" && !root.subPage
                 icon: "calendar-20"; title: "Meetings"
                 SettingsParts.SwitchRow { label: "Meeting start notifications"; on: notif.ts("MeetingWentLiveNotification", true) !== false
                     onToggled: v => notif.setMany(v ? { toastSettings: { MeetingWentLiveNotification: true }, activityGenerationSettings: { MeetingWentLiveNotification: true }, emailSettings: { MeetingWentLiveNotification: true } } : { toastSettings: { MeetingWentLiveNotification: false } }) }
                 SettingsParts.SwitchRow { label: "Show meeting join bar"; on: notif.ts("liveMeetingStatusBanner", true) !== false; onToggled: v => notif.setTs("liveMeetingStatusBanner", v) }
+                // Teams' meeting chat notifications by your RSVP (chatSettings:
+                // Mute / Unmute / Mute until I join or send a message).
+                Repeater {
+                    model: [{ key: "meetingChatNotificationForAcceptedMeetings", label: "Meeting chat notifications for meetings I've accepted", dflt: "MeetingsUserIsInvitedTo" },
+                            { key: "meetingChatNotificationForTentativeMeetings", label: "Meeting chat notifications for meetings marked as tentative or without a response", dflt: "MeetingsUserParticipatesIn" }]
+                    Item {
+                        id: mcRow
+                        required property var modelData
+                        readonly property var values: ["MeetingsManuallyUnmuted", "MeetingsUserIsInvitedTo", "MeetingsUserParticipatesIn"]
+                        width: parent.width; height: Math.max(48, mcLabel.height + 28)
+                        Text { id: mcLabel; y: 8; width: parent.width - 249.3 - 40; wrapMode: Text.Wrap; text: mcRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        OutlineDropdown {
+                            anchors.right: parent.right; anchors.rightMargin: 28; y: 3
+                            width: 249.3; height: mcRow.modelData.key.indexOf("Tentative") > 0 ? 50 : 30
+                            options: [{ label: "Mute" }, { label: "Unmute" }, { label: "Mute until I join or send a message" }]
+                            current: Math.max(0, mcRow.values.indexOf(root.prop("userPersonalSettings", ["chatSettings", mcRow.modelData.key], mcRow.modelData.dflt)))
+                            accessibleName: mcRow.modelData.label
+                            onPicked: i => root.setProp("userPersonalSettings", "chatSettings." + mcRow.modelData.key, mcRow.values[i])
+                        }
+                    }
+                }
                 SettingsParts.SwitchRow { label: "Meet now start notifications"; on: notif.ts("HuddleStartedNotification", false) === true; onToggled: v => notif.setTs("HuddleStartedNotification", v) }
+            }
+
+            // Teams' Presence: Manage notifications opens Manage status
+            // notifications (Notify when available, contacts v3 "Tagged").
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Presence" }
+            SettingsParts.Card {
+                visible: root.page === "notifications" && !root.subPage
+                icon: "person-available-20"; title: "Presence"
+                subtitle: "Keep track of someone's status and get notified when they appear available or offline."
+                trailingY: 31
+                trailing: Component { SettingsParts.Button { label: "Manage notifications"; onClicked: root.subPage = "status" } }
+            }
+            SettingsParts.Card {
+                id: statusNotif
+                visible: root.page === "notifications" && root.subPage === "status"
+                icon: "contact-card-20"; title: "Manage status notifications"
+                subtitle: "Keep track of someone's status and get notified when they appear available or offline."
+                property var tagged: []
+                readonly property var names: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
+                onVisibleChanged: if (visible) backend.channelAction("notify-tagged", "", "", "")
+                // Teams' Add people box beside the title (371 x 41, filled, brand
+                // underline while typing, measured), its matches under it.
+                trailingY: 21; trailingRight: 12
+                trailing: Component {
+                    Rectangle {
+                        width: 371; height: 41
+                        color: theme.inputFilled; radius: 4
+                        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: addPeople.activeFocus ? 2 : 0.67; color: addPeople.activeFocus ? theme.brand : theme.textSecondary }
+                        TextInput {
+                            id: addPeople
+                            x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
+                            font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                            onTextEdited: { peopleDelay.restart(); if (text.trim().length >= 2) matches.open(); else matches.close() }
+                            Text { visible: !addPeople.text; text: "Add people"; font: addPeople.font; color: theme.textSecondary }
+                            Keys.onEscapePressed: { text = ""; matches.close() }
+                            Accessible.name: "Add people"
+                        }
+                        Timer { id: peopleDelay; interval: 300; onTriggered: if (addPeople.text.trim().length >= 2) backend.searchPeople(addPeople.text.trim()) }
+                        Popup {
+                            id: matches
+                            y: parent.height + 2; width: parent.width; padding: 4
+                            closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnEscape
+                            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                            contentItem: Column {
+                                Repeater {
+                                    model: backend.peopleJson ? JSON.parse(backend.peopleJson).slice(0, 6) : []
+                                    Rectangle {
+                                        required property var modelData
+                                        width: matches.width - 8; height: 44; radius: 4
+                                        color: pHover.hovered ? theme.menuHover : "transparent"
+                                        Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name || ""; photoId: parent.modelData.id || "" }
+                                        Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                        HoverHandler { id: pHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: { backend.channelAction("notify-on", "", "", JSON.stringify({ mri: "8:orgid:" + parent.modelData.id })); addPeople.text = ""; matches.close() } }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: modelData.name || ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Connections {
+                    target: backend
+                    function onChannelActionResultChanged() {
+                        const r = JSON.parse(backend.channelActionResult || "{}")
+                        if (r.op === "notify-tagged" && r.ok) {
+                            statusNotif.tagged = r.data || []
+                            const want = statusNotif.tagged.map(t => t.mri).filter(m => !statusNotif.names[m])
+                            if (want.length) backend.resolveNames(JSON.stringify(want))
+                        } else if ((r.op === "notify-on" || r.op === "notify-off") && r.ok) backend.channelAction("notify-tagged", "", "", "")
+                    }
+                }
+                SettingsParts.Gap { size: statusNotif.tagged.length ? 12 : 0 }
+                Repeater {
+                    model: statusNotif.tagged
+                    Item {
+                        id: tagRow
+                        required property var modelData
+                        width: Math.min(parent.width, 372); height: 48
+                        readonly property string name: statusNotif.names[modelData.mri] || modelData.email || modelData.mri
+                        Avatar { anchors.verticalCenter: parent.verticalCenter; size: 32; name: tagRow.name; photoId: tagRow.modelData.mri.replace(/^8:orgid:/, "") }
+                        Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 88; elide: Text.ElideRight; text: tagRow.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Rectangle {
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            width: 32; height: 32; radius: 4
+                            color: rmHover.hovered ? theme.menuHover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.text }
+                            HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: backend.channelAction("notify-off", "", "", JSON.stringify({ id: tagRow.modelData.id, mri: tagRow.modelData.mri, email: tagRow.modelData.email })) }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Remove " + tagRow.name
+                        }
+                    }
+                }
+                SettingsParts.Gap { size: 8 }
+            }
+
+            // Teams' Calendar notifications: the Calendar app's Graph
+            // notification settings (userGraphSettings), each choice setting its
+            // group of meeting notification kinds.
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Calendar" }
+            SettingsParts.Card {
+                id: calNotif
+                visible: root.page === "notifications" && !root.subPage
+                icon: "calendar-20"; title: "Calendar"
+                readonly property string app: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
+                readonly property var groups: ({
+                    privateMeetingCreated: ["privateMeetingCreated", "privateMeetingUpdated", "privateMeetingCanceled", "channelMeetingCreated", "channelMeetingUpdated", "channelMeetingCanceled", "delegateMeetingCreated", "delegateMeetingUpdated", "delegateMeetingCanceled", "privateMeetingForwarded", "channelMeetingForwarded", "channelMeetingForwardedWithoutOrganizer"],
+                    privateMeetingForwardedNotification: ["privateMeetingForwardedNotification", "privateMeetingForwardedNotificationWithAttendee", "privateMeetingForwardedNotificationWithTwoAttendee", "privateMeetingForwardedNotificationWithAttendeeAndTotal"]
+                })
+                function lvl(key) {
+                    const a = root.prop("userGraphSettings", [app, "activityGenerationSettings", key], true), t = root.prop("userGraphSettings", [app, "toastSettings", key], false)
+                    return t === true ? 0 : a === false ? 2 : 1
+                }
+                function setLvl(key, i) {
+                    const act = {}, toast = {}
+                    for (const k of groups[key]) { act[k] = i !== 2; toast[k] = i === 0 }
+                    backend.changeSetting("prop", "userGraphSettings", JSON.stringify({ [app]: { activityGenerationSettings: act, toastSettings: toast } }))
+                }
+                Repeater {
+                    model: [{ key: "privateMeetingCreated", label: "New invites, updates and cancellations sent to me" }, { key: "privateMeetingForwardedNotification", label: "When people forward meetings I’ve organized" }]
+                    Item {
+                        id: calRow
+                        required property var modelData
+                        width: parent.width; height: 48
+                        Text { y: 8; width: parent.width - 249.3 - 40; elide: Text.ElideRight; text: calRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        OutlineDropdown {
+                            anchors.right: parent.right; anchors.rightMargin: 28; y: 3
+                            width: 249.3; height: 30
+                            options: notif.levels
+                            current: calNotif.lvl(calRow.modelData.key)
+                            accessibleName: calRow.modelData.label
+                            onPicked: i => calNotif.setLvl(calRow.modelData.key, i)
+                        }
+                    }
+                }
             }
 
             // ---- Privacy ----

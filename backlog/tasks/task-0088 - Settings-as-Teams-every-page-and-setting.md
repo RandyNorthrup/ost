@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-15T03:24:00Z'
+updated_date: '2026-11-15T03:46:00Z'
 labels:
   - desktop
   - settings
@@ -61,4 +61,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 
 - Chats and channels: "Viewing chats, teams, and channels" (Combined / Separate, synced simpleCollabUserSettings). Separate: a Teams app on the rail after Chat (Ctrl+3, the rest move down), Chat lists chats with Unread/Chats/Meeting chats and its own preview setting (time stamps always on, greyed), the Teams app lists Quick views / Teams and channels / Communities with Unread/Channels/Communities; opening a channel shows the Teams app. Verified on linuxlt (--collab-test), restored to Combined; Teams on winpc switched to Separate to measure and back.
 - New icons now carry #212121 so they recolour (dark theme).
+
+- Notifications and activity: Posts in all shown channels (+ Include replies), meeting chat notifications for accepted / tentative meetings (chatSettings), Presence ▸ Manage status notifications (Notify when available list with Add people), Calendar section (userGraphSettings for the Calendar app). Verified on linuxlt (--notif-test, change restored). Sounds and banner position/size are separate tasks.
 <!-- SECTION:NOTES:END -->

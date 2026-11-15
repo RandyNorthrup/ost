@@ -27,6 +27,8 @@ Item {
         property Component trailing: null
         /// Its top: 43 for a switch, 29 for a button (Teams').
         property real trailingY: 43
+        /// The control's right margin (57; Teams' Add people box sits 12 in).
+        property real trailingRight: 57
         default property alias body: bodyCol.data
         readonly property real bodyTop: (subtitle ? subText.y + subText.height + 16 : 27 + 42)
         width: parent ? parent.width : 0
@@ -58,7 +60,7 @@ Item {
         signal linkActivated(string link)
         Loader {
             id: trailingLoader
-            anchors.right: parent.right; anchors.rightMargin: 57
+            anchors.right: parent.right; anchors.rightMargin: card.trailingRight
             y: card.trailingY
             sourceComponent: card.trailing
         }
