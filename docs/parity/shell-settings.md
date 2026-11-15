@@ -399,7 +399,7 @@ Measured on winpc 2026-11-14, in Teams' order:
 ### 10.3c Files and links, App permissions, Recognition, About (checked on winpc 2026-11-14)
 - [x] Files and links: Downloads (location, Change, Always ask), open Office files in Desktop app / Browser, Links open preference, File previews. Teams' third choice, "Teams" (Office for the web in the window), is part of the embedding work (TASK-0038).
 - [x] App permissions (measured 2026-11-13).
-- [ ] Recognition (voice and face profiles): biometric enrollment, needs a user decision before it can be built and tested (TASK-0153).
+- [x] Recognition (voice and face profiles): Teams' cards in each state, voice and face capture to Teams' biometric service, passive opt-in, Opt out, Export (TASK-0153; verified with a synthetic voice and a generated face, profiles removed after).
 - [x] About: Version ("You have OST version **x**."), Legal information, Privacy and cookies, Third party notice ▸ Desktop (desktop/THIRD-PARTY-NOTICES.md from `just notices`, opened locally as Teams opens its notices). Teams' update line ("You've got the latest version…") needs an OST release channel (TASK-0154); Teams' "Web" notices have no OST counterpart.
 
 ### 10.4 Notifications and activity
@@ -530,9 +530,9 @@ Measured on winpc 2026-11-14, in Teams' order:
   Source: https://support.microsoft.com/topic/a1095e1a-a2f0-453e-8101-eca76429ff04 ; https://canisius.atlassian.net/wiki/x/E4D2Bw
 
 ### 10.11 Recognition (only if admin-enabled)
-- [ ] Voice recognition: opt in (profile auto-built at the next eligible meeting), or **Create**/**Update** now: choose mic, read the passage, "Start voice capture", wait for "Voice profile complete".
-- [ ] Face recognition: "Start face capture", nine photos. Unused face profiles are deleted after 1 year.
-- [ ] **Opt out** deletes a profile. **Export** saves voice clips to Downloads.
+- [x] Voice recognition: opt in (profile auto-built at the next eligible meeting), or **Create**/**Update** now: choose mic, read the passage, "Start voice capture", wait for "Voice profile complete". (OST: the opt-in is recorded as Teams does; building the profile from meetings happens in Teams' native media stack, which OST doesn't have.)
+- [x] Face recognition: "Start face capture" (Teams' current client: three posed photos, Center, Left, Right). Unused face profiles are deleted after 1 year.
+- [x] **Opt out** deletes a profile. **Export** saves voice clips to Downloads.
   Source: https://support.microsoft.com/topic/f0084478-52a7-4c52-bcdc-9063ed0e0bc0
 
 ### 10.12 App permissions

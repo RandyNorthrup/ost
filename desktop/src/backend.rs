@@ -357,6 +357,9 @@ pub mod qobject {
         /// The user's quick reactions for the hover bar (Teams' roamed
         /// defaultMessageReactions, else its default four), as a JSON array.
         #[qproperty(QString, quick_reactions_json)]
+        /// Settings ▸ Recognition: {loaded, voice, voiceRecording, face,
+        /// faceCapture, passiveVoice, error, busy}.
+        #[qproperty(QString, recognition_json)]
         #[qproperty(QString, typing_text)]
         /// The typer whose avatar the typing indicator shows (the latest).
         #[qproperty(QString, typing_avatar)]
@@ -1934,6 +1937,55 @@ pub mod qobject {
         /// A meeting-started notification's Join.
         #[qinvokable]
         fn join_from_notification(self: Pin<&mut Backend>, chat_id: &QString, chat_name: &QString);
+        /// Settings ▸ Recognition: your profiles and consent, into
+        /// recognition_json.
+        #[qinvokable]
+        fn load_recognition(self: Pin<&mut Backend>);
+        /// Recognition's voice "Start voice capture" (on) and "Opt out" (off).
+        #[qinvokable]
+        fn recognition_passive_voice(self: Pin<&mut Backend>, on: bool);
+        /// Recognition's face "Opt out": remove the face profile.
+        #[qinvokable]
+        fn recognition_remove_face(self: Pin<&mut Backend>);
+        /// Recognition's voice "Opt out" with a profile made by hand: remove
+        /// the voice profile.
+        #[qinvokable]
+        fn recognition_remove_voice(self: Pin<&mut Backend>);
+        /// Recognition's Export ("voice" or "face"): the zip into Downloads.
+        #[qinvokable]
+        fn recognition_export(self: Pin<&mut Backend>, kind: &QString);
+        /// The face capture's photo (a JPEG file) for `pose`: signed and,
+        /// when accepted, stored as your face profile; the outcome comes
+        /// as face_capture_result ("Success" or Teams' reason).
+        #[qinvokable]
+        fn face_capture_submit(self: Pin<&mut Backend>, path: &QString, pose: &QString);
+        #[qsignal]
+        fn face_capture_result(self: Pin<&mut Backend>, result: QString);
+        /// The face capture was cancelled: drop its photos.
+        #[qinvokable]
+        fn face_capture_cancel(self: Pin<&mut Backend>);
+        /// Where the face capture saves a photo named `name` (a private
+        /// cache folder).
+        #[qinvokable]
+        fn capture_path(self: &Backend, name: &QString) -> QString;
+        /// Start recording your voice (16 kHz mono) from `mic` ("" for the
+        /// call microphone). Whether it started.
+        #[qinvokable]
+        fn voice_capture_start(self: Pin<&mut Backend>, mic: &QString) -> bool;
+        /// End the recording: signed and, when accepted, stored as your
+        /// voice profile; the outcome comes as voice_capture_result
+        /// ("COMPLETE" or Teams' error code).
+        #[qinvokable]
+        fn voice_capture_end(self: Pin<&mut Backend>);
+        /// Drop the recording.
+        #[qinvokable]
+        fn voice_capture_cancel(self: Pin<&mut Backend>);
+        /// Enroll from a 16 kHz mono WAV file instead of the microphone
+        /// (the Recognition harness).
+        #[qinvokable]
+        fn voice_capture_file(self: Pin<&mut Backend>, path: &QString);
+        #[qsignal]
+        fn voice_capture_result(self: Pin<&mut Backend>, result: QString);
         /// Where downloads are saved now (Settings ▸ Files and links).
         #[qinvokable]
         fn download_location(self: Pin<&mut Backend>) -> QString;
@@ -2226,6 +2278,7 @@ pub struct BackendRust {
     pinned_json: QString,
     report_result: QString,
     quick_reactions_json: QString,
+    recognition_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
     window_active: bool,
@@ -3028,6 +3081,26 @@ async fn sender_short_name(mri: &str, display: &str) -> String {
         n.insert(mri.to_string(), short.clone());
     }
     short
+}
+
+/// Recognition's voice recording in progress: the microphone (kept open
+/// while it lives), what it recorded, and the call microphone to restore.
+struct VoiceCapture {
+    _capture: teams_cli::calling::audio::AudioCapture,
+    samples: std::sync::Arc<std::sync::Mutex<Vec<i16>>>,
+    previous: (Option<String>, Option<String>),
+}
+
+/// The face capture's accepted photos and their signatures, until the
+/// right-pose photo stores them.
+fn face_session() -> &'static std::sync::Mutex<Vec<(Vec<u8>, serde_json::Value)>> {
+    static SLOT: OnceLock<std::sync::Mutex<Vec<(Vec<u8>, serde_json::Value)>>> = OnceLock::new();
+    SLOT.get_or_init(Default::default)
+}
+
+fn voice_capture() -> &'static std::sync::Mutex<Option<VoiceCapture>> {
+    static SLOT: OnceLock<std::sync::Mutex<Option<VoiceCapture>>> = OnceLock::new();
+    SLOT.get_or_init(Default::default)
 }
 
 /// The desktop sound theme's sound for a new instant message (the one a
@@ -5111,6 +5184,22 @@ const ACTIVITY_LIMIT: usize = 50;
 /// How long a downloaded picture (or "has none") is trusted before it is
 /// fetched again.
 const PHOTO_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// Where Recognition's photos wait while they are checked:
+/// ~/.cache/ost/capture (owner-only).
+fn capture_dir() -> Option<std::path::PathBuf> {
+    let dir = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .map(|b| b.join("ost").join("capture"))?;
+    std::fs::create_dir_all(&dir).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    Some(dir)
+}
 
 /// Where pictures are cached: ~/.cache/ost/photos (owner-only).
 fn photo_dir() -> Option<std::path::PathBuf> {
@@ -15127,6 +15216,279 @@ impl qobject::Backend {
         self.as_mut().select_chat(chat_id, chat_name);
         self.as_mut().activate_requested();
         self.as_mut().join_group_call();
+    }
+
+    pub fn load_recognition(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let bio = api::biometric::Biometric::new(&client).await?;
+                let status = bio.status().await?;
+                let passive = api::biometric::passive(&client).await.unwrap_or_default();
+                anyhow::Ok(json!({
+                    "loaded": true,
+                    "voice": status.voice, "voiceRecording": status.voice_recording,
+                    "face": status.face, "faceCapture": status.face_capture,
+                    "passiveVoice": passive.voice,
+                }))
+            }
+            .await;
+            let v = result.unwrap_or_else(|e| {
+                tracing::warn!("recognition status: {}", short_error(&e));
+                json!({ "loaded": true, "error": short_error(&e) })
+            });
+            let _ = qt.queue(move |mut this| this.as_mut().set_recognition_json(QString::from(v.to_string().as_str())));
+        });
+    }
+
+    pub fn recognition_passive_voice(self: Pin<&mut Self>, on: bool) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let bio = api::biometric::Biometric::new(&client).await?;
+                bio.set_passive_voice(&client, on).await
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("passive voice enrollment: {}", short_error(e));
+            }
+            let _ = qt.queue(move |mut this| this.as_mut().load_recognition());
+        });
+    }
+
+    pub fn recognition_remove_face(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::biometric::Biometric::new(&client).await?.remove_face().await
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("removing the face profile: {}", short_error(e));
+            }
+            let _ = qt.queue(move |mut this| this.as_mut().load_recognition());
+        });
+    }
+
+    pub fn recognition_remove_voice(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::biometric::Biometric::new(&client).await?.remove_voice().await
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("removing the voice profile: {}", short_error(e));
+            }
+            let _ = qt.queue(move |mut this| this.as_mut().load_recognition());
+        });
+    }
+
+    pub fn recognition_export(self: Pin<&mut Self>, kind: &QString) {
+        let kind = kind.to_string();
+        if kind != "voice" && kind != "face" {
+            return;
+        }
+        let Some(dir) = download_dir() else { return };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let zip = api::biometric::Biometric::new(&client).await?.export(&kind).await?;
+                let path = dir.join(format!("{kind}_profile.zip"));
+                std::fs::write(&path, zip)?;
+                anyhow::Ok(path)
+            }
+            .await;
+            let text = match result {
+                Ok(p) => format!("Downloaded {}", p.file_name().and_then(|n| n.to_str()).unwrap_or_default()),
+                Err(e) => {
+                    tracing::warn!("biometric export: {}", short_error(&e));
+                    "Something went wrong. Please try again.".to_string()
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(text.as_str())));
+        });
+    }
+
+    pub fn face_capture_submit(self: Pin<&mut Self>, path: &QString, pose: &QString) {
+        let path = path.to_string().trim_start_matches("file://").to_string();
+        let pose = match pose.to_string().as_str() {
+            "Left" => api::biometric::HeadPose::Left,
+            "Right" => api::biometric::HeadPose::Right,
+            _ => api::biometric::HeadPose::Center,
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let jpeg = std::fs::read(&path)?;
+                // The camera's photos are ours to delete once read.
+                if capture_dir().is_some_and(|d| std::path::Path::new(&path).starts_with(d)) {
+                    let _ = std::fs::remove_file(&path);
+                }
+                let client = TeamsClient::new().await?;
+                let bio = api::biometric::Biometric::new(&client).await?;
+                let token = bio.cognition_token("face").await?;
+                let oid = client.object_id().unwrap_or_default();
+                if pose == api::biometric::HeadPose::Center {
+                    face_session().lock().unwrap().clear();
+                }
+                // Left and Right are signed against the centre photo's
+                // signature version.
+                let version = face_session()
+                    .lock()
+                    .unwrap()
+                    .first()
+                    .and_then(|(_, s)| s["Version"].as_str().map(str::to_string));
+                let outcome = api::biometric::face_signature(client.http(), &token, &jpeg, pose, &oid, version.as_deref()).await?;
+                let code = match outcome {
+                    api::biometric::FaceOutcome::Signed(sig) => {
+                        face_session().lock().unwrap().push((jpeg, sig));
+                        "Success".to_string()
+                    }
+                    api::biometric::FaceOutcome::Refused(reason) => reason,
+                };
+                tracing::info!(?pose, code, "face photo");
+                // Teams (ECS enableCenterOnlyFaceEnrollment) needs only the
+                // centre photo: a refused side photo moves on, and the
+                // profile is stored after the right one with what was
+                // accepted.
+                if pose == api::biometric::HeadPose::Center {
+                    return Ok::<_, anyhow::Error>(code);
+                }
+                if pose == api::biometric::HeadPose::Right {
+                    let photos = face_session().lock().unwrap().clone();
+                    if photos.is_empty() {
+                        return Ok("UnspecifiedFailure".to_string());
+                    }
+                    bio.store_face(&photos).await?;
+                    face_session().lock().unwrap().clear();
+                }
+                Ok("Success".to_string())
+            }
+            .await;
+            let code = result.unwrap_or_else(|e| {
+                tracing::warn!("face capture: {}", short_error(&e));
+                "UnspecifiedFailure".to_string()
+            });
+            let right = pose == api::biometric::HeadPose::Right;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().face_capture_result(QString::from(code.as_str()));
+                if right {
+                    this.as_mut().load_recognition();
+                }
+            });
+        });
+    }
+
+    pub fn capture_path(&self, name: &QString) -> QString {
+        let name = name.to_string();
+        if name.contains('/') || name.starts_with('.') {
+            return QString::default();
+        }
+        capture_dir()
+            .map(|d| QString::from(d.join(name).to_string_lossy().as_ref()))
+            .unwrap_or_default()
+    }
+
+    pub fn face_capture_cancel(self: Pin<&mut Self>) {
+        face_session().lock().unwrap().clear();
+    }
+
+    pub fn voice_capture_start(self: Pin<&mut Self>, mic: &QString) -> bool {
+        let mic = mic.to_string();
+        let mut slot = voice_capture().lock().unwrap();
+        if slot.is_some() {
+            return true;
+        }
+        let previous = teams_cli::calling::audio::preferred_devices();
+        if !mic.is_empty() && Some(&mic) != previous.0.as_ref() {
+            teams_cli::calling::audio::set_preferred_devices(Some(mic), previous.1.clone());
+        }
+        let Some((capture, frames)) = teams_cli::calling::audio::AudioCapture::start_at(16000) else {
+            teams_cli::calling::audio::set_preferred_devices(previous.0, previous.1);
+            return false;
+        };
+        let samples = std::sync::Arc::new(std::sync::Mutex::new(Vec::<i16>::new()));
+        let sink = samples.clone();
+        std::thread::spawn(move || {
+            while let Ok(f) = frames.recv() {
+                if let Ok(mut s) = sink.lock() {
+                    s.extend_from_slice(&f);
+                }
+            }
+        });
+        *slot = Some(VoiceCapture { _capture: capture, samples, previous });
+        true
+    }
+
+    pub fn voice_capture_end(self: Pin<&mut Self>) {
+        let Some(cap) = voice_capture().lock().unwrap().take() else { return };
+        let VoiceCapture { _capture, samples, previous } = cap;
+        drop(_capture);
+        teams_cli::calling::audio::set_preferred_devices(previous.0, previous.1);
+        let pcm = samples.lock().map(|s| s.clone()).unwrap_or_default();
+        self.enroll_voice(api::biometric::wav_16k(&pcm));
+    }
+
+    pub fn voice_capture_cancel(self: Pin<&mut Self>) {
+        if let Some(VoiceCapture { _capture, previous, .. }) = voice_capture().lock().unwrap().take() {
+            drop(_capture);
+            teams_cli::calling::audio::set_preferred_devices(previous.0, previous.1);
+        }
+    }
+
+    pub fn voice_capture_file(self: Pin<&mut Self>, path: &QString) {
+        match std::fs::read(path.to_string().trim_start_matches("file://")) {
+            Ok(wav) => self.enroll_voice(wav),
+            Err(e) => tracing::warn!("voice capture file: {e}"),
+        }
+    }
+
+    /// Sign a recording and store it as the voice profile (Teams' CTS path;
+    /// NotEnoughWords above 25% errors is HighErrorRate, ECS'
+    /// enrollmentErrorThresholdInPercentage).
+    fn enroll_voice(self: Pin<&mut Self>, wav: Vec<u8>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let locale = "en-us";
+            let result = async {
+                if wav.len() <= 44 {
+                    return Ok::<_, anyhow::Error>("NoWords".to_string());
+                }
+                let client = TeamsClient::new().await?;
+                let bio = api::biometric::Biometric::new(&client).await?;
+                let token = bio.cognition_token("voice").await?;
+                let threshold = api::ecs::setting("biometricEnrollment", "enrollmentErrorThresholdInPercentage")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(25.0);
+                match api::biometric::voice_signature(&token, locale, &wav, api::biometric::VOICE_TEXT, threshold).await {
+                    Ok(api::biometric::VoiceOutcome::Signed(sig)) => match bio.store_voice(locale, &wav, &sig).await {
+                        Ok(()) => Ok("COMPLETE".to_string()),
+                        Err(e) => Ok(short_error(&e)),
+                    },
+                    Ok(api::biometric::VoiceOutcome::Refused(code)) => Ok(code),
+                    Err(e) => {
+                        tracing::warn!("voice signature: {}", short_error(&e));
+                        Ok("CTSConnectionError".to_string())
+                    }
+                }
+            }
+            .await;
+            let code = result.unwrap_or_else(|e| {
+                tracing::warn!("voice capture: {}", short_error(&e));
+                "CTSConnectionError".to_string()
+            });
+            tracing::info!(code, "voice capture");
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().voice_capture_result(QString::from(code.as_str()));
+                this.as_mut().load_recognition();
+            });
+        });
     }
 
     pub fn notification_sound(&self) -> QString {

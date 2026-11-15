@@ -35,6 +35,7 @@ Rectangle {
         { key: "calls", label: "Calls", icon: "call-20" },
         { key: "files", label: "Files and links", icon: "document-20" },
         { key: "apppermissions", label: "App permissions", icon: "shield-20" },
+        { key: "recognition", label: "Recognition", icon: "slide-text-20" },
     ]
     property string filter: ""
     function appPermsForTest() { return { n: (appPerms.data_.apps || []).length, names: (appPerms.data_.apps || []).map(a => a.name), loading: !!appPerms.data_.loading } }
@@ -60,6 +61,181 @@ Rectangle {
     function setMt(name, value) { backend.changeSetting("mt", name, JSON.stringify(value)) }
     function local(name, dflt) { const v = backend.setting(name); return v === "" ? dflt : v }
     signal settingsChanged()
+
+    /// Starts Teams' voice or face capture (Recognition).
+    signal recognitionRequested(string kind)
+    function startRecognition(kind) {
+        recognitionRequested(kind)
+        const st = backend.recognitionJson ? JSON.parse(backend.recognitionJson) : ({})
+        if (kind === "face") { faceDialog.voiceEnrolled = !!st.voice; faceDialog.show() }
+        else { voiceDialog.faceEnrolled = !!st.face; voiceDialog.show() }
+    }
+    FaceCaptureDialog { id: faceDialog; onStartVoice: root.startRecognition("voice") }
+    VoiceCaptureDialog { id: voiceDialog; onStartFace: root.startRecognition("face") }
+    /// Test hooks: the Recognition dialogs.
+    function faceDialogForTest() { return faceDialog }
+    function voiceDialogForTest() { return voiceDialog }
+    // Recognition's consent line: the text, Learn More and Privacy Policy.
+    component RecognitionConsent: Text {
+        property string lead
+        property string privacyName
+        textFormat: Text.StyledText
+        text: lead + " <a href=\"learn\">Learn More</a>. <a href=\"privacy\">Privacy Policy</a>"
+        linkColor: theme.brandForeground1
+        wrapMode: Text.Wrap
+        font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+        color: theme.textSecondary
+        onLinkActivated: link => Qt.openUrlExternally(link === "learn"
+            ? "https://learn.microsoft.com/en-us/microsoftteams/rooms/voice-and-face-recognition?branch=main#data-retention"
+            : "https://myaccount.microsoft.com/settingsandprivacy/privacy")
+        HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        Accessible.role: Accessible.StaticText
+        Accessible.name: lead + " Learn More. " + privacyName
+    }
+    // Recognition's 12/16 secondary text.
+    component RecognitionSmall: Text {
+        wrapMode: Text.Wrap
+        font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+        color: theme.textSecondary
+    }
+
+    component RecognitionCard: Rectangle {
+        id: rc
+        property string icon
+        property string title
+        property string about
+        /// The consent (or retention) line before Learn More, or "".
+        property string consent
+        property string privacyName
+        property real textWidth
+        /// The status badge ("Face profile complete"), or "".
+        property string badge
+        /// The badge's sound-wave picture (a profile being generated).
+        property bool badgeWave: false
+        /// The buttons beside the text: [{label, x, act}], centred on it.
+        property var topButtons: []
+        /// The info tip after them (an i button at the right), or "".
+        property string infoTip
+        /// Teams' passive opt-in section (a voice profile made by hand).
+        property bool optIn: false
+        property string optInTitle
+        property string optInAbout
+        property string optInConsent
+        /// The "Create/Update my … profile now" row and its buttons.
+        property string rowLabel
+        property var rowButtons: []
+        signal act(string what)
+        width: parent ? parent.width : 790
+        height: (rowLabel ? rowCol.y + rowCol.height : optIn ? optInCol.y + optInCol.height : textCol.y + textCol.height) + 16.6
+        radius: 8
+        color: "transparent"
+        border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+        FluentIcon { x: 12.7; y: 16.7; name: rc.icon; size: 20; color: theme.text }
+
+        Column {
+            id: textCol
+            x: 44.7; y: 16.7; width: rc.textWidth
+            Text {
+                text: rc.title
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            RecognitionSmall { width: parent.width; text: rc.about }
+            Item { visible: !!rc.consent; width: 1; height: 15 }
+            RecognitionConsent { visible: !!rc.consent; width: parent.width; lead: rc.consent; privacyName: rc.privacyName }
+            Item { visible: !!rc.badge; width: 1; height: 8 }
+            // Teams' badge: #F5F5F5, radius 8, 4 x 8 padding, 4 gap.
+            Rectangle {
+                visible: !!rc.badge
+                width: badgeRow.implicitWidth + 16; height: 24; radius: 8
+                color: theme.pick("#F5F5F5", "#2E2E2E")
+                Row {
+                    id: badgeRow
+                    x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                    FluentIcon { visible: !rc.badgeWave; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-circle-20"; size: 16; color: theme.brandFill }
+                    // Teams' sound-wave picture: four bars.
+                    Item {
+                        visible: rc.badgeWave
+                        width: 12; height: 12; anchors.verticalCenter: parent.verticalCenter
+                        Repeater {
+                            model: [[0, 1.71, 8.57], [2.86, 4.29, 3.43], [5.71, 0, 12], [8.57, 3.43, 5.14]]
+                            delegate: Rectangle { required property var modelData; x: modelData[0]; y: modelData[1]; width: 0.95; height: modelData[2]; radius: 0.48; color: theme.brandFill }
+                        }
+                    }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: rc.badge; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                }
+            }
+        }
+        Repeater {
+            model: rc.topButtons
+            delegate: SettingsParts.Button {
+                required property var modelData
+                enabled: rc.enabled
+                x: modelData.x; y: textCol.y + (textCol.height - height) / 2
+                label: modelData.label
+                onClicked: rc.act(modelData.act)
+            }
+        }
+        Item {
+            visible: !!rc.infoTip
+            x: 745.7; y: textCol.y + (textCol.height - 31.3) / 2
+            width: 31.3; height: 31.3
+            FluentIcon { anchors.centerIn: parent; name: "info-20"; size: 20; color: theme.text }
+            HoverHandler { id: infoHover }
+            ToolTip.visible: infoHover.hovered
+            ToolTip.text: rc.infoTip
+            Accessible.role: Accessible.Button
+            Accessible.name: rc.infoTip
+        }
+
+        // Teams' passive opt-in section.
+        Column {
+            id: optInCol
+            visible: rc.optIn
+            x: 44.7; y: textCol.y + textCol.height + 30; width: 484.3
+            Text {
+                width: parent.width
+                text: rc.optInTitle
+                wrapMode: Text.Wrap
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+            RecognitionSmall { width: parent.width; text: rc.optInAbout }
+            Item { width: 1; height: 15 }
+            RecognitionConsent { width: parent.width; lead: rc.optInConsent; privacyName: rc.privacyName }
+        }
+        SettingsParts.Button {
+            visible: rc.optIn
+            enabled: rc.enabled
+            x: 591; y: optInCol.y + (optInCol.height - height) / 2
+            label: "Start voice capture"
+            onClicked: rc.act("optin")
+        }
+
+        Column {
+            id: rowCol
+            visible: !!rc.rowLabel
+            x: 44.7; y: textCol.y + textCol.height + 30
+            Text {
+                text: rc.rowLabel
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+            RecognitionSmall { text: "Takes about 30 seconds." }
+        }
+        Repeater {
+            model: rc.rowLabel ? rc.rowButtons : []
+            delegate: SettingsParts.Button {
+                required property var modelData
+                enabled: rc.enabled
+                x: modelData.x; y: rowCol.y + (36 - height) / 2
+                label: modelData.label
+                onClicked: rc.act(modelData.act)
+            }
+        }
+    }
 
     component AboutCard: Rectangle {
         id: ac
@@ -1972,6 +2148,98 @@ Rectangle {
                 onSaved: text => calls.setVm(oof ? "vmDefaultOofGreetingPromptOverwrite" : "vmDefaultGreetingPromptOverwrite", text)
             }
 
+            // ---- Recognition (Teams' biometric-enrollment app, measured on
+            // winpc 2026-11-15): two cards 35 apart, 8 lower than other
+            // pages' first card; a bold 14 px title over 12/16 secondary
+            // text, the consent (or retention) line with Learn More and
+            // Privacy Policy, a status badge; the card's top control centred
+            // on that text (voice: Start voice capture, which opts you in to
+            // passive enrollment, then Opt out; face: Opt out once you have
+            // a profile), and the "Create/Update my … profile now" row.
+            // Profiles: api::biometric (Teams' biometric service). ----
+            Column {
+                id: recognition
+                objectName: "cardGroup"
+                visible: root.page === "recognition"
+                width: parent ? parent.width : 790
+                topPadding: 8
+                spacing: 35
+                readonly property var st: backend.recognitionJson ? JSON.parse(backend.recognitionJson) : ({})
+                readonly property bool inCall: backend.callState !== "" && backend.callState !== "ended"
+                onVisibleChanged: if (visible) backend.loadRecognition()
+                // Teams: "You are currently in a meeting…" and no changes.
+                Rectangle {
+                    visible: recognition.inCall
+                    width: parent.width; height: 36; radius: 4
+                    color: theme.pick("#FDF3F4", "#3F1011")
+                    border.color: theme.pick("#EEACB2", "#6E0811"); border.width: 0.67
+                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#BC2F32", "#DC626D") }
+                    Text { x: 36; anchors.verticalCenter: parent.verticalCenter; text: "You are currently in a meeting. To modify your profile, please return after your meeting."; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                }
+                    // Teams' voice card, by whether you have a profile and whether
+                // you opted in to keeping it up to date from your calls
+                // (passive enrollment):
+                // - neither: the consent text and Start voice capture (opt in);
+                // - opted in: "Generating voice profile", Opt out, Create;
+                // - a profile: "Voice profile complete", Export, Opt out (i),
+                //   and the opt-in section;
+                // - both: "Voice profile complete", Opt out (i), Export, Update.
+                RecognitionCard {
+                    readonly property bool enrolled: !!recognition.st.voice
+                    readonly property bool joined: !!recognition.st.passiveVoice
+                    icon: "mic-20-filled"; title: "Voice Recognition"
+                    enabled: !recognition.inCall && !!recognition.st.loaded
+                    textWidth: !enrolled && !joined ? 484.3 : enrolled && !joined ? 416.7 : 532.7
+                    about: enrolled && !joined
+                        ? "Your voice profile is used to suppress background noises in Teams meetings through voice isolation and to identify you in meeting rooms, transcripts, and notes."
+                        : "Microsoft Teams, on behalf of your organization, collects and processes your pitch, inflection, and speech patterns to build and update your unique voice profile, which may be considered biometric data. Your voice profile is used to suppress background noises in Teams meetings through voice isolation and to identify you in meeting rooms, transcripts, and notes."
+                    consent: enrolled && !joined ? ""
+                        : joined ? "Your voice profile will be retained as described in the data retention section of this"
+                        : "When you click \u201cStart voice capture\u201d you are consenting to the collection and use of your data. Your voice profile will be retained as described in the data retention section of this"
+                    privacyName: "Privacy policy - Voice recognition"
+                    badge: enrolled ? "Voice profile complete" : joined ? "Generating voice profile" : ""
+                    badgeWave: !enrolled
+                    topButtons: !enrolled && !joined ? [{ label: "Start voice capture", x: 591, act: "optin" }]
+                        : enrolled && !joined ? [{ label: "Export", x: 523.3, act: "export" }, { label: "Opt out", x: 634.3, act: "optout" }]
+                        : [{ label: "Opt out", x: 639.3, act: "optout" }]
+                    infoTip: enrolled ? "Opting out will remove your voice profile, disabling all features that use it." : ""
+                    optIn: enrolled && !joined
+                    optInTitle: "Opt in to keep my voice profile up to date automatically"
+                    optInAbout: "Microsoft Teams, on behalf of your organization, collects and processes your pitch, inflection, and speech patterns to build and update your unique voice profile, which may be considered biometric data."
+                    optInConsent: "When you click \u201cStart voice capture\u201d you are consenting to the collection and use of your data. Your voice profile will be retained as described in the data retention section of this"
+                    rowLabel: joined ? (enrolled ? "Update my voice profile now" : "Create my voice profile now") : ""
+                    rowButtons: enrolled ? [{ label: "Export", x: 533.3, act: "export" }, { label: "Update", x: 639.3, act: "capture" }]
+                                         : [{ label: "Create", x: 639.3, act: "capture" }]
+                    onAct: what => {
+                        if (what === "optin") backend.recognitionPassiveVoice(true)
+                        else if (what === "optout") { if (joined) backend.recognitionPassiveVoice(false); else backend.recognitionRemoveVoice() }
+                        else if (what === "export") backend.recognitionExport("voice")
+                        else root.startRecognition("voice")
+                    }
+                }
+                RecognitionCard {
+                    readonly property bool enrolled: !!recognition.st.face
+                    icon: "video-person-20-filled"; title: "Face Recognition"
+                    enabled: !recognition.inCall && !!recognition.st.loaded
+                    textWidth: enrolled ? 527.7 : 572.7
+                    about: "Microsoft Teams, on behalf of your organization, collects and processes facial data to build and update your unique face profile, which may be considered biometric data. Your face profile is used to automatically recognize you during meetings, display your name, and add your name to the participant list as you walk into a Microsoft Teams Rooms with supported equipment."
+                    consent: enrolled ? "Your face profile will be retained as described in the data retention section of this"
+                                      : "When you click \u201cStart face capture\u201d, you are consenting to the collection and use of your data. Your face profile will be retained as described in the data retention section of this"
+                    privacyName: "Privacy policy - Face recognition"
+                    badge: enrolled ? "Face profile complete" : ""
+                    topButtons: enrolled ? [{ label: "Opt out", x: 634.3, act: "optout" }] : []
+                    infoTip: enrolled ? "Opting out will remove your face profile, disabling all features that use it." : ""
+                    rowLabel: enrolled ? "Update my face profile now" : "Create my face profile now"
+                    rowButtons: enrolled ? [{ label: "Export", x: 528.3, act: "export" }, { label: "Update", x: 639.3, act: "capture" }]
+                                         : [{ label: "Start face capture", x: 597.9, act: "capture" }]
+                    onAct: what => {
+                        if (what === "optout") backend.recognitionRemoveFace()
+                        else if (what === "export") backend.recognitionExport("face")
+                        else root.startRecognition("face")
+                    }
+                }
+            }
+
             // ---- App permissions (measured on winpc 2026-11-13) ----
             // One card (790, a 0.67 #F0F0F0 edge, radius 8): the shield (20)
             // at 18.7, 22.7, "App permissions" (14/20) at 68.5, 5.5 over the
@@ -2232,7 +2500,13 @@ Rectangle {
     /// Each visible card on the page: [y in the window, height, first text].
     function cardsForTest() {
         const out = []
-        for (const c of pageCol.children) {
+        const all = []
+        for (let i = 0; i < pageCol.children.length; i++) {
+            const c = pageCol.children[i]
+            if (c.objectName === "cardGroup" && c.visible) { for (let j = 0; j < c.children.length; j++) all.push(c.children[j]) }
+            else all.push(c)
+        }
+        for (const c of all) {
             if (!c.visible || c.radius !== 8 || c.height <= 0) continue
             let t = c.title !== undefined ? c.title : ""
             out.push([Math.round(c.mapToItem(null, 0, 0).y * 10) / 10, Math.round(c.height * 10) / 10, t])
@@ -2242,7 +2516,13 @@ Rectangle {
     /// The visible texts of the card titled `title` as [y, height, text]
     /// relative to the card (rows compared with Teams' cardrows dump).
     function cardRowsForTest(title) {
-        const card = [...pageCol.children].find(c => c.visible && c.radius === 8 && c.title === title)
+        const all = []
+        for (let i = 0; i < pageCol.children.length; i++) {
+            const c = pageCol.children[i]
+            if (c.objectName === "cardGroup") { for (let j = 0; j < c.children.length; j++) all.push(c.children[j]) }
+            else all.push(c)
+        }
+        const card = all.find(c => c.visible && c.radius === 8 && c.title === title)
         if (!card) return []
         const out = []
         const walk = it => {

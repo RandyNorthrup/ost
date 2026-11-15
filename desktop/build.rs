@@ -192,6 +192,9 @@ fn main() {
         "qml/CallHealthPane.qml",
         "qml/TimerSpin.qml",
         "qml/NotificationBanners.qml",
+        "qml/EnrollmentDone.qml",
+        "qml/FaceCaptureDialog.qml",
+        "qml/VoiceCaptureDialog.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [
@@ -203,6 +206,7 @@ fn main() {
         "assets/dialogs",
         "assets/illustrations",
         "assets/settings",
+        "assets/biometric",
         "assets/help",
     ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {

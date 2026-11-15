@@ -299,7 +299,7 @@ Item {
         color: primary ? (bh.pressed ? theme.pick("#444791", "#444791") : bh2.hovered ? theme.brandHover : theme.brandFill)
             : bh.pressed ? theme.menuHover : bh2.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
         border.color: primary ? "transparent" : theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
-        Text { id: btText; anchors.centerIn: parent; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: bt.primary ? "#FFFFFF" : theme.text }
+        Text { id: btText; anchors.centerIn: parent; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: !bt.enabled ? theme.disabled : bt.primary ? "#FFFFFF" : theme.text }
         HoverHandler { id: bh2; cursorShape: Qt.PointingHandCursor }
         TapHandler { id: bh; onTapped: bt.clicked() }
         Accessible.role: Accessible.Button

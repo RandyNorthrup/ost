@@ -259,6 +259,8 @@ account.
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
+| `--recognition-states` | Settings ▸ Recognition in each of Teams' card states (set locally, nothing sent): CARDS and CARDROWS lines and pictures. |
+| `--recognition-test=<photo.jpg>,<voice.wav>` | Teams' face capture fed that photo and the voice capture fed that 16 kHz WAV, to the completion step; enrolls them (remove afterwards with `examples/biometric`). |
 | `--notif-banner-test[=hold]` | Teams' notification banners in each corner and size (test, chat message with quick reply, @mention, meeting started), BANNERS lines and a picture of each; puts the position and size back. `=hold`: shows them bottom right for 45 s, for clicking. |
 | `--notif-banner-live-test=<text>` | The first real chat banner is answered from it: a heart reaction and a quick reply saying `<text>`. |
 | `--transfer-test=<oid>` | Once a call connects, transfer it to that person (`--consult`: consult first, then Transfer from the banner); stays until the call ends. |

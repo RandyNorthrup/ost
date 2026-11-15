@@ -206,7 +206,11 @@ Everything below is in userPersonalSettings unless marked local.
     notifications and Calendar.
 - App permissions: built (the list by Teams' rule, the expanders and switches, kept on the
   device and honoured by OST's app views).
-- Still to build: Recognition (TASK-0134) and the remaining items on built pages.
+- Recognition (TASK-0153): Teams' voice and face cards in each of Teams' states, the voice
+  capture (16 kHz recording → Azure Speech signature → `v2/voice/enroll`), the face capture
+  (Center, Left, Right photos → signature service → `beta/me/face/enroll/mandatory/signatures`),
+  passive voice opt-in and Opt out, Export, and Teams' completion step; api::biometric.
+- Still to build: the remaining items on built pages.
 - Chat list (measured with the settings on):
   - Previews: chat rows are 52 tall, with a 36 px picture at 16, 8, the name at 64 and the
     preview (12/16 #616161) at 64, 26. It reads "You: …" for yours and "Name: …" in groups.
