@@ -173,7 +173,7 @@ Window {
             visible: !win.meetNow && win.timesKnown
             anchors.horizontalCenter: parent.horizontalCenter
             // Teams: "Friday, Nov 6 • 3:00 PM – 3:30 PM PST".
-            text: Qt.formatDate(win.startTime, "dddd, MMM d") + "  •  " + Qt.formatTime(win.startTime, "h:mm AP") + " – " + Qt.formatDateTime(win.endTime, "h:mm AP t")
+            text: Qt.formatDate(win.startTime, "dddd, MMM d") + "  •  " + theme.time(win.startTime) + " – " + theme.time(win.endTime) + " " + Qt.formatDateTime(win.endTime, "t")
             font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
             color: theme.textStrong
         }

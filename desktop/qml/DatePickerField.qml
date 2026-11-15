@@ -24,7 +24,7 @@ Item {
     signal picked(date date)
     /// How the field writes the date, and Fluent's filled-darker look
     /// (Schedule message: #F5F5F5, the underline only).
-    property string format: "M/d/yy"
+    property string format: theme.shortYearPattern
     property bool filled: false
     /// No date chosen yet: the placeholder shows (Find in chat's From).
     property bool empty: false

@@ -436,7 +436,7 @@ Item {
                                 const m = rep.modelData, s = m.call_seconds || 0
                                 const parts = [[Math.floor(s / 3600) % 24, "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
                                     .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
-                                return Qt.formatTime(new Date(m.time), "h:mm AP") + "&nbsp;&nbsp;&nbsp;" + (m.call_state === "missed" ? "Call missed" : "Meeting ended:&nbsp;<b>" + parts + "</b>")
+                                return theme.time(new Date(m.time)) + "&nbsp;&nbsp;&nbsp;" + (m.call_state === "missed" ? "Call missed" : "Meeting ended:&nbsp;<b>" + parts + "</b>")
                             }
                             font.family: theme.font; font.pixelSize: 12
                             lineHeight: 16; lineHeightMode: Text.FixedHeight

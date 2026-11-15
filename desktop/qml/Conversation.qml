@@ -631,12 +631,12 @@ Rectangle {
     // the weekday within a week, and the date beyond that.
     function daysAgo(d) { return msgHost.daysAgo(d) }
     function stamp(t) {
-        const d = new Date(t), n = daysAgo(d), time = Qt.formatTime(d, "h:mm AP")
+        const d = new Date(t), n = daysAgo(d), time = theme.time(d)
         if (n === 0) return time
         if (n === 1) return "Yesterday " + time
         if (n > 1 && n < 7) return Qt.formatDate(d, "dddd") + " " + time
-        if (d.getFullYear() === new Date().getFullYear()) return Qt.formatDate(d, "M/d") + " " + time
-        return Qt.formatDate(d, "M/d/yyyy") + " " + time
+        if (d.getFullYear() === new Date().getFullYear()) return theme.dateNoYear(d) + " " + time
+        return theme.date(d) + " " + time
     }
     function dayLabel(t) { return msgHost.dayLabel(t) }
 
@@ -2090,7 +2090,7 @@ Rectangle {
                     visible: msg.scheduledMsg
                     x: bubble.pad; y: 6.6 + bubble.subjectH; height: 17.1
                     verticalAlignment: Text.AlignVCenter
-                    text: "Sending on " + (msg.scheduledMsg ? Qt.formatDate(new Date(msg.modelData.scheduled_at), "dddd, MMM d") + " at " + Qt.formatTime(new Date(msg.modelData.scheduled_at), "h:mm AP") : "")
+                    text: "Sending on " + (msg.scheduledMsg ? Qt.formatDate(new Date(msg.modelData.scheduled_at), "dddd, MMM d") + " at " + theme.time(new Date(msg.modelData.scheduled_at)) : "")
                     font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
                 }
                 Text {
@@ -3882,8 +3882,8 @@ Rectangle {
     readonly property var pinnedBanner: backend.pinnedJson ? JSON.parse(backend.pinnedJson) : null
     function pinnedStamp(iso) {
         const d = new Date(iso), now = new Date()
-        if (d.toDateString() === now.toDateString()) return Qt.formatTime(d, "h:mm AP")
-        return d.getFullYear() === now.getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yyyy")
+        if (d.toDateString() === now.toDateString()) return theme.time(d)
+        return d.getFullYear() === now.getFullYear() ? theme.dateNoYear(d) : theme.date(d)
     }
     Item {
         id: pinBanner

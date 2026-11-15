@@ -25,7 +25,7 @@ Rectangle {
     color: theme.pane
     function pageForTest(p) { page = p }
 
-    onHealthChanged: updatedAt = Qt.formatTime(new Date(), "h:mm:ss AP")
+    onHealthChanged: updatedAt = theme.longTime(new Date())
     onVisibleChanged: if (visible) { page = ""; refresh() }
     Timer { interval: 15000; repeat: true; running: root.visible; onTriggered: root.refresh() }
 

@@ -80,7 +80,7 @@ fn time_of_day<Tz: TimeZone>(t: &DateTime<Tz>) -> String
 where
     Tz::Offset: std::fmt::Display,
 {
-    t.format("%-I:%M %p").to_string()
+    crate::api::regional::short_time(t)
 }
 
 /// Teams' `duration_full_mf` without days' seconds: "30 minutes",

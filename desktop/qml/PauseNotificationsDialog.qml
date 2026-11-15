@@ -39,7 +39,7 @@ Popup {
         const out = []
         for (let i = 0; i < 48; i++) {
             const t = new Date(day.getTime()); t.setMinutes(i * 30)
-            out.push({ label: Qt.formatTime(t, "h:mm AP"), time: t, disabled: isToday && t.getTime() <= now })
+            out.push({ label: theme.time(t), time: t, disabled: isToday && t.getTime() <= now })
         }
         return out
     }

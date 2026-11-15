@@ -141,10 +141,10 @@ Rectangle {
         const d = new Date(iso)
         if (isNaN(d)) return ""
         const days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
-        const time = Qt.formatTime(d, "h:mm AP")
+        const time = theme.time(d)
         if (days === 0) return time
         if (days === 1) return "Yesterday, " + time
-        return d.getFullYear() === new Date().getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yyyy")
+        return d.getFullYear() === new Date().getFullYear() ? theme.dateNoYear(d) : theme.date(d)
     }
     function group(iso) {
         const d = new Date(iso), n = new Date()
@@ -363,7 +363,7 @@ Rectangle {
         case "yesterday": return "Yesterday"
         case "week": return "This week"
         case "month": return "This month"
-        case "custom": return Qt.formatDate(customFrom, "M/d/yyyy") + " - " + Qt.formatDate(customTo, "M/d/yyyy")
+        case "custom": return theme.date(customFrom) + " - " + theme.date(customTo)
         }
         return ""
     }

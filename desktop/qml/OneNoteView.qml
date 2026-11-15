@@ -50,7 +50,7 @@ Item {
     function openNotebook(nb) { notebook = nb; sections = []; section = null; pages = []; page = null; html = ""; load("sections", nb.id) }
     function openSection(sec) { section = sec; pages = []; page = null; html = ""; writing = false; load("pages", sec.id) }
     function openPage(p) { page = p; html = ""; writing = false; load("page", p.id) }
-    function when(iso) { return iso ? Qt.formatDateTime(new Date(iso), "dddd, MMMM d, yyyy  h:mm AP") : "" }
+    function when(iso) { return iso ? theme.longDate(iso) + "  " + theme.time(iso) : "" }
 
     Rectangle { anchors.fill: parent; color: theme.surface }
 

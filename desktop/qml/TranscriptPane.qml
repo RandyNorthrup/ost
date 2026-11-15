@@ -75,7 +75,7 @@ Rectangle {
     function escaped(t) {
         return (t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     }
-    function timeText(ms) { return Qt.formatTime(new Date(ms), "h:mm AP") }
+    function timeText(ms) { return theme.time(new Date(ms)) }
 
     Item {
         id: header

@@ -188,3 +188,9 @@ extern "C" size_t ost_language_display(const char *code, char *out, size_t cap)
     memcpy(out, b.constData(), size_t(b.size()));
     return size_t(b.size());
 }
+
+// Quit the application (Teams' Save and restart: main.rs starts OST again).
+extern "C" void ost_quit_application()
+{
+    QGuiApplication::quit();
+}

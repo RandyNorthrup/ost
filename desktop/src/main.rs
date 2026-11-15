@@ -149,4 +149,12 @@ fn main() {
     {
         let _ = std::fs::remove_file(path);
     }
+    // Teams' Save and restart: start again with the same arguments.
+    if backend::restart_requested()
+        && let Ok(exe) = std::env::current_exe()
+    {
+        use std::os::unix::process::CommandExt;
+        let err = std::process::Command::new(exe).args(std::env::args_os().skip(1)).exec();
+        tracing::warn!("restart failed: {err}");
+    }
 }

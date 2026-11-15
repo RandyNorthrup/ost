@@ -115,8 +115,8 @@ Rectangle {
     // Relative time as Teams shows it in the feed: time today, M/d before.
     function when(t) {
         const d = new Date(t), now = new Date()
-        if (d.toDateString() === now.toDateString()) return Qt.formatTime(d, "h:mm AP")
-        return Qt.formatDate(d, "M/d")
+        if (d.toDateString() === now.toDateString()) return theme.time(d)
+        return theme.dateNoYear(d)
     }
 
     ListView {

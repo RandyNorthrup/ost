@@ -402,12 +402,12 @@ Item {
     function conversationStamp(t) {
         const d = new Date(t), now = new Date()
         const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)
-        const time = Qt.formatTime(d, "h:mm AP")
+        const time = theme.time(d)
         if (days === 0) return time
         if (days === 1) return "Yesterday " + time
         if (days > 1 && days < 7) return Qt.formatDate(d, "dddd") + " " + time
-        if (d.getFullYear() === now.getFullYear()) return Qt.formatDate(d, "M/d") + " " + time
-        return Qt.formatDate(d, "M/d/yyyy") + " " + time
+        if (d.getFullYear() === now.getFullYear()) return theme.dateNoYear(d) + " " + time
+        return theme.date(d) + " " + time
     }
     // Whole days between a date and today.
     function daysAgo(d) {

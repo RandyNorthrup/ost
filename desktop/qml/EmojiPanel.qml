@@ -235,7 +235,7 @@ Item {
         customTarget = e
         const p = cell.mapToItem(root, px, py)
         const who = e.creator_name || ""
-        const when = e.created_on > 0 ? Qt.formatDate(new Date(e.created_on), "M/d/yyyy") : ""
+        const when = e.created_on > 0 ? theme.date(new Date(e.created_on)) : ""
         // Delete only where the policy allows it (Teams also for tenant admins).
         const del = backend.customEmojiCanDelete ? [{ key: "delete", label: "Delete emoji for org.", icon: "delete-20" }] : []
         const info = who && when ? [{ label: "Created by " + who + " on " + when, enabled: false }] : []

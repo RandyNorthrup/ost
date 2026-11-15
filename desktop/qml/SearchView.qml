@@ -142,17 +142,17 @@ Rectangle {
         const d = new Date(iso)
         if (isNaN(d)) return ""
         const days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
-        const time = Qt.formatTime(d, "h:mm AP")
+        const time = theme.time(d)
         if (days === 0) return time
         if (days === 1) return "Yesterday " + time
         if (days > 1 && days < 7) return Qt.formatDate(d, "dddd") + " " + time
-        return d.getFullYear() === new Date().getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yyyy")
+        return d.getFullYear() === new Date().getFullYear() ? theme.dateNoYear(d) : theme.date(d)
     }
     function shortDate(iso) {
         const d = new Date(iso)
         if (isNaN(d)) return ""
         const days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
-        return days === 0 ? Qt.formatTime(d, "h:mm AP") : d.getFullYear() === new Date().getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yyyy")
+        return days === 0 ? theme.time(d) : d.getFullYear() === new Date().getFullYear() ? theme.dateNoYear(d) : theme.date(d)
     }
     function escaped(t) { return String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
     function bold(t) { const re = theme.termPattern(terms); const e = escaped(t); return re ? e.replace(re, "$1<b>$2</b>") : e }
@@ -329,7 +329,7 @@ Rectangle {
         case "yesterday": return "Yesterday"
         case "week": return "This week"
         case "month": return "This month"
-        case "custom": return Qt.formatDate(customFrom, "M/d/yyyy") + " - " + Qt.formatDate(customTo, "M/d/yyyy")
+        case "custom": return theme.date(customFrom) + " - " + theme.date(customTo)
         }
         return ""
     }
@@ -1124,7 +1124,7 @@ Rectangle {
     }
     function ago(iso) {
         const d = new Date(iso), days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
-        return days <= 0 ? "today" : days === 1 ? "yesterday" : days < 30 ? days + " days ago" : Qt.formatDate(d, "M/d/yyyy")
+        return days <= 0 ? "today" : days === 1 ? "yesterday" : days < 30 ? days + " days ago" : theme.date(d)
     }
     function fileIcon(type, name) {
         const t = String(type || String(name || "").split(".").pop()).toLowerCase()
@@ -1169,7 +1169,7 @@ Rectangle {
                     Text { anchors.horizontalCenter: parent.horizontalCenter; y: 22.7; text: Qt.formatDate(parent.parent.parent.start, "MMM").toUpperCase(); font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary }
                 }
                 Text { x: 72.7; y: 17.3; width: parent.width - 72.7 - 130; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.e.subject); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Text { x: 72.7; y: 38.6; text: Qt.formatDate(parent.parent.start, "dddd") + " " + Qt.formatTime(parent.parent.start, "h:mm AP") + " - " + Qt.formatTime(new Date(parent.parent.e.end), "h:mm AP") + (parent.parent.e.location ? "  |  " + parent.parent.e.location : ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                Text { x: 72.7; y: 38.6; text: Qt.formatDate(parent.parent.start, "dddd") + " " + theme.time(parent.parent.start) + " - " + theme.time(new Date(parent.parent.e.end)) + (parent.parent.e.location ? "  |  " + parent.parent.e.location : ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                 Row {
                     anchors.right: parent.right; anchors.rightMargin: 16; y: 17
                     spacing: 0

@@ -42,9 +42,9 @@ Item {
     Rectangle {
         anchors.fill: parent; radius: 4
         color: theme.surface
-        border.color: hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
-        Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened || field.activeFocus ? 2 : 0.67; color: list.opened || field.activeFocus ? theme.brand : theme.textSecondary }
-        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-16"; size: 16; color: theme.text }
+        border.color: !root.enabled ? theme.pick("#E0E0E0", "#424242") : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+        Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened || field.activeFocus ? 2 : 0.67; color: list.opened || field.activeFocus ? theme.brand : root.enabled ? theme.textSecondary : theme.pick("#E0E0E0", "#424242") }
+        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-16"; size: 16; color: root.enabled ? theme.text : theme.disabled }
         TextInput {
             id: field
             x: 28; anchors.verticalCenter: parent.verticalCenter
@@ -67,10 +67,10 @@ Item {
                 width: parent.width; elide: Text.ElideRight
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.currentOption ? root.currentOption.label : ""
-                font: field.font; color: theme.text
+                font: field.font; color: root.enabled ? theme.text : theme.disabled
             }
         }
-        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
+        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: root.enabled ? theme.textSecondary : theme.disabled }
         HoverHandler { id: hover; cursorShape: Qt.IBeamCursor }
         TapHandler { onTapped: list.opened ? list.close() : root.openList() }
     }

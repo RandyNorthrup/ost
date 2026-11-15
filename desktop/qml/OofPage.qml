@@ -134,7 +134,7 @@ Rectangle {
                             width: 207; height: 30
                             accessibleName: parent.parent.modelData + " time"
                             readonly property date day: parent.parent.when
-                            options: { const out = []; for (let i = 0; i < 48; i++) { const t = new Date(2000, 0, 1, 0, i * 30); out.push({ label: Qt.formatTime(t, "h:mm AP") }) } return out }
+                            options: { const out = []; for (let i = 0; i < 48; i++) { const t = new Date(2000, 0, 1, 0, i * 30); out.push({ label: theme.time(t) }) } return out }
                             current: day.getHours() * 2 + Math.floor(day.getMinutes() / 30)
                             onPicked: i => { const w = parent.parent.when; parent.parent.setWhen(new Date(w.getFullYear(), w.getMonth(), w.getDate(), Math.floor(i / 2), (i % 2) * 30)) }
                         }

@@ -223,6 +223,88 @@ Rectangle {
                     onToggled: v => { backend.setSetting("leaveConfirmation", v ? "true" : "false"); leaveRow.on = v }
                 }
             }
+            // Teams' Language and regional formats card (measured on winpc
+            // 2026-11-14): Follow OS settings (on: the choices show the OS's,
+            // greyed), else App language (OST's text is English, so its
+            // English locales), one of Teams' eight date formats and four
+            // time formats, and Save and restart: they apply after a
+            // restart, as in Teams. (Its "Manage Windows settings" link is
+            // Windows' own.)
+            SettingsParts.Card {
+                id: regionalCard
+                visible: root.page === "general" && !root.subPage
+                icon: "local-language-20"; title: "Language and regional formats"
+                subtitle: "Restart OST to apply language and regional format settings"
+                property var opts: JSON.parse(backend.regionalOptionsJson())
+                property bool followOs: opts.followOs
+                property string appLanguage: opts.appLanguage
+                property string dateFormat: opts.dateFormat || opts.os.dateFormat
+                property string timeFormat: opts.timeFormat || opts.os.timeFormat
+                onVisibleChanged: if (visible) reset()
+                function reset() {
+                    opts = JSON.parse(backend.regionalOptionsJson())
+                    followOs = opts.followOs; appLanguage = opts.appLanguage
+                    dateFormat = opts.dateFormat || opts.os.dateFormat; timeFormat = opts.timeFormat || opts.os.timeFormat
+                }
+                readonly property bool changed: followOs !== opts.followOs || (!followOs && (appLanguage !== opts.appLanguage || dateFormat !== (opts.dateFormat || opts.os.dateFormat) || timeFormat !== (opts.timeFormat || opts.os.timeFormat)))
+                // Teams' samples: January 31 of this year, 1:01 to 23:59.
+                function dateSample(p) { return Qt.formatDate(new Date(new Date().getFullYear(), 0, 31), p) }
+                function timeSample(p) {
+                    const q = p.replace(/tt/g, "AP"), y = new Date().getFullYear()
+                    return Qt.formatTime(new Date(y, 0, 31, 1, 1), q) + " - " + Qt.formatTime(new Date(y, 0, 31, 23, 59), q)
+                }
+                // The current choice first, then the others in Teams' order.
+                function ordered(list, cur) { return [cur].concat(list.filter(x => x !== cur)) }
+                readonly property var dates: ordered(opts.dateFormats, followOs ? opts.os.dateFormat : dateFormat)
+                readonly property var times: ordered(opts.timeFormats.map(t => t.short), followOs ? opts.os.timeFormat : timeFormat)
+                SettingsParts.SwitchRow {
+                    label: "Follow OS settings"
+                    on: regionalCard.followOs
+                    onToggled: v => regionalCard.followOs = v
+                }
+                SettingsParts.Gap { size: 4 }
+                SettingsParts.SubHeading { text: "App language" }
+                SettingsParts.Gap { size: 10 }
+                SearchCombobox {
+                    width: 294; height: 32
+                    enabled: !regionalCard.followOs
+                    options: regionalCard.opts.languages.map(l => ({ key: l.code, label: l.nativeName, sublabel: l.name }))
+                    current: regionalCard.followOs ? "" : regionalCard.appLanguage
+                    accessibleName: "App language"
+                    onPicked: code => regionalCard.appLanguage = code
+                }
+                SettingsParts.Gap { size: 15 }
+                SettingsParts.SubHeading { text: "Date format" }
+                SettingsParts.Gap { size: 10 }
+                OutlineDropdown {
+                    width: 294; height: 31.3
+                    enabled: !regionalCard.followOs
+                    options: regionalCard.dates.map(p => ({ label: regionalCard.dateSample(p) }))
+                    current: 0
+                    accessibleName: "Date format"
+                    onPicked: i => regionalCard.dateFormat = regionalCard.dates[i]
+                }
+                SettingsParts.Gap { size: 15 }
+                SettingsParts.SubHeading { text: "Time format" }
+                SettingsParts.Gap { size: 10 }
+                OutlineDropdown {
+                    width: 294; height: 31.3
+                    enabled: !regionalCard.followOs
+                    options: regionalCard.times.map(p => ({ label: regionalCard.timeSample(p) }))
+                    current: 0
+                    accessibleName: "Time format"
+                    onPicked: i => regionalCard.timeFormat = regionalCard.times[i]
+                }
+                SettingsParts.Gap { size: regionalCard.changed ? 15 : 8 }
+                SettingsParts.Button {
+                    visible: regionalCard.changed
+                    x: -8
+                    primary: true
+                    label: regionalCard.followOs ? "Restart" : "Save and restart"
+                    onClicked: backend.saveRegionalAndRestart(regionalCard.followOs, regionalCard.appLanguage, regionalCard.dateFormat, regionalCard.timeFormat)
+                }
+                SettingsParts.Gap { size: regionalCard.changed ? 10 : 0 }
+            }
             // Teams' Time zone card (its "Manage Windows settings" link is
             // Windows' own).
             SettingsParts.Card {
@@ -1326,6 +1408,9 @@ Rectangle {
     }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
+    /// Test hooks: General scrolled to Language and regional formats; the card.
+    function scrollToRegionalForTest() { content.contentY = Math.max(0, Math.min(pageCol.y + regionalCard.y - 12, content.contentHeight - content.height)) }
+    function regionalForTest() { return regionalCard }
     /// Test hook: General scrolled to the Translation card.
     function openTranslationTargetForTest(open) { if (open) translationTargetBox.openList(); else translationTargetBox.closeList() }
     function scrollToTranslationForTest() { content.contentY = Math.max(0, Math.min(pageCol.y + translationCard.y - 12, content.contentHeight - content.height)) }

@@ -307,12 +307,20 @@ Page list, in order: General, Accounts and orgs, Privacy, Notifications and acti
 Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192 ; https://support.microsoft.com/en-gb/teams/notifications-settings/change-settings-in-microsoft-teams
 
 ### 10.1 General
-- [ ] Language and regional formats:
+- [x] Language and regional formats:
   - "Follow OS settings" toggle;
   - when off: "App language", "Date format", "Time format";
   - **Save and restart** / **Restart** buttons;
   - "Manage Windows settings" link.
   Source: https://support.microsoft.com/en-gb/teams/notifications-settings/change-settings-in-microsoft-teams
+  Verified on winpc (2026-11-14):
+  - Teams' formats come from its culture table (short and long date and time, first day of week) for the OS locale or the chosen app language.
+  - Date format choices: d/M/yyyy, dd-MM-yyyy, dd.MM.yyyy, dd/MM/yyyy, M/d/yyyy, yyyy-MM-dd, yyyy.MM.dd, yyyy/MM/dd.
+  - Time format choices: HH:mm, H:mm, hh:mm tt, h:mm tt.
+  - Dates in the current year drop the year using Teams' year-stripping regex.
+  - In OST every date and time goes through theme.time/date/… (QML) and api::regional (engine).
+  - OST's text is English, so its App language list has the 16 English locales of Teams' 109.
+  - The Windows link is not shown.
 - [ ] Time zone section with a "Manage Windows settings" link.
   Source: same
 - [ ] Efficiency mode: "Use only when resources are low (Default)", "Never use efficiency mode", "Always use efficiency mode".

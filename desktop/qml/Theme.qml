@@ -9,6 +9,23 @@ QtObject {
     /// sets it).
     property var hoverCard: null
     function pick(light, darkValue) { return dark ? darkValue : light }
+    /// Teams' regional formats (Settings ▸ General ▸ Language and regional
+    /// formats; read once, as a change applies after a restart). Every
+    /// date and time OST shows goes through these.
+    readonly property var regional: JSON.parse(backend.regionalFormatsJson())
+    function time(d) { return Qt.formatTime(new Date(d), regional.shortTime) }
+    function longTime(d) { return Qt.formatTime(new Date(d), regional.longTime) }
+    function date(d) { return Qt.formatDate(new Date(d), regional.shortDate) }
+    /// This year's dates leave the year out, as Teams.
+    function dateNoYear(d) { return Qt.formatDate(new Date(d), regional.shortDateNoYear) }
+    function dateMaybeYear(d) { const x = new Date(d); return x.getFullYear() === new Date().getFullYear() ? dateNoYear(x) : date(x) }
+    function longDate(d) { return Qt.formatDate(new Date(d), regional.longDate) }
+    function longDateNoYear(d) { return Qt.formatDate(new Date(d), regional.longDateNoYear) }
+    function dateTime(d) { return date(d) + " " + time(d) }
+    /// The short date with a two-digit year (the chat list's older dates,
+    /// date fields).
+    readonly property string shortYearPattern: regional.shortDate.replace("yyyy", "yy")
+    function dateShortYear(d) { return Qt.formatDate(new Date(d), shortYearPattern) }
     // Message HTML as shown: a shared contact's card icon in brand colour.
     // Headings as paragraphs of class h1-h3: Qt adds its own heading size on
     // top of a stylesheet's, so only Teams' measured sizes apply this way.

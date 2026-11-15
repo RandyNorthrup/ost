@@ -61,10 +61,10 @@ Rectangle {
     function stamp(t) {
         const d = new Date(t), now = new Date()
         const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)
-        if (days === 0) return Qt.formatTime(d, "h:mm AP")
+        if (days === 0) return theme.time(d)
         if (days === 1) return "Yesterday"
         if (days > 1 && days < 7) return Qt.formatDate(d, "dddd")
-        return Qt.formatDate(d, "M/d")
+        return theme.dateNoYear(d)
     }
     function esc(t) { return (t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
 

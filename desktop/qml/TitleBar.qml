@@ -443,7 +443,7 @@ Rectangle {
     // Teams' "Until …": the time today, else "Nov 10, 12:02 AM".
     function untilText(iso) {
         const d = new Date(iso), now = new Date()
-        const t = Qt.formatTime(d, "h:mm AP")
+        const t = theme.time(d)
         return d.toDateString() === now.toDateString() ? t : Qt.formatDate(d, "MMM d") + ", " + t
     }
     readonly property var pauseItems: [

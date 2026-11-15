@@ -22,7 +22,7 @@ FluentSurface {
     color: theme.quoteFill; borderColor: theme.quoteBorder
     readonly property string stamp: {
         const ms = parseInt(quote ? quote.message_id : "")
-        return isNaN(ms) ? "" : Qt.formatDateTime(new Date(ms), "M/d/yyyy h:mm AP")
+        return isNaN(ms) ? "" : theme.dateTime(new Date(ms))
     }
     readonly property real headerW: nameText.implicitWidth + (showTime ? 8 + timeText.implicitWidth : 0) + (dismissable ? 8 + 20 : 0)
     width: Math.min(maxWidth, 18 + Math.max(headerW, previewMetrics.advanceWidth) + 8)

@@ -546,8 +546,8 @@ Rectangle {
         if (!t) return ""
         const d = new Date(t), n = new Date()
         if (isNaN(d.getTime())) return ""
-        if (d.toDateString() === n.toDateString()) return Qt.formatTime(d, "h:mm AP")
-        return d.getFullYear() === n.getFullYear() ? Qt.formatDate(d, "M/d") : Qt.formatDate(d, "M/d/yy")
+        if (d.toDateString() === n.toDateString()) return theme.time(d)
+        return d.getFullYear() === n.getFullYear() ? theme.dateNoYear(d) : theme.dateShortYear(d)
     }
     function previewOf(c) {
         if (!c.preview) return ""
@@ -776,7 +776,7 @@ Rectangle {
             if (r.op !== "meeting-chat-report-info" || !r.ok || !r.data || !chatReport.opened) return
             const d = r.data
             chatReport.chatIcal = d.ical || ""
-            chatReport.meeting = { title: d.title || chatReport.meeting.title, start: d.start ? Qt.formatDateTime(new Date(d.start), "MMM d, h:mm AP") : "", organizer: d.organizer || "" }
+            chatReport.meeting = { title: d.title || chatReport.meeting.title, start: d.start ? Qt.formatDate(new Date(d.start), "MMM d") + ", " + theme.time(d.start) : "", organizer: d.organizer || "" }
             chatReport.people = d.people || []
         }
     }

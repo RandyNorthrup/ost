@@ -50,7 +50,7 @@ Rectangle {
     function load(call) { backend.loadAttendance(thread, organizer, message, call || "") }
     Component.onCompleted: if (thread && organizer) load(initialCall)
 
-    function time(iso) { return iso ? Qt.formatTime(new Date(iso), "h:mm AP") : "" }
+    function time(iso) { return iso ? theme.time(new Date(iso)) : "" }
     // "35m 1s", "1h 7m 42s": the parts that aren't zero (seconds when all are).
     function duration(sec) {
         const s = Math.max(0, Math.round(sec || 0))
@@ -68,7 +68,7 @@ Rectangle {
     }
     function pickerLabel(r) {
         if (!r) return ""
-        return Qt.formatDateTime(new Date(r.startTimeUtc), "dddd, MMMM d, yyyy h:mm AP") + " - " + time(r.endTimeUtc)
+        return theme.longDate(r.startTimeUtc) + " " + theme.time(r.startTimeUtc) + " - " + time(r.endTimeUtc)
     }
     // The picker's rows: a day header, then that day's meetings.
     readonly property var pickerRows: {

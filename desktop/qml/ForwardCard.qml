@@ -11,7 +11,7 @@ Rectangle {
     property var forward
     property real maxWidth: 535
     signal openOriginal()
-    readonly property string stamp: forward && forward.arrival_ms ? Qt.formatDateTime(new Date(forward.arrival_ms), "M/d/yyyy h:mm AP") : ""
+    readonly property string stamp: forward && forward.arrival_ms ? theme.dateTime(new Date(forward.arrival_ms)) : ""
     // The header ends at 68 + name + 9 + time; the card 12 px after its
     // widest line.
     readonly property real headerRight: 68 + nameText.implicitWidth + 9 + timeText.implicitWidth

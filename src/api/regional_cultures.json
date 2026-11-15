@@ -1,0 +1,840 @@
+[
+{
+"cultures": [
+"af-ZA"
+],
+"shortDate": "yyyy-MM-dd",
+"longDate": "dddd dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"ar-SA"
+],
+"shortDate": "dd/MM/yy",
+"longDate": "dd/MMMM/yyyy",
+"shortTime": "hh:mm tt",
+"longTime": "hh:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"az-Latn-AZ"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "d MMMM yyyy, dddd",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"bg-BG"
+],
+"shortDate": "d.M.yyyy 'г.'",
+"longDate": "dd MMMM yyyy 'г.'",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"bs-Latn-BA"
+],
+"shortDate": "d. M. yyyy.",
+"longDate": "dddd, d. MMMM yyyy.",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"ca-ES",
+"ca-ES-valencia"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d MMMM 'de' yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"cs-CZ"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "dddd d. MMMM yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"cy-GB"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"da-DK"
+],
+"shortDate": "dd-MM-yyyy",
+"longDate": "d. MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"de-AT",
+"de-CH",
+"de-DE",
+"de-LI",
+"de-LU",
+"et-EE"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "dddd, d. MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"el-GR"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"en-029"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"en-AU",
+"en-NZ"
+],
+"shortDate": "d/MM/yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"en-BZ"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-CA"
+],
+"shortDate": "yyyy-MM-dd",
+"longDate": "MMMM d, yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-GB"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"en-IE",
+"fr-FR",
+"fr-LU",
+"fr-MC",
+"it-IT"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"en-IN",
+"hi-IN"
+],
+"shortDate": "dd-MM-yyyy",
+"longDate": "dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-JM",
+"en-SG"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-MY"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d MMMM, yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-PH",
+"en-TT"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-US",
+"fil-PH"
+],
+"shortDate": "M/d/yyyy",
+"longDate": "dddd, MMMM d, yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-ZA"
+],
+"shortDate": "yyyy/MM/dd",
+"longDate": "dddd, dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"en-ZW"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-AR",
+"es-BO",
+"es-CR"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"es-CL"
+],
+"shortDate": "dd-MM-yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"es-CO"
+],
+"shortDate": "d/MM/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-DO",
+"es-VE"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-EC",
+"es-UY"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"es-ES"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d' de 'MMMM' de 'yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"es-GT",
+"es-PE"
+],
+"shortDate": "d/MM/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-HN"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd dd 'de' MMMM 'de' yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-MX"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d' de 'MMMM' de 'yyyy",
+"shortTime": "hh:mm tt",
+"longTime": "hh:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-NI",
+"es-PY",
+"es-SV"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-PA",
+"es-PR"
+],
+"shortDate": "MM/dd/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"es-US"
+],
+"shortDate": "M/d/yyyy",
+"longDate": "dddd, MMMM dd, yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"eu-ES"
+],
+"shortDate": "yyyy/M/d",
+"longDate": "yyyy('e')'ko' MMMM'ren' d('a'), dddd",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"fa-IR"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "hh:mm tt",
+"longTime": "hh:mm:ss tt",
+"firstDayOfWeek": 6
+},
+{
+"cultures": [
+"fi-FI"
+],
+"shortDate": "d.M.yyyy",
+"longDate": "dddd d. MMMM yyyy",
+"shortTime": "H.mm",
+"longTime": "H.mm.ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"fr-BE"
+],
+"shortDate": "dd-MM-yy",
+"longDate": "dddd d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"fr-CA"
+],
+"shortDate": "yyyy-MM-dd",
+"longDate": "d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"fr-CH",
+"it-CH",
+"pl-PL",
+"ro-RO"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"gl-ES"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d 'de' MMMM 'de' yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"he-IL"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd dd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"hr-HR"
+],
+"shortDate": "d.M.yyyy.",
+"longDate": "d. MMMM yyyy.",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"hu-HU"
+],
+"shortDate": "yyyy. MM. dd.",
+"longDate": "yyyy. MMMM d., dddd",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"id-ID"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, dd MMMM yyyy",
+"shortTime": "HH.mm",
+"longTime": "HH.mm.ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"is-IS"
+],
+"shortDate": "d.M.yyyy",
+"longDate": "dddd, d. MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"ja-JP"
+],
+"shortDate": "yyyy/MM/dd",
+"longDate": "yyyy'年'M'月'd'日'",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"ka-GE"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "dddd, dd MMMM, yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"kk-KZ"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "yyyy 'ж'. d MMMM, dddd",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"km-KH"
+],
+"shortDate": "dd/MM/yy",
+"longDate": "d MMMM yyyy",
+"shortTime": "H:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"ko-KR"
+],
+"shortDate": "yyyy-MM-dd",
+"longDate": "yyyy'년' M'월' d'일' dddd",
+"shortTime": "tt h:mm",
+"longTime": "tt h:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"lo-LA"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "dddd ທີ d MMMM gg yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"lt-LT"
+],
+"shortDate": "yyyy-MM-dd",
+"longDate": "yyyy 'm'. MMMM d 'd'., dddd",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"lv-LV"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "dddd, yyyy. 'gada' d. MMMM",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"mk-MK"
+],
+"shortDate": "d.M.yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"ms-MY"
+],
+"shortDate": "d/MM/yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"mt-MT"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d 'ta'’ MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"nb-NO",
+"nn-NO"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "dddd d. MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"nl-BE"
+],
+"shortDate": "d/MM/yyyy",
+"longDate": "dddd d MMMM yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"nl-NL"
+],
+"shortDate": "d-M-yyyy",
+"longDate": "dddd d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"pt-BR"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d' de 'MMMM' de 'yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"pt-PT"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "d' de 'MMMM' de 'yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"ru-RU"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "d MMMM yyyy 'г.'",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"sk-SK"
+],
+"shortDate": "d. M. yyyy",
+"longDate": "dddd d. MMMM yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"sl-SI"
+],
+"shortDate": "d. MM. yyyy",
+"longDate": "dddd, dd. MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"sq-AL"
+],
+"shortDate": "d.M.yyyy",
+"longDate": "dddd, d MMMM yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"sr-Cyrl-RS"
+],
+"shortDate": "dd.MM.yyyy.",
+"longDate": "d. MMMM yyyy.",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"sr-Latn-RS"
+],
+"shortDate": "d.M.yyyy.",
+"longDate": "dddd, dd. MMMM yyyy.",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"sv-FI"
+],
+"shortDate": "yyyy-MM-dd",
+"longDate": "dddd d MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"sv-SE"
+],
+"shortDate": "yyyy-MM-dd",
+"longDate": "'den 'd MMMM yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"th-TH"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "d MMMM yyyy",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"tr-TR"
+],
+"shortDate": "d.MM.yyyy",
+"longDate": "d MMMM yyyy dddd",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"uk-UA"
+],
+"shortDate": "dd.MM.yyyy",
+"longDate": "d MMMM yyyy' р.'",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"uz-Latn-UZ"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dddd, d-MMMM, yyyy",
+"shortTime": "HH:mm",
+"longTime": "HH:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"vi-VN"
+],
+"shortDate": "dd/MM/yyyy",
+"longDate": "dd MMMM yyyy",
+"shortTime": "h:mm tt",
+"longTime": "h:mm:ss tt",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"zh-CN"
+],
+"shortDate": "yyyy/M/d",
+"longDate": "yyyy'年'M'月'd'日'",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 1
+},
+{
+"cultures": [
+"zh-HK",
+"zh-MO"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "yyyy'年'M'月'd'日'",
+"shortTime": "H:mm",
+"longTime": "H:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"zh-SG"
+],
+"shortDate": "d/M/yyyy",
+"longDate": "yyyy'年'M'月'd'日'",
+"shortTime": "tt h:mm",
+"longTime": "tt h:mm:ss",
+"firstDayOfWeek": 0
+},
+{
+"cultures": [
+"zh-TW"
+],
+"shortDate": "yyyy/M/d",
+"longDate": "yyyy'年'M'月'd'日'",
+"shortTime": "tt hh:mm",
+"longTime": "tt hh:mm:ss",
+"firstDayOfWeek": 0
+}
+]

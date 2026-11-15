@@ -637,6 +637,22 @@ pub mod qobject {
         /// Translate a message (Teams' Translate) or show its original.
         #[qinvokable]
         fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
+        /// Teams' regional formats in effect (read once: changes apply
+        /// after a restart) as Qt format strings: {culture, shortDate,
+        /// shortDateNoYear, longDate, longDateNoYear, shortTime, longTime,
+        /// firstDayOfWeek}.
+        #[qinvokable]
+        fn regional_formats_json(self: Pin<&mut Backend>) -> QString;
+        /// Settings ▸ General ▸ Language and regional formats: {followOs,
+        /// appLanguage, dateFormat, timeFormat, languages: [{code, name,
+        /// nativeName}], dateFormats, timeFormats: [{short, long}], os:
+        /// {appLanguage, dateFormat, timeFormat}} (.NET patterns).
+        #[qinvokable]
+        fn regional_options_json(self: Pin<&mut Backend>) -> QString;
+        /// Teams' Save and restart / Restart: keep the choices and start
+        /// OST again.
+        #[qinvokable]
+        fn save_regional_and_restart(self: Pin<&mut Backend>, follow_os: bool, app_language: &QString, date_format: &QString, time_format: &QString);
         /// Settings ▸ General ▸ Translation: your settings as JSON
         /// {target, mode, known} (Teams' defaults until you change them).
         #[qinvokable]
@@ -3215,6 +3231,45 @@ fn apply_translations(chat_id: &str, timeline: &mut [api::messages::MessageView]
     }
 }
 
+/// Teams' "Save and restart": main.rs starts OST again after it quits.
+static RESTART: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn restart_requested() -> bool {
+    RESTART.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+fn quit_application() {
+    unsafe extern "C" {
+        fn ost_quit_application();
+    }
+    // SAFETY: a plain Qt call on the GUI thread (invokables run there).
+    unsafe { ost_quit_application() };
+}
+
+/// Your language and regional format choices, kept on this device as
+/// Teams does: regionalFollowOs (on unless turned off), appLanguage,
+/// regionalDateFormat, regionalTimeFormat.
+fn regional_choice(map: &serde_json::Map<String, serde_json::Value>) -> api::regional::Choice {
+    let get = |k: &str| map.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let app_language = get("appLanguage");
+    api::regional::Choice {
+        follow_os: get("regionalFollowOs") != "false",
+        app_language: if app_language.is_empty() { app_locale().to_lowercase() } else { app_language },
+        date_format: get("regionalDateFormat"),
+        time_format: get("regionalTimeFormat"),
+    }
+}
+
+/// The culture and formats this run uses (read once, as Teams applies a
+/// change after a restart).
+fn regional_in_effect() -> &'static (String, api::regional::Formats) {
+    static R: OnceLock<(String, api::regional::Formats)> = OnceLock::new();
+    R.get_or_init(|| {
+        let c = regional_choice(&load_settings());
+        let culture = if c.follow_os { app_locale() } else { c.app_language.clone() };
+        (culture, api::regional::resolve(&c, &app_locale()))
+    })
+}
+
 /// Your translation settings (Settings ▸ General ▸ Translation), kept on
 /// this device as Teams does: translationTarget, translationMode and
 /// translationKnown (a JSON list); Teams' defaults are your app language.
@@ -4884,6 +4939,8 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
 impl qobject::Backend {
     pub fn start(mut self: Pin<&mut Self>) {
         let _ = QT_THREAD.set(self.qt_thread());
+        // Teams' regional formats for text the engine formats.
+        api::regional::set_current(regional_in_effect().1.clone());
         // The machine's lock state feeds presence, as Teams' host does.
         runtime().spawn(crate::lock_watch::run());
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
@@ -7075,7 +7132,10 @@ impl qobject::Backend {
             // "Nov 6, 3:00 PM", as the report dialog's meeting card shows it.
             let start_text = info
                 .start
-                .map(|t| t.with_timezone(&tz).format("%b %-d, %-I:%M %p").to_string())
+                .map(|t| {
+                    let t = t.with_timezone(&tz);
+                    format!("{}, {}", t.format("%b %-d"), api::regional::short_time(&t))
+                })
                 .unwrap_or_default();
             let json = serde_json::json!({
                 "title": info.title,
@@ -10265,6 +10325,64 @@ impl qobject::Backend {
                     .set_report_result(QString::from(if result.is_ok() { "ok" } else { "error" }))
             });
         });
+    }
+
+    pub fn regional_formats_json(self: Pin<&mut Self>) -> QString {
+        use teams_cli::api::regional::{to_qt, without_year};
+        let (culture, f) = regional_in_effect();
+        QString::from(
+            serde_json::json!({
+                "culture": culture,
+                "shortDate": to_qt(&f.short_date),
+                "shortDateNoYear": to_qt(&without_year(&f.short_date, culture)),
+                "longDate": to_qt(&f.long_date),
+                "longDateNoYear": to_qt(&without_year(&f.long_date, culture)),
+                "shortTime": to_qt(&f.short_time),
+                "longTime": to_qt(&f.long_time),
+                "firstDayOfWeek": f.first_day_of_week,
+            })
+            .to_string()
+            .as_str(),
+        )
+    }
+
+    pub fn regional_options_json(self: Pin<&mut Self>) -> QString {
+        use teams_cli::api::regional as r;
+        let c = regional_choice(&load_settings());
+        let os = r::resolve(&r::Choice { follow_os: true, ..Default::default() }, &app_locale());
+        let os_language = app_locale().to_lowercase();
+        let time_formats: Vec<_> = r::TIME_FORMATS.iter().map(|(s, l)| serde_json::json!({"short": s, "long": l})).collect();
+        QString::from(
+            serde_json::json!({
+                "followOs": c.follow_os,
+                "appLanguage": c.app_language,
+                "dateFormat": c.date_format,
+                "timeFormat": c.time_format,
+                "languages": r::available_app_languages(),
+                "dateFormats": r::DATE_FORMATS,
+                "timeFormats": time_formats,
+                "os": {"appLanguage": os_language, "dateFormat": os.short_date, "timeFormat": os.short_time},
+            })
+            .to_string()
+            .as_str(),
+        )
+    }
+
+    pub fn save_regional_and_restart(self: Pin<&mut Self>, follow_os: bool, app_language: &QString, date_format: &QString, time_format: &QString) {
+        let mut map = load_settings();
+        map.insert("regionalFollowOs".into(), serde_json::Value::String(follow_os.to_string()));
+        if !follow_os {
+            map.insert("appLanguage".into(), serde_json::Value::String(app_language.to_string()));
+            map.insert("regionalDateFormat".into(), serde_json::Value::String(date_format.to_string()));
+            map.insert("regionalTimeFormat".into(), serde_json::Value::String(time_format.to_string()));
+        }
+        if let Err(e) = save_settings(&map) {
+            tracing::warn!("saving settings failed: {}", short_error(&e));
+            return;
+        }
+        RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
+        tracing::info!("restarting for language and regional formats");
+        quit_application();
     }
 
     pub fn translation_settings_json(self: Pin<&mut Self>) -> QString {

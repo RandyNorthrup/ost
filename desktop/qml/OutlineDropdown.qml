@@ -32,15 +32,15 @@ Item {
     Rectangle {
         anchors.fill: parent; radius: 4
         color: root.filled ? theme.pick("#F5F5F5", "#141414") : theme.surface
-        border.color: root.filled ? "transparent" : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
-        Rectangle { visible: !root.filled || list.opened; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened ? 2 : 0.67; color: list.opened ? theme.brand : theme.textSecondary }
+        border.color: root.filled ? "transparent" : !root.enabled ? theme.pick("#E0E0E0", "#424242") : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+        Rectangle { visible: !root.filled || list.opened; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened ? 2 : 0.67; color: list.opened ? theme.brand : root.enabled ? theme.textSecondary : theme.pick("#E0E0E0", "#424242") }
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 52; elide: Text.ElideRight
             text: root.options.length && root.current >= 0 ? root.options[root.current].label : root.placeholder
-            font.family: theme.font; font.pixelSize: 14; color: root.current >= 0 ? theme.text : theme.textSecondary
+            font.family: theme.font; font.pixelSize: 14; color: !root.enabled ? theme.disabled : root.current >= 0 ? theme.text : theme.textSecondary
         }
-        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
+        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: root.enabled ? theme.textSecondary : theme.disabled }
         HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: list.opened ? list.close() : root.openList() }
         Accessible.role: Accessible.ComboBox

@@ -37,10 +37,10 @@ Item {
     }
     function when(iso) {
         const d = new Date(iso), now = new Date()
-        if (d.toDateString() === now.toDateString()) return Qt.formatTime(d, "h:mm AP")
+        if (d.toDateString() === now.toDateString()) return theme.time(d)
         const y = new Date(now); y.setDate(now.getDate() - 1)
         if (d.toDateString() === y.toDateString()) return "Yesterday"
-        return Qt.formatDate(d, "M/d")
+        return theme.dateNoYear(d)
     }
     function kind(c) {
         if (c.direction === "incoming" && c.state !== "accepted") return "missed"

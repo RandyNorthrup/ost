@@ -69,7 +69,7 @@ Popup {
     readonly property string freeText: {
         const sch = card.schedule || {}
         const wh = sch.workingHours || {}
-        if (sch.nextFree) return "Free at " + Qt.formatTime(new Date(sch.nextFree), "h:mm AP")
+        if (sch.nextFree) return "Free at " + theme.time(new Date(sch.nextFree))
         if (wh.startTime && wh.daysOfWeek) {
             const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
             const [sh, sm] = wh.startTime.split(":").map(Number), [eh, em] = (wh.endTime || "17:00").split(":").map(Number)
@@ -77,21 +77,21 @@ Popup {
             const today = wh.daysOfWeek.indexOf(days[now.getDay()]) >= 0
             if (today && mins >= sh * 60 + sm && mins < eh * 60 + em) return ""
             const at = new Date(now); at.setHours(sh, sm, 0, 0)
-            return "Free at " + Qt.formatTime(at, "h:mm AP")
+            return "Free at " + theme.time(at)
         }
         return ""
     }
     readonly property string workHours: {
         const wh = (card.schedule || {}).workingHours || {}
         if (!wh.startTime) return ""
-        const t = s => { const [h, m] = s.split(":").map(Number); return Qt.formatTime(new Date(2000, 0, 1, h, m), "h:mm AP") }
+        const t = s => { const [h, m] = s.split(":").map(Number); return theme.time(new Date(2000, 0, 1, h, m)) }
         return "Work hours: " + t(wh.startTime) + " - " + t(wh.endTime || "17:00")
     }
     readonly property string localTime: {
         const sch = card.schedule || {}
         const theirs = ((sch.workingHours || {}).timeZone || {}).name || ""
         if (!theirs) return ""
-        return Qt.formatTime(new Date(), "h:mm AP") + (theirs === sch.myTimeZone ? " - Same time zone as you" : " - " + theirs)
+        return theme.time(new Date()) + (theirs === sch.myTimeZone ? " - Same time zone as you" : " - " + theirs)
     }
 
     contentItem: Item {

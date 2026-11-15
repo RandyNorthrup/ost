@@ -240,11 +240,14 @@ Item {
     component Button: Rectangle {
         id: bt
         property string label
+        /// Fluent's primary button (brand fill, white text).
+        property bool primary: false
         signal clicked()
         width: Math.max(96, btText.implicitWidth + 24); height: 31.3; radius: 4
-        color: bh.pressed ? theme.menuHover : bh2.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
-        border.color: theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
-        Text { id: btText; anchors.centerIn: parent; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        color: primary ? (bh.pressed ? theme.pick("#444791", "#444791") : bh2.hovered ? theme.brandHover : theme.brandFill)
+            : bh.pressed ? theme.menuHover : bh2.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+        border.color: primary ? "transparent" : theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
+        Text { id: btText; anchors.centerIn: parent; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: bt.primary ? "#FFFFFF" : theme.text }
         HoverHandler { id: bh2; cursorShape: Qt.PointingHandCursor }
         TapHandler { id: bh; onTapped: bt.clicked() }
         Accessible.role: Accessible.Button

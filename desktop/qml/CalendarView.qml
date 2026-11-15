@@ -64,7 +64,7 @@ Item {
     Component.onCompleted: emitRange()
     readonly property string rangeLabel: {
         const a = start, b = dayAt(days - 1)
-        if (days === 1) return Qt.formatDate(a, "dddd, MMMM d, yyyy")
+        if (days === 1) return theme.longDate(a)
         if (a.getMonth() === b.getMonth()) return Qt.formatDate(a, "MMMM d") + "–" + b.getDate() + ", " + b.getFullYear()
         return Qt.formatDate(a, "MMM d") + " – " + Qt.formatDate(b, "MMM d, yyyy")
     }
@@ -154,7 +154,7 @@ Item {
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.start = root.startFor(parent.day) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: Qt.formatDate(day, "dddd, MMMM d")
+                        Accessible.name: theme.longDateNoYear(day)
                     }
                 }
             }
@@ -383,7 +383,7 @@ Item {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: details.show(ev.modelData, ev) }
                 Accessible.role: Accessible.Button
-                Accessible.name: (modelData.subject || "Event") + ", " + Qt.formatTime(s, "h:mm AP")
+                Accessible.name: (modelData.subject || "Event") + ", " + theme.time(s)
             }
         }
         // Now
@@ -491,8 +491,8 @@ Item {
             DetailRow {
                 icon: "clock-20"
                 text: details.ev.start_utc
-                    ? (details.ev.is_all_day ? Qt.formatDate(new Date(details.ev.start_utc), "ddd M/d/yyyy") + "  All day"
-                       : Qt.formatDateTime(new Date(details.ev.start_utc), "ddd M/d/yyyy h:mm AP") + " - " + Qt.formatTime(new Date(details.ev.end_utc), "h:mm AP"))
+                    ? (details.ev.is_all_day ? Qt.formatDate(new Date(details.ev.start_utc), "ddd") + " " + theme.date(details.ev.start_utc) + "  All day"
+                       : Qt.formatDate(new Date(details.ev.start_utc), "ddd") + " " + theme.dateTime(details.ev.start_utc) + " - " + theme.time(new Date(details.ev.end_utc)))
                     : ""
             }
             // Teams hides the automatic "Microsoft Teams Meeting" location.
@@ -641,13 +641,13 @@ Item {
                 spacing: 8
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: Qt.formatDate(newEvent.at, "dddd, MMMM d")
+                    text: theme.longDateNoYear(newEvent.at)
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                 }
                 ComboBox {
                     id: startBox
                     width: 130
-                    model: Array.from({ length: 48 }, (_, i) => Qt.formatTime(new Date(2000, 0, 1, Math.floor(i / 2), (i % 2) * 30), "h:mm AP"))
+                    model: Array.from({ length: 48 }, (_, i) => theme.time(new Date(2000, 0, 1, Math.floor(i / 2), (i % 2) * 30)))
                     currentIndex: newEvent.at.getHours() * 2 + (newEvent.at.getMinutes() >= 30 ? 1 : 0)
                     onActivated: i => { const d = new Date(newEvent.at); d.setHours(Math.floor(i / 2), (i % 2) * 30, 0, 0); newEvent.at = d }
                     Accessible.name: "Start time"

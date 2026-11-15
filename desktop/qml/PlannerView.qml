@@ -45,7 +45,7 @@ Item {
         if (n === 0) return "Today"
         if (n === 1) return "Tomorrow"
         if (n === -1) return "Yesterday"
-        return Qt.formatDate(day, "ddd M/d")
+        return Qt.formatDate(day, "ddd") + " " + theme.dateNoYear(day)
     }
     readonly property var columns: {
         const key = t => view === "plan" ? (t.bucket || "No bucket") : t.source

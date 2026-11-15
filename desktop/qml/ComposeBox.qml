@@ -62,7 +62,7 @@ Item {
     property bool scheduleAllowed: false
     function scheduleText(ms) {
         const d = new Date(ms)
-        return Qt.formatDate(d, "dddd, MMM d") + " at " + Qt.formatTime(d, "h:mm AP")
+        return Qt.formatDate(d, "dddd, MMM d") + " at " + theme.time(d)
     }
     /// Teams' default: the next 8:00 AM.
     function nextEight() {
@@ -1199,7 +1199,7 @@ Item {
             const out = [], now = Date.now()
             for (let i = 0; i < 48; i++) {
                 const t = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(i / 2), (i % 2) * 30)
-                out.push({ label: Qt.formatTime(t, "h:mm AP"), disabled: t.getTime() <= now })
+                out.push({ label: theme.time(t), disabled: t.getTime() <= now })
             }
             return out
         }
