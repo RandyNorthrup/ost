@@ -637,6 +637,33 @@ pub mod qobject {
         /// Translate a message (Teams' Translate) or show its original.
         #[qinvokable]
         fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
+        /// Teams' Editor: the compose box `doc` now reads `text` (its
+        /// spelling is checked; editor_critiques follows).
+        #[qinvokable]
+        fn editor_set_text(self: Pin<&mut Backend>, doc: &QString, text: &QString);
+        /// The compose box is gone.
+        #[qinvokable]
+        fn editor_close(self: Pin<&mut Backend>, doc: &QString);
+        /// Teams' Add to Dictionary and Ignore all.
+        #[qinvokable]
+        fn editor_add_word(self: Pin<&mut Backend>, word: &QString);
+        #[qinvokable]
+        fn editor_ignore_word(self: Pin<&mut Backend>, word: &QString);
+        /// Settings ▸ General ▸ Editor spellcheck: {loaded, languages,
+        /// dictionary, supported: [{code, native, english}], max}; reading
+        /// them (editor_settings_changed follows).
+        #[qinvokable]
+        fn editor_settings_json(self: Pin<&mut Backend>) -> QString;
+        #[qinvokable]
+        fn editor_read_settings(self: Pin<&mut Backend>);
+        /// Editor's options for a language (JSON [{id, name, priority,
+        /// critiques: [{id, name, binary, default, priority}]}]); empty until
+        /// they load (editor_settings_changed follows).
+        #[qinvokable]
+        fn editor_categories_json(self: Pin<&mut Backend>, language: &QString) -> QString;
+        /// Manage spellcheck languages: the new list (JSON, preferred first).
+        #[qinvokable]
+        fn editor_set_languages(self: Pin<&mut Backend>, languages_json: &QString);
         /// Teams' regional formats in effect (read once: changes apply
         /// after a restart) as Qt format strings: {culture, shortDate,
         /// shortDateNoYear, longDate, longDateNoYear, shortTime, longTime,
@@ -1180,6 +1207,13 @@ pub mod qobject {
         /// Teams' translation languages arrived.
         #[qsignal]
         fn translation_languages_ready(self: Pin<&mut Backend>);
+        /// Teams' Editor: a compose box's critiques (JSON [{id, start,
+        /// length, category, word, suggestions}]).
+        #[qsignal]
+        fn editor_critiques(self: Pin<&mut Backend>, doc: QString, critiques_json: QString);
+        /// Your proofing settings arrived or changed.
+        #[qsignal]
+        fn editor_settings_changed(self: Pin<&mut Backend>);
 
         /// A video_clip_upload finished: the recording's path and {id,
         /// url, error}.
@@ -3229,6 +3263,101 @@ fn apply_translations(chat_id: &str, timeline: &mut [api::messages::MessageView]
     if !wanted.is_empty() {
         auto_translate_messages(chat_id, wanted, settings);
     }
+}
+
+/// Teams' Editor session (started on first use).
+fn editor() -> &'static api::editor::Editor {
+    static E: OnceLock<api::editor::Editor> = OnceLock::new();
+    E.get_or_init(|| {
+        api::editor::Editor::start(runtime().handle(), &app_locale().to_lowercase(), |e| {
+            let Some(qt) = QT_THREAD.get() else { return };
+            match e {
+                api::editor::Event::Critiques { doc, critiques } => {
+                    let json = serde_json::to_string(&critiques).unwrap_or_else(|_| "[]".into());
+                    let _ = qt.queue(move |mut this| this.as_mut().editor_critiques(QString::from(doc.as_str()), QString::from(json.as_str())));
+                }
+                api::editor::Event::Settings(s) => {
+                    for l in &s.languages {
+                        load_editor_categories(l);
+                    }
+                    *proofing_settings().lock().unwrap() = Some(s);
+                    apply_editor_overrides();
+                    let _ = qt.queue(|mut this| this.as_mut().editor_settings_changed());
+                }
+            }
+        })
+    })
+}
+
+/// Editor's options by language, as its service lists them.
+fn editor_categories() -> &'static std::sync::Mutex<HashMap<String, Vec<api::editor::Category>>> {
+    static C: OnceLock<std::sync::Mutex<HashMap<String, Vec<api::editor::Category>>>> = OnceLock::new();
+    C.get_or_init(Default::default)
+}
+
+fn load_editor_categories(lang: &str) {
+    static LOADING: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    if !LOADING.get_or_init(Default::default).lock().unwrap().insert(lang.to_string()) {
+        return;
+    }
+    let lang = lang.to_string();
+    runtime().spawn(async move {
+        match api::editor::categories(&reqwest::Client::new(), &lang).await {
+            Ok(c) => {
+                editor_categories().lock().unwrap().insert(lang, c);
+                apply_editor_overrides();
+                if let Some(qt) = QT_THREAD.get() {
+                    let _ = qt.queue(|mut this| this.as_mut().editor_settings_changed());
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Editor options for {lang}: {}", short_error(&e));
+                LOADING.get().unwrap().lock().unwrap().remove(&lang);
+            }
+        }
+    });
+}
+
+/// Your Editor options, kept on this device as Teams keeps its editorSdk
+/// client preferences: editorCritiques {language: {id: "0"|"1"}} and
+/// editorAutoCorrect [languages] (unset: your first language).
+fn editor_critique_values(map: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
+    map.get("editorCritiques").and_then(|v| v.as_str()).and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn editor_autocorrect_languages(map: &serde_json::Map<String, serde_json::Value>, languages: &[String]) -> Vec<String> {
+    map.get("editorAutoCorrect").and_then(|v| v.as_str()).and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(|| languages.first().cloned().into_iter().collect())
+}
+
+/// Tell the Editor session your options that differ from Editor's defaults
+/// (Teams' OverriddenCritiqueTypeOptions), for your languages.
+fn apply_editor_overrides() {
+    let map = load_settings();
+    let values = editor_critique_values(&map);
+    let languages = proofing_settings().lock().unwrap().as_ref().map(|s| s.languages.clone()).unwrap_or_default();
+    let cats = editor_categories().lock().unwrap();
+    let mut overrides = Vec::new();
+    for lang in &languages {
+        let Some(list) = cats.get(lang) else { continue };
+        for c in list.iter().filter(|c| c.priority <= 0) {
+            let entries = std::iter::once((c.id.clone(), c.name.clone(), 1)).chain(c.critiques.iter().filter(|t| t.priority <= 0).map(|t| (t.id.clone(), t.name.clone(), t.default)));
+            for (id, name, default) in entries {
+                if let Some(v) = values[lang][&id].as_str()
+                    && v.parse::<i64>().ok() != Some(default)
+                {
+                    overrides.push(serde_json::json!({"id": id, "value": v, "languageId": lang, "name": name}));
+                }
+            }
+        }
+    }
+    drop(cats);
+    editor().set_overrides(overrides);
+}
+
+/// Your proofing settings as AugLoop last sent them.
+fn proofing_settings() -> &'static std::sync::Mutex<Option<api::editor::ProofingSettings>> {
+    static S: OnceLock<std::sync::Mutex<Option<api::editor::ProofingSettings>>> = OnceLock::new();
+    S.get_or_init(Default::default)
 }
 
 /// Teams' "Save and restart": main.rs starts OST again after it quits.
@@ -10327,6 +10456,64 @@ impl qobject::Backend {
         });
     }
 
+    pub fn editor_set_text(self: Pin<&mut Self>, doc: &QString, text: &QString) {
+        editor().set_text(&doc.to_string(), &text.to_string());
+    }
+
+    pub fn editor_close(self: Pin<&mut Self>, doc: &QString) {
+        editor().close(&doc.to_string());
+    }
+
+    pub fn editor_add_word(self: Pin<&mut Self>, word: &QString) {
+        editor().add_to_dictionary(&word.to_string());
+    }
+
+    pub fn editor_ignore_word(self: Pin<&mut Self>, word: &QString) {
+        editor().ignore_all(&word.to_string());
+    }
+
+    pub fn editor_settings_json(self: Pin<&mut Self>) -> QString {
+        let s = proofing_settings().lock().unwrap().clone();
+        let supported: Vec<_> = api::editor::supported_languages().iter().map(|(c, n, e)| serde_json::json!({"code": c, "native": n, "english": e})).collect();
+        let map = load_settings();
+        let languages = s.as_ref().map(|s| s.languages.clone()).unwrap_or_default();
+        QString::from(
+            serde_json::json!({"loaded": s.is_some(), "languages": languages, "dictionary": s.map(|s| s.dictionary).unwrap_or_default(),
+                "supported": supported, "max": api::editor::MAX_LANGUAGES, "uiLanguage": app_locale().to_lowercase(),
+                "critiques": editor_critique_values(&map), "autocorrect": editor_autocorrect_languages(&map, &languages)})
+            .to_string()
+            .as_str(),
+        )
+    }
+
+    pub fn editor_read_settings(self: Pin<&mut Self>) {
+        editor().read_settings();
+    }
+
+    pub fn editor_categories_json(self: Pin<&mut Self>, language: &QString) -> QString {
+        let lang = language.to_string().to_lowercase();
+        let cached = editor_categories().lock().unwrap().get(&lang).cloned();
+        match cached {
+            Some(c) => QString::from(serde_json::to_string(&c).unwrap_or_else(|_| "[]".into()).as_str()),
+            None => {
+                load_editor_categories(&lang);
+                QString::from("[]")
+            }
+        }
+    }
+
+    pub fn editor_set_languages(self: Pin<&mut Self>, languages_json: &QString) {
+        let Ok(l) = serde_json::from_str::<Vec<String>>(&languages_json.to_string()) else { return };
+        let l: Vec<String> = l.into_iter().take(api::editor::MAX_LANGUAGES).collect();
+        if let Some(s) = proofing_settings().lock().unwrap().as_mut() {
+            s.languages = l.clone();
+        }
+        editor().set_languages(l);
+        if let Some(qt) = QT_THREAD.get() {
+            let _ = qt.queue(|mut this| this.as_mut().editor_settings_changed());
+        }
+    }
+
     pub fn regional_formats_json(self: Pin<&mut Self>) -> QString {
         use teams_cli::api::regional::{to_qt, without_year};
         let (culture, f) = regional_in_effect();
@@ -11483,6 +11670,10 @@ impl qobject::Backend {
         }
         if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {
             crate::video_effects::apply(&map);
+        }
+        if name == "editorCritiques" || name == "editorAutoCorrect" {
+            apply_editor_overrides();
+            self.as_mut().editor_settings_changed();
         }
         if ["translationTarget", "translationMode", "translationKnown"].contains(&name.as_str()) {
             *translation_cache().write().unwrap() = Some(translation_settings_in(&map));

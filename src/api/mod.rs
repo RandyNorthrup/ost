@@ -43,6 +43,7 @@ pub mod profile;
 pub mod store;
 pub mod store_content;
 pub mod channels;
+pub mod editor;
 pub mod regional;
 pub mod tabs;
 pub mod translation;

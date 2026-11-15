@@ -15,6 +15,8 @@ Item {
     property var options: []
     property string current: ""
     property string accessibleName: ""
+    /// Shown (NeutralForeground2) while nothing is chosen.
+    property string placeholder: ""
     property real listHeight: 340
     signal picked(string key)
     implicitWidth: 294; implicitHeight: 32
@@ -66,8 +68,8 @@ Item {
                 visible: !list.opened && field.text === ""
                 width: parent.width; elide: Text.ElideRight
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.currentOption ? root.currentOption.label : ""
-                font: field.font; color: root.enabled ? theme.text : theme.disabled
+                text: root.currentOption ? root.currentOption.label : root.placeholder
+                font: field.font; color: !root.enabled ? theme.disabled : root.currentOption ? theme.text : theme.textSecondary
             }
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: root.enabled ? theme.textSecondary : theme.disabled }

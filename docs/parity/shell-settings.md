@@ -345,8 +345,17 @@ Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192 ; https://s
   Source: same; winpc measurements
 - [ ] Out of Office: **Schedule** button (see §3.6).
   Source: https://support.microsoft.com/en-US/teams/notifications-settings/schedule-an-out-of-office-status-in-microsoft-teams
-- [ ] Spell check on/off.
+- [x] Spell check: Teams' Editor spellcheck (verified on winpc 2026-11-14).
   Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192
+  - The compose box is proofed by Microsoft Editor over AugLoop (`wss://augloop.office.com/`, token for `https://augloop.office.com/v2`; src/api/editor.rs):
+    - text deltas go out and `AugLoop_Text_Critique` annotations come back;
+    - wavy #EB0000 squiggles; clicking one opens Teams' Editor card (suggestions, Ignore all, Add to Dictionary, ··· Editor settings / Manage languages).
+  - The card lists your spellcheck languages (Editor's authoringLanguages, read and written through AugLoop's proofing settings) as radios; under them sit the chosen language's options:
+    - "Correct words while typing";
+    - the Spelling switch;
+    - Ignore words in UPPERCASE / with numbers / Internet and file addresses, and Flag repeated words.
+  - The options come from Editor's service (`POST https://editor.svc.cloud.microsoft/NLEditor/Config/V2`, Teams_Win32). They are kept on the device like Teams' editorSdk client preferences, and the changed ones are sent as OverriddenCritiqueTypeOptions.
+  - Manage spellcheck languages: up to three languages (··· Move up / Move down / Remove when there are several), plus a picker of Editor's 173 languages and Add.
 - [ ] Keyboard shortcut layout (Teams / Slack / Zoom / Combined) can also be set here.
   Source: https://support.microsoft.com/topic/ee332652-cefc-4b68-94d9-a8e1c391ac47
 - [ ] "Register Teams as the chat app for Microsoft 365" **[third-party; unverified]**.

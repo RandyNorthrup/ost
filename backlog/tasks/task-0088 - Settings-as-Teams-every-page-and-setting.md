@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-14T23:55:00Z'
+updated_date: '2026-11-15T02:37:00Z'
 labels:
   - desktop
   - settings
@@ -45,4 +45,13 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - 2026-11-14 General part 4: Starting chats card (synced messagingSettings.alwaysPopOutNewChat) with Teams' "New Message" window (588x493, measured on winpc; NewChatWindow.qml hosts OST's new-chat form; once sent the chat opens in its own chat window); "Opening content in OST windows" now acts: with New window, a notification's chat opens in a chat window. Verified with --new-chat-window-test (setting synced and put back; nothing sent). Teams' new-chat form itself (the note before anyone is picked, the compose always shown) is OST's own still.
 
 - 2026-11-14 General part 5: chat list keyboard navigation (Up/Down through the shown chats and channels, Fluent focus ring while using the keyboard; Teams opens each as you arrive) and "Use Enter or Spacebar to show content" (synced messagingSettings.disableAutomaticConvSwitchOnKeyboardNav: then Up/Down only move, Enter/Space opens). Verified with --chatlist-keys-test (setting synced and put back). Not yet: the same in @mentions and other lists.
+
+- ff84b5e: Translation card (target language combobox, mode, never-translate chips) kept on this device as Teams does (roaming off by ECS); Teams' automatic translation from languageStamp: "Translate | Never translate German" (Ask), auto-translate with x-ms-knownLanguages (Auto), See original brings the suggestion back. Verified live on linuxlt with OST TEST 139 (German from OST Test 2) via --translation-test; winpc translation settings reverted.
+- General page still to do: Language and regional formats, Editor spellcheck (Manage).
+
+- 00d238b: Language and regional formats (Follow OS, App language of OST's English locales, Teams' date/time formats, Save and restart via exec). All desktop dates/times now go through theme formatters; engine meeting times via api::regional. Verified across a real restart on linuxlt (--regional-test). UI localization is a follow-up task.
+- General page still to do: Editor spellcheck (Manage).
+
+- Editor spellcheck done: compose spelling via Microsoft Editor over AugLoop (src/api/editor.rs), Teams' Editor card, the Editor spellcheck card (languages, Correct words while typing, Spelling + options from NLEditor Config V2) and Manage spellcheck languages. Verified live on linuxlt (--editor-test); test account's spellcheck languages restored to [] (Teams' own UI cannot remove the last one).
+- General page complete; next: audit the other Settings pages against scratchpad/tset.
 <!-- SECTION:NOTES:END -->

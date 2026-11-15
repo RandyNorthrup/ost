@@ -144,7 +144,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? "Out of office" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "oof" ? "Out of office" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -415,6 +415,92 @@ Rectangle {
                     }
                 }
             }
+            // Teams' Editor spellcheck card (measured on winpc 2026-11-14): Manage
+            // opens Manage spellcheck languages; with languages chosen they
+            // are listed as radios (the language whose options show). Your
+            // languages and dictionary are kept by Microsoft Editor (AugLoop,
+            // src/api/editor.rs).
+            SettingsParts.Card {
+                id: editorSpellCard
+                visible: root.page === "general" && !root.subPage
+                icon: "local-language-20"; title: "Editor spellcheck"
+                subtitle: "Customize Editor to check for spelling and grammar improvements in up to three languages. If you'd like to include a different language or remove an old one, select Manage spellcheck languages."
+                trailingY: 31
+                trailing: Component { SettingsParts.Button { label: "Manage"; onClicked: root.subPage = "spellcheck" } }
+                property var st: JSON.parse(backend.editorSettingsJson())
+                property string selected: ""
+                Connections {
+                    target: backend
+                    function onEditorSettingsChanged() { editorSpellCard.st = JSON.parse(backend.editorSettingsJson()) }
+                }
+                onVisibleChanged: if (visible) backend.editorReadSettings()
+                function nameOf(code) { const l = st.supported.find(x => x.code === code); return l ? l.native : code }
+                Column {
+                    width: parent.width
+                    topPadding: editorSpellCard.st.languages.length ? 10 : 0
+                    Repeater {
+                        model: editorSpellCard.st.languages
+                        SettingsParts.RadioRow {
+                            required property string modelData
+                            required property int index
+                            label: editorSpellCard.nameOf(modelData)
+                            checked: (editorSpellCard.selected || editorSpellCard.st.languages[0]) === modelData
+                            onPicked: editorSpellCard.selected = modelData
+                        }
+                    }
+                }
+                // The chosen language's options (Teams' measured layout): Correct
+                // words while typing, then each category's switch over its
+                // checkboxes (greyed while the category is off).
+                readonly property string optLang: selected || st.languages[0] || ""
+                property var cats: []
+                function loadCats() { cats = optLang ? JSON.parse(backend.editorCategoriesJson(optLang)).filter(c => c.priority <= 0) : [] }
+                onOptLangChanged: loadCats()
+                onStChanged: loadCats()
+                function value(id, def) { const m = st.critiques[optLang]; return m && m[id] !== undefined ? Number(m[id]) : def }
+                function setValue(id, v) {
+                    const all = JSON.parse(JSON.stringify(st.critiques || {}))
+                    all[optLang] = all[optLang] || {}
+                    all[optLang][id] = String(v)
+                    backend.setSetting("editorCritiques", JSON.stringify(all))
+                }
+                SettingsParts.Gap { size: editorSpellCard.optLang ? 15 : 0 }
+                SettingsParts.SwitchRow {
+                    visible: editorSpellCard.optLang !== ""
+                    label: "Correct words while typing"
+                    on: editorSpellCard.st.autocorrect.indexOf(editorSpellCard.optLang) >= 0
+                    onToggled: v => {
+                        const l = editorSpellCard.st.autocorrect.filter(x => x !== editorSpellCard.optLang)
+                        backend.setSetting("editorAutoCorrect", JSON.stringify(v ? l.concat([editorSpellCard.optLang]) : l))
+                    }
+                }
+                Repeater {
+                    model: editorSpellCard.cats
+                    Column {
+                        id: catCol
+                        required property var modelData
+                        readonly property bool catOn: editorSpellCard.value(modelData.id, 1) === 1
+                        width: parent.width
+                        SettingsParts.SwitchRow {
+                            label: catCol.modelData.name
+                            on: catCol.catOn
+                            height: 44
+                            onToggled: v => editorSpellCard.setValue(catCol.modelData.id, v ? 1 : 0)
+                        }
+                        Repeater {
+                            model: catCol.modelData.critiques.filter(t => t.priority <= 0 && t.binary)
+                            SettingsParts.CheckRow {
+                                required property var modelData
+                                rowHeight: 40
+                                label: modelData.name
+                                usable: catCol.catOn
+                                checked: editorSpellCard.value(modelData.id, modelData.default) === 1
+                                onToggled: v => editorSpellCard.setValue(modelData.id, v ? 1 : 0)
+                            }
+                        }
+                    }
+                }
+            }
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "calendar-arrow-right-20"; title: "Out of office"
@@ -484,6 +570,75 @@ Rectangle {
                 setting: root.mt.oof || null
                 onSave: v => { root.setMt("oof", v); root.subPage = "" }
                 onCancel: root.subPage = ""
+            }
+
+            // ---- General ▸ Manage spellcheck languages (Teams', measured) ----
+            // Your languages as 40 px rows over a divider (360 wide, with ···
+            // Move up / Move down / Remove when there are several), then a
+            // language picker (250 x 32) and Add (96 x 32) while fewer than three.
+            SettingsParts.Card {
+                id: spellManage
+                visible: root.page === "general" && root.subPage === "spellcheck"
+                icon: "local-language-20"; title: "Spellcheck languages"
+                subtitle: "Select up to three languages you'd like Editor to work in. Make sure you select your preferred language at the top of the list."
+                property var st: JSON.parse(backend.editorSettingsJson())
+                property string pick: ""
+                Connections {
+                    target: backend
+                    function onEditorSettingsChanged() { spellManage.st = JSON.parse(backend.editorSettingsJson()) }
+                }
+                onVisibleChanged: if (visible) { pick = ""; backend.editorReadSettings() }
+                function nameOf(code) { const l = st.supported.find(x => x.code === code); return l ? l.native : code }
+                function setLanguages(l) { backend.editorSetLanguages(JSON.stringify(l)) }
+                SettingsParts.Gap { size: spellManage.st.languages.length ? 15 : 0 }
+                Repeater {
+                    model: spellManage.st.languages
+                    Item {
+                        id: langRow
+                        required property string modelData
+                        required property int index
+                        width: 360; height: 40
+                        Text { y: 9.6; text: spellManage.nameOf(langRow.modelData); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Rectangle {
+                            visible: spellManage.st.languages.length > 1
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            width: 32; height: 32; radius: 4
+                            color: moreHover.hovered || langMenu.opened ? theme.menuHover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.text }
+                            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: langMenu.open() }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "More options"
+                            Menu {
+                                id: langMenu
+                                y: parent.height
+                                MenuItem { visible: langRow.index > 0; height: visible ? implicitHeight : 0; text: "Move up"; onTriggered: { const l = spellManage.st.languages.slice(); l.splice(langRow.index - 1, 0, l.splice(langRow.index, 1)[0]); spellManage.setLanguages(l) } }
+                                MenuItem { visible: langRow.index < spellManage.st.languages.length - 1; height: visible ? implicitHeight : 0; text: "Move down"; onTriggered: { const l = spellManage.st.languages.slice(); l.splice(langRow.index + 1, 0, l.splice(langRow.index, 1)[0]); spellManage.setLanguages(l) } }
+                                MenuItem { text: "Remove"; onTriggered: spellManage.setLanguages(spellManage.st.languages.filter(x => x !== langRow.modelData)) }
+                            }
+                        }
+                        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                    }
+                }
+                SettingsParts.Gap { size: spellManage.st.languages.length ? 23.7 : 15 }
+                Row {
+                    visible: spellManage.st.languages.length < spellManage.st.max
+                    spacing: 14
+                    SearchCombobox {
+                        width: 250; height: 32
+                        options: spellManage.st.supported.filter(l => spellManage.st.languages.indexOf(l.code) < 0).map(l => ({ key: l.code, label: l.native, sublabel: l.english }))
+                        current: spellManage.pick
+                        accessibleName: "Select a spell check language"
+                        placeholder: "Select a spell check language"
+                        onPicked: code => spellManage.pick = code
+                    }
+                    SettingsParts.Button {
+                        label: "Add"
+                        height: 32
+                        onClicked: if (spellManage.pick) { spellManage.setLanguages(spellManage.st.languages.concat([spellManage.pick])); spellManage.pick = "" }
+                    }
+                }
+                SettingsParts.Gap { size: 10 }
             }
 
             // ---- Appearance ----
@@ -1408,6 +1563,14 @@ Rectangle {
     }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
+    /// Editor spellcheck (the Editor card's links): General scrolled to it,
+    /// or its Manage spellcheck languages page.
+    function showEditor(manage) {
+        page = "general"
+        subPage = manage ? "spellcheck" : ""
+        content.contentY = 0
+        if (!manage) Qt.callLater(() => { content.contentY = Math.max(0, Math.min(pageCol.y + editorSpellCard.y - 12, content.contentHeight - content.height)) })
+    }
     /// Test hooks: General scrolled to Language and regional formats; the card.
     function scrollToRegionalForTest() { content.contentY = Math.max(0, Math.min(pageCol.y + regionalCard.y - 12, content.contentHeight - content.height)) }
     function regionalForTest() { return regionalCard }

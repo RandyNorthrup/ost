@@ -184,6 +184,70 @@ Item {
     height: bannerShownH + boxHeight + 2 + (post ? 0 : 16)
 
     function plainText() { return input.getText(0, input.length) }
+    // Teams' Editor: this box's text is checked as you type (one tile of
+    // the Editor session); misspellings are squiggled and clicking one
+    // opens Teams' Editor card.
+    readonly property string editorDoc: "compose-" + Math.random().toString(36).slice(2)
+    property var critiques: []
+    property var openCritique: null
+    Connections {
+        target: backend
+        function onEditorCritiques(doc, json) { if (doc === root.editorDoc) { root.critiques = JSON.parse(json); root.autoCorrect() } }
+    }
+    // Teams' "Correct words while typing": a critique whose first suggestion
+    // may be applied automatically is, once the word is finished, in the
+    // languages that have it on (Settings ▸ General ▸ Editor spellcheck).
+    property var autoCorrected: ({})
+    function autoCorrect() {
+        const auto = root.critiques.filter(c => c.autocorrect && c.suggestions.length && !autoCorrected[c.id])
+        if (!auto.length) return
+        const langs = JSON.parse(backend.editorSettingsJson()).autocorrect
+        const text = plainText()
+        for (const c of auto) {
+            const after = text.charAt(c.start + c.length)
+            const done = after !== "" && /[\s.,;:!?)]/.test(after) && (input.cursorPosition < c.start || input.cursorPosition > c.start + c.length)
+            if (!done || (c.language && langs.indexOf(c.language) < 0)) continue
+            autoCorrected[c.id] = true
+            const pos = input.cursorPosition
+            input.remove(c.start, c.start + c.length)
+            input.insert(c.start, c.suggestions[0])
+            input.cursorPosition = pos + c.suggestions[0].length - c.length
+            return
+        }
+    }
+    Component.onDestruction: backend.editorClose(editorDoc)
+    function checkSpelling() { backend.editorSetText(editorDoc, plainText()) }
+    /// Test hooks: open the card of the i-th critique; close it.
+    function critiqueCardForTest(i) { if (critiques[i]) openEditorCard(critiques[i]) }
+    function closeCardForTest() { editorCard.close() }
+    function applySuggestion(c, s) {
+        input.remove(c.start, c.start + c.length)
+        input.insert(c.start, s)
+        input.cursorPosition = c.start + s.length
+        input.forceActiveFocus()
+    }
+    function openEditorCard(c) {
+        const r = input.positionToRectangle(c.start)
+        const p = input.mapToItem(root, r.x, r.y)
+        root.openCritique = c
+        editorCard.critique = c
+        // Above the word, its suggestions lined up with it; below when there
+        // is no room.
+        editorCard.x = Math.max(0, Math.min(root.width - editorCard.width, p.x - 16))
+        // Its height from its parts (the suggestions aren't laid out yet).
+        const h = 38 + 36 * c.suggestions.length + 45.3
+        const top = root.mapToItem(null, 0, p.y).y
+        editorCard.y = top - h - 6 >= 0 ? p.y - h - 6 : p.y + r.height + 6
+        editorCard.open()
+    }
+    EditorCard {
+        id: editorCard
+        parent: root
+        onPicked: s => { const c = root.openCritique; if (c) root.applySuggestion(c, s) }
+        onIgnoreAll: if (root.openCritique) backend.editorIgnoreWord(root.openCritique.word)
+        onAddToDictionary: if (root.openCritique) backend.editorAddWord(root.openCritique.word)
+        onClosed: root.openCritique = null
+    }
     // The text as clean HTML (RichText), for Teams' message HTML.
     function formattedText() { return rich.exportHtml() }
     // What applies at the cursor (the formatting bar's pressed buttons),
@@ -852,10 +916,57 @@ Item {
                     text: root.placeholder
                     font: input.font; color: theme.textSecondary
                 }
-                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention(); root.refreshRichState() }
+                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention(); root.refreshRichState(); root.checkSpelling() }
                 onCursorPositionChanged: { root.checkMention(); root.refreshRichState() }
                 // The formatting bar's commands act on this text's document.
                 RichText { id: rich }
+                // Teams' spelling squiggles: a wavy #EB0000 underline under each
+                // misspelt word (#FDE5E5 behind it while its card is open).
+                Repeater {
+                    model: root.critiques
+                    Item {
+                        id: sq
+                        required property var modelData
+                        readonly property rect a: { input.text; input.width; return input.positionToRectangle(modelData.start) }
+                        readonly property rect b: { input.text; input.width; return input.positionToRectangle(modelData.start + modelData.length) }
+                        readonly property bool open: root.openCritique !== null && root.openCritique.id === modelData.id
+                        // Behind the text (a negative z draws under the editor's own
+                        // text). A word broken over two lines underlines to the
+                        // line's end.
+                        z: -1
+                        x: a.x; y: a.y
+                        width: Math.max(1, (b.y === a.y ? b.x : input.width) - a.x); height: a.height
+                        Rectangle { anchors.fill: parent; visible: sq.open; color: theme.pick("#FDE5E5", "#3E1F25") }
+                        // Chromium's wavy underline as Teams shows it (measured): a
+                        // 7.3 px period, 2.7 px high, in the line's last 4 px.
+                        Canvas {
+                            y: parent.height - 4; width: parent.width; height: 4
+                            onWidthChanged: requestPaint()
+                            onPaint: {
+                                const ctx = getContext("2d")
+                                ctx.reset()
+                                ctx.strokeStyle = "#EB0000"
+                                ctx.lineWidth = 1
+                                ctx.beginPath()
+                                for (let x = 0; x <= width; x += 0.5) {
+                                    const y = 2 + 1.35 * Math.sin(2 * Math.PI * x / 7.3)
+                                    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+                                }
+                                ctx.stroke()
+                            }
+                        }
+                    }
+                }
+                // Clicking a squiggled word opens its card (the click still
+                // places the cursor).
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onTapped: ev => {
+                        const pos = input.positionAt(ev.position.x, ev.position.y)
+                        const c = root.critiques.find(c => pos >= c.start && pos <= c.start + c.length)
+                        if (c && input.selectedText.length === 0) root.openEditorCard(c)
+                    }
+                }
                 onLineCountChanged: if (lineCount > 1) root.grown = true
                 onActiveFocusChanged: if (activeFocus) root.enterKey = backend.setting("enterKey") || "send"
                 Keys.onPressed: event => {
