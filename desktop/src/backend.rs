@@ -12634,7 +12634,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -12957,6 +12957,20 @@ impl qobject::Backend {
                         let mri = a["mri"].as_str().unwrap_or_default();
                         let id = api::contacts::notify_when_available(&client, mri).await?;
                         Ok(json!({ "mri": mri.to_lowercase(), "id": id }))
+                    }
+                    // Settings ▸ Privacy: blocked people and priority access
+                    // ({list: "blocked"|"priority", mri}).
+                    "people-list" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let list = if a["list"] == "blocked" { api::contacts::PeopleList::Blocked } else { api::contacts::PeopleList::Priority };
+                        let mris = api::contacts::people_list(&client, list).await?;
+                        Ok(json!({ "list": a["list"], "mris": mris }))
+                    }
+                    "people-list-add" | "people-list-remove" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let list = if a["list"] == "blocked" { api::contacts::PeopleList::Blocked } else { api::contacts::PeopleList::Priority };
+                        api::contacts::manage_people_list(&client, list, a["mri"].as_str().unwrap_or_default(), op == "people-list-add").await?;
+                        Ok(json!({ "list": a["list"] }))
                     }
                     "notify-off" => {
                         let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();

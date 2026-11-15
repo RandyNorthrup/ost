@@ -352,3 +352,77 @@ mod tagged_tests {
         assert_eq!(tagged_from(&v), vec![("8:orgid:a".to_string(), "c1".to_string(), "a@x".to_string())]);
     }
 }
+
+// ---- Blocked people and priority access (Settings ▸ Privacy) ----
+
+/// Teams' two people lists in its user settings: who you blocked
+/// ("blocklist") and who can reach you in Do not disturb
+/// ("breakthroughlist", Manage priority access).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeopleList {
+    Blocked,
+    Priority,
+}
+
+impl PeopleList {
+    fn path(self) -> &'static str {
+        match self {
+            PeopleList::Blocked => "blocklist",
+            PeopleList::Priority => "breakthroughlist",
+        }
+    }
+}
+
+/// The list's MRIs (`GET {mt}/beta/userSettings/{list}`: `{value: [mri]}`).
+pub async fn people_list(client: &TeamsClient, list: PeopleList) -> Result<Vec<String>> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let resp = client
+        .http()
+        .get(format!("{base}/beta/userSettings/{}", list.path()))
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", "settings")
+        .send()
+        .await
+        .context("people list")?;
+    if !resp.status().is_success() {
+        bail!("HTTP {} for {}", resp.status().as_u16(), list.path());
+    }
+    let v: serde_json::Value = resp.json().await.context("people list reply")?;
+    Ok(list_mris(&v))
+}
+
+fn list_mris(v: &serde_json::Value) -> Vec<String> {
+    v["value"].as_array().into_iter().flatten().filter_map(|m| m.as_str().map(str::to_lowercase)).collect()
+}
+
+/// Add or remove someone (`POST {mt}/beta/userSettings/{list}/manage` with
+/// `{add: [mri]}` or `{remove: [mri]}`).
+pub async fn manage_people_list(client: &TeamsClient, list: PeopleList, mri: &str, add: bool) -> Result<()> {
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let body = if add { serde_json::json!({ "add": [mri] }) } else { serde_json::json!({ "remove": [mri] }) };
+    let resp = client
+        .http()
+        .post(format!("{base}/beta/userSettings/{}/manage", list.path()))
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", "settings")
+        .json(&body)
+        .send()
+        .await
+        .context("people list change")?;
+    if !resp.status().is_success() {
+        bail!("HTTP {} changing {}", resp.status().as_u16(), list.path());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod people_list_tests {
+    #[test]
+    fn mris_as_the_list_sends_them() {
+        let v = serde_json::json!({"value": ["8:orgid:ABC", "8:orgid:def"], "type": "System.Collections.Generic.List"});
+        assert_eq!(super::list_mris(&v), ["8:orgid:abc", "8:orgid:def"]);
+        assert!(super::list_mris(&serde_json::json!({})).is_empty());
+    }
+}

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-15T04:11:00Z'
+updated_date: '2026-11-15T04:29:00Z'
 labels:
   - desktop
   - settings
@@ -65,4 +65,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - Notifications and activity: Posts in all shown channels (+ Include replies), meeting chat notifications for accepted / tentative meetings (chatSettings), Presence ▸ Manage status notifications (Notify when available list with Add people), Calendar section (userGraphSettings for the Calendar app). Verified on linuxlt (--notif-test, change restored). Sounds and banner position/size are separate tasks.
 
 - Accounts and orgs page built (was empty): account (avatar, name, e-mail), Refresh license and restart (restarts OST), Manage (myaccount.microsoft.com with login_hint), the organisation row with the brand bar. Verified on linuxlt (--accounts-test).
+
+- Privacy: Manage priority contacts / Manage blocked contacts buttons and their pages (Teams' userSettings breakthroughlist / blocklist via {mt}/beta/userSettings/{list}[/manage]); DND checkbox sublabel. Verified on linuxlt (--privacy-test adds and removes OST Test 2). Remaining Privacy cards: work location, camera/mic off on lock, diagnostic data, extended diagnostics, E2EE calls, optional connected experiences.
 <!-- SECTION:NOTES:END -->

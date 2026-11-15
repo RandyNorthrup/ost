@@ -144,7 +144,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? "Out of office" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -1156,6 +1156,112 @@ Rectangle {
                 }
             }
 
+            // ---- Privacy ▸ Manage priority access / Manage blocked people ----
+            // Teams' user-settings lists (breakthroughlist, blocklist): the
+            // people, each removable; priority access adds people through
+            // Teams' "Search for a name or number" picker (347 x 32).
+            Item {
+                id: peopleLists
+                visible: root.page === "privacy" && (root.subPage === "priority" || root.subPage === "blocked")
+                width: parent.width; height: listCol.height
+                readonly property string list: root.subPage === "blocked" ? "blocked" : "priority"
+                property var mris: []
+                readonly property var names: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
+                function load() { mris = []; backend.channelAction("people-list", "", "", JSON.stringify({ list: list })) }
+                onVisibleChanged: if (visible) load()
+                onListChanged: if (visible) load()
+                Connections {
+                    target: backend
+                    function onChannelActionResultChanged() {
+                        const r = JSON.parse(backend.channelActionResult || "{}")
+                        if (r.op === "people-list" && r.ok && r.data && r.data.list === peopleLists.list) {
+                            peopleLists.mris = r.data.mris || []
+                            const want = peopleLists.mris.filter(m => !peopleLists.names[m])
+                            if (want.length) backend.resolveNames(JSON.stringify(want))
+                        } else if ((r.op === "people-list-add" || r.op === "people-list-remove") && r.ok) peopleLists.load()
+                        else if ((r.op === "people-list-add" || r.op === "people-list-remove") && !r.ok) backend.toast("Something went wrong on our end. Please try again.", "error")
+                    }
+                }
+                Column {
+                    id: listCol
+                    width: parent.width
+                    spacing: 0
+                    // Blocked: Teams' page is two lines of text, then the people.
+                    Column {
+                        visible: peopleLists.list === "blocked"
+                        width: parent.width
+                        topPadding: 20
+                        spacing: 30
+                        Text { width: parent.width; wrapMode: Text.Wrap; text: "When you block someone, they can't call you, message you, or see your presence."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { visible: peopleLists.mris.length === 0; width: parent.width; wrapMode: Text.Wrap; text: "When you block people, you'll see them listed below."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    }
+                    SettingsParts.Card {
+                        id: priorityCard
+                        visible: peopleLists.list === "priority"
+                        icon: "presence-dnd-20"; title: "Manage priority access"
+                        subtitle: "When your status is set to Do not disturb, you can still receive notifications for chats, calls, and @mentions from the people below."
+                        trailingY: 21; trailingRight: 24.7
+                        trailing: Component {
+                            Rectangle {
+                                width: 347; height: 32; radius: 4
+                                color: theme.surface
+                                border.color: prioField.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
+                                FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-16"; size: 16; color: theme.textSecondary }
+                                TextInput {
+                                    id: prioField
+                                    x: 30; width: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
+                                    font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                                    onTextEdited: { prioDelay.restart(); if (text.trim().length >= 2) prioMatches.open(); else prioMatches.close() }
+                                    Text { visible: !prioField.text; text: "Search for a name or number"; font: prioField.font; color: theme.textSecondary }
+                                    Keys.onEscapePressed: { text = ""; prioMatches.close() }
+                                    Accessible.name: "Search for a name or number"
+                                }
+                                Timer { id: prioDelay; interval: 300; onTriggered: if (prioField.text.trim().length >= 2) backend.searchPeople(prioField.text.trim()) }
+                                Popup {
+                                    id: prioMatches
+                                    y: parent.height + 2; width: parent.width; padding: 4
+                                    closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnEscape
+                                    background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                                    contentItem: Column {
+                                        Repeater {
+                                            model: backend.peopleJson ? JSON.parse(backend.peopleJson).slice(0, 6) : []
+                                            Rectangle {
+                                                required property var modelData
+                                                width: prioMatches.width - 8; height: 44; radius: 4
+                                                color: ppHover.hovered ? theme.menuHover : "transparent"
+                                                Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name || ""; photoId: parent.modelData.id || "" }
+                                                Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                                HoverHandler { id: ppHover; cursorShape: Qt.PointingHandCursor }
+                                                TapHandler { onTapped: { backend.channelAction("people-list-add", "", "", JSON.stringify({ list: "priority", mri: "8:orgid:" + parent.modelData.id })); prioField.text = ""; prioMatches.close() } }
+                                                Accessible.role: Accessible.Button
+                                                Accessible.name: modelData.name || ""
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    SettingsParts.Gap { size: peopleLists.mris.length ? 12 : 0 }
+                    Repeater {
+                        model: peopleLists.mris
+                        Item {
+                            id: plRow
+                            required property string modelData
+                            width: Math.min(listCol.width, 560); height: 48
+                            readonly property string name: peopleLists.names[modelData] || ""
+                            Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: plRow.name || "?"; photoId: plRow.modelData.replace(/^8:orgid:/, "") }
+                            Text { x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 170; elide: Text.ElideRight; text: plRow.name || plRow.modelData; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            SettingsParts.Button {
+                                anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                label: peopleLists.list === "blocked" ? "Unblock" : "Remove"
+                                onClicked: backend.channelAction("people-list-remove", "", "", JSON.stringify({ list: peopleLists.list, mri: plRow.modelData }))
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---- Accounts and orgs (Teams', measured on winpc 2026-11-14) ----
             // Your account (64 avatar, name, e-mail) with Refresh license and
             // restart and Manage (your Microsoft account page), then your
@@ -1219,19 +1325,24 @@ Rectangle {
 
             // ---- Privacy ----
             SettingsParts.Card {
-                visible: root.page === "privacy"
+                visible: root.page === "privacy" && !root.subPage
                 icon: "presence-dnd-20"; title: "Do not disturb"
-                subtitle: "You can still receive notifications from people who have priority access when your status is set to do not disturb."
+                subtitle: "You can still receive notifications from people who have priority access when your status is set to Do not disturb."
+                trailingY: 31
+                trailing: Component { SettingsParts.Button { label: "Manage priority contacts"; onClicked: root.subPage = "priority" } }
                 SettingsParts.CheckRow {
                     label: "Set my status to do not disturb when I'm sharing my screen"
+                    sublabel: "Turning this setting off will change your status to busy and let you receive calls, as well as urgent and priority contact notifications."
                     checked: root.mt.allowAutoDnd !== false
                     onToggled: on => root.setMt("allowAutoDnd", on)
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy"
+                visible: root.page === "privacy" && !root.subPage
                 icon: "person-prohibited-20"; title: "Blocked contacts"
                 subtitle: "Blocked contacts will be unable to call you, message you, or see your presence."
+                trailingY: 23
+                trailing: Component { SettingsParts.Button { label: "Manage blocked contacts"; onClicked: root.subPage = "blocked" } }
                 SettingsParts.CheckRow {
                     label: "Block calls with no caller ID"
                     checked: root.mt.blockAnonymousCaller === true
@@ -1239,17 +1350,17 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy"
+                visible: root.page === "privacy" && !root.subPage
                 icon: "clipboard-task-list-20"; title: "Surveys"; subtitle: "Participate in surveys from OST."
                 trailing: Component { SettingsParts.Toggle { on: root.prop("userEnableSurveysNotification", [], "true") !== "false"; accessibleName: "Surveys"; onToggled: v => root.setProp("userEnableSurveysNotification", "", v ? "true" : "false") } }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy"
+                visible: root.page === "privacy" && !root.subPage
                 icon: "people-list-20"; title: "Identify me in attendance reports"; subtitle: "Let meeting or event organizer know your attendance information."
                 trailing: Component { SettingsParts.Toggle { on: root.prop("showInMeetingReport", [], "true") !== "false"; accessibleName: "Identify me in attendance reports"; onToggled: v => root.setProp("showInMeetingReport", "", v ? "true" : "false") } }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy"
+                visible: root.page === "privacy" && !root.subPage
                 icon: "mic-20"; title: "Keyboard shortcut to unmute"; subtitle: "Press and hold Ctrl + Spacebar to temporarily unmute your mic during a meeting."
                 trailing: Component { SettingsParts.Toggle { on: root.prop("enablePushToTalk", [], "true") !== "false"; accessibleName: "Keyboard shortcut to unmute"; onToggled: v => root.setProp("enablePushToTalk", "", v ? "true" : "false") } }
             }
