@@ -212,13 +212,16 @@ Item {
         property bool checked
         property bool usable: true
         property real rowHeight: 47
+        /// Where the label wraps (Teams' 332.3 beside a dropdown), else the
+        /// row's width.
+        property real labelWidth: NaN
         /// The gap under the 32 px checkbox; a card's last row drops it.
         readonly property real trailingGap: Math.max(0, rowHeight - 32)
         signal toggled(bool on)
         width: parent ? parent.width : 0
         height: Math.max(rowHeight, labelText.height + (subText.visible ? subText.height : 0) + 12 + trailingGap)
         Box { y: 8; checked: cr.checked; usable: cr.usable; hovered: ch.hovered }
-        Text { id: labelText; x: 28; y: 6; width: parent.width - 28; text: cr.label; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: cr.usable ? theme.text : theme.disabled }
+        Text { id: labelText; x: 28; y: 6; width: isNaN(cr.labelWidth) ? parent.width - 28 : cr.labelWidth; text: cr.label; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: cr.usable ? theme.text : theme.disabled }
         Text { id: subText; visible: !!cr.sublabel; x: 28; y: labelText.y + labelText.height; width: parent.width - 28; text: cr.sublabel; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
         HoverHandler { id: ch; cursorShape: cr.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: cr.usable; onTapped: cr.toggled(!cr.checked) }

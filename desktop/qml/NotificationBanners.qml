@@ -86,7 +86,12 @@ Window {
         toasts[t.id] = t
         if (!old) order[priority(t)].push(t.id)
         regenerate(t.id)
-        if (!t.silent && t.kind !== "call" && sound.source.toString() !== "") { sound.stop(); sound.play() }
+        // Teams' sound for it (Settings ▸ Notifications ▸ Sound).
+        if (!t.silent && t.kind !== "call" && t.sound) {
+            sound.stop()
+            sound.source = "../assets/sounds/" + t.sound + ".mp3"
+            sound.play()
+        }
     }
     /// Take a banner away (its action ran, it was closed, or it timed out).
     function dismiss(id) {
@@ -176,8 +181,16 @@ Window {
 
     MediaPlayer {
         id: sound
-        source: backend.notificationSound()
-        audioOutput: AudioOutput {}
+        audioOutput: AudioOutput { device: root.speaker }
+        onErrorOccurred: (e, msg) => console.warn("BANNER sound error", source, msg)
+        onPlayingChanged: if (playing) console.info("BANNER sound", source)
+    }
+    /// The speaker chosen in Settings ▸ Devices (Teams plays notification
+    /// sounds there), else the default.
+    MediaDevices { id: outputs }
+    readonly property var speaker: {
+        const want = backend.setting("speakerDevice")
+        return outputs.audioOutputs.find(d => d.description === want || d.id == want) || outputs.defaultAudioOutput
     }
 
     Column {

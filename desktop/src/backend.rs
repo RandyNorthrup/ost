@@ -360,6 +360,8 @@ pub mod qobject {
         /// Settings ▸ Recognition: {loaded, voice, voiceRecording, face,
         /// faceCapture, passiveVoice, error, busy}.
         #[qproperty(QString, recognition_json)]
+        /// An incoming call is ringing here (the ringer plays).
+        #[qproperty(bool, ringer_on)]
         #[qproperty(QString, typing_text)]
         /// The typer whose avatar the typing indicator shows (the latest).
         #[qproperty(QString, typing_avatar)]
@@ -2279,6 +2281,7 @@ pub struct BackendRust {
     report_result: QString,
     quick_reactions_json: QString,
     recognition_json: QString,
+    ringer_on: bool,
     typing_avatar: QString,
     typing_avatar_id: QString,
     window_active: bool,
@@ -3157,6 +3160,32 @@ struct NotifyPrefs {
     meet_now: bool,
     seconds: u32,
     flash: bool,
+    /// Teams' sound for notifications (toastSettings.alertSoundType) and
+    /// for urgent and priority-contact ones (alertUrgentSoundType), as
+    /// file names in assets/sounds.
+    sound_file: String,
+    urgent_sound_file: String,
+    urgent_sounds: bool,
+    /// "Play sounds with incoming calls, requests to join, and meeting
+    /// start notifications".
+    call_sounds: bool,
+}
+
+/// Teams' notification sounds by their setting value (settings-app `T`).
+fn teams_sound_file(kind: &str) -> &'static str {
+    match kind {
+        "Vibe" => "a2_teams_basic_notification_r4_vibe",
+        "Nudge" => "a3_teams_basic_notification_r4_nudge",
+        "Tap" => "a4_teams_basic_notification_r4_tap",
+        "Flick" => "a5_teams_basic_notification_r4_flick",
+        "Pluck" => "a6_teams_basic_notification_r4_pluck",
+        "Summon" => "a7_teams_basic_notification_r4_summon",
+        "Ping" => "a8_teams_basic_notification_r4_ping",
+        "Prioritize" => "b2_teams_urgent_notification_r4_prioritize",
+        "Escalate" => "b3_teams_urgent_notification_r4_escalate",
+        "Alarm" => "b4_teams_urgent_notification_r4_alarm",
+        _ => "00_teams_basic_notification_r4_default",
+    }
 }
 
 fn notify_prefs(settings_json: &str, local: &serde_json::Map<String, serde_json::Value>) -> NotifyPrefs {
@@ -3178,6 +3207,10 @@ fn notify_prefs(settings_json: &str, local: &serde_json::Map<String, serde_json:
         meet_now: flag(t("HuddleStartedNotification"), false),
         seconds: l("toastSeconds").and_then(|s| s.parse().ok()).unwrap_or(5),
         flash: l("flashTaskbar").as_deref() != Some("false"),
+        sound_file: teams_sound_file(t("alertSoundType").as_str().unwrap_or("Default")).to_string(),
+        urgent_sound_file: teams_sound_file(t("alertUrgentSoundType").as_str().unwrap_or("DefaultUrgent")).to_string(),
+        urgent_sounds: on_off(t("PlayNotificationSoundsForUrgentAndPriority"), true),
+        call_sounds: ups["soundsSettings"]["incomingCallsAndMeetingStartSound"].as_str() != Some("Off"),
     }
 }
 
@@ -8339,6 +8372,7 @@ impl qobject::Backend {
                 "quickReply": quick_reply,
                 "seconds": prefs.seconds,
                 "silent": silent,
+                "sound": if m.urgent && prefs.urgent_sounds { &prefs.urgent_sound_file } else { &prefs.sound_file },
             });
             // A group chat's banner names the sender as Teams does: "OST:
             // hello" (their short name, which needs their profile once).
@@ -8468,7 +8502,9 @@ impl qobject::Backend {
                 "chatId": chat_id, "chatName": chat_name,
                 "senderMri": start.initiator, "senderName": who,
                 "seconds": 20,
-                "silent": !prefs.sound,
+                // Teams' meeting-started sound (its MeetingStarted toast sound).
+                "silent": !prefs.sound || !prefs.call_sounds,
+                "sound": "teams_meet_up_reminder",
                 "actions": [{ "id": "join", "label": "Join" }, { "id": "message", "label": "Message" }],
             });
             self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
@@ -9002,16 +9038,11 @@ impl qobject::Backend {
     }
 
     pub fn set_ringer(self: Pin<&mut Self>, on: bool) {
-        static RINGER: std::sync::Mutex<Option<teams_cli::calling::ringtone::Ringtone>> =
-            std::sync::Mutex::new(None);
-        let mut ringer = RINGER.lock().unwrap_or_else(|e| e.into_inner());
-        match (on, ringer.is_some()) {
-            (true, false) => {
-                *ringer = teams_cli::calling::ringtone::Ringtone::start();
-                tracing::info!(playing = ringer.is_some(), "ringing");
-            }
-            (false, true) => *ringer = None,
-            _ => {}
+        // Main.qml's ringer plays Teams' ringtone (Settings ▸ Calls ▸ Choose
+        // a ringtone for you) while this is on.
+        if self.rust().ringer_on != on {
+            tracing::info!(on, "ringing");
+            self.set_ringer_on(on);
         }
     }
 
@@ -15129,6 +15160,7 @@ impl qobject::Backend {
                 "title": "This is a test notification", "text": body,
                 "seconds": prefs.seconds,
                 "silent": silent,
+                "sound": prefs.sound_file,
             });
             self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
             return;
@@ -15551,6 +15583,9 @@ impl qobject::Backend {
                 if let Ok(voice) = api::preferences::voice_settings(&client).await {
                     mt["voice"] = voice;
                 }
+                if let Ok(rt) = api::preferences::ringtone_settings(&client).await {
+                    mt["voice"]["ringtoneSettings"] = rt;
+                }
                 anyhow::Ok(json!({ "props": props, "mt": mt, "loaded": true }))
             }
             .await;
@@ -15570,7 +15605,11 @@ impl qobject::Backend {
         // Shown at once; put back if the save fails.
         let before = self.rust().settings_json.to_string();
         let mut all: serde_json::Value = serde_json::from_str(&before).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
-        if kind == "mt" {
+        if kind == "mt" && name == "ringtone" {
+            // Kept with the rest of the calling settings, as Teams reads it.
+            let body = api::preferences::ringtone_body(&all["mt"]["voice"]["ringtoneSettings"], value.as_str().unwrap_or("Ring"));
+            all["mt"]["voice"]["ringtoneSettings"] = body;
+        } else if kind == "mt" {
             all["mt"][&name] = value.clone();
         } else if value.is_object() {
             let base = all["props"].get(&name).cloned().unwrap_or_else(|| json!({}));
@@ -15594,6 +15633,11 @@ impl qobject::Backend {
                         value["delay"].as_u64().unwrap_or(20) as u32,
                     );
                     api::preferences::set_voice_setting(&client, "redirection", &b).await?;
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "ringtone" {
+                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let body = api::preferences::ringtone_body(&current["mt"]["voice"]["ringtoneSettings"], value.as_str().unwrap_or("Ring"));
+                    api::preferences::set_voice_setting(&client, "ringtone", &body).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "voicemail" {
                     api::preferences::set_voice_setting(&client, "voicemail", &value).await?;

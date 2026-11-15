@@ -207,13 +207,14 @@ fn main() {
         "assets/illustrations",
         "assets/settings",
         "assets/biometric",
+        "assets/sounds",
         "assets/help",
     ] {
         for entry in std::fs::read_dir(dir).expect("asset dir") {
             let path = entry.expect("asset entry").path();
             if matches!(
                 path.extension().and_then(|e| e.to_str()),
-                Some("svg" | "ttf" | "png" | "json")
+                Some("svg" | "ttf" | "png" | "json" | "mp3")
             ) {
                 resources.push(path.to_string_lossy().into_owned());
             }

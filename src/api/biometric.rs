@@ -291,21 +291,98 @@ pub fn status_from(voice: &serde_json::Value, face: &serde_json::Value) -> Statu
     }
 }
 
+/// A BSON value (the little of BSON Teams' biometric service needs:
+/// documents, arrays, strings, binary, numbers, booleans and null).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Bson {
+    Doc(Vec<(String, Bson)>),
+    Array(Vec<Bson>),
+    Str(String),
+    Binary(Vec<u8>),
+    Int(i64),
+    Double(f64),
+    Bool(bool),
+    Null,
+}
+
+impl Bson {
+    /// The same value from JSON.
+    pub fn from_json(v: &serde_json::Value) -> Bson {
+        match v {
+            serde_json::Value::Null => Bson::Null,
+            serde_json::Value::Bool(b) => Bson::Bool(*b),
+            serde_json::Value::Number(n) => n.as_i64().map(Bson::Int).unwrap_or_else(|| Bson::Double(n.as_f64().unwrap_or(0.0))),
+            serde_json::Value::String(s) => Bson::Str(s.clone()),
+            serde_json::Value::Array(a) => Bson::Array(a.iter().map(Bson::from_json).collect()),
+            serde_json::Value::Object(o) => Bson::Doc(o.iter().map(|(k, v)| (k.clone(), Bson::from_json(v))).collect()),
+        }
+    }
+
+    /// This document's bytes (a document's own; any other value is
+    /// wrapped as nothing).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Bson::Doc(fields) => doc_bytes(&fields.iter().map(|(k, v)| (k.as_str(), v)).collect::<Vec<_>>()),
+            _ => doc_bytes(&[]),
+        }
+    }
+}
+
+fn doc_bytes(fields: &[(&str, &Bson)]) -> Vec<u8> {
+    let mut body = Vec::new();
+    for &(name, value) in fields {
+        let (kind, bytes) = match value {
+            Bson::Doc(f) => (0x03u8, doc_bytes(&f.iter().map(|(k, v)| (k.as_str(), v)).collect::<Vec<_>>())),
+            Bson::Array(items) => {
+                let keys: Vec<String> = (0..items.len()).map(|i| i.to_string()).collect();
+                (0x04, doc_bytes(&keys.iter().map(String::as_str).zip(items.iter()).collect::<Vec<_>>()))
+            }
+            Bson::Str(s) => {
+                let mut b = ((s.len() + 1) as i32).to_le_bytes().to_vec();
+                b.extend_from_slice(s.as_bytes());
+                b.push(0);
+                (0x02, b)
+            }
+            Bson::Binary(data) => {
+                let mut b = (data.len() as i32).to_le_bytes().to_vec();
+                b.push(0x00); // generic subtype
+                b.extend_from_slice(data);
+                (0x05, b)
+            }
+            Bson::Int(n) if i32::try_from(*n).is_ok() => (0x10, (*n as i32).to_le_bytes().to_vec()),
+            Bson::Int(n) => (0x12, n.to_le_bytes().to_vec()),
+            Bson::Double(f) => (0x01, f.to_le_bytes().to_vec()),
+            Bson::Bool(b) => (0x08, vec![u8::from(*b)]),
+            Bson::Null => (0x0A, Vec::new()),
+        };
+        body.push(kind);
+        body.extend_from_slice(name.as_bytes());
+        body.push(0);
+        body.extend_from_slice(&bytes);
+    }
+    let mut out = ((body.len() + 5) as i32).to_le_bytes().to_vec();
+    out.extend_from_slice(&body);
+    out.push(0);
+    out
+}
+
 /// The BSON Teams sends the signature service for one photo.
 pub fn face_signature_body(jpeg: &[u8], pose: HeadPose, user_oid: &str, tenant: &str, version: Option<&str>) -> Result<Vec<u8>> {
-    let image = bson::doc! {
-        "Payload": bson::Binary { subtype: bson::spec::BinarySubtype::Generic, bytes: jpeg.to_vec() },
-        "ExpectedHeadPose": pose.wire(),
-    };
-    let mut doc = bson::Document::new();
+    let image = Bson::Doc(vec![
+        ("Payload".into(), Bson::Binary(jpeg.to_vec())),
+        ("ExpectedHeadPose".into(), Bson::Str(pose.wire().into())),
+    ]);
+    let request = Bson::Doc(vec![
+        ("UserId".into(), Bson::Str(user_oid.into())),
+        ("TenantID".into(), Bson::Str(tenant.into())),
+        ("Images".into(), Bson::Array(vec![image])),
+    ]);
+    let mut doc = Vec::new();
     if let Some(v) = version {
-        doc.insert("Version", v);
+        doc.push(("Version".to_string(), Bson::Str(v.into())));
     }
-    doc.insert(
-        "PerUserFaceSignatureBatchRequest",
-        vec![bson::Bson::Document(bson::doc! { "UserId": user_oid, "TenantID": tenant, "Images": [image] })],
-    );
-    Ok(bson::to_vec(&doc)?)
+    doc.push(("PerUserFaceSignatureBatchRequest".to_string(), Bson::Array(vec![request])));
+    Ok(Bson::Doc(doc).to_bytes())
 }
 
 /// The signature service's answer for one photo.
@@ -355,26 +432,35 @@ pub async fn face_signature(
 
 /// The BSON storing a face profile.
 pub fn face_store_body(photos: &[(Vec<u8>, serde_json::Value)], app: &str) -> Result<Vec<u8>> {
-    let data: Vec<bson::Bson> = photos
+    let data: Vec<Bson> = photos
         .iter()
         .map(|(jpeg, sig)| {
-            let field = |k: &str| bson::to_bson(&sig[k]).unwrap_or(bson::Bson::Null);
-            bson::Bson::Document(bson::doc! {
-                "Image": bson::Binary { subtype: bson::spec::BinarySubtype::Generic, bytes: jpeg.clone() },
-                "Signature": {
-                    "Type": field("Type"),
-                    "Version": field("Version"),
-                    "Data": field("Data"),
-                    "HeadPose": field("HeadPose"),
-                },
-            })
+            let field = |k: &str| Bson::from_json(&sig[k]);
+            Bson::Doc(vec![
+                ("Image".into(), Bson::Binary(jpeg.clone())),
+                (
+                    "Signature".into(),
+                    Bson::Doc(vec![
+                        ("Type".into(), field("Type")),
+                        ("Version".into(), field("Version")),
+                        ("Data".into(), field("Data")),
+                        ("HeadPose".into(), field("HeadPose")),
+                    ]),
+                ),
+            ])
         })
         .collect();
-    let doc = bson::doc! {
-        "EnrollmentMetadata": { "ConsentTextVersion": "V1", "AppEnrolledFrom": app },
-        "Data": data,
-    };
-    Ok(bson::to_vec(&doc)?)
+    Ok(Bson::Doc(vec![
+        (
+            "EnrollmentMetadata".into(),
+            Bson::Doc(vec![
+                ("ConsentTextVersion".into(), Bson::Str("V1".into())),
+                ("AppEnrolledFrom".into(), Bson::Str(app.into())),
+            ]),
+        ),
+        ("Data".into(), Bson::Array(data)),
+    ])
+    .to_bytes())
 }
 
 /// The JSON storing a voice profile.
@@ -575,11 +661,15 @@ mod tests {
 
     #[test]
     fn bodies_round_trip() {
+        // BSON's own example: {"hello": "world"}.
+        let hello = Bson::Doc(vec![("hello".into(), Bson::Str("world".into()))]).to_bytes();
+        assert_eq!(hello, b"\x16\x00\x00\x00\x02hello\x00\x06\x00\x00\x00world\x00\x00");
         let body = face_signature_body(&[1, 2, 3], HeadPose::Center, "oid", "ident", None).unwrap();
-        let doc = bson::Document::from_reader(&mut body.as_slice()).unwrap();
-        let req = doc.get_array("PerUserFaceSignatureBatchRequest").unwrap()[0].as_document().unwrap();
-        assert_eq!(req.get_str("TenantID").unwrap(), "ident");
-        assert!(doc.get("Version").is_none());
+        assert_eq!(i32::from_le_bytes(body[..4].try_into().unwrap()) as usize, body.len());
+        assert!(body.windows(5).any(|w| w == b"ident"));
+        assert!(!body.windows(7).any(|w| w == b"Version"));
+        // Binary: length 3, generic subtype, the bytes.
+        assert!(body.windows(8).any(|w| w == [0x03, 0, 0, 0, 0, 1, 2, 3]));
         let wav = wav_16k(&[0, 1, -1]);
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(wav.len(), 44 + 6);

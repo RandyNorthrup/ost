@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
+import QtMultimedia
 import com.ost.desktop
 
 // Settings (Ctrl+,), laid out as Teams desktop's (measured on winpc
@@ -75,6 +76,61 @@ Rectangle {
     /// Test hooks: the Recognition dialogs.
     function faceDialogForTest() { return faceDialog }
     function voiceDialogForTest() { return voiceDialog }
+    // Teams' sounds, previewed here (assets/sounds, Teams' own files).
+    MediaPlayer {
+        id: preview
+        property string playing: ""
+        audioOutput: AudioOutput {}
+        onPlaybackStateChanged: if (playbackState === MediaPlayer.StoppedState) playing = ""
+    }
+    function previewSound(file) {
+        preview.stop()
+        if (preview.playing === file) { preview.playing = ""; return }
+        preview.source = "../assets/sounds/" + file + ".mp3"
+        preview.playing = file
+        preview.play()
+    }
+    /// Teams' sound names (settings-app `T`, files in assets/sounds).
+    readonly property var soundFiles: ({
+        Default: "00_teams_basic_notification_r4_default", DefaultUrgent: "00_teams_basic_notification_r4_default",
+        Vibe: "a2_teams_basic_notification_r4_vibe", Nudge: "a3_teams_basic_notification_r4_nudge",
+        Tap: "a4_teams_basic_notification_r4_tap", Flick: "a5_teams_basic_notification_r4_flick",
+        Pluck: "a6_teams_basic_notification_r4_pluck", Summon: "a7_teams_basic_notification_r4_summon",
+        Ping: "a8_teams_basic_notification_r4_ping", Prioritize: "b2_teams_urgent_notification_r4_prioritize",
+        Escalate: "b3_teams_urgent_notification_r4_escalate", Alarm: "b4_teams_urgent_notification_r4_alarm"
+    })
+    // Teams' Preview button: play (stop while it plays), 32 x 31.3.
+    component PreviewButton: Rectangle {
+        id: pb
+        property string file
+        property string label: "Preview sound"
+        width: 32; height: 31.3; radius: 4
+        color: pbHover.hovered ? theme.menuHover : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: preview.playing === pb.file ? "stop-20-filled" : "play-20"; size: 20; color: theme.text }
+        HoverHandler { id: pbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.previewSound(pb.file) }
+        Accessible.role: Accessible.Button
+        Accessible.name: label
+    }
+    // A sound dropdown (Teams' 248.7 x 30 at 443.3 in the row) and Preview.
+    component SoundPicker: Item {
+        id: sp
+        property string setting
+        property string dflt
+        property var keys: []
+        property string accessibleName
+        readonly property string value: root.prop("userPersonalSettings", ["toastSettings", setting], dflt)
+        x: 443.3; width: 281.3; height: 31.3
+        OutlineDropdown {
+            width: 248.7; height: 30
+            options: sp.keys.map(k => ({ label: k === "DefaultUrgent" ? "Default" : k }))
+            current: Math.max(0, sp.keys.indexOf(sp.value))
+            accessibleName: sp.accessibleName
+            onPicked: i => root.setProp("userPersonalSettings", "toastSettings." + sp.setting, sp.keys[i])
+        }
+        PreviewButton { x: 249.3; y: -0.6; file: root.soundFiles[sp.value] || root.soundFiles.Default }
+    }
+
     // Recognition's consent line: the text, Learn More and Privacy Policy.
     component RecognitionConsent: Text {
         property string lead
@@ -1098,10 +1154,24 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "speaker-2-20"; title: "Sound"
-                SettingsParts.CheckRow { label: "Play sounds with notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "alertSound"], "All") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.alertSound", v ? "All" : "Off") }
-                SettingsParts.CheckRow { label: "Play sounds with urgent and priority contact notifications"; checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
-                SettingsParts.CheckRow { label: "Play sounds with incoming calls, requests to join, and meeting start notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "incomingCallsAndMeetingStartSound"], "On") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.incomingCallsAndMeetingStartSound", v ? "On" : "Off") }
-                SettingsParts.CheckRow { label: "Play sounds when I'm busy or in a meeting"; checked: notif.ts("PlayNotificationSoundsWhenBusyOrInMeetings", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsWhenBusyOrInMeetings", v ? "On" : "Off") }
+                // Teams' last row keeps its 36 px label box.
+                bottomPad: 23.6
+                // Teams' rows (measured on winpc 2026-11-15): labels wrap at
+                // 332.3, 44 apart (64 for two lines); the notification and
+                // urgent sounds' dropdowns (248.7 x 30) and Preview sound
+                // beside them.
+                Item {
+                    width: parent.width; height: soundRow.height
+                    SettingsParts.CheckRow { id: soundRow; rowHeight: 44; labelWidth: 332.3; label: "Play sounds with notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "alertSound"], "All") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.alertSound", v ? "All" : "Off") }
+                    SoundPicker { y: 2.6; setting: "alertSoundType"; dflt: "Default"; keys: ["Default", "Vibe", "Nudge", "Tap", "Flick", "Pluck", "Summon", "Ping"]; accessibleName: "Notification sound" }
+                }
+                Item {
+                    width: parent.width; height: urgentRow.height
+                    SettingsParts.CheckRow { id: urgentRow; rowHeight: 44; labelWidth: 332.3; label: "Play sounds with urgent and priority contact notifications"; checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
+                    SoundPicker { y: 2.6; setting: "alertUrgentSoundType"; dflt: "DefaultUrgent"; keys: ["DefaultUrgent", "Prioritize", "Escalate", "Alarm"]; accessibleName: "Urgent and priority contact notification sound" }
+                }
+                SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: "Play sounds with incoming calls, requests to join, and meeting start notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "incomingCallsAndMeetingStartSound"], "On") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.incomingCallsAndMeetingStartSound", v ? "On" : "Off") }
+                SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: "Play sounds when I'm busy or in a meeting"; checked: notif.ts("PlayNotificationSoundsWhenBusyOrInMeetings", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsWhenBusyOrInMeetings", v ? "On" : "Off") }
             }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
@@ -2044,6 +2114,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "calls"
                 icon: "call-forward-20"; title: "Call handling and forwarding"
+                bottomPad: 21.4
                 SettingsParts.SwitchRow {
                     label: "Forward all calls to voicemail"
                     on: calls.forwardAll
@@ -2071,7 +2142,32 @@ Rectangle {
                     accessibleName: "Ring for this many seconds before redirect"
                     onPicked: i => calls.save(false, true, secs[i])
                 }
-                
+                // Teams' "Choose a ringtone for you" (measured on winpc
+                // 2026-11-15): 31.4 under the row above, the dropdown
+                // (Teams' 18 ringtones, Ring as "Default") with Preview
+                // ringtone 10.7 after it; saved with Teams' ringtone
+                // settings and rung by Main.qml's ringer.
+                SettingsParts.SubHeading { text: "Choose a ringtone for you"; gapAbove: 32 }
+                SettingsParts.Gap { size: 10.6 }
+                Row {
+                    spacing: 10.7
+                    readonly property var names: ["Ring", "Beep", "Bop", "Bounce", "Bubbles", "BubblesLoud", "DripDrop", "Eureka", "Flutter", "HighScore", "NextLevel", "Plink", "Remix", "RingRing", "Ripple", "Spacetime", "WishGranted", "Wobble"]
+                    readonly property var labels: ["Default", "Beep", "Bop", "Bounce", "Bubbles", "Bubbles (Loud)", "Drip Drop", "Eureka", "Flutter", "High Score", "Next Level", "Plink", "Remix", "Ring Ring", "Ripple", "Spacetime", "Wish Granted", "Wobble"]
+                    readonly property string chosen: {
+                        const voice = root.mt.voice || {}
+                        const list = ((voice.ringtoneSettings || {}).assignments || {}).ringToneAssignments || []
+                        const own = list.find(a => a.type === "Regular")
+                        return own && own.value ? own.value : "Ring"
+                    }
+                    OutlineDropdown {
+                        width: 293.3; height: 30
+                        options: parent.labels.map(l => ({ label: l }))
+                        current: Math.max(0, parent.names.indexOf(parent.chosen))
+                        accessibleName: "Choose a ringtone for you"
+                        onPicked: i => backend.changeSetting("mt", "ringtone", JSON.stringify(parent.names[i]))
+                    }
+                    PreviewButton { height: 30; label: "Preview ringtone"; file: parent.chosen.toLowerCase() }
+                }
             }
             Text {
                 visible: root.page === "calls"

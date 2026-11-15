@@ -1,4 +1,5 @@
 import QtQuick
+import QtMultimedia
 import QtQuick.Window
 import QtWebEngine
 import QtQuick.Dialogs
@@ -1243,6 +1244,44 @@ Window {
         onIgnoreCall: backend.setRinger(false)
     }
     Connections { target: backend; function onBannerRequested(json) { banners.add(json) } }
+    // Teams' ringtone while a call rings (Settings ▸ Calls ▸ Choose a
+    // ringtone for you; Ring by default), on the speaker and on the
+    // secondary ringer when one is chosen, again and again.
+    readonly property string ringtoneName: {
+        let s = {}
+        try { s = JSON.parse(backend.settingsJson || "{}") } catch (e) {}
+        const list = (((s.mt || {}).voice || {}).ringtoneSettings || {}).assignments
+        const own = list && list.ringToneAssignments ? list.ringToneAssignments.find(a => a.type === "Regular") : null
+        return own && own.value ? own.value : "Ring"
+    }
+    MediaDevices { id: ringDevices }
+    function outputNamed(name) {
+        return ringDevices.audioOutputs.find(d => d.description === name || d.id == name) || null
+    }
+    MediaPlayer {
+        id: ringer
+        source: "../assets/sounds/" + window.ringtoneName.toLowerCase() + ".mp3"
+        loops: MediaPlayer.Infinite
+        audioOutput: AudioOutput { device: window.outputNamed(backend.setting("speakerDevice")) || ringDevices.defaultAudioOutput }
+        onErrorOccurred: (e, msg) => console.warn("RINGER error", source, msg)
+        onPlayingChanged: console.info("RINGER", playing ? "playing" : "stopped", source)
+    }
+    MediaPlayer {
+        id: secondRinger
+        source: ringer.source
+        loops: MediaPlayer.Infinite
+        readonly property var device: window.outputNamed(backend.setting("secondaryRinger"))
+        audioOutput: AudioOutput { device: secondRinger.device || ringDevices.defaultAudioOutput }
+    }
+    Connections {
+        target: backend
+        function onRingerOnChanged() {
+            if (backend.ringerOn) {
+                ringer.play()
+                if (secondRinger.device) secondRinger.play()
+            } else { ringer.stop(); secondRinger.stop() }
+        }
+    }
     // The incoming call is a banner while it rings.
     readonly property bool ringing: backend.callState === "ringing"
     onRingingChanged: {

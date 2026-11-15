@@ -276,6 +276,28 @@ pub async fn voice_settings(client: &TeamsClient) -> Result<serde_json::Value> {
     resp.json().await.context("Voice settings reply")
 }
 
+/// Your ringtone settings as Teams reads them (`POST {mt}/beta/users/
+/// useraggregatesettings {"voiceAdminSettings": true}` →
+/// voiceAdminSettings.value.ringtoneSettings): {assignments:
+/// {ringToneAssignments: [{type, value, associatedEntityId}]}}.
+pub async fn ringtone_settings(client: &TeamsClient) -> Result<serde_json::Value> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let resp = client
+        .http()
+        .post(format!("{mt}/beta/users/useraggregatesettings"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "voiceAdminSettings": true }))
+        .send()
+        .await
+        .context("Ringtone settings request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reading ringtone settings", resp.status().as_u16());
+    }
+    let v: serde_json::Value = resp.json().await.context("Ringtone settings reply")?;
+    Ok(v["voiceAdminSettings"]["value"]["ringtoneSettings"].clone())
+}
+
 /// Teams' call redirection body (captured 2026-11-10) from the page's
 /// choices: forward everything to voicemail, or ring and then redirect
 /// unanswered calls to voicemail (or not) after `delay` seconds.
@@ -293,9 +315,9 @@ pub fn call_redirection_body(forward_all: bool, unanswered_to_voicemail: bool, d
     })
 }
 
-/// Save a Settings ▸ Calls change: "redirection" (a call_redirection_body)
-/// or "voicemail" (Teams' voicemail settings with only the changed keys
-/// set, the rest null).
+/// Save a Settings ▸ Calls change: "redirection" (a call_redirection_body),
+/// "voicemail" (Teams' voicemail settings with only the changed keys set,
+/// the rest null) or "ringtone" (ringtone_body).
 pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_json::Value) -> Result<()> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
@@ -313,6 +335,9 @@ pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_j
             }
             ("voicemailsettings", all)
         }
+        // Teams' ringtones (`{assignments: {ringToneAssignments: [{type,
+        // value}]}}`; Ring, the default, isn't listed).
+        "ringtone" => ("ringtonesettings", body.clone()),
         _ => anyhow::bail!("Not a calls setting: {which}"),
     };
     let resp = client
@@ -327,6 +352,23 @@ pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_j
         anyhow::bail!("HTTP {} saving {which}", resp.status().as_u16());
     }
     Ok(())
+}
+
+/// Teams' ringtone settings body with `name` for your own calls ("Regular")
+/// and the other call types' choices kept; Ring is left out.
+pub fn ringtone_body(current: &serde_json::Value, name: &str) -> serde_json::Value {
+    let mut list: Vec<serde_json::Value> = current
+        .pointer("/assignments/ringToneAssignments")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|a| a["type"].as_str() != Some("Regular") && a["value"].as_str() != Some("Ring"))
+        .cloned()
+        .collect();
+    if name != "Ring" {
+        list.insert(0, serde_json::json!({ "type": "Regular", "value": name, "associatedEntityId": "" }));
+    }
+    serde_json::json!({ "assignments": { "ringToneAssignments": list } })
 }
 
 /// Change one of the middle tier's settings: "allowAutoDnd",
@@ -418,13 +460,27 @@ mod tests {
     fn call_redirection_bodies_are_teams() {
         // As Teams sent them on winpc (2026-11-10).
         assert_eq!(
-            call_redirection_body(true, true, 20).to_string(),
-            r#"{"callForwardingSettings":{"delaySeconds":0,"forwardingType":"Immediate","isEnabled":true,"target":null,"targetType":"Voicemail"},"callGroupDetails":{"callOrder":"simultaneous","delaySeconds":0,"targets":[]},"favoriteTargets":{"targets":[]},"unansweredCallSettings":{"delaySeconds":20,"isEnabled":false,"safeForward":false,"target":null,"targetType":"Voicemail"}}"#
+            call_redirection_body(true, true, 20),
+            serde_json::from_str::<serde_json::Value>(r#"{"callForwardingSettings":{"delaySeconds":0,"forwardingType":"Immediate","isEnabled":true,"target":null,"targetType":"Voicemail"},"callGroupDetails":{"callOrder":"simultaneous","delaySeconds":0,"targets":[]},"favoriteTargets":{"targets":[]},"unansweredCallSettings":{"delaySeconds":20,"isEnabled":false,"safeForward":false,"target":null,"targetType":"Voicemail"}}"#).unwrap()
         );
         let off = call_redirection_body(false, true, 5);
         assert_eq!(off["callForwardingSettings"]["forwardingType"], "Simultaneous");
         assert_eq!(off["unansweredCallSettings"]["isEnabled"], true);
         assert_eq!(off["unansweredCallSettings"]["delaySeconds"], 5);
+    }
+
+    #[test]
+    fn ringtone_bodies_are_teams() {
+        // Teams' body for Bop (captured 2026-11-15); other call types kept,
+        // Ring (the default) left out.
+        let current = serde_json::json!({ "assignments": { "ringToneAssignments": [
+            { "type": "Regular", "value": "Bubbles", "associatedEntityId": "" },
+            { "type": "CallQueue", "value": "Plink", "associatedEntityId": "" } ] } });
+        let b = ringtone_body(&current, "Bop");
+        assert_eq!(b["assignments"]["ringToneAssignments"][0], serde_json::json!({ "type": "Regular", "value": "Bop", "associatedEntityId": "" }));
+        assert_eq!(b["assignments"]["ringToneAssignments"][1]["type"], "CallQueue");
+        let ring = ringtone_body(&serde_json::Value::Null, "Ring");
+        assert_eq!(ring, serde_json::json!({ "assignments": { "ringToneAssignments": [] } }));
     }
 
     #[test]
@@ -435,8 +491,8 @@ mod tests {
             "scheduledStartDateTime": "2026-11-10T08:00:00.000Z", "scheduledEndDateTime": "2026-11-11T08:00:00.000Z",
         }));
         assert_eq!(
-            b.to_string(),
-            r#"{"externalAudience":"all","externalReplyMessage":"","internalReplyMessage":"OST test 82 out of office","scheduledEndDateTime":"2026-11-11T08:00:00.000Z","scheduledStartDateTime":"2026-11-10T08:00:00.000Z","status":"scheduled"}"#
+            b,
+            serde_json::from_str::<serde_json::Value>(r#"{"externalAudience":"all","externalReplyMessage":"","internalReplyMessage":"OST test 82 out of office","scheduledEndDateTime":"2026-11-11T08:00:00.000Z","scheduledStartDateTime":"2026-11-10T08:00:00.000Z","status":"scheduled"}"#).unwrap()
         );
     }
 

@@ -390,7 +390,7 @@ Measured on winpc 2026-11-14, in Teams' order:
 
 ### 10.3b Calls (measured on winpc 2026-11-14)
 - [x] Call handling and forwarding with dividers; "Ring for this many seconds before redirect".
-- [ ] "Choose a ringtone for you" with play: Teams' packaged ringtones (TASK-0144).
+- [x] "Choose a ringtone for you" with play: Teams' ringtones, saved and rung as Teams (TASK-0144).
 - [ ] "Record a custom greeting" (a call to your voicemail, TASK-0152).
 - [x] "Choose a language for your default greeting": Teams' 37 languages (native over English) in its searchable combobox, saved as vmAudioLang.
 - [x] "Choose what happens when the call is redirected to voicemail".
@@ -409,7 +409,7 @@ Measured on winpc 2026-11-14, in Teams' order:
   - "Show notifications during calls and meetings";
   - **Test notification**.
   Source: https://support.microsoft.com/help/1cc31834-5fe5-412b-8edb-43fecc78413d
-- [ ] Sound:
+- [x] Sound:
   - "Play sounds with notifications";
   - "Play sounds with urgent and priority contact notifications";
   - "Play sound with incoming calls, requests to join, and meeting start notifications";

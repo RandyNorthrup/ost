@@ -185,9 +185,11 @@ Everything below is in userPersonalSettings unless marked local.
   language mode, captions settings) and Devices.
 - Calls: forwarding, unanswered calls, ring delay, the voicemail answer rule (no transfer
   rules) and out-of-office voicemail.
-  - Not built: the ringtone choice (OST synthesises its ring and doesn't ship Microsoft's
-    audio; whether to ship Teams' MP3s is the project's call), recorded and text-to-speech
-    greetings, the greeting language, and the transfer rules (they need the people picker).
+  - Choose a ringtone for you (TASK-0144): Teams' 18 ringtones (assets/sounds, Teams' own
+    files), saved with `POST {mt}/beta/usersettings/{mri}/ringtonesettings` and read with
+    `POST {mt}/beta/users/useraggregatesettings {"voiceAdminSettings": true}`; incoming calls
+    ring with it on the speaker and the secondary ringer.
+  - Not built: recorded greetings and the transfer rules (they need the people picker).
 - Files and links: the download location (OST's downloads use it), the file-open choice,
   file previews, "Always ask where to save downloaded file" and "Always open web links in:"
   (TASK-0119; docs/spec/file-actions.md).
@@ -202,8 +204,11 @@ Everything below is in userPersonalSettings unless marked local.
     its own banners (not on GNOME's Wayland).
   - Display ▸ Flash taskbar has no "taskbar flashing setting in your Windows OS settings"
     line: that setting is Windows'.
-  - Not built: the sound choices, posts in shown channels, meeting chat, Presence ▸ Manage
-    notifications and Calendar.
+  - Sound (TASK-0144): Teams' notification and urgent sounds (toastSettings.alertSoundType,
+    alertUrgentSoundType) with Preview; banners play them; the meeting-started banner plays
+    Teams' meet-up reminder.
+  - Not built: posts in shown channels, meeting chat, Presence ▸ Manage notifications and
+    Calendar.
 - App permissions: built (the list by Teams' rule, the expanders and switches, kept on the
   device and honoured by OST's app views).
 - Recognition (TASK-0153): Teams' voice and face cards in each of Teams' states, the voice
