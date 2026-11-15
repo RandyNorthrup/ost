@@ -326,8 +326,15 @@ Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192 ; https://s
   Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192
 - [ ] "Copilot in Chat" toggle, if licensed. "Channel recent activity" position: top or bottom.
   Source: same **[university]**
-- [ ] Translation: message translation language and options.
-  Source: same
+- [x] Translation: message translation language and options. Verified on winpc (2026-11-14):
+  - "Translate messages into this language": a searchable combobox of CSA's translator languages (`GET {csa}/api/v1/translator/languages?locale=`), each named for its usual locale in its own language over English.
+  - "How to handle messages in other languages": Ask me before translating (default), Auto-translate all messages, Never translate.
+  - "Never translate messages in these languages": an "Add another language" dropdown and chips. Your language is a chip with no remove.
+  - Teams keeps these on the device (TranslationSettingsV2 in local storage). They roam to the account's languageAccountSettings (`PATCH {mt}/beta/users/languageAccountSettings`) only with ECS enableTranslationSettingsRoaming, which is off.
+  - Messages: Teams reads the languageStamp property with ECS translationLanguageStampingTunerSettings.
+    - In Ask mode a trusted foreign message gets "Translate | Never translate German" after the time.
+    - In Auto mode it is translated with `x-ms-knownLanguages`, and See original brings the suggestion back.
+  Source: same; winpc measurements
 - [ ] Out of Office: **Schedule** button (see §3.6).
   Source: https://support.microsoft.com/en-US/teams/notifications-settings/schedule-an-out-of-office-status-in-microsoft-teams
 - [ ] Spell check on/off.

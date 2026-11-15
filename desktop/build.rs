@@ -157,6 +157,7 @@ fn main() {
         "qml/QuickListView.qml",
         "qml/DatePickerField.qml",
         "qml/OutlineDropdown.qml",
+        "qml/SearchCombobox.qml",
         "qml/PauseNotificationsDialog.qml",
         "qml/SettingsParts.qml",
         "qml/OofPage.qml",

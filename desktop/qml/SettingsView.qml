@@ -232,6 +232,107 @@ Rectangle {
                 SettingsParts.SubHeading { text: "Current time zone: " + backend.timeZoneName() }
                 SettingsParts.Gap { size: 8 }
             }
+            // Teams' Translation card (measured on winpc 2026-11-14): the
+            // language to translate into (a searchable combobox of Teams'
+            // translation languages), how to handle other languages, and
+            // the languages never to translate as chips (yours first, with
+            // no remove). Kept on this device, as Teams does.
+            SettingsParts.Card {
+                id: translationCard
+                visible: root.page === "general" && !root.subPage
+                icon: "translate-20-filled"; title: "Translation"
+                property var settings: JSON.parse(backend.translationSettingsJson())
+                property var languages: JSON.parse(backend.translationLanguagesJson())
+                Connections {
+                    target: backend
+                    function onTranslationLanguagesReady() { translationCard.languages = JSON.parse(backend.translationLanguagesJson()) }
+                }
+                onVisibleChanged: if (visible) {
+                    settings = JSON.parse(backend.translationSettingsJson())
+                    if (languages.length === 0) languages = JSON.parse(backend.translationLanguagesJson())
+                }
+                function nameOf(code) { const l = languages.find(x => x.code === code); return l ? l.name : code }
+                function save(key, value) {
+                    backend.setSetting(key, value)
+                    settings = JSON.parse(backend.translationSettingsJson())
+                }
+                readonly property var modes: ["SUGGEST_TRANSLATION", "ALWAYS_TRANSLATE", "NEVER_TRANSLATE"]
+                // The other known languages (yours is its own chip).
+                readonly property var others: settings.known.filter(k => k !== settings.target)
+                SettingsParts.SubHeading { text: "Translate messages into this language" }
+                SettingsParts.Gap { size: 10 }
+                SearchCombobox {
+                    id: translationTargetBox
+                    width: 294; height: 32
+                    options: translationCard.languages.map(l => ({ key: l.code, label: l.native, sublabel: l.english }))
+                    current: translationCard.settings.target
+                    accessibleName: "Translate messages into this language"
+                    onPicked: code => {
+                        // Your new language is one you never translate.
+                        const known = translationCard.settings.known.filter(k => k !== code).concat([code])
+                        translationCard.save("translationTarget", code)
+                        translationCard.save("translationKnown", JSON.stringify(known))
+                    }
+                }
+                SettingsParts.Gap { size: 15 }
+                SettingsParts.SubHeading { text: "How to handle messages in other languages" }
+                SettingsParts.Gap { size: 10 }
+                OutlineDropdown {
+                    width: 294; height: 31.3
+                    options: [{ label: "Ask me before translating" }, { label: "Auto-translate all messages" }, { label: "Never translate" }]
+                    current: Math.max(0, translationCard.modes.indexOf(translationCard.settings.mode))
+                    accessibleName: "How to handle messages in other languages"
+                    onPicked: i => translationCard.save("translationMode", translationCard.modes[i])
+                }
+                SettingsParts.Gap { size: 15 }
+                SettingsParts.SubHeading { text: "Never translate messages in these languages" }
+                SettingsParts.Gap { size: 10 }
+                OutlineDropdown {
+                    id: addLanguage
+                    width: 294; height: 31.3
+                    maxListHeight: 332
+                    placeholder: "Add another language"
+                    current: -1
+                    readonly property var choices: translationCard.languages.filter(l => translationCard.settings.known.indexOf(l.code) < 0 && l.code !== translationCard.settings.target)
+                    options: choices.map(l => ({ label: l.name }))
+                    accessibleName: "Never translate messages in these languages"
+                    onPicked: i => translationCard.save("translationKnown", JSON.stringify(translationCard.settings.known.concat([choices[i].code])))
+                }
+                SettingsParts.Gap { size: 15 }
+                Flow {
+                    x: -8; width: parent.width + 8
+                    spacing: 12
+                    bottomPadding: 12
+                    Repeater {
+                        model: [translationCard.settings.target].concat(translationCard.others)
+                        // Teams' chip: a pill with a 0.67 NeutralStroke1 border,
+                        // 14 px semibold 12 in, 31.3 tall; the others carry a
+                        // dismiss (20) and remove themselves when clicked.
+                        Rectangle {
+                            id: chip
+                            required property string modelData
+                            required property int index
+                            readonly property bool removable: index > 0
+                            width: chipRow.width + 24; height: 31.3
+                            radius: height / 2
+                            color: chipHover.hovered && removable ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+                            border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+                            Row {
+                                id: chipRow
+                                x: 12; anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4
+                                Text { anchors.verticalCenter: parent.verticalCenter; text: translationCard.nameOf(chip.modelData); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                                FluentIcon { visible: chip.removable; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 20; color: theme.text }
+                            }
+                            HoverHandler { id: chipHover; enabled: chip.removable; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { enabled: chip.removable; onTapped: translationCard.save("translationKnown", JSON.stringify(translationCard.settings.known.filter(k => k !== chip.modelData))) }
+                            Accessible.role: chip.removable ? Accessible.Button : Accessible.StaticText
+                            Accessible.name: chip.removable ? "Remove " + translationCard.nameOf(chip.modelData) + " from known languages" : translationCard.nameOf(chip.modelData)
+                            Accessible.onPressAction: if (chip.removable) translationCard.save("translationKnown", JSON.stringify(translationCard.settings.known.filter(k => k !== chip.modelData)))
+                        }
+                    }
+                }
+            }
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "calendar-arrow-right-20"; title: "Out of office"
@@ -1225,4 +1326,7 @@ Rectangle {
     }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
+    /// Test hook: General scrolled to the Translation card.
+    function openTranslationTargetForTest(open) { if (open) translationTargetBox.openList(); else translationTargetBox.closeList() }
+    function scrollToTranslationForTest() { content.contentY = Math.max(0, Math.min(pageCol.y + translationCard.y - 12, content.contentHeight - content.height)) }
 }

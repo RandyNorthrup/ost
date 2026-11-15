@@ -784,6 +784,17 @@ pub struct MessageView {
     /// Translation was asked for and failed (Teams: "Failed to translate").
     #[serde(default)]
     pub translation_failed: bool,
+    /// Teams' language stamp (properties.languageStamp): the detected
+    /// languages that decide automatic translation (api::translation).
+    #[serde(default)]
+    pub language_stamp: String,
+    /// Teams offers "Translate | Never translate …" for this language
+    /// (its translator code; set by the client from your settings).
+    #[serde(default)]
+    pub suggest_translation: String,
+    /// That language's name ("German").
+    #[serde(default)]
+    pub suggest_translation_name: String,
     /// A channel post's subject (Teams' subject line; an announcement's
     /// subheading).
     #[serde(default)]
@@ -1470,6 +1481,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let base = MessageView {
         importance: s("/properties/importance"),
         subject: s("/properties/subject"),
+        language_stamp: s("/properties/languageStamp"),
         announcement: announcement_from(m.pointer("/properties")),
         id: s("/id"),
         client_message_id: s("/clientmessageid"),

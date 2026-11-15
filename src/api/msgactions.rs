@@ -663,6 +663,39 @@ pub struct Translation {
     pub detected_language: String,
 }
 
+/// The languages Teams translates into, named in `locale` (Teams'
+/// GetSupportedTranslationLanguages): `[(code, name)]` from
+/// `GET {csa}/api/v1/translator/languages?locale=…`.
+pub async fn translation_languages(client: &TeamsClient, locale: &str) -> Result<Vec<(String, String)>> {
+    let locale: String = locale.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+    let url = format!("{}/api/v1/translator/languages?locale={}", client.chatsvcagg_url(), locale);
+    let token = csa_token().await?;
+    let resp = client
+        .http()
+        .get(&url)
+        .bearer_auth(token)
+        .header("x-ms-use-acs-translation", "true")
+        .send()
+        .await
+        .context("translation languages request")?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        anyhow::bail!("HTTP {} for translation languages: {}", status.as_u16(), text.chars().take(200).collect::<String>());
+    }
+    Ok(parse_translation_languages(&serde_json::from_str(&text).context("translation languages")?))
+}
+
+/// CSA's language list: `[{languageTag, languageName}]` (possibly under
+/// `languages` or `value`).
+fn parse_translation_languages(v: &serde_json::Value) -> Vec<(String, String)> {
+    let list = v.as_array().or_else(|| v.get("languages").and_then(|l| l.as_array())).or_else(|| v.get("value").and_then(|l| l.as_array()));
+    list.into_iter()
+        .flatten()
+        .filter_map(|l| Some((l.get("languageTag")?.as_str()?.to_string(), l.get("languageName")?.as_str()?.to_string())))
+        .collect()
+}
+
 /// Translate a chat message into `lang` on demand (Teams' Translate):
 /// `POST {csa}/api/v1/chats/{conv}/messages/languages/{lang}` with
 /// `[{"id": …}]`.
@@ -671,6 +704,20 @@ pub async fn translate(
     conv: &str,
     message_id: &str,
     lang: &str,
+) -> Result<Translation> {
+    translate_with(client, conv, message_id, lang, None).await
+}
+
+/// Teams' translation request: on demand (`known` None, Teams'
+/// x-ms-on-demand-translation) or automatic (Auto-translate all messages),
+/// which sends the languages you never want translated
+/// (x-ms-knownLanguages) so CSA skips those.
+pub async fn translate_with(
+    client: &TeamsClient,
+    conv: &str,
+    message_id: &str,
+    lang: &str,
+    known: Option<&[String]>,
 ) -> Result<Translation> {
     let url = format!(
         "{}/api/v1/chats/{}/messages/languages/{}",
@@ -685,8 +732,11 @@ pub async fn translate(
         .post(&url)
         .bearer_auth(token)
         .header("x-ms-request-id", request_id.as_str())
-        .header("x-ms-use-acs-translation", "true")
-        .header("x-ms-on-demand-translation", "true")
+        .header("x-ms-use-acs-translation", "true");
+    let resp = match known {
+        None => resp.header("x-ms-on-demand-translation", "true"),
+        Some(k) => resp.header("x-ms-knownLanguages", k.join(",")),
+    }
         .json(&serde_json::json!([{ "id": message_id }]))
         .send()
         .await

@@ -44,6 +44,7 @@ pub mod store;
 pub mod store_content;
 pub mod channels;
 pub mod tabs;
+pub mod translation;
 pub mod teams;
 pub mod quick_views;
 pub mod scheduled;

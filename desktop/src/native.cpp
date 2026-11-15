@@ -2,6 +2,8 @@
 #include <QtCore/QMimeData>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
+#include <QtCore/QLocale>
+#include <cstring>
 
 // Put `text` on the clipboard with an HTML form, as Teams copies links
 // (the HTML carries the name the link reads as).
@@ -142,4 +144,47 @@ extern "C" void ost_install_link_handler(QObject *backend)
 {
     QDesktopServices::setUrlHandler(QStringLiteral("http"), backend, "openWebLink");
     QDesktopServices::setUrlHandler(QStringLiteral("https"), backend, "openWebLink");
+}
+
+// A translation language ("de", "fr-ca", "sr-latn") as Teams lists it under
+// Settings ▸ General ▸ Translation: its usual locale named in itself and in
+// English, as "Deutsch (Deutschland)\tGerman (Germany)". 0 (nothing
+// written) when the locale data doesn't know the language.
+extern "C" size_t ost_language_display(const char *code, char *out, size_t cap)
+{
+    const QString c = QString::fromUtf8(code);
+    const QStringList parts = c.split(QLatin1Char('-'));
+    // A second part must be a script or a region (not "chs").
+    if (parts.size() > 2 || (parts.size() == 2 && parts[1].size() != 2 && parts[1].size() != 4))
+        return 0;
+    const QLocale loc(c);
+    if (loc.language() == QLocale::C || loc.language() == QLocale::AnyLanguage)
+        return 0;
+    if (QLocale::languageToCode(loc.language()) != parts[0].toLower())
+        return 0;
+    // The language's plain name: the locale's own may be a dialect's
+    // ("American English", "français canadien"); the plain one is the
+    // shortest of the language's locale names inside it ("English",
+    // "français"), never another dialect ("Vlaams" for Nederlands).
+    const QString own = loc.nativeLanguageName();
+    QString native = own;
+    for (const QLocale &l : QLocale::matchingLocales(loc.language(), loc.script(), QLocale::AnyTerritory)) {
+        const QString n = l.nativeLanguageName();
+        if (!n.isEmpty() && n.size() < native.size() && own.contains(n, Qt::CaseInsensitive))
+            native = n;
+    }
+    if (!native.isEmpty())
+        native[0] = native[0].toUpper();
+    const QString nativeRegion = loc.nativeTerritoryName();
+    const QString english = QLocale::languageToString(loc.language());
+    const QString region = QLocale::territoryToString(loc.territory());
+    if (native.isEmpty() || english.isEmpty())
+        return 0;
+    const QString text = native + (nativeRegion.isEmpty() ? QString() : QStringLiteral(" (") + nativeRegion + QLatin1Char(')'))
+        + QLatin1Char('\t') + english + (region.isEmpty() ? QString() : QStringLiteral(" (") + region + QLatin1Char(')'));
+    const QByteArray b = text.toUtf8();
+    if (size_t(b.size()) >= cap)
+        return 0;
+    memcpy(out, b.constData(), size_t(b.size()));
+    return size_t(b.size());
 }

@@ -637,6 +637,16 @@ pub mod qobject {
         /// Translate a message (Teams' Translate) or show its original.
         #[qinvokable]
         fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
+        /// Settings ▸ General ▸ Translation: your settings as JSON
+        /// {target, mode, known} (Teams' defaults until you change them).
+        #[qinvokable]
+        fn translation_settings_json(self: Pin<&mut Backend>) -> QString;
+        /// Teams' translation languages as JSON [{code, name, native,
+        /// english}] (native and English names of the language's usual
+        /// locale, for "Translate messages into this language"); empty
+        /// until they load (translation_languages_ready).
+        #[qinvokable]
+        fn translation_languages_json(self: Pin<&mut Backend>) -> QString;
         /// Retry a failed message, by its clientmessageid.
         #[qinvokable]
         fn retry_failed_message(self: Pin<&mut Backend>, client_message_id: &QString);
@@ -1151,6 +1161,9 @@ pub mod qobject {
         /// The Custom Filters app's definition loaded (video_filters).
         #[qsignal]
         fn video_filters_ready(self: Pin<&mut Backend>);
+        /// Teams' translation languages arrived.
+        #[qsignal]
+        fn translation_languages_ready(self: Pin<&mut Backend>);
 
         /// A video_clip_upload finished: the recording's path and {id,
         /// url, error}.
@@ -3158,11 +3171,21 @@ fn translations() -> &'static std::sync::Mutex<Translated> {
     T.get_or_init(Default::default)
 }
 
-/// Show shown translations in a timeline.
+/// Show shown translations in a timeline, with Teams' automatic
+/// translation: "Translate | Never translate …" on messages in other
+/// languages (Ask me before translating), or the translation itself
+/// (Auto-translate all messages), from your translation settings.
 fn apply_translations(chat_id: &str, timeline: &mut [api::messages::MessageView]) {
+    use api::translation::{auto_translate, source_language, suggest};
+    let settings = translation_settings();
+    let tuner = translation_tuner();
+    let mut wanted = Vec::new();
     let t = translations().lock().unwrap();
+    let auto = auto_translated().lock().unwrap();
     for m in timeline.iter_mut() {
-        match t.get(&(chat_id.to_string(), m.id.clone())) {
+        let key = (chat_id.to_string(), m.id.clone());
+        let entry = t.get(&key);
+        match entry {
             Some((tr, true)) if tr.status == "Done" => {
                 m.html = api::messages::sanitize_html(&tr.content);
                 m.text = api::strip_html(&tr.content).trim().to_string();
@@ -3172,6 +3195,186 @@ fn apply_translations(chat_id: &str, timeline: &mut [api::messages::MessageView]
             Some((_, true)) => m.translation_failed = true,
             _ => {}
         }
+        // Not your own messages, and not one being sent.
+        if m.mine || m.language_stamp.is_empty() {
+            continue;
+        }
+        let source = source_language(&m.language_stamp, &settings.target, &tuner);
+        let original_of_auto = auto.contains(&key) && matches!(entry, Some((_, false)));
+        if entry.is_none() && auto_translate(&settings, source.as_ref()) {
+            wanted.push(m.id.clone());
+        } else if !m.translated && suggest(&settings, source.as_ref(), original_of_auto) {
+            let code = source.map(|s| s.code).unwrap_or_default();
+            m.suggest_translation_name = translation_language_name(&code);
+            m.suggest_translation = code;
+        }
+    }
+    drop((t, auto));
+    if !wanted.is_empty() {
+        auto_translate_messages(chat_id, wanted, settings);
+    }
+}
+
+/// Your translation settings (Settings ▸ General ▸ Translation), kept on
+/// this device as Teams does: translationTarget, translationMode and
+/// translationKnown (a JSON list); Teams' defaults are your app language.
+fn translation_settings_in(map: &serde_json::Map<String, serde_json::Value>) -> api::translation::Settings {
+    let get = |k: &str| map.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let mut s = api::translation::default_settings(&app_locale());
+    let target = get("translationTarget");
+    if !target.is_empty() {
+        s.target = target.clone();
+        s.known = vec![target];
+    }
+    s.mode = api::translation::Mode::parse(&get("translationMode"));
+    if let Ok(known) = serde_json::from_str::<Vec<String>>(&get("translationKnown")) {
+        s.known = known;
+    }
+    s
+}
+
+fn translation_cache() -> &'static std::sync::RwLock<Option<api::translation::Settings>> {
+    static S: OnceLock<std::sync::RwLock<Option<api::translation::Settings>>> = OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
+fn translation_settings() -> api::translation::Settings {
+    if let Some(s) = translation_cache().read().unwrap().clone() {
+        return s;
+    }
+    let s = translation_settings_in(&load_settings());
+    *translation_cache().write().unwrap() = Some(s.clone());
+    s
+}
+
+/// The app's locale ("en-US"), from the environment as Qt reads it.
+fn app_locale() -> String {
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+        .and_then(|l| l.split(['.', '@']).next().map(|l| l.replace('_', "-")))
+        .filter(|l| !l.is_empty() && l != "C" && l != "POSIX")
+        .unwrap_or_else(|| "en-US".into())
+}
+
+/// ECS' translationLanguageStampingTunerSettings (a JSON string).
+fn translation_tuner() -> serde_json::Value {
+    match api::ecs::setting("messaging", "translationLanguageStampingTunerSettings") {
+        Some(serde_json::Value::String(s)) => serde_json::from_str(&s).unwrap_or_default(),
+        Some(v) => v,
+        None => serde_json::Value::Null,
+    }
+}
+
+/// Teams' translation languages ([(code, name)]), loaded once.
+fn translation_languages() -> &'static std::sync::Mutex<(Vec<(String, String)>, bool)> {
+    static L: OnceLock<std::sync::Mutex<(Vec<(String, String)>, bool)>> = OnceLock::new();
+    L.get_or_init(Default::default)
+}
+
+/// Load Teams' translation languages if they aren't yet; views refresh
+/// when they arrive.
+fn load_translation_languages() {
+    {
+        let mut l = translation_languages().lock().unwrap();
+        if l.1 {
+            return;
+        }
+        l.1 = true;
+    }
+    runtime().spawn(async move {
+        let langs = match TeamsClient::new().await {
+            Ok(client) => api::msgactions::translation_languages(&client, &app_locale().to_lowercase()).await,
+            Err(e) => Err(e),
+        };
+        match langs {
+            Ok(list) if !list.is_empty() => {
+                translation_languages().lock().unwrap().0 = list;
+                if let Some(qt) = QT_THREAD.get() {
+                    let _ = qt.queue(|mut this| {
+                        this.as_mut().translation_languages_ready();
+                        this.as_mut().refresh_lies();
+                    });
+                }
+            }
+            other => {
+                if let Err(e) = other {
+                    tracing::warn!("translation languages: {}", short_error(&e));
+                }
+                translation_languages().lock().unwrap().1 = false;
+            }
+        }
+    });
+}
+
+/// A translation language's name ("German"), the code until they load.
+fn translation_language_name(code: &str) -> String {
+    let l = translation_languages().lock().unwrap();
+    if let Some((_, name)) = l.0.iter().find(|(c, _)| c == code) {
+        return name.clone();
+    }
+    drop(l);
+    load_translation_languages();
+    code.to_string()
+}
+
+unsafe extern "C" {
+    fn ost_language_display(code: *const core::ffi::c_char, out: *mut core::ffi::c_char, cap: usize) -> usize;
+}
+
+/// A translation language as Teams lists it under "Translate messages
+/// into this language": its usual locale named in that language and in
+/// English ("Deutsch (Deutschland)", "German (Germany)"); None when the
+/// locale data doesn't know it.
+fn language_display(code: &str) -> Option<(String, String)> {
+    let c = std::ffi::CString::new(code).ok()?;
+    let mut buf = vec![0u8; 512];
+    let n = unsafe { ost_language_display(c.as_ptr(), buf.as_mut_ptr().cast(), buf.len()) };
+    let s = String::from_utf8_lossy(&buf[..n.min(buf.len())]).to_string();
+    let (native, english) = s.split_once('\t')?;
+    Some((native.to_string(), english.to_string()))
+}
+
+/// Messages Teams translated by itself (Auto-translate all messages): See
+/// original on one brings back "Translate | Never translate …".
+fn auto_translated() -> &'static std::sync::Mutex<std::collections::HashSet<(String, String)>> {
+    static A: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, String)>>> = OnceLock::new();
+    A.get_or_init(Default::default)
+}
+
+/// Translate these messages as Teams' automatic translation does (with
+/// the languages you never want translated), once each.
+fn auto_translate_messages(chat_id: &str, ids: Vec<String>, settings: api::translation::Settings) {
+    static PENDING: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, String)>>> = OnceLock::new();
+    let pending = PENDING.get_or_init(Default::default);
+    let ids: Vec<String> = {
+        let mut p = pending.lock().unwrap();
+        ids.into_iter().filter(|id| p.insert((chat_id.to_string(), id.clone()))).collect()
+    };
+    for id in ids {
+        let chat_id = chat_id.to_string();
+        let settings = settings.clone();
+        runtime().spawn(async move {
+            let result = match TeamsClient::new().await {
+                Ok(client) => api::msgactions::translate_with(&client, &chat_id, &id, &settings.target, Some(&settings.known)).await,
+                Err(e) => Err(e),
+            };
+            let key = (chat_id, id);
+            match result {
+                // Shown only when it worked; Teams says nothing otherwise.
+                Ok(tr) if tr.status == "Done" => {
+                    auto_translated().lock().unwrap().insert(key.clone());
+                    translations().lock().unwrap().insert(key, (tr, true));
+                    if let Some(qt) = QT_THREAD.get() {
+                        let _ = qt.queue(|mut this| this.as_mut().refresh_lies());
+                    }
+                }
+                Ok(tr) => {
+                    translations().lock().unwrap().insert(key, (tr, false));
+                }
+                Err(e) => tracing::warn!("automatic translation failed: {}", short_error(&e)),
+            }
+        });
     }
 }
 
@@ -10064,6 +10267,26 @@ impl qobject::Backend {
         });
     }
 
+    pub fn translation_settings_json(self: Pin<&mut Self>) -> QString {
+        let s = translation_settings();
+        QString::from(serde_json::json!({"target": s.target, "mode": s.mode.name(), "known": s.known}).to_string().as_str())
+    }
+
+    pub fn translation_languages_json(self: Pin<&mut Self>) -> QString {
+        let list = translation_languages().lock().unwrap().0.clone();
+        if list.is_empty() {
+            load_translation_languages();
+        }
+        let out: Vec<serde_json::Value> = list
+            .iter()
+            .map(|(code, name)| {
+                let (native, english) = language_display(code).unwrap_or_else(|| (name.clone(), name.clone()));
+                serde_json::json!({"code": code, "name": name, "native": native, "english": english})
+            })
+            .collect();
+        QString::from(serde_json::Value::Array(out).to_string().as_str())
+    }
+
     pub fn translate_message(mut self: Pin<&mut Self>, message_id: &QString, on: bool) {
         let (chat_id, id) = (
             self.chat_of(&message_id.to_string()),
@@ -10088,12 +10311,8 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                // The user's language: the UI locale's language.
-                let lang = std::env::var("LANG")
-                    .ok()
-                    .and_then(|l| l.split(['_', '.', '-']).next().map(str::to_string))
-                    .filter(|l| !l.is_empty() && l != "C" && l != "POSIX")
-                    .unwrap_or_else(|| "en".into());
+                // Into "Translate messages into this language".
+                let lang = translation_settings().target;
                 api::msgactions::translate(&client, &chat_id, &id, &lang).await
             }
             .await;
@@ -11146,6 +11365,10 @@ impl qobject::Backend {
         }
         if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {
             crate::video_effects::apply(&map);
+        }
+        if ["translationTarget", "translationMode", "translationKnown"].contains(&name.as_str()) {
+            *translation_cache().write().unwrap() = Some(translation_settings_in(&map));
+            self.as_mut().refresh_lies();
         }
         if name == "autoStart"
             && let Err(e) = set_autostart(value == "true")

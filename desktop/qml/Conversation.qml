@@ -1890,6 +1890,38 @@ Rectangle {
                     Accessible.role: Accessible.StaticText
                     Accessible.name: msg.modelData.importance === "urgent" ? "Urgent message." : "Important message."
                 }
+                // Teams' translation suggestion (Ask me before translating, or
+                // the original of a message it auto-translated): "Translate |
+                // Never translate German", 12 px BrandForeground1 links 8
+                // apart around a 20 px NeutralStroke3 rule (measured).
+                Row {
+                    visible: (msg.modelData.suggest_translation || "") !== ""
+                    spacing: 8
+                    Text {
+                        id: suggestTranslate
+                        text: "Translate"
+                        font.family: theme.font; font.pixelSize: theme.small
+                        font.underline: suggestTrHover.hovered
+                        color: theme.brand
+                        HoverHandler { id: suggestTrHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: backend.translateMessage(msg.modelData.id, true) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Translate"
+                        Accessible.onPressAction: backend.translateMessage(msg.modelData.id, true)
+                    }
+                    Rectangle { width: 1; height: 20; y: suggestTranslate.y + 3.3; color: theme.quoteBorder }
+                    Text {
+                        text: "Never translate " + (msg.modelData.suggest_translation_name || "")
+                        font.family: theme.font; font.pixelSize: theme.small
+                        font.underline: neverTrHover.hovered
+                        color: theme.brand
+                        HoverHandler { id: neverTrHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.neverTranslate(msg.modelData.suggest_translation) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: text
+                        Accessible.onPressAction: root.neverTranslate(msg.modelData.suggest_translation)
+                    }
+                }
                 // Translated: Teams' icon with "Translated from …" (click: See
                 // original message). Failed: the error icon and its text.
                 FluentIcon {
@@ -3582,6 +3614,13 @@ Rectangle {
     property var cardFooters: ({})
     property var cardRefreshed: ({})
     readonly property string cardInvokeTag: "conv-invoke-" + Math.floor(Math.random() * 1e9) + ":"
+    /// Teams' "Never translate German": the language joins "Never translate
+    /// messages in these languages" (Settings ▸ General ▸ Translation).
+    function neverTranslate(code) {
+        if (!code) return
+        const s = JSON.parse(backend.translationSettingsJson())
+        if (s.known.indexOf(code) < 0) backend.setSetting("translationKnown", JSON.stringify(s.known.concat([code])))
+    }
     function senderLabel(m) { return m.on_behalf_of ? m.on_behalf_of + " via " + (m.sender || "") : (m.sender || "") }
     function cardUpdated(id) { for (const k in root.cardOverrides) if (k.indexOf(id + ":") === 0) return true; return false }
     function setCardFooter(key, state) { const f = Object.assign({}, root.cardFooters); if (state) f[key] = state; else delete f[key]; root.cardFooters = f }

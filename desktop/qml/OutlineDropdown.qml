@@ -18,7 +18,16 @@ Item {
     signal picked(int index)
     /// Fluent's filled-darker look (#F5F5F5, no outline or underline).
     property bool filled: false
+    /// The listbox's tallest (Teams' language lists: 340 with padding).
+    property real maxListHeight: 300
     implicitWidth: 277.3; implicitHeight: 32
+    function openList() {
+        // Below when it fits, else above.
+        const w = root.Window.window
+        const h = Math.min(view.contentHeight, root.maxListHeight) + 8
+        list.y = (w && root.mapToItem(null, 0, root.height).y + h + 2 > w.height && root.mapToItem(null, 0, 0).y > h + 2) ? -h - 2 : root.height + 2
+        list.open()
+    }
 
     Rectangle {
         anchors.fill: parent; radius: 4
@@ -33,7 +42,7 @@ Item {
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
         HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: list.opened ? list.close() : list.open() }
+        TapHandler { onTapped: list.opened ? list.close() : root.openList() }
         Accessible.role: Accessible.ComboBox
         Accessible.name: root.accessibleName + (root.options.length && root.current >= 0 ? ", " + root.options[root.current].label : "")
     }
@@ -41,7 +50,7 @@ Item {
         id: list
         y: root.height + 2; width: root.width
         padding: 4
-        height: Math.min(view.contentHeight, 300) + 8
+        height: Math.min(view.contentHeight, root.maxListHeight) + 8
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         onOpened: view.positionViewAtIndex(Math.max(0, root.current), ListView.Center)
         contentItem: ListView {
