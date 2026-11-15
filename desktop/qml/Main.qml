@@ -1246,8 +1246,15 @@ Window {
     // The incoming call is a banner while it rings.
     readonly property bool ringing: backend.callState === "ringing"
     onRingingChanged: {
-        if (ringing) banners.add({ id: "call", kind: "call", title: backend.callPeer, video: backend.callVideoOffered, silent: true })
+        if (ringing) banners.add({ id: "call", kind: "call", title: backend.callPeer, senderMri: backend.callPeerId, video: backend.callVideoOffered, silent: true })
         else banners.dismiss("call")
+    }
+    // A video call is often known only after it starts ringing.
+    Connections {
+        target: backend
+        function onCallVideoOfferedChanged() {
+            if (window.ringing) banners.add({ id: "call", kind: "call", title: backend.callPeer, senderMri: backend.callPeerId, video: backend.callVideoOffered, silent: true })
+        }
     }
     // Teams' Rejoin: back into the meeting last joined.
     function rejoinMeeting() { backend.rejoinMeeting() }
@@ -3630,8 +3637,8 @@ Window {
     }
 
     // --notif-banner-test: Teams' notification banners, step by step every 3 s
-    // (photograph the screen at each BANNERS line): the test banner, a chat
-    // message with its quick reply, an @mention and a meeting that started
+    // (photograph the screen at each BANNERS line): an incoming call, a
+    // chat message with its quick reply, an @mention and a meeting that started
     // (BR, Comfy); then the same Compact in the top left, then the top
     // right. BANNERS lines give each card's place in the window. Puts the
     // position and size settings back as they were.
@@ -3643,7 +3650,7 @@ Window {
         property string corner0
         property string size0
         function fill() {
-            backend.testNotification()
+            banners.add({ id: "call", kind: "call", title: "OST Test 2", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", silent: true })
             banners.add({ id: "t1", kind: "standard", title: "OST Test 2", text: "Here is a longer message that needs two lines to show all of it in the banner, and then some more", chatId: "19:x@unq.gbl.spaces", messageId: "1", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", quickReply: true, seconds: 300, silent: true })
             banners.add({ id: "t2", kind: "msn", title: "OST group test", text: "OST Test 2 started a meeting", chatId: "19:y@thread.v2", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", seconds: 300, silent: true, actions: [{ id: "join", label: "Join" }, { id: "message", label: "Message" }] })
         }

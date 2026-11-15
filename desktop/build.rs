@@ -11,7 +11,6 @@ fn main() {
         "qml/Conversation.qml",
         "qml/Avatar.qml",
         "qml/SignIn.qml",
-        "qml/IncomingCall.qml",
         "qml/CallWindow.qml",
         "qml/CallsView.qml",
         "qml/CalendarView.qml",

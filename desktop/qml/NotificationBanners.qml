@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
+import QtQuick.Effects
 import QtMultimedia
 
 // Teams' own notification banners ("custom notifications", its
@@ -20,6 +21,7 @@ import QtMultimedia
 //   it. Compact cards drop the header: 76 tall, the buttons small on the
 //   title's line, a Reply button on hover. A meeting that started is
 //   Teams' MSN card: 260 (compact 130) with Join and Message.
+//   An incoming call is Teams' calling card: 240 (compact 114).
 // - The queue (Teams' NotificationStateContainer): calls, then meetings,
 //   then messages, oldest first; three on screen, the oldest nearest the
 //   corner. A card leaves after Settings' "Dismiss notifications after"
@@ -63,7 +65,7 @@ Window {
     function priority(t) { return t.kind === "call" ? "call" : t.kind === "msn" ? "high" : "normal" }
     function cardHeight(t) {
         if (!t) return 0
-        if (t.kind === "call") return 240
+        if (t.kind === "call") return root.compact ? 114 : 240
         if (t.kind === "msn") return root.compact ? 130 : 260
         return root.compact ? 76 : (t.quickReply ? 164 : 124)
     }
@@ -703,20 +705,138 @@ Window {
 
     // ── an incoming call ──────────────────────────────────────────────
 
+    // Teams' calling card (notifications-app `zt`, measured on winpc
+    // 2026-11-15): the caller's picture filling the card, blurred, under
+    // dark gradients at the top and bottom ("blurredBackplate"); Teams'
+    // header; the picture (80, compact 48), "<name>" and "is calling you"
+    // on 16 px lines; Accept with video, Accept with audio and Decline,
+    // 102.67 x 32, 8 apart. Comfy 240 tall, compact 114. Dismiss ignores
+    // the call: the ringing stops here but the call isn't declined.
     Component {
         id: callCard
         Card {
             id: cc
-            IncomingCall {
+            color: root.fill
+            readonly property string peer: toast ? (toast.title || "") : ""
+            // The backplate: the caller's picture (or initials) covering the
+            // card, blurred (Teams' 10 px), inside the card's rounded corners.
+            Item {
+                id: plateClip
                 anchors.fill: parent
-                peer: cc.toast ? (cc.toast.title || "") : ""
-                videoOffered: !!cc.toast && !!cc.toast.video
-                onAcceptVideo: root.acceptCall(true)
-                onAcceptAudio: root.acceptCall(false)
-                onDecline: root.declineCall()
-                onIgnore: { root.dismiss(cc.toast.id); root.ignoreCall() }
+                clip: true
+                visible: false
+                layer.enabled: true
+                Avatar {
+                    square: true; squareRadius: 0
+                    size: 360
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: cc.peer || "?"
+                    photoId: cc.toast ? (cc.toast.senderMri || "") : ""
+                }
             }
+            Rectangle {
+                id: plateMask
+                anchors.fill: parent; radius: 8
+                visible: false
+                layer.enabled: true
+            }
+            MultiEffect {
+                anchors.fill: parent
+                source: plateClip
+                blurEnabled: true; blur: 1.0; blurMax: 32
+                maskEnabled: true; maskSource: plateMask
+            }
+            Rectangle {
+                anchors.fill: parent; radius: 8
+                gradient: Gradient {
+                    GradientStop { position: 0; color: Qt.rgba(0, 0, 0, 0.7) }
+                    GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0) }
+                }
+            }
+            Rectangle {
+                anchors.fill: parent; radius: 8
+                gradient: Gradient {
+                    GradientStop { position: 0; color: Qt.rgba(0, 0, 0, 0) }
+                    GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.7) }
+                }
+            }
+
+            Header {
+                visible: !root.compact
+                MoreButton {}
+                HeadButton { icon: "dismiss-20"; label: "Dismiss notification"; onClicked: cc.ignore() }
+            }
+            Picture { visible: !root.compact; x: 140; y: 50; size: 80; toast: cc.toast }
+            Text {
+                visible: !root.compact
+                x: 16; y: 142; width: 328; height: 16
+                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                text: cc.peer; elide: Text.ElideRight
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                color: "white"
+            }
+            Text {
+                visible: !root.compact
+                x: 16; y: 158; width: 328; height: 16
+                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                text: cc.toast && cc.toast.video ? "is video calling you" : "is calling you"
+                font.family: theme.font; font.pixelSize: 14
+                color: "white"
+            }
+
+            Picture { visible: root.compact; x: 16; y: 14; toast: cc.toast }
+            Item {
+                visible: root.compact
+                x: 74; y: 12; width: 274; height: 23.33
+                Text {
+                    width: callButtons.x - 4; height: parent.height
+                    verticalAlignment: Text.AlignVCenter
+                    text: cc.peer; elide: Text.ElideRight
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                    color: "white"
+                }
+                Row {
+                    id: callButtons
+                    anchors.right: parent.right; height: parent.height
+                    MoreButton { small: true }
+                    HeadButton { small: true; icon: "dismiss-20"; label: "Dismiss notification"; onClicked: cc.ignore() }
+                }
+            }
+            Text {
+                visible: root.compact
+                x: 74; y: 37.33; width: 274; height: 16
+                verticalAlignment: Text.AlignVCenter
+                text: cc.toast && cc.toast.video ? "is video calling you" : "is calling you"
+                font.family: theme.font; font.pixelSize: 14
+                color: "white"
+            }
+
+            Row {
+                x: 16; y: root.compact ? 70 : 192
+                spacing: 8
+                CallButton { icon: "video-filled"; label: "Accept with video"; onClicked: root.acceptCall(true) }
+                CallButton { icon: "call-filled-24"; label: "Accept with audio"; onClicked: root.acceptCall(false) }
+                CallButton { icon: "call-end-filled"; label: "Decline call"; decline: true; onClicked: root.declineCall() }
+            }
+            function ignore() { root.dismiss(toast.id); root.ignoreCall() }
         }
+    }
+    // Teams' call buttons: brand (#5B5FC7), Decline red (#D13438).
+    component CallButton: Rectangle {
+        id: cb
+        property string icon
+        property string label
+        property bool decline: false
+        signal clicked()
+        width: 102.67; height: 32; radius: 4
+        color: decline ? (cbMouse.pressed ? "#A4262C" : cbHover.hovered ? "#BC2F32" : "#D13438")
+                       : (cbMouse.pressed ? "#383966" : cbHover.hovered ? "#4F52B2" : "#5B5FC7")
+        FluentIcon { anchors.centerIn: parent; name: cb.icon; size: 20; color: "white" }
+        HoverHandler { id: cbHover; cursorShape: Qt.PointingHandCursor }
+        MouseArea { id: cbMouse; anchors.fill: parent; onClicked: cb.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: label
+        Accessible.onPressAction: cb.clicked()
     }
     /// The call card on screen (for the call harness's picture), or null.
     function callCardItem() {
