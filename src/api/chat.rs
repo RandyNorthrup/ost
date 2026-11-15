@@ -542,21 +542,46 @@ pub struct Member {
     pub me: bool,
 }
 
-/// A chat's members with their names and e-mail addresses (Graph, for
-/// `8:orgid:` users), us included and marked.
+/// A chat's members with their names and e-mail addresses, us included and
+/// marked. Names come as Teams gets them: one `fetchShortProfile` request
+/// for the whole roster (guests too); anyone it leaves out is looked up in
+/// Graph (`8:orgid:` users). Members with no name are left out.
 pub async fn chat_members(client: &TeamsClient, thread: &str) -> Result<Vec<Member>> {
     let me = client
         .object_id()
         .map(|o| format!("8:orgid:{o}").to_ascii_lowercase())
         .unwrap_or_default();
     let ids = thread_member_ids(client, thread).await?;
+    let profiles: std::collections::HashMap<String, (String, String)> =
+        super::directory::short_profile_records(client, &ids)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("short profiles unavailable: {e:#}");
+                Vec::new()
+            })
+            .iter()
+            .filter_map(|p| {
+                let mri = p["mri"].as_str()?.to_ascii_lowercase();
+                let name = p["displayName"].as_str().filter(|n| !n.is_empty())?.to_string();
+                let mail = p["email"]
+                    .as_str()
+                    .filter(|m| !m.is_empty())
+                    .or_else(|| p["userPrincipalName"].as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                Some((mri, (name, mail)))
+            })
+            .collect();
     let mut out = Vec::new();
     for mri in ids {
         let mut m = Member {
             me: mri == me,
             ..Default::default()
         };
-        if let Some(oid) = mri.strip_prefix("8:orgid:")
+        if let Some((name, mail)) = profiles.get(&mri) {
+            m.name = name.clone();
+            m.mail = mail.clone();
+        } else if let Some(oid) = mri.strip_prefix("8:orgid:")
             && uuid::Uuid::parse_str(oid).is_ok()
             && let Ok(resp) = client
                 .graph_get(&format!(

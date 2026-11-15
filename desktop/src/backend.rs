@@ -12884,6 +12884,24 @@ impl qobject::Backend {
     pub fn add_app(mut self: Pin<&mut Self>, app_id: &QString, conversation_id: &QString, channel: bool) {
         let app = app_id.to_string();
         let conv = conversation_id.to_string();
+        // A channel's app goes to its team: Teams names the team by its
+        // thread id (the teams list has it).
+        let team_thread = if channel {
+            let teams: serde_json::Value =
+                serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+            teams
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|t| {
+                    t["channels"].as_array().into_iter().flatten().any(|c| c["id"].as_str() == Some(conv.as_str()))
+                })
+                .and_then(|t| t["thread_id"].as_str())
+                .unwrap_or_default()
+                .to_string()
+        } else {
+            String::new()
+        };
         self.as_mut().set_app_added_json(QString::from(
             json!({ "app": app, "conversation": conv, "busy": true }).to_string().as_str(),
         ));
@@ -12891,7 +12909,13 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                let target = (!conv.is_empty()).then_some((conv.as_str(), channel));
+                use api::store_content::AddTarget;
+                let target = match (conv.is_empty(), channel) {
+                    (true, _) => None,
+                    (false, false) => Some(AddTarget::Chat(&conv)),
+                    (false, true) if team_thread.is_empty() => anyhow::bail!("The channel's team isn't known"),
+                    (false, true) => Some(AddTarget::Channel { channel: &conv, team_thread: &team_thread }),
+                };
                 api::store_content::add_app(&client, &app, target).await
             }
             .await;

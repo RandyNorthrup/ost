@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-09T23:01:00Z'
+updated_date: '2026-11-15T23:27:00Z'
 labels:
   - desktop
   - messages
@@ -97,6 +97,8 @@ Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages
 - The post composer shows "Enter starts a new line." under it, as Teams does.
 - Fixed: the posts list went to negative height under a tall composer, so posts drew over the header.
 - The rest of compose moves to TASK-0085.
+
+- 2026-11-15: the Everyone banner was checked live in "OST large chat test" (ost-test1, ost-test2 and 52 guests ostguest01..52 invited from the OST Test Lab domain, no invitation mail). Teams on winpc and OST both show "53 people will be notified" (#FCF4F6, #C4314B, 748 wide). Teams' danger banner has no Close button, so OST's has none either now. OST's roster took over 6 s for 54 people (one Graph call each); it now uses Teams' single fetchShortProfile request (about 3 s with presence). Harness: --everyone-test.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

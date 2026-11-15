@@ -112,9 +112,11 @@ Item {
     // radius 4 4 0 0, #E6E6E6 with a #E0E0E0 line, its text 14/20 #424242
     // 16.7 in, Close notification (28, a 16 px dismiss) at the end. It goes
     // after 3 s. Danger banners (Everyone past 50) use Teams' alert danger
-    // colours (red foreground, background1, border).
+    // colours (red foreground, background1, border) and, as Teams' (measured
+    // on winpc 2026-11-15 in a 54-person chat), have no Close button.
     property string bannerText: ""
     property bool bannerDanger: false
+    property bool bannerDismissible: true
     // A standing note on top of the box (Teams' lobby chat awareness and
     // disabled banners, measured on winpc 2026-11-11): the box's width,
     // #F0F0F0, radius 6 6 0 0, a 0.67 #E0E0E0 line on top, padding 8 16 6,
@@ -123,8 +125,8 @@ Item {
     property bool noteMuted: false
     readonly property real noteH: noteText ? noteLabel.implicitHeight + 14 : 0
     readonly property real bannerShownH: (bannerText ? 29.3 : 0) + noteH
-    function showBanner(text, danger, decayMs) {
-        bannerText = text; bannerDanger = !!danger
+    function showBanner(text, danger, decayMs, dismissible) {
+        bannerText = text; bannerDanger = !!danger; bannerDismissible = dismissible !== false
         bannerDecay.interval = decayMs || 3000; bannerDecay.restart()
     }
     Timer { id: bannerDecay; onTriggered: root.bannerText = "" }
@@ -470,13 +472,14 @@ Item {
         color: root.bannerDanger ? theme.pick("#FCF4F6", "#3E1F25") : theme.pick("#E6E6E6", "#3D3D3D")
         border.color: root.bannerDanger ? theme.pick("#F3D6D8", "#4F222B") : theme.divider; border.width: 0.67
         Text {
-            x: 16.7; y: 4.7; width: parent.width - 16.7 - 36
+            x: 16.7; y: 4.7; width: parent.width - 16.7 - (root.bannerDismissible ? 36 : 16.7)
             elide: Text.ElideRight
             text: root.bannerText
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: root.bannerDanger ? theme.pick("#C4314B", "#E73550") : theme.textStrong
         }
         Item {
+            visible: root.bannerDismissible
             x: parent.width - 28.7; y: 0.7; width: 28; height: 28
             FluentIcon { x: 3.5; y: 7.25; size: 16; name: "dismiss-16"; color: closeBannerHover.hovered ? theme.brand : (root.bannerDanger ? theme.pick("#C4314B", "#E73550") : theme.textStrong) }
             HoverHandler { id: closeBannerHover; cursorShape: Qt.PointingHandCursor }
@@ -1556,7 +1559,7 @@ Item {
             if (!root.everyoneAllowed) return
             // Teams: past 50 others, "# people will be notified".
             if (root.everyoneOthers > 50)
-                root.showBanner(root.everyoneOthers === 1 ? "1 person will be notified" : root.everyoneOthers + " people will be notified", true, 3000)
+                root.showBanner(root.everyoneOthers === 1 ? "1 person will be notified" : root.everyoneOthers + " people will be notified", true, 3000, false)
             const at0 = mentionAt, end0 = input.cursorPosition
             mentionAt = -1; mentionPicker.close()
             input.remove(at0, end0)

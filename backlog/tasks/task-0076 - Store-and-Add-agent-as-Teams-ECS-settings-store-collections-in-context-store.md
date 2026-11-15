@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T13:23:00Z'
-updated_date: '2026-11-09T15:00:00Z'
+updated_date: '2026-11-15T23:27:00Z'
 labels:
   - desktop
   - apps
@@ -56,6 +56,8 @@ Teams' @ picker 'Add agent to the chat/channel' opens its in-context Store (bots
 - Root cause of the earlier CDN differences: without authz licenseDetails, OST asked for the Enterprise store doc instead of apps/smb. ecs::license now fetches them when missing, so ECS and the Store use the same filters as Teams.
 - Also found: the build script copied a stale binary after a failed build; it now fails.
 - Follow-up TASK-0077: the Devices tab, See all filter and Manage your apps.
+
+- 2026-11-15: adding an agent to a channel checked live. OST put the channel id in `beta/teams/{id}/apps/entitlements` and got 403. Teams (ECS enableChannelScopeAppMutations off, its default) uses the team thread id there with `X-Ms-Appinstall-Channelid: {channel}`. Fixed (`AddTarget::Channel { channel, team_thread }`; the backend finds the team thread in the teams list). Verified: Polls removed from OST Test Team, then added via "OST layout test"; the chat service logged ThreadActivity/AddCustomApp in General. Polls stays installed in OST Test Team. `examples/add_app` adds or removes an app.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

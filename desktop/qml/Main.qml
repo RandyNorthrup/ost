@@ -3709,6 +3709,31 @@ Window {
             else if (st > 12 || (st > 4 && Qt.application.arguments.indexOf("--link-preview-send") < 0)) { c.clear(); Qt.quit() }
         }
     }
+    // --everyone-test[=<chat>]: in a big group chat ("OST large chat test",
+    // 54 people), type "@Everyone" as keys, log the picker, pick it with
+    // Return and log and capture Teams' "# people will be notified" banner,
+    // then clear compose. Pictures in /tmp/act.
+    KeyTyper { id: everyoneTyper }
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--everyone-test")) && backend.signedIn
+        interval: 1000; repeat: true
+        property int step: 0
+        property int waited: 0
+        onTriggered: {
+            const st = step++
+            const arg = Qt.application.arguments.find(a => a.startsWith("--everyone-test="))
+            const name = arg ? arg.split("=").slice(1).join("=") : "OST large chat test"
+            const c = conversation.composeForTest()
+            if (st === 0) { const ch = chatList.chats.find(x => x.name === name); console.warn("EVERYONE chat", ch ? ch.id : "missing"); if (!ch) { Qt.quit(); return } rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
+            else if (st >= 1 && st < 6) { if (c.memberCount > 0) { console.warn("EVERYONE roster after", st, "s"); step = 6 } else if (st === 5) step = 1 + (waited++ < 40 ? 0 : 5) }
+            else if (st === 6) { console.warn("EVERYONE members", c.memberCount, "others", c.everyoneOthers, "allowed", c.everyoneAllowed); conversation.focusCompose(); everyoneTyper.typeText("@Everyone") }
+            else if (st === 9) window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/everyone-picker.png"))
+            else if (st === 10) { everyoneTyper.typeText("\n") }
+            else if (st === 11) { console.warn("EVERYONE banner", JSON.stringify(c.bannerText), "danger", c.bannerDanger, "compose", c.formattedText()); window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/everyone-banner.png")) }
+            else if (st === 15) { console.warn("EVERYONE after 3 s", JSON.stringify(c.bannerText)); c.clear() }
+            else if (st > 16) Qt.quit()
+        }
+    }
     // --room-audio-test: the pre-join screen with a connected room device
     // (Teams' BYOD Room audio): what it found and picked, the Room audio
     // card's geometry, then its room picker open; screenshots in /tmp/act.

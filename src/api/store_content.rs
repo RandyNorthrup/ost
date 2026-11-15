@@ -1045,11 +1045,23 @@ pub fn bot_of(def: &serde_json::Value) -> Option<(String, bool)> {
     ))
 }
 
+/// Where an app is added: a chat, or a channel (added to its team, with the
+/// channel named as Teams does).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AddTarget<'a> {
+    Chat(&'a str),
+    /// A channel and its team's thread id (19:…@thread.tacv2).
+    Channel { channel: &'a str, team_thread: &'a str },
+}
+
 /// Add an app as Teams' Add does (captured on winpc, 2026-11-09): for you
 /// (`POST {mt}/beta/users/apps/entitlements`, unless you have it), then,
-/// for a conversation, to it (`POST {mt}/beta/chats/{id}/apps/entitlements`,
-/// or the team's for a channel). Each body is the app's definition.
-pub async fn add_app(client: &TeamsClient, app_id: &str, conversation: Option<(&str, bool)>) -> Result<Added> {
+/// for a chat, to it (`POST {mt}/beta/chats/{id}/apps/entitlements`), or for
+/// a channel, to its team (`POST {mt}/beta/teams/{team thread}/apps/entitlements`
+/// with `X-Ms-Appinstall-Channelid: {channel}`; the channel's own id there is
+/// refused with 403, checked live 2026-11-15). Each body is the app's
+/// definition.
+pub async fn add_app(client: &TeamsClient, app_id: &str, conversation: Option<AddTarget<'_>>) -> Result<Added> {
     let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let def = app_details::definition(client, app_id).await?;
@@ -1066,9 +1078,14 @@ pub async fn add_app(client: &TeamsClient, app_id: &str, conversation: Option<(&
     if !have {
         post(format!("{base}/beta/users/apps/entitlements"), None).await?.error_for_status().context("Add the app")?;
     }
-    if let Some((conv, channel)) = conversation {
-        let scope = if channel { "teams" } else { "chats" };
-        post(format!("{base}/beta/{scope}/{conv}/apps/entitlements"), channel.then_some(conv))
+    if let Some(target) = conversation {
+        let (url, channel) = match target {
+            AddTarget::Chat(chat) => (format!("{base}/beta/chats/{chat}/apps/entitlements"), None),
+            AddTarget::Channel { channel, team_thread } => {
+                (format!("{base}/beta/teams/{team_thread}/apps/entitlements"), Some(channel))
+            }
+        };
+        post(url, channel)
             .await?
             .error_for_status()
             .context("Add the app to the conversation")?;
