@@ -14,6 +14,7 @@ Window {
     Theme {
         id: theme
         dark: window.appTheme.dark || window.callsDark
+        classic: window.appTheme.classic
         hoverCard: window.appTheme.hoverCard
     }
     property string peer

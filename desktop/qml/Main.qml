@@ -51,13 +51,14 @@ Window {
         readonly property string forced: (Qt.application.arguments.find(a => a.startsWith("--theme=")) || "").slice(8)
         readonly property string mode: forced || backend.themeMode
         dark: mode === "dark" || (mode === "system" && Qt.styleHints.colorScheme === Qt.ColorScheme.Dark)
+        classic: mode === "classic"
     }
     // The app's theme (call windows keep their own, see callsDark).
     readonly property QtObject appTheme: theme
     /// Teams' "Always use dark theme for calls and meetings" (its
     /// isCallingWindowDarkTheme, kept on this device); only in Light.
     property bool darkCallSetting: backend.setting("darkCallTheme") === "true"
-    readonly property bool callsDark: darkCallSetting && !theme.dark
+    readonly property bool callsDark: darkCallSetting && !theme.dark && !theme.classic
     /// Teams' App bar settings (its appBar client preferences, kept on this
     /// device): app names under the icons, and folding the bar away after
     /// you pick an app.
@@ -3593,8 +3594,10 @@ Window {
             case 6: log("collapsed after pick", rail.collapsed); cap("collapsed"); rail.collapsed = false; rail.current = "chat"; window.appBarAutoCollapse = false; window.appBarNames = false; break
             case 7: window.darkCallSetting = true; log("light", !theme.dark, "callsDark", window.callsDark); preJoin.openMeetNow("", "OST appearance test"); break
             case 10: cap("prejoin-dark", preJoin); break
-            case 11: preJoin.cancel(); window.appBarNames = before[0]; window.appBarAutoCollapse = before[1]; window.darkCallSetting = before[2]; log("restored", before); break
-            case 12: Qt.quit(); return
+            case 11: preJoin.cancel(); window.appBarNames = before[0]; window.appBarAutoCollapse = before[1]; window.darkCallSetting = before[2]; before.push(backend.themeMode); backend.setSetting("theme", "classic"); break
+            case 13: log("classic", theme.classic, String(theme.titleBar)); cap("classic"); break
+            case 14: backend.setSetting("theme", before[3]); log("restored", before); break
+            case 15: Qt.quit(); return
             }
             step++
         }

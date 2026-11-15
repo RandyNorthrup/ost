@@ -5078,7 +5078,7 @@ impl qobject::Backend {
         let theme = load_settings()
             .get("theme")
             .and_then(|t| t.as_str())
-            .filter(|t| ["system", "light", "dark"].contains(t))
+            .filter(|t| ["system", "light", "dark", "classic"].contains(t))
             .unwrap_or("system")
             .to_string();
         self.as_mut().set_theme_mode(QString::from(theme.as_str()));

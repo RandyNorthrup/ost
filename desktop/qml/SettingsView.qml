@@ -647,8 +647,8 @@ Rectangle {
                 icon: "dark-theme-20"; title: "Theme"; subtitle: "This will apply to all your OST apps."
                 OutlineDropdown {
                     width: 249.3; height: 30
-                    readonly property var keys: ["system", "light", "dark"]
-                    options: [{ label: "Follow operating system theme" }, { label: "Light" }, { label: "Dark" }]
+                    readonly property var keys: ["system", "light", "dark", "classic"]
+                    options: [{ label: "Follow operating system theme" }, { label: "Light" }, { label: "Dark" }, { label: "Classic" }]
                     current: Math.max(0, keys.indexOf(backend.themeMode))
                     accessibleName: "Theme"
                     onPicked: i => backend.setSetting("theme", keys[i])
@@ -658,7 +658,7 @@ Rectangle {
                 SettingsParts.CheckRow {
                     rowHeight: 40
                     label: "Always use dark theme for calls and meetings"
-                    usable: !theme.dark
+                    usable: !theme.dark && !theme.classic
                     checked: window.darkCallSetting
                     onToggled: v => { backend.setSetting("darkCallTheme", v ? "true" : "false"); window.darkCallSetting = v }
                 }

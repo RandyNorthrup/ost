@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-15T02:56:00Z'
+updated_date: '2026-11-15T03:06:00Z'
 labels:
   - desktop
   - settings
@@ -56,4 +56,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - General page complete; next: audit the other Settings pages against scratchpad/tset.
 
 - Appearance: "Always use dark theme for calls and meetings" (call and pre-join windows get their own dark Theme, Light only), App bar card (Show app names: 68x56 items with 10 px labels, selected item filled; Auto collapse app bar). Verified on linuxlt (--appearance-test). Still to do on Appearance: Teams' Classic and High contrast themes.
+
+- Classic theme (purple #444791 title bar, white icons, #E8EBFA search box, as measured); "Always use dark theme" greyed in Classic as in Teams. High contrast moved to its own task (token dumps in docs/spec/teams-tokens-*.json).
 <!-- SECTION:NOTES:END -->

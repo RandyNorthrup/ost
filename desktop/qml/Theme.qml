@@ -5,6 +5,14 @@ import QtQuick
 QtObject {
     /// Dark theme on: chosen in Settings > Appearance, or the system's.
     property bool dark: false
+    /// Teams' Classic theme: Light with its purple title bar (measured).
+    property bool classic: false
+    readonly property color titleBar: classic ? "#444791" : chrome
+    readonly property color titleIcon: classic ? "#FFFFFF" : icon
+    readonly property color titleIconDisabled: classic ? "#BDBDBD" : disabled
+    readonly property color titleHover: classic ? Qt.rgba(1, 1, 1, 0.1) : hover
+    readonly property color titleSearchFill: classic ? "#E8EBFA" : searchFill
+    readonly property color titleSearchIcon: classic ? "#4F52B2" : icon
     /// The compact profile card hovering a picture or name opens (Main
     /// sets it).
     property var hoverCard: null

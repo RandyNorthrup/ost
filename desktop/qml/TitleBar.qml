@@ -66,7 +66,7 @@ Rectangle {
     // where the window never has focus.
     property bool keepSuggestionsOpen: false
     function typeSearch(t) { keepSuggestionsOpen = true; field.text = t; peopleDebounce.restart() }
-    color: theme.chrome
+    color: theme.titleBar
     height: theme.titleBarHeight
 
     // Drag the window by its title bar, as on every desktop app.
@@ -90,10 +90,10 @@ Rectangle {
         property bool usable: true
         signal clicked()
         width: 32; height: 32; radius: theme.radius
-        color: hover.hovered && btn.usable ? theme.hover : "transparent"
+        color: hover.hovered && btn.usable ? theme.titleHover : "transparent"
         HoverHandler { id: hover }
         TapHandler { enabled: btn.usable; onTapped: btn.clicked() }
-        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20; color: btn.usable ? theme.icon : theme.disabled }
+        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20; color: btn.usable ? theme.titleIcon : theme.titleIconDisabled }
     }
 
     BarButton {
@@ -138,9 +138,9 @@ Rectangle {
         width: Math.max(0, Math.min(root.width >= 1024 ? root.searchWide : 468, root.searchRoomEnd - x))
         height: 32; radius: theme.radius
         anchors.verticalCenter: parent.verticalCenter
-        color: theme.searchFill
+        color: theme.titleSearchFill
         border.color: field.activeFocus ? theme.brand : "transparent"
-        FluentIcon { name: "search-20"; size: 16; x: 25; anchors.verticalCenter: parent.verticalCenter; color: theme.icon }
+        FluentIcon { name: "search-20"; size: 16; x: 25; anchors.verticalCenter: parent.verticalCenter; color: theme.titleSearchIcon }
         TextInput {
             id: field
             // The input starts at 51 px with 8.5 px of padding, as in Teams.
@@ -326,7 +326,7 @@ Rectangle {
         width: 40; height: 40; radius: 20
         anchors.right: controls.left; anchors.rightMargin: root.windowButtons ? 8 : 0
         anchors.verticalCenter: parent.verticalCenter
-        color: profileHover.hovered ? theme.hover : "transparent"
+        color: profileHover.hovered ? theme.titleHover : "transparent"
         HoverHandler { id: profileHover }
         TapHandler { onTapped: menu.visible = !menu.visible }
         Accessible.name: "Your profile"
@@ -354,14 +354,14 @@ Rectangle {
             property bool danger: false
             signal clicked()
             width: 44; height: parent.height
-            color: capHover.hovered ? (danger ? "#C42B1C" : theme.hover) : "transparent"
+            color: capHover.hovered ? (danger ? "#C42B1C" : theme.titleHover) : "transparent"
             HoverHandler { id: capHover }
             TapHandler { onTapped: cap.clicked() }
             Canvas {
                 id: glyphs
                 anchors.centerIn: parent
                 width: 12; height: 12
-                property color ink: capHover.hovered && cap.danger ? "white" : theme.icon
+                property color ink: capHover.hovered && cap.danger ? "white" : theme.titleIcon
                 property bool maximized: root.Window.window ? root.Window.window.visibility === Window.Maximized : false
                 onInkChanged: requestPaint()
                 onMaximizedChanged: requestPaint()
