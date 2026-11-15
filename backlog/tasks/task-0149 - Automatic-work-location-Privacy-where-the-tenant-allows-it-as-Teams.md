@@ -4,6 +4,7 @@ title: Automatic work location (Privacy) where the tenant allows it, as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-15T04:40:00Z'
+updated_date: '2026-11-15T22:24:00Z'
 labels:
   - settings
   - presence
@@ -23,3 +24,9 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
 - [ ] #2 The toggle is saved where Teams keeps it (placesSettings.autoUpdateLocationPreference)
 - [ ] #3 With it on, OST sets the work location from the detected place as Teams does
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-15 tenant (user: "you are authorized to adjust anything in the test tenant to unblock us"): TeamsWorkLocationDetectionPolicy 'OST test accounts' (EnableWorkLocationDetection true) created with Teams PowerShell and granted to ost-test1 and ost-test2 only (Global stays off).
+<!-- SECTION:NOTES:END -->

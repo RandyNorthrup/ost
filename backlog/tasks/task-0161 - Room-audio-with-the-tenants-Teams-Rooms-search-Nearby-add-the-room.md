@@ -4,6 +4,7 @@ title: Room audio with the tenant's Teams Rooms (search, Nearby, add the room)
 status: To Do
 assignee: []
 created_date: '2026-11-15T20:59:00Z'
+updated_date: '2026-11-15T22:24:00Z'
 labels:
   - calls
   - devices
@@ -23,3 +24,9 @@ Teams' pre-join Room audio also finds the tenant's Teams Rooms: 'Search for a ro
 - [ ] #2 Other Suggestions and Nearby list rooms as Teams does, with Teams' hints
 - [ ] #3 Joining with a tenant room adds the room to the meeting as Teams does
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-15 tenant (user: "you are authorized to adjust anything in the test tenant to unblock us"): room mailbox 'OST Test Room' (ost-test-room@scnetsolutions.com, capacity 6, location 'OST lab') created, so room search, suggestions and adding a room to a meeting can be tested. A Teams Rooms device (proximity join) is still absent.
+<!-- SECTION:NOTES:END -->

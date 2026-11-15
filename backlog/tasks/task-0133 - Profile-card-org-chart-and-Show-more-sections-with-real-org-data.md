@@ -4,6 +4,7 @@ title: Profile card org chart and Show more sections, with real org data
 status: To Do
 assignee: []
 created_date: '2026-11-14T03:26:00Z'
+updated_date: '2026-11-15T22:24:00Z'
 labels:
   - desktop
   - people
@@ -23,3 +24,9 @@ Teams' profile card Organization tab draws an org chart (managers above, peers a
 - [ ] #2 The sections under Show more match Teams'
 - [ ] #3 Verified side by side with Teams on winpc
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-15 tenant (user: "you are authorized to adjust anything in the test tenant to unblock us"): OST Test 2 set as OST Test 1's manager (Microsoft 365 admin center), so profile cards have an org chart to show.
+<!-- SECTION:NOTES:END -->
