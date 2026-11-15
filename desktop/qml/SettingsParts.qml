@@ -25,21 +25,44 @@ Item {
         property string subtitle
         /// A control on the title's row (single-setting cards).
         property Component trailing: null
-        /// Its top: 43 for a switch, 29 for a button (Teams').
-        property real trailingY: 43
+        /// Its top, when it isn't centred on the header row (NaN: centred,
+        /// as Teams does).
+        property real trailingY: NaN
         /// The control's right margin (57; Teams' Add people box sits 12 in).
         property real trailingRight: 57
         default property alias body: bodyCol.data
-        readonly property real bodyTop: (subtitle ? subText.y + subText.height + 16 : 27 + 42)
+        // Teams' layout (measured on winpc 2026-11-14): 20.7 padding top
+        // and bottom; a header row at least 32 tall holding the title (and
+        // subtitle) and the control, both centred on it (a switch counts as
+        // its 36 px hit area); the body 16 under the header.
+        readonly property real pad: 20.7
+        readonly property real textHeight: titleText.height + (subtitle ? subText.height : 0)
+        readonly property real controlHeight: trailingLoader.item ? (trailingLoader.item.height <= 20 ? 36 : trailingLoader.item.height) : 0
+        readonly property real headerHeight: Math.max(32, textHeight, isNaN(trailingY) ? controlHeight : 0)
+        readonly property real bodyTop: pad + headerHeight + 16
+        // The body without its last row's gap (Teams pads 20.6 under the
+        // last control itself).
+        readonly property real bodyHeight: {
+            let h = bodyCol.height
+            for (let i = bodyCol.children.length - 1; i >= 0; i--) {
+                const c = bodyCol.children[i]
+                if (!c.visible || c.height <= 0) continue
+                if (c.trailingGap !== undefined) h -= c.trailingGap
+                break
+            }
+            return h
+        }
         width: parent ? parent.width : 0
-        height: Math.max(bodyCol.children.length ? bodyTop + bodyCol.height : subtitle ? subText.y + subText.height : 47, trailingLoader.item ? trailingLoader.y + trailingLoader.height : 0) + 20
+        height: Math.max(bodyCol.children.length ? bodyTop + bodyHeight : pad + headerHeight,
+                         trailingLoader.item && !isNaN(trailingY) ? trailingY + trailingLoader.height : 0) + 20.6
         radius: 8
         color: "transparent"
         border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
-        FluentIcon { x: 18.7; y: 26.7; name: card.icon; size: 20; color: theme.text }
+        FluentIcon { x: 18.7; y: card.pad + (card.headerHeight - 20) / 2; name: card.icon; size: 20; color: theme.text }
         Text {
             id: titleText
-            x: 57; y: 27; width: card.width - 57 - (trailingLoader.item ? trailingLoader.width + 57 + 24 : 29)
+            x: 57; y: card.pad + (card.headerHeight - card.textHeight) / 2
+            width: card.width - 57 - (trailingLoader.item ? trailingLoader.width + 57 + 24 : 29)
             text: card.title
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -61,7 +84,7 @@ Item {
         Loader {
             id: trailingLoader
             anchors.right: parent.right; anchors.rightMargin: card.trailingRight
-            y: card.trailingY
+            y: isNaN(card.trailingY) ? card.pad + (card.headerHeight - height) / 2 : card.trailingY
             sourceComponent: card.trailing
         }
         Column {
@@ -128,6 +151,8 @@ Item {
         property string sublabel
         property bool on
         property bool usable: true
+        /// The gap under the row's 36 px switch; a card's last row drops it.
+        readonly property real trailingGap: 15
         signal toggled(bool on)
         width: parent ? parent.width : 0
         height: Math.max(51, labelCol.height + 15)
@@ -167,6 +192,8 @@ Item {
         property bool checked
         property bool usable: true
         property real rowHeight: 47
+        /// The gap under the 32 px checkbox; a card's last row drops it.
+        readonly property real trailingGap: rowHeight >= 47 ? 15 : 0
         signal toggled(bool on)
         width: parent ? parent.width : 0
         height: Math.max(rowHeight, labelText.height + (subText.visible ? subText.height : 0) + 27)

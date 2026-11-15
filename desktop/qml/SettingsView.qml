@@ -458,7 +458,6 @@ Rectangle {
                 visible: root.page === "general" && !root.subPage
                 icon: "local-language-20"; title: "Editor spellcheck"
                 subtitle: "Customize Editor to check for spelling and grammar improvements in up to three languages. If you'd like to include a different language or remove an old one, select Manage spellcheck languages."
-                trailingY: 31
                 trailing: Component { SettingsParts.Button { label: "Manage"; onClicked: root.subPage = "spellcheck" } }
                 property var st: JSON.parse(backend.editorSettingsJson())
                 property string selected: ""
@@ -538,7 +537,6 @@ Rectangle {
                 visible: root.page === "general" && !root.subPage
                 icon: "calendar-arrow-right-20"; title: "Out of office"
                 subtitle: "Schedule out of office and set automatic replies"
-                trailingY: 29
                 trailing: Component { SettingsParts.Button { label: "Schedule"; onClicked: root.subPage = "oof" } }
             }
             // Teams' Keyboard shortcuts card: its profile dropdown (248.7 x
@@ -900,7 +898,6 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "eye-20"; title: "Display"
-                trailingY: 29
                 trailing: Component { SettingsParts.Button { label: "Test notification"; onClicked: backend.testNotification() } }
                 SettingsParts.CheckRow { label: "Show message and content previews in notifications"; checked: notif.ts("ShowPreviewInToasts", "On") !== "Off"; onToggled: v => notif.setTs("ShowPreviewInToasts", v ? "On" : "Off") }
                 SettingsParts.CheckRow { label: "Show notifications during calls and meetings"; checked: notif.ts("MuteNotificationsDuringMeetings", "Off") !== "On"; onToggled: v => notif.setTs("MuteNotificationsDuringMeetings", v ? "Off" : "On") }
@@ -920,7 +917,6 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "mail-20"; title: "Missed activity emails"
-                trailingY: 22
                 trailing: Component {
                     OutlineDropdown {
                         width: 249.3; height: 30
@@ -936,7 +932,6 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "chat-20"; title: "Chat message notifications"
-                trailingY: 22
                 trailing: Component {
                     OutlineDropdown {
                         width: 249.3; height: 30
@@ -981,7 +976,6 @@ Rectangle {
                     required property var modelData
                     visible: root.page === "notifications" && !root.subPage
                     icon: modelData.icon; title: modelData.title
-                    trailingY: 22
                     trailing: Component {
                         OutlineDropdown {
                             width: 249.3; height: 30
@@ -1001,7 +995,6 @@ Rectangle {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "channel-20"; title: "Posts in all shown channels"
                 readonly property int lvl: notif.level(["Visible_ChannelNewMessage_v2"], 2)
-                trailingY: 22
                 trailing: Component {
                     OutlineDropdown {
                         width: 249.3; height: 30
@@ -1059,7 +1052,6 @@ Rectangle {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "person-available-20"; title: "Presence"
                 subtitle: "Keep track of someone's status and get notified when they appear available or offline."
-                trailingY: 31
                 trailing: Component { SettingsParts.Button { label: "Manage notifications"; onClicked: root.subPage = "status" } }
             }
             SettingsParts.Card {
@@ -1378,7 +1370,6 @@ Rectangle {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "presence-dnd-20"; title: "Do not disturb"
                 subtitle: "You can still receive notifications from people who have priority access when your status is set to Do not disturb."
-                trailingY: 31
                 trailing: Component { SettingsParts.Button { label: "Manage priority contacts"; onClicked: root.subPage = "priority" } }
                 SettingsParts.CheckRow {
                     label: "Set my status to do not disturb when I'm sharing my screen"
@@ -1391,7 +1382,6 @@ Rectangle {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "person-prohibited-20"; title: "Blocked contacts"
                 subtitle: "Blocked contacts will be unable to call you, message you, or see your presence."
-                trailingY: 23
                 trailing: Component { SettingsParts.Button { label: "Manage blocked contacts"; onClicked: root.subPage = "blocked" } }
                 SettingsParts.CheckRow {
                     label: "Block calls with no caller ID"
@@ -2131,6 +2121,16 @@ Rectangle {
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
     function greetingDialogForTest() { return greetingDialog }
+    /// Each visible card on the page: [y in the window, height, first text].
+    function cardsForTest() {
+        const out = []
+        for (const c of pageCol.children) {
+            if (!c.visible || c.radius !== 8 || c.height <= 0) continue
+            let t = c.title !== undefined ? c.title : ""
+            out.push([Math.round(c.mapToItem(null, 0, 0).y * 10) / 10, Math.round(c.height * 10) / 10, t])
+        }
+        return out
+    }
     function scrollToForTest(y) { content.contentY = y }
     /// Editor spellcheck (the Editor card's links): General scrolled to it,
     /// or its Manage spellcheck languages page.
