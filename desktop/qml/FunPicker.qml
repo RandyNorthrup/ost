@@ -29,6 +29,13 @@ Popup {
     signal customize()
     signal addCustomEmoji()
     property string tab: "all"
+    /// Settings ▸ Privacy ▸ Optional connected experiences (the user
+    /// property controllerConnectedServicesEnabled, on unless "false"). Off,
+    /// Teams drops GIPHY: no GIFs tab or section and no credit; All then
+    /// shows two rows of emoji and 84 px stickers (measured on winpc
+    /// 2026-11-14).
+    readonly property bool gifsOn: { const s = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; return (s.props || {}).controllerConnectedServicesEnabled !== "false" }
+    onGifsOnChanged: if (!gifsOn && tab === "gifs") tab = "all"
     width: 316; height: 485; padding: 0
     modal: false; focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -101,7 +108,7 @@ Popup {
         }
     }
     property string query: ""
-    onQueryChanged: if (tab === "gifs" || tab === "all") searchTimer.restart()
+    onQueryChanged: if (gifsOn && (tab === "gifs" || tab === "all")) searchTimer.restart()
     Timer { id: searchTimer; interval: 300; onTriggered: { root.gifQuery = root.query.trim(); root.gifResultsOpen = root.gifQuery.length > 0 || root.gifResultsOpen; backend.searchGifs(root.gifQuery) } }
     property string openPack: ""
 
@@ -109,14 +116,16 @@ Popup {
         tab = "all"; query = ""; search.text = ""; gifResultsOpen = false; openPack = ""; editor.sticker = null
         const saved = backend.setting("recent_stickers")
         recentIds = saved ? JSON.parse(saved) : []
-        gifQuery = ""; backend.searchGifs("")
+        gifQuery = ""; if (gifsOn) backend.searchGifs("")
         search.forceActiveFocus()
     }
     onTabChanged: { if (tab === "emoji") emojiPanel.reset(); else search.forceActiveFocus() }
 
     // Tabs.
     Repeater {
-        model: [["all", "All", 19.1, 40.7], ["emoji", "Emoji", 78, 59.3], ["gifs", "GIFs", 155.5, 50.9], ["stickers", "Stickers", 224.6, 72.4]]
+        model: root.gifsOn
+            ? [["all", "All", 19.1, 40.7], ["emoji", "Emoji", 78, 59.3], ["gifs", "GIFs", 155.5, 50.9], ["stickers", "Stickers", 224.6, 72.4]]
+            : [["all", "All", 31.3, 40.7], ["emoji", "Emoji", 115.3, 59.3], ["stickers", "Stickers", 215.3, 72.4]]
         Item {
             id: tabItem
             required property var modelData
@@ -257,12 +266,12 @@ Popup {
         clip: true
         readonly property string q: root.query.trim().toLowerCase()
         Heading { y: 2; text: "Emoji"; onSeeAllClicked: root.tab = "emoji" }
-        Row {
-            x: 15; y: 35.3
+        Grid {
+            x: 15; y: 35.3; columns: 6
             Repeater {
                 model: {
                     const ids = backend.recentReactionsJson ? JSON.parse(backend.recentReactionsJson) : []
-                    return ids.slice(0, 6)
+                    return ids.slice(0, root.gifsOn ? 6 : 12)
                 }
                 Rectangle {
                     required property string modelData
@@ -276,9 +285,9 @@ Popup {
                 }
             }
         }
-        Heading { y: 96.7; text: "GIFs"; onSeeAllClicked: root.tab = "gifs" }
+        Heading { visible: root.gifsOn; y: 96.7; text: "GIFs"; onSeeAllClicked: root.tab = "gifs" }
         Repeater {
-            model: (parent.q ? root.gifResults : root.trending).slice(0, 3)
+            model: root.gifsOn ? (parent.q ? root.gifResults : root.trending).slice(0, 3) : []
             GifTile {
                 required property var modelData
                 required property int index
@@ -286,16 +295,17 @@ Popup {
                 x: [17.5, 113.3, 209.2][index]; y: 130; width: 89.3; height: 86.3
             }
         }
-        Heading { y: 231.7; text: "Stickers"; onSeeAllClicked: root.tab = "stickers" }
-        Row {
-            x: 15; y: 265; spacing: 3
+        Heading { y: root.gifsOn ? 231.7 : 145.3; text: "Stickers"; onSeeAllClicked: root.tab = "stickers" }
+        Grid {
+            x: root.gifsOn ? 15 : 16; y: root.gifsOn ? 265 : 180.3
+            columns: root.gifsOn ? 4 : 3; spacing: root.gifsOn ? 3 : 2.7
             Repeater {
                 model: {
                     const q = parent.parent.q
                     const list = q ? root.catalog.stickers.filter(s => (s.title + " " + s.keywords).toLowerCase().indexOf(q) >= 0) : root.recentStickers
-                    return list.slice(0, 4)
+                    return list.slice(0, root.gifsOn ? 4 : 6)
                 }
-                StickerTile { required property var modelData; sticker: modelData }
+                StickerTile { required property var modelData; sticker: modelData; size: root.gifsOn ? 69 : 84 }
             }
         }
     }
@@ -550,7 +560,7 @@ Popup {
 
     // GIPHY's credit (All and GIFs), and its terms.
     Item {
-        visible: root.tab === "all" || root.tab === "gifs"
+        visible: root.gifsOn && (root.tab === "all" || root.tab === "gifs")
         y: 449; width: root.width; height: 36
         Text { x: 111.5; y: 10; height: 16; verticalAlignment: Text.AlignVCenter; text: "GIFs powered by GIPHY"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
         Text {

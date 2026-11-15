@@ -362,30 +362,25 @@ Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192 ; https://s
   Source: https://gomomentum.com/wp-content/uploads/2024/01/New-Teams-Settings-101-QRG88.pdf (search snippet only)
 
 ### 10.2 Accounts and orgs
-- [ ] One notification toggle per org or guest tenant. Guest orgs default to on.
-  Source: https://support.microsoft.com/office/manage-accounts-and-organizations-in-microsoft-teams-7b221128-6643-465c-a317-679e48cd2ce9
-- [ ] "Manage your account". "Accept invitations from other tenants". Per-org leave/remove **[unverified]**.
-  Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192
+Measured on winpc 2026-11-14 (ost-test1):
+- [x] Account card: 56 px avatar with presence, display name (14/700), e-mail (12, NeutralForeground2); **Refresh license and restart** (arrow-sync icon button) restarts the app; **Manage** (96 x 32, open icon) opens `https://myaccount.microsoft.com/` with the login hint.
+- [x] The org list under it: one 48 px row per tenant (14/700) on #FAFAFA; the active one has the 3 px brand bar.
+- [ ] Per-tenant visibility toggle and Leave org (shown only with guest or multi-tenant orgs; the test tenant has one org).
 
 ### 10.3 Privacy
-- [ ] "Do not disturb" > **Manage priority access**: add people whose messages raise banners and whose calls ring through during DND.
-  Source: https://learn.microsoft.com/en-us/microsoftteams/presence-admins
-- [ ] "Set my status to Do not disturb when I'm sharing my screen" (default on).
-  Source: https://support.microsoft.com/office/ce36ed14-6bc9-4775-a33e-6629ba4ff78e
-- [ ] **Read receipts** toggle: on by default, admin can lock it. **[third-party wording; may live under Chats and channels in newest builds]**
-  Source: https://kb.uwm.edu/66478
-- [ ] **Blocked contacts** > "Edit blocked contacts": list of blocked numbers and people, plus "Block calls with no caller ID" (Direct Routing).
-  Source: https://support.microsoft.com/office/manage-your-call-settings-in-microsoft-teams-456cb611-3477-496f-b31a-6ab752a7595f
-- [ ] "Manage your work location" (consent to auto-detected work location).
-  Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192
-- [ ] Other Privacy items:
-  - "Delete Copilot activity history";
-  - "Surveys": participate in Microsoft Teams surveys;
-  - "Turn off camera and mic when screen locks";
-  - "Enable keyboard shortcut to unmute" (Ctrl+Space);
-  - "View diagnostic data" and "Extended diagnostic data";
-  - "Optional connected experiences" (Giphy, URL previews).
-  Source: same **[university]**
+Measured on winpc 2026-11-14, in Teams' order:
+- [x] **Manage my work location**: with the tenant's work-location detection policy off (ECS places.enableWorkLocationDetectionPolicy), "Automatically setting your work location has been turned off by your IT department. Learn more", then "Your work location will be shared with Places and Outlook. Manage more preferences in Outlook. Open Outlook work hours and location settings" (ECS presence.outlookLocationSettingUrl). The policy-on toggle is TASK-0149.
+- [x] **Do not disturb** with **Manage priority contacts** → "Manage priority access" page (people picker "Search for a name or number", the people with Remove). Lists: `{mt}/beta/userSettings/breakthroughlist[/manage]`.
+- [x] "Set my status to do not disturb when I'm sharing my screen" with its sublabel.
+- [x] **Blocked contacts** with **Manage blocked contacts** → "Manage blocked people" (two lines of text, the people with Unblock). `{mt}/beta/userSettings/blocklist[/manage]`. "Block calls with no caller ID".
+- [x] **Surveys**.
+- [x] **Turn off my camera and mic when my screen locks** (clientPreferences lockScreenInCall.turnOffMediaOnDeviceLock, on this device; read at start, "Restart … to apply"). OST follows logind's lock state; verified on linuxlt: the mic muted when the session locked during a Meet now.
+- [ ] **View Diagnostic Data** > Manage (TASK-0147).
+- [x] **Extended diagnostics data** (clientPreferences diagnosticsLogs.shouldPersistLogsIntoIDB, on this device): OST then keeps earlier sessions' logs (up to 64 MiB, then one older file), included in Download logs.
+- [x] **Identify me in attendance reports**.
+- [ ] **End-to-end encrypted calls** (TASK-0146).
+- [x] **Optional connected experiences** (user property controllerConnectedServicesEnabled, on unless "false"): off, Teams' fun picker has no GIFs tab, section or GIPHY credit, and All shows two rows of emoji and 84 px stickers; link previews are TASK-0148.
+- [x] **Keyboard shortcut to unmute**.
 
 ### 10.4 Notifications and activity
 - [ ] General:

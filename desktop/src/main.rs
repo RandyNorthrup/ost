@@ -36,6 +36,15 @@ pub fn log_path() -> std::path::PathBuf {
     }
 }
 
+/// With extended diagnostics, the log grows across sessions to this size
+/// before the older part moves to `previous_log_path`.
+const EXTENDED_LOG_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// The older half of an extended-diagnostics log.
+pub fn previous_log_path() -> std::path::PathBuf {
+    log_path().with_extension("previous.log")
+}
+
 /// The socket a running OST listens on, so launching it again brings that
 /// window back (Teams keeps a single instance).
 fn instance_socket() -> Option<std::path::PathBuf> {
@@ -83,10 +92,20 @@ fn main() {
         return;
     }
     let log = log_path();
-    let file = log
-        .parent()
-        .and_then(|d| std::fs::create_dir_all(d).ok())
-        .and_then(|_| std::fs::File::create(&log).ok());
+    let file = log.parent().and_then(|d| std::fs::create_dir_all(d).ok()).and_then(|_| {
+        // Settings ▸ Privacy ▸ Extended diagnostics data: keep earlier
+        // sessions' logs (Teams persists its logs past the in-memory
+        // buffer); otherwise each start begins a fresh log.
+        if backend::extended_diagnostics() {
+            if std::fs::metadata(&log).is_ok_and(|m| m.len() > EXTENDED_LOG_LIMIT) {
+                let _ = std::fs::rename(&log, previous_log_path());
+            }
+            std::fs::OpenOptions::new().create(true).append(true).open(&log).ok()
+        } else {
+            let _ = std::fs::remove_file(previous_log_path());
+            std::fs::File::create(&log).ok()
+        }
+    });
     {
         use tracing_subscriber::prelude::*;
         let filter = || EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into());

@@ -3603,7 +3603,17 @@ Window {
             else if (step === 5) { shot("priority-one"); backend.channelAction("people-list-remove", "", "", JSON.stringify({ list: "priority", mri: test2 })) }
             else if (step === 6) { console.warn("PRIVACY after remove", backend.channelActionResult); settingsView.pageForTest("privacy", "blocked") }
             else if (step === 7) shot("blocked")
-            else { Qt.quit(); return }
+            else if (step === 8) settingsView.pageForTest("privacy")
+            else if (step === 9) shot("privacy-top")
+            else if (step === 10) settingsView.scrollForTest()
+            else if (step === 11) shot("privacy-lower")
+            // Optional connected experiences off: the fun picker without GIPHY.
+            else if (step === 12) { backend.changeSetting("prop", "controllerConnectedServicesEnabled", JSON.stringify("false")); const c = chatList.chats.find(c => c.name === "OST group test"); rail.current = "chat"; backend.selectChat(c.id, c.name) }
+            else if (step === 14) conversation.openEmojiForTest()
+            else if (step === 15) { console.warn("PRIVACY gifsOn", conversation.funPickerForTest().gifsOn); shot("fun-no-gifs") }
+            else if (step === 16) { conversation.funPickerForTest().close(); backend.changeSetting("prop", "controllerConnectedServicesEnabled", JSON.stringify("true")) }
+            else if (step === 17) console.warn("PRIVACY gifsOn after", conversation.funPickerForTest().gifsOn)
+            else if (step > 17) { Qt.quit(); return }
             step++
         }
     }
@@ -4004,6 +4014,8 @@ Window {
             else if (step === 2) { if (Qt.application.arguments.indexOf("--meet-join") >= 0) backend.joinGroupCall(); else backend.meetNow() }
             else if (step === 6) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-incall.png")))
             else if (step === 8) { console.warn("MEETNOW state", backend.callState, "meeting", backend.callMeeting, "thread", backend.callThreadId, "roster", backend.callRosterJson); callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-meetnow.png"))) }
+            else if (step === 7 && Qt.application.arguments.indexOf("--meet-unmute") >= 0 && backend.callMuted) backend.toggleMute()
+            else if (step >= 9 && step <= 21) console.warn("MEETNOW media muted", backend.callMuted, "camera", backend.callCameraOn, "sharing", backend.callSharing)
             else if (step === 22) backend.hangUp()
             else if (step === 26) { console.warn("MEETNOW after", backend.callState); Qt.quit() }
             step++

@@ -33,6 +33,13 @@ trait Manager {
     fn get_session(&self, id: &str) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
 }
 
+/// Presence follows the lock, and so does Teams' "Turn off my camera and
+/// mic when my screen locks".
+fn set_locked(locked: bool) {
+    presence::set_machine_locked(locked);
+    crate::backend::machine_lock_changed(locked);
+}
+
 /// Follow the session's lock state until the app exits.
 pub async fn run() {
     if let Err(e) = watch().await {
@@ -49,7 +56,7 @@ async fn watch() -> zbus::Result<()> {
     let id = SessionProxy::new(&bus).await?.id().await?;
     let path = manager.get_session(&id).await?;
     let session = SessionProxy::builder(&bus).path(path)?.build().await?;
-    presence::set_machine_locked(session.locked_hint().await.unwrap_or(false));
+    set_locked(session.locked_hint().await.unwrap_or(false));
     let mut hint = session.receive_locked_hint_changed().await;
     let mut locks = session.receive_lock().await?;
     let mut unlocks = session.receive_unlock().await?;
@@ -58,16 +65,16 @@ async fn watch() -> zbus::Result<()> {
         tokio::select! {
             Some(c) = hint.next() => {
                 if let Ok(v) = c.get().await {
-                    presence::set_machine_locked(v);
+                    set_locked(v);
                 }
             }
-            Some(_) = locks.next() => presence::set_machine_locked(true),
-            Some(_) = unlocks.next() => presence::set_machine_locked(false),
+            Some(_) = locks.next() => set_locked(true),
+            Some(_) = unlocks.next() => set_locked(false),
             Some(s) = sleeps.next() => {
                 // Suspending counts as locked; on resume, logind's hint decides.
                 if let Ok(args) = s.args() {
                     let locked = if *args.start() { true } else { session.locked_hint().await.unwrap_or(false) };
-                    presence::set_machine_locked(locked);
+                    set_locked(locked);
                 }
             }
             else => break,

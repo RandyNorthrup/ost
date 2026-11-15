@@ -676,6 +676,9 @@ pub mod qobject {
         /// {appLanguage, dateFormat, timeFormat}} (.NET patterns).
         #[qinvokable]
         fn regional_options_json(self: Pin<&mut Backend>) -> QString;
+        /// A Teams ECS setting as JSON ("" when ECS doesn't set it).
+        #[qinvokable]
+        fn ecs_setting(self: &Backend, area: &QString, key: &QString) -> QString;
         /// Teams' Refresh license and restart (Accounts and orgs): start OST
         /// again, which reads your licence and organisations afresh.
         #[qinvokable]
@@ -3366,6 +3369,35 @@ fn proofing_settings() -> &'static std::sync::Mutex<Option<api::editor::Proofing
 
 /// Teams' "Save and restart": main.rs starts OST again after it quits.
 static RESTART: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Settings ▸ Privacy ▸ "Turn off my camera and mic when my screen locks"
+/// (Teams' clientPreferences lockScreenInCall.turnOffMediaOnDeviceLock,
+/// kept on this device), as it was when OST started.
+static LOCK_MEDIA_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The screen locked or unlocked. With the setting on, locking during a
+/// call turns off your camera, mic and screen sharing, as Teams does.
+pub fn machine_lock_changed(locked: bool) {
+    if !locked || !LOCK_MEDIA_OFF.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let Some(qt) = QT_THREAD.get() else { return };
+    let _ = qt.queue(|mut this| {
+        if this.rust().call_state.to_string() != "connected" {
+            return;
+        }
+        tracing::info!("screen locked in a call: camera, mic and sharing off");
+        if this.rust().call_sharing {
+            this.as_mut().toggle_share();
+        }
+        if this.rust().call_camera_on {
+            this.as_mut().toggle_camera();
+        }
+        if !this.rust().call_muted {
+            this.as_mut().toggle_mute();
+        }
+    });
+}
+
 pub fn restart_requested() -> bool {
     RESTART.load(std::sync::atomic::Ordering::SeqCst)
 }
@@ -4847,6 +4879,12 @@ fn settings_path() -> Option<std::path::PathBuf> {
         .map(|b| b.join("ost").join("desktop.json"))
 }
 
+/// Settings ▸ Privacy ▸ Extended diagnostics data (Teams' clientPreferences
+/// diagnosticsLogs.shouldPersistLogsIntoIDB, kept on this device).
+pub fn extended_diagnostics() -> bool {
+    load_settings().get("shouldPersistLogsIntoIDB").and_then(|v| v.as_str()) == Some("true")
+}
+
 fn load_settings() -> serde_json::Map<String, serde_json::Value> {
     settings_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -5075,6 +5113,12 @@ impl qobject::Backend {
         // Teams' regional formats for text the engine formats.
         api::regional::set_current(regional_in_effect().1.clone());
         // The machine's lock state feeds presence, as Teams' host does.
+        // Teams reads "Turn off my camera and mic when my screen locks" when
+        // it starts ("Restart Teams to apply this setting").
+        LOCK_MEDIA_OFF.store(
+            load_settings().get("turnOffMediaOnDeviceLock").and_then(|v| v.as_str()) == Some("true"),
+            std::sync::atomic::Ordering::SeqCst,
+        );
         runtime().spawn(crate::lock_watch::run());
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
         self.as_mut().set_system_frame(frame);
@@ -10518,6 +10562,12 @@ impl qobject::Backend {
         }
     }
 
+    pub fn ecs_setting(&self, area: &QString, key: &QString) -> QString {
+        api::ecs::setting(&area.to_string(), &key.to_string())
+            .map(|v| QString::from(v.to_string().as_str()))
+            .unwrap_or_default()
+    }
+
     pub fn restart_app(self: Pin<&mut Self>) {
         RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
         tracing::info!("restarting (Refresh license and restart)");
@@ -12026,6 +12076,10 @@ impl qobject::Backend {
             let dir = desktop.join(format!("OST Support Logs {stamp}"));
             std::fs::create_dir_all(&dir)?;
             std::fs::copy(crate::log_path(), dir.join("ost-desktop.log"))?;
+            // Extended diagnostics: the earlier sessions too.
+            if crate::previous_log_path().exists() {
+                std::fs::copy(crate::previous_log_path(), dir.join("ost-desktop.previous.log"))?;
+            }
             std::fs::write(
                 dir.join("version.txt"),
                 format!("OST desktop {}\n", env!("CARGO_PKG_VERSION")),

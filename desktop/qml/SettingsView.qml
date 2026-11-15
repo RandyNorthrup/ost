@@ -1324,6 +1324,23 @@ Rectangle {
             }
 
             // ---- Privacy ----
+            // Manage my work location (Teams' presence-location card): with
+            // the tenant's work-location detection policy off, Teams says so;
+            // where your work hours and location are set, in Outlook.
+            SettingsParts.Card {
+                id: workLocationCard
+                // (ECS answers aren't notified: read again each time Privacy opens.)
+                readonly property bool shown: root.page === "privacy" && !root.subPage
+                readonly property bool detection: shown && backend.ecsSetting("places", "enableWorkLocationDetectionPolicy") === "true" && backend.ecsSetting("places", "enableAutoDetectPlaceWifi") === "true"
+                readonly property string outlookUrl: { if (!shown) return ""; const v = backend.ecsSetting("presence", "outlookLocationSettingUrl"); return v ? JSON.parse(v) : "" }
+                readonly property bool outlookLink: shown && backend.ecsSetting("presence", "enableWorkLocationSettingsLink") === "true" && outlookUrl.length > 0
+                visible: root.page === "privacy" && !root.subPage && (!detection || outlookLink)
+                icon: "building-home-20"; title: "Manage my work location"
+                subtitle: (detection ? "" : "Automatically setting your work location has been turned off by your IT department. <a href=\"https://support.microsoft.com/en-us/office/first-things-to-know-about-bookable-desks-in-microsoft-teams-5d10c217-1205-48a1-a883-ff4533f4ae71?preview=true\">Learn more</a>")
+                    + (!detection && outlookLink ? "<br>" : "")
+                    + (outlookLink ? "Your work location will be shared with Places and Outlook. Manage more preferences in Outlook. <a href=\"" + outlookUrl + "\">Open Outlook work hours and location settings</a>" : "")
+                onLinkActivated: l => Qt.openUrlExternally(l)
+            }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "presence-dnd-20"; title: "Do not disturb"
@@ -1356,8 +1373,27 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
+                icon: "video-person-off-20"; title: "Turn off my camera and mic when my screen locks"
+                subtitle: "If your screen locks due to inactivity while you're in a meeting, your camera, mic, and screensharing will automatically turn off. Restart OST to apply this setting."
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("turnOffMediaOnDeviceLock") === "true"; accessibleName: "Turn off my camera and mic when my screen locks"; onToggled: v => { backend.setSetting("turnOffMediaOnDeviceLock", v ? "true" : "false"); on = v } } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage
+                icon: "data-area-20"; title: "Extended diagnostics data"
+                subtitle: "Enable the application to store a larger duration of diagnostics data for debugging purposes."
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("shouldPersistLogsIntoIDB") === "true"; accessibleName: "Extended diagnostics data"; onToggled: v => { backend.setSetting("shouldPersistLogsIntoIDB", v ? "true" : "false"); on = v } } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage
                 icon: "people-list-20"; title: "Identify me in attendance reports"; subtitle: "Let meeting or event organizer know your attendance information."
                 trailing: Component { SettingsParts.Toggle { on: root.prop("showInMeetingReport", [], "true") !== "false"; accessibleName: "Identify me in attendance reports"; onToggled: v => root.setProp("showInMeetingReport", "", v ? "true" : "false") } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage
+                icon: "image-sparkle-20"; title: "Optional connected experiences"
+                subtitle: "Enhance your OST experience with cloud-backed services, including Giphy, URL Preview, and more. <a href=\"https://go.microsoft.com/fwlink/?linkid=2295907\">Learn More</a><br><a href=\"https://privacy.microsoft.com/privacystatement\">Microsoft Privacy Statement</a>"
+                onLinkActivated: l => Qt.openUrlExternally(l)
+                trailing: Component { SettingsParts.Toggle { on: root.prop("controllerConnectedServicesEnabled", [], "true") !== "false"; accessibleName: "Optional connected experiences"; onToggled: v => root.setProp("controllerConnectedServicesEnabled", "", v ? "true" : "false") } }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage

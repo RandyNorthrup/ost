@@ -160,7 +160,7 @@ pub const JSON_PROPERTIES: [&str; 6] = [
 
 /// Settings kept as plain string user properties ("true", "COMFY", …),
 /// written as Teams' Settings writes them.
-pub const PLAIN_PROPERTIES: [&str; 7] = [
+pub const PLAIN_PROPERTIES: [&str; 8] = [
     "messageDensity",
     "readReceiptsEnabled",
     "enableChannelsV2",
@@ -168,6 +168,9 @@ pub const PLAIN_PROPERTIES: [&str; 7] = [
     "showInMeetingReport",
     "enablePushToTalk",
     "preferredSkinToneIndex",
+    // Settings ▸ Privacy ▸ Optional connected experiences ("true"/"false",
+    // on unless "false").
+    "controllerConnectedServicesEnabled",
 ];
 
 /// All your user properties, the JSON-string ones parsed (Settings reads
