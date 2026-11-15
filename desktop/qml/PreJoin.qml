@@ -9,6 +9,13 @@ import com.ost.desktop
 // Join now. Choices OST can't offer yet are shown disabled.
 Window {
     id: win
+    // Teams' "Always use dark theme for calls and meetings" (Settings ▸
+    // Appearance): this window's own theme, dark then even in Light.
+    Theme {
+        id: theme
+        dark: window.appTheme.dark || window.callsDark
+        hoverCard: window.appTheme.hoverCard
+    }
     property string subject
     property string joinUrl
     property date startTime

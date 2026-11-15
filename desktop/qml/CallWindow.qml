@@ -9,6 +9,13 @@ import com.ost.desktop
 // other person's avatar, their name chip and your own tile.
 Window {
     id: win
+    // Teams' "Always use dark theme for calls and meetings" (Settings ▸
+    // Appearance): this window's own theme, dark then even in Light.
+    Theme {
+        id: theme
+        dark: window.appTheme.dark || window.callsDark
+        hoverCard: window.appTheme.hoverCard
+    }
     property string peer
     property string selfName
     property string state       // "calling" | "connecting" | "connected" | "ended"

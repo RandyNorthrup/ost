@@ -653,7 +653,16 @@ Rectangle {
                     accessibleName: "Theme"
                     onPicked: i => backend.setSetting("theme", keys[i])
                 }
-                SettingsParts.Gap { size: 16 }
+                // Teams: only in the Light theme.
+                SettingsParts.Gap { size: 8.7 }
+                SettingsParts.CheckRow {
+                    rowHeight: 40
+                    label: "Always use dark theme for calls and meetings"
+                    usable: !theme.dark
+                    checked: window.darkCallSetting
+                    onToggled: v => { backend.setSetting("darkCallTheme", v ? "true" : "false"); window.darkCallSetting = v }
+                }
+                SettingsParts.Gap { size: 4 }
             }
             SettingsParts.Card {
                 visible: root.page === "appearance"
@@ -678,6 +687,24 @@ Rectangle {
                     }
                 }
                 SettingsParts.Gap { size: 8 }
+            }
+
+            // Teams' App bar card (measured on winpc 2026-11-14).
+            SettingsParts.Card {
+                visible: root.page === "appearance"
+                icon: "panel-left-text-20"; title: "App bar"
+                subtitle: "Customize your app bar layout and properties"
+                SettingsParts.SwitchRow {
+                    label: "Show app names"
+                    on: window.appBarNames
+                    onToggled: v => { backend.setSetting("appBarShowNames", v ? "true" : "false"); window.appBarNames = v }
+                }
+                SettingsParts.SwitchRow {
+                    label: "Auto collapse app bar"
+                    sublabel: "The app bar will automatically collapse after you select an app."
+                    on: window.appBarAutoCollapse
+                    onToggled: v => { backend.setSetting("appBarAutoCollapse", v ? "true" : "false"); window.appBarAutoCollapse = v }
+                }
             }
 
             // ---- Chats and channels ----

@@ -11,6 +11,14 @@ Rectangle {
     property bool noneChosen: false
     /// "Collapse app bar": the rail folds away, as in Teams.
     property bool collapsed: false
+    /// Teams' "Show app names": labels under the icons (56 px items).
+    property bool showNames: false
+    /// Teams' "Auto collapse app bar": it folds away once you pick an app.
+    property bool autoCollapse: false
+    function pick(key) {
+        current = key
+        if (autoCollapse) collapsed = true
+    }
     property int unreadChats: 0
     property int unreadActivity: 0
     color: theme.chrome
@@ -51,29 +59,47 @@ Rectangle {
     Column {
         y: 0
         width: parent.width
-        spacing: 4
+        spacing: root.showNames ? 0 : 4
         Repeater {
             model: root.apps
             delegate: Item {
                 required property var modelData
                 readonly property bool selected: root.current === modelData.key && !root.noneChosen
-                width: root.width; height: 40
+                width: root.width; height: root.showNames ? 56 : 40
+                // With app names (Teams, measured): the chosen app's whole 68 x 56
+                // item is filled, its bar 3 x 47, the label 10 px under the icon.
+                Rectangle {
+                    visible: root.showNames && (parent.selected || hover.hovered)
+                    anchors.fill: parent
+                    color: parent.selected ? theme.surface : theme.hover
+                }
                 Rectangle {
                     visible: parent.selected
-                    width: 3; height: 32; radius: 2
+                    width: 3; height: root.showNames ? 47 : 32; radius: 2
                     anchors.verticalCenter: parent.verticalCenter
                     color: theme.brand
                 }
                 Rectangle {
+                    visible: !root.showNames
                     anchors.centerIn: parent
                     width: 40; height: 40; radius: theme.radius
                     color: hover.hovered && !parent.selected ? theme.hover : "transparent"
                 }
                 FluentIcon {
-                    anchors.centerIn: parent
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: root.showNames ? 8 : (parent.height - height) / 2
                     size: 24
                     name: parent.selected ? modelData.icon + "-filled" : modelData.icon
                     color: parent.selected ? theme.brand : theme.icon
+                }
+                Text {
+                    visible: root.showNames && modelData.key !== "more"
+                    x: 4; y: 34; width: parent.width - 8
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                    text: modelData.label
+                    font.family: theme.font; font.pixelSize: 10; lineHeight: 14; lineHeightMode: Text.FixedHeight
+                    color: parent.selected ? theme.brand : theme.textSecondary
                 }
                 Rectangle {
                     readonly property int count: modelData.key === "chat" ? root.unreadChats
@@ -92,7 +118,7 @@ Rectangle {
                     }
                 }
                 HoverHandler { id: hover }
-                TapHandler { onTapped: modelData.key === "more" ? moreApps.open() : root.current = modelData.key }
+                TapHandler { onTapped: modelData.key === "more" ? moreApps.open() : root.pick(modelData.key) }
                 ToolTipLabel { text: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label; shown: hover.hovered }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label

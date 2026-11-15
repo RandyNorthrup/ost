@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-15T02:37:00Z'
+updated_date: '2026-11-15T02:56:00Z'
 labels:
   - desktop
   - settings
@@ -54,4 +54,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 
 - Editor spellcheck done: compose spelling via Microsoft Editor over AugLoop (src/api/editor.rs), Teams' Editor card, the Editor spellcheck card (languages, Correct words while typing, Spelling + options from NLEditor Config V2) and Manage spellcheck languages. Verified live on linuxlt (--editor-test); test account's spellcheck languages restored to [] (Teams' own UI cannot remove the last one).
 - General page complete; next: audit the other Settings pages against scratchpad/tset.
+
+- Appearance: "Always use dark theme for calls and meetings" (call and pre-join windows get their own dark Theme, Light only), App bar card (Show app names: 68x56 items with 10 px labels, selected item filled; Auto collapse app bar). Verified on linuxlt (--appearance-test). Still to do on Appearance: Teams' Classic and High contrast themes.
 <!-- SECTION:NOTES:END -->
