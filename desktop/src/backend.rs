@@ -676,6 +676,10 @@ pub mod qobject {
         /// {appLanguage, dateFormat, timeFormat}} (.NET patterns).
         #[qinvokable]
         fn regional_options_json(self: Pin<&mut Backend>) -> QString;
+        /// Teams' Refresh license and restart (Accounts and orgs): start OST
+        /// again, which reads your licence and organisations afresh.
+        #[qinvokable]
+        fn restart_app(self: Pin<&mut Backend>);
         /// Teams' Save and restart / Restart: keep the choices and start
         /// OST again.
         #[qinvokable]
@@ -10512,6 +10516,12 @@ impl qobject::Backend {
         if let Some(qt) = QT_THREAD.get() {
             let _ = qt.queue(|mut this| this.as_mut().editor_settings_changed());
         }
+    }
+
+    pub fn restart_app(self: Pin<&mut Self>) {
+        RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
+        tracing::info!("restarting (Refresh license and restart)");
+        quit_application();
     }
 
     pub fn regional_formats_json(self: Pin<&mut Self>) -> QString {

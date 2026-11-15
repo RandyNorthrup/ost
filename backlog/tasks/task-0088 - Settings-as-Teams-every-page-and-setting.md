@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-15T03:46:00Z'
+updated_date: '2026-11-15T04:11:00Z'
 labels:
   - desktop
   - settings
@@ -63,4 +63,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - New icons now carry #212121 so they recolour (dark theme).
 
 - Notifications and activity: Posts in all shown channels (+ Include replies), meeting chat notifications for accepted / tentative meetings (chatSettings), Presence ▸ Manage status notifications (Notify when available list with Add people), Calendar section (userGraphSettings for the Calendar app). Verified on linuxlt (--notif-test, change restored). Sounds and banner position/size are separate tasks.
+
+- Accounts and orgs page built (was empty): account (avatar, name, e-mail), Refresh license and restart (restarts OST), Manage (myaccount.microsoft.com with login_hint), the organisation row with the brand bar. Verified on linuxlt (--accounts-test).
 <!-- SECTION:NOTES:END -->

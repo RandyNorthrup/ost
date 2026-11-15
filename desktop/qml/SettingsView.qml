@@ -1156,6 +1156,67 @@ Rectangle {
                 }
             }
 
+            // ---- Accounts and orgs (Teams', measured on winpc 2026-11-14) ----
+            // Your account (64 avatar, name, e-mail) with Refresh license and
+            // restart and Manage (your Microsoft account page), then your
+            // organisation, the active one marked with the brand bar.
+            Rectangle {
+                id: accountCard
+                visible: root.page === "accounts"
+                width: parent.width; height: 120.7
+                radius: 8; color: theme.surface
+                border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+                clip: true
+                Avatar { x: 10.7; y: 10.7; size: 56; name: backend.userName || "?"; photoId: "me"; presence: titleBar.presence }
+                Column {
+                    x: 76.7; y: 20.7
+                    Text { text: backend.userName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Text { text: backend.userMail; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                }
+                Rectangle {
+                    id: refreshBtn
+                    x: parent.width - 158.7; y: 21.2
+                    width: 32; height: 32; radius: 4
+                    color: refreshHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+                    border.color: theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
+                    FluentIcon { anchors.centerIn: parent; name: "arrow-clockwise-20"; size: 20; color: theme.text }
+                    HoverHandler { id: refreshHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: backend.restartApp() }
+                    ToolTip {
+                        visible: refreshHover.hovered; delay: 500
+                        y: -height - 4; padding: 8
+                        background: FluentSurface { depth: 16; radius: 4 }
+                        contentItem: Text { text: "Refresh license and restart"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Refresh license and restart"
+                }
+                Rectangle {
+                    x: parent.width - 118.7; y: 21.2
+                    width: 96; height: 32; radius: 4
+                    color: manageHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+                    border.color: theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
+                    Row {
+                        anchors.centerIn: parent; spacing: 6
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.text }
+                    }
+                    HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: "Manage Account for " + backend.userName + " (opens in browser)"
+                }
+                Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D") }
+                Rectangle {
+                    x: 0.67; y: 72.67; width: parent.width - 1.33; height: 47.3
+                    color: theme.pick("#FAFAFA", "#242424")
+                    Rectangle { x: 2; y: 4; width: 3; height: parent.height - 8; radius: 1.5; color: theme.brand }
+                    Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: backend.orgName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: backend.orgName
+                }
+            }
+
             // ---- Privacy ----
             SettingsParts.Card {
                 visible: root.page === "privacy"
