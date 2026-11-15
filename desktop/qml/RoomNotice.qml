@@ -9,7 +9,9 @@ import QtQuick.Effects
 Item {
     id: root
     signal dismissed()
-    width: 320; height: 89.3
+    /// The explanation (Teams shows it the first three times).
+    property bool body: true
+    width: 320; height: body ? 89.3 : 44
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 0.6; blur: 1.8; color: Qt.rgba(0, 0, 0, 0.11) }
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 3.2; blur: 7.2; color: Qt.rgba(0, 0, 0, 0.13) }
     Rectangle {
@@ -35,6 +37,7 @@ Item {
         Accessible.name: "Dismiss"
     }
     Text {
+        visible: root.body
         x: 12.7; y: 41.3; width: 296.7
         wrapMode: Text.WordWrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight

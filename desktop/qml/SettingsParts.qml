@@ -173,19 +173,32 @@ Item {
         property real rowHeight: 51
         /// The gap under the row's 36 px switch; a card's last row drops it.
         readonly property real trailingGap: rowHeight - 36
+        /// A link at the end of the sublabel ("Learn More"), or "".
+        property string link
+        /// The switch centred on the text (Teams' Connected devices row).
+        property bool centred: false
         signal toggled(bool on)
+        signal linkActivated()
         width: parent ? parent.width : 0
         height: Math.max(rowHeight, labelCol.height + 15)
         Column {
             id: labelCol
             y: 8; width: parent.width - toggle.width - 24
             Text { width: parent.width; text: sr.label; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: sr.usable ? theme.text : theme.disabled }
-            Text { visible: !!sr.sublabel; width: parent.width; text: sr.sublabel; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            Text {
+                visible: !!sr.sublabel; width: parent.width
+                textFormat: sr.link ? Text.StyledText : Text.PlainText
+                text: sr.link ? sr.sublabel + " <a href=\"link\">" + sr.link + "</a>" : sr.sublabel
+                linkColor: theme.brandForeground1
+                wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary
+                onLinkActivated: sr.linkActivated()
+                HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            }
         }
         Toggle {
             id: toggle
             anchors.right: parent.right; anchors.rightMargin: 28
-            y: 8
+            y: sr.centred ? labelCol.y + (labelCol.height - 36) / 2 + 8 : 8
             on: sr.on; usable: sr.usable; accessibleName: sr.label
             onToggled: v => sr.toggled(v)
         }

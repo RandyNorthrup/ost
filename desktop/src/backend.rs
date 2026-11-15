@@ -1885,6 +1885,11 @@ pub mod qobject {
         /// Microphones and speakers: {"inputs": [...], "outputs": [...]}.
         #[qinvokable]
         fn audio_devices(self: Pin<&mut Backend>) -> QString;
+        /// Teams' connected room devices for the pre-join screen's Room
+        /// audio: {devices, select, suggest} (meeting room mode is
+        /// Settings ▸ Devices' pushToRoomAudio, on unless turned off).
+        #[qinvokable]
+        fn room_devices(self: &Backend) -> QString;
         /// The call's speaker volume, 0-100 (Teams' in-call slider).
         #[qinvokable]
         fn speaker_volume(self: Pin<&mut Backend>) -> i32;
@@ -15077,6 +15082,12 @@ impl qobject::Backend {
                 .to_string()
                 .as_str(),
         )
+    }
+
+    pub fn room_devices(&self) -> QString {
+        let meeting_room_mode = load_settings().get("pushToRoomAudio").and_then(|v| v.as_str()) != Some("false");
+        let rooms = teams_cli::calling::room_devices::find(meeting_room_mode);
+        QString::from(serde_json::to_string(&rooms).unwrap_or_default().as_str())
     }
 
     pub fn speaker_volume(self: Pin<&mut Self>) -> i32 {

@@ -35,6 +35,7 @@ pub mod outgoing;
 #[cfg(all(feature = "audio", target_os = "linux"))]
 pub mod pw_defaults;
 pub mod recorder;
+pub mod room_devices;
 pub mod recording;
 #[cfg(feature = "audio")]
 pub mod ringtone;

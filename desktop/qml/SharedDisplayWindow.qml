@@ -14,6 +14,23 @@ Window {
     width: 1280; height: 680
     color: "#F5F5F5"
     onClosing: if (call) call.roomMode = false
+    // Teams opens it maximized on the room's display (a screen other than
+    // this device's), else over this screen's work area, without
+    // taking focus from the call window.
+    flags: Qt.Window | Qt.WindowDoesNotAcceptFocus
+    Component.onCompleted: {
+        // This device's screen is the call window's; any other is the room's.
+        const screens = Qt.application.screens
+        const mine = call && call.screen ? call.screen : screens[0]
+        let other = null
+        for (let i = 0; i < screens.length; i++) if (screens[i].name !== mine.name) { other = screens[i]; break }
+        const s = other || mine
+        screen = s
+        x = s.virtualX; y = s.virtualY
+        width = other ? s.width : s.desktopAvailableWidth
+        height = other ? s.height : s.desktopAvailableHeight
+        visibility = Window.Maximized
+    }
     GalleryGrid {
         x: 2.67; y: 2.67
         width: parent.width - 360 - 5.33; height: parent.height - 5.33

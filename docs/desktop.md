@@ -264,6 +264,7 @@ account.
 | `--remote-hangup` | Stay in the call until the caller ends it. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
+| `--room-audio-test` | The pre-join window with Teams' Room audio: the connected room devices and Teams' pick (ROOMS), the audio choices' geometry (CARDS), the room picker open, cleared (Join disabled); `--room-audio-join=<channel id>` then joins a Meet now in that channel with the room device (muted), logs the "Connected to a room device" notice (CALL) and leaves; `--manage-devices` captures Settings ▸ Devices ▸ Manage devices instead. Pictures in /tmp/act. |
 | `--about-test` | About OST after a real update check, then with an update shown (set locally): ABOUT lines and pictures. |
 | `--recognition-states` | Settings ▸ Recognition in each of Teams' card states (set locally, nothing sent): CARDS and CARDROWS lines and pictures. |
 | `--recognition-test=<photo.jpg>,<voice.wav>` | Teams' face capture fed that photo and the voice capture fed that 16 kHz WAV, to the completion step; enrolls them (remove afterwards with `examples/biometric`). |

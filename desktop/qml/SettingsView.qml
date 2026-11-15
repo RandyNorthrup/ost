@@ -409,7 +409,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.subPage === "connected" ? "Manage devices" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -1831,7 +1831,7 @@ Rectangle {
             // and the Devices section (Teams Rooms' connected devices) aren't
             // offered.
             Text {
-                visible: root.page === "devices"
+                visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
                 verticalAlignment: Text.AlignVCenter
                 text: "Audio"
@@ -1842,7 +1842,7 @@ Rectangle {
             }
             SettingsParts.Card {
                 id: devices
-                visible: root.page === "devices"
+                visible: root.page === "devices" && !root.subPage
                 icon: "speaker-settings-20"; title: "Audio settings"
                 readonly property var list: root.page === "devices" ? JSON.parse(backend.audioDevices()) : { inputs: [], outputs: [] }
                 property bool noise: root.local("noiseSuppression", "on") !== "off"
@@ -1923,7 +1923,7 @@ Rectangle {
             // "Open camera settings" are Windows camera controls, and Super
             // resolution is TASK-0139's.
             Text {
-                visible: root.page === "devices"
+                visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
                 verticalAlignment: Text.AlignVCenter
                 text: "Video"
@@ -1934,7 +1934,7 @@ Rectangle {
             }
             SettingsParts.Card {
                 id: videoCard
-                visible: root.page === "devices"
+                visible: root.page === "devices" && !root.subPage
                 icon: "video-20"; title: "Video settings"
                 readonly property bool showing: visible && root.visible
                 property bool previewing: false
@@ -2075,6 +2075,44 @@ Rectangle {
                     onToggled: v => videoEffects.setSoftFocus(v)
                 }
             }
+            // Teams' Connected devices (measured on winpc 2026-11-15, 204.9
+            // tall): "Manage your connected devices" with Manage devices
+            // (Teams' paired phones, its Better Together list), and
+            // "Automatically activate meeting room mode when in a meeting"
+            // with its explanation and Learn More (Teams' clientPreferences
+            // byod.pushToRoomAudio, on unless turned off, kept on the device).
+            SettingsParts.Card {
+                visible: root.page === "devices" && !root.subPage
+                icon: "laptop-20"; title: "Connected devices"
+                bottomPad: 16.3
+                SettingsParts.ButtonRow {
+                    label: "Manage your connected devices"; buttonText: "Manage devices"
+                    onClicked: root.subPage = "connected"
+                }
+                SettingsParts.Gap { size: 21.6 }
+                SettingsParts.SwitchRow {
+                    rowHeight: 36
+                    label: "Automatically activate meeting room mode when in a meeting"
+                    sublabel: "Optimizes meeting setup for connected audio/video devices and room displays. Attendees see only meeting content on the room display."
+                    on: root.local("pushToRoomAudio", "true") !== "false"
+                    onToggled: v => backend.setSetting("pushToRoomAudio", v ? "true" : "false")
+                    link: "Learn More"; centred: true
+                    onLinkActivated: Qt.openUrlExternally("https://aka.ms/meetingroommode")
+                }
+            }
+            // Devices ▸ Manage devices: Teams' "Select a device to connect"
+            // with the phones paired with it (Better Together). OST pairs
+            // with no phone, so the list is empty, as on a PC with none.
+            Text {
+                visible: root.page === "devices" && root.subPage === "connected"
+                width: parent.width; height: 20
+                text: "Select a device to connect"
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+
             // ---- Calls ----
             // Teams' call handling (voicesettings' callRedirectionSettings)
             // and voicemail settings (measured and captured on winpc

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import QtQuick.Controls.Basic as QC
 import com.ost.desktop
 
 // The pre-join window, as Teams desktop shows it before a meeting
@@ -33,6 +34,34 @@ Window {
     property bool cameraOn: false
     /// Teams' audio choices: "computer", "room" or "none" (Don't use audio).
     property string audio: "computer"
+    /// The audio choices fill the preview's height (Teams, measured
+    /// 2026-11-15): unselected choices are 41 tall under Computer audio's
+    /// devices, else 44.7.
+    readonly property real otherCardHeight: audio === "computer" ? 41 : 44.7
+    /// Teams' room devices (Backend::room_devices): {devices, select,
+    /// suggest}.
+    property var rooms: ({ devices: [], select: null, suggest: false })
+    /// The room Room audio joins with (a connected room device), or null.
+    property var room: null
+    /// Teams' "(suggested)": a room device it knows was found.
+    readonly property bool roomSuggested: !!rooms.select || rooms.suggest
+    /// Teams' BYOD pick: Room audio with that device, its speaker and
+    /// microphone (and camera) chosen at once.
+    function pickRoom(d) {
+        room = d
+        audio = "room"
+        if (!d) return
+        backend.setSetting("speakerDevice", d.speaker)
+        backend.setSetting("micDevice", d.microphone)
+        if (d.camera) backend.setSetting("cameraDevice", d.camera)
+    }
+    signal roomPickerOpenForTest()
+    function roomPickerForTest() { roomPickerOpenForTest() }
+    function findRooms() {
+        room = null
+        try { rooms = JSON.parse(backend.roomDevices()) } catch (e) { rooms = { devices: [], select: null, suggest: false } }
+        if (rooms.select) pickRoom(rooms.select)
+    }
     /// Held in the meeting's lobby (Teams' InLobby pre-join state): the
     /// title says someone will let you in, Join now and the audio choices
     /// are disabled; the mic and camera switches still work.
@@ -108,6 +137,7 @@ Window {
         meetNow = true; meetChannel = channel; joinUrl = ""; subject = subj
         micOn = true; audio = "computer"; cameraOn = false
         effectsOpen = false; effectsPaneOpen = false
+        findRooms()
         show(); raise(); requestActivate()
         titleField.forceActiveFocus(); titleField.cursorPosition = titleField.text.length
     }
@@ -120,8 +150,10 @@ Window {
         micOn = true; audio = "computer"; cameraOn = false
         effectsOpen = false; effectsPaneOpen = false
         retryReason = ""
+        findRooms()
         show(); raise(); requestActivate()
     }
+    readonly property bool canJoin: !lobby && (audio !== "room" || !!room)
     readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : "Default microphone" }
     readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : "Default speaker" }
 
@@ -378,10 +410,10 @@ Window {
         Column {
             id: audioColumn
             width: 449
-            spacing: 8
+            spacing: 6
             Rectangle {
                 // Teams shows your devices only under Computer audio.
-                width: parent.width; height: win.audio === "computer" ? 185 : 54; radius: 4
+                width: parent.width; height: win.audio === "computer" ? 189 : win.otherCardHeight; radius: 4
                 clip: true
                 color: theme.surface; border.color: theme.dividerSoft
                 Radio {
@@ -410,35 +442,80 @@ Window {
             }
             // Phone audio needs the tenant's Audio Conferencing; Teams greys
             // it the same way when the meeting has no dial-in.
-            Repeater {
-                model: [
-                    { key: "phone", label: "Phone audio", usable: false },
-                    { key: "room", label: "Room audio", usable: true },
-                    { key: "none", label: "Don't use audio", usable: true }
-                ]
-                Rectangle {
-                    required property var modelData
-                    width: 449; height: win.audio === "room" && modelData.key === "room" ? 80 : 40; radius: 4
-                    color: theme.surface; border.color: theme.dividerSoft
+            OptionCard { key: "phone"; label: "Phone audio"; usable: false }
+            // Teams' Room audio (measured on winpc 2026-11-15): selected, its
+            // header fills the column (178.7 with the 89.2 pane) over Teams'
+            // room picker. A connected room device (a USB speakerphone) is
+            // listed under "Connected room devices"; one Teams knows is
+            // picked for you ("meeting room mode") or only suggested.
+            Rectangle {
+                id: roomCard
+                readonly property bool selected: win.audio === "room"
+                width: 449; radius: 4
+                height: selected ? roomHeader.height + 89.2 : win.otherCardHeight
+                color: theme.surface; border.color: theme.dividerSoft; border.width: 0.67
+                Item {
+                    id: roomHeader
+                    width: parent.width
+                    height: roomCard.selected ? Math.max(44.7, 330.2 - 3 * win.otherCardHeight - 3 * audioColumn.spacing - 89.2) : parent.height
                     Radio {
-                        x: 16; y: 10
-                        on: win.audio === parent.modelData.key; label: parent.modelData.label
-                        opacity: parent.modelData.usable && !win.lobby ? 1 : 0.45
+                        id: roomRadio
+                        x: 16; anchors.verticalCenter: parent.verticalCenter
+                        on: roomCard.selected; label: ""
+                        opacity: win.lobby ? 0.45 : 1
                     }
-                    // Room audio: Teams looks for a Teams Room nearby to pair with.
-                    Text {
-                        visible: win.audio === "room" && parent.modelData.key === "room"
-                        x: 48; y: 46; width: parent.width - 64; wrapMode: Text.Wrap
-                        text: "No rooms found nearby. Join with computer audio, or try again when you're in a Teams Room."
-                        font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
+                    Column {
+                        x: 48; anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 48 - 20
+                        Item {
+                            width: parent.width; height: 20
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Room audio"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                            // Teams' "(suggested)" tag, at the title row's end.
+                            Text {
+                                visible: win.roomSuggested
+                                anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                text: "(suggested)"
+                                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+                            }
+                        }
+                        Text {
+                            visible: roomCard.selected && win.roomSuggested
+                            text: "We've detected a room device."
+                            font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+                            color: theme.brandForeground1
+                        }
                     }
-                    HoverHandler { cursorShape: parent.modelData.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                    TapHandler { enabled: parent.modelData.usable && !win.lobby; onTapped: win.audio = parent.modelData.key }
-                    Accessible.role: Accessible.RadioButton
-                    Accessible.name: modelData.label
-                    Accessible.checked: win.audio === modelData.key
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: !win.lobby; onTapped: win.audio = "room" }
                 }
+                Rectangle {
+                    visible: roomCard.selected
+                    x: 0.67; y: roomHeader.height; width: parent.width - 1.33; height: 0.67; color: theme.dividerSoft
+                }
+                Rectangle {
+                    visible: roomCard.selected
+                    x: 0.67; y: roomHeader.height + 0.67; width: parent.width - 1.33; height: 88.5
+                    color: theme.pane
+                    RoomPicker { x: 32.5 - 0.67; y: 16.6 - 0.67 }
+                    // Teams' line under the picker: what Room audio does once
+                    // a room is picked; else that OST finds no rooms nearby
+                    // (Teams' text where automatic room discovery is missing).
+                    Row {
+                        x: 40.7 - 0.67; y: 48 - 0.67; spacing: 8
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: win.room ? "info-20-filled" : "bluetooth-20"; size: 14; color: theme.text }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: win.room ? "We'll add the room's audio system to the meeting after you join." : "Automatic room discovery isn't available on your device yet."
+                            font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary
+                        }
+                        Accessible.role: Accessible.AlertMessage
+                    }
+                }
+                Accessible.role: Accessible.RadioButton
+                Accessible.name: "Room audio" + (win.roomSuggested ? " (suggested)" : "")
+                Accessible.checked: selected
             }
+            OptionCard { key: "none"; label: "Don't use audio"; usable: true }
         }
     }
 
@@ -459,12 +536,13 @@ Window {
         Rectangle {
             width: 96; height: 32; radius: theme.radius
             // Disabled in the lobby (Fluent's disabled primary button).
-            color: win.lobby ? theme.pick("#F0F0F0", "#141414") : jnh.hovered ? theme.brandHover : theme.brandFill
-            border.color: win.lobby ? theme.pick("#E0E0E0", "#424242") : "transparent"
-            Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: win.lobby ? theme.pick("#BDBDBD", "#5C5C5C") : "white" }
-            HoverHandler { id: jnh; cursorShape: win.lobby ? Qt.ArrowCursor : Qt.PointingHandCursor }
-            // Room audio found no room: Teams then joins with computer audio.
-            TapHandler { enabled: !win.lobby; onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none", win.cameraOn) } }
+            color: !win.canJoin ? theme.pick("#F0F0F0", "#141414") : jnh.hovered ? theme.brandHover : theme.brandFill
+            border.color: !win.canJoin ? theme.pick("#E0E0E0", "#424242") : "transparent"
+            Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: !win.canJoin ? theme.pick("#BDBDBD", "#5C5C5C") : "white" }
+            HoverHandler { id: jnh; cursorShape: win.canJoin ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            // Room audio waits for a room (Teams disables Join until one is
+            // picked); a connected room device joins with its own audio.
+            TapHandler { enabled: win.canJoin; onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none", win.cameraOn) } }
             Accessible.role: Accessible.Button
             Accessible.name: "Join now"
         }
@@ -483,6 +561,137 @@ Window {
             TapHandler { onTapped: win.lobbyPaneOpen = !win.lobbyPaneOpen }
             Accessible.role: Accessible.Button
             Accessible.name: "Lobby chat"
+        }
+    }
+
+    // An audio choice without a body (Phone audio, Don't use audio).
+    component OptionCard: Rectangle {
+        id: oc
+        property string key
+        property string label
+        property bool usable: true
+        width: 449; height: win.otherCardHeight; radius: 4
+        color: theme.surface; border.color: theme.dividerSoft; border.width: 0.67
+        Radio {
+            x: 16; anchors.verticalCenter: parent.verticalCenter
+            on: win.audio === oc.key; label: oc.label
+            opacity: oc.usable && !win.lobby ? 1 : 0.45
+        }
+        HoverHandler { cursorShape: oc.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        TapHandler { enabled: oc.usable && !win.lobby; onTapped: win.audio = oc.key }
+        Accessible.role: Accessible.RadioButton
+        Accessible.name: label
+        Accessible.checked: win.audio === key
+    }
+
+    // Teams' room picker (room-search-dropdown, measured): an editable
+    // 383.8 x 30.7 combobox, "Search for a room", its listbox (radius 4,
+    // shadow16, padding 4; options 32 tall 2 apart, the check 6 in and the
+    // text at 28). Sections are greyed semibold headers: "Connected room
+    // devices" with each device (Teams' USB plug, 20), then "Other
+    // Suggestions" (Teams' tenant rooms; "Unable to find any rooms" when
+    // there are none). Typing narrows the list.
+    component RoomPicker: Item {
+        id: rp
+        width: 383.8; height: 30.7
+        readonly property string query: field.text === (win.room ? win.room.label : "") ? "" : field.text.trim().toLowerCase()
+        readonly property var items: {
+            const out = []
+            const devices = (win.rooms.devices || []).filter(d => !rp.query || d.label.toLowerCase().indexOf(rp.query) >= 0)
+            if (devices.length) {
+                out.push({ header: "Connected room devices", disabled: true })
+                for (const d of devices) out.push({ header: d.label, device: d })
+            }
+            out.push({ header: "Other Suggestions", disabled: true })
+            out.push({ header: "Unable to find any rooms", disabled: true })
+            return out
+        }
+        Connections {
+            target: win
+            function onRoomChanged() { field.text = win.room ? win.room.label : "" }
+        }
+        Component.onCompleted: field.text = win.room ? win.room.label : ""
+        Connections { target: win; function onRoomPickerOpenForTest() { roomList.open() } }
+        Rectangle {
+            anchors.fill: parent; radius: 4
+            color: theme.surface
+            border.color: fieldHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+            Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: field.activeFocus || roomList.opened ? 2 : 0.67; color: field.activeFocus || roomList.opened ? theme.brand : theme.textSecondary }
+            HoverHandler { id: fieldHover }
+        }
+        TextInput {
+            id: field
+            x: 12; width: parent.width - 12 - (clearButton.visible ? 52 : 32)
+            anchors.verticalCenter: parent.verticalCenter
+            clip: true
+            font.family: theme.font; font.pixelSize: 14; color: theme.text
+            selectByMouse: true
+            enabled: !win.lobby
+            onTextEdited: { if (!roomList.opened) roomList.open() }
+            Text {
+                visible: !field.text
+                text: "Search for a room"
+                font: field.font; color: theme.textSecondary
+            }
+            Accessible.role: Accessible.ComboBox
+            Accessible.name: "Search for a room"
+        }
+        // Fluent's clear button once a room is chosen.
+        FluentIcon {
+            id: clearButton
+            visible: !!win.room && !win.lobby
+            anchors.right: chevron.left; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
+            name: "dismiss-20"; size: 16; color: theme.textSecondary
+            TapHandler { onTapped: { win.room = null; field.text = "" } }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Clear selection"
+        }
+        FluentIcon {
+            id: chevron
+            anchors.right: parent.right; anchors.rightMargin: 7; anchors.verticalCenter: parent.verticalCenter
+            name: "chevron-down-20"; size: 20; color: theme.textSecondary
+            TapHandler { enabled: !win.lobby; onTapped: roomList.opened ? roomList.close() : roomList.open() }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Open"
+        }
+        QC.Popup {
+            id: roomList
+            y: rp.height + 2; width: rp.width
+            padding: 4
+            height: roomView.contentHeight + 8
+            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+            contentItem: ListView {
+                id: roomView
+                interactive: false
+                spacing: 2
+                model: rp.items
+                delegate: Rectangle {
+                    id: ro
+                    required property var modelData
+                    readonly property bool usable: !modelData.disabled
+                    readonly property bool chosen: !!modelData.device && !!win.room && win.room.speaker === modelData.device.speaker
+                    width: roomView.width; height: 32; radius: 4
+                    color: roHover.hovered && usable ? theme.menuHover : "transparent"
+                    FluentIcon { visible: ro.chosen; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.text }
+                    Row {
+                        x: 28; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                        FluentIcon { visible: !!ro.modelData.device; anchors.verticalCenter: parent.verticalCenter; name: "usb-plug-20"; size: 20; color: theme.text }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: ro.modelData.header
+                            font.family: theme.font; font.pixelSize: 14
+                            font.weight: ro.usable ? Font.Normal : Font.DemiBold
+                            color: ro.usable ? theme.text : theme.disabled
+                        }
+                    }
+                    HoverHandler { id: roHover; cursorShape: ro.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler { enabled: ro.usable; onTapped: { win.pickRoom(ro.modelData.device); roomList.close() } }
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: ro.modelData.header
+                }
+            }
         }
     }
 

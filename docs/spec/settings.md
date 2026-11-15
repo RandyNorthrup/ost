@@ -171,11 +171,31 @@ Everything below is in userPersonalSettings unless marked local.
   were changed; by name, 100 at most. On OST Test 1 that is the same 22 apps Teams lists.
 - The switches stay on the device (Teams made no request when one was flipped).
 
-## Recognition (seen 2026-11-13)
+## Recognition (seen 2026-11-13, built 2026-11-15)
 
 - Voice Recognition and Face Recognition cards with Microsoft's biometric consent text and Start
   voice capture / Start face capture (face: "Create my face profile now", "Takes about 30
-  seconds"). Not built: the enrolment protocol is unresearched (TASK-0134).
+  seconds"). Built in TASK-0153: OST enrols, updates, exports and deletes both profiles with
+  Teams' biometric service (`api::biometric`), with Teams' capture dialogs.
+
+## Devices ▸ Connected devices (measured 2026-11-15)
+
+- The last card on Devices (204.9 tall, a laptop icon): "Manage your connected devices" with
+  **Manage devices**, and "Automatically activate meeting room mode when in a meeting" (on by
+  default) with "Optimizes meeting setup for connected audio/video devices and room displays.
+  Attendees see only meeting content on the room display. Learn More"
+  (https://aka.ms/meetingroommode). Teams keeps the switch on the device (clientPreferences
+  `byod.pushToRoomAudio`); OST keeps it as the local setting `pushToRoomAudio`.
+- **Manage devices** opens "Devices › Manage devices": "Select a device to connect", the Teams
+  phones paired with this PC (Teams' Better Together). OST pairs with no phone, so the list is
+  empty, as on a PC with none (pairing is TASK-0162).
+- Meeting room mode acts in the pre-join screen. A connected room device is a USB device that
+  is both a speaker and a microphone (no headsets). OST reads these from PipeWire with their
+  USB ids (`calling::room_devices`). If the device's id is on Teams' `byodRoomDeviceVidPids`
+  list, Room audio is picked with it and the device's speaker, microphone and camera are
+  chosen. With meeting room mode off, Room audio is only marked "(suggested)". Joining with
+  it opens the shared display on a second screen and shows Teams' "Connected to a room
+  device" notice (its explanation the first three times).
 
 ## OST status
 

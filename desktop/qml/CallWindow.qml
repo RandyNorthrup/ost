@@ -1908,7 +1908,22 @@ Window {
     // The lobby notification, 8 px below the top of the stage, centred on it.
     // Optimize for room: the shared display window, and the notice here.
     property bool roomNoticeDismissed: false
-    onRoomModeChanged: roomNoticeDismissed = false
+    /// Joined with a connected room device (Teams' BYOD Room audio): its
+    /// "Connected to a room device" notice shows for the call.
+    property bool roomDeviceJoined: false
+    /// Teams explains the shared display only the first three times
+    /// (its byodSdmUfdTriggerCount); later the notice is the title alone.
+    property bool roomNoticeBody: true
+    property bool roomNoticeCounted: false
+    function showRoomNotice() {
+        roomNoticeDismissed = false
+        if (roomNoticeCounted) return
+        roomNoticeCounted = true
+        const n = parseInt(backend.setting("byodSdmUfdTriggerCount") || "0") || 0
+        roomNoticeBody = n < 3
+        if (n < 3) backend.setSetting("byodSdmUfdTriggerCount", String(n + 1))
+    }
+    onRoomModeChanged: if (roomMode) showRoomNotice()
     Loader {
         id: roomLoader
         active: win.roomMode
@@ -1959,7 +1974,8 @@ Window {
         onTriggered: viewMenu.openSubmenuForTest(sub)
     }
     RoomNotice {
-        visible: win.roomMode && !win.roomNoticeDismissed
+        visible: (win.roomMode || win.roomDeviceJoined) && !win.roomNoticeDismissed
+        body: win.roomNoticeBody
         x: stage.x + (stage.width - width) / 2
         y: win.belowBar + 10.7
         z: 5
