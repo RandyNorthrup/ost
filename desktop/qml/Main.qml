@@ -3594,7 +3594,14 @@ Window {
         readonly property var keys: settingsView.pages.map(p => p.key).concat(["about"])
         onTriggered: {
             const i = Math.floor(step / 2)
-            if (i >= keys.length) { Qt.quit(); return }
+            if (i >= keys.length) {
+                // General again, its Editor card once its options load.
+                if (step === 2 * keys.length) settingsView.pageForTest("general")
+                else if (step === 2 * keys.length + 6) { console.warn("CARDS general-late", JSON.stringify(settingsView.cardsForTest())); settingsView.scrollToForTest(1700); }
+                else if (step === 2 * keys.length + 7) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-editor.png")))
+                else if (step > 2 * keys.length + 8) { Qt.quit(); return }
+                step++; return
+            }
             if (step % 2 === 0) { rail.current = "settings"; settingsView.pageForTest(keys[i]) }
             else console.warn("CARDS", keys[i], JSON.stringify(settingsView.cardsForTest()))
             step++

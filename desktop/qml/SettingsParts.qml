@@ -35,11 +35,29 @@ Item {
         // and bottom; a header row at least 32 tall holding the title (and
         // subtitle) and the control, both centred on it (a switch counts as
         // its 36 px hit area); the body 16 under the header.
-        readonly property real pad: 20.7
+        property real pad: 20.7
+        property real bottomPad: 20.6
+        /// The header row's least height (Teams' Notifications cards have
+        /// none, and their own insets).
+        property real minHeader: 32
+        property real iconX: 18.7
+        property real titleX: 57
+        /// The space between the title and the control.
+        property real trailingGapX: 24
+        /// The title's width, where Teams' wraps it at a set width (NaN:
+        /// up to the control).
+        property real textWidth: NaN
+        /// The subtitle's size: 12 on a 16 px line, or 14 on 20 (Presence).
+        property real subtitleSize: 12
+        /// Its line height (Teams' work location card uses 17.14).
+        property real subtitleLineHeight: subtitleSize > 12 ? 20 : 16
         readonly property real textHeight: titleText.height + (subtitle ? subText.height : 0)
         readonly property real controlHeight: trailingLoader.item ? (trailingLoader.item.height <= 20 ? 36 : trailingLoader.item.height) : 0
-        readonly property real headerHeight: Math.max(32, textHeight, isNaN(trailingY) ? controlHeight : 0)
-        readonly property real bodyTop: pad + headerHeight + 16
+        readonly property real headerHeight: Math.max(minHeader, textHeight, isNaN(trailingY) ? controlHeight : 0)
+        /// The gap from the header to the body: 16, Teams' usual; 28 over a
+        /// row of picture choices, 10.6 over a lone dropdown.
+        property real bodyGap: 16
+        readonly property real bodyTop: pad + headerHeight + bodyGap
         // The body without its last row's gap (Teams pads 20.6 under the
         // last control itself).
         readonly property real bodyHeight: {
@@ -54,15 +72,15 @@ Item {
         }
         width: parent ? parent.width : 0
         height: Math.max(bodyCol.children.length ? bodyTop + bodyHeight : pad + headerHeight,
-                         trailingLoader.item && !isNaN(trailingY) ? trailingY + trailingLoader.height : 0) + 20.6
+                         trailingLoader.item && !isNaN(trailingY) ? trailingY + trailingLoader.height : 0) + bottomPad
         radius: 8
         color: "transparent"
         border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
-        FluentIcon { x: 18.7; y: card.pad + (card.headerHeight - 20) / 2; name: card.icon; size: 20; color: theme.text }
+        FluentIcon { x: card.iconX; y: card.pad + (card.headerHeight - 20) / 2; name: card.icon; size: 20; color: theme.text }
         Text {
             id: titleText
-            x: 57; y: card.pad + (card.headerHeight - card.textHeight) / 2
-            width: card.width - 57 - (trailingLoader.item ? trailingLoader.width + 57 + 24 : 29)
+            x: card.titleX; y: card.pad + (card.headerHeight - card.textHeight) / 2
+            width: !isNaN(card.textWidth) ? card.textWidth : card.width - card.titleX - (trailingLoader.item ? trailingLoader.width + card.trailingRight + card.trailingGapX : 29)
             text: card.title
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -71,10 +89,10 @@ Item {
         Text {
             id: subText
             visible: !!card.subtitle
-            x: 57; y: titleText.y + titleText.height; width: titleText.width
+            x: card.titleX; y: titleText.y + titleText.height; width: titleText.width
             text: card.subtitle
             wrapMode: Text.Wrap
-            font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+            font.family: theme.font; font.pixelSize: card.subtitleSize; lineHeight: card.subtitleLineHeight; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
             textFormat: Text.StyledText
             linkColor: theme.brandForeground1
@@ -151,11 +169,13 @@ Item {
         property string sublabel
         property bool on
         property bool usable: true
+        /// The row's height: the 36 px switch and the gap under it.
+        property real rowHeight: 51
         /// The gap under the row's 36 px switch; a card's last row drops it.
-        readonly property real trailingGap: 15
+        readonly property real trailingGap: rowHeight - 36
         signal toggled(bool on)
         width: parent ? parent.width : 0
-        height: Math.max(51, labelCol.height + 15)
+        height: Math.max(rowHeight, labelCol.height + 15)
         Column {
             id: labelCol
             y: 8; width: parent.width - toggle.width - 24
@@ -193,10 +213,10 @@ Item {
         property bool usable: true
         property real rowHeight: 47
         /// The gap under the 32 px checkbox; a card's last row drops it.
-        readonly property real trailingGap: rowHeight >= 47 ? 15 : 0
+        readonly property real trailingGap: Math.max(0, rowHeight - 32)
         signal toggled(bool on)
         width: parent ? parent.width : 0
-        height: Math.max(rowHeight, labelText.height + (subText.visible ? subText.height : 0) + 27)
+        height: Math.max(rowHeight, labelText.height + (subText.visible ? subText.height : 0) + 12 + trailingGap)
         Box { y: 8; checked: cr.checked; usable: cr.usable; hovered: ch.hovered }
         Text { id: labelText; x: 28; y: 6; width: parent.width - 28; text: cr.label; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: cr.usable ? theme.text : theme.disabled }
         Text { id: subText; visible: !!cr.sublabel; x: 28; y: labelText.y + labelText.height; width: parent.width - 28; text: cr.sublabel; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }

@@ -84,7 +84,7 @@ Rectangle {
         property string url
         property bool external: true
         signal activated()
-        height: 20; spacing: 8
+        height: 16.1; spacing: 8
         Text { anchors.verticalCenter: parent.verticalCenter; text: al.label; font.family: theme.font; font.pixelSize: 14; color: alHover.hovered ? theme.brandHover : theme.brandForeground1; font.underline: alHover.hovered }
         FluentIcon { visible: al.external; anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 16; color: theme.brandForeground1 }
         HoverHandler { id: alHover; cursorShape: Qt.PointingHandCursor }
@@ -223,6 +223,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "chat-multiple-20"; title: "Opening content in OST windows"
+                bodyGap: 28
                 subtitle: "Open incoming notifications and links in the main window or a new window. This will only apply to this account."
                 Row {
                     spacing: 12.7
@@ -236,6 +237,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "compose-20"; title: "Starting chats"
+                bodyGap: 28
                 subtitle: "Create new chats in the main window or a new window. This will only apply to this account."
                 Row {
                     spacing: 12.7
@@ -295,40 +297,50 @@ Rectangle {
                     on: regionalCard.followOs
                     onToggled: v => regionalCard.followOs = v
                 }
-                SettingsParts.Gap { size: 4 }
+                // Teams' "Manage Windows settings": the desktop's own region
+                // settings (KDE or GNOME), 15 under the switch.
+                SettingsParts.Link {
+                    visible: backend.hasOsSettings("region")
+                    text: "Manage system settings"; font.pixelSize: 14
+                    height: 16.1; verticalAlignment: Text.AlignVCenter
+                    onClicked: backend.openOsSettings("region")
+                    Accessible.role: Accessible.Link
+                    Accessible.name: "Link to Manage your OS language and region settings"
+                }
+                SettingsParts.Gap { size: backend.hasOsSettings("region") ? 15 : 4 }
                 SettingsParts.SubHeading { text: "App language" }
-                SettingsParts.Gap { size: 10 }
+                SettingsParts.Gap { size: 10.6 }
                 SearchCombobox {
-                    width: 294; height: 32
+                    width: 258.7; height: 30.7
                     enabled: !regionalCard.followOs
                     options: regionalCard.opts.languages.map(l => ({ key: l.code, label: l.nativeName, sublabel: l.name }))
                     current: regionalCard.followOs ? "" : regionalCard.appLanguage
                     accessibleName: "App language"
                     onPicked: code => regionalCard.appLanguage = code
                 }
-                SettingsParts.Gap { size: 15 }
+                SettingsParts.Gap { size: 15.7 }
                 SettingsParts.SubHeading { text: "Date format" }
-                SettingsParts.Gap { size: 10 }
+                SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
-                    width: 294; height: 31.3
+                    width: 292.7; height: 30
                     enabled: !regionalCard.followOs
                     options: regionalCard.dates.map(p => ({ label: regionalCard.dateSample(p) }))
                     current: 0
                     accessibleName: "Date format"
                     onPicked: i => regionalCard.dateFormat = regionalCard.dates[i]
                 }
-                SettingsParts.Gap { size: 15 }
+                SettingsParts.Gap { size: 15.7 }
                 SettingsParts.SubHeading { text: "Time format" }
-                SettingsParts.Gap { size: 10 }
+                SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
-                    width: 294; height: 31.3
+                    width: 292.7; height: 30
                     enabled: !regionalCard.followOs
                     options: regionalCard.times.map(p => ({ label: regionalCard.timeSample(p) }))
                     current: 0
                     accessibleName: "Time format"
                     onPicked: i => regionalCard.timeFormat = regionalCard.times[i]
                 }
-                SettingsParts.Gap { size: regionalCard.changed ? 15 : 8 }
+                SettingsParts.Gap { size: 15.7 }
                 SettingsParts.Button {
                     visible: regionalCard.changed
                     x: -8
@@ -345,7 +357,17 @@ Rectangle {
                 icon: "globe-20"; title: "Time zone"
                 subtitle: "You can adjust the time zone from your OS settings."
                 SettingsParts.SubHeading { text: "Current time zone: " + backend.timeZoneName() }
-                SettingsParts.Gap { size: 8 }
+                // Teams' "Manage Windows settings": the desktop's own date
+                // and time settings (KDE or GNOME).
+                SettingsParts.Link {
+                    visible: backend.hasOsSettings("timezone")
+                    text: "Manage system settings"; font.pixelSize: 14
+                    height: 16.1; verticalAlignment: Text.AlignVCenter
+                    onClicked: backend.openOsSettings("timezone")
+                    Accessible.role: Accessible.Link
+                    Accessible.name: "Link to Manage your OS time zone settings"
+                }
+                SettingsParts.Gap { size: backend.hasOsSettings("timezone") ? 15 : 8 }
             }
             // Teams' Translation card (measured on winpc 2026-11-14): the
             // language to translate into (a searchable combobox of Teams'
@@ -512,6 +534,8 @@ Rectangle {
                         id: catCol
                         required property var modelData
                         readonly property bool catOn: editorSpellCard.value(modelData.id, 1) === 1
+                        // Its last row's 8 px gap, dropped when it ends the card.
+                        readonly property real trailingGap: 8
                         width: parent.width
                         SettingsParts.SwitchRow {
                             label: catCol.modelData.name
@@ -545,6 +569,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "keyboard-20"; title: "Keyboard shortcuts"
+                bodyGap: 10.6
                 subtitle: "Use OST shortcuts, or combine them with those of other apps. <a href=\"shortcuts\">See available keyboard shortcuts</a>"
                 onLinkActivated: root.showShortcuts()
                 OutlineDropdown {
@@ -560,7 +585,7 @@ Rectangle {
                     accessibleName: "Keyboard shortcuts"
                     onPicked: i => root.setProp("keyboardShortcutsSettings", "shortcutProfile", keys[i])
                 }
-                SettingsParts.Gap { size: 8 }
+                SettingsParts.Gap { size: 0.8 }
             }
 
             // Teams' "Use Enter or Spacebar to show content" (the synced
@@ -584,14 +609,14 @@ Rectangle {
                 id: efficiencyCard
                 visible: root.page === "general" && !root.subPage
                 icon: "top-speed-20"; title: "Efficiency mode"
+                bodyGap: 26
                 subtitle: "This mode reduces processor, memory and network usage and is ideal for lower performance devices or those under heavy load. Turning this on may affect some functionality such as camera resolution."
                 property string mode: root.local("efficiencyMode", "auto")
                 function pick(m) { mode = m; backend.setSetting("efficiencyMode", m) }
                 SettingsParts.RadioRow { label: "Use only when resources are low (Default)"; sublabel: "Reduce processor and memory usage when reduced resources are detected."; checked: efficiencyCard.mode === "auto"; onPicked: efficiencyCard.pick("auto") }
                 SettingsParts.RadioRow { label: "Never use efficiency mode"; sublabel: "Prioritize a richer experience, using more system resources."; checked: efficiencyCard.mode === "off"; onPicked: efficiencyCard.pick("off") }
                 SettingsParts.RadioRow { label: "Always use efficiency mode"; sublabel: "Reduce processor and memory use at all times."; checked: efficiencyCard.mode === "on"; onPicked: efficiencyCard.pick("on") }
-                SettingsParts.Gap { size: 8 }
-            }
+                            }
 
             // ---- General ▸ Out of office ----
             OofPage {
@@ -676,6 +701,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "appearance"
                 icon: "dark-theme-20"; title: "Theme"; subtitle: "This will apply to all your OST apps."
+                bodyGap: 10.6
                 OutlineDropdown {
                     width: 249.3; height: 30
                     readonly property var keys: ["system", "light", "dark", "classic"]
@@ -685,30 +711,32 @@ Rectangle {
                     onPicked: i => backend.setSetting("theme", keys[i])
                 }
                 // Teams: only in the Light theme.
-                SettingsParts.Gap { size: 8.7 }
+                SettingsParts.Gap { size: 16.7 }
                 SettingsParts.CheckRow {
-                    rowHeight: 40
+                    rowHeight: 32
                     label: "Always use dark theme for calls and meetings"
                     usable: !theme.dark && !theme.classic
                     checked: window.darkCallSetting
                     onToggled: v => { backend.setSetting("darkCallTheme", v ? "true" : "false"); window.darkCallSetting = v }
                 }
-                SettingsParts.Gap { size: 4 }
             }
             SettingsParts.Card {
                 visible: root.page === "appearance"
                 icon: "emoji-hand-20"; title: "Skin tone preference"; subtitle: "Reactions and emoji will appear with this skin tone."
+                // Teams' skin tone radios (measured on winpc 2026-11-14): 42 x
+                // 50 each from 8 left of the text, a 30 px swatch 6 in and the
+                // chosen one's 30 x 4 brand bar at 40.
                 Row {
-                    spacing: 8
+                    x: -8; spacing: 0
                     Repeater {
                         model: ["None", "Light", "Medium light", "Medium", "Medium dark", "Dark"]
                         Item {
                             required property string modelData
                             required property int index
                             readonly property bool on: backend.skinTone === index
-                            width: 32; height: 40
-                            Rectangle { anchors.horizontalCenter: parent.horizontalCenter; y: 2; width: 24; height: 24; radius: 12; color: ["#FFC83D", "#F7D7C4", "#D8B094", "#BB9167", "#8E562E", "#613D30"][index] }
-                            Rectangle { visible: parent.on; anchors.horizontalCenter: parent.horizontalCenter; y: 32; width: 24; height: 3; radius: 1.5; color: theme.brand }
+                            width: 42; height: 50
+                            Rectangle { x: 6; y: 6; width: 30; height: 30; radius: 15; color: ["#FFC83D", "#F7D7C4", "#D8B094", "#BB9167", "#8E562E", "#613D30"][index] }
+                            Rectangle { visible: parent.on; x: 6; y: 40; width: 30; height: 4; radius: 2; color: theme.brand }
                             TapHandler { onTapped: { backend.changeSetting("prop", "preferredSkinToneIndex", JSON.stringify(String(index))); backend.skinTone = index } }
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                             Accessible.role: Accessible.RadioButton
@@ -717,7 +745,6 @@ Rectangle {
                         }
                     }
                 }
-                SettingsParts.Gap { size: 8 }
             }
 
             // Teams' App bar card (measured on winpc 2026-11-14).
@@ -745,6 +772,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "chats"
                 icon: "window-layout-20"; title: "Viewing chats, teams, and channels"
+                bodyGap: 28
                 subtitle: "See all conversations in a combined view, or keep chats separate from teams and channels."
                 Row {
                     spacing: 12.7
@@ -806,7 +834,7 @@ Rectangle {
                 visible: root.page === "chats"
                 icon: "chat-20"; title: "Chat"
                 SettingsParts.SubHeading { text: "Message density" }
-                SettingsParts.Gap { size: 13 }
+                SettingsParts.Gap { size: 12 }
                 Row {
                     spacing: 12.7
                     readonly property string mode: root.prop("messageDensity", [], "COMFY")
@@ -814,19 +842,19 @@ Rectangle {
                     SettingsParts.ImageRadio { label: "Compact"; image: "../assets/settings/chat-density-compact-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMPACT") }
                 }
                 SettingsParts.SubHeading { text: "When I open a chat, take me to"; gapAbove: 15 }
-                SettingsParts.Gap { size: 13 }
+                SettingsParts.Gap { size: 12 }
                 Row {
                     spacing: 12.7
                     readonly property bool lastRead: root.prop("userPersonalSettings", ["messagingSettings", "navigateToLastReadMessage"], true) !== false
                     SettingsParts.ImageRadio { label: "Last read message"; image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
                     SettingsParts.ImageRadio { label: "Newest message"; image: "../assets/settings/chat-landing-latest-" + theme.pick("light", "dark") + ".svg"; checked: !parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", false) }
                 }
-                SettingsParts.Gap { size: 4 }
             }
             SettingsParts.Card {
                 id: enterCard
                 visible: root.page === "chats"
                 icon: "keyboard-20"; title: "When writing a message, press Enter to"
+                bodyGap: 26
                 subtitle: "This setting doesn't apply when message formatting is active."
                 property string enterKey: root.local("enterKey", "send")
                 SettingsParts.RadioRow { label: "Send the message"; checked: enterCard.enterKey === "send"; onPicked: { backend.setSetting("enterKey", "send"); enterCard.enterKey = "send"; root.settingsChanged() } }
@@ -841,6 +869,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "chats"
                 icon: "arrow-sort-20"; title: "In post channels, show recent activity"
+                bodyGap: 26
                 SettingsParts.RadioRow { label: "At the top"; checked: backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-top", "", "", "") }
                 SettingsParts.RadioRow { label: "At the bottom"; checked: !backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-bottom", "", "", "") }
             }
@@ -874,7 +903,7 @@ Rectangle {
                 }
                 readonly property var levels: [{ label: "Show in Activity and banner" }, { label: "Show in Activity" }, { label: "Off" }]
             }
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "General" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "General"; first: true }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "alert-off-20"; title: "Mute all notifications (except for calls and meetings)"
@@ -917,6 +946,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "mail-20"; title: "Missed activity emails"
+                pad: 16.3; bottomPad: 16.4; minHeader: 0; iconX: 16.7; titleX: 61.7
                 trailing: Component {
                     OutlineDropdown {
                         width: 249.3; height: 30
@@ -932,6 +962,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "chat-20"; title: "Chat message notifications"
+                pad: 16.3; bottomPad: 16.4; minHeader: 0; iconX: 16.7; titleX: 61.7
                 trailing: Component {
                     OutlineDropdown {
                         width: 249.3; height: 30
@@ -945,20 +976,38 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "mention-20"; title: "@Mentions"
+                id: mentionsCard
+                pad: 14.7; bodyGap: 33.3; bottomPad: 34.9
+                // Teams' @Mentions switch (Global_Mention): on while any row
+                // is above its off value (Off; Personal: Show in Activity) or
+                // Global_Mention is on. Turning it on sets Personal to
+                // Activity and banner and the rest to Activity; off, the
+                // reverse floor. The rows are disabled while it's off.
+                readonly property var rows: [
+                    { label: "Channel and team @mentions", keys: ["Mention_Team", "Visible_ChannelMention_v2"], dflt: 0, off: true },
+                    { label: "Tag @mentions", keys: ["Mention_Tag"], dflt: 0, off: true },
+                    { label: "Everyone in chat @mentions", keys: ["MentionInChat_Everyone"], dflt: 0, off: true },
+                    { label: "Personal @mentions", keys: ["Mention_Person", "MentionInChat_Person_v2"], dflt: 0, off: false }
+                ]
+                readonly property bool on: rows.some(r => notif.level(r.keys, r.dflt) !== (r.off ? 2 : 1)) || notif.level(["Global_Mention"], 0) !== 2
+                function setAll(v) {
+                    notif.setLevel(["Global_Mention"], v ? 0 : 2)
+                    for (const r of rows) notif.setLevel(r.keys, r.off ? (v ? 1 : 2) : (v ? 0 : 1))
+                }
+                trailing: Component { SettingsParts.Toggle { on: mentionsCard.on; accessibleName: "@Mentions " + (mentionsCard.on ? "On" : "Off"); onToggled: v => mentionsCard.setAll(v) } }
                 Repeater {
-                    model: [
-                        { label: "Channel and team @mentions", keys: ["Mention_Team", "Visible_ChannelMention_v2"], dflt: 0, off: true },
-                        { label: "Tag @mentions", keys: ["Mention_Tag"], dflt: 0, off: true },
-                        { label: "Everyone in chat @mentions", keys: ["MentionInChat_Everyone"], dflt: 0, off: true },
-                        { label: "Personal @mentions", keys: ["Mention_Person", "MentionInChat_Person_v2"], dflt: 0, off: false }
-                    ]
+                    model: mentionsCard.rows
                     Item {
                         required property var modelData
-                        width: parent.width; height: 68
-                        Text { y: 12; text: modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        // Teams: rows 68.7 apart, the label 5 under the
+                        // dropdown's top and 6.6 in.
+                        readonly property real trailingGap: 38.7
+                        width: parent.width; height: 68.7
+                        Text { x: 6.6; y: 5; text: modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: mentionsCard.on ? theme.text : theme.disabled }
                         OutlineDropdown {
-                            anchors.right: parent.right; anchors.rightMargin: 28; y: 8
+                            anchors.right: parent.right; anchors.rightMargin: 28; y: 0
                             width: 249.3; height: 30
+                            enabled: mentionsCard.on
                             options: modelData.off ? notif.levels : notif.levels.slice(0, 2)
                             current: notif.level(modelData.keys, modelData.dflt)
                             accessibleName: modelData.label
@@ -976,6 +1025,7 @@ Rectangle {
                     required property var modelData
                     visible: root.page === "notifications" && !root.subPage
                     icon: modelData.icon; title: modelData.title
+                    pad: 16.3; bottomPad: 16.4; minHeader: 0; iconX: 16.7; titleX: 61.7
                     trailing: Component {
                         OutlineDropdown {
                             width: 249.3; height: 30
@@ -987,13 +1037,13 @@ Rectangle {
                     }
                 }
             }
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Meetings" }
             // Teams' "Posts in all shown channels" (Visible_ChannelNewMessage_v2)
             // with "Include replies" (Visible_ChannelReplyMessage_v2), measured.
             SettingsParts.Card {
                 id: shownPosts
                 visible: root.page === "notifications" && !root.subPage
                 icon: "channel-20"; title: "Posts in all shown channels"
+                pad: 20; bottomPad: 28.7; minHeader: 0; bodyGap: 19.3; iconX: 16.3; titleX: 61.3
                 readonly property int lvl: notif.level(["Visible_ChannelNewMessage_v2"], 2)
                 trailing: Component {
                     OutlineDropdown {
@@ -1009,18 +1059,21 @@ Rectangle {
                     }
                 }
                 SettingsParts.CheckRow {
+                    rowHeight: 32
                     label: "Include replies"
                     usable: shownPosts.lvl !== 2
                     checked: root.prop("userPersonalSettings", ["activityGenerationSettings", "Visible_ChannelReplyMessage_v2"], false) === true
                     onToggled: v => notif.setLevel(["Visible_ChannelReplyMessage_v2"], v ? shownPosts.lvl : 2)
                 }
             }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Meetings" }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "calendar-20"; title: "Meetings"
-                SettingsParts.SwitchRow { label: "Meeting start notifications"; on: notif.ts("MeetingWentLiveNotification", true) !== false
+                pad: 22.7; minHeader: 20; bodyGap: 48; bottomPad: 18.7; iconX: 17.7; titleX: 55.7
+                SettingsParts.SwitchRow { rowHeight: 61; label: "Meeting start notifications"; on: notif.ts("MeetingWentLiveNotification", true) !== false
                     onToggled: v => notif.setMany(v ? { toastSettings: { MeetingWentLiveNotification: true }, activityGenerationSettings: { MeetingWentLiveNotification: true }, emailSettings: { MeetingWentLiveNotification: true } } : { toastSettings: { MeetingWentLiveNotification: false } }) }
-                SettingsParts.SwitchRow { label: "Show meeting join bar"; on: notif.ts("liveMeetingStatusBanner", true) !== false; onToggled: v => notif.setTs("liveMeetingStatusBanner", v) }
+                SettingsParts.SwitchRow { rowHeight: 59.3; label: "Show meeting join bar"; on: notif.ts("liveMeetingStatusBanner", true) !== false; onToggled: v => notif.setTs("liveMeetingStatusBanner", v) }
                 // Teams' meeting chat notifications by your RSVP (chatSettings:
                 // Mute / Unmute / Mute until I join or send a message).
                 Repeater {
@@ -1030,10 +1083,12 @@ Rectangle {
                         id: mcRow
                         required property var modelData
                         readonly property var values: ["MeetingsManuallyUnmuted", "MeetingsUserIsInvitedTo", "MeetingsUserParticipatesIn"]
-                        width: parent.width; height: Math.max(48, mcLabel.height + 28)
-                        Text { id: mcLabel; y: 8; width: parent.width - 249.3 - 40; wrapMode: Text.Wrap; text: mcRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        // Teams: the label 5 under the dropdown's top; rows 68.7
+                        // apart, the two-line one 80.3.
+                        width: parent.width; height: mcRow.modelData.key.indexOf("Tentative") > 0 ? 80.3 : 68.7
+                        Text { id: mcLabel; y: 5; width: parent.width - 249.3 - 40; wrapMode: Text.Wrap; text: mcRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                         OutlineDropdown {
-                            anchors.right: parent.right; anchors.rightMargin: 28; y: 3
+                            anchors.right: parent.right; anchors.rightMargin: 28; y: 0
                             width: 249.3; height: mcRow.modelData.key.indexOf("Tentative") > 0 ? 50 : 30
                             options: [{ label: "Mute" }, { label: "Unmute" }, { label: "Mute until I join or send a message" }]
                             current: Math.max(0, mcRow.values.indexOf(root.prop("userPersonalSettings", ["chatSettings", mcRow.modelData.key], mcRow.modelData.dflt)))
@@ -1052,6 +1107,7 @@ Rectangle {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "person-available-20"; title: "Presence"
                 subtitle: "Keep track of someone's status and get notified when they appear available or offline."
+                pad: 15.7; bottomPad: 15.6; minHeader: 0; iconX: 16.7; titleX: 58.7; textWidth: 494.2; subtitleSize: 14
                 trailing: Component { SettingsParts.Button { label: "Manage notifications"; onClicked: root.subPage = "status" } }
             }
             SettingsParts.Card {
@@ -1148,6 +1204,7 @@ Rectangle {
                 id: calNotif
                 visible: root.page === "notifications" && !root.subPage
                 icon: "calendar-20"; title: "Calendar"
+                pad: 22.7; minHeader: 20; bodyGap: 19.3; bottomPad: 46; iconX: 17.7; titleX: 55.7
                 readonly property string app: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
                 readonly property var groups: ({
                     privateMeetingCreated: ["privateMeetingCreated", "privateMeetingUpdated", "privateMeetingCanceled", "channelMeetingCreated", "channelMeetingUpdated", "channelMeetingCanceled", "delegateMeetingCreated", "delegateMeetingUpdated", "delegateMeetingCanceled", "privateMeetingForwarded", "channelMeetingForwarded", "channelMeetingForwardedWithoutOrganizer"],
@@ -1167,10 +1224,11 @@ Rectangle {
                     Item {
                         id: calRow
                         required property var modelData
-                        width: parent.width; height: 48
-                        Text { y: 8; width: parent.width - 249.3 - 40; elide: Text.ElideRight; text: calRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        readonly property real trailingGap: 38.7
+                        width: parent.width; height: 68.7
+                        Text { y: 5; width: parent.width - 249.3 - 40; elide: Text.ElideRight; text: calRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                         OutlineDropdown {
-                            anchors.right: parent.right; anchors.rightMargin: 28; y: 3
+                            anchors.right: parent.right; anchors.rightMargin: 28; y: 0
                             width: 249.3; height: 30
                             options: notif.levels
                             current: calNotif.lvl(calRow.modelData.key)
@@ -1361,6 +1419,7 @@ Rectangle {
                 readonly property bool outlookLink: shown && backend.ecsSetting("presence", "enableWorkLocationSettingsLink") === "true" && outlookUrl.length > 0
                 visible: root.page === "privacy" && !root.subPage && (!detection || outlookLink)
                 icon: "building-home-20"; title: "Manage my work location"
+                subtitleLineHeight: 17.14
                 subtitle: (detection ? "" : "Automatically setting your work location has been turned off by your IT department. <a href=\"https://support.microsoft.com/en-us/office/first-things-to-know-about-bookable-desks-in-microsoft-teams-5d10c217-1205-48a1-a883-ff4533f4ae71?preview=true\">Learn more</a>")
                     + (!detection && outlookLink ? "<br>" : "")
                     + (outlookLink ? "Your work location will be shared with Places and Outlook. Manage more preferences in Outlook. <a href=\"" + outlookUrl + "\">Open Outlook work hours and location settings</a>" : "")
@@ -1792,7 +1851,7 @@ Rectangle {
                     accessibleName: "Ring for this many seconds before redirect"
                     onPicked: i => calls.save(false, true, secs[i])
                 }
-                SettingsParts.Gap { size: 20 }
+                
             }
             Text {
                 visible: root.page === "calls"
@@ -1808,7 +1867,7 @@ Rectangle {
                 // Teams' "Record a custom greeting" calls your voicemail
                 // (TASK-0152). Voicemail settings can't be read back (Teams
                 // shows them unset too); what you set here shows.
-                SettingsParts.SubHeading { text: "Choose a language for your default greeting"; gapAbove: 7.6 }
+                SettingsParts.SubHeading { text: "Choose a language for your default greeting" }
                 SettingsParts.Gap { size: 10.7 }
                 SearchCombobox {
                     width: 258.7; height: 30.7
@@ -1839,7 +1898,7 @@ Rectangle {
                     buttonText: calls.vm.vmDefaultGreetingPromptOverwrite ? "Edit custom greeting" : "Write a custom greeting"
                     onClicked: { greetingDialog.oof = false; greetingDialog.show(calls.vm.vmDefaultGreetingPromptOverwrite || "") }
                 }
-                SettingsParts.Gap { size: 20.7 }
+                
             }
             Text {
                 visible: root.page === "calls"
@@ -1853,16 +1912,15 @@ Rectangle {
                 visible: root.page === "calls"
                 icon: "voicemail-arrow-back-20"; title: "Out-of-office voicemail"
                 SettingsParts.SubHeading { text: "When should your greeting play" }
-                SettingsParts.Gap { size: 6 }
+                SettingsParts.Gap { size: 15 }
                 SettingsParts.CheckRow { label: "All the time"; checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
                 SettingsParts.CheckRow { label: "When Outlook automatic replies are on"; checked: calls.vm.vmUseAutoRepliesForOof === true; onToggled: v => calls.setVm("vmUseAutoRepliesForOof", v) }
-                SettingsParts.Gap { size: 6 }
                 SettingsParts.ButtonRow {
                     label: "Your custom greeting"
                     buttonText: calls.vm.vmDefaultOofGreetingPromptOverwrite ? "Edit custom greeting" : "Write a custom greeting"
                     onClicked: { greetingDialog.oof = true; greetingDialog.show(calls.vm.vmDefaultOofGreetingPromptOverwrite || "") }
                 }
-                SettingsParts.Gap { size: 20 }
+                
             }
             GreetingDialog {
                 id: greetingDialog
@@ -2018,6 +2076,7 @@ Rectangle {
                 visible: root.page === "files"
                 id: openIn
                 icon: "document-20"; title: "Always open Word, PowerPoint, and Excel files in:"
+                bodyGap: 26
                 // Teams offers "Desktop app" when Office is installed and
                 // keeps that choice on the device; Browser is its synced
                 // "web". OST offers the desktop's own app for Word files.
@@ -2038,8 +2097,8 @@ Rectangle {
                 icon: "link-20"; title: "Links open preference"
                 readonly property var browsers: root.page === "files" ? JSON.parse(backend.webBrowsers()) : []
                 readonly property string choice: root.local("linkBrowser", browsers.some(b => b.key === "edge") ? "edge" : "default")
-                Text { text: "Always open web links in:"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                SettingsParts.Gap { size: 10 }
+                SettingsParts.SubHeading { text: "Always open web links in:" }
+                SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
                     width: 293.3; height: 30
                     options: linksPref.browsers.map(b => ({ label: b.label }))
@@ -2047,7 +2106,7 @@ Rectangle {
                     accessibleName: "Always open web links in"
                     onPicked: i => backend.setSetting("linkBrowser", linksPref.browsers[i].key)
                 }
-                SettingsParts.Gap { size: 20 }
+                
             }
             SettingsParts.Card {
                 visible: root.page === "files"
@@ -2101,10 +2160,15 @@ Rectangle {
     property string myPresence: ""
     signal showShortcuts()
     // Teams' section headings on long pages (16/22 semibold, 20 in).
+    // Teams' section headings (Notifications and activity, measured on
+    // winpc 2026-11-14): 14/700 on a 20 px line, 18 above and below (the
+    // first one 6, and 8 under the page's top), cards 12 above.
     component SectionTitle: Text {
+        property bool first: false
         width: parent ? parent.width : 0
-        topPadding: 8
-        font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+        height: first ? 52 : 44
+        topPadding: first ? 14 : 18
+        font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight
         color: theme.text
         Accessible.role: Accessible.Heading
         Accessible.name: text

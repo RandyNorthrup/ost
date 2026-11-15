@@ -680,6 +680,13 @@ pub mod qobject {
         /// written out to the cache, as a local file URL to open.
         #[qinvokable]
         fn third_party_notices_url(self: &Backend) -> QString;
+        /// Whether this desktop has the system settings page Teams' "Manage
+        /// Windows settings" links open ("timezone" or "region").
+        #[qinvokable]
+        fn has_os_settings(self: &Backend, kind: &QString) -> bool;
+        /// Open that page (the desktop's date and time, or region settings).
+        #[qinvokable]
+        fn open_os_settings(self: &Backend, kind: &QString);
         /// A Teams ECS setting as JSON ("" when ECS doesn't set it).
         #[qinvokable]
         fn ecs_setting(self: &Backend, area: &QString, key: &QString) -> QString;
@@ -3373,6 +3380,33 @@ fn proofing_settings() -> &'static std::sync::Mutex<Option<api::editor::Proofing
 
 /// Teams' "Save and restart": main.rs starts OST again after it quits.
 static RESTART: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The desktop's own settings page for Teams' "Manage Windows settings"
+/// links: date and time ("timezone") or region and language ("region"),
+/// in KDE Plasma or GNOME; None elsewhere (the link is then not shown).
+fn os_settings_command(kind: &str) -> Option<(&'static str, Vec<&'static str>)> {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_uppercase();
+    let on_path = |p: &str| {
+        std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|d| d.join(p).is_file()))
+    };
+    if desktop.contains("KDE") && on_path("systemsettings") {
+        let module = match kind {
+            "timezone" => "kcm_clock",
+            "region" => "kcm_regionandlang",
+            _ => return None,
+        };
+        return Some(("systemsettings", vec![module]));
+    }
+    if desktop.contains("GNOME") && on_path("gnome-control-center") {
+        let panel = match kind {
+            "timezone" => "datetime",
+            "region" => "region",
+            _ => return None,
+        };
+        return Some(("gnome-control-center", vec![panel]));
+    }
+    None
+}
+
 /// Settings ▸ Privacy ▸ "Turn off my camera and mic when my screen locks"
 /// (Teams' clientPreferences lockScreenInCall.turnOffMediaOnDeviceLock,
 /// kept on this device), as it was when OST started.
@@ -10528,7 +10562,12 @@ impl qobject::Backend {
         let s = proofing_settings().lock().unwrap().clone();
         let supported: Vec<_> = api::editor::supported_languages().iter().map(|(c, n, e)| serde_json::json!({"code": c, "native": n, "english": e})).collect();
         let map = load_settings();
-        let languages = s.as_ref().map(|s| s.languages.clone()).unwrap_or_default();
+        // With no spellcheck languages saved, Teams' Editor checks (and its
+        // Settings list) your app language.
+        let mut languages = s.as_ref().map(|s| s.languages.clone()).unwrap_or_default();
+        if languages.is_empty() {
+            languages.push(app_locale().to_lowercase());
+        }
         QString::from(
             serde_json::json!({"loaded": s.is_some(), "languages": languages, "dictionary": s.map(|s| s.dictionary).unwrap_or_default(),
                 "supported": supported, "max": api::editor::MAX_LANGUAGES, "uiLanguage": app_locale().to_lowercase(),
@@ -10563,6 +10602,18 @@ impl qobject::Backend {
         editor().set_languages(l);
         if let Some(qt) = QT_THREAD.get() {
             let _ = qt.queue(|mut this| this.as_mut().editor_settings_changed());
+        }
+    }
+
+    pub fn has_os_settings(&self, kind: &QString) -> bool {
+        os_settings_command(&kind.to_string()).is_some()
+    }
+
+    pub fn open_os_settings(&self, kind: &QString) {
+        if let Some((program, args)) = os_settings_command(&kind.to_string()) {
+            if let Err(e) = std::process::Command::new(program).args(args).spawn() {
+                tracing::warn!("system settings ({program}): {e}");
+            }
         }
     }
 
