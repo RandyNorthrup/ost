@@ -1426,6 +1426,15 @@ Rectangle {
                     onToggled: v => root.setProp("callAccessibilitySettings", "profanityFilterEnabled", v)
                 }
             }
+            // Teams' Muted notification (clientPreferences meeting.mutedDialogs,
+            // on this device): the same setting as the call's Accessibility
+            // pane, so a call in progress follows it at once.
+            SettingsParts.Card {
+                visible: root.page === "accessibility"
+                icon: "mic-off-20"; title: "Muted notification"
+                subtitle: "Show the 'You're muted' notification when audio is detected while your microphone is off."
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("showMutedNotice") !== "false"; accessibleName: "Muted notification"; onToggled: v => { backend.setSetting("showMutedNotice", v ? "true" : "false"); on = v; callWindow.showMutedNotice = v } } }
+            }
 
             // ---- Devices: Audio (Teams' Settings ▸ Devices, measured on
             // winpc 2026-11-14) ----
@@ -1696,7 +1705,30 @@ Rectangle {
                 readonly property bool toVoicemail: pending ? pending.unansweredToVoicemail : (redir.unansweredCallSettings || {}).isEnabled !== false
                 readonly property int delay: pending ? pending.delay : ((redir.unansweredCallSettings || {}).delaySeconds || 20)
                 function save(fa, vm, d) { root.setMt("redirection", { forwardAll: fa, unansweredToVoicemail: vm, delay: d }) }
-                property var vm: ({ vmUseOof: false, vmUseAutoRepliesForOof: false, vmCallAnswerRule: "" })
+                property var vm: ({ vmUseOof: false, vmUseAutoRepliesForOof: false, vmCallAnswerRule: "", vmAudioLang: "", vmDefaultGreetingPromptOverwrite: "", vmDefaultOofGreetingPromptOverwrite: "" })
+                // Teams' voicemail greeting languages (measured on winpc
+                // 2026-11-14, in its order): [native, English, code].
+                readonly property var greetingLanguages: [
+                    ["Arabic (Egypt)", "Arabic (Egypt)", "ar-eg"], ["Bahasa Indonesia (Indonesia)", "Indonesian (Indonesia)", "id-id"],
+                    ["Català (Català)", "Catalan (Spain)", "ca-es"], ["Čeština (Česká republika)", "Czech (Czechia)", "cs-cz"],
+                    ["Dansk (Danmark)", "Danish (Denmark)", "da-dk"], ["Deutsch (Deutschland)", "German (Germany)", "de-de"],
+                    ["English (Australia)", "English (Australia)", "en-au"], ["English (Canada)", "English (Canada)", "en-ca"],
+                    ["English (India)", "English (India)", "en-in"], ["English (United Kingdom)", "English (United Kingdom)", "en-gb"],
+                    ["English (United States)", "English (United States)", "en-us"], ["Español (España, alfabetización internacional)", "Spanish (Spain)", "es-es"],
+                    ["Español (México)", "Spanish (Mexico)", "es-mx"], ["Français (Canada)", "French (Canada)", "fr-ca"],
+                    ["Français (France)", "French (France)", "fr-fr"], ["Hrvatski (Hrvatska)", "Croatian (Croatia)", "hr-hr"],
+                    ["Italiano (Italia)", "Italian (Italy)", "it-it"], ["Magyar (Magyarország)", "Hungarian (Hungary)", "hu-hu"],
+                    ["Nederlands (Nederland)", "Dutch (Netherlands)", "nl-nl"], ["Norsk, Bokmål (Norge)", "Norwegian Bokmål (Norway)", "nb-no"],
+                    ["Polski (Polska)", "Polish (Poland)", "pl-pl"], ["Português (Brasil)", "Portuguese (Brazil)", "pt-br"],
+                    ["Português (Portugal)", "Portuguese (Portugal)", "pt-pt"], ["Română (România)", "Romanian (Romania)", "ro-ro"],
+                    ["Slovenčina (Slovenská republika)", "Slovak (Slovakia)", "sk-sk"], ["Slovenščina (Slovenija)", "Slovenian (Slovenia)", "sl-si"],
+                    ["Suomi (Suomi)", "Finnish (Finland)", "fi-fi"], ["Svenska (Sverige)", "Swedish (Sweden)", "sv-se"],
+                    ["Türkçe (Türkiye)", "Turkish (Türkiye)", "tr-tr"], ["Ελληνικά (Ελλάδας)", "Greek (Greece)", "el-gr"],
+                    ["Русский (Россия)", "Russian (Russia)", "ru-ru"], ["ไทย (ไทย)", "Thai (Thailand)", "th-th"],
+                    ["한국어 (대한민국)", "Korean (Korea)", "ko-kr"], ["中文(中国)", "Chinese (China)", "zh-cn"],
+                    ["中文(台灣)", "Chinese (Taiwan)", "zh-tw"], ["中文(香港特別行政區)", "Chinese (Hong Kong SAR)", "zh-hk"],
+                    ["日本語 (日本)", "Japanese (Japan)", "ja-jp"]
+                ]
                 function setVm(k, v) { const o = Object.assign({}, vm); o[k] = v; vm = o; const b = {}; b[k] = v; root.setMt("voicemail", b) }
             }
             Text {
@@ -1715,7 +1747,8 @@ Rectangle {
                     on: calls.forwardAll
                     onToggled: v => calls.save(v, calls.toVoicemail, calls.delay)
                 }
-                SettingsParts.SubHeading { visible: !calls.forwardAll; text: "When you can't answer a call"; gapAbove: 7 }
+                SettingsParts.Divider { visible: !calls.forwardAll }
+                SettingsParts.SubHeading { visible: !calls.forwardAll; text: "When you can't answer a call"; gapAbove: 15.6 }
                 SettingsParts.Gap { visible: !calls.forwardAll; size: 10 }
                 OutlineDropdown {
                     visible: !calls.forwardAll
@@ -1725,7 +1758,7 @@ Rectangle {
                     accessibleName: "When you can't answer a call"
                     onPicked: i => calls.save(false, i === 1, calls.delay)
                 }
-                SettingsParts.SubHeading { visible: !calls.forwardAll && calls.toVoicemail; text: "Ring for this many seconds before redirecting"; gapAbove: 16 }
+                SettingsParts.SubHeading { visible: !calls.forwardAll && calls.toVoicemail; text: "Ring for this many seconds before redirect"; gapAbove: 15.7 }
                 SettingsParts.Gap { visible: !calls.forwardAll && calls.toVoicemail; size: 10 }
                 OutlineDropdown {
                     visible: !calls.forwardAll && calls.toVoicemail
@@ -1733,7 +1766,7 @@ Rectangle {
                     readonly property var secs: [5, 10, 15, 20, 30, 40, 50, 60]
                     options: secs.map(n => ({ label: n + " seconds" + (n === 20 ? " (default)" : "") }))
                     current: Math.max(0, secs.indexOf(calls.delay))
-                    accessibleName: "Ring for this many seconds before redirecting"
+                    accessibleName: "Ring for this many seconds before redirect"
                     onPicked: i => calls.save(false, true, secs[i])
                 }
                 SettingsParts.Gap { size: 20 }
@@ -1749,8 +1782,22 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "calls"
                 icon: "voicemail-20"; title: "Voicemail"
-                SettingsParts.SubHeading { text: "Choose what happens when the call is redirected to voicemail" }
-                SettingsParts.Gap { size: 10 }
+                // Teams' "Record a custom greeting" calls your voicemail
+                // (TASK-0152). Voicemail settings can't be read back (Teams
+                // shows them unset too); what you set here shows.
+                SettingsParts.SubHeading { text: "Choose a language for your default greeting"; gapAbove: 7.6 }
+                SettingsParts.Gap { size: 10.7 }
+                SearchCombobox {
+                    width: 258.7; height: 30.7
+                    options: calls.greetingLanguages.map(l => ({ key: l[2], label: l[0], sublabel: l[1] }))
+                    current: calls.vm.vmAudioLang || ""
+                    accessibleName: "Choose a language for your default greeting"
+                    onPicked: code => calls.setVm("vmAudioLang", code)
+                }
+                SettingsParts.Gap { size: 15.6 }
+                SettingsParts.Divider {}
+                SettingsParts.SubHeading { text: "Choose what happens when the call is redirected to voicemail"; gapAbove: 15.7 }
+                SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
                     width: 293.3; height: 30
                     readonly property var rules: ["RegularVoicemail", "PromptOnly", "DeclineCall"]
@@ -1760,7 +1807,16 @@ Rectangle {
                     accessibleName: "Choose what happens when the call is redirected to voicemail"
                     onPicked: i => calls.setVm("vmCallAnswerRule", rules[i])
                 }
-                SettingsParts.Gap { size: 20 }
+                SettingsParts.Gap { size: 15.6 }
+                SettingsParts.Divider {}
+                SettingsParts.Gap { size: 15.7 }
+                SettingsParts.ButtonRow {
+                    label: "Set up text-to-speech customized greeting option"
+                    sublabel: "If you\u2019ve recorded a greeting, it\u2019ll override this option."
+                    buttonText: calls.vm.vmDefaultGreetingPromptOverwrite ? "Edit custom greeting" : "Write a custom greeting"
+                    onClicked: { greetingDialog.oof = false; greetingDialog.show(calls.vm.vmDefaultGreetingPromptOverwrite || "") }
+                }
+                SettingsParts.Gap { size: 20.7 }
             }
             Text {
                 visible: root.page === "calls"
@@ -1777,6 +1833,18 @@ Rectangle {
                 SettingsParts.Gap { size: 6 }
                 SettingsParts.CheckRow { label: "All the time"; checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
                 SettingsParts.CheckRow { label: "When Outlook automatic replies are on"; checked: calls.vm.vmUseAutoRepliesForOof === true; onToggled: v => calls.setVm("vmUseAutoRepliesForOof", v) }
+                SettingsParts.Gap { size: 6 }
+                SettingsParts.ButtonRow {
+                    label: "Your custom greeting"
+                    buttonText: calls.vm.vmDefaultOofGreetingPromptOverwrite ? "Edit custom greeting" : "Write a custom greeting"
+                    onClicked: { greetingDialog.oof = true; greetingDialog.show(calls.vm.vmDefaultOofGreetingPromptOverwrite || "") }
+                }
+                SettingsParts.Gap { size: 20 }
+            }
+            GreetingDialog {
+                id: greetingDialog
+                property bool oof: false
+                onSaved: text => calls.setVm(oof ? "vmDefaultOofGreetingPromptOverwrite" : "vmDefaultGreetingPromptOverwrite", text)
             }
 
             // ---- App permissions (measured on winpc 2026-11-13) ----
@@ -2003,6 +2071,8 @@ Rectangle {
     }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
+    function greetingDialogForTest() { return greetingDialog }
+    function scrollToForTest(y) { content.contentY = y }
     /// Editor spellcheck (the Editor card's links): General scrolled to it,
     /// or its Manage spellcheck languages page.
     function showEditor(manage) {

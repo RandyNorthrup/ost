@@ -273,4 +273,37 @@ Item {
     }
 
     component Gap: Item { property real size: 0; width: 1; height: size }
+
+    /// Fluent's Divider between a card's rows (NeutralStroke2), as wide as
+    /// Teams' (the card less 56.7 each side).
+    component Divider: Item {
+        width: parent ? parent.width : 0; height: 0.67
+        Rectangle { width: parent.width - 27.3; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+    }
+
+    /// A row with a title (14/20), an optional subtitle (12/16) and a
+    /// button at its end, centred on the text (Teams' button widget).
+    component ButtonRow: Item {
+        id: brw
+        property string label
+        property string sublabel
+        property string buttonText
+        signal clicked()
+        width: parent ? parent.width : 0
+        height: Math.max(brCol.height, brBtn.height)
+        Column {
+            id: brCol
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - brBtn.width - 27.3 - 24
+            Text { width: parent.width; text: brw.label; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { visible: !!brw.sublabel; width: parent.width; text: brw.sublabel; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+        }
+        Button {
+            id: brBtn
+            anchors.right: parent.right; anchors.rightMargin: 27.3
+            anchors.verticalCenter: parent.verticalCenter
+            label: brw.buttonText
+            onClicked: brw.clicked()
+        }
+    }
 }

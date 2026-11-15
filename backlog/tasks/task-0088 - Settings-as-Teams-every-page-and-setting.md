@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-15T05:29:00Z'
+updated_date: '2026-11-15T05:58:00Z'
 labels:
   - desktop
   - settings
@@ -69,4 +69,8 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - Privacy: Manage priority contacts / Manage blocked contacts buttons and their pages (Teams' userSettings breakthroughlist / blocklist via {mt}/beta/userSettings/{list}[/manage]); DND checkbox sublabel. Verified on linuxlt (--privacy-test adds and removes OST Test 2). Remaining Privacy cards: work location, camera/mic off on lock, diagnostic data, extended diagnostics, E2EE calls, optional connected experiences.
 
 - Privacy complete except View Diagnostic Data (TASK-0147) and E2EE calls (TASK-0146): work location card (policy text + Outlook link, ECS-driven; policy-on toggle TASK-0149), camera/mic off on screen lock (logind; verified live in a Meet now on linuxlt), Extended diagnostics (keeps earlier sessions' logs), Optional connected experiences (user property; fun picker drops GIPHY exactly as Teams, measured by toggling it on winpc and restoring). Link previews TASK-0148.
+
+- Accessibility: Muted notification card (shares the in-call pane's showMutedNotice). Single pointer controls -> TASK-0150 (chat list reordering), TTY -> TASK-0151.
+- Calls: greeting language (Teams' 37), TTS greeting + OOF greeting dialog (Your custom greeting), dividers, label fix. Record a greeting -> TASK-0152; ringtone -> TASK-0144. Voicemail settings have no GET (Teams shows them unset too).
+- Found: Settings Card geometry differs from Teams (single-setting cards 20.7 top padding with header row centred; switch-row cards ~14 px taller at the bottom). Geometry pass next after the content audit.
 <!-- SECTION:NOTES:END -->

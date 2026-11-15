@@ -382,6 +382,20 @@ Measured on winpc 2026-11-14, in Teams' order:
 - [x] **Optional connected experiences** (user property controllerConnectedServicesEnabled, on unless "false"): off, Teams' fun picker has no GIFs tab, section or GIPHY credit, and All shows two rows of emoji and 84 px stickers; link previews are TASK-0148.
 - [x] **Keyboard shortcut to unmute**.
 
+### 10.3a Accessibility (measured on winpc 2026-11-14)
+- [x] Sign language mode; Captions and transcripts (Always show captions, Automatically identify me, Filter out profane words).
+- [x] **Muted notification** (clientPreferences meeting.mutedDialogs; OST: the in-call pane's showMutedNotice, on this device).
+- [ ] **Turn on single pointer controls** ("Start reordering"): needs chat list reordering first (TASK-0150).
+- [ ] **Teletypewriter (TTY) mode** (TASK-0151).
+
+### 10.3b Calls (measured on winpc 2026-11-14)
+- [x] Call handling and forwarding with dividers; "Ring for this many seconds before redirect".
+- [ ] "Choose a ringtone for you" with play: Teams' packaged ringtones (TASK-0144).
+- [ ] "Record a custom greeting" (a call to your voicemail, TASK-0152).
+- [x] "Choose a language for your default greeting": Teams' 37 languages (native over English) in its searchable combobox, saved as vmAudioLang.
+- [x] "Choose what happens when the call is redirected to voicemail".
+- [x] "Set up text-to-speech customized greeting option" and Out-of-office "Your custom greeting": Write / Edit custom greeting opens "Your custom greeting" (500 x 264.67), saved as vmDefaultGreetingPromptOverwrite / vmDefaultOofGreetingPromptOverwrite. Voicemail settings have no read endpoint; Teams shows them unset until changed, and so does OST.
+
 ### 10.4 Notifications and activity
 - [ ] General:
   - "Mute all notifications (except for calls and meetings)";
