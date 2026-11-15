@@ -199,7 +199,12 @@ Rectangle {
         : teams.map(t => ({ id: t.id, name: t.name, new: t.new, expanded: t.expanded !== false,
                             channels: (t.channels || []).filter(ch => channelShown(t, ch)) }))
                .filter(t => t.channels.length > 0 && (!unreadOn || t.channels.some(c => c.unread)))
-    readonly property var sections: folders.map(f => {
+    function folderInPane(f) {
+        if (pane === "chats") return f.kind !== "TeamsAndChannels" && f.kind !== "EngageCommunities"
+        if (pane === "teams") return f.kind === "QuickViews" || f.kind === "TeamsAndChannels" || f.kind === "EngageCommunities"
+        return true
+    }
+    readonly property var sections: folders.filter(f => folderInPane(f)).map(f => {
         let rows = []
         if (f.kind === "QuickViews") {
             if (category || unreadOn || nameFilter) rows = []
@@ -248,7 +253,7 @@ Rectangle {
         width: parent.width; height: 61
         Text {
             x: 32; y: 19
-            text: "Chat"
+            text: root.pane === "teams" ? "Teams" : "Chat"
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             color: theme.text
         }
@@ -291,12 +296,17 @@ Rectangle {
     // ---- Filter pills (Teams' sticky filter) ----
     // 24 tall, 4 apart, border 0.67 NeutralStroke1, 12/16 NeutralForeground2,
     // padding 8; chosen: BrandForeground2 (#444791) fill, white text.
+    // Separate view: Chat has Unread / Chats / Meeting chats, the Teams app
+    // Unread / Channels / Communities (Teams, measured).
     readonly property var pillDefs: [
         { key: "unread", label: "Unread", keys: "Ctrl+Alt+U" },
         { key: "channels", label: "Channels", keys: "Ctrl+Alt+A" },
         { key: "chats", label: "Chats", keys: "Ctrl+Alt+C" },
         { key: "meetings", label: "Meeting chats", keys: "Ctrl+Alt+B" }
     ].concat(hasCommunities ? [{ key: "communities", label: "Communities", keys: "" }] : [])
+     .filter(p => pane === "chats" ? ["unread", "chats", "meetings"].indexOf(p.key) >= 0
+                : pane === "teams" ? ["unread", "channels", "communities"].indexOf(p.key) >= 0 : true)
+    onPaneChanged: { category = ""; unreadOn = false }
     function pillOn(k) { return k === "unread" ? unreadOn : category === k }
     FontMetrics { id: pillMetrics; font.family: theme.font; font.pixelSize: 12 }
     function pillWidth(label) { return Math.ceil(pillMetrics.advanceWidth(label)) + 18 }
@@ -538,8 +548,14 @@ Rectangle {
     // M/d) 12 from the row's right, chats and channels alike; "Filters" off
     // hides the pills and the list starts under the header.
     readonly property var collab: { const s = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; return (s.props || {}).simpleCollabUserSettings || {} }
-    readonly property bool previews: collab.hasUserEnabledMessagePreviews === true
-    readonly property bool timestamps: collab.hasUserEnabledShowTimeStamps === true
+    /// Teams' "Separate" view (Settings ▸ Chats and channels): the list is
+    /// Chat's chats ("chats") or the Teams app's teams and channels
+    /// ("teams"); "combined" holds both. Its own preview setting; time
+    /// stamps always shown (Teams greys the switch on).
+    property string pane: "combined"
+    readonly property bool split: pane !== "combined"
+    readonly property bool previews: split ? collab.hasUserEnabledMessagePreviewsForSplitApp !== false : collab.hasUserEnabledMessagePreviews === true
+    readonly property bool timestamps: split || collab.hasUserEnabledShowTimeStamps === true
     readonly property bool filtersShown: collab.hasUserDisabledShowingFilterAtTop !== true
     Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) backend.loadSettings() } }
     function stamp(t) {

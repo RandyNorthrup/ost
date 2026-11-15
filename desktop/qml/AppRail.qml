@@ -15,8 +15,14 @@ Rectangle {
     property bool showNames: false
     /// Teams' "Auto collapse app bar": it folds away once you pick an app.
     property bool autoCollapse: false
+    /// Teams' Separate view: a Teams app after Chat (Ctrl+3), the rest
+    /// moved down one; Chat and Teams share the chat view.
+    property bool split: false
+    property string collabPane: "chats"
+    signal collabPicked(string pane)
     function pick(key) {
-        current = key
+        if (split && (key === "chat" || key === "teams")) collabPicked(key === "teams" ? "teams" : "chats")
+        else current = key
         if (autoCollapse) collapsed = true
     }
     property int unreadChats: 0
@@ -37,13 +43,20 @@ Rectangle {
         { key: "help", icon: "question-circle-20", label: "Help", keys: "" }
     ]
     // Teams desktop's rail, with its labels and shortcuts (Copilot left out).
-    readonly property var apps: [
+    readonly property var apps: (split ? [
+        { key: "activity", icon: "alert", label: "Activity", keys: "Ctrl+1" },
+        { key: "chat", icon: "chat", label: "Chat", keys: "Ctrl+2" },
+        { key: "teams", icon: "people-team", label: "Teams", keys: "Ctrl+3" },
+        { key: "calendar", icon: "calendar", label: "Calendar", keys: "Ctrl+4" },
+        { key: "calls", icon: "call", label: "Calls", keys: "Ctrl+5" },
+        { key: "onedrive", icon: "onedrive", label: "OneDrive", keys: "Ctrl+6" },
+    ] : [
         { key: "activity", icon: "alert", label: "Activity", keys: "Ctrl+1" },
         { key: "chat", icon: "chat", label: "Chat", keys: "Ctrl+2" },
         { key: "calendar", icon: "calendar", label: "Calendar", keys: "Ctrl+3" },
         { key: "calls", icon: "call", label: "Calls", keys: "Ctrl+4" },
         { key: "onedrive", icon: "onedrive", label: "OneDrive", keys: "Ctrl+5" },
-    ].concat(extraApps.filter(a => opened.indexOf(a.key) >= 0 || current === a.key)).concat([
+    ]).concat(extraApps.filter(a => opened.indexOf(a.key) >= 0 || current === a.key)).concat([
         { key: "add", icon: "add-app", label: "Store", keys: "" },
         { key: "more", icon: "more", label: "View more apps", keys: "" },
     ])
@@ -64,7 +77,9 @@ Rectangle {
             model: root.apps
             delegate: Item {
                 required property var modelData
-                readonly property bool selected: root.current === modelData.key && !root.noneChosen
+                readonly property bool selected: !root.noneChosen && (root.split && (modelData.key === "chat" || modelData.key === "teams")
+                    ? root.current === "chat" && root.collabPane === (modelData.key === "teams" ? "teams" : "chats")
+                    : root.current === modelData.key)
                 width: root.width; height: root.showNames ? 56 : 40
                 // With app names (Teams, measured): the chosen app's whole 68 x 56
                 // item is filled, its bar 3 x 47, the label 10 px under the icon.

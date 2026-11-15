@@ -708,17 +708,36 @@ Rectangle {
             }
 
             // ---- Chats and channels ----
+            // Teams' "Viewing chats, teams, and channels" (measured): Combined
+            // or Separate (Teams in its own app), the synced
+            // simpleCollabUserSettings.
+            SettingsParts.Card {
+                visible: root.page === "chats"
+                icon: "window-layout-20"; title: "Viewing chats, teams, and channels"
+                subtitle: "See all conversations in a combined view, or keep chats separate from teams and channels."
+                Row {
+                    spacing: 12.7
+                    readonly property bool separate: window.splitView
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Combined"; image: "../assets/settings/simple-collab-picker-combined-" + theme.pick("light", "dark") + ".svg"; checked: !parent.separate
+                        onPicked: backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: true })) }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Separate"; image: "../assets/settings/simple-collab-picker-separate-" + theme.pick("light", "dark") + ".svg"; checked: parent.separate
+                        onPicked: backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: false })) }
+                }
+            }
             SettingsParts.Card {
                 visible: root.page === "chats"
                 icon: "apps-list-20"; title: "Chats and channels list"
                 SettingsParts.SwitchRow {
                     label: "Show message previews for chats and team names for channels"
-                    on: root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviews"], false) === true
-                    onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledMessagePreviews", v)
+                    // Separate view has its own (on unless turned off).
+                    on: window.splitView ? root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviewsForSplitApp"], true) !== false : root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviews"], false) === true
+                    onToggled: v => root.setProp("simpleCollabUserSettings", window.splitView ? "hasUserEnabledMessagePreviewsForSplitApp" : "hasUserEnabledMessagePreviews", v)
                 }
                 SettingsParts.SwitchRow {
                     label: "Show time stamps"
-                    on: root.prop("simpleCollabUserSettings", ["hasUserEnabledShowTimeStamps"], false) === true
+                    // Always on in the Separate view (Teams greys it).
+                    usable: !window.splitView
+                    on: window.splitView || root.prop("simpleCollabUserSettings", ["hasUserEnabledShowTimeStamps"], false) === true
                     onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledShowTimeStamps", v)
                 }
                 SettingsParts.SwitchRow {

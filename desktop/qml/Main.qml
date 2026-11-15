@@ -111,6 +111,17 @@ Window {
     // chat in the main window, or in Teams' "New Message" window; once
     // sent, the chat opens in its own chat window.
     readonly property bool newChatInWindow: ((syncedProps.userPersonalSettings || {}).messagingSettings || {}).alwaysPopOutNewChat === true
+    /// Teams' "Viewing chats, teams, and channels": Separate gives Teams its
+    /// own app on the rail (simpleCollabUserSettings' adaptive rail without
+    /// the unified app); collabPane says which list Chat shows then.
+    readonly property bool splitView: { const s = syncedProps.simpleCollabUserSettings || {}; return s.hasUserEnabledAdaptiveRailForDesktop === true && s.hasUserEnabledUnifiedAppForDesktop === false }
+    property string collabPane: "chats"
+    function openCollab(pane) { collabPane = pane; rail.current = "chat" }
+    // Opening a channel shows the Teams app, a chat Chat.
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() { if (window.splitView && backend.currentChatId) window.collabPane = backend.currentChatId.endsWith("@thread.tacv2") ? "teams" : "chats" }
+    }
     property var newChatWin: null
     property string popOutChatName: ""
     function startNewChat() {
@@ -157,10 +168,12 @@ Window {
     Shortcut { enabled: window.zoomShortcuts; sequences: ["Alt+Q", "Ctrl+Shift+E"]; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.leaveAsked() }
     Shortcut { enabled: window.zoomShortcuts; sequence: "Ctrl+Shift+V"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(backend.callVideoOffered) }
     Shortcut { sequence: "Ctrl+1"; onActivated: rail.current = "activity" }
-    Shortcut { sequence: "Ctrl+2"; onActivated: rail.current = "chat" }
-    Shortcut { sequence: "Ctrl+3"; onActivated: rail.current = "calendar" }
-    Shortcut { sequence: "Ctrl+4"; onActivated: rail.current = "calls" }
-    Shortcut { sequence: "Ctrl+5"; onActivated: rail.current = "onedrive" }
+    // Separate view: Teams takes Ctrl+3 and the rest move down one.
+    Shortcut { sequence: "Ctrl+2"; onActivated: window.splitView ? window.openCollab("chats") : rail.current = "chat" }
+    Shortcut { sequence: "Ctrl+3"; onActivated: window.splitView ? window.openCollab("teams") : rail.current = "calendar" }
+    Shortcut { sequence: "Ctrl+4"; onActivated: rail.current = window.splitView ? "calendar" : "calls" }
+    Shortcut { sequence: "Ctrl+5"; onActivated: rail.current = window.splitView ? "calls" : "onedrive" }
+    Shortcut { sequence: "Ctrl+6"; enabled: window.splitView; onActivated: rail.current = "onedrive" }
     Shortcut { sequence: "Ctrl+,"; onActivated: rail.current = "settings" }
     Shortcut { sequence: "Ctrl+N"; onActivated: { chatList.draftsOpen = false; chatList.mentionsOpen = false; window.startNewChat() } }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
@@ -1134,7 +1147,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInCode) {
@@ -3567,6 +3580,33 @@ Window {
             case 7: log("reloaded", window.shortcutProfile); window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-kb-slack.png"))); settingsView.setPropForTest("keyboardShortcutsSettings", "shortcutProfile", "default"); break
             case 10: backend.loadSettings(); break
             case 12: log("back", window.shortcutProfile); Qt.quit(); return
+            }
+            step++
+        }
+    }
+
+    // --collab-test: Settings ▸ Chats and channels' "Viewing chats, teams,
+    // and channels", then Separate: Chat's list, the Teams app's, a channel
+    // opened from it; back to Combined. Logs COLLAB lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--collab-test") >= 0 && backend.signedIn && chatList.chats.length > 2
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const log = (...a) => console.warn("COLLAB", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const set = unified => backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: unified }))
+            switch (step) {
+            case 0: rail.current = "settings"; settingsView.pageForTest("chats"); break
+            case 1: cap("settings"); set(false); break
+            case 3: log("split", window.splitView); window.openCollab("chats"); break
+            case 4: log("chat pane", chatList.pane, chatList.pillDefs.map(p => p.label), chatList.sections.map(s => s.folder.kind)); cap("chats"); break
+            case 5: window.openCollab("teams"); break
+            case 6: log("teams pane", chatList.pane, chatList.pillDefs.map(p => p.label), chatList.sections.map(s => s.folder.kind)); cap("teams"); break
+            case 7: { const t = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => (t.channels || []).length); const ch = t.channels[0]; window.openCollab("chats"); backend.selectChat(ch.id, ch.name); break }
+            case 9: log("after channel", window.collabPane); cap("channel"); break
+            case 10: set(true); break
+            case 12: log("restored split", window.splitView, chatList.pane); Qt.quit(); return
             }
             step++
         }
@@ -7239,6 +7279,9 @@ Window {
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: parent.left }
         showNames: window.appBarNames
         autoCollapse: window.appBarAutoCollapse
+        split: window.splitView
+        collabPane: window.collabPane
+        onCollabPicked: pane => window.openCollab(pane)
         // Muted chats don't count toward the badge (Teams' doesContributeToBadgeCount).
         noneChosen: !!window.teamPage && rail.current === "chat"
         unreadChats: chatList.chats.filter(c => c.unread && !c.muted).length
@@ -7672,6 +7715,7 @@ Window {
     }
     ChatList {
         id: chatList
+        pane: window.splitView ? window.collabPane : "combined"
         enterToOpen: ((window.syncedProps.userPersonalSettings || {}).messagingSettings || {}).disableAutomaticConvSwitchOnKeyboardNav === true
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
