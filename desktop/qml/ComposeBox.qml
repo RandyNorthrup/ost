@@ -124,7 +124,14 @@ Item {
     property string noteText: ""
     property bool noteMuted: false
     readonly property real noteH: noteText ? noteLabel.implicitHeight + 14 : 0
-    readonly property real bannerShownH: (bannerText ? 29.3 : 0) + noteH
+    // Teams' DefaultBanner (pre-send checks, measured on winpc 2026-11-16:
+    // "Please type a message to continue.") has no Close and is 28 tall,
+    // its text 4 down; the dismissible kind is 29.3.
+    readonly property real noticeH: bannerDismissible && !draftConflict ? 29.3 : 28
+    readonly property real bannerShownH: (bannerText || draftConflict ? noticeH : 0) + noteH
+    /// Another device's different draft for this chat (Teams' roamed-draft
+    /// conflict): the banner offers "View draft" until it is resolved.
+    property bool draftConflict: false
     function showBanner(text, danger, decayMs, dismissible) {
         bannerText = text; bannerDanger = !!danger; bannerDismissible = dismissible !== false
         bannerDecay.interval = decayMs || 3000; bannerDecay.restart()
@@ -466,6 +473,9 @@ Item {
     function setDraftState(d) {
         input.clear()
         media = d && d.media ? d.media : []
+        // One taken from another device (Teams' roamed draft) is in a sent
+        // message's form, so it loads as editing one does.
+        if (d && d.editHtml) { setMessage({ edit_html: d.editHtml, edit_media: d.editMedia || [] }); refreshRichState(); return }
         if (d && d.html) { rich.importHtml(d.html, String(theme.brandForeground1)); input.cursorPosition = input.length; refreshRichState() }
         else if (d && d.text) input.insert(0, escapeHtml(d.text))
     }
@@ -513,19 +523,25 @@ Item {
     // The compose banner.
     Rectangle {
         id: hcFill2
-        visible: !!root.bannerText
-        width: parent.width; height: 29.3 + 4; radius: 4
+        visible: !!root.bannerText || root.draftConflict
+        width: parent.width; height: root.noticeH + 4; radius: 4
         color: root.bannerDanger ? theme.pick("#FCF4F6", "#3E1F25", "#000000") : theme.pick("#E6E6E6", "#3D3D3D", "#000000")
         border.color: root.bannerDanger ? theme.pick("#F3D6D8", "#4F222B", "#FFFFFF") : theme.divider; border.width: 0.67
         Text {
-            x: 16.7; y: 4.7; width: parent.width - 16.7 - (root.bannerDismissible ? 36 : 16.7)
+            x: 16.7; y: root.noticeH === 28 ? 4 : 4.7; width: parent.width - 16.7 - (root.bannerDismissible && root.bannerText ? 36 : 16.7)
             elide: Text.ElideRight
-            text: root.bannerText
+            // Teams' RoamingDraftConflictBanner: its text and a "View draft" link.
+            textFormat: root.bannerText ? Text.PlainText : Text.StyledText
+            text: root.bannerText ? root.bannerText
+                : "There's a draft saved from another platform&nbsp;&nbsp;<a href=\"view\">View draft</a>"
+            linkColor: theme.brandForeground1
+            onLinkActivated: root.viewConflict()
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
-            color: theme.onFill(hcFill2, root.bannerDanger ? theme.pick("#C4314B", "#E73550", "#FFFFFF") : theme.textStrong)
+            color: theme.onFill(hcFill2, root.bannerDanger && root.bannerText ? theme.pick("#C4314B", "#E73550", "#FFFFFF") : theme.textStrong)
+            HoverHandler { enabled: !root.bannerText; cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         Item {
-            visible: root.bannerDismissible
+            visible: root.bannerDismissible && !!root.bannerText
             x: parent.width - 28.7; y: 0.7; width: 28; height: 28
             FluentIcon { x: 3.5; y: 7.25; size: 16; name: "dismiss-16"; color: theme.onFill(hcFill2, closeBannerHover.hovered ? theme.brand : (root.bannerDanger ? theme.pick("#C4314B", "#E73550", "#FFFFFF") : theme.textStrong)) }
             HoverHandler { id: closeBannerHover; cursorShape: Qt.PointingHandCursor }
@@ -535,11 +551,11 @@ Item {
             Accessible.name: "Close notification"
         }
         Accessible.role: Accessible.AlertMessage
-        Accessible.name: root.bannerText
+        Accessible.name: root.bannerText || "There's a draft saved from another platform"
     }
     Rectangle {
         visible: !!root.noteText
-        y: root.bannerText ? 29.3 : 0
+        y: root.bannerText || root.draftConflict ? root.noticeH : 0
         width: parent.width; height: root.noteH + 6; radius: 6
         color: theme.pick("#F0F0F0", "#2E2E2E", "#000000")
         Rectangle { width: parent.width; height: 0.67; color: theme.divider; radius: 6 }
@@ -1341,13 +1357,46 @@ Item {
         return "ft-" + k + "-32"
     }
     function trySubmit() {
-        if (root.empty) return
-        // Teams: an announcement needs its headline (AnnouncementPostMissingTitle).
-        if (root.post && root.announcement && !root.headline.trim()) {
-            root.showBanner("You'll need to add a headline to post your announcement.", false, 3000)
+        // Teams runs its checks even on an empty box (Send and Enter both
+        // show "Please type a message to continue.", measured 2026-11-16).
+        const blocked = root.preSendCheck()
+        if (blocked) {
+            // Teams' DefaultBanner: no Close, gone after 3 s; the text stays.
+            root.showBanner(blocked, false, 3000, false)
+            console.warn("PRESEND blocked:", blocked)
             return
         }
+        if (root.dryRun) { console.warn("PRESEND would send"); return }
         root.submit()
+    }
+    /// Harness: run the checks but never send.
+    property bool dryRun: false
+    // Teams' checks before a message goes (its draft validation, module
+    // 198077, run in this order; the first that fails names the problem in
+    // a compose banner and the message stays in the box). Loop components,
+    // Nearby mentions and Teams for life invitations don't apply in OST.
+    /// Teams' maxMessageContentSize (live 90112 bytes of the sent HTML).
+    property var sizeCheck: html => backend.composeTooLarge(html, JSON.stringify(root.mediaInUse()))
+    function preSendCheck() {
+        const text = root.plainText().replace(/[\u00a0\ufffc\ufdd0\ufdd1]/g, " ")
+        const html = root.formattedText()
+        // FileEvaluator and VideoMessageEvaluator: uploads still going.
+        if (root.cloudFiles.some(c => c.loading) || (root.clip && (root.clip.uploading || !root.clip.id))) return "Uploading... Please wait."
+        // EmptyContentEvaluator: nothing but spaces (files and cards count).
+        if (!text.trim() && root.mediaInUse().length === 0 && root.files.length === 0 && root.cloudFiles.length === 0 && !root.clip && !root.appCard)
+            return "Please type a message to continue."
+        // AnnouncementPostEvaluator: an announcement needs its headline.
+        if (root.post && root.announcement && !root.headline.trim() && !root.bannerImage) return "You'll need to add a headline to post your announcement."
+        // exceedsMaxSizeEvaluator.
+        if (root.sizeCheck(html)) return "Message is too large to send."
+        // scheduledSendTimeInThePastEvaluator (10 s of grace).
+        if (root.scheduleAt > 0 && Date.now() > root.scheduleAt + 10000) return "This message was scheduled for a time in the past."
+        // VideoMessageEvaluator: a clip is kept for 7 days.
+        if (root.clip && root.clip.created && Date.now() - root.clip.created > 604800000) return "The video clip might not exist or is no longer available."
+        // ShareToL1WithBotMentionEvaluator: a reply also sent to the channel
+        // can't @mention a bot.
+        if (root.sendTo === "channel" && /href="mention:28:/.test(html)) return "Remove the bot mention or switch to thread only to proceed."
+        return ""
     }
     // The post composer's tools under the editor (Teams: Emoji, GIFs and
     // Stickers, Attach files, Actions and apps).
@@ -1871,7 +1920,79 @@ Item {
             }
         }
     }
+    // Teams' RoamingDraftConflictDialog ("View draft" on the conflict
+    // banner): "Saved draft" with Close, "Saved on {date}", the other
+    // device's draft, then Discard and "Use this version". Teams' code gives
+    // its parts and strings; it can't be opened on this tenant (drafts don't
+    // roam there), so the frame is the Discard draft dialog's.
+    /// {text, editHtml, time} of the other device's draft.
+    property var conflictDraft: null
+    signal conflictResolved(bool useIt)
+    function viewConflict() { if (conflictDraft) conflictDialog.open() }
+    Popup {
+        id: conflictDialog
+        parent: Overlay.overlay
+        modal: true; focus: true
+        width: 600; height: Math.min(480, conflictBody.y + conflictBody.height + 24 + 31.3 + 24); padding: 0
+        anchors.centerIn: Overlay.overlay
+        closePolicy: Popup.CloseOnEscape
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
+        Text { x: 24.7; y: 24.7; height: 28; verticalAlignment: Text.AlignVCenter; text: "Saved draft"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Rectangle {
+            id: hcFill14
+            x: 543.3; y: 24.7; width: 32; height: 31.3; radius: 4
+            color: cdCloseHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill14, theme.textStrong) }
+            HoverHandler { id: cdCloseHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: conflictDialog.close() }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close"
+        }
+        Row {
+            x: 24.7; y: 62; spacing: 4
+            Text { text: "Saved on"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            Text {
+                text: root.conflictDraft && root.conflictDraft.time ? theme.date(new Date(root.conflictDraft.time)) + " " + theme.time(new Date(root.conflictDraft.time)) : ""
+                font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary
+            }
+        }
+        Text {
+            id: conflictBody
+            x: 24.7; y: 90; width: 600 - 49.3
+            wrapMode: Text.Wrap
+            textFormat: Text.RichText
+            text: root.conflictDraft ? theme.messageHtml(String(root.conflictDraft.editHtml || "").replace(/<a href="(mention[^"]*)">/g, '<a href="$1" style="color:' + theme.brandForeground1 + '; text-decoration:none">') || root.escapeHtml(root.conflictDraft.text || "")) : ""
+            font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+            maximumLineCount: 14; elide: Text.ElideRight
+        }
+        Row {
+            anchors.right: parent.right; anchors.rightMargin: 24.7
+            y: conflictDialog.height - 24 - 31.3; spacing: 8
+            Rectangle {
+                id: hcFill15
+                width: 96; height: 31.3; radius: 4
+                color: cdDiscardHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
+                Text { anchors.centerIn: parent; text: "Discard"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill15, theme.text) }
+                HoverHandler { id: cdDiscardHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { conflictDialog.close(); root.conflictResolved(false) } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Discard"
+            }
+            Rectangle {
+                id: hcFill16
+                width: useLabel.implicitWidth + 32; height: 31.3; radius: 4
+                color: cdUseHover.hovered ? theme.brandHover : theme.brandFill
+                Text { id: useLabel; anchors.centerIn: parent; text: "Use this version"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill16, "white") }
+                HoverHandler { id: cdUseHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { conflictDialog.close(); root.conflictResolved(true) } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Use this version"
+            }
+        }
+    }
     // Test hooks.
+    function conflictDialogForTest() { return conflictDialog }
     function discardForTest() { discardDialog.open() }
     function openSchemesForTest() { schemes.open() }
     function bannerDialogForTest() { return bannerImageDialog }

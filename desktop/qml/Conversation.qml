@@ -635,10 +635,35 @@ Rectangle {
         // A thread pane keeps no draft (its channel's draft is the channel's).
         if (root.threadRoot) { draftChat = ""; root.setPlain(""); return }
         if (draftChat) root.saveDraft(draftChat)
-        const kept = chatId ? backend.draftJson(chatId) : ""
-        compose.setDraftState(kept ? JSON.parse(kept) : null)
-        draftShown = draftKey(compose.draftState())
         draftChat = chatId
+        root.loadDraft()
+    }
+    // The chat's kept draft into the box, and another device's different
+    // one (Teams' roamed-draft conflict) onto its banner.
+    function loadDraft() {
+        const kept = draftChat ? backend.draftJson(draftChat) : ""
+        const d = kept ? JSON.parse(kept) : null
+        compose.setDraftState(d)
+        compose.conflictDraft = d && d.conflict ? d.conflict : null
+        compose.draftConflict = !!(d && d.conflict)
+        draftShown = draftKey(compose.draftState())
+    }
+    // A draft changed on another device (Teams' roamed drafts): the box
+    // takes it if you haven't typed since it loaded.
+    Connections {
+        target: backend
+        function onDraftArrived(chat) {
+            if (!root.draftChat || chat !== root.draftChat || root.threadRoot) return
+            if (root.draftKey(compose.draftState()) !== root.draftShown) {
+                const kept = backend.draftJson(chat)
+                const d = kept ? JSON.parse(kept) : null
+                compose.conflictDraft = d && d.conflict ? d.conflict : null
+                compose.draftConflict = !!(d && d.conflict)
+                return
+            }
+            root.loadDraft()
+            console.warn("DRAFT arrived", chat, JSON.stringify(compose.draftState().text))
+        }
     }
     // The draft as this box last loaded or saved it. Only a box changed
     // since then writes the chat's draft, so another view of the same chat
@@ -4466,6 +4491,8 @@ Rectangle {
         // policy allowing them, and not in your notes to self.
         previewsAllowed: root.previewsShown && root.chatId !== "48:notes"
         chatId: root.chatId
+        // Teams' "Saved draft": Discard or "Use this version".
+        onConflictResolved: useIt => { if (root.draftChat) { root.saveDraft(root.draftChat); backend.resolveDraftConflict(root.draftChat, useIt) } }
         // The app card's settings button: Settings ▸ Privacy (Teams).
         onAppCardSettingsRequested: root.openPrivacySettings()
         onAppCardPermissionsRequested: id => root.openAppDetails(id)

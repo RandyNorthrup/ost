@@ -1251,24 +1251,50 @@ Teams' recorder is Microsoft Stream's `StreamCameraEmbed.aspx`. Its frame-ancest
   - New post: subject "Add a subject" (250 chars; Ctrl+Enter in it sends), announcement headline "Type a headline" + "Add a background image" + "Color scheme".
   - Footer: [fun picker, Attach, Copilot, Loop, +] … ["Also notify via email"] **Post**.
   - A draft shows "Continue your draft".
-- **Pre-send checks, in order** (198077):
-  1. empty → "Please type a message to continue."
-  2. Loop still syncing
-  3. video still uploading
-  4. inline image
-  5. Loop permissions
-  6. group of ≥2 people
-  7. recipients
-  8. **too large → "Message is too large to send."** (`maxMessageContentSize` live 90112 bytes of UTF-8 HTML)
-  9. announcement headline
-  10. scheduled time in the past
-  11. group name rules
-  12. roster size
+- **Pre-send checks** (read in Teams 26288's code, module 198077 "draft validation", and measured on winpc 2026-11-16):
+  - Send, Enter and Ctrl+Enter all run them, even on an empty box. The first that fails puts its text in a compose banner, the screen reader announces it, and the message stays in the box. Teams' Send button is never disabled by them: spaces alone light it up.
+  - The banner is Teams' DefaultBanner, measured with "Please type a message to continue." (spaces, then Send, and an empty box with Enter or Send): 28 tall including its 0.67 px #E0E0E0 border, the box's width, #E6E6E6, radius 4 4 0 0, padding 0 16; the text 14/20 #424242, 4 px down. It has no Close button and goes after 3.0 s (measured 3014 and 3038 ms).
+  - The checks, in Teams' order. The compose box's own come first (uploads), then Teams' list:
+
+| # | evaluator | when | text |
+|---|---|---|---|
+| 1 | FileEvaluatorId | a file still uploading | "Uploading... Please wait." |
+| 2 | fluidComponentSyncingEvaluator | a Loop component still syncing | "Syncing... Please wait." |
+| 3 | EmptyContentEvaluator | no content (spaces count as none), files, Loop card or forward | "Please type a message to continue." |
+| 4 | InlineImageContentEvaluator | a pasted picture still loading / initialising / failed | "The images are being loaded... Please wait." / "The images are being initialized... Please wait." / "Cannot paste this image. Try different source." |
+| 5 | AnnouncementPostEvaluator | an announcement with a colour scheme, no headline and no picture | "You'll need to add a headline to post your announcement." |
+| 6 | noRecipientEvaluator | a new chat with nobody in To: | "The contact info doesn't look right. Enter the info again, then select from the list." |
+| 7 | notEnoughGroupParticipantsEvaluator | a new chat with a group name and one person | "You need to add at least 2 people to start group chat." |
+| 8 | exceedsMaxSizeEvaluator | the HTML (cards taken out) past `maxMessageContentSize` bytes: 90112 (built-in; not in ECS) | "Message is too large to send." (a comment stream: 500 per ECS, "Message is too large to send." in its own banner) |
+| 9 | scheduledSendTimeInThePastEvaluator | a scheduled time more than 10 s ago | "This message was scheduled for a time in the past." |
+| 10 | scheduledMessageWithNearbyMentionEvaluator | a scheduled message with the Nearby @mention | "Scheduled messages can't include the Nearby @mention." |
+| 11 | enforceGroupNameForChatWithTflOffNetworkUsersEvaluator | a new chat with people invited by email or phone and no name | Teams for life only |
+| 12 | exceedsMaxChatRosterSizeEvaluator | a new chat past the roster limit | "There's a {n}-person limit in group chats. You'll need to remove some people before you send your message." (exactly at it: "You've hit the {n}-person limit…") |
+| 13 | ContainsNonTextInTflChatRequestBanner, ContainsUnsupportedDataInTflInviteMessageBanner | Teams for life chat requests and invitations | Teams for life only |
+| 14 | FluidPermissionsEvaluator | a Loop component's permissions still loading or being granted | "Checking permissions... Please wait." / "Granting permissions... Please wait." |
+| 15 | VideoMessageEvaluator | a video clip still uploading; a clip older than 7 days | "Uploading... Please wait." / "The video clip might not exist or is no longer available." |
+| 16 | ShareToL1WithBotMentionEvaluator | a reply also sent to the channel that @mentions a bot | "Remove the bot mention or switch to thread only to proceed." |
+
+  - Elsewhere, not in this list: the recorder's own "This video is too big to send…" (VideoMessageMaxSizeEvaluator), the mention picker's "You can @mention up to {{atMentionCountLimit}} people at a time.", the Everyone banner ("{n} people will be notified", §19), and the service's own refusals after sending (DLP shows as the message's policy violation; external chats blocked by policy fail with the chat service's 403 codes).
+  - Teams has no dialog before sending for external or guest members or for large @mentions: those show as the chat's banners and the mention picker's limits.
+  - **OST.** ComposeBox.preSendCheck runs the ones that apply, in this order, with these words and the DefaultBanner: uploads (cloud files still loading, a clip still uploading), empty, the announcement headline, the size (backend.composeTooLarge, the HTML in Teams' form), the scheduled time, the clip's age, and the bot mention in a reply sent to the channel too. Loop, pasted-picture uploads, Nearby and Teams for life aren't in OST. OST's new-chat form has its own simpler message field; its recipient and roster checks are not built. `--presend-test` checks each case.
 - **Editor and paste limits**: editor content 3072000; paste 1536000; plain-text paste 40000; table paste 200000 bytes; long link text 100.
-- **Drafts**: `SaveMessageDraft` (sync debounce 400 ms, `composeDebounceDraftSyncDuration`),
-  `SetConversationHasDraft`, `RemoveMessageDraft`, `DeleteRoamedDraft`. REST
-  `POST/PUT/DELETE v1/users/ME/drafts`. "Discard" asks for confirmation (619123).
+- **Drafts** (read in Teams 26288's code and checked against the chat service and Teams on winpc, 2026-11-16):
+  - **On the device.** Teams keeps each unsent draft in its local `48:drafts` stream (IndexedDB `streams-replychain-manager`, store `drafts`), in reply chain `-4.{chat id}` (`-4.{post id}` for a channel reply). It is a message as it would be sent: `content` is the message HTML (`<p>OST draft probe A</p>`), `messageType` RichText/Html, `threadType` streamofdrafts, `draftType` RegularDraft, `source` 5 (local), and `properties` holds `mentions`, `cards`, `files`, `links`, `importance`, `subject` and `formatVariant` TEAMS, as a sent message's do. So formatting and mentions are kept as Teams sends them: the HTML with its `<span itemtype="http://schema.skype.com/Mention" itemid="n">` tokens and the mentions JSON. `draftDetails.clientDraftProperties` holds the compose state: `clientDraftId` `draft.{chat}.-4.{chat}`, `lastEditTimestamp`, `versioningTimestamp`, `isExpanded`, `offlineAssets`, `urlPreview`, `fluidProperties`, the forward fields, `scheduledSendTime`, `shareToL1`, `crossPostChannels`. Saving is debounced 400 ms (`composeDebounceDraftSyncDuration`).
+  - **Roaming.** Only when `messaging.enableRoamMessageDraft` is on does Teams also send the draft to the chat service (RoamMessageDraftWorkflow; `roamMessageDraftDebounceConfig` can debounce it, 60 s / 120 s by default when enabled, and `roamDraftToServerUIConfig` can hold it until the compose box asks):
+    - new: `POST {chatsvc}/v1/users/ME/drafts` with `{draftType: "RegularDraft", innerThreadId: "{chat}" or "{chat};messageid={post}", message}`. The message is the local one with `conversationid` 48:drafts, `threadtype` streamofdrafts, `innerThreadId` and `draftType`. Unlike a scheduled message there is no `draftDetails.sendAt`. The reply is 201 with `Location: …/drafts/{id}` and `{"OriginalArrivalTime": …}`; the id goes into `properties.draftId`.
+    - changed: `PUT …/drafts/{id}` with the same envelope and the message's `id`. Sent or cleared: `DELETE …/drafts/{id}`. A Loop component, files or a video can block roaming (`enableRoamMessageDraftFilesLoopsBlocking`, with the banner "Drafts with attached files won't show up on other devices.").
+    - other devices read them with `GET {chatsvc}/v1/users/ME/drafts?view=msnp24Equivalent|supportsMessageProperties&pageSize=200&syncState=…&startTime=1` (Teams' startup request, captured). A RegularDraft without a send time lands in the same `-4.{chat}` reply chain. The service keeps the message's content, `properties` (`mentions`, `cards`, `files`, `links`, `formatVariant`, plus its own `languageStamp`), `clientmessageid`, `innerThreadId`, `draftType`, `id` and `version`. It drops `draftDetails`; Teams puts `innerThreadIdForRoamedDraftsFromAnotherClient` there on arrival.
+    - conflicts (routeDraftsConflicts): the device's own unsynced draft stays the active one. Another device's newer draft for the same chat becomes the conflict, and the compose box shows RoamingDraftConflictBanner "There's a draft saved from another platform" with "View draft". That link opens RoamingDraftConflictDialog: "Saved draft" with Close, "Saved on {date}", the draft (subject and announcement too), then Discard (deletes it on the service) and "Use this version" (it replaces the draft; the old one is deleted). A delete from another device clears the draft unless it changed here since. With roaming on, the Drafts quick view's empty state adds "Drafts with certain files or complex formatting won't be shown on your other devices."
+  - **This tenant.** `enableRoamMessageDraft` is false in every cloud's built-in config, and Teams' own ECS reply on winpc (captured at startup 2026-11-16: experienceBuild 26110100710, desktop 26288.2004.5269.3420, TeamsRing ring3_6, teamsAddOnPlan Copilot) doesn't set it. So Teams keeps drafts on the device:
+    - typing "OST draft probe A" in OST group test and leaving the chat made no drafts request in 75 s (only the typing indicator);
+    - a RegularDraft OST put on the service ("OST draft probe B", accepted with 201) did not show in Teams, not even after a restart. Its startup drafts sync read it, but Teams left it out of the compose box, the Drafts view and its local stream.
+    - Drafts can't move between Teams and any other client for these accounts until Microsoft's rollout turns the setting on.
+  - "Discard" asks for confirmation (619123).
   - **OST.** A draft keeps its formatting, as Teams' does: drafts.json holds the compose box's text (the Drafts list's preview), RichText's HTML export and the fun picker's pictures. Switching back or restarting reads that HTML into blocks (`teams_cli::api::compose_blocks`), which richtext.cpp builds back into the document with its quote, code block, heading, list, table, inline code, link and mention formats. Plain drafts from older versions still load. Only a compose box changed since it loaded the draft writes it back, so another view of the same chat (a call window's chat pane) can't overwrite it with an older or empty copy.
+    - Roaming follows Teams (`teams_cli::api::drafts`), behind the same `enableRoamMessageDraft` (`OST_ROAM_DRAFTS=1` or `0` overrides it for testing). 400 ms after a save the draft goes in Teams' sent form (the same HTML and mentions JSON as sending) with Teams' POST, PUT or DELETE. Its id and clientmessageid are kept in drafts.json.
+    - At startup, and each time a chat opens, OST reads the drafts list. Another device's draft for a chat with none here becomes its draft, loaded in a sent message's edit form. A change or delete of the shared draft replaces or clears it unless it was edited here since. A different draft next to OST's own shows Teams' conflict banner and "Saved draft" dialog. The dialog's frame is the Discard draft dialog's, since Teams' can't be opened on this tenant.
+    - `--draft-roam-test` checks it with OST on both sides.
 - **Send**: `ComponentsChatUtilsSendMessageMutation` → `POST {chatsvc}/v1/users/ME/conversations/{conv[;messageid=replyChainId]}/messages`.
   **Edit**: `PUT …/messages/{id}`.
 
@@ -1411,6 +1437,8 @@ Menu items show the shortcut text; hover-bar buttons expose it through `aria-key
 - The schedule-send default time (332491 `w()` returns the next 08:00;
   not confirmed as the default).
 - The discard-draft dialog strings (619123) and the final @mention result ordering.
+- The compose box's maximum height. OST's grows with its text, so 91 KB of text pushes the "Message is too large to send." banner out of view. Teams' box stops growing and scrolls; its limit isn't measured yet.
+- The roamed-draft conflict dialog's measurements (needs a tenant where `enableRoamMessageDraft` is on).
 
 ## OST status against this spec
 - [ ] Message grouping: 5 minutes between consecutive messages; breaks on sender, control message, call recording, shared message, a message with replies (chat), and any date or "Last read" divider.
@@ -1436,6 +1464,7 @@ Menu items show the shortcut text; hover-bar buttons expose it through `aria-key
 - [x] Attach menu (2026-11-13): the popover, the cloud file picker, the compose card, and the send in chats and channels, all as Teams. OST TEST 119 and 121 store the same records as Teams' 120 and 118. Not yet: the picker's command bar, People's collaborators, Media's headings and controls, the card's Link settings, and the suggestion rows (TASK-0130).
 - [x] A file in a message (2026-11-13): Teams' card with the location and preview, Share (Share this file from the default link), and the ··· menu (Open in Browser, Download, Share, Copy link, Favorite / Unfavorite with Teams' toasts and Undo). Opening the file shows Teams' viewer: the header with Close and ···, and OneDrive's embedded text view. Office files show as PDF pages, not Office for the web.
 - [ ] Delivery options (Urgent disabled above 20 members), schedule send on right-click of Send, Enter behaviour and setting, hint text.
-- [ ] Pre-send checks, 90112-byte message limit and its error text, draft save, debounced at 400 ms.
+- [x] Pre-send checks (2026-11-16): Teams' list, order, words and DefaultBanner, measured on winpc (§18). Loop, pasted pictures, Nearby, Teams for life and the new-chat form's checks are not in OST.
+- [x] Drafts (2026-11-16): kept with their formatting; roamed with Teams' protocol behind enableRoamMessageDraft, which is off for this tenant (§18), so Teams and OST can't exchange drafts here yet.
 - [ ] @mention rules: Everyone limits (channel, team and tag mentions done).
 - [ ] Message and compose keyboard shortcuts in §20.

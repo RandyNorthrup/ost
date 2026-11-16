@@ -12,6 +12,7 @@ pub mod client;
 pub mod contacts;
 pub mod custom_emoji;
 pub mod directory;
+pub mod drafts;
 pub mod drive;
 pub mod ecs;
 pub mod emoticons;

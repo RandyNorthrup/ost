@@ -1275,6 +1275,11 @@ pub mod qobject {
         #[qsignal]
         fn photo_ready(self: Pin<&mut Backend>, id: QString);
 
+        /// A chat's draft changed from another device (Teams' roamed
+        /// drafts): its compose box loads it again if untouched.
+        #[qsignal]
+        fn draft_arrived(self: Pin<&mut Backend>, chat_id: QString);
+
         /// A file's preview picture asked for with file_thumbnail is ready.
         #[qsignal]
         fn thumbnail_ready(self: Pin<&mut Backend>, url: QString);
@@ -1475,10 +1480,24 @@ pub mod qobject {
         #[qinvokable]
         fn draft_for(self: Pin<&mut Backend>, chat_id: &QString) -> QString;
 
-        /// The draft kept for a chat as JSON {text, html, media}, or "" for
-        /// none (a draft from before formatting was kept has no html).
+        /// The draft kept for a chat as JSON {text, html, media, editHtml,
+        /// editMedia, conflict}, or "" for none (a draft from before
+        /// formatting was kept has no html; one taken from another device
+        /// has its edit form; conflict is another device's different draft:
+        /// {text, editHtml, editMedia, time}).
         #[qinvokable]
         fn draft_json(self: Pin<&mut Backend>, chat_id: &QString) -> QString;
+
+        /// Another device's draft for this chat (Teams' "Saved draft"):
+        /// `use_it` puts it in place of this one, else it is discarded.
+        #[qinvokable]
+        fn resolve_draft_conflict(self: Pin<&mut Backend>, chat_id: &QString, use_it: bool);
+
+        /// Teams' size check before sending: whether the compose box's HTML
+        /// (with its pictures, JSON) is past maxMessageContentSize once in
+        /// Teams' form.
+        #[qinvokable]
+        fn compose_too_large(self: &Backend, editor_html: &QString, media_json: &QString) -> bool;
 
         /// Load the Activity feed.
         #[qinvokable]
@@ -5284,7 +5303,8 @@ async fn cached_image(
 }
 
 /// Where drafts are kept: $XDG_STATE_HOME/ost/drafts.json (owner-only).
-/// Teams keeps drafts on the device too; they are not sent anywhere.
+/// Teams keeps drafts on the device too, and roams them to the chat
+/// service only where `enableRoamMessageDraft` is on (api::drafts).
 fn drafts_path() -> Option<std::path::PathBuf> {
     std::env::var_os("XDG_STATE_HOME")
         .map(std::path::PathBuf::from)
@@ -5307,6 +5327,83 @@ struct Draft {
     media: Vec<serde_json::Value>,
     /// Unix ms when last edited.
     time: u64,
+    /// Where it roams (Teams' roamed drafts), once it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    roam: Option<RoamState>,
+    /// Taken from another device: its edit form (as editing a sent
+    /// message loads one) and the pictures in it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    edit_html: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    edit_media: Vec<serde_json::Value>,
+    /// Another device's different draft for this chat (Teams' conflict).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    conflict: Option<RemoteDraft>,
+}
+
+/// A draft's place in the chat service's drafts.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+struct RoamState {
+    /// The service's id ("" until it has one).
+    #[serde(default)]
+    id: String,
+    /// The draft's clientmessageid, kept across its saves.
+    #[serde(default)]
+    client_message_id: String,
+    /// Unix ms when this device's copy last matched the service's.
+    #[serde(default)]
+    synced: u64,
+}
+
+/// Another device's draft, as the service has it.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+struct RemoteDraft {
+    id: String,
+    #[serde(default)]
+    client_message_id: String,
+    text: String,
+    #[serde(default)]
+    edit_html: String,
+    #[serde(default)]
+    edit_media: Vec<serde_json::Value>,
+    time: u64,
+}
+
+/// What each chat's draft last roamed as, for the roaming tasks: its
+/// service id and a save counter (a newer save makes an older one moot).
+#[derive(Default)]
+struct RoamSlot {
+    id: Option<String>,
+    generation: u64,
+    busy: std::sync::Arc<tokio::sync::Mutex<()>>,
+}
+
+fn roam_slots() -> &'static std::sync::Mutex<HashMap<String, RoamSlot>> {
+    static SLOTS: OnceLock<std::sync::Mutex<HashMap<String, RoamSlot>>> = OnceLock::new();
+    SLOTS.get_or_init(Default::default)
+}
+
+/// A draft in Teams' sent form: its HTML and mentions JSON.
+fn draft_teams_form(d: &Draft) -> (String, String) {
+    if !d.edit_html.is_empty() {
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_value(serde_json::Value::Array(d.edit_media.clone())).unwrap_or_default();
+        let (html, mentions) = api::messages::teams_html_with_media(&d.edit_html, &media);
+        return (html, if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() });
+    }
+    if d.html.is_empty() {
+        return (api::outbox::plain_html(&d.text), String::new());
+    }
+    let media: Vec<api::messages::ComposeMedia> =
+        serde_json::from_value(serde_json::Value::Array(d.media.clone())).unwrap_or_default();
+    let (html, mentions) = api::messages::teams_html_with_media(&d.html, &media);
+    (html, if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() })
+}
+
+/// The same draft text, give or take whitespace (Teams' HTML vs ours).
+fn same_draft_html(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.replace("&nbsp;", " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    norm(a) == norm(b)
 }
 
 /// A drafts.json entry: older versions kept [text, time].
@@ -5814,6 +5911,12 @@ impl qobject::Backend {
         self.as_mut().set_chats_json(QString::from(text.as_str()));
         // Draft names come from the chat list.
         self.as_mut().publish_drafts();
+        // Other devices' drafts, once the chats are known (Teams syncs its
+        // drafts stream at startup).
+        static DRAFTS_SYNCED: AtomicBool = AtomicBool::new(false);
+        if !DRAFTS_SYNCED.swap(true, Ordering::Relaxed) {
+            self.as_mut().sync_roamed_drafts();
+        }
     }
 
     /// Connect to Trouter once per process and react to pushed chat events:
@@ -9716,10 +9819,15 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::scheduled::list(&client, &me, &name).await
+                api::drafts::page(&client).await
             }
             .await;
             let _ = qt.queue(move |mut this| {
+                // Other devices' drafts come in with it (Teams' drafts sync).
+                if let Ok(page) = &result {
+                    this.as_mut().apply_roamed(page);
+                }
+                let result = result.map(|page| api::scheduled::scheduled_from(&page, &me, &name));
                 if this.rust().current_chat_id.to_string() != chat_id {
                     return;
                 }
@@ -12356,10 +12464,17 @@ impl qobject::Backend {
     }
 
     fn drafts_mut(self: Pin<&mut Self>) -> &mut HashMap<String, Draft> {
-        self.rust_mut()
-            .get_mut()
-            .drafts
-            .get_or_insert_with(load_drafts)
+        self.rust_mut().get_mut().drafts.get_or_insert_with(|| {
+            let all = load_drafts();
+            // The roaming tasks start from the ids kept with the drafts.
+            let mut slots = roam_slots().lock().unwrap();
+            for (chat, d) in &all {
+                if let Some(r) = d.roam.as_ref().filter(|r| !r.id.is_empty()) {
+                    slots.entry(chat.clone()).or_default().id.get_or_insert_with(|| r.id.clone());
+                }
+            }
+            all
+        })
     }
 
     pub fn set_draft(self: Pin<&mut Self>, chat_id: &QString, text: &QString) {
@@ -12398,13 +12513,19 @@ impl qobject::Backend {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or_default();
+            // Its roaming place and any other device's draft stay; the
+            // box's own form replaces one taken from another device.
+            let old = drafts.remove(&id).unwrap_or_default();
             drafts.insert(
-                id,
+                id.clone(),
                 Draft {
                     text,
                     html,
                     media,
                     time: now,
+                    roam: old.roam,
+                    conflict: old.conflict,
+                    ..Default::default()
                 },
             );
             true
@@ -12416,7 +12537,297 @@ impl qobject::Backend {
                 tracing::warn!("saving drafts failed: {}", short_error(&e));
             }
             self.as_mut().publish_drafts();
+            self.as_mut().roam_draft(id);
         }
+    }
+
+    /// Teams' roamed drafts: after a save (400 ms later, Teams' compose
+    /// debounce), the chat's draft goes to the chat service: POST when it
+    /// has no id there yet, PUT when it has, DELETE once it is sent or
+    /// cleared. Only where enableRoamMessageDraft is on, as in Teams.
+    fn roam_draft(mut self: Pin<&mut Self>, chat: String) {
+        if !api::drafts::roaming_enabled() || chat.starts_with("48:") {
+            return;
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let name = self.rust().user_name.to_string();
+        let draft = self.as_mut().drafts_mut().get(&chat).cloned();
+        // A stable clientmessageid for the draft's life.
+        let cmid = match draft.as_ref().and_then(|d| d.roam.as_ref()).map(|r| r.client_message_id.clone()).filter(|c| !c.is_empty()) {
+            Some(c) => c,
+            None => (uuid::Uuid::new_v4().as_u128() as u64 % 9_000_000_000_000_000_000 + 1_000_000_000_000_000_000).to_string(),
+        };
+        if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
+            let r = d.roam.get_or_insert_with(Default::default);
+            r.client_message_id = cmid.clone();
+        }
+        let form = draft.as_ref().map(draft_teams_form);
+        let (generation, busy) = {
+            let mut slots = roam_slots().lock().unwrap();
+            let slot = slots.entry(chat.clone()).or_default();
+            slot.generation += 1;
+            (slot.generation, slot.busy.clone())
+        };
+        let current = move |chat: &str| roam_slots().lock().unwrap().get(chat).map(|s| s.generation) == Some(generation);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            if !current(&chat) {
+                return;
+            }
+            let _turn = busy.lock().await;
+            if !current(&chat) {
+                return;
+            }
+            let id = roam_slots().lock().unwrap().get(&chat).and_then(|s| s.id.clone());
+            let result: anyhow::Result<Option<String>> = async {
+                let client = TeamsClient::new().await?;
+                match (&form, &id) {
+                    (None, None) => Ok(None),
+                    (None, Some(id)) => {
+                        api::drafts::delete(&client, id).await?;
+                        tracing::info!("DRAFT roam deleted {id} for {chat}");
+                        Ok(None)
+                    }
+                    (Some((content, mentions)), id) => {
+                        let o = api::drafts::Outgoing {
+                            chat: &chat,
+                            reply_to: "",
+                            client_message_id: &cmid,
+                            content,
+                            mentions,
+                            display_name: &name,
+                            now_ms: now,
+                            id: id.as_deref(),
+                        };
+                        let id = match id {
+                            Some(id) => {
+                                api::drafts::update(&client, &o).await?;
+                                id.clone()
+                            }
+                            None => api::drafts::create(&client, &o).await?,
+                        };
+                        tracing::info!("DRAFT roam saved {id} for {chat}");
+                        Ok(Some(id))
+                    }
+                }
+            }
+            .await;
+            match result {
+                Ok(id) => {
+                    if let Some(slot) = roam_slots().lock().unwrap().get_mut(&chat) {
+                        slot.id = id.clone();
+                    }
+                    let _ = qt.queue(move |mut this| {
+                        let synced = chrono::Utc::now().timestamp_millis() as u64;
+                        let drafts = this.as_mut().drafts_mut();
+                        if let (Some(d), Some(id)) = (drafts.get_mut(&chat), id) {
+                            let r = d.roam.get_or_insert_with(Default::default);
+                            r.id = id;
+                            r.synced = synced;
+                            if let Err(e) = save_drafts(this.as_mut().drafts_mut()) {
+                                tracing::warn!("saving drafts failed: {}", short_error(&e));
+                            }
+                        }
+                    });
+                }
+                Err(e) => tracing::warn!("DRAFT roam failed for {chat}: {}", short_error(&e)),
+            }
+        });
+    }
+
+    /// Other devices' drafts from the chat service's drafts list, taken in
+    /// as Teams does: one for a chat with no draft here becomes its draft;
+    /// a change or a delete of the one this device shares replaces it
+    /// unless it was edited here since; a different draft next to this
+    /// device's own becomes its conflict ("There's a draft saved from
+    /// another platform").
+    fn apply_roamed(mut self: Pin<&mut Self>, page: &serde_json::Value) {
+        if !api::drafts::roaming_enabled() {
+            return;
+        }
+        let me = self.rust().my_mri.clone().unwrap_or_default();
+        let name = self.rust().user_name.to_string();
+        let raw: HashMap<String, serde_json::Value> = page["drafts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| Some((m["id"].as_str()?.to_string(), m.clone())))
+            .collect();
+        let mut roamed = api::drafts::roamed_from(page);
+        roamed.retain(|r| r.reply_to.is_empty());
+        roamed.sort_by_key(|r| std::cmp::Reverse(r.time_ms));
+        let now = chrono::Utc::now().timestamp_millis() as u64;
+        let view = |r: &api::drafts::Roamed| -> Option<RemoteDraft> {
+            let v = api::messages::message_view(raw.get(&r.id)?, &me, &name)?;
+            Some(RemoteDraft {
+                id: r.id.clone(),
+                client_message_id: r.client_message_id.clone(),
+                text: v.text.clone(),
+                edit_html: v.edit_html.clone(),
+                edit_media: v.edit_media.iter().filter_map(|m| serde_json::to_value(m).ok()).collect(),
+                time: r.time_ms.max(0) as u64,
+            })
+        };
+        let mut chats: Vec<String> = roamed.iter().map(|r| r.chat.clone()).collect();
+        chats.sort();
+        chats.dedup();
+        let mut arrived = Vec::new();
+        for chat in chats {
+            let known = roam_slots().lock().unwrap().get(&chat).and_then(|s| s.id.clone());
+            let local = self.as_mut().drafts_mut().get(&chat).cloned();
+            let untouched = local.as_ref().is_some_and(|d| d.roam.as_ref().is_some_and(|r| r.synced > 0 && d.time <= r.synced));
+            let mine = known.as_ref().and_then(|k| roamed.iter().find(|r| &r.id == k && r.chat == chat));
+            let adopt = |this: &mut Pin<&mut Self>, rd: RemoteDraft| {
+                roam_slots().lock().unwrap().entry(chat.clone()).or_default().id = Some(rd.id.clone());
+                let old = this.as_mut().drafts_mut().remove(&chat).unwrap_or_default();
+                this.as_mut().drafts_mut().insert(
+                    chat.clone(),
+                    Draft {
+                        text: rd.text.clone(),
+                        time: rd.time.min(now),
+                        roam: Some(RoamState { id: rd.id.clone(), client_message_id: rd.client_message_id.clone(), synced: now }),
+                        edit_html: rd.edit_html.clone(),
+                        edit_media: rd.edit_media.clone(),
+                        conflict: old.conflict.filter(|c| c.id != rd.id),
+                        ..Default::default()
+                    },
+                );
+            };
+            // The draft this device shares: deleted or changed elsewhere.
+            if let Some(r) = mine {
+                let synced = local.as_ref().and_then(|d| d.roam.as_ref()).map(|r| r.synced).unwrap_or_default();
+                if r.deleted {
+                    roam_slots().lock().unwrap().entry(chat.clone()).or_default().id = None;
+                    if local.is_some() && untouched {
+                        self.as_mut().drafts_mut().remove(&chat);
+                        tracing::info!("DRAFT cleared on another device: {chat}");
+                        arrived.push(chat.clone());
+                    }
+                    continue;
+                }
+                let ours = local.as_ref().map(|d| draft_teams_form(d).0).unwrap_or_default();
+                if r.time_ms as u64 > synced && !same_draft_html(&ours, &r.content) {
+                    if let Some(rd) = view(r) {
+                        if local.is_none() || untouched {
+                            adopt(&mut self, rd);
+                            tracing::info!("DRAFT changed on another device: {chat}");
+                        } else if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
+                            d.conflict = Some(rd);
+                        }
+                        arrived.push(chat.clone());
+                        continue;
+                    }
+                }
+            }
+            // Another device's own draft for this chat (a different id).
+            let local = self.as_mut().drafts_mut().get(&chat).cloned();
+            let Some(r) = roamed.iter().find(|r| r.chat == chat && !r.deleted && Some(&r.id) != known.as_ref()) else { continue };
+            let Some(rd) = view(r) else { continue };
+            match &local {
+                None => {
+                    adopt(&mut self, rd);
+                    tracing::info!("DRAFT from another device: {chat}");
+                    arrived.push(chat.clone());
+                }
+                Some(d) if same_draft_html(&draft_teams_form(d).0, &r.content) => {
+                    if known.is_none() {
+                        roam_slots().lock().unwrap().entry(chat.clone()).or_default().id = Some(r.id.clone());
+                        if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
+                            d.roam = Some(RoamState { id: r.id.clone(), client_message_id: r.client_message_id.clone(), synced: now });
+                        }
+                    }
+                }
+                Some(d) => {
+                    if d.conflict.as_ref().map(|c| (&c.id, c.time)) != Some((&rd.id, rd.time)) {
+                        if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
+                            d.conflict = Some(rd);
+                        }
+                        tracing::info!("DRAFT conflict from another device: {chat}");
+                        arrived.push(chat.clone());
+                    }
+                }
+            }
+        }
+        if !arrived.is_empty() {
+            if let Err(e) = save_drafts(self.as_mut().drafts_mut()) {
+                tracing::warn!("saving drafts failed: {}", short_error(&e));
+            }
+            self.as_mut().publish_drafts();
+            for chat in arrived {
+                self.as_mut().draft_arrived(QString::from(chat.as_str()));
+            }
+        }
+    }
+
+    /// Read the chat service's drafts and take in other devices' (startup,
+    /// and each time a chat opens, as Teams' drafts sync).
+    fn sync_roamed_drafts(self: Pin<&mut Self>) {
+        if !api::drafts::roaming_enabled() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::drafts::page(&client).await
+            }
+            .await;
+            let _ = qt.queue(move |this| match result {
+                Ok(page) => this.apply_roamed(&page),
+                Err(e) => tracing::debug!("drafts unavailable: {}", short_error(&e)),
+            });
+        });
+    }
+
+    pub fn resolve_draft_conflict(mut self: Pin<&mut Self>, chat_id: &QString, use_it: bool) {
+        let chat = chat_id.to_string();
+        let Some(conflict) = self.as_mut().drafts_mut().get_mut(&chat).and_then(|d| d.conflict.take()) else { return };
+        // Teams: "Use this version" makes the other device's draft this
+        // chat's and deletes the one it replaces; Discard deletes it.
+        let gone = if use_it {
+            let old = roam_slots().lock().unwrap().entry(chat.clone()).or_default().id.replace(conflict.id.clone());
+            let now = chrono::Utc::now().timestamp_millis() as u64;
+            self.as_mut().drafts_mut().insert(
+                chat.clone(),
+                Draft {
+                    text: conflict.text.clone(),
+                    time: now,
+                    roam: Some(RoamState { id: conflict.id.clone(), client_message_id: conflict.client_message_id.clone(), synced: now }),
+                    edit_html: conflict.edit_html.clone(),
+                    edit_media: conflict.edit_media.clone(),
+                    ..Default::default()
+                },
+            );
+            old.filter(|o| *o != conflict.id)
+        } else {
+            Some(conflict.id.clone())
+        };
+        if let Err(e) = save_drafts(self.as_mut().drafts_mut()) {
+            tracing::warn!("saving drafts failed: {}", short_error(&e));
+        }
+        self.as_mut().publish_drafts();
+        self.as_mut().draft_arrived(QString::from(chat.as_str()));
+        if let Some(id) = gone {
+            runtime().spawn(async move {
+                let result = async {
+                    let client = TeamsClient::new().await?;
+                    api::drafts::delete(&client, &id).await
+                }
+                .await;
+                match result {
+                    Ok(()) => tracing::info!("DRAFT roam deleted {id} (conflict resolved)"),
+                    Err(e) => tracing::warn!("DRAFT conflict delete failed: {}", short_error(&e)),
+                }
+            });
+        }
+    }
+
+    pub fn compose_too_large(&self, editor_html: &QString, media_json: &QString) -> bool {
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (html, _) = api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        html.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE
     }
 
     pub fn draft_for(mut self: Pin<&mut Self>, chat_id: &QString) -> QString {
@@ -12436,7 +12847,16 @@ impl qobject::Backend {
             .as_mut()
             .drafts_mut()
             .get(&id)
-            .map(|d| json!({ "text": d.text, "html": d.html, "media": d.media }).to_string())
+            .map(|d| {
+                json!({
+                    "text": d.text, "html": d.html, "media": d.media,
+                    "editHtml": d.edit_html, "editMedia": d.edit_media,
+                    "conflict": d.conflict.as_ref().map(|c| json!({
+                        "text": c.text, "editHtml": c.edit_html, "editMedia": c.edit_media, "time": c.time,
+                    })),
+                })
+                .to_string()
+            })
             .unwrap_or_default();
         QString::from(json.as_str())
     }
@@ -16919,6 +17339,7 @@ mod draft_tests {
                 html: "<p><b>bold</b></p><table><tbody><tr><td><p>a</p></td><td><p>b</p></td></tr></tbody></table>".into(),
                 media: vec![json!({"src": "https://e/20_f.png", "kind": "emoji", "id": "smile"})],
                 time: 5,
+                ..Default::default()
             },
         );
         all.insert(
@@ -16937,6 +17358,34 @@ mod draft_tests {
         assert_eq!(mixed["x"].text, "old");
         assert_eq!(mixed["y"].html, "<p><i>new</i></p>");
         assert!(mixed["y"].media.is_empty());
+    }
+
+    #[test]
+    fn roamed_drafts_keep_their_place_and_conflict() {
+        let mut all = HashMap::new();
+        all.insert(
+            "19:d@thread.v2".to_string(),
+            Draft {
+                text: "mine".into(),
+                time: 7,
+                roam: Some(RoamState { id: "1794831861119".into(), client_message_id: "348".into(), synced: 8 }),
+                conflict: Some(RemoteDraft { id: "1794831900000".into(), text: "theirs".into(), edit_html: "<p>theirs</p>".into(), time: 9, ..Default::default() }),
+                ..Default::default()
+            },
+        );
+        let saved = serde_json::to_string(&all).unwrap();
+        assert!(!saved.contains("edit_html\":\"\""), "empty edit forms are left out: {saved}");
+        assert_eq!(parse_drafts(&saved), all);
+    }
+
+    #[test]
+    fn a_draft_roams_in_teams_sent_form() {
+        let plain = Draft { text: "a < b".into(), ..Default::default() };
+        assert_eq!(draft_teams_form(&plain).0, api::outbox::plain_html("a < b"));
+        let taken = Draft { text: "hi".into(), edit_html: "<p>hi <b>there</b></p>".into(), ..Default::default() };
+        assert!(draft_teams_form(&taken).0.contains("<b>there</b>"), "{}", draft_teams_form(&taken).0);
+        assert!(same_draft_html("<p>OST&nbsp;draft  probe</p>", "<p>OST draft probe</p>"));
+        assert!(!same_draft_html("<p>a</p>", "<p>b</p>"));
     }
 
     #[test]

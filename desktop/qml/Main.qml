@@ -535,6 +535,130 @@ Window {
             step++
         }
     }
+    // --presend-test[=<chat name>] with --shots=<dir>: Teams' pre-send
+    // checks in that chat (default OST Test 2): each case is put in the
+    // compose box and Send pressed with the box in dry-run, so nothing can
+    // go; logs PRESEND <case> <banner> <text kept> and captures
+    // presend-<case>.png while the banner shows.
+    Timer {
+        readonly property var args: Qt.application.arguments
+        running: args.some(a => a.startsWith("--presend-test")) && backend.signedIn && chatList.chats.length > 1
+        interval: 1500; repeat: true
+        property int step: 0
+        property var chat: null
+        onTriggered: {
+            const dir = (args.find(a => a.startsWith("--shots=")) || "--shots=/tmp/presend").slice(8) + "/"
+            const want = (args.find(a => a.startsWith("--presend-test=")) || "--presend-test=OST Test 2").slice(15)
+            const c = conversation.composeForTest()
+            const cases = [
+                ["empty", () => {}],
+                // (insert() reads HTML, which drops plain spaces.)
+                ["spaces", () => c.editor.insert(0, "&nbsp; &nbsp;")],
+                ["too-large", () => c.insertText("OST presend " + "x".repeat(91000))],
+                ["schedule-past", () => { c.insertText("OST presend past"); c.scheduleAt = Date.now() - 60000 }],
+                ["clip-uploading", () => { c.insertText("OST presend clip"); c.clip = { uploading: true, path: "", thumb: "", width: 1280, height: 720, duration: 3 } }],
+                ["bot-mention", () => { c.sendTo = "channel"; c.insertText("OST presend "); c.editor.insert(c.editor.cursorPosition, '<a href="mention:28:00000000-0000-0000-0000-000000000000">Bot</a>&nbsp;') }],
+                ["fine", () => c.insertText("OST presend fine")]
+            ]
+            if (step === 0) {
+                chat = chatList.chats.find(x => x.name === want) || null
+                if (!chat) { console.warn("PRESEND no chat", want); Qt.quit(); return }
+                backend.selectChat(chat.id, chat.name)
+                step = 1; return
+            }
+            const i = Math.floor((step - 1) / 2)
+            if (i >= cases.length) {
+                c.dryRun = false; c.clear(); c.scheduleAt = 0; c.clip = null; c.sendTo = ""
+                backend.setDraft(chat.id, ""); Qt.quit(); return
+            }
+            if ((step - 1) % 2 === 0) {
+                c.dryRun = true; c.clear(); c.scheduleAt = 0; c.clip = null; c.sendTo = ""; c.bannerText = ""
+                cases[i][1]()
+                c.trySubmit()
+                console.warn("PRESEND", cases[i][0], JSON.stringify(c.bannerText), "kept", c.plainText().length)
+                window.contentItem.grabToImage(r => r.saveToFile(dir + "presend-" + cases[i][0] + ".png"))
+            }
+            step++
+        }
+    }
+    // --draft-roam-test=<out|in|conflict>[,<chat name>] with --shots=<dir>
+    // (run with OST_ROAM_DRAFTS=1, as Teams roams drafts only where
+    // enableRoamMessageDraft is on). In that chat (default OST Test 2):
+    // out: type a draft with a mention, capture it, wait for it to roam,
+    //   switch chats (the Drafts view) and back, then clear it (it is
+    //   deleted from the service);
+    // in: wait for another device's draft to come in, capture the box and
+    //   the Drafts view; --draft-roam-clear then clears it;
+    // conflict: type a draft of OST's own, wait for the other device's one
+    //   to show as a conflict, capture the banner and "Saved draft", then
+    //   Discard it (or "Use this version" with --draft-roam-use) and clear.
+    // Logs DRAFTROAM lines; nothing is sent.
+    Timer {
+        readonly property var args: Qt.application.arguments
+        readonly property var opts: (args.find(a => a.startsWith("--draft-roam-test=")) || "").slice(18).split(",")
+        running: opts[0].length > 0 && backend.signedIn && chatList.chats.length > 1
+        interval: 2000; repeat: true
+        property int step: 0
+        property var chat: null
+        onTriggered: {
+            const mode = opts[0], want = opts[1] || "OST Test 2"
+            const dir = (args.find(a => a.startsWith("--shots=")) || "--shots=/tmp/draftroam").slice(8) + "/"
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(dir + "draft-roam-" + mode + "-" + tag + ".png"))
+            const log = (tag, x) => console.warn("DRAFTROAM", mode, tag, JSON.stringify(x))
+            const c = conversation.composeForTest()
+            const kept = () => JSON.parse(backend.draftJson(chat.id) || "null")
+            if (step === 0) {
+                chat = chatList.chats.find(x => x.name === want) || null
+                if (!chat) { log("no chat", want); Qt.quit(); return }
+                backend.selectChat(chat.id, chat.name)
+            } else if (mode === "out") {
+                if (step === 2) {
+                    c.clearForTest(); c.insertText("OST draft roam test ")
+                    c.insertMentionOf({ mri: backend.userMri, name: "OST Test 1" })
+                    c.insertText("with a mention")
+                    conversation.saveDraft(chat.id)
+                } else if (step === 3) { log("typed", kept()); cap("typed") }
+                // A change: the same draft again (PUT).
+                else if (step === 4) { c.insertText(" and a change"); conversation.saveDraft(chat.id) }
+                else if (step === 6) {
+                    const other = chatList.chats.find(x => x.id !== chat.id)
+                    backend.selectChat(other.id, other.name); chatList.openDrafts()
+                } else if (step === 7) { log("listed", (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).find(x => x.id === chat.id)); cap("drafts") }
+                else if (step === 8) { chatList.draftsOpen = false; backend.selectChat(chat.id, chat.name) }
+                else if (step === 9) { log("back", c.plainText()); cap("back") }
+                else if (step === 10) { c.clear(); conversation.saveDraft(chat.id) }
+                else if (step === 13) { log("cleared", kept()); Qt.quit() }
+            } else if (mode === "in") {
+                if (step >= 2 && step < 20 && (c.plainText().trim() || step === 19)) {
+                    log("box", c.plainText()); log("kept", kept()); cap("box")
+                    chatList.openDrafts(); step = 20
+                } else if (step === 21) {
+                    log("listed", (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).find(x => x.id === chat.id)); cap("drafts")
+                } else if (step === 22) {
+                    chatList.draftsOpen = false; backend.selectChat(chat.id, chat.name)
+                } else if (step === 23) {
+                    if (args.indexOf("--draft-roam-clear") >= 0) { c.clear(); conversation.saveDraft(chat.id) }
+                } else if (step === 25) { log("end", kept()); Qt.quit() }
+            } else if (mode === "conflict") {
+                if (step === 2) { c.clearForTest(); c.insertText("OST draft roam conflict, this device's"); conversation.saveDraft(chat.id) }
+                else if (step >= 3 && step < 30 && (c.draftConflict || step === 29)) {
+                    log("banner", c.draftConflict); log("conflict", c.conflictDraft); cap("banner")
+                    step = 29
+                } else if (step === 30) c.viewConflict()
+                else if (step >= 3 && step < 30) {
+                    // Opening the chat again reads the service's drafts.
+                    const other = chatList.chats.find(x => x.id !== chat.id)
+                    if (step % 3 === 0) backend.selectChat(other.id, other.name)
+                    else if (step % 3 === 1) backend.selectChat(chat.id, chat.name)
+                } else if (step === 31) cap("dialog")
+                else if (step === 32) { c.conflictDialogForTest().close(); c.conflictResolved(args.indexOf("--draft-roam-use") >= 0) }
+                else if (step === 33) { log("resolved", kept()); log("box", c.plainText()); cap("resolved") }
+                else if (step === 34) { c.clear(); conversation.saveDraft(chat.id) }
+                else if (step === 37) { log("cleared", kept()); Qt.quit() }
+            }
+            step++
+        }
+    }
     // --draft-format-test: in "OST group test" (or --open-chat=<id>), type
     // a draft with every format (bold, italic, underline, strike, inline
     // code, a heading, a quote, lists, a link, a mention, an emoticon, a
