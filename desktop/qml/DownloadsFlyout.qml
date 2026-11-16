@@ -26,9 +26,9 @@ Popup {
     property string query: ""
     readonly property var shown: items.filter(d => !query || d.name.toLowerCase().indexOf(query.toLowerCase()) >= 0)
     // 86% and 56% black on white, as opaque colours (icons take no alpha).
-    readonly property color ink: theme.pick("#242424", "#DBDBDB")
+    readonly property color ink: theme.pick("#242424", "#DBDBDB", "#FFFFFF")
     readonly property color ink2: theme.pick("#707070", "#8F8F8F")
-    readonly property color linkInk: theme.pick("#235CCF", "#7EB2FF")
+    readonly property color linkInk: theme.pick("#235CCF", "#7EB2FF", "#FFFF00")
     onOpened: { searching = false; query = ""; backend.downloadsAction("load", "") }
     background: FluentSurface { depth: 16; radius: 8; color: theme.surface }
 
@@ -49,7 +49,7 @@ Popup {
         signal clicked()
         width: 32; height: 32; radius: 7.2
         color: hbh.hovered ? theme.rowHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: hb.icon; size: hb.glyph; color: root.ink }
+        FluentIcon { anchors.centerIn: parent; name: hb.icon; size: hb.glyph; color: theme.onFill(hb, root.ink) }
         HoverHandler { id: hbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }
         ToolTip.visible: hbh.hovered; ToolTip.delay: 500; ToolTip.text: hb.label
@@ -80,7 +80,7 @@ Popup {
                     x: 40; y: 9.33; width: 316; height: 30.67; radius: 7.2
                     color: theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 2; radius: 1; color: "#2169EB"; visible: searchField.activeFocus }
+                    Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 2; radius: 1; color: theme.hc("#2169EB", "#1AEBFF"); visible: searchField.activeFocus }
                     FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: root.ink2 }
                     TextInput {
                         id: searchField
@@ -107,10 +107,11 @@ Popup {
                     x: 150; y: 41; width: 205; padding: 4
                     background: FluentSurface { depth: 16; radius: 8; color: theme.surface }
                     contentItem: Rectangle {
+                        id: hcFill1
                         implicitHeight: 36; radius: 4
                         color: clearHover.hovered ? theme.rowHover : "transparent"
-                        FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "delete-20"; size: 20; color: root.ink }
-                        Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: "Clear all download history"; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                        FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "delete-20"; size: 20; color: theme.onFill(hcFill1, root.ink) }
+                        Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: "Clear all download history"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, root.ink) }
                         HoverHandler { id: clearHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { hubMenu.close(); clearConfirm.open() } }
                         Accessible.role: Accessible.MenuItem
@@ -150,14 +151,14 @@ Popup {
                             wrapMode: Text.WrapAnywhere; maximumLineCount: 2; elide: Text.ElideRight
                             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                             font.strikeout: !row.modelData.exists
-                            color: root.ink
+                            color: theme.onFill(card, root.ink)
                         }
                         Text {
                             x: 32; y: nameText.y + nameText.height + 4
                             text: row.modelData.exists ? "Open file" : "Removed"
                             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
                             font.underline: row.modelData.exists && openHover.hovered
-                            color: row.modelData.exists ? root.linkInk : root.ink2
+                            color: theme.onFill(card, row.modelData.exists ? root.linkInk : root.ink2)
                             HoverHandler { id: openHover; enabled: row.modelData.exists; cursorShape: Qt.PointingHandCursor }
                             TapHandler { enabled: row.modelData.exists; onTapped: backend.downloadsAction("open", row.modelData.path) }
                             Accessible.role: row.modelData.exists ? Accessible.Link : Accessible.StaticText
@@ -209,17 +210,19 @@ Popup {
             x: 358 - 16 - width; y: 148
             spacing: 8
             Rectangle {
-                width: 88.7; height: 32; radius: 4; color: removeHover.hovered ? "#1D5FD6" : "#2169EB"
-                Text { anchors.centerIn: parent; text: "Remove all"; font.family: theme.font; font.pixelSize: 14; color: "#FFFFFF" }
+                id: hcFill2
+                width: 88.7; height: 32; radius: 4; color: removeHover.hovered ? theme.hc("#1D5FD6", "#1AEBFF") : theme.hc("#2169EB", "#FFFFFF")
+                Text { anchors.centerIn: parent; text: "Remove all"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, "#FFFFFF") }
                 HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { clearConfirm.close(); backend.downloadsAction("clear", "") } }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Remove all"
             }
             Rectangle {
+                id: hcFill3
                 width: 66; height: 32; radius: 4; color: cancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, root.ink) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: clearConfirm.close() }
                 Accessible.role: Accessible.Button

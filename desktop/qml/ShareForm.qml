@@ -30,7 +30,7 @@ Popup {
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
 
     readonly property var info: { const r = backend.appDetailsJson ? JSON.parse(backend.appDetailsJson) : null; return r && r.app === appId ? r : null }
     readonly property var d: info && info.details ? info.details : null
@@ -97,8 +97,8 @@ Popup {
         Row {
             id: obRow
             anchors.centerIn: parent; spacing: 8
-            FluentIcon { visible: !!ob.icon; anchors.verticalCenter: parent.verticalCenter; name: ob.icon; size: 20; color: theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            FluentIcon { visible: !!ob.icon; anchors.verticalCenter: parent.verticalCenter; name: ob.icon; size: 20; color: theme.onFill(ob, theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(ob, theme.text) }
         }
         HoverHandler { id: obHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ob.clicked() }
@@ -114,9 +114,10 @@ Popup {
             Accessible.role: Accessible.Heading; Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             x: 543; y: 25; width: 32; height: 31.33; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button; Accessible.name: "Close"
@@ -131,9 +132,10 @@ Popup {
                 onClicked: { const c = backend.sharedConversation(); root.close(); if (c) backend.selectChat(c, "") }
             }
             Rectangle {
+                id: hcFill2
                 width: 96; height: 31.33; radius: 4
                 color: doneHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
                 HoverHandler { id: doneHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Done"
@@ -148,7 +150,7 @@ Popup {
             Rectangle {
                 id: picker
                 x: 25; y: 86; width: 551; height: root.picked.length > 0 ? 41 : 32; radius: 4
-                color: theme.inputFilledDark
+                color: theme.inputFilledDark; border.color: theme.transparentStroke
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: search.activeFocus ? 2 : 0; color: theme.brand; radius: 1 }
                 Flow {
                     id: tags
@@ -193,7 +195,7 @@ Popup {
             Rectangle {
                 id: compose
                 x: 25; y: picker.y + picker.height + 39; width: 551; height: 276
-                color: theme.inputFilledDark
+                color: theme.inputFilledDark; border.color: theme.transparentStroke
                 Flickable {
                     anchors.fill: parent
                     contentHeight: composeCol.height + 20
@@ -268,11 +270,12 @@ Popup {
                             Repeater {
                                 model: modelData.items
                                 Rectangle {
+                                    id: hcFill3
                                     required property var modelData
                                     width: 543; height: 44; radius: 4
                                     color: sugHover.hovered ? theme.menuHover : "transparent"
                                     Avatar { x: 8; y: 6; size: 32; name: modelData.name; photoId: modelData.oid || ""; group: modelData.kind === "chat" }
-                                    Text { x: 49; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    Text { x: 49; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, theme.text) }
                                     HoverHandler { id: sugHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: root.pick(modelData) }
                                     Accessible.role: Accessible.ListItem; Accessible.name: modelData.name
@@ -298,10 +301,11 @@ Popup {
                     Timer { id: copied; interval: 3000 }
                 }
                 Rectangle {
+                    id: hcFill4
                     width: 96; height: 31.33; radius: 4
                     readonly property bool on: root.picked.length > 0 && backend.shareState !== "sharing" && !!root.d
-                    color: !on ? theme.bgDisabled : shareHover.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: backend.shareState === "sharing" ? "Sharing" : "Share"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.on ? theme.textOnBrand : theme.disabled }
+                    color: !on ? theme.hc(theme.bgDisabled, theme.hcHighlight) : shareHover.hovered ? theme.brandHover : theme.checkedFill
+                    Text { anchors.centerIn: parent; text: backend.shareState === "sharing" ? "Sharing" : "Share"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, parent.on ? theme.textOnBrand : theme.disabled) }
                     HoverHandler { id: shareHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: parent.on; onTapped: root.share() }
                     Accessible.role: Accessible.Button; Accessible.name: "Share"

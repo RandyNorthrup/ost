@@ -87,13 +87,13 @@ Rectangle {
         signal clicked()
         width: Math.max(96, label.implicitWidth + 24); height: 31.3; radius: 4
         color: primary ? (h.hovered ? theme.brandHover : theme.brandFill) : (h.hovered ? theme.menuHover : "transparent")
-        border.color: primary ? "transparent" : theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+        border.color: primary ? "transparent" : theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
         Text {
             id: label
             anchors.centerIn: parent
             text: btn.text
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: btn.primary ? theme.textOnBrand : theme.pick("#242424", "#FFFFFF")
+            color: theme.onFill(btn, btn.primary ? theme.textOnBrand : theme.pick("#242424", "#FFFFFF", "#FFFFFF"))
         }
         HoverHandler { id: h; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: btn.clicked() }

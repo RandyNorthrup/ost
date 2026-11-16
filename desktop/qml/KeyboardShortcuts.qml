@@ -60,9 +60,10 @@ Popup {
             color: theme.text
         }
         Rectangle {
+            id: hcFill1
             x: parent.width - 32 - 32; y: 24; width: 32; height: 32; radius: theme.radius
             color: xh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: xh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
@@ -150,7 +151,7 @@ Popup {
                                         id: pill
                                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                                         width: 141; height: 32; radius: 16
-                                        color: theme.searchFill
+                                        color: theme.searchFill; border.color: theme.transparentStroke
                                         Text {
                                             anchors.centerIn: parent
                                             text: parent.parent.modelData[1].split("+").join(" + ")

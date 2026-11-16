@@ -40,7 +40,7 @@ Popup {
     padding: 0
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
 
     property string appId: ""
     /// Apps opened before this one from More like this.
@@ -130,7 +130,7 @@ Popup {
         width: obText.implicitWidth + 32; height: 31.33; radius: 4
         color: obHover.hovered ? theme.menuHover : theme.surface
         border.width: 0.67; border.color: obHover.hovered ? theme.strokeHover : theme.stroke
-        Text { id: obText; anchors.centerIn: parent; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        Text { id: obText; anchors.centerIn: parent; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(ob, theme.text) }
         HoverHandler { id: obHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ob.clicked() }
         Accessible.role: Accessible.Button
@@ -144,7 +144,7 @@ Popup {
         signal clicked()
         width: 32; height: 31.33; radius: 4
         color: ibHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: ib.glyph; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: ib.glyph; color: theme.onFill(ib, theme.textStrong) }
         HoverHandler { id: ibHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ib.clicked() }
         ToolTip.visible: ibHover.hovered && ib.tip.length > 0
@@ -257,13 +257,14 @@ Popup {
         }
         Item { width: 1; height: ri.reportable ? 10 : 0 }
         Rectangle {
+            id: hcFill1
             visible: ri.reportable
             width: 103; height: 21; radius: 4
             color: rpHover.hovered ? theme.menuHover : "transparent"
             Row {
                 x: 3; anchors.verticalCenter: parent.verticalCenter; spacing: 4
-                FluentIcon { name: "flag-16"; size: 16; color: theme.textStrong }
-                Text { text: "Report review"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textStrong }
+                FluentIcon { name: "flag-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
+                Text { text: "Report review"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
             }
             HoverHandler { id: rpHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.showReport(ri.review) }
@@ -332,9 +333,10 @@ Popup {
                         x: page.heroX + 86; y: heroTile.y + 74
                         spacing: 8
                         Rectangle {
+                            id: hcFill2
                             width: 96; height: 32; radius: 4
                             color: addHover.hovered ? theme.brandHover : theme.brandFill
-                            Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; opacity: root.adding && root.adding.busy ? 0.6 : 1; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                            Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; opacity: root.adding && root.adding.busy ? 0.6 : 1; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
                             HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.addOrOpen() }
                             Accessible.role: Accessible.Button; Accessible.name: root.d && root.d.installed ? "Open" : "Add"
@@ -496,10 +498,11 @@ Popup {
                                     width: 376; height: Math.max(120, 80 + modelData.groups.length * 28 + 12)
                                     radius: 12; color: theme.quoteFill
                                     Rectangle {
+                                        id: hcFill3
                                         x: 20; y: 20; width: 336; height: 27; radius: 4
                                         color: phHover.hovered ? theme.menuHover : "transparent"
-                                        Text { x: 1; height: 24; verticalAlignment: Text.AlignVCenter; text: modelData.title; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                                        FluentIcon { x: 315; y: 6; name: "chevron-right-16"; size: 14; color: theme.textStrong }
+                                        Text { x: 1; height: 24; verticalAlignment: Text.AlignVCenter; text: modelData.title; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
+                                        FluentIcon { x: 315; y: 6; name: "chevron-right-16"; size: 14; color: theme.onFill(hcFill3, theme.textStrong) }
                                         HoverHandler { id: phHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: root.view = "permissions" }
                                         Accessible.role: Accessible.Button; Accessible.name: modelData.title
@@ -583,13 +586,14 @@ Popup {
                             Repeater {
                                 model: root.similar
                                 Rectangle {
+                                    id: hcFill4
                                     required property var modelData
                                     width: 378; height: 84; radius: 8
                                     color: mlHover.hovered ? theme.menuHover : theme.surface
                                     border.width: 0.67; border.color: theme.quoteBorder
                                     AppTile { x: 16; y: 16; width: 52; height: 52; src: modelData.icon; background: parent.color }
-                                    Text { x: 80; y: 23; width: 282; text: modelData.name; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                                    Text { x: 80; y: 45; width: 282; text: modelData.short; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                                    Text { x: 80; y: 23; width: 282; text: modelData.name; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                                    Text { x: 80; y: 45; width: 282; text: modelData.short; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary) }
                                     HoverHandler { id: mlHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: root.openSimilar(modelData.id) }
                                     Accessible.role: Accessible.Button; Accessible.name: modelData.name + ", " + modelData.short
@@ -609,10 +613,11 @@ Popup {
                 AppTile { x: root.history.length > 0 || root.addTo ? 98 : 56; y: 20; width: 40; height: 40; src: root.d ? root.d.icon : "" }
                 Text { x: root.history.length > 0 || root.addTo ? 148 : 106; y: 29; height: 22; text: root.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                 Rectangle {
+                    id: hcFill5
                     visible: page.canAdd
                     x: 707; y: 24; width: 96; height: 32; radius: 4
                     color: addHover2.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                    Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textOnBrand) }
                     HoverHandler { id: addHover2; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.addOrOpen() }
                 }
@@ -676,8 +681,8 @@ Popup {
                 color: sbHover.hovered || sortMenu.opened ? theme.menuHover : "transparent"
                 Row {
                     anchors.centerIn: parent; spacing: 6
-                    FluentIcon { name: "arrow-sort-20"; size: 20; color: theme.textStrong }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Sort"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+                    FluentIcon { name: "arrow-sort-20"; size: 20; color: theme.onFill(sortButton, theme.textStrong) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Sort"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
                 }
                 HoverHandler { id: sbHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: sortMenu.open() }
@@ -828,7 +833,7 @@ Popup {
                         // The comment box sits under the chosen reason.
                         Rectangle {
                             visible: parent.on
-                            width: 787; height: visible ? 120 : 0; radius: 4; color: theme.inputFilled
+                            width: 787; height: visible ? 120 : 0; radius: 4; color: theme.inputFilled; border.color: theme.transparentStroke
                             TextArea {
                                 anchors.fill: parent
                                 placeholderText: "Add a comment"; placeholderTextColor: theme.textTertiary
@@ -843,9 +848,10 @@ Popup {
                 }
                 Item { width: 1; height: 20 }
                 Rectangle {
+                    id: hcFill6
                     width: 124; height: 31.33; radius: 4
                     color: rsHover.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                    Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.textOnBrand) }
                     HoverHandler { id: rsHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
@@ -903,7 +909,7 @@ Popup {
                     }
                     Text { x: 56; y: 96; text: "Title"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     Rectangle {
-                        x: 56; y: 120; width: 773; height: 32; radius: 4; color: theme.inputFilled
+                        x: 56; y: 120; width: 773; height: 32; radius: 4; color: theme.inputFilled; border.color: theme.transparentStroke
                         TextField {
                             id: reviewTitle
                             anchors.fill: parent; leftPadding: 10
@@ -915,7 +921,7 @@ Popup {
                     }
                     Text { x: 56; y: 172; text: "Description"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     Rectangle {
-                        x: 56; y: 196; width: 773; height: 200; radius: 4; color: theme.inputFilled
+                        x: 56; y: 196; width: 773; height: 200; radius: 4; color: theme.inputFilled; border.color: theme.transparentStroke
                         ScrollView {
                             anchors.fill: parent
                             TextArea {
@@ -933,10 +939,11 @@ Popup {
                         id: publicBox
                         x: 56; y: 404
                         indicator: Rectangle {
+                            id: hcFill7
                             x: 8; y: 10; width: 16; height: 16; radius: 2
-                            color: publicBox.checked ? theme.brandFill : "transparent"
+                            color: publicBox.checked ? theme.checkedFill : "transparent"
                             border.width: publicBox.checked ? 0 : 0.67; border.color: theme.textSecondary
-                            FluentIcon { anchors.centerIn: parent; visible: publicBox.checked; name: "checkmark-12-filled"; size: 12; color: theme.textOnBrand }
+                            FluentIcon { anchors.centerIn: parent; visible: publicBox.checked; name: "checkmark-12-filled"; size: 12; color: theme.onFill(hcFill7, theme.textOnBrand) }
                         }
                         contentItem: Column {
                             leftPadding: 32
@@ -945,10 +952,11 @@ Popup {
                         }
                     }
                     Rectangle {
+                        id: hcFill8
                         x: 56; y: 476; width: 124; height: 31.33; radius: 4
                         readonly property bool on: root.rating > 0
-                        color: !on ? theme.bgDisabled : submitHover.hovered ? theme.brandHover : theme.brandFill
-                        Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.on ? theme.textOnBrand : theme.disabled }
+                        color: !on ? theme.hc(theme.bgDisabled, theme.hcHighlight) : submitHover.hovered ? theme.brandHover : theme.checkedFill
+                        Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, parent.on ? theme.textOnBrand : theme.disabled) }
                         HoverHandler { id: submitHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler {
                             enabled: parent.on

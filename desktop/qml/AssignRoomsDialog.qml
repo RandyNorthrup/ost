@@ -81,9 +81,9 @@ Popup {
         property bool mixed: false
         signal toggled()
         width: 16; height: 16; radius: 2
-        color: checked ? theme.brandFill : "transparent"
-        border.color: checked ? theme.brandFill : theme.textStrong; border.width: 0.67
-        FluentIcon { visible: bx.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.textOnBrand }
+        color: checked ? theme.checkedFill : "transparent"
+        border.color: checked ? theme.checkedFill : theme.textStrong; border.width: 0.67
+        FluentIcon { visible: bx.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(bx, theme.textOnBrand) }
         Rectangle { visible: bx.mixed && !bx.checked; anchors.centerIn: parent; width: 8; height: 8; radius: 1; color: theme.brandFill }
         TapHandler { onTapped: bx.toggled() }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -101,15 +101,15 @@ Popup {
         width: (icon ? 28 : 0) + dbText.implicitWidth + 24 + (bordered ? 24 : 0)
         color: dbHover.hovered && dbn.enabled ? theme.menuHover : bordered ? theme.surface : "transparent"
         border.color: bordered ? theme.stroke : "transparent"; border.width: 0.67
-        FluentIcon { visible: dbn.icon.length > 0; x: bordered ? 12 : 0; anchors.verticalCenter: parent.verticalCenter; name: dbn.icon; size: 20; color: dbn.enabled ? theme.textStrong : theme.disabled }
+        FluentIcon { visible: dbn.icon.length > 0; x: bordered ? 12 : 0; anchors.verticalCenter: parent.verticalCenter; name: dbn.icon; size: 20; color: theme.onFill(dbn, dbn.enabled ? theme.textStrong : theme.disabled) }
         Text {
             id: dbText
             x: (dbn.icon ? 28 : 0) + (dbn.bordered ? 12 : 0); anchors.verticalCenter: parent.verticalCenter
             text: dbn.label
             font.family: theme.font; font.pixelSize: 14; font.weight: dbn.strong ? Font.DemiBold : Font.Normal
-            color: dbn.enabled ? theme.text : theme.disabled
+            color: theme.onFill(dbn, dbn.enabled ? theme.text : theme.disabled)
         }
-        FluentIcon { x: dbText.x + dbText.implicitWidth + 6; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: dbn.enabled ? theme.textStrong : theme.disabled }
+        FluentIcon { x: dbText.x + dbText.implicitWidth + 6; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.onFill(dbn, dbn.enabled ? theme.textStrong : theme.disabled) }
         HoverHandler { id: dbHover; cursorShape: dbn.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: dbn.enabled; onTapped: dbn.clicked() }
         Accessible.role: Accessible.Button
@@ -132,7 +132,7 @@ Popup {
     }
     Rectangle {
         x: 24.67; y: 88.67; width: 650.67; height: 32; radius: 4
-        color: theme.inputFilled
+        color: theme.inputFilled; border.color: theme.transparentStroke
         FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
         TextInput {
             id: search
@@ -209,7 +209,7 @@ Popup {
             delegate: Item {
                 required property var modelData
                 width: table.width; height: 36
-                Rectangle { anchors.fill: parent; color: rowHover.hovered ? theme.menuHover : "transparent" }
+                Rectangle { id: hcFill1; anchors.fill: parent; color: rowHover.hovered ? theme.menuHover : "transparent" }
                 HoverHandler { id: rowHover }
                 Box {
                     x: 13.33; anchors.verticalCenter: parent.verticalCenter
@@ -221,7 +221,7 @@ Popup {
                 Text {
                     x: 86; anchors.verticalCenter: parent.verticalCenter; width: 260; elide: Text.ElideRight
                     text: parent.modelData.name
-                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                    font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.text)
                 }
                 DropButton {
                     x: 351.33; anchors.verticalCenter: parent.verticalCenter; bordered: false
@@ -251,19 +251,21 @@ Popup {
     Row {
         x: 475.33; y: 445.33; spacing: 8
         Rectangle {
+            id: hcFill2
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill3
             width: 96; height: 31.33; radius: 4
             color: !root.changed ? theme.bgDisabled : saveHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.changed ? theme.textOnBrand : theme.disabled }
+            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.changed ? theme.textOnBrand : theme.disabled) }
             HoverHandler { id: saveHover; cursorShape: root.changed ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: root.changed; onTapped: root.save() }
             Accessible.role: Accessible.Button

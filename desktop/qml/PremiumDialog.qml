@@ -73,7 +73,7 @@ Popup {
         property bool usable: true
         x: 544; y: 24; width: 32; height: 31.33; radius: 4
         color: onPicture ? (cbh.hovered ? Qt.rgba(1, 1, 1, 0.8) : Qt.rgba(1, 1, 1, 0.5)) : (cbh.hovered ? theme.menuHover : "transparent")
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: cb.usable ? "#424242" : "#BDBDBD" }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(cb, cb.usable ? theme.hc("#424242", "#FFFFFF") : theme.hc("#BDBDBD", "#3FF23F")) }
         HoverHandler { id: cbh; enabled: cb.usable; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: cb.usable; onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -96,8 +96,8 @@ Popup {
         Row {
             id: dbRow
             anchors.centerIn: parent; spacing: 6
-            Text { anchors.verticalCenter: parent.verticalCenter; text: db.label; font.family: theme.font; font.pixelSize: db.size; font.weight: db.size < 14 ? Font.Normal : Font.DemiBold; font.underline: db.kind === "link" && dbh.hovered; color: db.kind === "primary" ? theme.textOnBrand : db.kind === "link" ? theme.brandFill : db.kind === "subtle" ? theme.textStrong : theme.text }
-            FluentIcon { visible: !!db.icon; anchors.verticalCenter: parent.verticalCenter; name: db.icon; size: 20; color: theme.text }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: db.label; font.family: theme.font; font.pixelSize: db.size; font.weight: db.size < 14 ? Font.Normal : Font.DemiBold; font.underline: db.kind === "link" && dbh.hovered; color: theme.onFill(db, db.kind === "primary" ? theme.textOnBrand : db.kind === "link" ? theme.brandFill : db.kind === "subtle" ? theme.textStrong : theme.text) }
+            FluentIcon { visible: !!db.icon; anchors.verticalCenter: parent.verticalCenter; name: db.icon; size: 20; color: theme.onFill(db, theme.text) }
         }
         HoverHandler { id: dbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: db.clicked() }
@@ -128,13 +128,13 @@ Popup {
                 fillGradient: LinearGradient {
                     x1: 54 - 54 * Math.sin(136 * Math.PI / 180); y1: 54 + 54 * Math.cos(136 * Math.PI / 180)
                     x2: 54 + 54 * Math.sin(136 * Math.PI / 180); y2: 54 - 54 * Math.cos(136 * Math.PI / 180)
-                    GradientStop { position: 0.1669; color: "#FFFFFF" }
-                    GradientStop { position: 1.2623; color: "#C6B1DE" }
+                    GradientStop { position: 0.1669; color: theme.hc("#FFFFFF", "#000000") }
+                    GradientStop { position: 1.2623; color: theme.hc("#C6B1DE", "#FFFFFF") }
                 }
                 PathAngleArc { centerX: 54; centerY: 54; radiusX: 54; radiusY: 54; startAngle: 0; sweepAngle: 360 }
             }
         }
-        Rectangle { visible: hero.wide; x: 246; y: 186; width: 108; height: 108; radius: 54; color: "#FFFFFF" }
+        Rectangle { visible: hero.wide; x: 246; y: 186; width: 108; height: 108; radius: 54; color: theme.hc("#FFFFFF", "#000000") }
         Image { x: 266; y: hero.wide ? 206 : 94; width: 68; height: 68; source: "../assets/dialogs/premium-diamond.svg"; sourceSize: Qt.size(136, 136); smooth: true }
     }
     component Title: Text {
@@ -256,7 +256,7 @@ Popup {
             Shape {
                 anchors.fill: parent
                 preferredRendererType: Shape.CurveRenderer
-                ShapePath { strokeWidth: 3; strokeColor: theme.pick("#E0E0E0", "#3D3D3D"); fillColor: "transparent"; capStyle: ShapePath.RoundCap
+                ShapePath { strokeWidth: 3; strokeColor: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); fillColor: "transparent"; capStyle: ShapePath.RoundCap
                     PathAngleArc { centerX: 16; centerY: 16; radiusX: 14.5; radiusY: 14.5; startAngle: 0; sweepAngle: 360 } }
             }
             Shape {
@@ -374,7 +374,7 @@ Popup {
                 property real pictureDy: 18.7
                 y: sectionTop - 63.33; width: 586
                 height: col.y + col.height
-                Rectangle { visible: sec.shaded; y: -16; width: 586; height: sec.height + 32; color: theme.pick("#FAFAFA", "#1F1F1F") }
+                Rectangle { visible: sec.shaded; y: -16; width: 586; height: sec.height + 32; color: theme.pick("#FAFAFA", "#1F1F1F", "#000000") }
                 Image { x: sec.pictureLeft ? 0 : 346; y: col.y + sec.pictureDy; width: 240; height: 192; source: "../assets/dialogs/" + sec.picture; sourceSize: Qt.size(480, 384); fillMode: Image.PreserveAspectFit; smooth: true }
                 Column {
                     id: col

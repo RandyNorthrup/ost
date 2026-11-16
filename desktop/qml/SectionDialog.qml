@@ -27,7 +27,7 @@ Popup {
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
 
     function create(item_, from_) { mode = "create"; section = null; item = item_ || ""; from = from_ || ""; field.text = ""; open(); field.forceActiveFocus() }
     function rename(s) { mode = "rename"; section = s; field.text = s ? s.title : ""; open(); field.selectAll(); field.forceActiveFocus() }
@@ -73,7 +73,7 @@ Popup {
         Rectangle {
             visible: root.mode !== "remove"
             width: parent.width; height: 32; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: field.activeFocus ? 2 : 0.67; color: field.activeFocus ? theme.brand : theme.textSecondary }
             TextField {
                 id: field
@@ -98,22 +98,24 @@ Popup {
             anchors.right: parent.right
             spacing: 8
             Rectangle {
+                id: hcFill1
                 width: 96; height: 32; radius: 4
                 color: cancelHover.hovered ? theme.menuHover : theme.surface
                 border.width: 0.67; border.color: theme.stroke
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Cancel"
             }
             Rectangle {
+                id: hcFill2
                 width: 96; height: 32; radius: 4
                 color: !root.canConfirm ? theme.bgDisabled : okHover.hovered ? theme.brandHover : theme.brandFill
                 Text {
                     anchors.centerIn: parent
                     text: root.mode === "create" ? "Create" : root.mode === "rename" ? "Save" : "Remove"
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                    color: root.canConfirm ? theme.textOnBrand : theme.disabled
+                    color: theme.onFill(hcFill2, root.canConfirm ? theme.textOnBrand : theme.disabled)
                 }
                 HoverHandler { id: okHover; cursorShape: root.canConfirm ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { onTapped: root.confirm() }

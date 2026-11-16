@@ -63,11 +63,11 @@ Item {
     Component.onCompleted: { open("recent"); actions.loadQuickAccess() }
 
     // Teams' OneDrive list colours.
-    readonly property color ink: theme.pick("#616161", "#D6D6D6")
+    readonly property color ink: theme.pick("#616161", "#D6D6D6", "#FFFFFF")
     readonly property color strong: theme.pick("#424242", "#D6D6D6")
     readonly property color accent: theme.pick("#5B5FC7", "#7F85F5")
     readonly property color hairline: theme.pick("#F0F0F0", "#3D3D3D")
-    readonly property color selectedFill: theme.pick("#E9EAF6", "#2B2C3F")
+    readonly property color selectedFill: theme.pick("#E9EAF6", "#2B2C3F", "#000000")
     readonly property var favoriteIds: driveData.favorite_ids || []
 
     /// Sort ▾ and the column headers (OneDrive's: Type, Name, Modified,
@@ -198,8 +198,8 @@ Item {
             color: cbh.hovered ? theme.brandHover : theme.brandFill
             Row {
                 anchors.centerIn: parent; spacing: 8
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: "white" }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create or upload"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: theme.onFill(createButton, "white") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create or upload"; color: theme.onFill(createButton, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             }
             HoverHandler { id: cbh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: createMenu.open() }
@@ -269,17 +269,18 @@ Item {
         SiteTile { x: 16; anchors.verticalCenter: parent.verticalCenter; acronym: qr.modelData.acronym; tint: qr.modelData.color }
         Text {
             x: 44; width: parent.width - 44 - 36; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
-            text: qr.modelData.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: qr.sel ? Font.DemiBold : Font.Normal; color: theme.text
+            text: qr.modelData.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: qr.sel ? Font.DemiBold : Font.Normal; color: theme.onFill(qr, theme.text)
         }
         HoverHandler { id: qh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: if (qr.modelData.drive_id) { root.trail = []; root.openFolder(qr.modelData.label, qr.modelData.drive_id, "") } }
         Accessible.role: Accessible.Button
         Accessible.name: modelData.label
         Rectangle {
+            id: hcFill1
             visible: qh.hovered || qr.modelData.pinned
             x: parent.width - 32; width: 24; height: 24; radius: 4; anchors.verticalCenter: parent.verticalCenter
-            color: qph.hovered ? theme.pick("#E0E0E0", "#3D3D3D") : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: qr.modelData.pinned ? "pin-16-filled" : "pin-16"; size: 16; color: root.ink }
+            color: qph.hovered ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: qr.modelData.pinned ? "pin-16-filled" : "pin-16"; size: 16; color: theme.onFill(hcFill1, root.ink) }
             HoverHandler { id: qph; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: actions.pinLibrary(qr.modelData, !qr.modelData.pinned) }
             ToolTip.visible: qph.hovered; ToolTip.delay: 300
@@ -299,8 +300,8 @@ Item {
         color: sel ? theme.selected : nh.hovered && !modelData.off ? theme.rowHover : "transparent"
         opacity: modelData.off ? 0.45 : 1
         Rectangle { visible: nr.sel; x: -8; width: 3; height: 20; radius: 1.5; anchors.verticalCenter: parent.verticalCenter; color: theme.brand }
-        FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: nr.sel && nr.modelData.key === "recent" ? "home-20-filled" : nr.sel && nr.modelData.key === "myfiles" ? "folder-20-filled" : nr.modelData.icon; size: 20; color: nr.sel ? theme.text : theme.textStrong }
-        Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: nr.modelData.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: nr.sel ? Font.DemiBold : Font.Normal; color: theme.text }
+        FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: nr.sel && nr.modelData.key === "recent" ? "home-20-filled" : nr.sel && nr.modelData.key === "myfiles" ? "folder-20-filled" : nr.modelData.icon; size: 20; color: theme.onFill(nr, nr.sel ? theme.text : theme.textStrong) }
+        Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: nr.modelData.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: nr.sel ? Font.DemiBold : Font.Normal; color: theme.onFill(nr, theme.text) }
         HoverHandler { id: nh; cursorShape: nr.modelData.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
         TapHandler { enabled: !nr.modelData.off; onTapped: root.open(nr.modelData.key) }
         Accessible.role: Accessible.Button
@@ -476,17 +477,17 @@ Item {
                 id: countPill
                 y: 0; height: 32; radius: 16
                 width: 36.67 + countText.implicitWidth + 14.67
-                color: cph.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
-                border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
-                FluentIcon { x: 12.67; y: 10; name: "dismiss-12"; size: 12; color: root.ink }
-                Text { id: countText; x: 36.67; y: 9; text: root.selection.length + " selected"; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                color: cph.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
+                border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                FluentIcon { x: 12.67; y: 10; name: "dismiss-12"; size: 12; color: theme.onFill(countPill, root.ink) }
+                Text { id: countText; x: 36.67; y: 9; text: root.selection.length + " selected"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(countPill, root.ink) }
                 HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.selectedIds = [] }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Clear selection, " + root.selection.length + " selected"
             }
                 }
-                Item { width: 25; height: 32; Rectangle { x: 12; y: 6; width: 1; height: 20; color: theme.pick("#E0E0E0", "#3D3D3D") } }
+                Item { width: 25; height: 32; Rectangle { x: 12; y: 6; width: 1; height: 20; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") } }
                 ViewControls { inBar: true }
             }
         }
@@ -503,14 +504,15 @@ Item {
                 anchors.fill: parent; anchors.margins: 8
                 model: root.people
                 delegate: Rectangle {
+                    id: hcFill2
                     required property var modelData
                     width: ListView.view.width; height: 52; radius: theme.radius
                     color: pph.hovered ? theme.rowHover : "transparent"
                     Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: modelData.name }
                     Column {
                         x: 56; anchors.verticalCenter: parent.verticalCenter
-                        Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                        Text { text: modelData.items.length + (modelData.items.length === 1 ? " file" : " files"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                        Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                        Text { text: modelData.items.length + (modelData.items.length === 1 ? " file" : " files"); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.person = modelData.name }
@@ -543,18 +545,19 @@ Item {
                         Rectangle { x: 16; width: parent.width - 32; height: 1; color: theme.dividerSoft }
                         Row {
                             height: parent.height
-                            Item { width: 77; height: parent.height; FluentIcon { anchors.centerIn: parent; name: "document-20"; size: 20; color: theme.textSecondary } }
+                            Item { width: 77; height: parent.height; FluentIcon { anchors.centerIn: parent; name: "document-20"; size: 20; color: theme.onFill(drow, theme.textSecondary) } }
                             Cell { width: Math.max(200, drow.width * 0.3); text: drow.modelData.name; strong: true }
                             Cell { width: 150; text: root.ago(drow.modelData.deleted) }
                             Cell { width: 150; text: drow.modelData.deleted_by }
                             Cell { width: 220; text: drow.modelData.from }
                         }
                         Rectangle {
+                            id: hcFill3
                             visible: dh.hovered || dmenu.visible
                             anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
                             width: 32; height: 32; radius: theme.radius
-                            color: dmh.hovered ? theme.pane : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+                            color: dmh.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFill3, theme.textStrong) }
                             HoverHandler { id: dmh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: dmenu.open() }
                             Accessible.role: Accessible.Button
@@ -578,14 +581,15 @@ Item {
                 anchors.fill: parent; anchors.margins: 8
                 model: root.libraries
                 delegate: Rectangle {
+                    id: hcFill4
                     required property var modelData
                     width: ListView.view.width; height: 52; radius: theme.radius
                     color: lh.hovered ? theme.rowHover : "transparent"
-                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: "library-20"; size: 20; color: theme.brand }
+                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: "library-20"; size: 20; color: theme.onFill(hcFill4, theme.brand) }
                     Column {
                         x: 52; anchors.verticalCenter: parent.verticalCenter
-                        Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                        Text { text: modelData.site; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                        Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                        Text { text: modelData.site; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill4, theme.textSecondary) }
                     }
                     HoverHandler { id: lh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.trail = []; root.openFolder(modelData.site + " · " + modelData.name, modelData.drive_id, "") } }
@@ -615,12 +619,13 @@ Item {
                     HoverHandler { id: headHover }
                     // "Select all rows": on hover, or filled once all are picked.
                     Rectangle {
+                        id: hcFill5
                         readonly property bool all: root.items.length > 0 && root.selection.length === root.items.length
                         visible: headHover.hovered || all
                         x: 29; y: 15.5; width: 18; height: 18; radius: 9
                         color: all ? root.accent : theme.surface
                         border.width: all ? 0 : 1; border.color: root.strong
-                        FluentIcon { visible: parent.all; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                        FluentIcon { visible: parent.all; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill5, "white") }
                         TapHandler { onTapped: root.selectedIds = parent.all ? [] : root.items.map(i => i.id) }
                         Accessible.role: Accessible.CheckBox
                         Accessible.name: "Select all rows"
@@ -629,7 +634,7 @@ Item {
                     Row {
                         height: parent.height
                         Item { width: 56; height: 49 }
-                        Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: root.ink } }
+                        Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: theme.onFill(card, root.ink) } }
                         ListHead { label: "Name"; field: root.view === "folder" ? "name" : ""; width: table.wName }
                         ListHead { label: root.view === "recent" ? "Opened" : "Modified"; field: root.view === "folder" ? "modified" : ""; width: table.narrow ? 189.33 : 136 }
                         ListHead { visible: !table.narrow; label: root.view === "shared" ? "Shared by" : "Modified By"; field: root.view === "folder" ? "modified_by" : ""; width: 136 }
@@ -658,6 +663,7 @@ Item {
                         readonly property real ty: compact ? 7.67 : 14
                         width: files.width; height: table.narrow ? 63 : compact ? 34 : 49
                         Rectangle {
+                            id: hcFill6
                             x: 8; width: parent.width - 16; height: parent.height - 1; radius: 8
                             color: frow.sel ? root.selectedFill : frow.hot ? theme.rowHover : "transparent"
                         }
@@ -668,7 +674,7 @@ Item {
                             x: 29; y: (frow.compact ? 34 : 49) / 2 - 9; width: 18; height: 18; radius: 9
                             color: frow.sel ? root.accent : theme.surface
                             border.width: frow.sel ? 0 : 1; border.color: root.strong
-                            FluentIcon { visible: frow.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                            FluentIcon { visible: frow.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(circle, "white") }
                             TapHandler { onTapped: root.toggle(frow.modelData) }
                             Accessible.role: Accessible.CheckBox
                             Accessible.name: frow.modelData.name
@@ -687,7 +693,7 @@ Item {
                             id: nameCell
                             x: 96; width: table.wName; height: frow.height
                             readonly property bool tools: frow.hot || frow.sel
-                            FluentIcon { id: newMark; visible: !!frow.modelData.is_new; x: 12; y: frow.ty; size: 12; width: 7.92; name: "glimmer-12"; color: root.strong }
+                            FluentIcon { id: newMark; visible: !!frow.modelData.is_new; x: 12; y: frow.ty; size: 12; width: 7.92; name: "glimmer-12"; color: theme.onFill([hcFill6, card], root.strong) }
                             Text {
                                 id: nameText
                                 x: newMark.visible ? 19.92 : 12; y: frow.ty
@@ -695,7 +701,7 @@ Item {
                                 elide: Text.ElideRight
                                 text: frow.modelData.name
                                 font.family: theme.font; font.pixelSize: 14; font.weight: frow.sel ? Font.DemiBold : Font.Normal
-                                color: root.ink
+                                color: theme.onFill([hcFill6, card], root.ink)
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: frow.activate() }
                                 Accessible.role: Accessible.Link
@@ -707,7 +713,7 @@ Item {
                                 x: 12; y: 35.33; width: nameCell.width - 20
                                 elide: Text.ElideRight
                                 text: "Modified by " + (frow.modelData.modified_by || root.userName) + " · " + (frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size))
-                                font.family: theme.font; font.pixelSize: 12; color: theme.pick("#5E5E5D", "#ADADAD")
+                                font.family: theme.font; font.pixelSize: 12; color: theme.onFill([hcFill6, card], theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF"))
                             }
                             Row {
                                 visible: nameCell.tools
@@ -740,22 +746,22 @@ Item {
                                 width: 81; height: 49
                                 Row {
                                     x: 12; y: frow.ty + 0.67; spacing: 4
-                                    FluentIcon { visible: frow.modelData.sharing === "Shared"; y: 2.5; name: "people-16"; size: 14; color: root.strong }
-                                    Text { text: frow.modelData.sharing; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                                    FluentIcon { visible: frow.modelData.sharing === "Shared"; y: 2.5; name: "people-16"; size: 14; color: theme.onFill([hcFill6, card], root.strong) }
+                                    Text { text: frow.modelData.sharing; font.family: theme.font; font.pixelSize: 14; color: theme.onFill([hcFill6, card], root.ink) }
                                 }
                             }
                             Item {
                                 width: 119; height: 49
                                 visible: !!frow.modelData.activity && !table.narrow
                                 FluentIcon {
-                                    x: 12; y: frow.ty + 1.83; size: 16; color: root.strong
+                                    x: 12; y: frow.ty + 1.83; size: 16; color: theme.onFill([hcFill6, card], root.strong)
                                     name: frow.modelData.activity ? root.activityIcon(frow.modelData.activity.kind) : ""
                                 }
                                 Text {
                                     x: 32; y: 15.83; width: parent.width - 32 - 4; height: 16
                                     elide: Text.ElideRight
                                     text: frow.modelData.activity ? frow.modelData.activity.text + " " + frow.modelData.activity.time : ""
-                                    font.family: theme.font; font.pixelSize: 12; color: root.ink
+                                    font.family: theme.font; font.pixelSize: 12; color: theme.onFill([hcFill6, card], root.ink)
                                 }
                             }
                         }
@@ -822,14 +828,14 @@ Item {
                          meetings: "Files from your meetings will show up here", media: "Your photos and videos will show up here",
                          people: "Files people share with you will show up here" })[root.view] || "This folder is empty"
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
-                color: theme.text
+                color: theme.onFill(card, theme.text)
             }
             Text {
                 visible: !!root.driveData.error
                 anchors.centerIn: parent
                 text: root.driveData.error || ""
                 font.family: theme.font; font.pixelSize: theme.base
-                color: theme.danger
+                color: theme.onFill(card, theme.danger)
             }
             BusyIndicator { anchors.centerIn: parent; running: root.busy; visible: root.busy }
         }
@@ -873,11 +879,12 @@ Item {
             color: tile.sel ? root.selectedFill : theme.surface
         }
         Rectangle {
+            id: hcFill7
             visible: tile.hot
             x: parent.width - 30; y: 12; width: 18; height: 18; radius: 9
             color: tile.sel ? root.accent : theme.surface
             border.width: tile.sel ? 0 : 1; border.color: root.strong
-            FluentIcon { visible: tile.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+            FluentIcon { visible: tile.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill7, "white") }
             TapHandler { onTapped: root.toggle(tile.modelData) }
             Accessible.role: Accessible.CheckBox
             Accessible.name: tile.modelData.name
@@ -895,7 +902,7 @@ Item {
             visible: !tile.modelData.is_folder
             x: 51; y: 16; width: 74; height: 96; radius: 4
             color: theme.surface
-            border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+            border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
             Image {
                 id: thumbImg
                 anchors.fill: parent; anchors.margins: 1
@@ -906,8 +913,8 @@ Item {
             FluentIcon { visible: !thumbImg.source.toString(); anchors.centerIn: parent; size: 32; name: root.fileIcon(tile.modelData.kind) }
             Rectangle {
                 visible: !!root.badge(tile.modelData.kind)
-                x: 6; y: parent.height - 30; width: 24; height: 24; radius: 4; color: "white"
-                border.width: 0.67; border.color: "#E0E0E0"
+                x: 6; y: parent.height - 30; width: 24; height: 24; radius: 4; color: theme.hc("white", "#000000")
+                border.width: 0.67; border.color: theme.hc("#E0E0E0", "#FFFFFF")
                 FluentIcon { anchors.centerIn: parent; size: 16; name: root.badge(tile.modelData.kind) }
             }
             Component.onCompleted: root.wantThumb(tile.modelData)
@@ -949,8 +956,8 @@ Item {
         Row {
             x: 10.67; y: 14.83; spacing: 6
             Text { text: lh.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
-            FluentIcon { visible: !!lh.field && root.sortField === lh.field; y: 3; size: 12; name: root.sortAsc ? "arrow-up-12" : "arrow-down-12"; color: theme.pick("#605E5C", "#D6D6D6") }
-            FluentIcon { visible: !!lh.field; y: 4; size: 10; name: "chevron-down-12"; color: theme.pick("#605E5C", "#D6D6D6") }
+            FluentIcon { visible: !!lh.field && root.sortField === lh.field; y: 3; size: 12; name: root.sortAsc ? "arrow-up-12" : "arrow-down-12"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
+            FluentIcon { visible: !!lh.field; y: 4; size: 10; name: "chevron-down-12"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
         }
         HoverHandler { enabled: !!lh.field; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: !!lh.field; onTapped: headMenu.open() }
@@ -994,10 +1001,10 @@ Item {
         signal clicked()
         height: 32; radius: 4
         width: 8 + 16 + (label ? 8 + bcText.implicitWidth : 0) + (chevron ? 4 + 16 : 0) + 8
-        color: bc.pressed ? theme.pick("#EBEBEB", "#3D3D3D") : bch.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
-        FluentIcon { x: 8; y: 8; name: bc.icon; size: 16; color: bc.icon.startsWith("ft-") ? "#212121" : root.ink }
-        Text { id: bcText; visible: !!bc.label; x: 32; y: 9; text: bc.label; font.family: theme.font; font.pixelSize: 14; color: root.ink }
-        FluentIcon { visible: bc.chevron; x: bcText.x + bcText.implicitWidth + 6; y: 10; name: "chevron-down-12"; size: 12; color: root.ink }
+        color: bc.pressed ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : bch.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
+        FluentIcon { x: 8; y: 8; name: bc.icon; size: 16; color: theme.onFill(bc, bc.icon.startsWith("ft-") ? theme.hc("#212121", "#FFFFFF") : root.ink) }
+        Text { id: bcText; visible: !!bc.label; x: 32; y: 9; text: bc.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(bc, root.ink) }
+        FluentIcon { visible: bc.chevron; x: bcText.x + bcText.implicitWidth + 6; y: 10; name: "chevron-down-12"; size: 12; color: theme.onFill(bc, root.ink) }
         HoverHandler { id: bch; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: bc.clicked() }
         Accessible.role: Accessible.Button
@@ -1010,8 +1017,8 @@ Item {
         property string tip
         signal clicked()
         width: 28; height: 28; radius: 4
-        color: rth2.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: rtool.icon; size: 16; color: theme.pick("#605E5C", "#D6D6D6") }
+        color: rth2.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: rtool.icon; size: 16; color: theme.onFill(rtool, theme.pick("#605E5C", "#D6D6D6", "#FFFFFF")) }
         HoverHandler { id: rth2; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: rtool.clicked() }
         ToolTip.visible: rth2.hovered
@@ -1076,9 +1083,10 @@ Item {
             Row {
                 spacing: 8
                 Rectangle {
+                    id: hcFill8
                     width: 90; height: 32; radius: theme.radius
                     color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill8, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: folderName.createFolder() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Create"

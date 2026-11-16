@@ -106,11 +106,12 @@ Item {
             // 2026-11-11): 32 x 31.3, white, a NeutralStroke1 edge, radius
             // 4, the chat glyph (20, filled on hover).
             Rectangle {
+                id: hcFill1
                 visible: root.chatShown
                 width: 32; height: 31.3; radius: 4
                 color: ch.hovered ? theme.menuHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                FluentIcon { anchors.centerIn: parent; name: ch.hovered ? "chat-20-filled" : "chat-20"; size: 20; color: ch.hovered ? theme.brand : theme.text }
+                FluentIcon { anchors.centerIn: parent; name: ch.hovered ? "chat-20-filled" : "chat-20"; size: 20; color: theme.onFill(hcFill1, ch.hovered ? theme.brand : theme.text) }
                 HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.chatLobby() }
                 Accessible.role: Accessible.Button
@@ -119,6 +120,7 @@ Item {
             Repeater {
                 model: actions.buttons
                 Rectangle {
+                    id: hcFill2
                     required property var modelData
                     width: (294.7 - (root.chatShown ? 40 : 0) - 8 * (actions.buttons.length - 1)) / actions.buttons.length
                     height: 31.3; radius: 4
@@ -128,7 +130,7 @@ Item {
                         anchors.centerIn: parent
                         text: parent.modelData.t
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                        color: parent.modelData.primary ? "white" : theme.text
+                        color: theme.onFill(hcFill2, parent.modelData.primary ? "white" : theme.text)
                     }
                     HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
                     TapHandler {

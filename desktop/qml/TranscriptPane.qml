@@ -90,10 +90,11 @@ Rectangle {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             visible: root.languageSettingsAvailable
             x: parent.width - 84; y: 13; width: 32; height: 31.33; radius: 4
             color: langHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "translate-auto-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "translate-auto-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: langHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.languageSettings() }
             ToolTip.visible: langHover.hovered
@@ -103,9 +104,10 @@ Rectangle {
             Accessible.name: "Language settings"
         }
         Rectangle {
+            id: hcFill2
             x: parent.width - 52; y: 13; width: 32; height: 31.33; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
@@ -135,15 +137,17 @@ Rectangle {
             color: theme.text
         }
         Rectangle {
+            id: hcFill3
             x: 324; y: 10.83; width: 24; height: 23.33; radius: 4
             color: dismissHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill3, theme.textStrong) }
             HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.barDismissed = true }
             Accessible.role: Accessible.Button
             Accessible.name: "Dismiss"
         }
         Rectangle {
+            id: hcFill4
             anchors.right: parent.right; anchors.rightMargin: 12
             y: 55; height: 23.33; width: switchText.implicitWidth + 16; radius: 4
             color: switchHover.hovered ? theme.menuHover : theme.surface
@@ -153,7 +157,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: "Switch to live captions"
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: theme.text
+                color: theme.onFill(hcFill4, theme.text)
             }
             HoverHandler { id: switchHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.switchToCaptions() }
@@ -288,6 +292,7 @@ Rectangle {
 
     // Back to the newest row after scrolling up.
     Rectangle {
+        id: hcFill5
         visible: list.contentHeight > list.height && !list.atYEnd
         anchors { right: parent.right; rightMargin: 20; bottom: parent.bottom; bottomMargin: 20 }
         width: goRow.implicitWidth + 13; height: 28; radius: 4
@@ -296,12 +301,12 @@ Rectangle {
             id: goRow
             x: 5; anchors.verticalCenter: parent.verticalCenter
             spacing: 4
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "arrow-down-20-filled"; size: 20; color: theme.textOnBrand }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "arrow-down-20-filled"; size: 20; color: theme.onFill(hcFill5, theme.textOnBrand) }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Go to current"
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: theme.textOnBrand
+                color: theme.onFill(hcFill5, theme.textOnBrand)
             }
         }
         HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }

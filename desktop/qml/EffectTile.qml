@@ -77,7 +77,7 @@ Item {
         visible: tile.kind === "blur"
         x: tile.width / 2 + 4; y: tile.glyphY; width: 16; height: 16; radius: 4
         color: chevHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "chevron-down-16"; size: 14; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "chevron-down-16"; size: 14; color: theme.onFill(chev, theme.textStrong) }
         HoverHandler { id: chevHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: blurMenu.opened ? blurMenu.close() : blurMenu.open() }
         Accessible.role: Accessible.ButtonMenu
@@ -97,7 +97,7 @@ Item {
         visible: tile.selected
         x: tile.width - 17.7; y: 1; width: 16; height: 16
         // Measured: the filled part #8A8A8A, the outline white.
-        FluentIcon { anchors.fill: parent; name: "tile-check-filled"; size: 16; color: "#8A8A8A" }
+        FluentIcon { anchors.fill: parent; name: "tile-check-filled"; size: 16; color: theme.hc("#8A8A8A", "#FFFFFF") }
         FluentIcon { anchors.fill: parent; name: "tile-check-outline"; size: 16; color: "white" }
     }
 
@@ -108,7 +108,7 @@ Item {
         visible: tile.removable && (hover.hovered || removeMenu.opened)
         x: tile.width - 19.8; y: 3.5; width: 16; height: 16; radius: 4
         color: moreHover.hovered ? theme.menuHover : theme.surface
-        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-16"; size: 16; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-16"; size: 16; color: theme.onFill(more, theme.textStrong) }
         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: removeMenu.opened ? removeMenu.close() : removeMenu.open() }
         Accessible.role: Accessible.ButtonMenu
@@ -131,14 +131,15 @@ Item {
             x = p.x + 4.9 - 4; y = p.y + more.height + 4.5 - 4
         }
         Rectangle {
+            id: hcFill1
             width: 128.67; height: 32; radius: 4
             color: rmHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { x: 6; y: 6; name: "delete-20"; size: 20; color: theme.textStrong }
+            FluentIcon { x: 6; y: 6; name: "delete-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             Text {
                 x: 30; anchors.verticalCenter: parent.verticalCenter
                 text: "Remove"
                 font.family: theme.font; font.pixelSize: 14
-                color: theme.textStrong
+                color: theme.onFill(hcFill1, theme.textStrong)
             }
             HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { removeMenu.close(); tile.removeRequested() } }
@@ -167,12 +168,12 @@ Item {
                     required property var modelData
                     width: 120.67; height: 32; radius: 4
                     color: bmHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { x: 6; y: 8; visible: tile.blurKind === bm.modelData.k; name: "checkmark-16"; size: 16; color: theme.textStrong }
+                    FluentIcon { x: 6; y: 8; visible: tile.blurKind === bm.modelData.k; name: "checkmark-16"; size: 16; color: theme.onFill(bm, theme.textStrong) }
                     Text {
                         x: 26; anchors.verticalCenter: parent.verticalCenter
                         text: bm.modelData.t
                         font.family: theme.font; font.pixelSize: 14
-                        color: theme.textStrong
+                        color: theme.onFill(bm, theme.textStrong)
                     }
                     HoverHandler { id: bmHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { blurMenu.close(); tile.blurPicked(bm.modelData.k) } }

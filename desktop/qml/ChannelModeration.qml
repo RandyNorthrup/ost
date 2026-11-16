@@ -113,12 +113,12 @@ Item {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             text: !root.loaded ? "" : root.moderated ? "On" : "Off"
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: root.canChange ? theme.text : theme.disabled
+            color: theme.onFill(dropdown, root.canChange ? theme.text : theme.disabled)
         }
         FluentIcon {
             x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter
             name: "chevron-down-20"; size: 20
-            color: root.canChange ? theme.textSecondary : theme.disabled
+            color: theme.onFill(dropdown, root.canChange ? theme.textSecondary : theme.disabled)
         }
         // The brand line while it's open (Fluent's focus underline).
         Rectangle {
@@ -155,7 +155,7 @@ Item {
                         x: 28; anchors.verticalCenter: parent.verticalCenter
                         text: opt.modelData[0]
                         font.family: theme.font; font.pixelSize: 14; font.weight: opt.chosen ? Font.Bold : Font.Normal
-                        color: theme.text
+                        color: theme.onFill(opt, theme.text)
                     }
                     HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
@@ -207,10 +207,11 @@ Item {
         Timer { id: hoverTimer; interval: 250; onTriggered: if (whoHover.hovered) whoCard.open() }
         Timer { id: closeTimer; interval: 250; onTriggered: if (!whoHover.hovered && !cardHover.hovered) whoCard.close() }
         Rectangle {
+            id: hcFill1
             visible: root.canChange
             x: 298; y: 98.4; width: 96; height: 31.3; radius: 4
             color: manageHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+            Text { anchors.centerIn: parent; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: moderatorsDialog.start() }
             Accessible.role: Accessible.Button
@@ -288,7 +289,7 @@ Item {
                                 x: 47.7; anchors.verticalCenter: parent.verticalCenter
                                 text: person.modelData.name
                                 font.family: theme.font; font.pixelSize: 12
-                                color: theme.text
+                                color: theme.onFill(person, theme.text)
                             }
                             HoverHandler { id: personHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler {
@@ -325,7 +326,7 @@ Item {
         Rectangle {
             x: 8; y: 8; width: 16; height: 16; radius: 8
             color: "transparent"
-            border.color: !root.canChange ? theme.disabled : rb.chosen ? theme.brandFill : theme.textSecondary
+            border.color: !root.canChange ? theme.disabled : rb.chosen ? theme.checkedFill : theme.textSecondary
             border.width: 0.67
             Rectangle {
                 visible: rb.chosen; anchors.centerIn: parent; width: 10; height: 10; radius: 5
@@ -353,11 +354,12 @@ Item {
         signal toggled(bool on)
         width: 32 + cbText.implicitWidth + 12; height: 32
         Rectangle {
+            id: hcFill2
             x: 8; y: 8; width: 16; height: 16; radius: 2
-            color: cb.checked ? (root.canChange ? theme.brandFill : theme.disabled) : "transparent"
+            color: cb.checked ? (root.canChange ? theme.checkedFill : theme.disabled) : "transparent"
             border.color: cb.checked ? color : root.canChange ? theme.textSecondary : theme.disabled
             border.width: 0.67
-            FluentIcon { visible: cb.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.textOnBrand }
+            FluentIcon { visible: cb.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill2, theme.textOnBrand) }
         }
         Text {
             id: cbText

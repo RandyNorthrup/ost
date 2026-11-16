@@ -111,7 +111,7 @@ Popup {
             text: "You're about to delete the \"" + (dlg.tag ? dlg.tag.name : "") + "\" tag."
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
-            color: theme.pick("#0F0F0F", "#FFFFFF")
+            color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
         }
 
         // Name and description.
@@ -122,12 +122,12 @@ Popup {
             anchors.right: parent.right; y: 33.8
             text: nameField.text.length + "/40"
             font.family: theme.font; font.pixelSize: 12
-            color: theme.pick("#0F0F0F", "#FFFFFF")
+            color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
         }
         Rectangle {
             visible: dlg.hasName
             x: 0.7; y: 58.4; width: 534.7; height: 32; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             TextInput {
                 id: nameField
                 x: 12; width: parent.width - 14; anchors.verticalCenter: parent.verticalCenter
@@ -149,12 +149,12 @@ Popup {
             anchors.right: parent.right; y: dlg.mode === "edit" ? 109.8 : 101.8
             text: descField.text.length + "/200"
             font.family: theme.font; font.pixelSize: 12
-            color: theme.pick("#0F0F0F", "#FFFFFF")
+            color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
         }
         Rectangle {
             visible: dlg.hasName
             x: 0.7; y: dlg.mode === "edit" ? 134.4 : 126.4; width: 534.7; height: 52; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             TextEdit {
                 id: descField
                 x: 12; y: 6; width: parent.width - 24; height: parent.height - 12
@@ -208,7 +208,7 @@ Popup {
                         required property var modelData
                         width: pickedCol.width; height: 34
                         Avatar { y: 1; size: 32; name: pickedRow.modelData.name || "?"; photoId: pickedRow.modelData.mri }
-                        Text { x: 42; y: -1; width: parent.width - 90; elide: Text.ElideRight; text: pickedRow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.pick("#0F0F0F", "#FFFFFF") }
+                        Text { x: 42; y: -1; width: parent.width - 90; elide: Text.ElideRight; text: pickedRow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF") }
                         Text { x: 42; y: 19; width: parent.width - 90; elide: Text.ElideRight; text: pickedRow.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                         Rectangle {
                             x: parent.width - 32; y: 1.3; width: 32; height: 31.3; radius: 4
@@ -247,8 +247,8 @@ Popup {
                         x: 0.7; width: 534.7; height: 43
                         color: matchHover.hovered ? theme.menuHover : "transparent"
                         Avatar { x: 11.6; y: 7.4; size: 28; name: match.modelData.name || "?"; photoId: match.modelData.mri }
-                        Text { x: 51.6; y: 4.6; width: parent.width - 60; elide: Text.ElideRight; text: match.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
-                        Text { x: 51.6; y: 22.3; width: parent.width - 60; elide: Text.ElideRight; text: match.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        Text { x: 51.6; y: 4.6; width: parent.width - 60; elide: Text.ElideRight; text: match.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(match, theme.textStrong) }
+                        Text { x: 51.6; y: 22.3; width: parent.width - 60; elide: Text.ElideRight; text: match.modelData.mail || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(match, theme.textSecondary) }
                         HoverHandler { id: matchHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: dlg.pickPerson(match.modelData) }
                         Accessible.role: Accessible.ListItem
@@ -295,7 +295,7 @@ Popup {
             anchors.centerIn: parent
             text: btn.text
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: !btn.enabled ? theme.disabledStrong : btn.primary ? theme.textOnBrand : theme.text
+            color: theme.onFill(btn, !btn.enabled ? theme.disabledStrong : btn.primary ? theme.textOnBrand : theme.text)
         }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }

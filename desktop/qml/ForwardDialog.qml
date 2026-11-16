@@ -24,7 +24,7 @@ Popup {
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
 
     property var picked: []
     readonly property bool single: picked.some(p => p.kind === "chat")
@@ -70,7 +70,7 @@ Popup {
     Rectangle {
         id: pickerBox
         x: 33; y: 135; width: 535; height: root.picked.length > 0 ? 39 : 33; radius: 4
-        color: theme.inputFilledDark
+        color: theme.inputFilledDark; border.color: theme.transparentStroke
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand; visible: search.activeFocus }
         Flow {
             x: 12; y: root.picked.length > 0 ? 6 : 0; width: parent.width - 24; spacing: 4
@@ -130,9 +130,10 @@ Popup {
         }
         ForwardCard { x: 11; y: 47; maxWidth: 535 - 22; forward: root.message ? { sender_mri: root.message.sender_mri, sender_name: root.message.sender, arrival_ms: parseInt(root.message.id), html: root.message.html, text: root.message.text } : null }
         Rectangle {
+            id: hcFill1
             x: 494; y: 131; width: 32; height: 32; radius: 4
             color: emojiHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "emoji-16"; size: 16; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "emoji-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: emojiHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: noteEmoji.open() }
             Accessible.role: Accessible.Button
@@ -144,19 +145,21 @@ Popup {
     Row {
         x: 359; y: previewBox.y + previewBox.height + 24; spacing: 16
         Rectangle {
+            id: hcFill2
             width: 96; height: 32; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill3
             readonly property bool on: root.picked.length > 0
             width: 96; height: 32; radius: 4
-            color: !on ? theme.bgDisabled : fwdHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Forward"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: parent.on ? "white" : theme.disabledStrong }
+            color: !on ? theme.hc(theme.bgDisabled, theme.hcHighlight) : fwdHover.hovered ? theme.brandHover : theme.checkedFill
+            Text { anchors.centerIn: parent; text: "Forward"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.on ? "white" : theme.disabledStrong) }
             HoverHandler { id: fwdHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.on; onTapped: { root.forwardTo(root.picked, note.text); root.close() } }
             Accessible.role: Accessible.Button
@@ -182,8 +185,8 @@ Popup {
                 Avatar { x: 12; y: 9; size: 32; name: opt.modelData.name.replace(/ \(You\)$/, ""); photoId: opt.modelData.kind === "person" ? "8:orgid:" + opt.modelData.oid : opt.modelData.group ? "team:" + opt.modelData.group : ""; meeting: opt.modelData.thread_type === "Meeting"; group: opt.modelData.kind === "chat" && !opt.modelData.group && opt.modelData.thread_type !== "Meeting"; square: !!opt.modelData.group }
                 Column {
                     x: 60; anchors.verticalCenter: parent.verticalCenter
-                    Text { text: root.bolded(opt.modelData.name); textFormat: Text.StyledText; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
-                    Text { visible: !!opt.modelData.sub; text: root.bolded(opt.modelData.sub); textFormat: Text.StyledText; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                    Text { text: root.bolded(opt.modelData.name); textFormat: Text.StyledText; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(opt, theme.textStrong) }
+                    Text { visible: !!opt.modelData.sub; text: root.bolded(opt.modelData.sub); textFormat: Text.StyledText; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(opt, theme.textSecondary) }
                 }
                 HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.picked = root.picked.concat([opt.modelData]); search.text = ""; search.forceActiveFocus() } }

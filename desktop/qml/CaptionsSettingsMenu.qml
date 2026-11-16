@@ -51,13 +51,13 @@ Popup {
         signal hovered()
         width: parent.width; height: 32; radius: 4
         color: rh.hovered ? theme.menuHover : "transparent"
-        FluentIcon { visible: r.icon.length > 0; x: 6; y: 6; size: 20; name: r.icon; color: rh.hovered ? theme.text : theme.textStrong }
+        FluentIcon { visible: r.icon.length > 0; x: 6; y: 6; size: 20; name: r.icon; color: theme.onFill(r, rh.hovered ? theme.text : theme.textStrong) }
         Text {
             x: r.icon.length > 0 ? 30 : 6; y: 6; height: 20
             verticalAlignment: Text.AlignVCenter
             text: r.label
             font.family: theme.font; font.pixelSize: theme.base
-            color: rh.hovered ? theme.text : theme.textStrong
+            color: theme.onFill(r, rh.hovered ? theme.text : theme.textStrong)
         }
         Text {
             visible: r.value.length > 0
@@ -66,9 +66,9 @@ Popup {
             verticalAlignment: Text.AlignVCenter
             text: r.value
             font.family: theme.font; font.pixelSize: 12
-            color: theme.textSecondary
+            color: theme.onFill(r, theme.textSecondary)
         }
-        FluentIcon { id: chev; visible: r.chevron; anchors.right: parent.right; anchors.rightMargin: 6; y: 6; size: 20; name: "chevron-right-20"; color: rh.hovered ? theme.text : theme.textStrong }
+        FluentIcon { id: chev; visible: r.chevron; anchors.right: parent.right; anchors.rightMargin: 6; y: 6; size: 20; name: "chevron-right-20"; color: theme.onFill(r, rh.hovered ? theme.text : theme.textStrong) }
         HoverHandler { id: rh; cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) r.hovered() }
         TapHandler { onTapped: r.activated() }
         Accessible.role: Accessible.MenuItem
@@ -87,19 +87,19 @@ Popup {
             verticalAlignment: Text.AlignVCenter
             text: s.label
             font.family: theme.font; font.pixelSize: theme.base
-            color: sh.hovered ? theme.text : theme.textStrong
+            color: theme.onFill(s, sh.hovered ? theme.text : theme.textStrong)
         }
         Rectangle {
             anchors.right: parent.right; anchors.rightMargin: 10; y: 6
             width: 40; height: 20; radius: 10
-            color: s.checked ? (sh.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+            color: s.checked ? (sh.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
             border.color: s.checked ? "transparent" : theme.textSecondary
             border.width: 0.67
             Rectangle {
                 width: 14.4; height: 14.4; radius: 7.2
                 anchors.verticalCenter: parent.verticalCenter
                 x: (s.checked ? 20.67 : 0.67) + 9 - 7.2
-                color: s.checked ? "white" : theme.textSecondary
+                color: s.checked ? theme.hc("white", "#1AEBFF") : theme.textSecondary
             }
         }
         HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) s.hovered() }

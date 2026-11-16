@@ -39,7 +39,7 @@ Item {
         id: surface
         anchors.fill: parent
         radius: 6
-        color: theme.pick("#F0F0F0", "#0A0A0A")
+        color: theme.pick("#F0F0F0", "#0A0A0A", "#000000")
         clip: true
         Item {
             width: 120; height: 96
@@ -47,8 +47,8 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 visible: picture.status !== Image.Ready
-                color: "#CCCCCC"
-                FluentIcon { anchors.centerIn: parent; name: "link-20"; size: 48; color: "#525252" }
+                color: theme.hc("#CCCCCC", "#000000")
+                FluentIcon { anchors.centerIn: parent; name: "link-20"; size: 48; color: theme.hc("#525252", "#FFFFFF") }
             }
             Image {
                 id: picture
@@ -62,7 +62,7 @@ Item {
         }
         Rectangle {
             x: 120; width: 340; height: 96
-            color: theme.pick("#FAFAFA", "#1F1F1F")
+            color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
             Text {
                 visible: !!card.title
                 x: 12; y: 8; width: card.removable ? 284 : 316; height: 20
@@ -75,7 +75,7 @@ Item {
             Item {
                 visible: card.removable && !!card.title
                 x: 308; y: 8; width: 20; height: 20
-                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.pick("#424242", "#D6D6D6") }
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.removeRequested() }
                 Accessible.role: Accessible.Button

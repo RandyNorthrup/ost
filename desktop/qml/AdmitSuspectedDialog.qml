@@ -32,9 +32,10 @@ Popup {
         color: theme.text
     }
     Rectangle {
+        id: hcFill1
         x: 551.3; y: 25.5; width: 24; height: 23.3; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -64,10 +65,11 @@ Popup {
     Item {
         x: 24.7; y: 168.7; width: 133.6; height: 32
         Rectangle {
+            id: hcFill2
             x: 8; y: 8; width: 16; height: 16; radius: 2
             color: root.notBot ? theme.brandFill : "transparent"
             border.color: root.notBot ? theme.brandFill : theme.textSecondary; border.width: 0.67
-            FluentIcon { visible: root.notBot; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+            FluentIcon { visible: root.notBot; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill2, "white") }
         }
         Text {
             x: 36; anchors.verticalCenter: parent.verticalCenter
@@ -85,19 +87,21 @@ Popup {
         x: 375.3; y: 208.7
         spacing: 8
         Rectangle {
+            id: hcFill3
             width: 96; height: 31.3; radius: 4
             color: admitHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Admit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Admit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
             HoverHandler { id: admitHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.admit(root.personId, root.personName, root.notBot) } }
             Accessible.role: Accessible.Button
             Accessible.name: "Admit"
         }
         Rectangle {
+            id: hcFill4
             width: 96; height: 31.3; radius: 4
             color: denyHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Deny"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+            Text { anchors.centerIn: parent; text: "Deny"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, "white") }
             HoverHandler { id: denyHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.deny(root.personId, root.personName) } }
             Accessible.role: Accessible.Button

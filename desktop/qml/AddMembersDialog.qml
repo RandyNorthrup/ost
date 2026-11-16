@@ -184,7 +184,7 @@ Popup {
         Rectangle {
             id: box
             x: 0; y: dlg.channelMode ? 69.3 : 128.7; width: 550.7; height: 33.3; radius: 4
-            color: theme.pick("#F0F0F0", "#141414")
+            color: theme.pick("#F0F0F0", "#141414", "#000000")
             Rectangle {
                 visible: picker.activeFocus
                 anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1
@@ -337,10 +337,11 @@ Popup {
             photoId: opt.candidate ? (opt.candidate.mri || "") : ""
         }
         Rectangle {
+            id: hcFill1
             visible: !opt.candidate
             x: 12; y: 9; width: 32; height: 32; radius: 16
-            color: theme.pick("#8A8A8A", "#5C5C5C")
-            FluentIcon { anchors.centerIn: parent; name: "person-20"; size: 20; color: "white" }
+            color: theme.pick("#8A8A8A", "#5C5C5C", "#000000")
+            FluentIcon { anchors.centerIn: parent; name: "person-20"; size: 20; color: theme.onFill(hcFill1, "white") }
         }
         Text {
             x: 60; y: opt.candidate ? 7 : 15; width: parent.width - 68; elide: Text.ElideRight
@@ -348,7 +349,7 @@ Popup {
             text: opt.candidate ? dlg.marked(opt.candidate.name) : "Add <b>" + dlg.marked(opt.guestEmail).replace(/<\/?b>/g, "") + "</b> as a guest?"
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
-            color: theme.textStrong
+            color: theme.onFill(opt, theme.textStrong)
         }
         Text {
             visible: !!opt.candidate
@@ -357,7 +358,7 @@ Popup {
             text: opt.candidate ? dlg.marked(opt.candidate.detail) : ""
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
-            color: theme.textSecondary
+            color: theme.onFill(opt, theme.textSecondary)
         }
         HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: opt.chosen() }
@@ -382,7 +383,7 @@ Popup {
         Rectangle {
             visible: !!row.item.guest
             x: 8; y: 6; width: 32; height: 32; radius: 16
-            color: theme.pick("#E6E6E6", "#3D3D3D")
+            color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
             FluentIcon { anchors.centerIn: parent; name: "contact-card-20"; size: 20; color: theme.textSecondary }
         }
         // Name (a guest's Add name), the group's expand button.
@@ -396,14 +397,14 @@ Popup {
                 width: Math.min(implicitWidth, 300); elide: Text.ElideRight
                 font.family: theme.font; font.pixelSize: 14
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
-                color: theme.text
+                color: theme.onFill(row, theme.text)
             }
             Text {
                 visible: !!row.item.guest && !row.item.name
                 text: "Add name"
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
-                color: theme.brandFill
+                color: theme.onFill(row, theme.brandFill)
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { row.editing = true; nameEdit.text = ""; nameEdit.forceActiveFocus() } }
                 Accessible.role: Accessible.Button
@@ -412,7 +413,7 @@ Popup {
             Item {
                 visible: !!row.item.group && row.item.people !== null && row.count > 0
                 width: 15; height: 20
-                FluentIcon { anchors.centerIn: parent; name: "chevron-circle-down-12"; size: 12; color: theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "chevron-circle-down-12"; size: 12; color: theme.onFill(row, theme.textStrong) }
                 HoverHandler { id: expandHover; cursorShape: Qt.PointingHandCursor }
                 ToolTip.visible: expandHover.hovered
                 ToolTip.text: row.count === 1 ? "Expand the list with 1 person" : "Expand the list with " + row.count + " people"
@@ -427,7 +428,7 @@ Popup {
             text: row.item.guest ? row.item.email : (row.item.mail || row.item.detail || "")
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
-            color: theme.textSecondary
+            color: theme.onFill(row, theme.textSecondary)
         }
         // A guest's name, edited in place.
         Item {
@@ -437,7 +438,7 @@ Popup {
                 id: nameEdit
                 x: 12; width: parent.width - 14; anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: 14
-                color: theme.text
+                color: theme.onFill(row, theme.text)
                 clip: true
                 Keys.onReturnPressed: { dlg.update(row.item.key, { name: text.trim() }); row.editing = false }
                 Keys.onEscapePressed: row.editing = false
@@ -447,7 +448,7 @@ Popup {
                     width: parent.width; elide: Text.ElideRight
                     text: "Enter a name for " + (row.item.email || "")
                     font: nameEdit.font
-                    color: theme.textTertiary
+                    color: theme.onFill(row, theme.textTertiary)
                 }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
@@ -466,7 +467,7 @@ Popup {
         Rectangle {
             visible: !!row.item.guest && !row.editing
             x: 458.4; y: 12.3; width: guestTag.implicitWidth + 12; height: 20; radius: 4
-            color: theme.pick("#EBEBEB", "#3D3D3D")
+            color: theme.pick("#EBEBEB", "#3D3D3D", "#000000")
             Text { id: guestTag; anchors.centerIn: parent; text: "Guest"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
         }
         Rectangle {
@@ -479,9 +480,9 @@ Popup {
                 anchors.right: roleChevron.left; anchors.rightMargin: 9; anchors.verticalCenter: parent.verticalCenter
                 text: row.item.group ? (row.item.owner ? "Owners" : "Members") : (row.item.owner ? "Owner" : "Member")
                 font.family: theme.font; font.pixelSize: 14
-                color: theme.text
+                color: theme.onFill(roleButton, theme.text)
             }
-            FluentIcon { id: roleChevron; x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
+            FluentIcon { id: roleChevron; x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(roleButton, theme.textSecondary) }
             HoverHandler { id: roleHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: roleMenu.opened ? roleMenu.close() : roleMenu.open() }
             Accessible.role: Accessible.ComboBox
@@ -501,12 +502,12 @@ Popup {
                             readonly property bool chosen: !!row.item.owner === modelData
                             width: 119.6; height: 32; radius: 4
                             color: roleOptHover.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { visible: roleOpt.chosen; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.text }
+                            FluentIcon { visible: roleOpt.chosen; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(roleOpt, theme.text) }
                             Text {
                                 x: 32; anchors.verticalCenter: parent.verticalCenter
                                 text: row.item.group ? (roleOpt.modelData ? "Owners" : "Members") : (roleOpt.modelData ? "Owner" : "Member")
                                 font.family: theme.font; font.pixelSize: 14
-                                color: theme.text
+                                color: theme.onFill(roleOpt, theme.text)
                             }
                             HoverHandler { id: roleOptHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { roleMenu.close(); dlg.update(row.item.key, { owner: roleOpt.modelData }) } }
@@ -549,7 +550,7 @@ Popup {
             anchors.centerIn: parent
             text: btn.text
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text
+            color: theme.onFill(btn, !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text)
         }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }

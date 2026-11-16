@@ -181,13 +181,13 @@ Rectangle {
                 readonly property bool chosen: modelData === root.tab
                 height: 32; radius: 16
                 width: label.implicitWidth + 24
-                color: chosen ? theme.brandTint : ph.hovered ? theme.pick("#EBEBEB", "#3D3D3D") : theme.pick("#F5F5F5", "#2E2E2E")
+                color: chosen ? theme.hc(theme.brandTint, theme.hcHighlight) : ph.hovered ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                 border.width: 0.67; border.color: chosen ? theme.brand : color
                 Text {
                     id: label
                     anchors.centerIn: parent
                     text: pill.modelData === "+" ? "+" + root.hiddenTabs.length : root.tabNames[pill.modelData]
-                    font.family: theme.font; font.pixelSize: 14; font.weight: pill.chosen ? Font.DemiBold : Font.Normal; color: theme.text
+                    font.family: theme.font; font.pixelSize: 14; font.weight: pill.chosen ? Font.DemiBold : Font.Normal; color: theme.onFill(pill, theme.text)
                 }
                 HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pill.modelData === "+" ? overflow.open() : root.setTab(pill.modelData) }
@@ -203,7 +203,7 @@ Rectangle {
             }
         }
     }
-    Rectangle { y: 60.7; width: root.resultsWidth; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
+    Rectangle { y: 60.7; width: root.resultsWidth; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D", "#000000") }
 
     // Filters.
     Item {
@@ -219,16 +219,17 @@ Rectangle {
             height: 24; radius: 4
             width: fbText.implicitWidth + 12 + 4 + 10 + 12 + (on ? 20 : 0)
             color: fbh.hovered ? theme.hover : "transparent"
-            Text { id: fbText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: fb.label; font.family: theme.font; font.pixelSize: 14; color: fb.on ? theme.text : theme.textSecondary; font.weight: fb.on ? Font.DemiBold : Font.Normal }
-            FluentIcon { visible: !fb.on; x: fbText.x + fbText.implicitWidth + 9; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 10; color: theme.textSecondary }
+            Text { id: fbText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: fb.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fb, fb.on ? theme.text : theme.textSecondary); font.weight: fb.on ? Font.DemiBold : Font.Normal }
+            FluentIcon { visible: !fb.on; x: fbText.x + fbText.implicitWidth + 9; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 10; color: theme.onFill(fb, theme.textSecondary) }
             HoverHandler { id: fbh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: fb.clicked() }
             Rectangle {
+                id: hcFill1
                 visible: fb.on
                 x: fbText.x + fbText.implicitWidth + 6; anchors.verticalCenter: parent.verticalCenter
                 width: 20; height: 20; radius: 4
                 color: fxh.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 12; color: theme.textSecondary }
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 12; color: theme.onFill(hcFill1, theme.textSecondary) }
                 HoverHandler { id: fxh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: fb.cleared() }
                 Accessible.role: Accessible.Button
@@ -283,7 +284,7 @@ Rectangle {
                 Accessible.name: "Clear all"
             }
         }
-        Rectangle { y: 40.7; x: -column.x; width: root.resultsWidth; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D") }
+        Rectangle { y: 40.7; x: -column.x; width: root.resultsWidth; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D", "#000000") }
         // Files' Grid view / List view (Teams: 30.67 + 32 x 31.33 outline
         // buttons sharing a #D1D1D1 edge, radius 4 outside, 52.5 in from
         // the list's right; the chosen one's icon filled in brand colour).
@@ -299,17 +300,18 @@ Rectangle {
                     readonly property bool on: root.fileLayout === modelData.key
                     width: index === 0 ? 30.67 : 32; height: 31.33
                     Rectangle {
+                        id: hcFill2
                         // Rounded outside only: the inner corners hide under the clip.
                         x: lb.index === 0 ? 0 : -6; width: parent.width + 6; height: parent.height; radius: 4
                         color: lbh.hovered ? theme.hover : "transparent"
-                        border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
+                        border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
                     }
                     clip: true
-                    Rectangle { visible: lb.index === 1; width: 0.67; height: parent.height; color: theme.pick("#D1D1D1", "#666666") }
+                    Rectangle { visible: lb.index === 1; width: 0.67; height: parent.height; color: theme.pick("#D1D1D1", "#666666", "#000000") }
                     FluentIcon {
                         anchors.centerIn: parent; size: 16
                         name: lb.modelData.icon + (lb.on ? "-filled" : "")
-                        color: lb.on ? theme.brandForeground1 : theme.textStrong
+                        color: theme.onFill(hcFill2, lb.on ? theme.brandForeground1 : theme.textStrong)
                     }
                     HoverHandler { id: lbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.setFileLayout(lb.modelData.key) }
@@ -361,7 +363,7 @@ Rectangle {
         }
         Rectangle {
             x: 12.7; y: 16.7; width: parent.width - 25.4; height: 33.3; radius: 4
-            color: theme.pick("#F5F5F5", "#141414")
+            color: theme.pick("#F5F5F5", "#141414", "#000000")
             Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: inField.activeFocus ? 2 : 0.67; color: inField.activeFocus ? theme.brand : theme.textSecondary }
             TextInput {
                 id: inField
@@ -381,9 +383,10 @@ Rectangle {
             clip: true
             model: inPop.items
             delegate: Rectangle {
+                id: hcFill3
                 required property var modelData
                 width: inList.width; height: 48; radius: 4
-                color: ih.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                color: ih.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                 Avatar {
                     x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32
                     name: parent.modelData.kind === "chat" ? parent.modelData.name : parent.modelData.team || parent.modelData.name
@@ -393,8 +396,8 @@ Rectangle {
                 }
                 Column {
                     x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 64
-                    Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    Text { visible: !!parent.parent.modelData.team && parent.parent.modelData.kind === "channel"; width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.team || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, theme.text) }
+                    Text { visible: !!parent.parent.modelData.team && parent.parent.modelData.kind === "channel"; width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.team || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill3, theme.textSecondary) }
                 }
                 HoverHandler { id: ih; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.inPlace = { kind: parent.modelData.kind, thread: parent.modelData.thread, group: parent.modelData.group, name: parent.modelData.name }; inPop.close(); root.run() } }
@@ -415,14 +418,14 @@ Rectangle {
         readonly property var people: { try { return pField.text.trim().length >= 2 ? JSON.parse(backend.peopleJson || "[]") : [] } catch (e) { return [] } }
         Rectangle {
             x: 12.7; y: 16.7; width: parent.width - 25.4; height: 33.3; radius: 4
-            color: theme.pick("#F5F5F5", "#141414")
+            color: theme.pick("#F5F5F5", "#141414", "#000000")
             Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: pField.activeFocus ? 2 : 0.67; color: pField.activeFocus ? theme.brand : theme.textSecondary }
             Rectangle {
                 id: pickedChip
                 visible: !!personPop.picked
                 x: 6; anchors.verticalCenter: parent.verticalCenter
                 height: 24; radius: 4; width: pcText.implicitWidth + 36
-                color: theme.pick("#EBEBEB", "#3D3D3D")
+                color: theme.pick("#EBEBEB", "#3D3D3D", "#000000")
                 Text { id: pcText; x: 8; anchors.verticalCenter: parent.verticalCenter; text: personPop.picked ? personPop.picked.name : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 FluentIcon { anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 12; color: theme.textSecondary
                     TapHandler { onTapped: personPop.picked = null } }
@@ -444,14 +447,15 @@ Rectangle {
             Repeater {
                 model: personPop.people.slice(0, 5)
                 Rectangle {
+                    id: hcFill4
                     required property var modelData
                     width: parent.width; height: 50; radius: 4
-                    color: pph.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                    color: pph.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                     Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: parent.modelData.name || ""; photoId: parent.modelData.mri || "" }
                     Column {
                         x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 64
-                        Text { width: parent.width; elide: Text.ElideRight; text: (parent.parent.modelData.name || "") + (root.isMe(parent.parent.modelData.mri) ? " (You)" : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                        Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.mail || parent.parent.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        Text { width: parent.width; elide: Text.ElideRight; text: (parent.parent.modelData.name || "") + (root.isMe(parent.parent.modelData.mri) ? " (You)" : ""); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
+                        Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.mail || parent.parent.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary) }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { personPop.picked = { name: parent.modelData.name, mail: parent.modelData.mail || parent.modelData.upn || "", mri: parent.modelData.mri || ("8:orgid:" + (parent.modelData.id || "")) }; pField.text = "" } }
@@ -482,11 +486,12 @@ Rectangle {
             }
         }
         Rectangle {
+            id: hcFill5
             anchors.right: parent.right; anchors.rightMargin: 12.7; anchors.bottom: parent.bottom; anchors.bottomMargin: 12.7
             width: 96; height: 32; radius: 4
             readonly property bool usable: !!personPop.picked
-            color: usable ? (aph.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E")
-            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C") }
+            color: usable ? (aph.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E", "#000000")
+            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: aph; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.usable; onTapped: { root.person = Object.assign({}, personPop.picked, { from: personPop.from }); personPop.close(); root.run() } }
             Accessible.role: Accessible.Button
@@ -508,10 +513,11 @@ Rectangle {
             Repeater {
                 model: [{ k: "today", l: "Today" }, { k: "yesterday", l: "Yesterday" }, { k: "week", l: "This week" }, { k: "month", l: "This month" }]
                 Rectangle {
+                    id: hcFill6
                     required property var modelData
                     width: parent.width; height: 32
-                    color: dh.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : root.dateKey === modelData.k ? theme.pick("#EBEBEB", "#383838") : "transparent"
-                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.l; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    color: dh.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : root.dateKey === modelData.k ? theme.pick("#EBEBEB", "#383838", "#000000") : "transparent"
+                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.l; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill6, theme.text) }
                     HoverHandler { id: dh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.dateKey = parent.modelData.k; datePop.close(); root.run() } }
                     Accessible.role: Accessible.ListItem
@@ -519,7 +525,7 @@ Rectangle {
                 }
             }
         }
-        Rectangle { x: 1; y: 176; width: parent.width - 2; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        Rectangle { x: 1; y: 176; width: parent.width - 2; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
         Text { x: 16; y: 190; text: "From"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
         DatePickerField {
             x: 16; y: 210; width: parent.width - 32
@@ -536,20 +542,22 @@ Rectangle {
             onPicked: d => datePop.toDate = d
         }
         Rectangle {
+            id: hcFill7
             x: parent.width - 16 - 96 - 8 - 54.7; y: 324; width: 54.7; height: 32; radius: 4
             readonly property bool usable: datePop.fromSet || !!root.dateKey
             color: usable && dch.hovered ? theme.hover : "transparent"
-            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: parent.usable ? theme.text : theme.pick("#BDBDBD", "#5C5C5C") }
+            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill7, parent.usable ? theme.text : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: dch; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.usable; onTapped: { datePop.fromSet = false; if (root.dateKey) { root.dateKey = ""; datePop.close(); root.run() } } }
             Accessible.role: Accessible.Button
             Accessible.name: "Clear"
         }
         Rectangle {
+            id: hcFill8
             x: parent.width - 16 - 96; y: 324; width: 96; height: 32; radius: 4
             readonly property bool usable: datePop.fromSet
-            color: usable ? (dah.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E")
-            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C") }
+            color: usable ? (dah.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E", "#000000")
+            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: dah; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.usable; onTapped: { root.customFrom = datePop.fromDate; root.customTo = datePop.toDate; root.dateKey = "custom"; datePop.close(); root.run() } }
             Accessible.role: Accessible.Button
@@ -574,10 +582,11 @@ Rectangle {
             signal toggled()
             width: 170; height: 32
             Rectangle {
+                id: hcFill9
                 anchors.verticalCenter: parent.verticalCenter
                 width: 16; height: 16; radius: 2
                 color: ck.checked ? theme.brand : "transparent"; border.width: 1; border.color: ck.checked ? theme.brand : theme.textSecondary
-                FluentIcon { anchors.centerIn: parent; visible: ck.checked; name: "checkmark-12"; size: 12; color: "#FFFFFF" }
+                FluentIcon { anchors.centerIn: parent; visible: ck.checked; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill9, "#FFFFFF") }
             }
             Text { x: 26; anchors.verticalCenter: parent.verticalCenter; text: ck.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
             TapHandler { onTapped: ck.toggled() }
@@ -593,18 +602,20 @@ Rectangle {
             Check { label: "Hide apps & bots"; checked: morePop.b; onToggled: morePop.b = !morePop.b }
         }
         Rectangle {
+            id: hcFill10
             x: parent.width - 20 - 96 - 8 - 60; y: 150; width: 60; height: 32; radius: 4
             color: mch.hovered ? theme.hover : "transparent"
-            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill10, theme.text) }
             HoverHandler { id: mch; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { morePop.m = false; morePop.a = false; morePop.b = false } }
             Accessible.role: Accessible.Button
             Accessible.name: "Clear"
         }
         Rectangle {
+            id: hcFill11
             x: parent.width - 20 - 96; y: 150; width: 96; height: 32; radius: 4
             color: mah.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
+            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill11, "#FFFFFF") }
             HoverHandler { id: mah; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.mentions = morePop.m; root.attachment = morePop.a; root.hideBots = morePop.b; morePop.close(); root.run() } }
             Accessible.role: Accessible.Button
@@ -754,7 +765,7 @@ Rectangle {
         signal clicked()
         width: 32; height: 31.3; radius: 4
         color: cah2.hovered ? theme.hover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: ca.icon; size: 18; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: ca.icon; size: 18; color: theme.onFill(ca, theme.textStrong) }
         HoverHandler { id: cah2; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ca.clicked() }
         ToolTip.visible: cah2.hovered; ToolTip.delay: 500; ToolTip.text: ca.label
@@ -824,7 +835,7 @@ Rectangle {
             Card {
                 id: card
                 height: 80 + mtext.height
-                color: root.preview && root.preview.id === mc.h.id ? theme.pick("#FAFAFA", "#2E2E2E") : theme.surface
+                color: root.preview && root.preview.id === mc.h.id ? theme.pick("#FAFAFA", "#2E2E2E", "#000000") : theme.surface
                 // Its place.
                 Avatar {
                     x: 20; y: 16; size: 20
@@ -852,7 +863,7 @@ Rectangle {
                         onClicked: root.openChatWindow(mc.h.thread, mc.place ? mc.place.channel.name : root.chatName(mc.h.thread))
                     }
                 }
-                Rectangle { x: 16; y: 52; width: parent.width - 32; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                Rectangle { x: 16; y: 52; width: parent.width - 32; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                 Avatar {
                     x: 16; y: 56
                     size: 28
@@ -1174,11 +1185,12 @@ Rectangle {
                     anchors.right: parent.right; anchors.rightMargin: 16; y: 17
                     spacing: 0
                     Rectangle {
+                        id: hcFill12
                         readonly property bool chat: !!parent.parent.parent.e.join_url && !parent.parent.parent.e.is_organizer || (!!parent.parent.parent.e.join_url && new Date(parent.parent.parent.e.end) < new Date())
                         width: ebText.implicitWidth + 16 + 6 + 20; height: 23.3; radius: 4
                         color: ebh.hovered ? theme.hover : theme.surface; border.color: theme.stroke; border.width: 0.67
-                        FluentIcon { x: 10.6; anchors.verticalCenter: parent.verticalCenter; name: parent.chat ? "chat-20" : "edit-20"; size: 16; color: theme.text }
-                        Text { id: ebText; x: 32.6; anchors.verticalCenter: parent.verticalCenter; text: parent.chat ? "Chat" : "Edit"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                        FluentIcon { x: 10.6; anchors.verticalCenter: parent.verticalCenter; name: parent.chat ? "chat-20" : "edit-20"; size: 16; color: theme.onFill(hcFill12, theme.text) }
+                        Text { id: ebText; x: 32.6; anchors.verticalCenter: parent.verticalCenter; text: parent.chat ? "Chat" : "Edit"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, theme.text) }
                         HoverHandler { id: ebh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.openMeeting(parent.parent.parent.parent.e) }
                         Accessible.role: Accessible.Button
@@ -1205,10 +1217,10 @@ Rectangle {
                         required property var modelData
                         width: 242.3; height: 216.3; depth: 2; radius: 6; color: theme.surface
                         Rectangle {
-                            width: parent.width; height: 136.3; radius: 6; color: theme.pick("#F5F5F5", "#2E2E2E"); clip: true
+                            width: parent.width; height: 136.3; radius: 6; color: theme.pick("#F5F5F5", "#2E2E2E", "#000000"); clip: true
                             Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true; source: root.imageOf(parent.parent.modelData) }
                         }
-                        Rectangle { y: 136.3; width: parent.width; height: 80; color: theme.pick("#FAFAFA", "#1A1A1A"); radius: 6 }
+                        Rectangle { y: 136.3; width: parent.width; height: 80; color: theme.pick("#FAFAFA", "#1A1A1A", "#000000"); radius: 6 }
                         Avatar { x: 12.7; y: 142.9; size: 20; name: parent.modelData.sender_name || ""; photoId: parent.modelData.sender_mri || "" }
                         Text { x: 40.7; y: 144.9; text: root.shortName(parent.modelData.sender_name) + "   "; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                         Text { x: 82.6; y: 144.9; text: root.shortDate(parent.modelData.time); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
@@ -1259,7 +1271,7 @@ Rectangle {
                         }
                         width: 242.27; height: 186.27; depth: 2; radius: 6; color: theme.surface
                         // Rounded at the top only: the footer covers the rest.
-                        Rectangle { width: parent.width; height: 136.27 + 6; radius: 6; color: theme.pick("#F5F5F5", "#2E2E2E") }
+                        Rectangle { width: parent.width; height: 136.27 + 6; radius: 6; color: theme.pick("#F5F5F5", "#2E2E2E", "#000000") }
                         FluentIcon { visible: gimg.status !== Image.Ready; x: (parent.width - 28) / 2; y: (136.27 - 28) / 2; size: 28; name: "ft-genericfile-32" }
                         // The picture, cropped from its top to fill the area
                         // and clipped to the card's top corners on a canvas
@@ -1291,8 +1303,8 @@ Rectangle {
                                 ctx.drawImage(gimg, (iw - sw) / 2, 0, sw, sh, 0, 0, width, height)
                             }
                         }
-                        Rectangle { y: 136.27; width: parent.width; height: 50; radius: 6; color: theme.pick("#FAFAFA", "#1A1A1A") }
-                        Rectangle { y: 136.27; width: parent.width; height: 8; color: theme.pick("#FAFAFA", "#1A1A1A") }
+                        Rectangle { y: 136.27; width: parent.width; height: 50; radius: 6; color: theme.pick("#FAFAFA", "#1A1A1A", "#000000") }
+                        Rectangle { y: 136.27; width: parent.width; height: 8; color: theme.pick("#FAFAFA", "#1A1A1A", "#000000") }
                         FluentIcon { x: 12.67; y: 145.27; size: 32; name: root.fileIcon(gcard.modelData.file_type, gcard.modelData.file_name) }
                         Text {
                             x: 52.67; y: 143.27; width: 144.67; height: 20; verticalAlignment: Text.AlignVCenter
@@ -1312,7 +1324,7 @@ Rectangle {
                             id: gmoreBtn
                             x: 202.6; y: 145.27; width: 32; height: 32; radius: 4
                             color: gmore.hovered ? theme.hover : "transparent"
-                            FluentIcon { anchors.centerIn: parent; size: 16; name: "more-horizontal-20"; color: theme.textSecondary }
+                            FluentIcon { anchors.centerIn: parent; size: 16; name: "more-horizontal-20"; color: theme.onFill(gmoreBtn, theme.textSecondary) }
                             HoverHandler { id: gmore; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: gmenu.open() }
                             Accessible.role: Accessible.Button

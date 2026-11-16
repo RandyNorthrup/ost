@@ -6,7 +6,7 @@ import QtQuick
 Canvas {
     id: root
     property real radius: 4
-    property color background: "white"
+    property color background: theme.hc("white", "#000000")
     /// A squircle over the whole box instead (CSS corner-shape
     /// superellipse(2) with a 50% radius: |x|^4 + |y|^4 = 1), as Teams
     /// draws app tiles.

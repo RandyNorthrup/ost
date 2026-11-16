@@ -39,7 +39,7 @@ Popup {
     width: 316; height: 485; padding: 0
     modal: false; focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    background: FluentSurface { depth: 16; radius: 4; color: theme.pick("#FAFAFA", "#1F1F1F") }
+    background: FluentSurface { depth: 16; radius: 4; color: theme.pick("#FAFAFA", "#1F1F1F", "#000000") }
 
     // Teams' sticker catalogue (shipped with OST; pictures from Teams' CDN).
     property var catalog: ({ statics: "", cdnVersion: 5, categories: [], stickers: [], popular: [], defaultRecent: [] })
@@ -157,10 +157,11 @@ Popup {
     // Back (GIF results, a sticker pack) and search.
     readonly property bool showBack: (tab === "gifs" && gifResultsOpen) || (tab === "stickers" && (openPack !== "" || !!editor.sticker))
     Rectangle {
+        id: hcFill1
         visible: root.tab !== "emoji" && root.showBack
         x: 15; y: 68; width: 32; height: 32; radius: 4
         color: backHover.hovered ? theme.hover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { if (root.tab === "gifs") { root.gifResultsOpen = false; search.text = "" } else if (editor.sticker) editor.sticker = null; else root.openPack = "" } }
         Accessible.role: Accessible.Button
@@ -169,7 +170,7 @@ Popup {
     Rectangle {
         visible: root.tab !== "emoji"
         x: root.showBack ? 59 : 15; y: 68; width: root.showBack ? 242 : 286; height: 32; radius: 4
-        color: theme.pick("#F5F5F5", "#292929")
+        color: theme.pick("#F5F5F5", "#292929", "#000000")
         TextInput {
             id: search
             x: 10; width: parent.width - 10 - 34; anchors.verticalCenter: parent.verticalCenter
@@ -192,11 +193,12 @@ Popup {
         width: 316; height: 31.3
         Text { x: 15; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; text: hd.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Medium; color: theme.text; Accessible.role: Accessible.Heading }
         Rectangle {
+            id: hcFill2
             visible: hd.seeAll
             x: 224.8; width: 83.2; height: 31.3; radius: 4
             color: seeHover.hovered ? theme.hover : "transparent"
-            Text { x: 12.7; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "See all"; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
-            FluentIcon { x: 59; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 16; color: theme.textStrong }
+            Text { x: 12.7; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "See all"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.textStrong) }
+            FluentIcon { x: 59; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: seeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: hd.seeAllClicked() }
             Accessible.role: Accessible.Button
@@ -211,17 +213,18 @@ Popup {
         property var sticker
         property real size: 69
         width: size; height: size; radius: 6
-        color: stHover.hovered ? theme.pick("#EBEBEB", "#333333") : theme.pick("#F5F5F5", "#292929")
+        color: stHover.hovered ? theme.pick("#EBEBEB", "#333333", "#1AEBFF") : theme.pick("#F5F5F5", "#292929", "#000000")
         Image {
             x: 4.7; y: 4.7; width: st.size - 9.4; height: st.size - 9.4
             source: st.sticker ? root.stickerPreview(st.sticker) : ""
             fillMode: Image.PreserveAspectFit; asynchronous: true; smooth: true
         }
         Rectangle {
+            id: hcFill3
             visible: !!st.sticker && root.editable(st.sticker)
             x: st.size - 25.4; y: st.size - 25.4; width: 18; height: 18; radius: 9
-            color: "#575757"
-            FluentIcon { anchors.centerIn: parent; name: "edit-20-filled"; size: 12; color: "white" }
+            color: theme.hc("#575757", "#000000")
+            FluentIcon { anchors.centerIn: parent; name: "edit-20-filled"; size: 12; color: theme.onFill(hcFill3, "white") }
         }
         HoverHandler { id: stHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.chooseSticker(st.sticker) }
@@ -344,7 +347,7 @@ Popup {
                         fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true
                         playing: root.opened && root.tab === "gifs"
                     }
-                    Rectangle { x: 0.7; y: 0.7; width: 138.2; height: 74.7; color: "#4D000000" }
+                    Rectangle { x: 0.7; y: 0.7; width: 138.2; height: 74.7; color: theme.hc("#4D000000", "#000000") }
                     RoundedCorners { anchors.fill: parent; radius: 6; background: theme.surface }
                     Text { x: 15.7; y: 28; height: 20; verticalAlignment: Text.AlignVCenter; text: cat.modelData[0]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -425,10 +428,10 @@ Popup {
                         id: pack
                         required property var modelData
                         width: 138; height: 46; radius: 6
-                        color: packHover.hovered ? theme.pick("#EBEBEB", "#333333") : theme.pick("#F5F5F5", "#292929")
-                        Text { x: 10; y: 13; width: 88; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: pack.modelData.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        color: packHover.hovered ? theme.pick("#EBEBEB", "#333333", "#1AEBFF") : theme.pick("#F5F5F5", "#292929", "#000000")
+                        Text { x: 10; y: 13; width: 88; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: pack.modelData.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pack, theme.text) }
                         Image { x: 102; y: 10; width: 26; height: 26; source: root.packIcon(pack.modelData); fillMode: Image.PreserveAspectFit; asynchronous: true }
-                        FluentIcon { visible: pack.modelData.customizable; x: 116; y: 24; name: "edit-20-filled"; size: 12; color: theme.textStrong }
+                        FluentIcon { visible: pack.modelData.customizable; x: 116; y: 24; name: "edit-20-filled"; size: 12; color: theme.onFill(pack, theme.textStrong) }
                         HoverHandler { id: packHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.openPack = pack.modelData.id }
                         Accessible.role: Accessible.Button
@@ -501,7 +504,7 @@ Popup {
         }
         Rectangle {
             x: 15.3; y: 288; width: 286; height: 94.7; radius: 4
-            color: theme.pick("#F5F5F5", "#292929")
+            color: theme.pick("#F5F5F5", "#292929", "#000000")
             Column {
                 x: 12; y: 10; width: parent.width - 24; spacing: 6
                 TextInput {
@@ -526,19 +529,21 @@ Popup {
             }
         }
         Rectangle {
+            id: hcFill4
             x: 15.3; y: 395.3; width: 138; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: editor.sticker = null }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill5
             readonly property bool can: tpl.status === Image.Ready && (cap1.text.trim().length > 0 || cap2.text.trim().length > 0)
             x: 163.3; y: 395.3; width: 138; height: 31.3; radius: 4
             color: !can ? theme.bgDisabled : doneHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: parent.can ? "white" : theme.disabledStrong }
+            Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.can ? "white" : theme.disabledStrong) }
             HoverHandler { id: doneHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.can; onTapped: editor.finish() }
             Accessible.role: Accessible.Button
@@ -579,7 +584,7 @@ Popup {
             contentItem: Text {
                 wrapMode: Text.Wrap; textFormat: Text.StyledText
                 text: "When you search for images, your search terms are sent to GIPHY. To learn more, see GIPHY's <a href=\"https://support.giphy.com/hc/en-us/articles/360032872931-GIPHY-Privacy-Policy\">Privacy Policy</a> and <a href=\"https://support.giphy.com/hc/en-us/articles/360020027752-GIPHY-User-Terms-of-Service\">Terms of Service</a>."
-                linkColor: theme.brand
+                linkColor: theme.link
                 font.family: theme.font; font.pixelSize: theme.small; color: theme.text
                 onLinkActivated: link => Qt.openUrlExternally(link)
             }

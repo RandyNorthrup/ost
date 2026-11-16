@@ -30,17 +30,18 @@ Item {
     }
 
     Rectangle {
+        id: hcFill1
         anchors.fill: parent; radius: 4
-        color: root.filled ? theme.pick("#F5F5F5", "#141414") : theme.surface
-        border.color: root.filled ? "transparent" : !root.enabled ? theme.pick("#E0E0E0", "#424242") : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
-        Rectangle { visible: !root.filled || list.opened; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened ? 2 : 0.67; color: list.opened ? theme.brand : root.enabled ? theme.textSecondary : theme.pick("#E0E0E0", "#424242") }
+        color: root.filled ? theme.pick("#F5F5F5", "#141414", "#000000") : theme.surface
+        border.color: root.filled ? "transparent" : !root.enabled ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+        Rectangle { visible: !root.filled || list.opened; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened ? 2 : 0.67; color: list.opened ? theme.brand : root.enabled ? theme.textSecondary : theme.pick("#E0E0E0", "#424242", "#000000") }
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 52; elide: Text.ElideRight
             text: root.options.length && root.current >= 0 ? root.options[root.current].label : root.placeholder
-            font.family: theme.font; font.pixelSize: 14; color: !root.enabled ? theme.disabled : root.current >= 0 ? theme.text : theme.textSecondary
+            font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, !root.enabled ? theme.disabled : root.current >= 0 ? theme.text : theme.textSecondary)
         }
-        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: root.enabled ? theme.textSecondary : theme.disabled }
+        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(hcFill1, root.enabled ? theme.textSecondary : theme.disabled) }
         HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: list.opened ? list.close() : root.openList() }
         Accessible.role: Accessible.ComboBox
@@ -66,8 +67,8 @@ Item {
                 readonly property bool usable: !modelData.disabled
                 width: view.width; height: 32; radius: 4
                 color: optHover.hovered && usable ? theme.menuHover : "transparent"
-                FluentIcon { visible: opt.index === root.current; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.text }
-                Text { x: 30; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; color: opt.usable ? theme.text : theme.disabled }
+                FluentIcon { visible: opt.index === root.current; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(opt, theme.text) }
+                Text { x: 30; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(opt, opt.usable ? theme.text : theme.disabled) }
                 HoverHandler { id: optHover; cursorShape: opt.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: opt.usable; onTapped: { root.picked(opt.index); list.close() } }
                 Accessible.role: Accessible.ListItem

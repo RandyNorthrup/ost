@@ -110,6 +110,7 @@ Item {
             Rectangle { visible: search.activeFocus; anchors.bottom: parent.bottom; width: parent.width + 30; height: 2; radius: 1; color: theme.brand }
         }
         Rectangle {
+            id: hcFill1
             visible: view.canChange
             x: parent.width - 52 - width; y: 32.6
             width: createRow.implicitWidth + 24; height: 31.3; radius: 4
@@ -118,8 +119,8 @@ Item {
                 id: createRow
                 anchors.centerIn: parent
                 spacing: 6
-                FluentIcon { name: "tag-20"; size: 20; color: theme.textOnBrand }
-                Text { text: "Create tag"; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                FluentIcon { name: "tag-20"; size: 20; color: theme.onFill(hcFill1, theme.textOnBrand) }
+                Text { text: "Create tag"; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             }
             HoverHandler { id: createHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dialog.startCreate([]) }
@@ -160,13 +161,14 @@ Item {
         visible: !!view.open
         anchors.fill: parent
         Rectangle {
+            id: hcFill2
             x: 52; y: 32.6; width: 96; height: 31.3; radius: 4
             color: backHover.hovered ? theme.menuHover : "transparent"
             Row {
                 x: 9.3; anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-12"; size: 12; color: theme.textStrong }
-                Text { text: "All tags"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-12"; size: 12; color: theme.onFill(hcFill2, theme.textStrong) }
+                Text { text: "All tags"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textStrong) }
             }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: view.open = null }
@@ -253,7 +255,7 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: modelData || ""
                                     font.family: theme.font; font.pixelSize: 14
-                                    color: theme.text
+                                    color: theme.onFill(personRow, theme.text)
                                 }
                             }
                             IconButton {
@@ -262,7 +264,7 @@ Item {
                                 icon: "dismiss-20"; label: "Remove " + (personRow.modelData.name || "")
                                 onClicked: view.act("tag-remove-members", { id: view.open.id, name: view.open.name, members: [personRow.modelData.mri] })
                             }
-                            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#FAFAFA", "#2E2E2E") }
+                            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#FAFAFA", "#2E2E2E", "#000000") }
                         }
                     }
                 }
@@ -302,10 +304,11 @@ Item {
         signal toggled()
         width: parent ? parent.width : 0
         Rectangle {
+            id: hcFill3
             width: parent.width; height: 44; radius: 4
             color: secHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: sec.open ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.text }
-            Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: sec.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: sec.open ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.onFill(hcFill3, theme.text) }
+            Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: sec.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, theme.text) }
             HoverHandler { id: secHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sec.toggled() }
             Accessible.role: Accessible.Button
@@ -357,36 +360,37 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: tagRow.modelData.name
                         font.family: theme.font; font.pixelSize: 14
-                        color: theme.text
+                        color: theme.onFill(tagRow, theme.text)
                     }
                     Row {
                         x: table.col + 8; anchors.verticalCenter: parent.verticalCenter
                         spacing: 10
-                        FluentIcon { name: "people-20"; size: 20; color: theme.text }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: String(tagRow.modelData.count); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        FluentIcon { name: "people-20"; size: 20; color: theme.onFill(tagRow, theme.text) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: String(tagRow.modelData.count); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(tagRow, theme.text) }
                     }
                     Text {
                         x: table.col * 2 + 8; width: table.col - 16; elide: Text.ElideRight
                         anchors.verticalCenter: parent.verticalCenter
                         text: tagRow.modelData.description || ""
                         font.family: theme.font; font.pixelSize: 14
-                        color: theme.text
+                        color: theme.onFill(tagRow, theme.text)
                     }
                     Text {
                         x: table.col * 3 + 8; width: table.col - 16; elide: Text.ElideRight
                         anchors.verticalCenter: parent.verticalCenter
                         text: tagRow.modelData.source || ""
                         font.family: theme.font; font.pixelSize: 14
-                        color: theme.text
+                        color: theme.onFill(tagRow, theme.text)
                     }
                     // Restore (deleted) or ···.
                     Rectangle {
+                        id: hcFill4
                         visible: table.deletedRows && view.canChange
                         x: parent.width - 8 - width; anchors.verticalCenter: parent.verticalCenter
                         width: restoreText.implicitWidth + 24; height: 31.3; radius: 4
                         color: restoreHover.hovered ? theme.menuHover : theme.surface
                         border.color: theme.stroke; border.width: 0.67
-                        Text { id: restoreText; anchors.centerIn: parent; text: "Restore"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { id: restoreText; anchors.centerIn: parent; text: "Restore"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                         HoverHandler { id: restoreHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: view.act("tag-restore", tagRow.modelData.id) }
                         Accessible.role: Accessible.Button
@@ -399,7 +403,7 @@ Item {
                         icon: "more-horizontal-20"; label: "More options"
                         onClicked: { rowMenu.tag = tagRow.modelData; rowMenu.parent = more; rowMenu.x = more.width - rowMenu.implicitWidth; rowMenu.y = more.height + 4; rowMenu.open() }
                     }
-                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#FAFAFA", "#2E2E2E") }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#FAFAFA", "#2E2E2E", "#000000") }
                 }
             }
         }
@@ -408,8 +412,8 @@ Item {
     component Badge: Rectangle {
         property int size: 32
         width: size; height: size; radius: size / 2
-        color: theme.pick("#C5CBFA", "#3D3E78")
-        FluentIcon { anchors.centerIn: parent; name: parent.size > 36 ? "tag-24" : "tag-20"; size: parent.size > 36 ? 24 : 20; color: theme.pick("#444791", "#C5CBFA") }
+        color: theme.pick("#C5CBFA", "#3D3E78", "#FFFFFF")
+        FluentIcon { anchors.centerIn: parent; name: parent.size > 36 ? "tag-24" : "tag-20"; size: parent.size > 36 ? 24 : 20; color: theme.pick("#444791", "#C5CBFA", "#FFFFFF") }
     }
     component IconButton: Rectangle {
         id: ib
@@ -418,7 +422,7 @@ Item {
         signal clicked()
         width: 32; height: 31.3; radius: 4
         color: ibHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: 20; color: ibHover.hovered ? theme.brand : theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: 20; color: theme.onFill(ib, ibHover.hovered ? theme.brand : theme.textStrong) }
         HoverHandler { id: ibHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ib.clicked() }
         Accessible.role: Accessible.Button

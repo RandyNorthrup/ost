@@ -139,10 +139,11 @@ Popup {
                         { icon: "linkedin-logo", label: "Find LinkedIn profile for ", act: "linkedin" }
                     ]
                     Rectangle {
+                        id: hcFill1
                         required property var modelData
                         width: 44; height: 32; radius: 4
                         color: hah.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: modelData.icon; size: 16; color: modelData.act === "linkedin" ? "#1177B3" : hah.hovered ? theme.brand : theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: modelData.icon; size: 16; color: theme.onFill(hcFill1, modelData.act === "linkedin" ? theme.hc("#1177B3", "#FFFF00") : hah.hovered ? theme.brand : theme.textStrong) }
                         HoverHandler { id: hah; cursorShape: Qt.PointingHandCursor }
                         TapHandler {
                             onTapped: {
@@ -161,7 +162,7 @@ Popup {
             }
             Rectangle {
                 x: 13.7; y: 163.3; width: 255.3; height: 32; radius: 4
-                color: theme.pick("#F3F2F1", "#3B3A39")
+                color: theme.pick("#F3F2F1", "#3B3A39", "#000000")
                 TextInput {
                     id: quick
                     x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
@@ -177,7 +178,7 @@ Popup {
                 x: 273.7; y: 162.7; width: 44; height: 32; radius: 4
                 color: sh.hovered ? theme.menuHover : "transparent"
                 function go() { if (!quick.text.trim()) return; const t = quick.text.trim(); root.close(); root.quickMessage(root.mri, root.displayName, t) }
-                FluentIcon { anchors.centerIn: parent; name: "send-20"; size: 16; color: quick.text.trim() ? theme.brand : theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "send-20"; size: 16; color: theme.onFill(send, quick.text.trim() ? theme.brand : theme.textStrong) }
                 HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: send.go() }
                 Accessible.role: Accessible.Button
@@ -185,7 +186,7 @@ Popup {
             }
             Rectangle {
                 x: 14; y: 208; width: 304; height: 38; radius: 4
-                color: "transparent"; border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+                color: "transparent"; border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
                 PresenceBadge { x: 25.7 - 14; anchors.verticalCenter: parent.verticalCenter; total: 16; presence: root.p.availability || "Offline" }
                 Text {
                     x: 55.7 - 14; width: parent.width - x - 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
@@ -203,18 +204,20 @@ Popup {
                 Accessible.name: "Profile"
             }
             Rectangle {
+                id: hcFill2
                 readonly property string mail: root.loaded ? (root.card.mail || "") : ""
                 visible: !!mail
                 x: 1; y: 292; width: 312.7; height: 32
                 color: mh.hovered ? theme.menuHover : "transparent"
-                FluentIcon { x: 25; anchors.verticalCenter: parent.verticalCenter; name: "mail-20"; size: 16; color: theme.textStrong }
-                Text { x: 57; width: 290.7 - 57 - 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: parent.mail; font.family: theme.font; font.pixelSize: 12; color: theme.brand }
+                FluentIcon { x: 25; anchors.verticalCenter: parent.verticalCenter; name: "mail-20"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
+                Text { x: 57; width: 290.7 - 57 - 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: parent.mail; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.brand) }
                 HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: Qt.openUrlExternally("mailto:" + parent.mail) }
                 Rectangle {
+                    id: hcFill3
                     x: 290.7 - 5; anchors.verticalCenter: parent.verticalCenter; width: 24; height: 24; radius: 4
                     color: ch.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: "copy-16"; size: 14; color: theme.textSecondary }
+                    FluentIcon { anchors.centerIn: parent; name: "copy-16"; size: 14; color: theme.onFill(hcFill3, theme.textSecondary) }
                     HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.copyText(parent.parent.mail) }
                     Accessible.role: Accessible.Button
@@ -224,9 +227,10 @@ Popup {
                 Accessible.name: mail
             }
             Rectangle {
+                id: hcFill4
                 x: 9; y: 328; width: 92; height: 32; radius: 4
                 color: smh.hovered ? theme.menuHover : "transparent"
-                Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "Show more"; font.family: theme.font; font.pixelSize: 12; color: theme.brand }
+                Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "Show more"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.brand) }
                 HoverHandler { id: smh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.full("profile") }
                 Accessible.role: Accessible.Link

@@ -49,9 +49,10 @@ Rectangle {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             x: parent.width - 52; y: 13.67; width: 32; height: 30; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
@@ -83,7 +84,7 @@ Rectangle {
                 width: 32; height: 32; radius: 4
                 color: root.colors[modelData]
                 border.width: modelData === sw.selected ? 2 : 0.67
-                border.color: modelData === sw.selected ? "#444791" : "#D1D1D1"
+                border.color: modelData === sw.selected ? theme.hc("#444791", "#1AEBFF") : theme.hc("#D1D1D1", "#FFFFFF")
                 HoverHandler { id: swh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: sw.picked(modelData) }
                 ToolTip.visible: swh.hovered

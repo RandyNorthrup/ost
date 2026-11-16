@@ -51,8 +51,9 @@ Window {
         id: theme
         readonly property string forced: (Qt.application.arguments.find(a => a.startsWith("--theme=")) || "").slice(8)
         readonly property string mode: forced || backend.themeMode
-        dark: mode === "dark" || (mode === "system" && Qt.styleHints.colorScheme === Qt.ColorScheme.Dark)
+        dark: mode === "dark" || mode === "highContrast" || (mode === "system" && Qt.styleHints.colorScheme === Qt.ColorScheme.Dark)
         classic: mode === "classic"
+        highContrast: mode === "highContrast"
     }
     // The app's theme (call windows keep their own, see callsDark).
     readonly property QtObject appTheme: theme
@@ -7667,9 +7668,10 @@ Window {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             x: 251.33; y: 12.67; width: 24; height: 20; radius: 4
             color: toastClose.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: toastClose; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: toast.toastData = null }
             Accessible.role: Accessible.Button
@@ -7844,7 +7846,7 @@ Window {
         readonly property bool shown: kind !== "" && backend.hasCredentials
         height: shown ? (kind === "threads" ? 64 : 36) : 0
         visible: shown
-        color: theme.pick("#F5F5F5", "#292929")
+        color: theme.pick("#F5F5F5", "#292929", "#000000")
         z: 9
         FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "info-20-filled"; size: 20; color: theme.textSecondary }
         Text {
@@ -7865,7 +7867,7 @@ Window {
             width: visible ? bannerActionText.implicitWidth + 16 : 0; height: 23.3; radius: 4
             color: bannerActionHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { id: bannerActionText; anchors.centerIn: parent; text: "Change settings"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { id: bannerActionText; anchors.centerIn: parent; text: "Change settings"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(bannerAction, theme.text) }
             HoverHandler { id: bannerActionHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { settingsView.page = settingsView.pages.some(p => p.key === "privacy") ? "privacy" : "notifications"; rail.current = "settings" } }
             Accessible.role: Accessible.Button
@@ -7876,7 +7878,7 @@ Window {
             anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
             width: 24; height: 23.3; radius: 4
             color: bannerDismissHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(bannerDismiss, theme.textStrong) }
             HoverHandler { id: bannerDismissHover; cursorShape: Qt.PointingHandCursor }
             TapHandler {
                 onTapped: {

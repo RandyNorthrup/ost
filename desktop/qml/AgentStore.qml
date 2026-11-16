@@ -36,7 +36,7 @@ Popup {
     padding: 0
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
 
     readonly property var store: { const s = backend.agentStoreJson ? JSON.parse(backend.agentStoreJson) : null; return s && s.conversation === conversationId ? s : null }
     readonly property var collections: store && store.collections ? store.collections : []
@@ -70,8 +70,8 @@ Popup {
         property var app
         property bool full: false
         width: full ? 848 : 834; height: full ? 122 : 86
-        FluentSurface { anchors.fill: parent; depth: 4; radius: 4; color: cardHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface }
-        AppIcon { x: 19; y: 14.5; width: 32; height: 32; src: card.app.icon || ""; background: cardHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface }
+        FluentSurface { anchors.fill: parent; depth: 4; radius: 4; color: cardHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface }
+        AppIcon { x: 19; y: 14.5; width: 32; height: 32; src: card.app.icon || ""; background: cardHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface }
         Row {
             x: 61; y: 12; height: 20; spacing: 0
             Text { height: 20; verticalAlignment: Text.AlignVCenter; text: card.app.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text; elide: Text.ElideRight; width: Math.min(implicitWidth, card.width - 120) }
@@ -105,7 +105,7 @@ Popup {
         id: searchBox
         x: 32; y: 32; width: root.width - 64; height: 32; radius: 4
         visible: !root.seeAll
-        color: theme.inputFilled
+        color: theme.inputFilled; border.color: theme.transparentStroke
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: search.activeFocus ? 2 : 0; color: theme.brand }
         TextField {
             id: search
@@ -124,8 +124,8 @@ Popup {
             anchors.right: parent.right; anchors.rightMargin: root.query ? 12.7 : 10
             anchors.verticalCenter: parent.verticalCenter
             width: root.query ? 24 : 20; height: root.query ? 23.3 : 20
-            Rectangle { anchors.fill: parent; radius: 4; visible: !!root.query && clearHover.hovered; color: theme.menuHover }
-            FluentIcon { anchors.centerIn: parent; name: root.query ? "dismiss-20" : "search-20"; size: 20; color: root.query ? theme.textSecondary : theme.pick("#616161", "#ADADAD") }
+            Rectangle { id: hcFill1; anchors.fill: parent; radius: 4; visible: !!root.query && clearHover.hovered; color: theme.menuHover }
+            FluentIcon { anchors.centerIn: parent; name: root.query ? "dismiss-20" : "search-20"; size: 20; color: theme.onFill(hcFill1, root.query ? theme.textSecondary : theme.pick("#616161", "#ADADAD", "#FFFFFF")) }
             HoverHandler { id: clearHover; enabled: !!root.query; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !!root.query; onTapped: { search.text = ""; search.forceActiveFocus() } }
             Accessible.role: root.query ? Accessible.Button : Accessible.Graphic
@@ -157,8 +157,8 @@ Popup {
                         text: root.found && root.found.results ? "Search results for \"" + root.query + "\" (" + root.found.results.length + ")" : "Search results for \"" + root.query + "\""
                         font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.textSecondary
                     }
-                    Rectangle { y: 9; x: 0; width: resultsTitle.x - 12; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
-                    Rectangle { y: 9; x: resultsTitle.x + resultsTitle.width + 12; width: parent.width - x; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                    Rectangle { y: 9; x: 0; width: resultsTitle.x - 12; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
+                    Rectangle { y: 9; x: resultsTitle.x + resultsTitle.width + 12; width: parent.width - x; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                 }
                 Repeater {
                     model: root.found && root.found.results ? root.found.results : []
@@ -187,10 +187,11 @@ Popup {
                                 required property var modelData
                                 width: 104; height: 100
                                 Rectangle {
+                                    id: hcFill2
                                     x: 2; y: 2; width: 100; height: 96; radius: 6
-                                    color: tileHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+                                    color: tileHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
                                     AppIcon { x: 26; y: 8; width: 48; height: 48; src: tile.modelData.icon || ""; background: parent.color }
-                                    Text { x: 14; y: 62; width: 72; height: 32; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; text: tile.modelData.name; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                                    Text { x: 14; y: 62; width: 72; height: 32; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; text: tile.modelData.name; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.text) }
                                     HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: root.openApp(tile.modelData.id) }
                                     Accessible.role: Accessible.MenuItem
@@ -204,8 +205,8 @@ Popup {
                 Item {
                     width: parent.width - 18; height: 18
                     Text { id: addNew; anchors.centerIn: parent; text: "Add a new agent or bot"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.textSecondary }
-                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: 0; width: addNew.x - 12; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
-                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: addNew.x + addNew.width + 12; width: parent.width - x; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: 0; width: addNew.x - 12; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
+                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: addNew.x + addNew.width + 12; width: parent.width - x; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                 }
                 Text {
                     visible: !!root.store && !!root.store.loading
@@ -264,13 +265,14 @@ Popup {
 
     // Footer.
     Rectangle {
+        id: hcFill3
         visible: !!root.seeAll
         x: 32; y: root.height - 52.7; width: 96; height: 31.3; radius: 4
         color: backHover.hovered ? theme.menuHover : "transparent"
         Row {
             anchors.centerIn: parent; spacing: 6
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-20"; size: 20; color: theme.text }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Back"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill3, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: "Back"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
         }
         HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { root.seeAll = null; flick.contentY = 0 } }
@@ -280,18 +282,20 @@ Popup {
         anchors.right: parent.right; anchors.rightMargin: 32
         y: root.height - 52.7; spacing: 10
         Rectangle {
+            id: hcFill4
             width: 96; height: 31.3; radius: 4
             color: closeHover.hovered ? theme.menuHover : theme.surface
-            border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
-            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button; Accessible.name: "Close"
         }
         Rectangle {
+            id: hcFill5
             width: 118.8; height: 31.3; radius: 4
             color: moreHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Get more apps"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+            Text { anchors.centerIn: parent; text: "Get more apps"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textOnBrand) }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.getMoreApps() } }
             Accessible.role: Accessible.Button; Accessible.name: "Get more apps"

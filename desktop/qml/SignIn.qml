@@ -109,7 +109,7 @@ Rectangle {
         height: 32; radius: theme.radius
         opacity: enabled ? 1 : 0.6
         color: hover.hovered ? theme.brandHover : theme.brand
-        Text { id: btnText; anchors.centerIn: parent; text: btn.label; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+        Text { id: btnText; anchors.centerIn: parent; text: btn.label; color: theme.onFill(btn, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
         HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: if (btn.enabled) btn.clicked() }
     }
@@ -119,9 +119,9 @@ Rectangle {
         signal clicked()
         implicitWidth: sText.implicitWidth + 32
         height: 32; radius: theme.radius
-        color: shover.hovered ? theme.pane : theme.surface
+        color: shover.hovered ? theme.hc(theme.pane, theme.hcHighlight) : theme.surface
         border.color: theme.stroke
-        Text { id: sText; anchors.centerIn: parent; text: sbtn.label; color: theme.text; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+        Text { id: sText; anchors.centerIn: parent; text: sbtn.label; color: theme.onFill(sbtn, theme.text); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
         HoverHandler { id: shover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: sbtn.clicked() }
     }

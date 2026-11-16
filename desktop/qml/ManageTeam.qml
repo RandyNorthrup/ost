@@ -35,7 +35,7 @@ Rectangle {
     signal openChannelWindow(string channelId)
     signal channelWorkflows(string channelId)
     signal acrossTeams()
-    color: theme.pick("#FFFFFF", "#292929")
+    color: theme.pick("#FFFFFF", "#292929", "#000000")
     onTeamIdChanged: { tab = "channels"; filter = "all"; sort = "az"; search.text = "" }
 
     readonly property var tabs: [["channels", "Channels"], ["members", "Members"], ["pending", "Pending requests"], ["settings", "Settings"], ["analytics", "Analytics"], ["apps", "Apps"], ["tags", "Tags"]]
@@ -44,7 +44,7 @@ Rectangle {
     Rectangle {
         id: header
         width: parent.width; height: 61
-        color: theme.pick("#FFFFFF", "#292929")
+        color: theme.pick("#FFFFFF", "#292929", "#000000")
         Avatar {
             x: 20; y: 14.2
             size: 32; square: true; squareRadius: 4
@@ -96,7 +96,7 @@ Rectangle {
             id: moreButton
             x: parent.width - 39; y: 18.2; width: 32; height: 24; radius: 4
             color: moreHover.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: teamMenu.menu.opened ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(moreButton, teamMenu.menu.opened ? theme.brand : theme.textStrong) }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: teamMenu.show(moreButton, moreButton.width - teamMenu.menu.implicitWidth, moreButton.height) }
             Accessible.role: Accessible.Button
@@ -175,13 +175,13 @@ Rectangle {
         signal clicked()
         width: pillRow.implicitWidth + 24; height: chosen ? 31.3 : 30; radius: height / 2
         y: chosen ? 0 : 0.7
-        color: chosen ? theme.pick("#E8EBFA", "#2F2F4A") : pillHover.hovered ? theme.pick("#EBEBEB", "#3D3D3D") : theme.pick("#F5F5F5", "#333333")
-        border.color: chosen ? theme.pick("#C5CBFA", "#444791") : "transparent"; border.width: 0.67
+        color: chosen ? theme.pick("#E8EBFA", "#2F2F4A", "#000000") : pillHover.hovered ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : theme.pick("#F5F5F5", "#333333", "#000000")
+        border.color: chosen ? theme.pick("#C5CBFA", "#444791", "#FFFFFF") : "transparent"; border.width: 0.67
         Row {
             id: pillRow
             anchors.centerIn: parent; spacing: 4
-            Text { anchors.verticalCenter: parent.verticalCenter; text: pill.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: pill.chosen ? theme.brandForeground1 : theme.text }
-            FluentIcon { visible: pill.chevron; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.text }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: pill.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pill, pill.chosen ? theme.brandForeground1 : theme.text) }
+            FluentIcon { visible: pill.chevron; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(pill, theme.text) }
         }
         HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pill.clicked() }
@@ -219,8 +219,8 @@ Rectangle {
             Row {
                 id: sortRow
                 anchors.centerIn: parent; spacing: 4
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Sort: " + page.sortNames[page.sort]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Sort: " + page.sortNames[page.sort]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(sortButton, theme.textStrong) }
             }
             HoverHandler { id: sortHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sortMenu.open() }
@@ -236,13 +236,14 @@ Rectangle {
         }
         // Add channel (subtle, the add icon; 40 from the right).
         Rectangle {
+            id: hcFill1
             x: parent.width - 40 - width; y: 24; width: addRow.implicitWidth + 24; height: 31.3; radius: 4
             color: addHover.hovered ? theme.rowHover : "transparent"
             Row {
                 id: addRow
                 anchors.centerIn: parent; spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: addHover.hovered ? "add-20-filled" : "add-20"; size: 20; color: addHover.hovered ? theme.brand : theme.textStrong }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Add channel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: addHover.hovered ? "add-20-filled" : "add-20"; size: 20; color: theme.onFill(hcFill1, addHover.hovered ? theme.brand : theme.textStrong) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Add channel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
             }
             HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: createChannel.start(page.teamId, page.team.name || "") }
@@ -252,13 +253,13 @@ Rectangle {
         // Search channels.
         Rectangle {
             x: 28; y: 55.3; width: 280; height: 32; radius: 4
-            color: theme.pick("#F5F5F5", "#333333")
+            color: theme.pick("#F5F5F5", "#333333", "#000000")
             Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: search.activeFocus ? 2 : 0; color: theme.brand }
             TextInput {
                 id: search
                 x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
-                Text { visible: !search.text; text: "Search channels"; font: search.font; color: theme.pick("#707070", "#ADADAD") }
+                Text { visible: !search.text; text: "Search channels"; font: search.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
                 Accessible.role: Accessible.EditableText
                 Accessible.name: "Search channels"
             }
@@ -275,9 +276,9 @@ Rectangle {
                 id: row
                 required property var modelData
                 width: channelList.width; height: 60.7
-                color: rowHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                color: rowHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                 readonly property bool menuOpen: rowMenu.menu.opened && rowMenu.channel.id === row.modelData.id
-                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#333333") }
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#333333", "#000000") }
                 HoverHandler { id: rowHover }
                 Row {
                     x: 20; y: 12; spacing: 14
@@ -285,24 +286,24 @@ Rectangle {
                         text: row.modelData.general ? "General" : row.modelData.name
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
-                        color: theme.text
+                        color: theme.onFill(row, theme.text)
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: page.openChannel(row.modelData.id, row.modelData.name) }
                         Accessible.role: Accessible.Button
                         Accessible.name: "Go to channel"
                     }
-                    FluentIcon { visible: !!row.modelData.general; anchors.verticalCenter: parent.verticalCenter; name: "home-20"; size: 16; color: theme.text }
+                    FluentIcon { visible: !!row.modelData.general; anchors.verticalCenter: parent.verticalCenter; name: "home-20"; size: 16; color: theme.onFill(row, theme.text) }
                     // Recommended (14 after the name): #F5F5F5, a #E0E0E0
                     // line, radius 4, 10/16 semibold #616161.
                     Rectangle {
                         visible: !!row.modelData.recommended
                         anchors.verticalCenter: parent.verticalCenter
                         width: recText.implicitWidth + 14; height: 20; radius: 4
-                        color: theme.pick("#F5F5F5", "#333333")
+                        color: theme.pick("#F5F5F5", "#333333", "#000000")
                         border.color: theme.divider; border.width: 0.67
                         Text { id: recText; x: 7; y: 1; text: "Recommended"; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
                     }
-                    FluentIcon { visible: row.modelData.channel_type === 1; anchors.verticalCenter: parent.verticalCenter; name: "lock-closed-20"; size: 16; color: theme.textSecondary }
+                    FluentIcon { visible: row.modelData.channel_type === 1; anchors.verticalCenter: parent.verticalCenter; name: "lock-closed-20"; size: 16; color: theme.onFill(row, theme.textSecondary) }
                 }
                 Row {
                     x: 20; y: 33; spacing: 8
@@ -311,7 +312,7 @@ Rectangle {
                         visible: !!row.modelData.last_active
                         text: "Last active: " + page.distance(row.modelData.last_active)
                         font.family: theme.font; font.pixelSize: 10; lineHeight: 14; lineHeightMode: Text.FixedHeight
-                        color: theme.textSecondary
+                        color: theme.onFill(row, theme.textSecondary)
                     }
                     Rectangle { visible: lastActive.visible && desc.text.length > 0; anchors.verticalCenter: parent.verticalCenter; width: 1; height: 14; color: theme.divider }
                     Text {
@@ -320,17 +321,18 @@ Rectangle {
                         elide: Text.ElideRight
                         text: row.modelData.general ? (page.team.description || "") : (row.modelData.description || "")
                         font.family: theme.font; font.pixelSize: 10; lineHeight: 14; lineHeightMode: Text.FixedHeight
-                        color: theme.textSecondary
+                        color: theme.onFill(row, theme.textSecondary)
                     }
                 }
                 // Hide / Show (Teams' small button, 64 x 24).
                 Rectangle {
+                    id: hcFill2
                     visible: page.filter !== "deleted"
                     x: parent.width - 32 - 12 - width; y: 18
                     width: Math.max(64, hideText.implicitWidth + 16); height: 24; radius: 4
                     color: hideHover.hovered ? theme.rowHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Text { id: hideText; anchors.centerIn: parent; text: row.modelData.shown === false ? "Show" : "Hide"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    Text { id: hideText; anchors.centerIn: parent; text: row.modelData.shown === false ? "Show" : "Hide"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: hideHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.channelAction(row.modelData.shown === false ? "show" : "hide", page.teamId, row.modelData.id, "") }
                     Accessible.role: Accessible.Button
@@ -341,7 +343,7 @@ Rectangle {
                     visible: page.filter !== "deleted"
                     x: parent.width - 12 - 32; y: 18; width: 32; height: 24; radius: 4
                     color: rowMoreHover.hovered ? theme.hover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: row.menuOpen ? theme.brand : theme.textStrong }
+                    FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(rowMore, row.menuOpen ? theme.brand : theme.textStrong) }
                     HoverHandler { id: rowMoreHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {

@@ -18,11 +18,11 @@ Window {
     title: "Cast"
     width: 626; height: 713
     minimumWidth: 400; minimumHeight: 400
-    color: "#1F1F1F"
+    color: theme.hc("#1F1F1F", "#000000")
     flags: Qt.Window | (pinned ? Qt.WindowStaysOnTopHint : 0)
     function start() { searching = true; searchTimer.restart(); show(); raise(); requestActivate() }
     Timer { id: searchTimer; interval: 20000; onTriggered: win.searching = false }
-    Rectangle { anchors.fill: parent; color: "#1F1F1F" }
+    Rectangle { anchors.fill: parent; color: theme.hc("#1F1F1F", "#000000") }
 
     ChildWindowTitleBar {
         id: titleRow
@@ -32,11 +32,12 @@ Window {
     }
     Rectangle {
         y: 32; width: parent.width; height: 60
-        color: "#292929"
+        color: theme.hc("#292929", "#000000")
         Rectangle {
+            id: hcFill1
             x: 20; y: 14; width: 32; height: 32; radius: 4
-            color: "#4F52B2"
-            FluentIcon { anchors.centerIn: parent; name: "cast-20"; size: 20; color: "#FFFFFF" }
+            color: theme.hc("#4F52B2", "#FFFFFF")
+            FluentIcon { anchors.centerIn: parent; name: "cast-20"; size: 20; color: theme.onFill(hcFill1, "#FFFFFF") }
         }
         Text {
             x: 64; y: 18.31
@@ -67,8 +68,8 @@ Window {
     Rectangle {
         x: parent.width - 52 - width; y: parent.height - 20.33 - height
         width: 96; height: 32; radius: 4
-        color: "#1F1F1F"
-        Text { anchors.centerIn: parent; text: "Next"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#5C5C5C" }
+        color: theme.hc("#1F1F1F", "#000000")
+        Text { anchors.centerIn: parent; text: "Next"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.hc("#5C5C5C", "#3FF23F") }
         Accessible.role: Accessible.Button
         Accessible.name: "Next"
     }

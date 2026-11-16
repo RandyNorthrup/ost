@@ -85,39 +85,42 @@ Rectangle {
         width: 380; height: parent.height
         color: theme.pane
         Rectangle {
+            id: hcFill1
             x: 11; y: 12; width: 32; height: 31.3; radius: 4
             color: backHover.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: page.back() }
             Accessible.role: Accessible.Button; Accessible.name: "Back"
         }
         Text { x: 43; y: 14.8; text: "Join a team"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
         Rectangle {
+            id: hcFill2
             x: 328; y: 12; width: 32; height: 31.3; radius: 4
             color: newHover.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "add-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "add-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: newHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: page.createTeam() }
             ToolTip.visible: newHover.hovered; ToolTip.delay: 600; ToolTip.text: "Create a new team"
             Accessible.role: Accessible.Button; Accessible.name: "Create a new team"
         }
         Rectangle {
+            id: hcFill3
             x: 4; y: 59.3; width: 368; height: 32; radius: 4
-            color: search.activeFocus ? theme.surface : theme.pick("#F5F5F5", "#333333")
+            color: search.activeFocus ? theme.surface : theme.pick("#F5F5F5", "#333333", "#000000")
             Rectangle { visible: !search.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
             TextInput {
                 id: search
                 x: 12; width: parent.width - 52; anchors.verticalCenter: parent.verticalCenter
-                font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, theme.text); clip: true
                 selectByMouse: true
                 onAccepted: page.runSearch()
-                Text { visible: !search.text; text: "Type to search"; font: search.font; color: theme.textSecondary }
+                Text { visible: !search.text; text: "Type to search"; font: search.font; color: theme.onFill(hcFill3, theme.textSecondary) }
                 Accessible.role: Accessible.EditableText; Accessible.name: "Type to search"
             }
             FluentIcon {
                 x: parent.width - 36; anchors.verticalCenter: parent.verticalCenter
-                name: search.text ? "dismiss-20" : "search-20"; size: 20; color: theme.textStrong
+                name: search.text ? "dismiss-20" : "search-20"; size: 20; color: theme.onFill(hcFill3, theme.textStrong)
                 TapHandler { enabled: !!search.text; onTapped: { search.text = ""; page.view = "suggested"; page.searched = "" } }
             }
             Rectangle { visible: search.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand }
@@ -131,8 +134,8 @@ Rectangle {
                     required property var modelData
                     readonly property bool sel: page.view === modelData[0]
                     width: 368; height: 32; radius: 4
-                    color: sel ? theme.surface : navHover.hovered ? theme.rowHover : "transparent"
-                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: nav.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    color: sel ? theme.hc(theme.surface, theme.hcHighlight) : navHover.hovered ? theme.rowHover : "transparent"
+                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: nav.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(nav, theme.text) }
                     HoverHandler { id: navHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: page.view = nav.modelData[0] }
                     Accessible.role: Accessible.ListItem; Accessible.name: nav.modelData[1]; Accessible.selected: sel
@@ -151,8 +154,8 @@ Rectangle {
         border.color: enabled ? "transparent" : theme.divider; border.width: 0.67
         Row {
             anchors.centerIn: parent; spacing: 6
-            FluentIcon { visible: pb.icon !== ""; anchors.verticalCenter: parent.verticalCenter; name: pb.icon; size: 20; color: pb.enabled ? theme.textOnBrand : theme.disabled }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: pb.enabled ? theme.textOnBrand : theme.disabled }
+            FluentIcon { visible: pb.icon !== ""; anchors.verticalCenter: parent.verticalCenter; name: pb.icon; size: 20; color: theme.onFill(pb, pb.enabled ? theme.textOnBrand : theme.disabled) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pb, pb.enabled ? theme.textOnBrand : theme.disabled) }
         }
         HoverHandler { id: pbHover; enabled: pb.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: pb.enabled; onTapped: pb.clicked() }
@@ -190,7 +193,7 @@ Rectangle {
             x: 61; y: 140.7; spacing: 10
             Repeater {
                 model: 3
-                Rectangle { width: 32; height: 32; radius: 16; color: theme.pick("#E6E6E6", "#3D3D3D"); FluentIcon { anchors.centerIn: parent; name: "person-20"; size: 20; color: theme.textSecondary } }
+                Rectangle { width: 32; height: 32; radius: 16; color: theme.pick("#E6E6E6", "#3D3D3D", "#000000"); FluentIcon { anchors.centerIn: parent; name: "person-20"; size: 20; color: theme.textSecondary } }
             }
         }
         PrimaryButton { x: 11.7; y: 216; width: 214.7; text: "Create a new team"; onClicked: page.createTeam() }

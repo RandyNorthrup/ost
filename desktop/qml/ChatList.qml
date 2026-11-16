@@ -245,7 +245,7 @@ Rectangle {
         color: hbHover.hovered ? theme.hover : "transparent"
         HoverHandler { id: hbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }
-        FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: hb.iconColor }
+        FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: theme.onFill(hb, hb.iconColor) }
     }
 
     // Header: "Chat", then more / filter / new message (with its menu).
@@ -337,7 +337,7 @@ Rectangle {
             anchors.centerIn: parent
             text: pill.def.label
             font.family: theme.font; font.pixelSize: 12
-            color: pill.on ? "white" : theme.textStrong
+            color: theme.onFill(pill, pill.on ? "white" : theme.textStrong)
         }
         ToolTip.visible: pillHover.hovered
         ToolTip.delay: 600
@@ -389,11 +389,12 @@ Rectangle {
             Accessible.name: "Filter by name"
         }
         Rectangle {
+            id: hcFill1
             anchors.right: parent.right; anchors.rightMargin: 4
             anchors.verticalCenter: parent.verticalCenter
             width: 24; height: 24; radius: theme.radius
             color: clh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { filterField.text = ""; root.filtering = false } }
             Accessible.role: Accessible.Button
@@ -587,6 +588,7 @@ Rectangle {
         readonly property bool twoLine: root.previews
         width: list.width; height: twoLine ? 52 : 32
         Rectangle {
+            id: hcFill2
             x: 16; width: parent.width - 32; height: parent.height; radius: theme.radius
             color: row.selected ? theme.selected : (hover.hovered ? theme.rowHover : "transparent")
             // Fluent's keyboard focus ring.
@@ -608,7 +610,7 @@ Rectangle {
         Rectangle {
             visible: !!row.chat.muted
             x: 32; y: row.twoLine ? 8 : 6; width: row.twoLine ? 36 : 20; height: width; radius: width / 2
-            color: theme.pick("#E6E6E6", "#3D3D3D")
+            color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
             FluentIcon { anchors.centerIn: parent; name: "alert-off-20"; size: row.twoLine ? 20 : 16; color: theme.textSecondary }
         }
         // The last activity (Show time stamps), where ··· goes on hover.
@@ -620,7 +622,7 @@ Rectangle {
             text: root.stamp(row.chat.time)
             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
             font.weight: row.unread ? Font.DemiBold : Font.Normal
-            color: row.unread ? theme.text : theme.textSecondary
+            color: theme.onFill(hcFill2, row.unread ? theme.text : theme.textSecondary)
         }
         // The last message (Show message previews).
         Text {
@@ -631,7 +633,7 @@ Rectangle {
             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
             font.italic: !!row.chat.previewSystem
             font.weight: row.unread ? Font.DemiBold : Font.Normal
-            color: row.unread ? theme.text : theme.textSecondary
+            color: theme.onFill(hcFill2, row.unread ? theme.text : theme.textSecondary)
         }
         Text {
             x: row.twoLine ? 80 : 64; y: row.twoLine ? 8.7 : 6
@@ -641,7 +643,7 @@ Rectangle {
             font.family: theme.font; font.pixelSize: theme.base
             // Teams: bold only when unread; the open chat is just darker.
             font.weight: row.unread ? Font.DemiBold : Font.Normal
-            color: row.selected || row.unread ? theme.text : theme.textSecondary
+            color: theme.onFill(hcFill2, row.selected || row.unread ? theme.text : theme.textSecondary)
         }
         // A call going on in the chat (Teams: the regular sound-wave 14 in
         // NeutralForeground3 at 244, 9 in the 288-wide row).
@@ -650,7 +652,7 @@ Rectangle {
             visible: !!row.chat.liveCall && !row.showMore
             x: parent.width - 60; y: row.twoLine ? 29 : 9
             name: "live-roster-14"; size: 14
-            color: theme.textSecondary
+            color: theme.onFill(hcFill2, theme.textSecondary)
         }
         // Unread: bold name plus a brand dot; muted chats keep the bold
         // name but not the dot (they don't count toward badges).
@@ -668,7 +670,7 @@ Rectangle {
             visible: row.showMore
             x: parent.width - 16 - 32; y: row.twoLine ? 14.3 : 4.3; width: 24; height: 23.3; radius: 4
             color: moreHover.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: moreHover.hovered ? "more-horizontal-20-filled" : "more-horizontal-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: moreHover.hovered ? "more-horizontal-20-filled" : "more-horizontal-20"; size: 20; color: theme.onFill(moreButton, theme.textStrong) }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: row.openMenu(parent.x, parent.y + parent.height) }
             Accessible.role: Accessible.Button
@@ -886,7 +888,7 @@ Rectangle {
             x: parent.width - 16 - 8 - 24; anchors.verticalCenter: parent.verticalCenter
             width: 24; height: 24; radius: theme.radius
             color: chMoreHover.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: chRow.menuOpen ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(chMore, chRow.menuOpen ? theme.brand : theme.textStrong) }
             HoverHandler { id: chMoreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.openChannelMenu(chRow.channel, chRow.team, chMore, 0, chMore.height + 4) }
             Accessible.role: Accessible.Button
@@ -902,9 +904,10 @@ Rectangle {
 
     // Teams' "New" badge: brand pill, 10/14 semibold.
     component NewBadge: Rectangle {
+        id: hcFill3
         width: newText.implicitWidth + 12; height: 18; radius: 9
         color: theme.brandFill
-        Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: "white" }
+        Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
     }
 
     // A team and its shown channels.
@@ -955,7 +958,7 @@ Rectangle {
                 x: parent.width - 16 - 8 - 24; anchors.verticalCenter: parent.verticalCenter
                 width: 24; height: 23.3; radius: theme.radius
                 color: teamMoreHover.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: teamMore.parent.menuOpen ? theme.brand : theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(teamMore, teamMore.parent.menuOpen ? theme.brand : theme.textStrong) }
                 HoverHandler { id: teamMoreHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openTeamMenu(teamRows.team, teamMore, 0, -teamMenu.menu.implicitHeight - 3) }
                 Accessible.role: Accessible.Button
@@ -1021,10 +1024,11 @@ Rectangle {
             color: theme.textSecondary
         }
         Rectangle {
+            id: hcFill4
             visible: sh.userSection && shHover.hovered
             x: parent.width - 16 - 32; y: 2; width: 24; height: 23.3; radius: 4
             color: smHover.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFill4, theme.textStrong) }
             HoverHandler { id: smHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sh.menuRequested(parent.x, parent.y + parent.height) }
             Accessible.role: Accessible.Button

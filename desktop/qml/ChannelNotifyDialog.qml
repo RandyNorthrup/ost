@@ -80,8 +80,8 @@ Popup {
         width: parent.width
         height: 12 + 40 + (chosen && extraCol.children.length ? extraCol.height + 8 : 0) + 9.3
         radius: 8
-        color: cardHover.hovered && !chosen ? theme.pick("#E8EBFA", "#2F2F4A") : "transparent"
-        border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+        color: cardHover.hovered && !chosen ? theme.pick("#E8EBFA", "#2F2F4A", "#1AEBFF") : "transparent"
+        border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
         readonly property color ink: chosen ? theme.text : theme.textSecondary
         Rectangle {
             x: 24.6; y: 22.6 - 7.6; width: 16; height: 16; radius: 8
@@ -89,11 +89,11 @@ Popup {
             border.color: card.chosen ? theme.brand : theme.textSecondary; border.width: 0.67
             Rectangle { visible: card.chosen; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
         }
-        FluentIcon { x: 56; y: 12.6; size: 20; name: card.icon; color: card.ink }
+        FluentIcon { x: 56; y: 12.6; size: 20; name: card.icon; color: theme.onFill(card, card.ink) }
         Column {
             x: 84.6; y: 12.6; width: parent.width - 84.6 - 16
-            Text { text: card.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: card.ink }
-            Text { width: parent.width; wrapMode: Text.Wrap; text: card.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: card.ink }
+            Text { text: card.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(card, card.ink) }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: card.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(card, card.ink) }
         }
         HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: dlg.mode = card.key }
@@ -113,10 +113,11 @@ Popup {
         signal toggled()
         width: 400; height: 32
         Rectangle {
+            id: hcFill1
             x: 8; y: 8; width: 16; height: 16; radius: 2
             color: chk.checked ? theme.brand : "transparent"
             border.color: chk.checked ? theme.brand : theme.textSecondary; border.width: 0.67
-            FluentIcon { visible: chk.checked; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: "white" }
+            FluentIcon { visible: chk.checked; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill1, "white") }
         }
         Text {
             x: 36; anchors.verticalCenter: parent.verticalCenter
@@ -202,19 +203,21 @@ Popup {
             anchors.right: parent.right; anchors.bottom: parent.bottom
             spacing: 8
             Rectangle {
+                id: hcFill2
                 width: 96; height: 31.3; radius: 4
                 color: cancelHover.hovered ? theme.rowHover : theme.surface
-                border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Cancel"
             }
             Rectangle {
+                id: hcFill3
                 readonly property bool on: dlg.changed && !dlg.saving
                 width: 96; height: 31.3; radius: 4
-                color: !on ? theme.pick("#F0F0F0", "#141414") : saveHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.on ? "white" : theme.disabled }
+                color: !on ? theme.pick("#F0F0F0", "#141414", "#000000") : saveHover.hovered ? theme.brandHover : theme.checkedFill
+                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.on ? "white" : theme.disabled) }
                 HoverHandler { id: saveHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: parent.on; onTapped: dlg.save() }
                 Accessible.role: Accessible.Button; Accessible.name: "Save"

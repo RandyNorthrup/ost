@@ -29,7 +29,7 @@ Window {
     readonly property bool isPage: tab.kind === "ChannelPage"
     /// The header's text and icons: black in the window of its own (as
     /// measured; the channel's header uses #242424).
-    readonly property color ink: theme.pick("#000000", "#FFFFFF")
+    readonly property color ink: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
     /// The app's About (name, icon), once loaded.
     property var about: null
     signal aboutRequested()
@@ -106,11 +106,12 @@ Window {
                     { key: "devicePermissions", icon: "shield-keyhole-20", tip: "App permissions", show: win.keys.indexOf("devicePermissions") >= 0 }
                 ].filter(a => a.show !== false)
                 Rectangle {
+                    id: hcFill1
                     required property var modelData
                     width: modelData.w || 30; height: modelData.h || 44; radius: 4
                     anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                     color: ah.hovered ? theme.hover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: parent.modelData.key === "conversation" && win.conversationOpen ? theme.brand : win.ink }
+                    FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.onFill(hcFill1, parent.modelData.key === "conversation" && win.conversationOpen ? theme.brand : win.ink) }
                     HoverHandler { id: ah; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: win.act(parent.modelData.key) }
                     ToolTip.visible: ah.hovered && modelData.tip.length > 0

@@ -57,7 +57,7 @@ Rectangle {
         Rectangle {
             x: 20; anchors.verticalCenter: parent.verticalCenter
             width: 32; height: 32; radius: 6
-            color: "#33344A"
+            color: theme.hc("#33344A", "#000000")
             FluentIcon { anchors.centerIn: parent; name: "question-circle-20"; size: 20; color: "#FFFFFF" }
         }
         Text {
@@ -71,7 +71,7 @@ Rectangle {
             x: parent.width - 39; anchors.verticalCenter: parent.verticalCenter
             width: 32; height: 31.3; radius: 4
             color: mhh.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: helpMenu.opened ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(moreHelp, helpMenu.opened ? theme.brand : theme.textStrong) }
             HoverHandler { id: mhh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: helpMenu.open() }
             Accessible.role: Accessible.Button
@@ -89,7 +89,7 @@ Rectangle {
                 }
             }
         }
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
     }
 
     // The page.
@@ -114,7 +114,7 @@ Rectangle {
                     signal clicked()
                     radius: 4
                     color: nbh.hovered && usable ? theme.hover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: nb.icon; size: 20; color: nb.usable ? theme.brand : theme.pick("#BDBDBD", "#5C5C5C") }
+                    FluentIcon { anchors.centerIn: parent; name: nb.icon; size: 20; color: theme.onFill(nb, nb.usable ? theme.brand : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
                     HoverHandler { id: nbh; cursorShape: nb.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: nb.usable; onTapped: nb.clicked() }
                     Accessible.role: Accessible.Button
@@ -139,10 +139,11 @@ Rectangle {
                         Accessible.name: "Search help"
                     }
                     Rectangle {
+                        id: hcFill1
                         anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
                         width: 40; height: 38.7; radius: 4
                         color: sbh.hovered ? theme.hover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "search-20"; size: 24; color: theme.brand }
+                        FluentIcon { anchors.centerIn: parent; name: "search-20"; size: 24; color: theme.onFill(hcFill1, theme.brand) }
                         HoverHandler { id: sbh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.search(q.text) }
                         Accessible.role: Accessible.Button
@@ -315,7 +316,7 @@ Rectangle {
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
                 Item { width: 1; height: 32 }
-                Rectangle { width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                Rectangle { width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                 Item { width: 1; height: 20 }
                 Row {
                     spacing: 12
@@ -323,11 +324,12 @@ Rectangle {
                     Repeater {
                         model: [{ label: "Yes", kind: "compliment" }, { label: "No", kind: "problem" }]
                         Rectangle {
+                            id: hcFill2
                             required property var modelData
                             width: 64; height: 32; radius: 4
-                            color: yh.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+                            color: yh.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
                             border.color: theme.stroke; border.width: 0.67
-                            Text { anchors.centerIn: parent; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { anchors.centerIn: parent; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                             HoverHandler { id: yh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { const a = root.article(root.current.id); backend.requestFeedback(parent.modelData.kind, "Help", a ? "Help article: " + a.title + " (docs/help/" + a.id + ".md)" : "Help") } }
                             Accessible.role: Accessible.Button
@@ -368,10 +370,11 @@ Rectangle {
                 onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("docs"))
             }
             Rectangle {
+                id: hcFill3
                 anchors.right: parent.right
                 width: 96; height: 32; radius: 4
                 color: abh.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
+                Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "#FFFFFF") }
                 HoverHandler { id: abh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: about.close() }
                 Accessible.role: Accessible.Button

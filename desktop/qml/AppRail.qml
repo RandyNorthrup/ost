@@ -84,17 +84,21 @@ Rectangle {
                 // With app names (Teams, measured): the chosen app's whole 68 x 56
                 // item is filled, its bar 3 x 47, the label 10 px under the icon.
                 Rectangle {
-                    visible: root.showNames && (parent.selected || hover.hovered)
+                    id: hcFill2
+                    // High contrast fills the selected app's whole 68 x 44 item
+                    // with #1AEBFF (Teams, measured), names or not.
+                    visible: (root.showNames || theme.highContrast) && (parent.selected || hover.hovered && root.showNames)
                     anchors.fill: parent
-                    color: parent.selected ? theme.surface : theme.hover
+                    color: parent.selected ? theme.hc(theme.surface, theme.hcHighlight) : theme.hover
                 }
                 Rectangle {
                     visible: parent.selected
                     width: 3; height: root.showNames ? 47 : 32; radius: 2
                     anchors.verticalCenter: parent.verticalCenter
-                    color: theme.brand
+                    color: theme.highContrast ? "#000000" : theme.brand
                 }
                 Rectangle {
+                    id: hcFill1
                     visible: !root.showNames
                     anchors.centerIn: parent
                     width: 40; height: 40; radius: theme.radius
@@ -105,7 +109,7 @@ Rectangle {
                     y: root.showNames ? 8 : (parent.height - height) / 2
                     size: 24
                     name: parent.selected ? modelData.icon + "-filled" : modelData.icon
-                    color: parent.selected ? theme.brand : theme.icon
+                    color: theme.onFill([hcFill1, hcFill2], parent.selected ? theme.brand : theme.icon)
                 }
                 Text {
                     visible: root.showNames && modelData.key !== "more"
@@ -114,9 +118,10 @@ Rectangle {
                     elide: Text.ElideRight
                     text: modelData.label
                     font.family: theme.font; font.pixelSize: 10; lineHeight: 14; lineHeightMode: Text.FixedHeight
-                    color: parent.selected ? theme.brand : theme.textSecondary
+                    color: theme.onFill([hcFill1, hcFill2], parent.selected ? theme.brand : theme.textSecondary)
                 }
                 Rectangle {
+                    id: hcFill3
                     readonly property int count: modelData.key === "chat" ? root.unreadChats
                         : modelData.key === "activity" ? root.unreadActivity : 0
                     visible: count > 0
@@ -128,7 +133,7 @@ Rectangle {
                         id: badgeText
                         anchors.centerIn: parent
                         text: parent.count
-                        color: "white"
+                        color: theme.onFill(hcFill3, "white")
                         font.family: theme.font; font.pixelSize: theme.caption; font.weight: Font.DemiBold
                     }
                 }
@@ -183,11 +188,12 @@ Rectangle {
             Repeater {
                 model: moreApps.all.filter(a => !appSearch.text || a.label.toLowerCase().indexOf(appSearch.text.toLowerCase()) >= 0)
                 Rectangle {
+                    id: hcFill4
                     required property var modelData
                     width: 284; height: 40; radius: theme.radius
                     color: ah.hovered ? theme.rowHover : "transparent"
-                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: modelData.icon; size: 22; color: modelData.color }
-                    Text { x: 46; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: modelData.icon; size: 22; color: theme.onFill(hcFill4, modelData.color) }
+                    Text { x: 46; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill4, theme.text) }
                     HoverHandler { id: ah; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {

@@ -57,6 +57,7 @@ Item {
         color: theme.textSecondary
     }
     Rectangle {
+        id: hcFill1
         visible: root.action.length > 0
         x: 12.7; y: 72.7 + root.extra; width: parent.width - 25.3; height: 32
         radius: 4
@@ -65,7 +66,7 @@ Item {
             anchors.centerIn: parent
             text: root.action
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: theme.textOnBrand
+            color: theme.onFill(hcFill1, theme.textOnBrand)
         }
         HoverHandler { id: unmuteHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.unmute() }

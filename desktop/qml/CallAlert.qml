@@ -39,9 +39,10 @@ Item {
         color: root.icon.length > 0 ? theme.textSecondary : theme.text
     }
     Rectangle {
+        id: hcFill1
         x: root.width - 36; y: 6.67; width: 28; height: 28; radius: 4
         color: dismissHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textSecondary }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textSecondary) }
         HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button

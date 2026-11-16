@@ -71,15 +71,16 @@ Item {
         visible: av.failed
         x: 20; y: 0; width: av.width - 20 - av.rightGutter; height: visible ? 36 : 0
         radius: 4
-        color: theme.pick("#FDF3F4", "#3F1011")
-        border.color: theme.pick("#EEACB2", "#6E0811"); border.width: 0.67
-        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-circle-20-filled"; size: 20; color: theme.pick("#BC2F32", "#DC626D") }
+        color: theme.pick("#FDF3F4", "#3F1011", "#000000")
+        border.color: theme.pick("#EEACB2", "#6E0811", "#FFFFFF"); border.width: 0.67
+        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-circle-20-filled"; size: 20; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
         Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: "We are sorry - We've run into an issue"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
+            id: hcFill1
             x: parent.width - 36; anchors.verticalCenter: parent.verticalCenter
             width: 24; height: 24; radius: 4
             color: dismissHover.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: av.failed = false }
             Accessible.role: Accessible.Button; Accessible.name: "Dismiss"
@@ -122,7 +123,7 @@ Item {
         x: 30 + av.controlsW - width; y: 91.3
         width: acrossText.implicitWidth + 24; height: 31.3; radius: 4
         color: acrossHover.hovered ? theme.brandHover : theme.brandFill
-        Text { id: acrossText; anchors.centerIn: parent; text: av.teamScope ? "Analytics across teams" : "Analytics across channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+        Text { id: acrossText; anchors.centerIn: parent; text: av.teamScope ? "Analytics across teams" : "Analytics across channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(acrossButton, "white") }
         HoverHandler { id: acrossHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: av.teamScope ? av.acrossTeams() : av.teamAnalytics() }
         Accessible.role: Accessible.Button; Accessible.name: acrossText.text
@@ -149,7 +150,7 @@ Item {
         Rectangle {
             visible: av.loading && !av.result
             x: 12; y: 82; width: Math.min(200, parent.width - 24); height: 20; radius: 4
-            color: theme.pick("#E6E6E6", "#3D3D3D")
+            color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
             SequentialAnimation on opacity { running: parent.visible; loops: Animation.Infinite; NumberAnimation { to: 0.4; duration: 700 } NumberAnimation { to: 1; duration: 700 } }
         }
         Item { id: bodyItem; visible: !card.empty; x: 12; y: 71.3; width: parent.width - 24; height: card.bodyHeight }

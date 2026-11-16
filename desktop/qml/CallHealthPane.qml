@@ -112,7 +112,7 @@ Rectangle {
         signal clicked()
         width: 32; height: 31.33; radius: 4
         color: ibh.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: ib.glyph; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: ib.glyph; color: theme.onFill(ib, theme.textStrong) }
         HoverHandler { id: ibh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ib.clicked() }
         ToolTip.visible: ibh.hovered && ib.tip.length > 0
@@ -195,7 +195,7 @@ Rectangle {
                     Rectangle {
                         width: parent.width
                         height: (cat.off ? 48.33 : 42) + cat.modelData.root.length * 23 + 8
-                        color: theme.pick("#F0F0F0", "#3D3D3D")
+                        color: theme.pick("#F0F0F0", "#3D3D3D", "#000000")
                         Row {
                             x: 10; y: 14
                             Text {
@@ -230,17 +230,18 @@ Rectangle {
                     Item { width: 1; height: 2 }
                     Rectangle {
                         width: parent.width; height: 41.33
-                        color: theme.pick("#F0F0F0", "#3D3D3D")
+                        color: theme.pick("#F0F0F0", "#3D3D3D", "#000000")
                         Rectangle {
+                            id: hcFill1
                             x: 10; y: 5; width: parent.width - 20; height: 31.33; radius: 4
                             color: vmh.hovered ? theme.menuHover : "transparent"
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: "View more " + cat.modelData.title.toLowerCase() + " data"
                                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                                color: theme.textStrong
+                                color: theme.onFill(hcFill1, theme.textStrong)
                             }
-                            FluentIcon { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: theme.textStrong }
+                            FluentIcon { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
                             HoverHandler { id: vmh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { root.page = cat.modelData.name; flick.contentY = 0; root.refresh() } }
                             Accessible.role: Accessible.Button
@@ -266,7 +267,7 @@ Rectangle {
                     required property var modelData
                     readonly property bool on: root.enabled(modelData[1])
                     width: parent.width; height: 73.33
-                    color: theme.pick("#F0F0F0", "#3D3D3D")
+                    color: theme.pick("#F0F0F0", "#3D3D3D", "#000000")
                     Text {
                         id: tileTitle
                         x: 10; y: 12; height: 23.33 - 8

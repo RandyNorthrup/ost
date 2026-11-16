@@ -70,9 +70,10 @@ Popup {
             Item {
                 width: 268; height: 31.3
                 Rectangle {
+                    id: hcFill1
                     x: -6; width: 32; height: 31.3; radius: 4
                     color: spkHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "flyout-speaker-20"; size: 20; color: theme.textStrong }
+                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "flyout-speaker-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
                     HoverHandler { id: spkHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.volume = root.volume > 0 ? 0 : 100; backend.setSpeakerVolume(root.volume) } }
                     Accessible.role: Accessible.Button
@@ -122,9 +123,10 @@ Popup {
             Item {
                 width: 268; height: 31.3
                 Rectangle {
+                    id: hcFill2
                     width: 32; height: 31.3; radius: 4
                     color: micHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: root.muted ? "flyout-mic-off-16" : "flyout-mic-16"; size: 16; color: theme.textStrong }
+                    FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: root.muted ? "flyout-mic-off-16" : "flyout-mic-16"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
                     HoverHandler { id: micHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.toggleMute() }
                     Accessible.role: Accessible.Button
@@ -163,7 +165,7 @@ Popup {
                         width: 14; height: 14; radius: 7
                         anchors.verticalCenter: parent.verticalCenter
                         x: root.noiseSuppression ? parent.width - width - 3 : 3
-                        color: root.noiseSuppression ? "white" : theme.textStrong
+                        color: root.noiseSuppression ? theme.hc("white", "#000000") : theme.textStrong
                     }
                 }
                 HoverHandler { id: nsHover; cursorShape: Qt.PointingHandCursor }
@@ -199,7 +201,7 @@ Popup {
                         width: 14; height: 14; radius: 7
                         anchors.verticalCenter: parent.verticalCenter
                         x: root.musicMode ? parent.width - width - 3 : 3
-                        color: root.musicMode ? "white" : theme.textStrong
+                        color: root.musicMode ? theme.hc("white", "#000000") : theme.textStrong
                     }
                     HoverHandler { id: mmHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {

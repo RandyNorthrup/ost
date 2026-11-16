@@ -49,7 +49,7 @@ Popup {
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
     readonly property bool sending: backend.reportResult === "sending"
     readonly property bool failed: backend.reportResult === "error" && opened
     property var chosen: []
@@ -65,9 +65,10 @@ Popup {
 
     Text { x: 24.67; y: 24.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: root.personMode ? "Report this person" : "Report a security concern"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
     Rectangle {
+        id: hcFill1
         x: 543.33; y: 24.67; width: 32; height: 31.33; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -77,7 +78,7 @@ Popup {
     FluentSurface {
         x: 24.67; y: 64; width: 550.67; height: root.personMode ? 48 : 76
         depth: 2; radius: 4
-        color: root.personMode ? theme.pick("#F5F5F5", "#1F1F1F") : theme.pick("#E8EBFA", "#2B2B40")
+        color: root.personMode ? theme.pick("#F5F5F5", "#1F1F1F", "#000000") : theme.pick("#E8EBFA", "#2B2B40", "#000000")
     }
     // The person reported.
     Rectangle {
@@ -101,7 +102,7 @@ Popup {
     Rectangle {
         visible: !root.personMode
         x: 24.67; y: 64; width: 550.67; height: 76; radius: 4
-        color: theme.pick("#E8EBFA", "#2B2B40")
+        color: theme.pick("#E8EBFA", "#2B2B40", "#000000")
         clip: true
         Rectangle { width: 6; height: parent.height; color: theme.brandFill }
         Column {
@@ -123,7 +124,7 @@ Popup {
     // The explanation.
     Rectangle {
         x: 25.33; y: root.textTop; width: 549.33; height: 92; radius: 4
-        color: theme.inputFilled
+        color: theme.inputFilled; border.color: theme.transparentStroke
         clip: true
         TextEdit {
             id: why
@@ -154,6 +155,7 @@ Popup {
             Repeater {
                 model: root.chosen
                 Rectangle {
+                    id: hcFill2
                     required property var modelData
                     height: 20; radius: 10
                     width: pillRow.implicitWidth + 4
@@ -163,7 +165,7 @@ Popup {
                         x: 1.67; anchors.verticalCenter: parent.verticalCenter
                         spacing: 6
                         Avatar { size: 16; name: modelData.name; photoId: modelData.id || "" }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.textStrong) }
                     }
                     TapHandler { onTapped: root.chosen = root.chosen.filter(p => p.id !== modelData.id) }
                     Accessible.role: Accessible.Button
@@ -208,7 +210,7 @@ Popup {
                             required property var modelData
                             width: col.width; height: 32; radius: 4
                             color: oh.hovered ? theme.menuHover : "transparent"
-                            Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(opt, theme.text) }
                             HoverHandler { id: oh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { root.chosen = root.chosen.concat([opt.modelData]); search.text = ""; list.close() } }
                             Accessible.role: Accessible.ListItem
@@ -229,18 +231,20 @@ Popup {
     Row {
         x: 375.33; y: root.buttonsTop; spacing: 8
         Rectangle {
+            id: hcFill3
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered && !root.sending ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.sending ? theme.disabled : theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.sending ? theme.disabled : theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill4
             width: 96; height: 31.33; radius: 4
             color: root.sending ? theme.bgDisabled : reportHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Report"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.sending ? theme.disabled : "white" }
+            Text { anchors.centerIn: parent; text: "Report"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, root.sending ? theme.disabled : "white") }
             HoverHandler { id: reportHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: root.chatThread ? backend.reportMeetingChat(root.chatThread, root.chatIcal, why.text, JSON.stringify(root.chosen.map(p => p.id))) : backend.reportMeeting(why.text, JSON.stringify(root.chosen.map(p => p.id))) }
             Accessible.role: Accessible.Button

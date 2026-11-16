@@ -34,8 +34,8 @@ Item {
         width: 318.67
         height: Math.max(68, message.y + message.height + 7.33)
         radius: 8
-        color: theme.pick("#FAFAFA", "#292929")
-        border.color: theme.pick("#F0F0F0", "#3D3D3D"); border.width: 0.67
+        color: theme.pick("#FAFAFA", "#292929", "#000000")
+        border.color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF"); border.width: 0.67
         TapHandler { onTapped: { root.dismiss(); root.openChat() } }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         Avatar {

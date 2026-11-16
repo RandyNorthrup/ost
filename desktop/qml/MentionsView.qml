@@ -61,7 +61,7 @@ Rectangle {
                     readonly property bool on: root.chip === modelData.toLowerCase()
                     height: 24; radius: 12
                     width: chipText.implicitWidth + 16
-                    color: on ? theme.brandTint : (mch.hovered ? theme.rowHover : "transparent")
+                    color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (mch.hovered ? theme.rowHover : "transparent")
                     border.color: on ? theme.brand : theme.stroke
                     HoverHandler { id: mch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.chip = mchip.on ? "" : mchip.modelData.toLowerCase() }
@@ -70,7 +70,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.small
-                        color: mchip.on ? theme.brand : theme.textStrong
+                        color: theme.onFill(mchip, mchip.on ? theme.brand : theme.textStrong)
                     }
                     Accessible.role: Accessible.CheckBox
                     Accessible.name: modelData
@@ -93,6 +93,7 @@ Rectangle {
                 readonly property bool sel: root.selectedId === modelData.id
                 width: list.width; height: 66
                 Rectangle {
+                    id: hcFill1
                     x: 8; width: parent.width - 16; height: parent.height - 4; radius: theme.radius
                     color: row.sel ? theme.selected : rh.hovered ? theme.pane : "transparent"
                 }
@@ -111,13 +112,13 @@ Rectangle {
                     text: row.modelData.actor_name || "Someone"
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
-                    color: theme.text
+                    color: theme.onFill(hcFill1, theme.text)
                 }
                 Text {
                     anchors.right: parent.right; anchors.rightMargin: 24; y: 12
                     text: root.stamp(row.modelData.time)
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: theme.textSecondary
+                    color: theme.onFill(hcFill1, theme.textSecondary)
                 }
                 Text {
                     x: 72; y: 32; width: parent.width - 72 - 24
@@ -125,7 +126,7 @@ Rectangle {
                     textFormat: Text.StyledText
                     elide: Text.ElideRight; maximumLineCount: 1
                     font.family: theme.font; font.pixelSize: theme.base
-                    color: theme.text
+                    color: theme.onFill(hcFill1, theme.text)
                 }
                 HoverHandler { id: rh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openMention(row.modelData) }

@@ -33,7 +33,7 @@ Popup {
     Text {
         x: 16.7; y: 16.7; height: 20; verticalAlignment: Text.AlignVCenter
         text: "Add"
-        font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6")
+        font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
     }
     // The history choice: 12 px labels at 44.7, 20 apart; the chosen one
     // in the text colour, the others secondary.
@@ -50,7 +50,7 @@ Popup {
                     x: 0; anchors.verticalCenter: parent.verticalCenter
                     width: 16; height: 16; radius: 8
                     color: "transparent"
-                    border.color: parent.on ? theme.brand : theme.pick("#616161", "#ADADAD"); border.width: 1
+                    border.color: parent.on ? theme.brand : theme.pick("#616161", "#ADADAD", "#FFFFFF"); border.width: 1
                     Rectangle { visible: parent.parent.on; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
                 }
                 Text {
@@ -65,7 +65,7 @@ Popup {
                     visible: parent.modelData.v === 1
                     x: label.x + label.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter
                     width: Math.max(20, daysField.implicitWidth + 8); height: 18.7; radius: 2
-                    color: theme.pick("#F0F0F0", "#2E2E2E")
+                    color: theme.pick("#F0F0F0", "#2E2E2E", "#000000")
                     TextInput {
                         id: daysField
                         anchors.centerIn: parent
@@ -88,19 +88,21 @@ Popup {
         x: 185.3; y: choices.y + choices.height + 16
         spacing: 8
         Rectangle {
+            id: hcFill1
             width: 96; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill2
             readonly property bool can: picker.picked.length > 0
             width: 96; height: 31.3; radius: 4
-            color: !can ? theme.pick("#F0F0F0", "#141414") : addHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C") }
+            color: !can ? theme.pick("#F0F0F0", "#141414", "#000000") : addHover.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: addHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.can; onTapped: root.finish() }
             Accessible.role: Accessible.Button

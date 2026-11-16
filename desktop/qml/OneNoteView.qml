@@ -60,7 +60,7 @@ Item {
         anchors.fill: parent
         Row {
             x: 24; y: 18; spacing: 10
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "notebook-20"; size: 22; color: "#7719AA" }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "notebook-20"; size: 22; color: theme.hc("#7719AA", "#FFFFFF") }
             Text { text: "OneNote"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         }
         Rectangle { y: 59; width: parent.width; height: 1; color: theme.dividerSoft }
@@ -71,17 +71,18 @@ Item {
             clip: true
             model: root.notebooks
             delegate: Rectangle {
+                id: hcFill1
                 required property var modelData
                 width: ListView.view.width; height: 56; radius: theme.radius
                 color: nbh.hovered ? theme.rowHover : "transparent"
                 Rectangle {
-                    x: 12; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32; radius: 4; color: "#F1E6F7"
-                    FluentIcon { anchors.centerIn: parent; name: "notebook-20"; size: 20; color: "#7719AA" }
+                    x: 12; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32; radius: 4; color: theme.hc("#F1E6F7", "#000000")
+                    FluentIcon { anchors.centerIn: parent; name: "notebook-20"; size: 20; color: theme.hc("#7719AA", "#FFFFFF") }
                 }
                 Column {
                     x: 56; anchors.verticalCenter: parent.verticalCenter
-                    Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                    Text { text: "Modified " + root.when(modelData.modified); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                    Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+                    Text { text: "Modified " + root.when(modelData.modified); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill1, theme.textSecondary) }
                 }
                 HoverHandler { id: nbh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openNotebook(modelData) }
@@ -93,7 +94,7 @@ Item {
             visible: !root.busy && !root.error && root.notebooks.length === 0
             anchors.centerIn: parent
             spacing: 12
-            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "notebook-20"; size: 64; color: "#7719AA" }
+            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "notebook-20"; size: 64; color: theme.hc("#7719AA", "#FFFFFF") }
             Text { anchors.horizontalCenter: parent.horizontalCenter; text: "You don't have any notebooks yet"; font.family: theme.font; font.pixelSize: theme.base + 1; font.weight: Font.DemiBold; color: theme.text }
         }
     }
@@ -106,24 +107,26 @@ Item {
             id: top
             width: parent.width; height: 52; color: theme.surface
             Rectangle {
+                id: hcFill2
                 x: 12; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32; radius: theme.radius
                 color: bh.hovered ? theme.rowHover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 18; color: theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 18; color: theme.onFill(hcFill2, theme.textStrong) }
                 HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.notebook = null; root.load("notebooks", "") } }
                 Accessible.role: Accessible.Button
                 Accessible.name: "All notebooks"
             }
-            FluentIcon { x: 52; anchors.verticalCenter: parent.verticalCenter; name: "notebook-20"; size: 20; color: "#7719AA" }
+            FluentIcon { x: 52; anchors.verticalCenter: parent.verticalCenter; name: "notebook-20"; size: 20; color: theme.hc("#7719AA", "#FFFFFF") }
             Text { x: 80; anchors.verticalCenter: parent.verticalCenter; text: root.notebook ? root.notebook.name : ""; font.family: theme.font; font.pixelSize: theme.base + 2; font.weight: Font.Bold; color: theme.text }
             Rectangle {
+                id: hcFill3
                 visible: !!root.notebook && !!root.notebook.web_url
                 anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
                 width: openRow.implicitWidth + 20; height: 32; radius: theme.radius
                 color: oh.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
                 Row { id: openRow; anchors.centerIn: parent; spacing: 6
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-20"; size: 16; color: theme.textStrong }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Open in OneNote"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-20"; size: 16; color: theme.onFill(hcFill3, theme.textStrong) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Open in OneNote"; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill3, theme.text) }
                 }
                 HoverHandler { id: oh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: Qt.openUrlExternally((root.page && root.page.web_url) || root.notebook.web_url) }
@@ -187,9 +190,10 @@ Item {
                     width: parent.width
                     Text { width: parent.width - 40; wrapMode: Text.Wrap; text: root.page ? root.page.title : ""; font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text }
                     Rectangle {
+                        id: hcFill4
                         width: 32; height: 32; radius: theme.radius
                         color: dh.hovered ? theme.rowHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "delete-20"; size: 18; color: theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: "delete-20"; size: 18; color: theme.onFill(hcFill4, theme.textStrong) }
                         HoverHandler { id: dh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.removePage(root.page.id) }
                         Accessible.role: Accessible.Button
@@ -240,9 +244,10 @@ Item {
             Row {
                 spacing: 8
                 Rectangle {
+                    id: hcFill5
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
                     opacity: newTitle.text.trim() ? 1 : 0.5
-                    Text { anchors.centerIn: parent; text: "Save"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: "Save"; color: theme.onFill(hcFill5, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: if (newTitle.text.trim()) root.create("page", root.section.id, newTitle.text.trim(), newText.text) }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Save page"
@@ -302,8 +307,9 @@ Item {
             Row {
                 spacing: 8; layoutDirection: Qt.RightToLeft; width: 352
                 Rectangle {
+                    id: hcFill6
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill6, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: nameDialog.done() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Create"
@@ -331,8 +337,8 @@ Item {
         width: abRow.implicitWidth + 20; height: 32; radius: theme.radius
         color: abh.hovered ? theme.rowHover : "transparent"
         Row { id: abRow; anchors.centerIn: parent; spacing: 6
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 18; color: theme.brand }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: ab.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 18; color: theme.onFill(ab, theme.brand) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: ab.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(ab, theme.brand) }
         }
         HoverHandler { id: abh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ab.clicked() }
@@ -348,7 +354,7 @@ Item {
         width: ListView.view ? ListView.view.width : 200; height: 40
         color: selected ? theme.selected : lh.hovered ? theme.rowHover : "transparent"
         Rectangle { visible: lr.selected; width: 4; height: parent.height; color: lr.bar }
-        Text { x: 16; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 24; elide: Text.ElideRight; text: lr.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: lr.selected ? Font.DemiBold : Font.Normal; color: theme.text }
+        Text { x: 16; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 24; elide: Text.ElideRight; text: lr.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: lr.selected ? Font.DemiBold : Font.Normal; color: theme.onFill(lr, theme.text) }
         HoverHandler { id: lh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: lr.clicked() }
         Accessible.role: Accessible.Button

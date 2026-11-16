@@ -36,16 +36,18 @@ Popup {
         color: theme.text
     }
     Rectangle {
+        id: hcFill1
         visible: root.rename
         x: root.width - 56.67; y: 24.67; width: 32; height: 31.33; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
         Accessible.name: "Close"
     }
     Rectangle {
+        id: hcFill2
         x: 24.67; y: root.rename ? 94.67 : 61.33; width: root.width - 49.33; height: 32; radius: 4
         color: root.rename ? theme.inputFilled : theme.surface
         border.color: root.rename ? "transparent" : theme.stroke; border.width: 0.67
@@ -58,7 +60,7 @@ Popup {
             id: field
             x: 12; width: parent.width - 24; height: 32
             verticalAlignment: TextInput.AlignVCenter
-            font.family: theme.font; font.pixelSize: 14; color: theme.text
+            font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text)
             selectByMouse: true; clip: true
             onAccepted: if (root.ready) { root.close(); root.confirmed(text.trim()) }
             Accessible.role: Accessible.EditableText
@@ -67,26 +69,28 @@ Popup {
                 visible: !field.text.length
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.placeholder
-                font: field.font; color: theme.textSecondary
+                font: field.font; color: theme.onFill(hcFill2, theme.textSecondary)
             }
         }
     }
     Row {
         x: root.width - 24.67 - width; y: root.height - 24.67 - 31.33; spacing: 8
         Rectangle {
+            id: hcFill3
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill4
             width: 96; height: 31.33; radius: 4
             color: !root.ready ? theme.bgDisabled : okHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: root.confirmText; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ready ? theme.textOnBrand : theme.disabled }
+            Text { anchors.centerIn: parent; text: root.confirmText; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, root.ready ? theme.textOnBrand : theme.disabled) }
             HoverHandler { id: okHover; cursorShape: root.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: root.ready; onTapped: { root.close(); root.confirmed(field.text.trim()) } }
             Accessible.role: Accessible.Button

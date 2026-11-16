@@ -74,7 +74,7 @@ Item {
             anchors.fill: parent
             Rectangle {
                 x: 20; y: 14.17; width: 32; height: 32; radius: 16
-                color: theme.pick("#FAFAFA", "#1F1F1F")
+                color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
                 // The tile, clipped round as Teams' image is; painted at twice
                 // the size so it stays sharp on scaled screens.
                 Canvas {
@@ -115,7 +115,7 @@ Item {
                     appMenu.open()
                 }
                 FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20
-                             color: appMenu.opened ? theme.brand : theme.textStrong }
+                             color: theme.onFill(teamsMore, appMenu.opened ? theme.brand : theme.textStrong) }
                 HoverHandler { id: tmHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: teamsMore.openMenu() }
                 Accessible.role: Accessible.Button
@@ -136,7 +136,7 @@ Item {
         Rectangle {
             anchors.bottom: parent.bottom; width: parent.width
             height: root.appId.length > 0 ? 0.67 : 1
-            color: root.appId.length > 0 ? theme.pick("#E0E0E0", "#3D3D3D") : theme.dividerSoft
+            color: root.appId.length > 0 ? theme.pick("#E0E0E0", "#3D3D3D", "#000000") : theme.dividerSoft
         }
     }
 
@@ -324,7 +324,7 @@ Item {
         signal clicked()
         width: 32; height: 32; radius: theme.radius
         color: pbh.hovered ? theme.rowHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: pb.icon; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: pb.icon; size: 20; color: theme.onFill(pb, theme.textStrong) }
         HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pb.clicked() }
         ToolTip.visible: pbh.hovered; ToolTip.text: tip; ToolTip.delay: 500
@@ -339,8 +339,8 @@ Item {
         width: ibRow.implicitWidth + 32; height: 40; radius: 6
         color: ibh.hovered ? theme.rowHover : theme.surface; border.color: theme.stroke
         Row { id: ibRow; anchors.centerIn: parent; spacing: 8
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: ib.icon; size: 20; color: theme.textStrong }
-            Text { visible: !!ib.label; anchors.verticalCenter: parent.verticalCenter; text: ib.label; font.family: theme.font; font.pixelSize: theme.base + 1; color: theme.text }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: ib.icon; size: 20; color: theme.onFill(ib, theme.textStrong) }
+            Text { visible: !!ib.label; anchors.verticalCenter: parent.verticalCenter; text: ib.label; font.family: theme.font; font.pixelSize: theme.base + 1; color: theme.onFill(ib, theme.text) }
         }
         HoverHandler { id: ibh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ib.clicked() }
@@ -355,8 +355,8 @@ Item {
         width: hbRow.implicitWidth + 16; height: 32; radius: theme.radius
         color: hbh.hovered ? theme.rowHover : "transparent"
         Row { id: hbRow; anchors.centerIn: parent; spacing: 6
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: hb.icon; size: 18; color: theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: hb.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: hb.icon; size: 18; color: theme.onFill(hb, theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: hb.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hb, theme.text) }
         }
         HoverHandler { id: hbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }

@@ -55,9 +55,10 @@ Item {
         id: header
         width: parent.width; height: 61
         Rectangle {
+            id: hcFill1
             x: 28; y: 14; width: 32; height: 32; radius: theme.radius
             color: theme.brandFill
-            FluentIcon { anchors.centerIn: parent; name: "call-filled"; size: 20; color: "white" }
+            FluentIcon { anchors.centerIn: parent; name: "call-filled"; size: 20; color: theme.onFill(hcFill1, "white") }
         }
         Text {
             x: 60; anchors.verticalCenter: parent.verticalCenter
@@ -78,14 +79,15 @@ Item {
             Accessible.name: "Personal"
         }
         Rectangle {
+            id: hcFill2
             x: parent.width - 186; y: 15; width: 139; height: 31; radius: theme.radius
             color: vch.hovered ? theme.rowHover : theme.input
             border.color: theme.stroke
             Row {
                 anchors.centerIn: parent
                 spacing: 8
-                Text { text: "View contacts"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-20"; size: 16; color: theme.textStrong }
+                Text { text: "View contacts"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-20"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
             }
             HoverHandler { id: vch; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: Qt.openUrlExternally("https://outlook.office.com/people/") }
@@ -93,9 +95,10 @@ Item {
             Accessible.name: "View contacts"
         }
         Rectangle {
+            id: hcFill3
             x: parent.width - 43; y: 15; width: 32; height: 31; radius: theme.radius
             color: sdt.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "people"; size: 20; color: root.speedDialShown ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "people"; size: 20; color: theme.onFill(hcFill3, root.speedDialShown ? theme.brand : theme.textStrong) }
             HoverHandler { id: sdt; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.speedDialShown = !root.speedDialShown }
             Accessible.role: Accessible.Button
@@ -144,14 +147,15 @@ Item {
                 Repeater {
                     model: root.people.slice(0, 5)
                     Rectangle {
+                        id: hcFill4
                         required property var modelData
                         width: pplCol.width; height: 44; radius: theme.radius
                         color: ph.hovered ? theme.rowHover : "transparent"
                         Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name; photoId: parent.modelData.id }
                         Column {
                             x: 46; anchors.verticalCenter: parent.verticalCenter
-                            Text { text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                            Text { text: parent.parent.modelData.mail || parent.parent.modelData.job_title || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                            Text { text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill4, theme.text) }
+                            Text { text: parent.parent.modelData.mail || parent.parent.modelData.job_title || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill4, theme.textSecondary) }
                         }
                         HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { dial.chosen = parent.modelData; nameField.text = parent.modelData.name } }
@@ -160,14 +164,15 @@ Item {
             }
         }
         Rectangle {
+            id: hcFill5
             x: 16; y: 82; width: 347; height: 32; radius: theme.radius
             readonly property bool ready: dial.chosen !== null
-            color: ready ? (cbh.hovered ? theme.brandHover : theme.brandFill) : (theme.dark ? "#2E2E2E" : "#F0F0F0")
+            color: ready ? (cbh.hovered ? theme.brandHover : theme.brandFill) : (theme.dark ? theme.hc("#2E2E2E", "#000000") : theme.hc("#F0F0F0", "#000000"))
             Row {
                 anchors.centerIn: parent
                 spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "call-20"; size: 16; color: parent.parent.ready ? "white" : theme.disabled }
-                Text { text: "Call"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: parent.parent.ready ? "white" : theme.disabled }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "call-20"; size: 16; color: theme.onFill(hcFill5, parent.parent.ready ? "white" : theme.disabled) }
+                Text { text: "Call"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.parent.ready ? "white" : theme.disabled) }
             }
             HoverHandler { id: cbh; cursorShape: parent.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.ready; onTapped: root.callPerson(dial.chosen.id, dial.chosen.name) }
@@ -180,15 +185,15 @@ Item {
             x: 16; y: parent.height - 52; height: 36; radius: theme.radius
             width: Math.min(300, deviceText.implicitWidth + 64)
             color: dvh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "headset-20"; size: 20; color: theme.textStrong }
+            FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "headset-20"; size: 20; color: theme.onFill(deviceRow, theme.textStrong) }
             Text {
                 id: deviceText
                 x: 36; anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, 230); elide: Text.ElideRight
                 text: { const d = backend.setting("speakerDevice"); return d && d !== "default" ? d : "Default speaker" }
-                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(deviceRow, theme.text)
             }
-            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
+            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(deviceRow, theme.textStrong) }
             HoverHandler { id: dvh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { deviceMenu.devices = JSON.parse(backend.audioDevices()).outputs; deviceMenu.open() } }
             Accessible.role: Accessible.Button
@@ -217,10 +222,11 @@ Item {
             id: histHead
             width: parent.width; height: 48
             Rectangle {
+                id: hcFill6
                 x: 17; y: 8; width: 88; height: 35; radius: theme.radius
                 color: hhh.hovered ? theme.rowHover : "transparent"
-                FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: root.historyOpen ? "chevron-down-12" : "chevron-right-12"; size: 12; color: theme.text }
-                Text { x: 26; anchors.verticalCenter: parent.verticalCenter; text: "History"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.Bold; color: theme.text }
+                FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: root.historyOpen ? "chevron-down-12" : "chevron-right-12"; size: 12; color: theme.onFill(hcFill6, theme.text) }
+                Text { x: 26; anchors.verticalCenter: parent.verticalCenter; text: "History"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.Bold; color: theme.onFill(hcFill6, theme.text) }
                 HoverHandler { id: hhh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.historyOpen = !root.historyOpen }
                 Accessible.role: Accessible.Button
@@ -228,12 +234,13 @@ Item {
             }
             // The filter, as Teams' brand pill.
             Rectangle {
+                id: hcFill7
                 anchors.right: parent.right; anchors.rightMargin: 58; y: 13
                 height: 25; radius: 12.5
                 width: pillText.implicitWidth + 38
                 color: pfh.hovered ? theme.brandHover : theme.brandFill
-                Text { id: pillText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: root.filterLabels[root.filter]; font.family: theme.font; font.pixelSize: theme.base; color: "white" }
-                FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: "white" }
+                Text { id: pillText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: root.filterLabels[root.filter]; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill7, "white") }
+                FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(hcFill7, "white") }
                 HoverHandler { id: pfh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: filterMenu.open() }
                 Accessible.role: Accessible.ComboBox
@@ -271,20 +278,20 @@ Item {
                         width: parent.width; elide: Text.ElideRight
                         text: row.modelData.peer_name || "Unknown"
                         font.family: theme.font; font.pixelSize: theme.base; font.weight: row.k === "missed" ? Font.Bold : Font.Normal
-                        color: theme.text
+                        color: theme.onFill(row, theme.text)
                     }
                     Row {
                         spacing: 4
                         FluentIcon {
                             anchors.verticalCenter: parent.verticalCenter; size: 16
                             name: row.k === "missed" ? "call-missed-16" : row.k === "outgoing" ? "call-outbound-16" : "call-inbound-16"
-                            color: row.k === "missed" ? "#BC2F32" : theme.textSecondary
+                            color: theme.onFill(row, row.k === "missed" ? theme.hc("#BC2F32", "#FFFFFF") : theme.textSecondary)
                         }
                         Text {
                             text: (row.k === "missed" ? "Missed incoming" : row.k === "outgoing" ? "Outgoing" : "Incoming")
                                 + (root.duration(row.modelData) ? " · " + root.duration(row.modelData) : "")
                             font.family: theme.font; font.pixelSize: theme.small; font.weight: row.k === "missed" ? Font.Bold : Font.Normal
-                            color: row.k === "missed" ? "#BC2F32" : theme.textSecondary
+                            color: theme.onFill(row, row.k === "missed" ? theme.hc("#BC2F32", "#FFFFFF") : theme.textSecondary)
                         }
                     }
                 }
@@ -293,7 +300,7 @@ Item {
                     anchors.right: parent.right; anchors.rightMargin: 15; anchors.verticalCenter: parent.verticalCenter
                     text: root.when(row.modelData.start_time)
                     font.family: theme.font; font.pixelSize: theme.small; font.weight: row.k === "missed" ? Font.Bold : Font.Normal
-                    color: theme.textStrong
+                    color: theme.onFill(row, theme.textStrong)
                 }
                 // On hover: chat, and call back.
                 Row {
@@ -301,15 +308,17 @@ Item {
                     anchors.right: parent.right; anchors.rightMargin: 15; anchors.verticalCenter: parent.verticalCenter
                     spacing: 10
                     Rectangle {
+                        id: hcFill8
                         width: 31; height: 31; radius: theme.radius
                         color: mah.hovered ? theme.selected : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "chat-20"; size: 20; color: theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: "chat-20"; size: 20; color: theme.onFill(hcFill8, theme.textStrong) }
                         HoverHandler { id: mah; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.openChatWith(row.modelData.peer_mri, row.modelData.peer_name) }
                         Accessible.role: Accessible.Button
                         Accessible.name: "Chat with " + row.modelData.peer_name
                     }
                     Rectangle {
+                        id: hcFill9
                         width: 64; height: 23; radius: theme.radius
                         anchors.verticalCenter: parent.verticalCenter
                         color: cbh2.hovered ? theme.rowHover : theme.input
@@ -317,8 +326,8 @@ Item {
                         Row {
                             anchors.centerIn: parent
                             spacing: 4
-                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "call-20"; size: 14; color: theme.text }
-                            Text { text: "Call"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "call-20"; size: 14; color: theme.onFill(hcFill9, theme.text) }
+                            Text { text: "Call"; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill9, theme.text) }
                         }
                         HoverHandler { id: cbh2; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.callPerson(root.oidOf(row.modelData.peer_mri), row.modelData.peer_name) }
@@ -348,9 +357,10 @@ Item {
         width: 360
         Text { x: 20.7; y: 14.6; text: "Speed dial"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
         Rectangle {
+            id: hcFill10
             x: 308; y: 10.7; width: 32; height: 31; radius: theme.radius
             color: sah.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "people-add-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "people-add-20"; size: 20; color: theme.onFill(hcFill10, theme.textStrong) }
             HoverHandler { id: sah; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.addingSpeedDial = true; addField.forceActiveFocus() } }
             Accessible.role: Accessible.Button
@@ -383,11 +393,12 @@ Item {
             Repeater {
                 model: root.people.slice(0, 5)
                 Rectangle {
+                    id: hcFill11
                     required property var modelData
                     width: addResults.width; height: 40; radius: theme.radius
                     color: arh.hovered ? theme.rowHover : "transparent"
                     Avatar { x: 6; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name; photoId: parent.modelData.id }
-                    Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill11, theme.text) }
                     HoverHandler { id: arh; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
@@ -411,7 +422,7 @@ Item {
                 width: speedList.width; height: 48; radius: theme.radius
                 color: sdh.hovered ? theme.rowHover : "transparent"
                 Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: sd.modelData.name; photoId: sd.modelData.id }
-                Text { x: 54; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 140; elide: Text.ElideRight; text: sd.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                Text { x: 54; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 140; elide: Text.ElideRight; text: sd.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(sd, theme.text) }
                 Row {
                     visible: sdh.hovered
                     anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
@@ -419,10 +430,11 @@ Item {
                     Repeater {
                         model: [{ icon: "call-20", l: "Call" }, { icon: "dismiss-12", l: "Remove from speed dial" }]
                         Rectangle {
+                            id: hcFill12
                             required property var modelData
                             width: 32; height: 32; radius: theme.radius
                             color: sbh.hovered ? theme.selected : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: parent.modelData.icon === "dismiss-12" ? 12 : 20; color: theme.textStrong }
+                            FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: parent.modelData.icon === "dismiss-12" ? 12 : 20; color: theme.onFill(hcFill12, theme.textStrong) }
                             HoverHandler { id: sbh; cursorShape: Qt.PointingHandCursor }
                             TapHandler {
                                 onTapped: parent.modelData.icon === "call-20" ? root.callPerson(sd.modelData.id, sd.modelData.name)
@@ -448,14 +460,15 @@ Item {
                 font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
             }
             Rectangle {
+                id: hcFill13
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 96; height: 31; radius: theme.radius
                 color: abh.hovered ? theme.rowHover : theme.input
                 border.color: theme.stroke
                 Row {
                     anchors.centerIn: parent; spacing: 6
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "people-add-20"; size: 16; color: theme.text }
-                    Text { text: "Add"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "people-add-20"; size: 16; color: theme.onFill(hcFill13, theme.text) }
+                    Text { text: "Add"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill13, theme.text) }
                 }
                 HoverHandler { id: abh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.addingSpeedDial = true; addField.forceActiveFocus() } }

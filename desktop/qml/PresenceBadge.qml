@@ -17,8 +17,8 @@ Item {
         : p === "outofoffice" ? "oof"
         : p === "offline" ? "offline"
         : "unknown"
-    readonly property color ink: kind === "available" ? "#13A10E" : kind === "away" ? "#EAA300"
-        : (kind === "busy" || kind === "dnd") ? "#D13438" : kind === "oof" ? "#C239B3" : theme.textSecondary
+    readonly property color ink: kind === "available" ? theme.hc("#13A10E", "#FFFFFF") : kind === "away" ? theme.hc("#EAA300", "#FFFFFF")
+        : (kind === "busy" || kind === "dnd") ? theme.hc("#D13438", "#FFFFFF") : kind === "oof" ? theme.hc("#C239B3", "#FFFFFF") : theme.textSecondary
     visible: presence.length > 0
     width: total; height: total
     Rectangle {

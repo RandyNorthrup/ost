@@ -91,9 +91,10 @@ Rectangle {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             x: parent.width - 52; y: 13.67; width: 32; height: 30; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
@@ -158,9 +159,10 @@ Rectangle {
                 visible: root.showAll
                 width: 341.3; height: visible ? 31 : 0
                 Rectangle {
+                    id: hcFill2
                     x: 3; width: 32; height: 25; radius: 4
                     color: backHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.textStrong }
+                    FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                     HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.showAll = false; flick.contentY = 0 } }
                     Accessible.role: Accessible.Button
@@ -181,7 +183,7 @@ Rectangle {
                 Rectangle {
                     id: bar
                     x: 18.7; y: 0; width: 319.3; height: Math.max(37.3, noticeText.implicitHeight + 17.3); radius: 4
-                    color: theme.pick("#EBEBEB", "#2E2E2E")
+                    color: theme.pick("#EBEBEB", "#2E2E2E", "#000000")
                     border.color: theme.stroke; border.width: 0.67
                     FluentIcon { x: 12; y: 8.67; name: "info-20-filled"; size: 20; color: theme.textSecondary }
                     Text {
@@ -193,10 +195,11 @@ Rectangle {
                         color: theme.text
                     }
                     Rectangle {
+                        id: hcFill3
                         x: parent.width - 30; y: 8.67
                         width: 20; height: 20; radius: 4
                         color: nxHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill3, theme.textStrong) }
                         HoverHandler { id: nxHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.notice = "" }
                         Accessible.role: Accessible.Button
@@ -328,7 +331,7 @@ Rectangle {
                                 anchors.centerIn: parent
                                 text: chip.modelData
                                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium
-                                color: chip.chosen ? theme.pick("#FAFAFA", "#FFFFFF") : theme.textStrong
+                                color: theme.onFill(chip, chip.chosen ? theme.pick("#FAFAFA", "#FFFFFF", "#FFFFFF") : theme.textStrong)
                             }
                             HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.filterCategory = chip.modelData }
@@ -466,6 +469,7 @@ Rectangle {
             }
         }
         Rectangle {
+            id: hcFill4
             x: 10.7; width: 339.3; height: 32; radius: 4
             color: root.previewing ? theme.pane : pvHover.hovered ? theme.menuHover : theme.surface
             border.color: pvHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
@@ -473,7 +477,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: root.previewing ? "Stop preview" : "Preview"
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: theme.text
+                color: theme.onFill(hcFill4, theme.text)
             }
             HoverHandler { id: pvHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.setPreview(!root.previewing) }
@@ -482,13 +486,14 @@ Rectangle {
         }
         Item { width: 1; height: 10 }
         Rectangle {
+            id: hcFill5
             x: 10.7; width: 339.3; height: 32; radius: 4
             color: apHover.hovered ? theme.brandHover : theme.brandFill
             Text {
                 anchors.centerIn: parent
                 text: "Apply and turn on video"
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: theme.textOnBrand
+                color: theme.onFill(hcFill5, theme.textOnBrand)
             }
             HoverHandler { id: apHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.setPreview(false); root.turnOnVideo() } }
@@ -563,14 +568,14 @@ Rectangle {
         }
         Rectangle {
             x: ss.width - 40; y: 8; width: 40; height: 20; radius: 10
-            color: ss.checked ? (swHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+            color: ss.checked ? (swHover.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
             border.color: ss.checked ? "transparent" : theme.textSecondary
             border.width: 0.67
             Rectangle {
                 width: 14.4; height: 14.4; radius: 7.2
                 anchors.verticalCenter: parent.verticalCenter
                 x: (ss.checked ? 20.67 : 0.67) + 9 - 7.2
-                color: ss.checked ? "white" : theme.textSecondary
+                color: ss.checked ? theme.hc("white", "#1AEBFF") : theme.textSecondary
             }
             HoverHandler { id: swHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: ss.toggled() }

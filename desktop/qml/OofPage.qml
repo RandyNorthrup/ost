@@ -25,7 +25,7 @@ Rectangle {
     height: col.y + col.height + 20
     radius: 8
     color: "transparent"
-    border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+    border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
 
     property bool on: false
     property bool external: false
@@ -148,9 +148,10 @@ Rectangle {
             x: -16; spacing: 10
             SettingsParts.Button { label: "Cancel"; onClicked: { root.load(); root.cancel() } }
             Rectangle {
+                id: hcFill1
                 width: 96; height: 31.3; radius: 4
                 color: !root.canSave ? theme.bgDisabled : saveHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.canSave ? "white" : theme.disabled }
+                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, root.canSave ? "white" : theme.disabled) }
                 HoverHandler { id: saveHover; cursorShape: root.canSave ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: root.canSave; onTapped: root.save(root.value()) }
                 Accessible.role: Accessible.Button
@@ -168,7 +169,7 @@ Rectangle {
         property alias text: edit.text
         height: 96.7; radius: 4
         color: theme.surface
-        border.color: !usable ? theme.pick("#E0E0E0", "#3D3D3D") : edit.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
+        border.color: !usable ? theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") : edit.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
         Rectangle { visible: ma.usable; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: edit.activeFocus ? 2 : 0.67; color: edit.activeFocus ? theme.brand : theme.textSecondary }
         Flickable {
             x: 12; y: 6; width: parent.width - 24; height: parent.height - 12

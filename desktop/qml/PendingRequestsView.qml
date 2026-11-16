@@ -75,7 +75,7 @@ Item {
         anchors.fill: parent
         Rectangle {
             x: 20; y: 20.6; width: 278.7; height: 32; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             Rectangle { visible: search.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
             TextInput {
                 id: search
@@ -136,7 +136,7 @@ Item {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: modelData
                                 font.family: theme.font; font.pixelSize: index === 0 ? 14 : 12
-                                color: theme.text
+                                color: theme.onFill(row, theme.text)
                             }
                         }
                         Row {
@@ -151,9 +151,9 @@ Item {
                             anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                             text: row.state_ ? "You accepted the request." : "You denied the request."
                             font.family: theme.font; font.pixelSize: 12
-                            color: theme.text
+                            color: theme.onFill(row, theme.text)
                         }
-                        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#EBEBEB", "#333333") }
+                        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#EBEBEB", "#333333", "#000000") }
                     }
                 }
             }
@@ -178,7 +178,7 @@ Item {
             anchors.centerIn: parent
             text: btn.text
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text
+            color: theme.onFill(btn, !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text)
         }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }

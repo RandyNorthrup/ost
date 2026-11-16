@@ -49,7 +49,7 @@ Item {
         radius: 6
         color: "transparent"
         border.width: root.hair
-        border.color: theme.pick("#E0E0E0", "#3D3D3D")
+        border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
         z: 3
     }
     Item {
@@ -61,14 +61,14 @@ Item {
         Rectangle {
             id: head
             width: parent.width; height: 48.67
-            color: theme.pick("#FAFAFA", "#1F1F1F")
+            color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
             radius: 5.33
             Rectangle { y: parent.height - 6; width: parent.width; height: 6; color: parent.color; visible: root.hasPreview }
-            Rectangle { y: parent.height - root.hair; width: parent.width; height: root.hair; color: theme.pick("#E0E0E0", "#3D3D3D"); visible: root.hasPreview }
+            Rectangle { y: parent.height - root.hair; width: parent.width; height: root.hair; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000"); visible: root.hasPreview }
             Rectangle {
                 id: main
                 x: 8; y: 2; width: 238.67; height: 44; radius: 8
-                color: mainHover.hovered || root.hoverForTest ? theme.surface : "transparent"
+                color: mainHover.hovered || root.hoverForTest ? theme.hc(theme.surface, theme.hcHighlight) : "transparent"
                 FluentIcon { x: 4; y: 6; size: 32; name: root.typeIcon(root.file.file_type) }
                 Column {
                     x: 44; anchors.verticalCenter: parent.verticalCenter
@@ -79,7 +79,7 @@ Item {
                         elide: Text.ElideRight
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
-                        color: theme.text
+                        color: theme.onFill(main, theme.text)
                     }
                     Text {
                         visible: text !== ""
@@ -88,7 +88,7 @@ Item {
                         elide: Text.ElideRight
                         font.family: theme.font; font.pixelSize: 12
                         lineHeight: 16; lineHeightMode: Text.FixedHeight
-                        color: theme.textSecondary
+                        color: theme.onFill(main, theme.textSecondary)
                     }
                 }
                 HoverHandler { id: mainHover; cursorShape: Qt.PointingHandCursor }
@@ -117,7 +117,7 @@ Item {
                     id: moreButton
                     width: 32; height: 31.33; radius: 6
                     color: moreHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; size: 20; name: "more-horizontal-20"; color: moreHover.hovered ? theme.textStrong : theme.textSecondary }
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: "more-horizontal-20"; color: theme.onFill(moreButton, moreHover.hovered ? theme.textStrong : theme.textSecondary) }
                     HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.menuRequested(moreButton) }
                     ToolTip.visible: moreHover.hovered
@@ -132,7 +132,7 @@ Item {
         Rectangle {
             visible: root.hasPreview
             y: 48.67; width: parent.width; height: 179.33
-            color: theme.pick("#F5F5F5", "#141414")
+            color: theme.pick("#F5F5F5", "#141414", "#000000")
             Image {
                 id: pic
                 anchors.fill: parent

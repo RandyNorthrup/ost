@@ -148,7 +148,7 @@ Popup {
                 delegate: Rectangle {
                     required property int index
                     width: 6; height: 14; radius: 3
-                    color: (index + 1) / 13 <= root.level / 100 + 0.0001 && root.level > 0 ? theme.brandFill : theme.pick("#BDBDBD", "#5C5C5C")
+                    color: (index + 1) / 13 <= root.level / 100 + 0.0001 && root.level > 0 ? theme.brandFill : theme.pick("#BDBDBD", "#5C5C5C", "#000000")
                 }
             }
             Accessible.role: Accessible.Indicator
@@ -163,13 +163,13 @@ Popup {
         Row {
             visible: root.phase === "error"
             x: 32; y: 274.9; width: 536; spacing: 8
-            FluentIcon { name: "error-circle-20-filled"; size: 16; color: theme.pick("#C50F1F", "#DC626D") }
+            FluentIcon { name: "error-circle-20-filled"; size: 16; color: theme.pick("#C50F1F", "#DC626D", "#FFFFFF") }
             Text {
                 width: 512
                 text: root.errorText
                 wrapMode: Text.Wrap
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
-                color: theme.pick("#C50F1F", "#DC626D")
+                color: theme.pick("#C50F1F", "#DC626D", "#FFFFFF")
             }
         }
         Row {

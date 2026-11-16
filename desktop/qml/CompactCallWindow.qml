@@ -22,7 +22,7 @@ Window {
     width: 521; height: 248
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     title: "Meeting compact view | " + (call ? call.peer : "") + " | OST"
-    color: "#FFFFFF"
+    color: theme.hc("#FFFFFF", "#000000")
     x: screen ? screen.virtualX + screen.desktopAvailableWidth - width - 6.67 : 0
     y: screen ? screen.virtualY + screen.desktopAvailableHeight - height - 35 : 0
 
@@ -36,7 +36,7 @@ Window {
 
     // Title bar (call-monitor-titlebar): drag to move.
     Rectangle {
-        width: parent.width; height: 32; color: "#FFFFFF"
+        width: parent.width; height: 32; color: theme.hc("#FFFFFF", "#000000")
         DragHandler { target: null; onActiveChanged: if (active) cw.startSystemMove() }
         Repeater {
             model: [
@@ -45,13 +45,14 @@ Window {
                 { x: 494.33, icon: "picture-in-picture-exit-20", tip: "Maximize meeting window", act: "max" }
             ]
             Rectangle {
+                id: hcFill1
                 required property var modelData
                 x: modelData.x; y: 4.33; width: 24; height: 23.33; radius: 4
-                color: tbHover.hovered ? theme.pick("#F5F5F5", "#383838") : "transparent"
+                color: tbHover.hovered ? theme.pick("#F5F5F5", "#383838", "#1AEBFF") : "transparent"
                 FluentIcon {
                     anchors.centerIn: parent; size: 16
                     name: parent.modelData.icon + (tbHover.hovered ? "-filled" : "")
-                    color: theme.textStrong
+                    color: theme.onFill(hcFill1, theme.textStrong)
                 }
                 HoverHandler { id: tbHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
@@ -81,6 +82,7 @@ Window {
                 { icon: "call-people", tip: "People", act: "people", count: cw.call.roster.filter(p => p.active !== false).length }
             ] : []
             Rectangle {
+                id: hcFill2
                 required property var modelData
                 required property int index
                 x: 106.67 + index * 46; y: 4; width: 32; height: 32; radius: 4
@@ -88,14 +90,14 @@ Window {
                 FluentIcon {
                     x: parent.modelData.count !== undefined ? 2.23 : 6; y: 6; size: 20
                     name: parent.modelData.icon
-                    color: parent.modelData.strong || btHover.hovered ? theme.text : theme.textStrong
+                    color: theme.onFill(hcFill2, parent.modelData.strong || btHover.hovered ? theme.text : theme.textStrong)
                 }
                 Text {
                     visible: parent.modelData.count !== undefined
                     x: 22.23; y: 6; height: 20; verticalAlignment: Text.AlignVCenter
                     text: parent.modelData.count || ""
                     font.family: theme.font; font.pixelSize: 14
-                    color: theme.textStrong
+                    color: theme.onFill(hcFill2, theme.textStrong)
                 }
                 HoverHandler { id: btHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
@@ -113,9 +115,10 @@ Window {
             }
         }
         Rectangle {
+            id: hcFill3
             x: 382.67; y: 4; width: 32; height: 32; radius: 4
             color: leaveHover.hovered ? theme.rowHover : "transparent"
-            FluentIcon { x: 6; y: 6; size: 20; name: "call-leave-filled"; color: "#B10E1C" }
+            FluentIcon { x: 6; y: 6; size: 20; name: "call-leave-filled"; color: theme.onFill(hcFill3, theme.hc("#B10E1C", "#FFFFFF")) }
             HoverHandler { id: leaveHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: cw.call.leave() }
             Accessible.role: Accessible.Button

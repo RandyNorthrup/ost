@@ -28,9 +28,10 @@ Popup {
         Accessible.name: text
     }
     Rectangle {
+        id: hcFill1
         x: 543.33; y: 24.67; width: 32; height: 32; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -46,7 +47,7 @@ Popup {
     }
     FluentSurface {
         x: (root.width - 160) / 2; y: 112.67; width: 160; height: 160
-        depth: 4; radius: 32; color: "#FFFFFF"
+        depth: 4; radius: 32; color: theme.hc("#FFFFFF", "#000000")
         Image {
             anchors.fill: parent
             source: "../assets/dialogs/mobile-app-qr.png"

@@ -9,7 +9,8 @@ Item {
     property int depth: 16
     property real radius: 4
     property color color: theme.menu
-    property color borderColor: "transparent"
+    // Fluent's TransparentStroke: white in High contrast.
+    property color borderColor: theme.transparentStroke
     readonly property real ambientBlur: depth === 64 ? 8 : 2
     RectangularShadow {
         anchors.fill: parent

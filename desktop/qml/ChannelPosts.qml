@@ -281,7 +281,7 @@ Item {
                                     text: postHead.ann ? postHead.ann.title : ""
                                     font.family: theme.font; font.pixelSize: 32; font.weight: Font.DemiBold
                                     lineHeight: 40; lineHeightMode: Text.FixedHeight
-                                    color: bannerBox.colors[1]
+                                    color: theme.onFill(bannerBox, bannerBox.colors[1])
                                     Accessible.role: Accessible.Heading
                                 }
                             }
@@ -355,11 +355,12 @@ Item {
                     width: card.width; height: visible ? 68 : 0
                     Rectangle {
                         y: -6; width: parent.width; height: 70; radius: 4
-                        color: "#333357"
+                        color: theme.hc("#333357", "#000000")
                         Rectangle {
+                            id: hcFill1
                             x: 20; y: 19; width: 32; height: 32; radius: 4
-                            color: "#5B5FC7"
-                            FluentIcon { anchors.centerIn: parent; name: "video-20-filled"; size: 20; color: "white" }
+                            color: theme.hc("#5B5FC7", "#FFFFFF")
+                            FluentIcon { anchors.centerIn: parent; name: "video-20-filled"; size: 20; color: theme.onFill(hcFill1, "white") }
                         }
                         Text {
                             x: 62; anchors.verticalCenter: parent.verticalCenter
@@ -393,8 +394,8 @@ Item {
                             readonly property bool can: backend.callState === ""
                             x: parent.width - 20 - width; anchors.verticalCenter: parent.verticalCenter
                             width: 96; height: 32; radius: 4
-                            color: !can ? theme.bgDisabled : jh.hovered ? theme.brandHover : "#5B5FC7"
-                            Text { anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: joinButton.can ? "white" : theme.disabled }
+                            color: !can ? theme.bgDisabled : jh.hovered ? theme.brandHover : theme.hc("#5B5FC7", "#FFFFFF")
+                            Text { anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(joinButton, joinButton.can ? "white" : theme.disabled) }
                             HoverHandler { id: jh; enabled: joinButton.can; cursorShape: Qt.PointingHandCursor }
                             TapHandler { enabled: joinButton.can; onTapped: root.joinMeeting(card.post.meeting_join_url, card.meetingTitle) }
                             Accessible.role: Accessible.Button
@@ -603,7 +604,7 @@ Item {
                             FluentIcon {
                                 anchors.centerIn: parent
                                 name: replyInput.text.trim() ? "send-20-filled" : "send-20"; size: 20
-                                color: replyInput.text.trim() ? theme.brand : theme.textStrong
+                                color: theme.onFill(sendReply, replyInput.text.trim() ? theme.brand : theme.textStrong)
                             }
                             HoverHandler { id: srh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: replyInput.submit() }
@@ -640,13 +641,14 @@ Item {
                 depth: 4; radius: 6; color: theme.surface
                 Avatar { x: 16; y: 12; size: 32; name: root.myName; photoId: backend.userMri || ""; presence: root.myPresence }
                 Rectangle {
+                    id: hcFill2
                     x: 46; y: 12; width: parent.width - 74; height: 31.3; radius: 4
                     color: startHover.hovered ? theme.rowHover : "transparent"
                     Text {
                         x: 12.7; anchors.verticalCenter: parent.verticalCenter
                         text: "Post in channel"
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                        color: theme.textStrong
+                        color: theme.onFill(hcFill2, theme.textStrong)
                     }
                     HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.startPost() }
@@ -655,12 +657,13 @@ Item {
                 }
                 // The post types: Post (chosen) and Announcement.
                 Rectangle {
+                    id: hcFill3
                     x: 12; y: 68; width: 96; height: 30; radius: 4
-                    color: postTypeHover.hovered ? theme.rowHover : theme.pick("#EBEBEB", "#3D3D3D")
+                    color: postTypeHover.hovered ? theme.rowHover : theme.pick("#EBEBEB", "#3D3D3D", "#000000")
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: postTypeHover.hovered ? "channel-20-filled" : "channel-20"; color: theme.brandForeground1 }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Post"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brandForeground1 }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: postTypeHover.hovered ? "channel-20-filled" : "channel-20"; color: theme.onFill(hcFill3, theme.brandForeground1) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Post"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.brandForeground1) }
                     }
                     HoverHandler { id: postTypeHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.startPost() }
@@ -668,12 +671,13 @@ Item {
                     Accessible.name: "Post"
                 }
                 Rectangle {
+                    id: hcFill4
                     x: 123.5; y: 68; width: 147.5; height: 30; radius: 4
                     color: annTypeHover.hovered ? theme.rowHover : theme.surface
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: annTypeHover.hovered ? "fmt-announcement-filled" : "fmt-announcement"; color: annTypeHover.hovered ? theme.brand : theme.text }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Announcement"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: annTypeHover.hovered ? "fmt-announcement-filled" : "fmt-announcement"; color: theme.onFill(hcFill4, annTypeHover.hovered ? theme.brand : theme.text) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Announcement"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                     }
                     HoverHandler { id: annTypeHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.startAnnouncement() }
@@ -695,8 +699,8 @@ Item {
         Row {
             id: pbRow
             anchors.centerIn: parent; spacing: 8
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "compose-20"; size: 20; color: "white" }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Post in channel"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "compose-20"; size: 20; color: theme.onFill(postButton, "white") }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: "Post in channel"; color: theme.onFill(postButton, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
         }
         HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.startPost() }

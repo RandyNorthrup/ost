@@ -42,7 +42,7 @@ Window {
     /// Settings ▸ Notifications ▸ Size: Compact.
     property bool compact: false
     readonly property bool leftSide: corner.endsWith("L")
-    readonly property color fill: "#444791"
+    readonly property color fill: theme.hc("#444791", "#FFFFFF")
     /// The app's icon and name in the header (Teams' own there).
     readonly property string appName: "OST"
 
@@ -276,9 +276,10 @@ Window {
 
     // Teams' urgent badge: a red "!" in a 16 px white circle.
     component UrgentBadge: Rectangle {
+        id: hcFill1
         width: 16; height: 16; radius: 8
-        color: "white"
-        FluentIcon { anchors.centerIn: parent; name: "important-20-filled"; size: 12; color: "#D13438" }
+        color: theme.hc("white", "#000000")
+        FluentIcon { anchors.centerIn: parent; name: "important-20-filled"; size: 12; color: theme.onFill(hcFill1, theme.hc("#D13438", "#FFFFFF")) }
     }
 
     // A transparent header button (Fluent's medium 32 x 31.3, small 24 x
@@ -317,15 +318,16 @@ Window {
             padding: 4
             background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
             contentItem: Rectangle {
+                id: hcFill2
                 implicitWidth: settingsText.implicitWidth + 46; implicitHeight: 32
                 radius: 4
                 color: settingsHover.hovered ? theme.menuHover : "transparent"
-                FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "settings-20"; size: 20; color: theme.text }
+                FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "settings-20"; size: 20; color: theme.onFill(hcFill2, theme.text) }
                 Text {
                     id: settingsText
                     x: 36; anchors.verticalCenter: parent.verticalCenter
                     text: "Go to Notification settings"
-                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                    font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text)
                 }
                 HoverHandler { id: settingsHover; cursorShape: Qt.PointingHandCursor }
                 MouseArea { anchors.fill: parent; onClicked: { moreMenu.close(); root.openSettings() } }
@@ -389,10 +391,11 @@ Window {
             photoId: toast ? (toast.senderMri || "") : ""
         }
         Rectangle {
+            id: hcFill3
             visible: !!toast && toast.kind === "test"
             anchors.fill: parent; radius: width / 2
-            color: "white"
-            FluentIcon { anchors.centerIn: parent; name: "alert-20"; size: Math.round(parent.width / 2); color: theme.brandFill }
+            color: theme.hc("white", "#000000")
+            FluentIcon { anchors.centerIn: parent; name: "alert-20"; size: Math.round(parent.width / 2); color: theme.onFill(hcFill3, theme.brandFill) }
         }
     }
 
@@ -403,14 +406,14 @@ Window {
         property alias input: field
         signal sent()
         height: 32; radius: 4
-        color: "#383966"
+        color: theme.hc("#383966", "#FFFFFF")
         TextInput {
             id: field
             x: 12.67; width: parent.width - 12.67 - 34; height: parent.height
             verticalAlignment: TextInput.AlignVCenter
             clip: true
             font.family: theme.font; font.pixelSize: 14
-            color: "white"; selectionColor: "#7579EB"; selectedTextColor: "white"
+            color: theme.onFill(qr, "white"); selectionColor: theme.hc("#7579EB", "#1AEBFF"); selectedTextColor: theme.hc("white", "#000000")
             onActiveFocusChanged: if (activeFocus) root.requestActivate()
             Keys.onReturnPressed: event => { if (!(event.modifiers & Qt.ShiftModifier)) qr.send() }
             Keys.onEnterPressed: qr.send()
@@ -418,7 +421,7 @@ Window {
                 visible: !field.text.length
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Send a quick reply"
-                font: field.font; color: "white"
+                font: field.font; color: theme.onFill(qr, "white")
             }
             Accessible.role: Accessible.EditableText
             Accessible.name: "Send a quick reply"
@@ -552,7 +555,7 @@ Window {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     width: replyRow.implicitWidth + 17.33; height: 23.33; radius: 4
                     color: "transparent"
-                    border.width: 1; border.color: replyHover.hovered ? "white" : Qt.rgba(1, 1, 1, 0.2)
+                    border.width: 1; border.color: replyHover.hovered ? theme.hc("white", "#1AEBFF") : Qt.rgba(1, 1, 1, 0.2)
                     Row {
                         id: replyRow
                         anchors.centerIn: parent; spacing: 4
@@ -691,7 +694,7 @@ Window {
                 readonly property bool primary: index === 0
                 width: (acts.width - acts.spacing * (acts.list.length - 1)) / Math.max(1, acts.list.length)
                 height: 32; radius: 4
-                color: primary ? (abMouse.pressed ? "#C5CBFA" : abHover.hovered ? "#E8EBFA" : "white")
+                color: primary ? (abMouse.pressed ? theme.hc("#C5CBFA", "#1AEBFF") : abHover.hovered ? theme.hc("#E8EBFA", "#1AEBFF") : theme.hc("white", "#000000"))
                                : (abMouse.pressed ? Qt.rgba(0, 0, 0, 0.3) : abHover.hovered ? Qt.rgba(0, 0, 0, 0.1) : "transparent")
                 border.width: 1; border.color: "white"
                 Row {
@@ -699,13 +702,13 @@ Window {
                     FluentIcon {
                         anchors.verticalCenter: parent.verticalCenter
                         name: ab.modelData.id === "join" ? "video-20" : "chat-20"
-                        size: 20; color: ab.primary ? "#242424" : "white"
+                        size: 20; color: theme.onFill(ab, ab.primary ? theme.hc("#242424", "#FFFFFF") : "white")
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: ab.modelData.label
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                        color: ab.primary ? "#242424" : "white"
+                        color: theme.onFill(ab, ab.primary ? theme.hc("#242424", "#FFFFFF") : "white")
                     }
                 }
                 HoverHandler { id: abHover; cursorShape: Qt.PointingHandCursor }
@@ -842,9 +845,9 @@ Window {
         property bool decline: false
         signal clicked()
         width: 102.67; height: 32; radius: 4
-        color: decline ? (cbMouse.pressed ? "#A4262C" : cbHover.hovered ? "#BC2F32" : "#D13438")
-                       : (cbMouse.pressed ? "#383966" : cbHover.hovered ? "#4F52B2" : "#5B5FC7")
-        FluentIcon { anchors.centerIn: parent; name: cb.icon; size: 20; color: "white" }
+        color: decline ? (cbMouse.pressed ? theme.hc("#A4262C", "#1AEBFF") : cbHover.hovered ? theme.hc("#BC2F32", "#1AEBFF") : theme.hc("#D13438", "#000000"))
+                       : (cbMouse.pressed ? theme.hc("#383966", "#1AEBFF") : cbHover.hovered ? theme.hc("#4F52B2", "#1AEBFF") : theme.hc("#5B5FC7", "#FFFFFF"))
+        FluentIcon { anchors.centerIn: parent; name: cb.icon; size: 20; color: theme.onFill(cb, "white") }
         HoverHandler { id: cbHover; cursorShape: Qt.PointingHandCursor }
         MouseArea { id: cbMouse; anchors.fill: parent; onClicked: cb.clicked() }
         Accessible.role: Accessible.Button

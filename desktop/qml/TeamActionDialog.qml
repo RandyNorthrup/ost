@@ -87,10 +87,11 @@ Popup {
             y: bodyText.y + bodyText.height
             width: 32 + checkText.implicitWidth + 12; height: 32
             Rectangle {
+                id: hcFill1
                 x: 8; y: 8; width: 16; height: 16; radius: 2
-                color: dlg.checked ? theme.brandFill : "transparent"
-                border.color: dlg.checked ? theme.brandFill : theme.textSecondary; border.width: 0.67
-                FluentIcon { visible: dlg.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.textOnBrand }
+                color: dlg.checked ? theme.checkedFill : "transparent"
+                border.color: dlg.checked ? theme.checkedFill : theme.textSecondary; border.width: 0.67
+                FluentIcon { visible: dlg.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill1, theme.textOnBrand) }
             }
             Text {
                 id: checkText
@@ -133,7 +134,7 @@ Popup {
             anchors.centerIn: parent
             text: btn.text
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text
+            color: theme.onFill(btn, !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text)
         }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }

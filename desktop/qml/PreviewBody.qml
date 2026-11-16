@@ -23,23 +23,23 @@ Item {
     property string error: ""
     property string iconName: ""
     property string appIconName: ""
-    property color ink: "#F3F2F1"
+    property color ink: theme.hc("#F3F2F1", "#FFFFFF")
     property bool embedded: false
     readonly property int pageCount: pdf.pageCount
     readonly property bool isText: !!preview && preview.kind === "text"
 
-    Rectangle { visible: root.embedded; anchors.fill: parent; color: "#FAF9F8" }
+    Rectangle { visible: root.embedded; anchors.fill: parent; color: theme.hc("#FAF9F8", "#000000") }
 
     // Text: the Preview's page
     Rectangle {
         visible: root.isText && !root.embedded
         anchors.horizontalCenter: parent.horizontalCenter
         width: parent.width * 0.75; height: parent.height
-        color: "#FFFFFE"
+        color: theme.hc("#FFFFFE", "#000000")
         Text {
             x: 15; height: 30; verticalAlignment: Text.AlignVCenter
             text: root.name
-            font.family: theme.font; font.pixelSize: 14; color: "#242424"
+            font.family: theme.font; font.pixelSize: 14; color: theme.hc("#242424", "#FFFFFF")
         }
         ListView {
             id: lines
@@ -52,8 +52,8 @@ Item {
                 required property string modelData
                 required property int index
                 width: lines.width; height: Math.max(19, lt.implicitHeight)
-                Text { width: 52; horizontalAlignment: Text.AlignRight; text: index + 1; font.family: theme.mono; font.pixelSize: 14; color: "#237893" }
-                Text { id: lt; x: 72; width: parent.width - 72 - 16; text: modelData.replace(/\r$/, ""); wrapMode: Text.WrapAnywhere; font.family: theme.mono; font.pixelSize: 14; lineHeight: 19; lineHeightMode: Text.FixedHeight; color: "#000000"; textFormat: Text.PlainText }
+                Text { width: 52; horizontalAlignment: Text.AlignRight; text: index + 1; font.family: theme.mono; font.pixelSize: 14; color: theme.hc("#237893", "#FFFFFF") }
+                Text { id: lt; x: 72; width: parent.width - 72 - 16; text: modelData.replace(/\r$/, ""); wrapMode: Text.WrapAnywhere; font.family: theme.mono; font.pixelSize: 14; lineHeight: 19; lineHeightMode: Text.FixedHeight; color: theme.hc("#000000", "#FFFFFF"); textFormat: Text.PlainText }
             }
         }
     }
@@ -61,11 +61,11 @@ Item {
     Rectangle {
         visible: root.isText && root.embedded
         x: 20; y: 20; width: parent.width - 40; height: 31
-        color: "#FFFFFF"
+        color: theme.hc("#FFFFFF", "#000000")
         Text {
             x: 10; y: 6
             text: root.name
-            font.family: theme.font; font.pixelSize: 14; color: "#000000"
+            font.family: theme.font; font.pixelSize: 14; color: theme.hc("#000000", "#FFFFFF")
             Accessible.role: Accessible.Heading
             Accessible.name: text
         }
@@ -73,7 +73,7 @@ Item {
     Rectangle {
         visible: root.isText && root.embedded
         x: 21; y: 51; width: parent.width - 42; height: Math.max(0, parent.height - 72)
-        color: "#FFFFFE"
+        color: theme.hc("#FFFFFE", "#000000")
         ListView {
             id: editorLines
             anchors.fill: parent
@@ -91,10 +91,10 @@ Item {
                 Rectangle {
                     visible: parent.index === 0
                     x: 64; width: editorLines.width - 64; height: 19
-                    color: "transparent"; border.width: 2; border.color: "#EEEEEE"
+                    color: "transparent"; border.width: 2; border.color: theme.hc("#EEEEEE", "#FFFFFF")
                 }
-                Text { width: 38; height: 19; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignRight; text: parent.index + 1; font.family: theme.mono; font.pixelSize: 14; color: parent.index === 0 ? "#0B216F" : "#237893" }
-                Text { x: 64; height: 19; verticalAlignment: Text.AlignVCenter; text: parent.modelData.replace(/\r$/, ""); font.family: theme.mono; font.pixelSize: 14; color: "#000000"; textFormat: Text.PlainText }
+                Text { width: 38; height: 19; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignRight; text: parent.index + 1; font.family: theme.mono; font.pixelSize: 14; color: parent.index === 0 ? theme.hc("#0B216F", "#FFFFFF") : theme.hc("#237893", "#FFFFFF") }
+                Text { x: 64; height: 19; verticalAlignment: Text.AlignVCenter; text: parent.modelData.replace(/\r$/, ""); font.family: theme.mono; font.pixelSize: 14; color: theme.hc("#000000", "#FFFFFF"); textFormat: Text.PlainText }
             }
             TextMetrics {
                 id: widest
@@ -137,14 +137,14 @@ Item {
                 height: implicitWidth > 0 ? width * implicitHeight / implicitWidth : width * 1.294
                 sourceSize.width: width * 2
                 fillMode: Image.PreserveAspectFit
-                Rectangle { anchors.fill: parent; z: -1; color: "white" }
+                Rectangle { anchors.fill: parent; z: -1; color: theme.hc("white", "#000000") }
             }
         }
     }
     Rectangle {
         visible: pages.visible
         anchors.bottom: parent.bottom; width: parent.width; height: 22
-        color: "#2B2B2B"
+        color: theme.hc("#2B2B2B", "#000000")
         FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 16; name: root.appIconName }
         Text {
             x: 46; anchors.verticalCenter: parent.verticalCenter
@@ -162,7 +162,7 @@ Item {
         visible: !root.loading && (!!root.error || (!!root.preview && root.preview.kind === "none"))
         anchors.centerIn: parent; spacing: 12
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; size: 32; name: root.iconName }
-        Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.error || "No preview available"; font.family: theme.font; font.pixelSize: 16; color: root.embedded ? "#323130" : root.ink }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.error || "No preview available"; font.family: theme.font; font.pixelSize: 16; color: root.embedded ? theme.hc("#323130", "#FFFFFF") : root.ink }
     }
     BusyIndicator { anchors.centerIn: parent; running: root.loading; visible: root.loading }
 }

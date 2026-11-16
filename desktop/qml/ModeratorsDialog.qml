@@ -206,14 +206,14 @@ Popup {
                                 text: match.modelData.name
                                 font.family: theme.font; font.pixelSize: 14
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
-                                color: theme.text
+                                color: theme.onFill(match, theme.text)
                             }
                             Text {
                                 x: 48; y: 26; width: parent.width - 56; elide: Text.ElideRight
                                 text: match.modelData.detail
                                 font.family: theme.font; font.pixelSize: 12
                                 lineHeight: 16; lineHeightMode: Text.FixedHeight
-                                color: theme.textSecondary
+                                color: theme.onFill(match, theme.textSecondary)
                             }
                             HoverHandler { id: matchHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: dlg.pick(match.modelData) }
@@ -253,7 +253,7 @@ Popup {
         Rectangle {
             x: 8; y: 8; width: 32; height: 32; radius: 16
             visible: row.group
-            color: theme.pick("#E6E6E6", "#3D3D3D")
+            color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
             FluentIcon { anchors.centerIn: parent; name: "people-team-20"; size: 20; color: theme.textSecondary }
         }
         Avatar { visible: !row.group; x: 8; y: 8; size: 32; name: row.header || "?"; photoId: row.mri }
@@ -296,7 +296,7 @@ Popup {
             anchors.centerIn: parent
             text: btn.text
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: btn.primary ? theme.textOnBrand : theme.text
+            color: theme.onFill(btn, btn.primary ? theme.textOnBrand : theme.text)
         }
         HoverHandler { id: btnHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: btn.clicked() }

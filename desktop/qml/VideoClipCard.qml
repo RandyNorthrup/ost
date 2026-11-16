@@ -124,7 +124,7 @@ Item {
         onMediaStatusChanged: if ((mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) && root.seekOnLoad > 0) { position = root.seekOnLoad; root.seekOnLoad = 0 }
     }
 
-    Rectangle { anchors.fill: parent; color: "black"; visible: root.state_ === "playback" || root.state_ === "loading" }
+    Rectangle { id: hcFill1; anchors.fill: parent; color: "black"; visible: root.state_ === "playback" || root.state_ === "loading" }
     // The poster (preview, loading and the end screen).
     Image {
         id: poster
@@ -195,7 +195,7 @@ Item {
         visible: (root.state_ === "preview" || root.state_ === "loading") && !root.processing
         x: 12; y: parent.height - 12 - 48
         width: 48; height: 48; radius: 24
-        color: "#66000000"
+        color: theme.hc("#66000000", "#000000")
         FluentIcon { visible: root.state_ === "preview"; anchors.centerIn: parent; anchors.horizontalCenterOffset: 1; name: "play-20-filled"; size: 22; color: "white" }
         BusyIndicator { visible: root.state_ === "loading"; anchors.centerIn: parent; width: 28; height: 28; running: visible; palette.dark: "white" }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -208,21 +208,21 @@ Item {
         visible: (root.state_ === "preview" || root.state_ === "loading") && !root.processing
         anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12
         width: lengthText.implicitWidth + 16; height: 32; radius: 4
-        color: "#66000000"
+        color: theme.hc("#66000000", "#000000")
         Text { id: lengthText; anchors.centerIn: parent; text: root.clock(root.clip.duration || 0); font.family: theme.font; font.pixelSize: 14; color: "white" }
     }
     Text {
         visible: root.error.length > 0 && root.state_ === "preview"
         x: 72; y: parent.height - 12 - 40; width: parent.width - 72 - 80
         text: "Couldn't load video clip."
-        font.family: theme.font; font.pixelSize: 12; color: "white"; wrapMode: Text.Wrap
+        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, "white"); wrapMode: Text.Wrap
         style: Text.Raised; styleColor: "#80000000"
     }
     // Being stored (compose box): Teams' video-loader-wrapper.
     Rectangle {
         visible: root.processing
         anchors.fill: parent
-        color: "#66000000"
+        color: theme.hc("#66000000", "#000000")
         BusyIndicator { x: 0; y: parent.height - 62; width: 62; height: 62; running: root.processing; padding: 15; palette.dark: "white" }
         Text { x: 62; y: parent.height - 62; height: 34; verticalAlignment: Text.AlignVCenter; text: "Processing..."; font.family: theme.font; font.pixelSize: 14; color: "white" }
         Accessible.role: Accessible.Indicator
@@ -231,12 +231,13 @@ Item {
     Rectangle {
         visible: root.uploadFailed && !root.processing
         anchors.fill: parent
-        color: "#66000000"
+        color: theme.hc("#66000000", "#000000")
         Rectangle {
+            id: hcFill2
             anchors.centerIn: parent
             width: retryText.implicitWidth + 24; height: 31.3; radius: 4
             color: retryHover.hovered ? theme.brandHover : theme.brand
-            Text { id: retryText; anchors.centerIn: parent; text: "Re-upload video clip"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+            Text { id: retryText; anchors.centerIn: parent; text: "Re-upload video clip"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, "white") }
             HoverHandler { id: retryHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.retryUpload() }
             Accessible.role: Accessible.Button
@@ -248,7 +249,7 @@ Item {
         visible: root.removable && (cardHover.hovered || removeHover.hovered)
         anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 12
         width: 32; height: 30; radius: 4
-        color: "#66000000"
+        color: theme.hc("#66000000", "#000000")
         z: 7
         FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: "white" }
         HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
@@ -263,7 +264,7 @@ Item {
         visible: !root.removable && root.state_ !== "ended" && (cardHover.hovered || clipMenu.opened)
         anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 12
         width: 32; height: 30; radius: 4
-        color: "#66000000"
+        color: theme.hc("#66000000", "#000000")
         FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: "white" }
         HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: clipMenu.popup(optionsBtn, optionsBtn.width - clipMenu.width, optionsBtn.height + 4) }
@@ -282,17 +283,18 @@ Item {
     }
 
     // ---- End screen ----
-    Rectangle { anchors.fill: parent; visible: root.state_ === "ended"; color: "#80000000" }
+    Rectangle { anchors.fill: parent; visible: root.state_ === "ended"; color: theme.hc("#80000000", "#000000") }
     Column {
         visible: root.state_ === "ended"
         anchors.centerIn: parent
         spacing: 10
         Rectangle {
+            id: hcFill3
             visible: root.canReply
             anchors.horizontalCenter: parent.horizontalCenter
             width: replyText.implicitWidth + 24; height: 31.3; radius: 4
             color: replyHover.hovered ? theme.brandHover : theme.brand
-            Text { id: replyText; anchors.centerIn: parent; text: "Reply with a video clip"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+            Text { id: replyText; anchors.centerIn: parent; text: "Reply with a video clip"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.textOnBrand) }
             HoverHandler { id: replyHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.replyWithClip() }
             Accessible.role: Accessible.Button
@@ -304,8 +306,8 @@ Item {
             Row {
                 id: againRow
                 anchors.centerIn: parent; spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "replay-20"; size: 20; color: "white" }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Play again"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "replay-20"; size: 20; color: theme.onFill(hcFill1, "white") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Play again"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.play() }
@@ -323,7 +325,7 @@ Item {
             anchors.bottom: parent.bottom; width: parent.width; height: 64
             gradient: Gradient {
                 GradientStop { position: 0; color: "#00000000" }
-                GradientStop { position: 1; color: "#99000000" }
+                GradientStop { position: 1; color: theme.hc("#99000000", "#000000") }
             }
         }
         // The progress bar.
@@ -332,9 +334,9 @@ Item {
             x: 8; y: parent.height - 8 - 32 - 4 - 12
             width: parent.width - 16; height: 12
             readonly property real frac: player.duration > 0 ? player.position / player.duration : 0
-            Rectangle { anchors.verticalCenter: parent.verticalCenter; width: parent.width; height: 4; radius: 2; color: "#66FFFFFF" }
-            Rectangle { anchors.verticalCenter: parent.verticalCenter; width: parent.width * bar.frac; height: 4; radius: 2; color: "white" }
-            Rectangle { x: parent.width * bar.frac - 6; width: 12; height: 12; radius: 6; color: "white" }
+            Rectangle { anchors.verticalCenter: parent.verticalCenter; width: parent.width; height: 4; radius: 2; color: theme.hc("#66FFFFFF", "#000000") }
+            Rectangle { anchors.verticalCenter: parent.verticalCenter; width: parent.width * bar.frac; height: 4; radius: 2; color: theme.hc("white", "#000000") }
+            Rectangle { x: parent.width * bar.frac - 6; width: 12; height: 12; radius: 6; color: theme.hc("white", "#000000") }
             MouseArea {
                 anchors.fill: parent; anchors.topMargin: -4; anchors.bottomMargin: -4
                 cursorShape: Qt.PointingHandCursor
@@ -355,8 +357,8 @@ Item {
             width: 32; height: 32
             // (FluentIcon writes its colour into the SVG, which takes no
             // alpha: a disabled control is dimmed instead.)
-            FluentIcon { visible: !cb.text; anchors.centerIn: parent; name: cb.icon; size: 20; color: "white"; opacity: cb.enabledCtl ? 1 : 0.6 }
-            Text { visible: !!cb.text; anchors.centerIn: parent; text: cb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+            FluentIcon { visible: !cb.text; anchors.centerIn: parent; name: cb.icon; size: 20; color: theme.onFill(hcFill1, "white"); opacity: cb.enabledCtl ? 1 : 0.6 }
+            Text { visible: !!cb.text; anchors.centerIn: parent; text: cb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
             HoverHandler { id: cbHover; cursorShape: cb.enabledCtl ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { onTapped: { surface.forceActiveFocus(); if (cb.enabledCtl) cb.clicked() } }
             ToolTip.visible: cbHover.hovered
@@ -411,7 +413,7 @@ Item {
         padding: 3
         width: implicitWidth
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-        background: Rectangle { color: "#CC292827"; radius: 2 }
+        background: Rectangle { color: theme.hc("#CC292827", "#000000"); radius: 2 }
         // Placed above the buttons, as tall as the room there allows (the
         // rest scrolls, as in Teams' player).
         property real anchorX: 0
@@ -438,17 +440,18 @@ Item {
             Repeater {
                 model: dm.rows
                 Rectangle {
+                    id: hcFill4
                     required property var modelData
                     required property int index
                     width: Math.max(dm.minRow, rowLabel.implicitWidth + (rowValue.visible ? rowValue.implicitWidth + 32 : 0) + 16)
                     height: 32
                     color: rowHover.hovered ? "#33FFFFFF" : "transparent"
-                    Text { id: rowLabel; x: 8; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; font.weight: parent.modelData.checked ? Font.DemiBold : Font.Normal; color: "white" }
+                    Text { id: rowLabel; x: 8; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; font.weight: parent.modelData.checked ? Font.DemiBold : Font.Normal; color: theme.onFill(hcFill4, "white") }
                     Row {
                         anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                        Text { id: rowValue; visible: !!parent.parent.modelData.value; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData.value || ""; font.family: theme.font; font.pixelSize: 14; color: "white" }
-                        FluentIcon { visible: !!parent.parent.modelData.chevron; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: "white" }
-                        FluentIcon { visible: !!parent.parent.modelData.checked; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-20"; size: 20; color: "white" }
+                        Text { id: rowValue; visible: !!parent.parent.modelData.value; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData.value || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, "white") }
+                        FluentIcon { visible: !!parent.parent.modelData.chevron; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: theme.onFill(hcFill4, "white") }
+                        FluentIcon { visible: !!parent.parent.modelData.checked; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-20"; size: 20; color: theme.onFill(hcFill4, "white") }
                     }
                     HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: dm.pickedRow(parent.index) }
@@ -506,9 +509,10 @@ Item {
         ]
         Text { x: 24; y: 22; text: "Keyboard shortcuts"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
+            id: hcFill5
             x: parent.width - 24 - 32; y: 16; width: 32; height: 31.3; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill5, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { shortcuts.visible = false; surface.forceActiveFocus() } }
             Accessible.role: Accessible.Button

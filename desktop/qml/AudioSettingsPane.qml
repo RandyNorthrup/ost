@@ -79,9 +79,10 @@ Rectangle {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             x: parent.width - 52; y: 13.67; width: 32; height: 30; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
@@ -132,9 +133,10 @@ Rectangle {
                 Item {
                     width: 305.33; height: 31.33
                     Rectangle {
+                        id: hcFill2
                         x: -6; width: 32; height: 31.33; radius: 4
                         color: spkHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "flyout-speaker-20"; size: 20; color: theme.textStrong }
+                        FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "flyout-speaker-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                         HoverHandler { id: spkHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { root.volume = root.volume > 0 ? 0 : 100; backend.setSpeakerVolume(root.volume) } }
                         Accessible.role: Accessible.Button
@@ -187,9 +189,10 @@ Rectangle {
                 Item {
                     width: 305.33; height: 31.33
                     Rectangle {
+                        id: hcFill3
                         width: 32; height: 31.33; radius: 4
                         color: micHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: root.muted ? "flyout-mic-off-16" : "flyout-mic-16"; size: 16; color: theme.textStrong }
+                        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: root.muted ? "flyout-mic-off-16" : "flyout-mic-16"; size: 16; color: theme.onFill(hcFill3, theme.textStrong) }
                         HoverHandler { id: micHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.toggleMute() }
                         Accessible.role: Accessible.Button
@@ -330,14 +333,14 @@ Rectangle {
         }
         Rectangle {
             x: 265.33; y: 8; width: 40; height: 20; radius: 10
-            color: sr.checked ? (swHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+            color: sr.checked ? (swHover.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
             border.color: sr.checked ? "transparent" : theme.textSecondary
             border.width: 0.67
             Rectangle {
                 width: 14.4; height: 14.4; radius: 7.2
                 anchors.verticalCenter: parent.verticalCenter
                 x: (sr.checked ? 20.67 : 0.67) + 9 - 7.2
-                color: sr.checked ? "white" : theme.textSecondary
+                color: sr.checked ? theme.hc("white", "#1AEBFF") : theme.textSecondary
             }
             HoverHandler { id: swHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sr.toggled() }
@@ -358,14 +361,15 @@ Rectangle {
         signal toggled()
         width: 305.33; height: 32
         Rectangle {
+            id: hcFill4
             x: 1; y: 8; width: 16; height: 16; radius: 2
-            color: cr.checked && cr.enabled ? theme.brandFill : "transparent"
+            color: cr.checked && cr.enabled ? theme.checkedFill : "transparent"
             border.width: cr.checked && cr.enabled ? 0 : 0.67
             border.color: cr.enabled ? theme.textSecondary : theme.divider
             FluentIcon {
                 visible: cr.checked
                 anchors.centerIn: parent; name: "checkmark-12"; size: 12
-                color: cr.enabled ? "white" : theme.disabled
+                color: theme.onFill(hcFill4, cr.enabled ? "white" : theme.disabled)
             }
         }
         Text {

@@ -32,7 +32,7 @@ Rectangle {
 
     height: 40
     color: theme.surface
-    Rectangle { anchors.bottom: root.bottom; width: root.width; height: 1; color: theme.pick("#D1D1D1", "#666666") }
+    Rectangle { anchors.bottom: root.bottom; width: root.width; height: 1; color: theme.pick("#D1D1D1", "#666666", "#000000") }
 
     readonly property var t: info && info.adhoc ? info.adhoc : ({ state: "Cancelled", remainingDuration: 300000 })
     readonly property string timerState: t.state || "Cancelled"
@@ -109,15 +109,15 @@ Rectangle {
             id: trigger
             anchors.verticalCenter: parent.verticalCenter
             width: clockText.implicitWidth + 10; height: 32; radius: 8
-            color: root.viewOnly ? "transparent" : popover.opened ? theme.pick("#E0E0E0", "#1F1F1F")
-                 : th.hovered ? theme.pick("#F5F5F5", "#333333") : "transparent"
+            color: root.viewOnly ? "transparent" : popover.opened ? theme.pick("#E0E0E0", "#1F1F1F", "#1AEBFF")
+                 : th.hovered ? theme.pick("#F5F5F5", "#333333", "#1AEBFF") : "transparent"
             Text {
                 id: clockText
                 x: 5; anchors.verticalCenter: parent.verticalCenter
                 text: root.display
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
                 font.features: { "tnum": 1 }
-                color: root.overTime ? theme.pick("#B10E1C", "#DC626D") : theme.pick("#5B5FC7", "#7F85F5")
+                color: theme.onFill(trigger, root.overTime ? theme.pick("#B10E1C", "#DC626D", "#FFFFFF") : theme.pick("#5B5FC7", "#7F85F5", "#FFFFFF"))
             }
             HoverHandler { id: th; enabled: !root.viewOnly; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.viewOnly; onTapped: popover.opened ? popover.close() : popover.open() }
@@ -157,7 +157,7 @@ Rectangle {
         id: track
         x: controls.x + controls.width + 10; y: 7.5
         width: root.width - x - 12; height: 24; radius: 8
-        color: theme.pick("#EBEBEB", "#0A0A0A")
+        color: theme.pick("#EBEBEB", "#0A0A0A", "#000000")
         clip: true
         readonly property color progress: theme.pick("#C5CBFA", "#7579EB")
         readonly property color red: theme.pick("#F1BBBC", "#D13438")
@@ -196,6 +196,7 @@ Rectangle {
         }
         // Paused (not over time): 40 % black and "Paused".
         Rectangle {
+            id: hcFill1
             visible: root.timerState === "Paused" && !root.overTime
             anchors.fill: parent; radius: 8
             color: theme.pick(Qt.rgba(0, 0, 0, 0.4), Qt.rgba(0, 0, 0, 0.5))
@@ -203,7 +204,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: "Paused"
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: "white"
+                color: theme.onFill(hcFill1, "white")
             }
         }
         Text {
@@ -211,7 +212,7 @@ Rectangle {
             anchors.centerIn: parent
             text: "Time's up!"
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: theme.pick("#960B18", theme.text)
+            color: theme.onFill(hcFill1, theme.pick("#960B18", theme.text))
         }
         HoverHandler { id: trackHover }
         ToolTip.visible: trackHover.hovered
@@ -291,7 +292,7 @@ Rectangle {
                         text: { const c = root.display.replace(":", " : "); return c }
                         font.family: theme.font; font.pixelSize: 32; font.weight: Font.DemiBold
                         font.features: { "tnum": 1, "case": 1 }
-                        color: root.overTime ? theme.pick("#B10E1C", "#DC626D") : theme.pick("#5B5FC7", "#7F85F5")
+                        color: root.overTime ? theme.pick("#B10E1C", "#DC626D", "#FFFFFF") : theme.pick("#5B5FC7", "#7F85F5", "#FFFFFF")
                     }
                     Accessible.role: Accessible.StaticText
                     Accessible.name: root.spoken(root.remaining)
@@ -327,7 +328,7 @@ Rectangle {
                             anchors.centerIn: parent
                             text: "+" + addBtn.modelData + " min"
                             font.family: theme.font; font.pixelSize: 12
-                            color: addBtn.on ? theme.textStrong : theme.disabled
+                            color: theme.onFill(addBtn, addBtn.on ? theme.textStrong : theme.disabled)
                         }
                         HoverHandler { id: addHover; cursorShape: addBtn.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler { enabled: addBtn.on; onTapped: popover.addMinutes(addBtn.modelData) }
@@ -346,7 +347,7 @@ Rectangle {
                     property bool on: true
                     signal clicked()
                     width: fbText.implicitWidth + 15; height: 31.33; radius: 4
-                    color: !on ? theme.bgDisabled : primary ? (fbh.hovered ? theme.brandHover : theme.brandFill)
+                    color: !on ? theme.hc(theme.bgDisabled, theme.hcHighlight) : primary ? (fbh.hovered ? theme.brandHover : theme.brandFill)
                          : (fbh.hovered ? theme.menuHover : theme.surface)
                     border.color: primary || !on ? "transparent" : theme.stroke; border.width: 0.67
                     Text {
@@ -354,7 +355,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: fb.label
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                        color: !fb.on ? theme.disabled : fb.primary ? theme.textOnBrand : theme.text
+                        color: theme.onFill(fb, !fb.on ? theme.disabled : fb.primary ? theme.textOnBrand : theme.text)
                     }
                     HoverHandler { id: fbh; cursorShape: fb.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: fb.on; onTapped: fb.clicked() }

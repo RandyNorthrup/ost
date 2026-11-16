@@ -36,7 +36,7 @@ Rectangle {
                     readonly property bool on: root.chip === modelData.toLowerCase()
                     height: 24; radius: 12
                     width: chipText.implicitWidth + 16
-                    color: on ? theme.brandTint : (dch.hovered ? theme.rowHover : "transparent")
+                    color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (dch.hovered ? theme.rowHover : "transparent")
                     border.color: on ? theme.brand : theme.stroke
                     HoverHandler { id: dch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.chip = dchip.on ? "" : dchip.modelData.toLowerCase() }
@@ -45,7 +45,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: modelData
                         font.family: theme.font; font.pixelSize: theme.small
-                        color: dchip.on ? theme.brand : theme.textStrong
+                        color: theme.onFill(dchip, dchip.on ? theme.brand : theme.textStrong)
                     }
                     Accessible.role: Accessible.CheckBox
                     Accessible.name: modelData
@@ -67,8 +67,9 @@ Rectangle {
                 required property var modelData
                 width: list.width; height: 60
                 Rectangle {
+                    id: hcFill1
                     x: 16; width: parent.width - 32; height: parent.height; radius: theme.radius
-                    color: itemHover.hovered ? theme.pane : "transparent"
+                    color: itemHover.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
                 }
                 Avatar {
                     x: 32; y: 16
@@ -80,14 +81,14 @@ Rectangle {
                     text: item.modelData.name || "Chat"
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
-                    color: theme.text
+                    color: theme.onFill(hcFill1, theme.text)
                 }
                 Text {
                     x: 80; y: 37; width: parent.width - 80 - 56
                     text: "You: " + item.modelData.text.replace(/\s+/g, " ")
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: theme.base; font.italic: true
-                    color: theme.text
+                    color: theme.onFill(hcFill1, theme.text)
                 }
                 HoverHandler { id: itemHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openDraft(item.modelData.id, item.modelData.name) }

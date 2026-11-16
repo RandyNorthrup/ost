@@ -50,10 +50,11 @@ FluentSurface {
         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
     }
     Rectangle {
+        id: hcFill1
         visible: root.dismissable
         x: root.width - 8 - 20; y: 7; width: 20; height: 20; radius: 4
         color: dismissHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button

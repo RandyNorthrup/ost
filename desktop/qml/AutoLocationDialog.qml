@@ -82,7 +82,7 @@ Popup {
             width: Math.max(96, dbText.implicitWidth + 24); height: 31.33; radius: 4
             color: primary ? (dbHover.hovered ? theme.brandHover : theme.brandFill) : (dbHover.hovered ? theme.menuHover : theme.surface)
             border.color: theme.stroke; border.width: primary ? 0 : 0.67
-            Text { id: dbText; anchors.centerIn: parent; text: db.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: db.primary ? theme.textOnBrand : theme.text }
+            Text { id: dbText; anchors.centerIn: parent; text: db.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(db, db.primary ? theme.textOnBrand : theme.text) }
             HoverHandler { id: dbHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: db.clicked() }
             Accessible.role: Accessible.Button

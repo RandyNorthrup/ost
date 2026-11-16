@@ -68,19 +68,21 @@ Popup {
     Row {
         x: root.width - 24.67 - width; y: root.height - 24.67 - 31.33; spacing: 8
         Rectangle {
+            id: hcFill1
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill2
             width: 96; height: 31.33; radius: 4
-            color: !root.ready ? theme.pick("#F0F0F0", "#141414") : saveHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C") }
+            color: !root.ready ? theme.pick("#F0F0F0", "#141414", "#000000") : saveHover.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, root.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: saveHover; cursorShape: root.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { onTapped: if (root.ready) { root.close(); root.saved(area.text) } }
             Accessible.role: Accessible.Button

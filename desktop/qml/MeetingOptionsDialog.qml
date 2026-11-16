@@ -198,9 +198,10 @@ Popup {
         Accessible.name: text
     }
     Rectangle {
+        id: hcFill1
         x: root.width - 24 - 20.8; y: 28.9; width: 20.8; height: 20.8; radius: 4
         color: closeH.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeH; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.tryClose() }
         Accessible.role: Accessible.Button
@@ -225,12 +226,12 @@ Popup {
                     id: tabRow
                     x: 8; anchors.verticalCenter: parent.verticalCenter
                     spacing: 6
-                    FluentIcon { name: tab.modelData.icon + (tab.chosen ? "-filled" : ""); size: 20; color: tab.chosen ? theme.brand : theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                    FluentIcon { name: tab.modelData.icon + (tab.chosen ? "-filled" : ""); size: 20; color: theme.onFill(tab, tab.chosen ? theme.brand : theme.textStrong); anchors.verticalCenter: parent.verticalCenter }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: tab.modelData.title
                         font.family: theme.font; font.pixelSize: 14; font.weight: tab.chosen ? Font.DemiBold : Font.Normal
-                        color: tab.chosen ? theme.text : theme.textStrong
+                        color: theme.onFill(tab, tab.chosen ? theme.text : theme.textStrong)
                     }
                 }
                 HoverHandler { id: tabH; cursorShape: Qt.PointingHandCursor }
@@ -312,7 +313,7 @@ Popup {
                                     id: note
                                     visible: field.modelData.name === "PresenterOption" && root.planningNote
                                     width: 498.7; height: noteText.implicitHeight + 10; radius: 5
-                                    color: theme.pick("#F5F5F5", "#2E2E2E")
+                                    color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                                     FluentIcon { x: 5; y: 5.5; name: "info-16"; size: 16; color: theme.text }
                                     Text {
                                         id: noteText
@@ -396,14 +397,14 @@ Popup {
                                 readonly property bool usable: !field.locked
                                 x: parent.width - 40 - 10; y: 0
                                 width: 40; height: 20; radius: 10
-                                color: !on ? "transparent" : !usable ? theme.bgDisabled : swH.hovered ? theme.brandHover : theme.brandFill
+                                color: !on ? "transparent" : !usable ? theme.bgDisabled : swH.hovered ? theme.brandHover : theme.checkedFill
                                 border.width: on ? 0 : 1
-                                border.color: !usable ? theme.pick("#E0E0E0", "#424242") : swH.hovered ? theme.text : theme.textSecondary
+                                border.color: !usable ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : swH.hovered ? theme.text : theme.textSecondary
                                 Rectangle {
                                     width: 14; height: 14; radius: 7
                                     anchors.verticalCenter: parent.verticalCenter
                                     x: sw.on ? parent.width - width - 3 : 3
-                                    color: sw.on ? (sw.usable ? "white" : theme.disabled) : (!sw.usable ? theme.disabled : swH.hovered ? theme.text : theme.textSecondary)
+                                    color: sw.on ? (sw.usable ? theme.hc("white", "#000000") : theme.disabled) : (!sw.usable ? theme.disabled : swH.hovered ? theme.text : theme.textSecondary)
                                 }
                                 HoverHandler { id: swH; cursorShape: sw.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                                 TapHandler {
@@ -426,6 +427,7 @@ Popup {
 
     // Apply.
     Rectangle {
+        id: hcFill2
         x: root.width - 24 - width; y: 497.4
         width: 71; height: 31.3; radius: 4
         color: !root.dirty ? theme.bgDisabled : applyH.hovered ? theme.brandHover : theme.brandFill
@@ -433,7 +435,7 @@ Popup {
             anchors.centerIn: parent
             text: "Apply"
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-            color: root.dirty ? theme.textOnBrand : theme.disabled
+            color: theme.onFill(hcFill2, root.dirty ? theme.textOnBrand : theme.disabled)
         }
         HoverHandler { id: applyH; enabled: root.dirty; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: root.dirty; onTapped: root.tryApply() }
@@ -477,19 +479,21 @@ Popup {
                 anchors.right: parent.right
                 spacing: 8
                 Rectangle {
+                    id: hcFill3
                     width: contLabel.implicitWidth + 24; height: 31.3; radius: 4
                     color: contH.hovered ? theme.brandHover : theme.brandFill
-                    Text { id: contLabel; anchors.centerIn: parent; text: "Continue editing"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                    Text { id: contLabel; anchors.centerIn: parent; text: "Continue editing"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.textOnBrand) }
                     HoverHandler { id: contH; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: unsaved.close() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Continue editing"
                 }
                 Rectangle {
+                    id: hcFill4
                     width: Math.max(96, discLabel.implicitWidth + 24); height: 31.3; radius: 4
                     color: discH.hovered ? theme.menuHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Text { id: discLabel; anchors.centerIn: parent; text: "Discard"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { id: discLabel; anchors.centerIn: parent; text: "Discard"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                     HoverHandler { id: discH; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { unsaved.close(); root.changes = ({}); root.close() } }
                     Accessible.role: Accessible.Button

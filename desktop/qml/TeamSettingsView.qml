@@ -102,7 +102,7 @@ Item {
                     }
                     Rectangle {
                         x: 39; y: 70; width: 32; height: 24
-                        color: theme.pick("#E6E6E6", "#3D3D3D")
+                        color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
                         FluentIcon { anchors.centerIn: parent; name: view.team["public"] ? "globe-20" : "lock-closed-20"; size: 20; color: theme.textSecondary }
                         Accessible.role: Accessible.StaticText
                         Accessible.name: view.team["public"] ? "Public Team" : "Private Team"
@@ -122,6 +122,7 @@ Item {
                         photoId: view.teamId ? "team:" + view.teamId : ""
                     }
                     Rectangle {
+                        id: hcFill1
                         visible: view.owner
                         x: 31; y: 294.3; width: picRow.implicitWidth + 24; height: 31.3; radius: 4
                         color: picHover.hovered ? theme.menuHover : "transparent"
@@ -129,8 +130,8 @@ Item {
                             id: picRow
                             x: 12; anchors.verticalCenter: parent.verticalCenter
                             spacing: 6
-                            FluentIcon { name: "arrow-upload-20"; size: 20; color: theme.textStrong }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Change picture"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+                            FluentIcon { name: "arrow-upload-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Change picture"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
                         }
                         HoverHandler { id: picHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: pictureDialog.start() }
@@ -224,9 +225,9 @@ Item {
                             x: 12; anchors.verticalCenter: parent.verticalCenter
                             text: view.user.giphyRating === 0 ? "G (based on the GIPHY Content Rating)" : "PG (based on the GIPHY Content Rating)"
                             font.family: theme.font; font.pixelSize: 14
-                            color: rating.on ? theme.text : theme.disabled
+                            color: theme.onFill(rating, rating.on ? theme.text : theme.disabled)
                         }
-                        FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: rating.on ? theme.textSecondary : theme.disabled }
+                        FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(rating, rating.on ? theme.textSecondary : theme.disabled) }
                         HoverHandler { id: ratingHover; enabled: rating.on; cursorShape: Qt.PointingHandCursor }
                         TapHandler { enabled: rating.on; onTapped: ratingMenu.open() }
                         Accessible.role: Accessible.ComboBox
@@ -244,7 +245,7 @@ Item {
                                         required property var modelData
                                         width: rating.width - 8; height: 32; radius: 4
                                         color: roptHover.hovered ? theme.menuHover : "transparent"
-                                        Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: ropt.modelData[1]; font.family: theme.font; font.pixelSize: 14; font.weight: (view.user.giphyRating === 0) === (ropt.modelData[0] === 0) ? Font.Bold : Font.Normal; color: theme.text }
+                                        Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: ropt.modelData[1]; font.family: theme.font; font.pixelSize: 14; font.weight: (view.user.giphyRating === 0) === (ropt.modelData[0] === 0) ? Font.Bold : Font.Normal; color: theme.onFill(ropt, theme.text) }
                                         HoverHandler { id: roptHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: { ratingMenu.close(); view.change("userSettings", { giphyRating: ropt.modelData[0] }) } }
                                         Accessible.role: Accessible.ListItem
@@ -270,9 +271,9 @@ Item {
                         readonly property bool on: !!view.tags && (view.tags.disallowed_sources || []).indexOf("Shifts") < 0
                         Rectangle {
                             y: 3; width: 38; height: 20; radius: 10
-                            color: shifts.on ? theme.brandFill : "transparent"
-                            border.color: shifts.on ? theme.brandFill : theme.textSecondary; border.width: 1
-                            Rectangle { x: shifts.on ? 22 : 4; anchors.verticalCenter: parent.verticalCenter; width: 12; height: 12; radius: 6; color: shifts.on ? "white" : theme.textSecondary }
+                            color: shifts.on ? theme.checkedFill : "transparent"
+                            border.color: shifts.on ? theme.checkedFill : theme.textSecondary; border.width: 1
+                            Rectangle { x: shifts.on ? 22 : 4; anchors.verticalCenter: parent.verticalCenter; width: 12; height: 12; radius: 6; color: shifts.on ? theme.hc("white", "#000000") : theme.textSecondary }
                         }
                         Text { x: 50; y: 3; text: "Shifts"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         HoverHandler { enabled: view.owner; cursorShape: Qt.PointingHandCursor }
@@ -313,11 +314,12 @@ Item {
         readonly property bool expanded: !!view.open[key]
         width: parent ? parent.width : 0
         Rectangle {
+            id: hcFill2
             width: parent.width; height: 64; radius: 4
             color: secHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: sec.expanded ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.text }
-            Text { x: 38; y: 12; width: parent.width - 50; elide: Text.ElideRight; text: sec.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-            Text { x: 38; y: 32; width: parent.width - 50; elide: Text.ElideRight; text: sec.hint; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+            FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: sec.expanded ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.onFill(hcFill2, theme.text) }
+            Text { x: 38; y: 12; width: parent.width - 50; elide: Text.ElideRight; text: sec.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill2, theme.text) }
+            Text { x: 38; y: 32; width: parent.width - 50; elide: Text.ElideRight; text: sec.hint; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: secHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: view.toggle(sec.key) }
             Accessible.role: Accessible.Button
@@ -356,11 +358,12 @@ Item {
         width: 32 + Math.min(488, cbText.implicitWidth) + 12; height: Math.max(42, cbText.height + 12)
         readonly property bool on: view.owner && !!view.settings
         Rectangle {
+            id: hcFill3
             x: 8; y: 8; width: 16; height: 16; radius: 2
-            color: cb.checked ? (cb.on ? theme.brandFill : theme.disabled) : "transparent"
+            color: cb.checked ? (cb.on ? theme.checkedFill : theme.disabled) : "transparent"
             border.color: cb.checked ? color : cb.on ? theme.textSecondary : theme.disabled
             border.width: 0.67
-            FluentIcon { visible: cb.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.textOnBrand }
+            FluentIcon { visible: cb.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill3, theme.textOnBrand) }
         }
         Text {
             id: cbText
@@ -389,8 +392,8 @@ Item {
             id: pbRow
             x: 12; anchors.verticalCenter: parent.verticalCenter
             spacing: 6
-            FluentIcon { name: pb.icon; size: 20; color: theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+            FluentIcon { name: pb.icon; size: 20; color: theme.onFill(pb, theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pb, theme.textStrong) }
         }
         HoverHandler { id: pbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pb.clicked() }
@@ -408,7 +411,7 @@ Item {
         width: Math.max(96, btnText.implicitWidth + 24); height: 31.3; radius: 4
         color: primary ? (btnHover.hovered ? theme.brandHover : theme.brandFill) : (btnHover.hovered ? theme.menuHover : theme.surface)
         border.color: primary ? "transparent" : theme.stroke; border.width: 0.67
-        Text { id: btnText; anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: btn.primary ? theme.textOnBrand : theme.text }
+        Text { id: btnText; anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(btn, btn.primary ? theme.textOnBrand : theme.text) }
         HoverHandler { id: btnHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: btn.clicked() }
         Accessible.role: Accessible.Button

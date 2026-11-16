@@ -161,7 +161,7 @@ Rectangle {
                     verticalAlignment: Text.AlignVCenter
                     text: "RTT"
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
-                    color: theme.text
+                    color: theme.onFill(root, theme.text)
                 }
                 Text {
                     id: notice
@@ -174,7 +174,7 @@ Rectangle {
                         + "for all participants throughout this " + (root.isMeeting ? "meeting" : "call")
                         + ". All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the <a href=\"" + root.privacyUrl + "\">Microsoft Privacy Statement</a>."
                     font.family: theme.font; font.pixelSize: 14
-                    color: theme.text
+                    color: theme.onFill(root, theme.text)
                     onLinkActivated: link => { if (link) Qt.openUrlExternally(link) }
                     HoverHandler { cursorShape: notice.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
@@ -196,12 +196,12 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.nameOf(cap.modelData)
                     font.family: theme.font; font.pixelSize: root.size.author; font.weight: Font.DemiBold
-                    color: root.ink
+                    color: theme.onFill(root, root.ink)
                 }
                 FluentIcon {
                     visible: root.isGuest(cap.modelData.userId)
                     anchors.verticalCenter: parent.verticalCenter
-                    name: "person-unverified-16-filled"; size: 16; color: root.ink
+                    name: "person-unverified-16-filled"; size: 16; color: theme.onFill(root, root.ink)
                     Accessible.role: Accessible.Graphic
                     Accessible.name: "Unverified"
                 }
@@ -211,7 +211,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "RTT Typing"
                     font.family: theme.font; font.pixelSize: root.size.author; font.weight: Font.DemiBold
-                    color: root.ink
+                    color: theme.onFill(root, root.ink)
                 }
             }
             Text {
@@ -222,7 +222,7 @@ Rectangle {
                 text: cap.intro ? "" : root.wordsOf(cap.modelData)
                 font.family: theme.font; font.pixelSize: root.size.text
                 lineHeight: root.size.line; lineHeightMode: Text.FixedHeight
-                color: root.ink
+                color: theme.onFill(root, root.ink)
             }
             Accessible.role: Accessible.ListItem
             Accessible.name: cap.intro ? card.Accessible.name
@@ -244,7 +244,7 @@ Rectangle {
         anchors.centerIn: parent
         text: "Captions will be shown in " + root.languageName + "."
         font.family: theme.font; font.pixelSize: 16
-        color: root.ink
+        color: theme.onFill(root, root.ink)
     }
 
     // Settings, Open captions in new window and close; the first two fold
@@ -257,7 +257,7 @@ Rectangle {
         signal clicked()
         width: 32; height: 32; radius: 4
         color: bh.hovered ? (root.lightBackground ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.12)) : "transparent"
-        FluentIcon { anchors.centerIn: parent; size: 20; name: b.icon; color: root.lightBackground ? theme.pick("#424242", "#424242") : "#FFFFFF" }
+        FluentIcon { anchors.centerIn: parent; size: 20; name: b.icon; color: theme.onFill(b, root.lightBackground ? theme.pick("#424242", "#424242", "#FFFFFF") : "#FFFFFF") }
         HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: b.clicked() }
         ToolTip.visible: bh.hovered

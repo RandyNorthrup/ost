@@ -91,11 +91,11 @@ Rectangle {
                     readonly property bool on: root.chip === modelData.toLowerCase()
                     height: 23.3; radius: height / 2
                     width: chipText.implicitWidth + 16
-                    color: on ? theme.brandTint : (qch.hovered ? theme.rowHover : "transparent")
+                    color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (qch.hovered ? theme.rowHover : "transparent")
                     border.color: on ? theme.brand : theme.stroke; border.width: 0.67
                     HoverHandler { id: qch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.chip = qchip.on ? "" : qchip.modelData.toLowerCase() }
-                    Text { id: chipText; anchors.centerIn: parent; text: qchip.modelData; font.family: theme.font; font.pixelSize: 12; color: qchip.on ? theme.brand : theme.textStrong }
+                    Text { id: chipText; anchors.centerIn: parent; text: qchip.modelData; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(qchip, qchip.on ? theme.brand : theme.textStrong) }
                     Accessible.role: Accessible.CheckBox
                     Accessible.name: modelData
                     Accessible.checked: on
@@ -122,6 +122,7 @@ Rectangle {
                 }
                 width: list.width; height: bodyY + body.height + 14.6
                 Rectangle {
+                    id: hcFill1
                     x: 8; width: parent.width - 16; height: parent.height - 4; radius: theme.radius
                     color: row.sel ? theme.selected : rh.hovered ? theme.pane : "transparent"
                 }
@@ -134,26 +135,26 @@ Rectangle {
                 }
                 Row {
                     x: 80; y: 10; spacing: 6
-                    Text { text: root.titleOf(row.modelData); width: Math.min(implicitWidth, 190); elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Text { text: root.titleOf(row.modelData); width: Math.min(implicitWidth, 190); elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text) }
                     Text {
                         visible: root.followed
                         anchors.verticalCenter: parent.verticalCenter
                         text: "· " + row.modelData.replies + (row.modelData.replies === 1 ? " reply" : " replies")
-                        font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
+                        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, theme.textStrong)
                     }
                 }
                 Text {
                     visible: root.followed && !rh.hovered
                     anchors.right: parent.right; anchors.rightMargin: 32; y: 10
                     text: root.stamp(row.modelData.time)
-                    font.family: theme.font; font.pixelSize: 12; lineHeight: 19; lineHeightMode: Text.FixedHeight; color: theme.textStrong
+                    font.family: theme.font; font.pixelSize: 12; lineHeight: 19; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.textStrong)
                 }
                 Text {
                     visible: root.followed
                     x: 80; y: 32; width: parent.width - 80 - 32
                     text: row.modelData.parent_preview
                     elide: Text.ElideRight; maximumLineCount: 1
-                    font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textStrong
+                    font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.textStrong)
                 }
                 Avatar { x: 80; y: row.bodyY + 1.8; size: 20; name: row.modelData.sender || "?"; photoId: row.modelData.sender_mri || "" }
                 Text {
@@ -164,7 +165,7 @@ Rectangle {
                     textFormat: Text.StyledText
                     wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                    color: theme.text
+                    color: theme.onFill(hcFill1, theme.text)
                 }
                 // Saved: Unsave and More options; Followed threads: on hover,
                 // Unfollow thread and More options.
@@ -172,18 +173,20 @@ Rectangle {
                     visible: !root.followed || rh.hovered
                     x: 292; y: 9.6; spacing: 8
                     Rectangle {
+                        id: hcFill2
                         width: 24; height: 23.3; radius: 4
                         color: actHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: root.followed ? "followed-threads-20" : "bookmark-20-filled"; size: 20; color: theme.text }
+                        FluentIcon { anchors.centerIn: parent; name: root.followed ? "followed-threads-20" : "bookmark-20-filled"; size: 20; color: theme.onFill(hcFill2, theme.text) }
                         HoverHandler { id: actHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: row.toggle() }
                         Accessible.role: Accessible.Button
                         Accessible.name: root.followed ? "Unfollow thread" : "Unsave this message"
                     }
                     Rectangle {
+                        id: hcFill3
                         width: 24; height: 23.3; radius: 4
                         color: moreHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.text }
+                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFill3, theme.text) }
                         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: rowMenu.open() }
                         Accessible.role: Accessible.Button

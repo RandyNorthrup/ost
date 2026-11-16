@@ -44,7 +44,7 @@ Rectangle {
         anchors.right: parent.right; anchors.rightMargin: 8; y: 4.42
         width: 24; height: 23.33; radius: 4
         color: moreHover.hovered || menu.opened ? theme.hover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textSecondary }
+        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(more, theme.textSecondary) }
         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.settingsMenuForTest() }
         Accessible.role: Accessible.Button

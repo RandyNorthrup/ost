@@ -16,6 +16,7 @@ Window {
         id: theme
         dark: window.appTheme.dark || window.callsDark
         classic: window.appTheme.classic
+        highContrast: window.appTheme.highContrast
         hoverCard: window.appTheme.hoverCard
     }
     property string subject
@@ -206,7 +207,7 @@ Window {
             }
             Rectangle {
                 anchors.bottom: parent.bottom; width: parent.width; height: titleField.activeFocus ? 2 : 1
-                color: titleField.activeFocus ? theme.brand : theme.pick("#757575", "#ADADAD")
+                color: titleField.activeFocus ? theme.brand : theme.pick("#757575", "#ADADAD", "#000000")
             }
         }
         Text {
@@ -271,6 +272,7 @@ Window {
                     Rectangle { anchors.centerIn: parent; width: 1; height: 20; color: theme.divider }
                 }
                 Rectangle {
+                    id: hcFill1
                     anchors.verticalCenter: parent.verticalCenter
                     width: fxRow.implicitWidth + 24; height: 31.3; radius: 4
                     color: fxHover.hovered ? theme.rowHover : "transparent"
@@ -278,12 +280,12 @@ Window {
                         id: fxRow
                         anchors.centerIn: parent
                         spacing: 8
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-background-effect-20"; size: 20; color: win.effectsOpen ? theme.brand : theme.textStrong }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-background-effect-20"; size: 20; color: theme.onFill(hcFill1, win.effectsOpen ? theme.brand : theme.textStrong) }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Video effects"
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                            color: win.effectsOpen ? theme.brand : theme.textStrong
+                            color: theme.onFill(hcFill1, win.effectsOpen ? theme.brand : theme.textStrong)
                         }
                     }
                     HoverHandler { id: fxHover; cursorShape: Qt.PointingHandCursor }
@@ -302,7 +304,7 @@ Window {
                 id: picker
                 visible: win.effectsOpen
                 x: 1; y: 329; width: parent.width - 2; height: win.cameraOn && videoEffects.quickFilters.length > 0 ? 194 : 114
-                color: theme.inputFilledDark
+                color: theme.inputFilledDark; border.color: theme.transparentStroke
                 radius: 3
                 Rectangle { width: parent.width; height: 4; color: parent.color }
                 Text {
@@ -525,20 +527,22 @@ Window {
         y: panels.y + Math.max(329, audioColumn.height) * win.fit + 24
         spacing: 8
         Rectangle {
+            id: hcFill2
             width: 96; height: 32; radius: theme.radius
             color: cxh.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cxh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.cancel() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill3
             width: 96; height: 32; radius: theme.radius
             // Disabled in the lobby (Fluent's disabled primary button).
-            color: !win.canJoin ? theme.pick("#F0F0F0", "#141414") : jnh.hovered ? theme.brandHover : theme.brandFill
-            border.color: !win.canJoin ? theme.pick("#E0E0E0", "#424242") : "transparent"
-            Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: !win.canJoin ? theme.pick("#BDBDBD", "#5C5C5C") : "white" }
+            color: !win.canJoin ? theme.pick("#F0F0F0", "#141414", "#000000") : jnh.hovered ? theme.brandHover : theme.brandFill
+            border.color: !win.canJoin ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : "transparent"
+            Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, !win.canJoin ? theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") : "white") }
             HoverHandler { id: jnh; cursorShape: win.canJoin ? Qt.PointingHandCursor : Qt.ArrowCursor }
             // Room audio waits for a room (Teams disables Join until one is
             // picked); a connected room device joins with its own audio.
@@ -547,6 +551,7 @@ Window {
             Accessible.name: "Join now"
         }
         Rectangle {
+            id: hcFill4
             visible: win.lobby && win.lobbyMessages.length > 0
             width: lcRow.implicitWidth + 24; height: 32; radius: theme.radius
             color: lch.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
@@ -554,8 +559,8 @@ Window {
                 id: lcRow
                 anchors.centerIn: parent
                 spacing: 8
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: lch.hovered ? "chat-20-filled" : "chat-20"; size: 20; color: theme.text }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Lobby chat"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: lch.hovered ? "chat-20-filled" : "chat-20"; size: 20; color: theme.onFill(hcFill4, theme.text) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Lobby chat"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             }
             HoverHandler { id: lch; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.lobbyPaneOpen = !win.lobbyPaneOpen }
@@ -674,16 +679,16 @@ Window {
                     readonly property bool chosen: !!modelData.device && !!win.room && win.room.speaker === modelData.device.speaker
                     width: roomView.width; height: 32; radius: 4
                     color: roHover.hovered && usable ? theme.menuHover : "transparent"
-                    FluentIcon { visible: ro.chosen; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.text }
+                    FluentIcon { visible: ro.chosen; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(ro, theme.text) }
                     Row {
                         x: 28; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                        FluentIcon { visible: !!ro.modelData.device; anchors.verticalCenter: parent.verticalCenter; name: "usb-plug-20"; size: 20; color: theme.text }
+                        FluentIcon { visible: !!ro.modelData.device; anchors.verticalCenter: parent.verticalCenter; name: "usb-plug-20"; size: 20; color: theme.onFill(ro, theme.text) }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: ro.modelData.header
                             font.family: theme.font; font.pixelSize: 14
                             font.weight: ro.usable ? Font.Normal : Font.DemiBold
-                            color: ro.usable ? theme.text : theme.disabled
+                            color: theme.onFill(ro, ro.usable ? theme.text : theme.disabled)
                         }
                     }
                     HoverHandler { id: roHover; cursorShape: ro.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -702,13 +707,13 @@ Window {
         property bool usable: true
         signal toggled(bool on)
         width: 40; height: 20; radius: 10
-        color: on ? theme.brandFill : "transparent"
+        color: on ? theme.checkedFill : "transparent"
         border.color: on ? "transparent" : theme.textStrong
         Rectangle {
             width: 14; height: 14; radius: 7
             anchors.verticalCenter: parent.verticalCenter
             x: tg.on ? parent.width - width - 3 : 3
-            color: tg.on ? "white" : theme.textStrong
+            color: tg.on ? theme.hc("white", "#000000") : theme.textStrong
         }
         TapHandler { enabled: tg.usable; onTapped: tg.toggled(!tg.on) }
         HoverHandler { cursorShape: tg.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -761,10 +766,11 @@ Window {
                 Accessible.name: text
             }
             Rectangle {
+                id: hcFill5
                 x: parent.width - 16 - 32; anchors.verticalCenter: parent.verticalCenter
                 width: 32; height: 30; radius: 4
                 color: lpClose.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill5, theme.textStrong) }
                 HoverHandler { id: lpClose; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.lobbyPaneOpen = false }
                 Accessible.role: Accessible.Button
@@ -774,7 +780,7 @@ Window {
         Rectangle {
             id: lpBanner
             y: 61; width: parent.width; height: lpBannerText.implicitHeight + 10 + 1.33
-            color: theme.pick("#F0F0F0", "#2E2E2E")
+            color: theme.pick("#F0F0F0", "#2E2E2E", "#000000")
             Rectangle { width: parent.width; height: 0.67; color: theme.divider }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
             Text {

@@ -79,7 +79,7 @@ Item {
         FluentIcon {
             visible: sec.enrolled
             x: titleText.implicitWidth + 10; y: 4.5
-            name: "checkmark-20-filled"; size: 13; color: "#11910D"
+            name: "checkmark-20-filled"; size: 13; color: theme.hc("#11910D", "#FFFFFF")
         }
         Text {
             id: bodyText

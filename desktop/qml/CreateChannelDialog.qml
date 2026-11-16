@@ -94,7 +94,7 @@ Popup {
         property string text
         property bool required: false
         Text { text: parent.text; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
-        Text { visible: parent.required; leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#DC626D") }
+        Text { visible: parent.required; leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#DC626D", "#FFFFFF") }
     }
     component LayoutCard: Rectangle {
         id: lc
@@ -106,18 +106,19 @@ Popup {
         readonly property bool chosen: dlg.layout === key
         width: 157.3; height: 167.3; radius: 6
         color: "transparent"
-        border.color: lcHover.hovered ? theme.textSecondary : theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+        border.color: lcHover.hovered ? theme.textSecondary : theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
         Image {
             x: 8.6; y: 6.6; width: 140; height: 80
             source: "../assets/illustrations/channel-layout-" + lc.picture + (theme.dark ? "-dark" : "") + ".svg"
             sourceSize: Qt.size(280, 160)
         }
         Rectangle {
+            id: hcFill1
             visible: lc.isNew
             x: 17; y: 2; height: 20; radius: 10
             width: newText.implicitWidth + 12
             color: theme.brandFill
-            Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: "white" }
+            Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
         }
         Text { x: 8.6; y: 92.6; text: lc.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: lc.chosen ? theme.text : theme.textSecondary }
         Rectangle {
@@ -155,7 +156,7 @@ Popup {
             Item { width: 1; height: 3 }
             Rectangle {
                 width: parent.width; height: 32; radius: 4
-                color: theme.pick("#F5F5F5", "#1F1F1F")
+                color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
                 TextInput {
                     id: nameField
                     anchors.fill: parent; leftPadding: 12; rightPadding: 34
@@ -186,7 +187,7 @@ Popup {
             Item { width: 1; height: 3 }
             Rectangle {
                 width: parent.width; height: Math.max(55.3, descField.contentHeight + 20); radius: 4
-                color: theme.pick("#F5F5F5", "#1F1F1F")
+                color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
                 TextEdit {
                     id: descField
                     x: 12; y: 10; width: parent.width - 24
@@ -205,9 +206,10 @@ Popup {
                 height: 21.3
                 Label { text: "Choose a channel type"; required: true; anchors.verticalCenter: parent.verticalCenter }
                 Rectangle {
+                    id: hcFill2
                     width: 32; height: 21.3; radius: 4
                     color: infoHover.hovered ? theme.rowHover : "transparent"
-                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: theme.textStrong }
+                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                     HoverHandler { id: infoHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://learn.microsoft.com/en-us/microsoftteams/teams-channels-overview") }
                     ToolTip.visible: infoHover.hovered; ToolTip.delay: 300; ToolTip.text: "Learn more about channel types"
@@ -228,7 +230,7 @@ Popup {
                     width: parent.width - 52; elide: Text.ElideRight
                     text: dlg.chosenType ? dlg.chosenType.label + " — " + dlg.chosenType.hint.replace(/\.$/, "") : "Select"
                     font.family: theme.font; font.pixelSize: 14
-                    color: dlg.chosenType ? theme.text : theme.pick("#707070", "#ADADAD")
+                    color: dlg.chosenType ? theme.text : theme.pick("#707070", "#ADADAD", "#FFFFFF")
                 }
                 FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -249,14 +251,15 @@ Popup {
                                 required property var modelData
                                 width: typeList.width - 8; height: 48; radius: 4
                                 color: optHover.hovered ? theme.menuHover : "transparent"
-                                FluentIcon { visible: dlg.type === opt.modelData.key; x: 6; y: 16; size: 16; name: "checkmark-16"; color: theme.text }
+                                FluentIcon { visible: dlg.type === opt.modelData.key; x: 6; y: 16; size: 16; name: "checkmark-16"; color: theme.onFill(opt, theme.text) }
                                 Rectangle {
+                                    id: hcFill3
                                     x: 28; y: 8; width: 32; height: 32; radius: 5
                                     color: opt.modelData.tile
-                                    FluentIcon { anchors.centerIn: parent; size: 20; name: opt.modelData.icon; color: "#242424" }
+                                    FluentIcon { anchors.centerIn: parent; size: 20; name: opt.modelData.icon; color: theme.onFill(hcFill3, theme.hc("#242424", "#FFFFFF")) }
                                 }
-                                Text { x: 67; y: 6; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                                Text { x: 67; y: 26; width: parent.width - 75; elide: Text.ElideRight; text: opt.modelData.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+                                Text { x: 67; y: 6; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(opt, theme.text) }
+                                Text { x: 67; y: 26; width: parent.width - 75; elide: Text.ElideRight; text: opt.modelData.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(opt, theme.text) }
                                 HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: { dlg.type = opt.modelData.key; typeList.close() } }
                                 Accessible.role: Accessible.ListItem
@@ -273,10 +276,11 @@ Popup {
                 Item {
                     x: 0; y: 8.1; width: recText.x + recText.implicitWidth + 8; height: 36
                     Rectangle {
+                        id: hcFill4
                         x: 8; y: 10; width: 16; height: 16; radius: 2
                         color: dlg.recommend ? theme.brand : "transparent"
                         border.color: dlg.recommend ? theme.brand : theme.textSecondary; border.width: 0.67
-                        FluentIcon { visible: dlg.recommend; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: "white" }
+                        FluentIcon { visible: dlg.recommend; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill4, "white") }
                     }
                     Text { id: recText; x: 36; y: 8; text: "Recommend that people show this channel in their channel lists"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: dlg.recommend ? theme.text : theme.textSecondary }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -307,18 +311,20 @@ Popup {
             y: parent.height - 31.3 - 8.7
             spacing: 8
             Rectangle {
+                id: hcFill5
                 width: 96; height: 31.3; radius: 4
                 color: cancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Cancel"
             }
             Rectangle {
+                id: hcFill6
                 width: 96; height: 31.3; radius: 4
-                color: !dlg.canCreate ? theme.pick("#F0F0F0", "#141414") : createHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Create"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: dlg.canCreate ? "white" : theme.disabled }
+                color: !dlg.canCreate ? theme.pick("#F0F0F0", "#141414", "#000000") : createHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: "Create"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, dlg.canCreate ? "white" : theme.disabled) }
                 HoverHandler { id: createHover; cursorShape: dlg.canCreate ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: dlg.canCreate; onTapped: dlg.create() }
                 Accessible.role: Accessible.Button; Accessible.name: "Create"

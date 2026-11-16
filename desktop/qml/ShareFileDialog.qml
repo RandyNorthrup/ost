@@ -188,7 +188,7 @@ Popup {
         id: moreBtn
         x: 495.33; y: 36.67; width: 32; height: 31.33; radius: 4
         color: mbh.hovered || moreMenu.visible ? theme.hover : "transparent"
-        FluentIcon { anchors.centerIn: parent; size: 20; name: "more-horizontal-20"; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; size: 20; name: "more-horizontal-20"; color: theme.onFill(moreBtn, theme.textStrong) }
         HoverHandler { id: mbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: moreMenu.open() }
         Accessible.role: Accessible.Button
@@ -201,9 +201,10 @@ Popup {
         }
     }
     Rectangle {
+        id: hcFill1
         x: 527.33; y: 32.67; width: 40; height: 39.33; radius: 4
         color: clh.hovered ? theme.hover : "transparent"
-        FluentIcon { anchors.centerIn: parent; size: 24; name: "dismiss-20"; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; size: 24; name: "dismiss-20"; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -214,12 +215,12 @@ Popup {
     Row {
         x: 32.67; y: 114.67
         Text { text: "Add recipients"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
-        Text { leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#F1707B") }
+        Text { leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#F1707B", "#FFFFFF") }
     }
     Rectangle {
         id: picker
         x: 32.67; y: 134.67; width: 534.67; height: root.picked.length ? Math.max(38.67, pillFlow.height + 12) : 33.33
-        radius: 4; color: theme.pick("#F0F0F0", "#1F1F1F")
+        radius: 4; color: theme.pick("#F0F0F0", "#1F1F1F", "#000000")
         Flow {
             id: pillFlow
             x: 12; y: 6; width: parent.width - 24; spacing: 4
@@ -269,7 +270,7 @@ Popup {
     Rectangle {
         id: preview
         x: 32.67; y: picker.y + picker.height + 57.33; width: 534.67; height: 329.33 + (root.formatting ? 20.67 : 0)
-        radius: 6; color: theme.pick("#F5F5F5", "#141414"); border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+        radius: 6; color: theme.pick("#F5F5F5", "#141414", "#000000"); border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
         clip: true
         Rectangle { visible: note.activeFocus; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 2; radius: 1; color: theme.brand; z: 2 }
         // Teams' formatting bar (458 for its buttons, no Discard), at 6.67, 9.67.
@@ -301,9 +302,9 @@ Popup {
         // The file card.
         Rectangle {
             x: 13.67; y: Math.max(42.67, note.y + note.height + 12.67); width: 320; height: 236
-            radius: 6; color: theme.surface; border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+            radius: 6; color: theme.surface; border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
             clip: true
-            Rectangle { width: parent.width; height: 56.67; radius: 6; color: theme.pick("#FAFAFA", "#1A1A1A") }
+            Rectangle { width: parent.width; height: 56.67; radius: 6; color: theme.pick("#FAFAFA", "#1A1A1A", "#000000") }
             FluentIcon { x: 16.67; y: 12.67; size: 32; name: root.fileIcon() }
             Text { x: 60.67; y: 11; width: 240; height: 16; elide: Text.ElideRight; text: root.fileName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
             Text {
@@ -320,13 +321,14 @@ Popup {
             Rectangle {
                 id: warn
                 visible: root.blocked
-                y: 57.33; width: parent.width; height: 32; color: theme.pick("#FDF3F4", "#3F1011")
+                y: 57.33; width: parent.width; height: 32; color: theme.pick("#FDF3F4", "#3F1011", "#000000")
                 Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: "The recipient can’t access this item"; font.family: theme.font; font.pixelSize: 10; color: theme.text }
                 Rectangle {
+                    id: hcFill2
                     anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                     width: gaText.implicitWidth + 16; height: 21.33; radius: 4
-                    color: gah.hovered ? theme.hover : theme.surface; border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
-                    Text { id: gaText; anchors.centerIn: parent; text: "Give access"; font.family: theme.font; font.pixelSize: 10; color: theme.text }
+                    color: gah.hovered ? theme.hover : theme.surface; border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                    Text { id: gaText; anchors.centerIn: parent; text: "Give access"; font.family: theme.font; font.pixelSize: 10; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: gah; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: outside.openLinkSettings(root.item, root.fileName, root.fileType, root.scope, root.edit, root.expiration, root.password) }
                     Accessible.role: Accessible.Button
@@ -335,7 +337,7 @@ Popup {
             }
             Rectangle {
                 y: warn.visible ? 89.33 : 57.33; width: parent.width; height: parent.height - y
-                color: theme.pick("#F5F5F5", "#2E2E2E")
+                color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                 clip: true
                 Image { id: pimg; width: parent.width; height: parent.height; fillMode: Image.PreserveAspectCrop; verticalAlignment: Image.AlignTop; asynchronous: true; source: root.thumb }
                 FluentIcon { visible: pimg.status !== Image.Ready; anchors.centerIn: parent; size: 32; name: "ft-genericfile-32" }
@@ -345,18 +347,20 @@ Popup {
         }
         // Format (Show / Hide Formatting option).
         Rectangle {
+            id: hcFill3
             x: parent.width - 8 - 64; y: parent.height - 36.67; width: 32; height: 32; radius: 4
             color: fmh.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; size: 20; name: "format-20"; color: root.formatting ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; size: 20; name: "format-20"; color: theme.onFill(hcFill3, root.formatting ? theme.brand : theme.textStrong) }
             HoverHandler { id: fmh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.formatting = !root.formatting; note.forceActiveFocus() } }
             Accessible.role: Accessible.Button
             Accessible.name: root.formatting ? "Hide Formatting option" : "Show Formatting options"
         }
         Rectangle {
+            id: hcFill4
             x: parent.width - 8 - 32; y: parent.height - 36.67; width: 32; height: 32; radius: 4
             color: emh.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; size: 20; name: "emoji-20"; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; size: 20; name: "emoji-20"; color: theme.onFill(hcFill4, theme.textStrong) }
             HoverHandler { id: emh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: noteEmoji.open() }
             Accessible.role: Accessible.Button
@@ -367,26 +371,28 @@ Popup {
     Text {
         visible: !!root.error
         x: 32.67; y: preview.y + preview.height + 6; width: 534.67; elide: Text.ElideRight
-        text: root.error; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#C4314B", "#F1707B")
+        text: root.error; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#C4314B", "#F1707B", "#FFFFFF")
     }
 
     // Copy link, Share.
     Row {
         x: 367.33; y: preview.y + preview.height + 24; spacing: 8
         Rectangle {
+            id: hcFill5
             width: 96; height: 31.33; radius: 4
-            color: cph.hovered ? theme.hover : theme.surface; border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666")
-            Text { anchors.centerIn: parent; text: "Copy link"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            color: cph.hovered ? theme.hover : theme.surface; border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+            Text { anchors.centerIn: parent; text: "Copy link"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
             HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.copyLink() }
             Accessible.role: Accessible.Button
             Accessible.name: "Copy link"
         }
         Rectangle {
+            id: hcFill6
             readonly property bool on: root.picked.length > 0 && !root.sharing
             width: 96; height: 31.33; radius: 4
-            color: !on ? theme.pick("#F0F0F0", "#2E2E2E") : shh.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Share"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C") }
+            color: !on ? theme.pick("#F0F0F0", "#2E2E2E", "#000000") : shh.hovered ? theme.brandHover : theme.checkedFill
+            Text { anchors.centerIn: parent; text: "Share"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: shh; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.on; onTapped: root.share() }
             Accessible.role: Accessible.Button
@@ -414,8 +420,8 @@ Popup {
                 Picture { x: 12; y: 9; size: 32; who: sug.modelData }
                 Column {
                     x: 60; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 72
-                    Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bolded(sug.modelData.name); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
-                    Text { visible: !!sug.modelData.sub; width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bolded(sug.modelData.sub); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Text { width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bolded(sug.modelData.name); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(sug, theme.textStrong) }
+                    Text { visible: !!sug.modelData.sub; width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bolded(sug.modelData.sub); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(sug, theme.textSecondary) }
                 }
                 HoverHandler { id: sgh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.pick(sug.modelData) }

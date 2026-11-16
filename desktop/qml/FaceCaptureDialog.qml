@@ -175,7 +175,7 @@ Popup {
                 width: 600; height: 500
                 scale: 522 / 600; transformOrigin: Item.TopLeft
                 ShapePath {
-                    fillColor: theme.pick("#F5F5F5", "#1F1F1F")
+                    fillColor: theme.pick("#F5F5F5", "#1F1F1F", "#FFFFFF")
                     strokeWidth: -1
                     fillRule: ShapePath.OddEvenFill
                     PathSvg { path: "M597,0 C598.656854,0 600,1.34314575 600,3 L600,384 L0,384 L0,3 C0,1.34314575 1.34314575,0 3,0 L597,0 Z M300,82 C239.248678,82 190,131.248678 190,192 C190,252.751322 239.248678,302 300,302 C360.751322,302 410,252.751322 410,192 C410,131.248678 360.751322,82 300,82 Z" }
@@ -192,7 +192,7 @@ Popup {
                 x: 151; y: 57; width: 320; height: 320
                 scale: 220 / 320; transformOrigin: Item.TopLeft
                 ShapePath {
-                    strokeColor: theme.pick("#9FD89F", "#359B35")
+                    strokeColor: theme.pick("#9FD89F", "#359B35", "#FFFFFF")
                     strokeWidth: 8
                     fillColor: "transparent"
                     capStyle: ShapePath.FlatCap
@@ -242,7 +242,7 @@ Popup {
                 delegate: Rectangle {
                     required property string modelData
                     width: 8; height: 8; radius: 4
-                    color: root.pose === modelData ? theme.brandFill : theme.pick("#C7C7C7", "#5C5C5C")
+                    color: root.pose === modelData ? theme.brandFill : theme.pick("#C7C7C7", "#5C5C5C", "#000000")
                 }
             }
         }
@@ -282,13 +282,13 @@ Popup {
                 : root.error ? (root.errors[root.error] || "Something went wrong. Please try again.") : ""
             visible: message !== ""
             x: 32; y: 662; width: 522; spacing: 8
-            FluentIcon { name: "error-circle-20-filled"; size: 16; color: theme.pick("#C50F1F", "#DC626D") }
+            FluentIcon { name: "error-circle-20-filled"; size: 16; color: theme.pick("#C50F1F", "#DC626D", "#FFFFFF") }
             Text {
                 width: 498
                 text: parent.message
                 wrapMode: Text.Wrap
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
-                color: theme.pick("#C50F1F", "#DC626D")
+                color: theme.pick("#C50F1F", "#DC626D", "#FFFFFF")
             }
         }
         Row {

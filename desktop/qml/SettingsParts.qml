@@ -78,7 +78,7 @@ Item {
                          trailingLoader.item && !isNaN(trailingY) ? trailingY + trailingLoader.height : 0) + bottomPad
         radius: 8
         color: "transparent"
-        border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+        border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
         FluentIcon { x: card.iconX; y: card.pad + (card.headerHeight - 20) / 2; name: card.icon; size: 20; color: theme.text }
         Text {
             id: titleText
@@ -148,14 +148,14 @@ Item {
         Rectangle {
             anchors.right: parent.right
             width: 40; height: 20; radius: 10
-            color: !tg.on ? "transparent" : !tg.usable ? theme.bgDisabled : th.hovered ? theme.brandHover : theme.brandFill
-            border.width: tg.on ? 0 : 1
+            color: !tg.on ? "transparent" : !tg.usable ? theme.bgDisabled : th.hovered ? theme.brandHover : theme.checkedFill
+            border.width: tg.on && !theme.highContrast ? 0 : 1
             border.color: !tg.usable ? theme.disabled : th.hovered ? theme.text : theme.textSecondary
             Rectangle {
                 width: 14; height: 14; radius: 7
                 anchors.verticalCenter: parent.verticalCenter
                 x: tg.on ? parent.width - width - 3 : 3
-                color: tg.on ? (tg.usable ? "white" : theme.disabled) : (!tg.usable ? theme.disabled : th.hovered ? theme.text : theme.textSecondary)
+                color: tg.on ? (tg.usable ? theme.hc("white", "#000000") : theme.disabled) : (!tg.usable ? theme.disabled : th.hovered ? theme.text : theme.textSecondary)
                 Behavior on x { NumberAnimation { duration: 100 } }
             }
             HoverHandler { id: th; cursorShape: tg.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -215,10 +215,10 @@ Item {
         property bool usable: true
         property bool hovered: false
         width: 16; height: 16; radius: 2
-        color: !checked ? "transparent" : !usable ? theme.bgDisabled : hovered ? theme.brandHover : theme.brandFill
+        color: !checked ? "transparent" : !usable ? theme.bgDisabled : hovered ? theme.brandHover : theme.checkedFill
         border.width: checked ? 0 : 1
         border.color: !usable ? theme.disabled : hovered ? theme.text : theme.textSecondary
-        FluentIcon { visible: bx.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: bx.usable ? "white" : theme.disabled }
+        FluentIcon { visible: bx.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(bx, bx.usable ? "white" : theme.disabled) }
     }
 
     component CheckRow: Item {
@@ -254,7 +254,7 @@ Item {
         width: 16; height: 16; radius: 8
         color: "transparent"
         border.width: 1
-        border.color: checked ? theme.brandFill : hovered ? theme.text : theme.textSecondary
+        border.color: checked ? theme.checkedFill : hovered ? theme.text : theme.textSecondary
         Rectangle { visible: parent.checked; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brandFill }
     }
 
@@ -291,7 +291,7 @@ Item {
         width: 169.3; height: imageHeight + 53.3
         radius: 4
         color: theme.surface
-        border.color: ih.hovered ? theme.pick("#C7C7C7", "#5C5C5C") : theme.pick("#E0E0E0", "#3D3D3D"); border.width: 0.67
+        border.color: ih.hovered ? theme.pick("#C7C7C7", "#5C5C5C", "#1AEBFF") : theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); border.width: 0.67
         FluentSurface { anchors.fill: parent; z: -1; depth: 2; radius: 4; color: theme.surface }
         Image {
             x: 12.7; y: 14.7; width: 140; height: ir.imageHeight
@@ -316,10 +316,10 @@ Item {
         property bool primary: false
         signal clicked()
         width: Math.max(96, btText.implicitWidth + 24); height: 31.3; radius: 4
-        color: primary ? (bh.pressed ? theme.pick("#444791", "#444791") : bh2.hovered ? theme.brandHover : theme.brandFill)
-            : bh.pressed ? theme.menuHover : bh2.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
-        border.color: primary ? "transparent" : theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
-        Text { id: btText; anchors.centerIn: parent; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: !bt.enabled ? theme.disabled : bt.primary ? "#FFFFFF" : theme.text }
+        color: primary ? (bh.pressed ? theme.pick("#444791", "#444791", "#1AEBFF") : bh2.hovered ? theme.brandHover : theme.brandFill)
+            : bh.pressed ? theme.menuHover : bh2.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+        border.color: primary ? "transparent" : theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
+        Text { id: btText; anchors.centerIn: parent; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(bt, !bt.enabled ? theme.disabled : bt.primary ? "#FFFFFF" : theme.text) }
         HoverHandler { id: bh2; cursorShape: Qt.PointingHandCursor }
         TapHandler { id: bh; onTapped: bt.clicked() }
         Accessible.role: Accessible.Button
@@ -345,7 +345,7 @@ Item {
     /// Teams' (the card less 56.7 each side).
     component Divider: Item {
         width: parent ? parent.width : 0; height: 0.67
-        Rectangle { width: parent.width - 27.3; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        Rectangle { width: parent.width - 27.3; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
     }
 
     /// A row with a title (14/20), an optional subtitle (12/16) and a

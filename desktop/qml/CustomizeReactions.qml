@@ -25,7 +25,7 @@ Popup {
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 4; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
 
     readonly property int maxSlots: 5
     // Client ids, as the hover bar shows them.
@@ -93,7 +93,7 @@ Popup {
                 border.color: lit ? theme.strokeHover : theme.stroke
                 activeFocusOnTab: true
                 Emoticon { visible: !!slot.key; x: 8; y: 8; key: slot.key; named: "medium"; size: 30 }
-                FluentIcon { visible: !slot.key; anchors.centerIn: parent; name: "add-24"; size: 24; color: theme.textStrong }
+                FluentIcon { visible: !slot.key; anchors.centerIn: parent; name: "add-24"; size: 24; color: theme.onFill(slot, theme.textStrong) }
                 HoverHandler { id: slotHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { slot.forceActiveFocus(); root.openPicker(slot, slot.index) } }
                 Keys.onPressed: event => {
@@ -164,19 +164,21 @@ Popup {
     Row {
         x: 375.3; y: 336.7; spacing: 8
         Rectangle {
+            id: hcFill1
             width: 96; height: 31.3; radius: 4
             color: cancelHover.hovered && !root.saving ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.saving ? theme.disabled : theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, root.saving ? theme.disabled : theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.saving; onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill2
             readonly property bool can: root.changed && !root.saving
             width: 96; height: 31.3; radius: 4
             color: !can ? theme.bgDisabled : saveHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: parent.can ? "white" : theme.disabledStrong }
+            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.can ? "white" : theme.disabledStrong) }
             HoverHandler { id: saveHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.can; onTapped: backend.saveReactionPrefs(JSON.stringify(root.slots), root.tone) }
             Accessible.role: Accessible.Button

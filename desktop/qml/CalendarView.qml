@@ -106,10 +106,11 @@ Item {
                 Repeater {
                     model: [{ icon: "chevron-left-20", d: -1, l: "Previous month" }, { icon: "chevron-right-20", d: 1, l: "Next month" }]
                     Rectangle {
+                        id: hcFill1
                         required property var modelData
                         width: 28; height: 28; radius: theme.radius
                         color: mh.hovered ? theme.rowHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 16; color: theme.textStrong; rotation: 90 }
+                        FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 16; color: theme.onFill(hcFill1, theme.textStrong); rotation: 90 }
                         HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { const d = new Date(month.shown); d.setMonth(d.getMonth() + parent.modelData.d); month.shown = d } }
                         Accessible.role: Accessible.Button
@@ -140,6 +141,7 @@ Item {
                         width: 28; height: 28
                         Rectangle { visible: parent.inRange; anchors.fill: parent; color: theme.brandTint }
                         Rectangle {
+                            id: hcFill2
                             visible: parent.today
                             anchors.centerIn: parent; width: 22; height: 22; radius: 11
                             color: theme.brandFill
@@ -149,7 +151,7 @@ Item {
                             text: parent.day.getDate()
                             font.family: theme.font; font.pixelSize: theme.small
                             font.weight: parent.today ? Font.DemiBold : Font.Normal
-                            color: parent.today ? "white" : parent.inMonth ? theme.text : theme.textTertiary
+                            color: theme.onFill(hcFill2, parent.today ? "white" : parent.inMonth ? theme.text : theme.textTertiary)
                         }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.start = root.startFor(parent.day) }
@@ -167,11 +169,12 @@ Item {
             Item {
                 width: parent.width; height: 28
                 Rectangle {
+                    id: hcFill3
                     x: 6; anchors.verticalCenter: parent.verticalCenter
                     width: 16; height: 16; radius: 2
                     color: root.showCalendar ? theme.brandFill : "transparent"
                     border.color: root.showCalendar ? "transparent" : theme.textStrong
-                    FluentIcon { visible: root.showCalendar; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                    FluentIcon { visible: root.showCalendar; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill3, "white") }
                 }
                 Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: "Calendar"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 TapHandler { onTapped: root.showCalendar = !root.showCalendar }
@@ -190,7 +193,7 @@ Item {
         signal clicked()
         width: 32; height: 32; radius: theme.radius
         color: nbHover.hovered ? theme.rowHover : "transparent"
-        FluentIcon { id: nbIcon; anchors.centerIn: parent; size: 20; color: theme.textStrong }
+        FluentIcon { id: nbIcon; anchors.centerIn: parent; size: 20; color: theme.onFill(nb, theme.textStrong) }
         HoverHandler { id: nbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: nb.clicked() }
         Accessible.role: Accessible.Button
@@ -207,14 +210,15 @@ Item {
             spacing: 6
             NavButton { icon: "panel-left-20"; tip: root.paneShown ? "Hide navigation" : "Show navigation"; onClicked: root.paneShown = !root.paneShown }
             Rectangle {
+                id: hcFill4
                 anchors.verticalCenter: parent.verticalCenter
                 width: todayRow.implicitWidth + 20; height: 32; radius: theme.radius
                 color: todayHover.hovered ? theme.rowHover : "transparent"
                 Row {
                     id: todayRow
                     anchors.centerIn: parent; spacing: 6
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "calendar"; size: 16; color: theme.textStrong }
-                    Text { text: "Today"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "calendar"; size: 16; color: theme.onFill(hcFill4, theme.textStrong) }
+                    Text { text: "Today"; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill4, theme.text) }
                 }
                 HoverHandler { id: todayHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.start = root.startFor(new Date()) }
@@ -235,15 +239,16 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 10
             Rectangle {
+                id: hcFill5
                 anchors.verticalCenter: parent.verticalCenter
                 width: viewRow.implicitWidth + 20; height: 32; radius: theme.radius
                 color: vh.hovered ? theme.rowHover : "transparent"
                 Row {
                     id: viewRow
                     anchors.centerIn: parent; spacing: 6
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "calendar"; size: 16; color: theme.textStrong }
-                    Text { text: ({ day: "Day", workweek: "Work week", week: "Week" })[root.view]; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "calendar"; size: 16; color: theme.onFill(hcFill5, theme.textStrong) }
+                    Text { text: ({ day: "Day", workweek: "Work week", week: "Week" })[root.view]; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill5, theme.text) }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(hcFill5, theme.textStrong) }
                 }
                 HoverHandler { id: vh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: viewMenu.open() }
@@ -258,14 +263,15 @@ Item {
             }
             // New: schedule an event (a Teams meeting by default).
             Rectangle {
+                id: hcFill6
                 anchors.verticalCenter: parent.verticalCenter
                 width: newRow.implicitWidth + 28; height: 32; radius: theme.radius
                 color: nh.hovered ? theme.brandHover : theme.brandFill
                 Row {
                     id: newRow
                     anchors.centerIn: parent; spacing: 6
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 16; color: "white" }
-                    Text { text: "New"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 16; color: theme.onFill(hcFill6, "white") }
+                    Text { text: "New"; color: theme.onFill(hcFill6, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 }
                 HoverHandler { id: nh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: newEvent.openAt(null) }
@@ -465,10 +471,11 @@ Item {
                     color: theme.text
                 }
                 Rectangle {
+                    id: hcFill7
                     anchors.right: parent.right; y: -2
                     width: 28; height: 28; radius: theme.radius
                     color: dxh.hovered ? theme.rowHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.textStrong }
+                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.onFill(hcFill7, theme.textStrong) }
                     HoverHandler { id: dxh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: details.close() }
                     Accessible.role: Accessible.Button
@@ -564,18 +571,18 @@ Item {
         signal clicked()
         width: cbRow.implicitWidth + 24; height: 32; radius: theme.radius
         color: primary ? (cbh.hovered ? theme.brandHover : theme.brandFill)
-            : danger ? (cbh.hovered ? "#BC2F32" : "#D13438")
+            : danger ? (cbh.hovered ? theme.hc("#BC2F32", "#1AEBFF") : theme.hc("#D13438", "#000000"))
             : (cbh.hovered ? theme.rowHover : theme.input)
         border.color: primary || danger ? "transparent" : theme.stroke
         Row {
             id: cbRow
             anchors.centerIn: parent; spacing: 6
-            FluentIcon { visible: !!cb.icon; anchors.verticalCenter: parent.verticalCenter; name: cb.icon; size: 16; color: cb.iconColor }
+            FluentIcon { visible: !!cb.icon; anchors.verticalCenter: parent.verticalCenter; name: cb.icon; size: 16; color: theme.onFill(cb, cb.iconColor) }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: cb.label
                 font.family: theme.font; font.pixelSize: theme.base; font.weight: cb.primary || cb.danger ? Font.DemiBold : Font.Normal
-                color: cb.primary || cb.danger ? "white" : theme.text
+                color: theme.onFill(cb, cb.primary || cb.danger ? "white" : theme.text)
             }
         }
         HoverHandler { id: cbh; cursorShape: Qt.PointingHandCursor }
@@ -665,8 +672,8 @@ Item {
                     id: teamsBox
                     property bool on: true
                     width: 16; height: 16; radius: 2
-                    color: on ? theme.brandFill : "transparent"; border.color: on ? "transparent" : theme.textStrong
-                    FluentIcon { visible: teamsBox.on; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                    color: on ? theme.checkedFill : "transparent"; border.color: on ? "transparent" : theme.textStrong
+                    FluentIcon { visible: teamsBox.on; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(teamsBox, "white") }
                     TapHandler { onTapped: teamsBox.on = !teamsBox.on }
                 }
                 Text { text: "Teams meeting"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
@@ -674,18 +681,20 @@ Item {
             Row {
                 spacing: 8
                 Rectangle {
+                    id: hcFill8
                     width: 90; height: 32; radius: theme.radius
                     color: sh.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Save"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: "Save"; color: theme.onFill(hcFill8, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: newEvent.saveNow() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Save"
                 }
                 Rectangle {
+                    id: hcFill9
                     width: 90; height: 32; radius: theme.radius
                     color: ch.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.onFill(hcFill9, theme.text); font.family: theme.font; font.pixelSize: theme.base }
                     HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: newEvent.close() }
                     Accessible.role: Accessible.Button

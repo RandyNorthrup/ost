@@ -152,7 +152,7 @@ Item {
         height: body.y + body.height + 16.6
         radius: 4
         color: theme.surface
-        border.color: theme.pick("#E0E0E0", "#3D3D3D"); border.width: 0.67
+        border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); border.width: 0.67
         Column {
             id: body
             x: 16.7; y: 26.7

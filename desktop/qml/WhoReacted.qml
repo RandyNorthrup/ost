@@ -76,7 +76,7 @@ Popup {
                 elide: Text.ElideRight
                 text: row.modelData.name
                 font.family: theme.font; font.pixelSize: theme.base
-                color: rowHover.hovered ? theme.text : theme.textStrong
+                color: theme.onFill(row, rowHover.hovered ? theme.text : theme.textStrong)
             }
             Emoticon {
                 visible: root.diverse
@@ -85,7 +85,7 @@ Popup {
             Item {
                 visible: root.removable && row.own
                 x: row.width - 6 - 16; y: 8; width: 16; height: 16
-                FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: removeHover.hovered ? theme.text : theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(row, removeHover.hovered ? theme.text : theme.textStrong) }
                 HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.removeMine(root.messageId, row.modelData.key); root.close() } }
                 Accessible.role: Accessible.Button

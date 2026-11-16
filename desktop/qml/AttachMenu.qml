@@ -88,7 +88,7 @@ Popup {
     Rectangle {
         id: box
         x: 10; y: 7; width: 285; height: 32; radius: 4
-        color: theme.pick("#F5F5F5", "#1F1F1F")
+        color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
         Rectangle {
             anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33
             height: field.activeFocus ? 2 : 0.67; radius: 1
@@ -111,7 +111,7 @@ Popup {
             visible: !!field.text
             x: 250.3; y: 4.3; width: 24; height: 23.3; radius: 4
             color: clearHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { x: 2; y: 1.7; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { x: 2; y: 1.7; name: "dismiss-20"; size: 20; color: theme.onFill(clear, theme.textStrong) }
             HoverHandler { id: clearHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { field.text = ""; field.forceActiveFocus() } }
             Accessible.role: Accessible.Button
@@ -136,12 +136,12 @@ Popup {
             Text {
                 x: 60; y: 9.8; width: parent.width - x - 16
                 text: hit.modelData.name; elide: Text.ElideRight
-                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hit, theme.text)
             }
             Text {
                 x: 60; y: 29.5; width: parent.width - x - 16
                 text: hit.modelData.location || ""; elide: Text.ElideRight
-                font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hit, theme.textSecondary)
             }
             HoverHandler { id: hitHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { pop.close(); pop.picked(hit.modelData) } }
@@ -175,7 +175,7 @@ Popup {
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 text: "Your recent files suggestions will show up here soon."
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
-                font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6")
+                font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
             }
         }
     }
@@ -198,7 +198,7 @@ Popup {
             y: 274.2; width: parent.width; horizontalAlignment: Text.AlignHCenter
             text: "Check for spelling or try another search keyword"
             lineHeight: 16; lineHeightMode: Text.FixedHeight
-            font.family: theme.font; font.pixelSize: 12; color: theme.pick("#424242", "#D6D6D6")
+            font.family: theme.font; font.pixelSize: 12; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
         }
         Column {
             y: 306.2; width: parent.width
@@ -212,13 +212,13 @@ Popup {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: nbLabel.implicitWidth + 16 + 26.7; height: 23.3; radius: 4
                     color: nbHover.hovered ? theme.menuHover : "transparent"
-                    border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
-                    FluentIcon { x: 10.7; anchors.verticalCenter: parent.verticalCenter; name: nb.modelData.icon; size: 16; color: theme.text }
+                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                    FluentIcon { x: 10.7; anchors.verticalCenter: parent.verticalCenter; name: nb.modelData.icon; size: 16; color: theme.onFill(nb, theme.text) }
                     Text {
                         id: nbLabel
                         x: 32.7; anchors.verticalCenter: parent.verticalCenter
                         text: nb.modelData.label
-                        font.family: theme.font; font.pixelSize: 12; color: theme.text
+                        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(nb, theme.text)
                     }
                     HoverHandler { id: nbHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: pop.act(nb.modelData.key) }
@@ -245,12 +245,12 @@ Popup {
             FluentIcon {
                 x: row.modelData.size === 14 ? 8 : 7
                 anchors.verticalCenter: parent.verticalCenter
-                name: row.modelData.icon; size: row.modelData.size; color: theme.pick("#424242", "#D6D6D6")
+                name: row.modelData.icon; size: row.modelData.size; color: theme.onFill(row, theme.pick("#424242", "#D6D6D6", "#FFFFFF"))
             }
             Text {
                 x: 35; anchors.verticalCenter: parent.verticalCenter
                 text: row.modelData.label
-                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.pick("#424242", "#D6D6D6")
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(row, theme.pick("#424242", "#D6D6D6", "#FFFFFF"))
             }
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: pop.act(row.modelData.key) }

@@ -22,7 +22,7 @@ Popup {
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
     contentItem: Column {
         spacing: 0
         Item {
@@ -31,9 +31,10 @@ Popup {
                 Image { anchors.fill: parent; source: root.info && root.info.icon ? root.info.icon : ""; sourceSize: Qt.size(56, 56); fillMode: Image.PreserveAspectFit; asynchronous: true } }
             Text { x: 44; y: 3; height: 22; verticalAlignment: Text.AlignVCenter; text: root.info && root.info.name ? root.info.name : ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
             Rectangle {
+                id: hcFill1
                 anchors.right: parent.right; width: 32; height: 31.3; radius: 4
                 color: closeHover.hovered ? theme.menuHover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textSecondary }
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textSecondary) }
                 HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Close"
@@ -66,9 +67,9 @@ Popup {
                 Rectangle {
                     anchors.right: parent.right; anchors.rightMargin: 8; y: 1
                     width: 40; height: 20; radius: 10
-                    color: row.modelData.on ? (swHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+                    color: row.modelData.on ? (swHover.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
                     border.width: row.modelData.on ? 0 : 1; border.color: theme.textSecondary
-                    Rectangle { width: 14; height: 14; radius: 7; anchors.verticalCenter: parent.verticalCenter; x: row.modelData.on ? parent.width - width - 3 : 3; color: row.modelData.on ? "white" : theme.textSecondary }
+                    Rectangle { width: 14; height: 14; radius: 7; anchors.verticalCenter: parent.verticalCenter; x: row.modelData.on ? parent.width - width - 3 : 3; color: row.modelData.on ? theme.hc("white", "#000000") : theme.textSecondary }
                     HoverHandler { id: swHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.setAppPermission(root.appId, row.modelData.kind, !row.modelData.on) }
                     Accessible.role: Accessible.CheckBox; Accessible.name: row.modelData.title; Accessible.checked: !!row.modelData.on

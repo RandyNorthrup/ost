@@ -54,7 +54,7 @@ Rectangle {
     Component.onDestruction: release()
     onMessagesChanged: if (!marked && messages.length && hit) { marked = true; Qt.callLater(() => conv.showFound(hit.id, terms, "")) }
 
-    Rectangle { z: 3; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D") }
+    Rectangle { z: 3; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
 
     Conversation {
         id: conv
@@ -83,7 +83,7 @@ Rectangle {
         z: 2
         x: 0.67; width: parent.width - 0.67; height: theme.headerHeight
         color: theme.surface
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
         Avatar {
             x: 20.7 - 0.67; anchors.verticalCenter: parent.verticalCenter; size: 32
             name: pane.channel ? (pane.place ? pane.place.team.name : "") : pane.chatName
@@ -112,10 +112,11 @@ Rectangle {
             anchors.right: parent.right; anchors.rightMargin: 9.8; anchors.verticalCenter: parent.verticalCenter
             spacing: 8
             Rectangle {
+                id: hcFill1
                 visible: pane.channel
                 width: gtText.implicitWidth + 24; height: 32; radius: 4
                 color: gth.hovered ? theme.hover : "transparent"
-                Text { id: gtText; anchors.centerIn: parent; text: "Go to channel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { id: gtText; anchors.centerIn: parent; text: "Go to channel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
                 HoverHandler { id: gth; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pane.goTo() }
                 Accessible.role: Accessible.Button
@@ -128,7 +129,7 @@ Rectangle {
                 signal clicked()
                 width: 32; height: 31.3; radius: 4
                 color: hbh.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: hb.icon; size: 20; color: theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: hb.icon; size: 20; color: theme.onFill(hb, theme.textStrong) }
                 HoverHandler { id: hbh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: hb.clicked() }
                 ToolTip.visible: hbh.hovered; ToolTip.delay: 500; ToolTip.text: hb.label

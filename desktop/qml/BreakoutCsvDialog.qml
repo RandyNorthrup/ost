@@ -35,9 +35,10 @@ Popup {
         color: theme.text
     }
     Rectangle {
+        id: hcFill1
         x: 553.33; y: 24.67; width: 32; height: 31.33; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -73,7 +74,7 @@ Popup {
         }
         Item {
             x: 216.33; y: 32; width: 128; height: 128
-            FluentIcon { anchors.centerIn: parent; name: "arrow-upload-20"; size: 48; color: theme.textSecondary }
+            FluentIcon { anchors.centerIn: parent; name: "arrow-upload-20"; size: 48; color: theme.onFill(zone, theme.textSecondary) }
             Accessible.role: Accessible.Graphic
             Accessible.name: "Upload icon"
         }
@@ -81,12 +82,13 @@ Popup {
             anchors.horizontalCenter: parent.horizontalCenter; y: 190
             text: drop.containsDrag ? "Drop your file here" : "Drag and drop a CSV file here, or select one to import"
             font.family: theme.font; font.pixelSize: 14
-            color: theme.text
+            color: theme.onFill(zone, theme.text)
         }
         Rectangle {
+            id: hcFill2
             x: 180.33; y: 240; width: 200; height: 31.33; radius: 4
             color: importHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Import"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+            Text { anchors.centerIn: parent; text: "Import"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
             HoverHandler { id: importHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: fileDialog.open() }
             Accessible.role: Accessible.Button

@@ -52,11 +52,12 @@ Rectangle {
     Rectangle {
         id: left
         width: 380; height: parent.height
-        color: theme.pick("#EBEBEB", "#1F1F1F")
+        color: theme.pick("#EBEBEB", "#1F1F1F", "#000000")
         Rectangle {
+            id: hcFill1
             x: 10; y: 14; width: 32; height: 31.3; radius: 4
             color: backHover.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: page.back() }
             Accessible.role: Accessible.Button
@@ -71,8 +72,8 @@ Rectangle {
                 required property int index
                 readonly property bool sel: page.view === modelData[0]
                 y: 60 + index * 42; width: 380; height: 40; radius: 4
-                color: sel ? theme.surface : navHover.hovered ? theme.pick("#F5F5F5", "#292929") : "transparent"
-                Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: nav.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: nav.sel ? theme.text : theme.textStrong }
+                color: sel ? theme.hc(theme.surface, theme.hcHighlight) : navHover.hovered ? theme.pick("#F5F5F5", "#292929", "#1AEBFF") : "transparent"
+                Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: nav.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(nav, nav.sel ? theme.text : theme.textStrong) }
                 HoverHandler { id: navHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: page.view = nav.modelData[0] }
                 Accessible.role: Accessible.RadioButton
@@ -96,7 +97,7 @@ Rectangle {
         id: card
         signal clicked()
         radius: 4
-        color: cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : theme.surface
+        color: cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : theme.surface
         border.color: theme.stroke; border.width: 0.67
         HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: card.clicked() }
@@ -297,9 +298,10 @@ Rectangle {
             color: theme.text
         }
         Rectangle {
+            id: hcFill2
             x: 518.7; width: 32; height: 31.3; radius: 4
             color: tclose.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: tclose; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: templateDialog.close() }
             Accessible.role: Accessible.Button; Accessible.name: "Close"
@@ -325,10 +327,11 @@ Rectangle {
                 required property var modelData
                 x: 0; y: modelData.y; width: 550.7; height: 20
                 Rectangle {
+                    id: hcFill3
                     visible: arow.modelData.expandable
                     x: 281.3; width: 24; height: 23.3; radius: 4
                     color: foldHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: templateDialog.folded[arow.modelData.app.id] ? "chevron-right-16" : "chevron-down-16"; size: 14; color: theme.textStrong }
+                    FluentIcon { anchors.centerIn: parent; name: templateDialog.folded[arow.modelData.app.id] ? "chevron-right-16" : "chevron-down-16"; size: 14; color: theme.onFill(hcFill3, theme.textStrong) }
                     HoverHandler { id: foldHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { const f = Object.assign({}, templateDialog.folded); f[arow.modelData.app.id] = !f[arow.modelData.app.id]; templateDialog.folded = f } }
                     Accessible.role: Accessible.Button
@@ -343,9 +346,10 @@ Rectangle {
             }
         }
         Rectangle {
+            id: hcFill4
             anchors.right: parent.right; y: 520; width: 135.9; height: 31.3; radius: 4
             color: !templateDialog.details ? theme.bgDisabled : useHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Use this template"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: templateDialog.details ? theme.textOnBrand : theme.disabled }
+            Text { anchors.centerIn: parent; text: "Use this template"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, templateDialog.details ? theme.textOnBrand : theme.disabled) }
             HoverHandler { id: useHover; enabled: !!templateDialog.details; cursorShape: Qt.PointingHandCursor }
             TapHandler {
                 enabled: !!templateDialog.details

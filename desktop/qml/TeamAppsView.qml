@@ -55,14 +55,15 @@ Item {
     }
 
     Rectangle {
+        id: hcFill1
         x: view.chatMode ? 24 : 44; y: view.chatMode ? 13.3 : 28.6; width: 140.8; height: view.chatMode ? 21.3 : 31.3; radius: 4
         color: moreHover.hovered ? theme.menuHover : theme.surface
         border.color: theme.stroke; border.width: 0.67
         Row {
             x: 10; anchors.verticalCenter: parent.verticalCenter
             spacing: 6
-            FluentIcon { name: "add-20"; size: 20; color: theme.text }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Get more apps"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            FluentIcon { name: "add-20"; size: 20; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: "Get more apps"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
         }
         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: view.getMoreApps() }
@@ -83,7 +84,7 @@ Item {
     }
     Rectangle {
         x: view.chatMode ? 662 : parent.width - 40 - width; y: view.chatMode ? 8 : 28.3; width: 210; height: 32; radius: 4
-        color: theme.inputFilled
+        color: theme.inputFilled; border.color: theme.transparentStroke
         Rectangle { visible: find.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
         TextInput {
             id: find
@@ -127,20 +128,20 @@ Item {
                         text: row.modelData.name || row.modelData.id
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
-                        color: theme.text
+                        color: theme.onFill(row, theme.text)
                     }
                     Text {
                         x: 91; y: 36.4; width: parent.width - 160; elide: Text.ElideRight
                         text: row.modelData.publisher || ""
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 16; lineHeightMode: Text.FixedHeight
-                        color: theme.textSecondary
+                        color: theme.onFill(row, theme.textSecondary)
                     }
                     Rectangle {
                         id: more
                         x: 758.7 - (836 - list.width); y: 17; width: 32; height: 31.3; radius: 4
                         color: moreH.hovered ? theme.hover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(more, theme.textStrong) }
                         HoverHandler { id: moreH; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { rowMenu.app = row.modelData; rowMenu.parent = more; rowMenu.x = more.width - rowMenu.implicitWidth; rowMenu.y = more.height + 4; rowMenu.open() } }
                         Accessible.role: Accessible.Button
@@ -202,7 +203,7 @@ Item {
             FieldLabel { y: 290; text: "Description*" }
             Rectangle {
                 y: 312.6; width: parent.width; height: 76.7; radius: 4
-                color: theme.inputFilled
+                color: theme.inputFilled; border.color: theme.transparentStroke
                 TextEdit {
                     id: descField
                     x: 12; y: 6; width: parent.width - 24; height: parent.height - 12
@@ -219,10 +220,11 @@ Item {
             Row {
                 y: 431; spacing: 8
                 Rectangle {
+                    id: hcFill2
                     width: chooseText.implicitWidth + 16; height: 22; radius: 2
-                    color: chooseHover.hovered ? theme.pick("#E5E5E5", "#3D3D3D") : theme.pick("#EFEFEF", "#333333")
-                    border.color: theme.pick("#767676", "#999999"); border.width: 1
-                    Text { id: chooseText; anchors.centerIn: parent; text: "Choose File"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    color: chooseHover.hovered ? theme.pick("#E5E5E5", "#3D3D3D", "#1AEBFF") : theme.pick("#EFEFEF", "#333333", "#000000")
+                    border.color: theme.pick("#767676", "#999999", "#FFFFFF"); border.width: 1
+                    Text { id: chooseText; anchors.centerIn: parent; text: "Choose File"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: chooseHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: iconFile.open() }
                     Accessible.role: Accessible.Button
@@ -255,7 +257,7 @@ Item {
         property alias text: input.text
         function forceActiveFocus() { input.forceActiveFocus() }
         width: parent.width; height: 32; radius: 4
-        color: theme.inputFilled
+        color: theme.inputFilled; border.color: theme.transparentStroke
         TextInput {
             id: input
             x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
@@ -278,8 +280,8 @@ Item {
             id: pbRow
             x: 12; anchors.verticalCenter: parent.verticalCenter
             spacing: 6
-            FluentIcon { name: pb.icon; size: 20; color: pb.active ? theme.brand : theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: pb.active ? theme.brand : theme.textStrong }
+            FluentIcon { name: pb.icon; size: 20; color: theme.onFill(pb, pb.active ? theme.brand : theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pb, pb.active ? theme.brand : theme.textStrong) }
         }
         HoverHandler { id: pbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pb.clicked() }
@@ -294,7 +296,7 @@ Item {
         width: 96; height: 31.3; radius: 4
         color: !enabled ? theme.bgDisabled : primary ? (btnHover.hovered ? theme.brandHover : theme.brandFill) : (btnHover.hovered ? theme.menuHover : theme.surface)
         border.color: primary || !enabled ? "transparent" : theme.stroke; border.width: 0.67
-        Text { anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text }
+        Text { anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(btn, !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text) }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }
         Accessible.role: Accessible.Button

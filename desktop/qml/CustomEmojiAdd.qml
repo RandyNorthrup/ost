@@ -102,7 +102,7 @@ Item {
         anchors.centerIn: parent
         closePolicy: Popup.CloseOnEscape
         background: FluentSurface { depth: 64; radius: 4; color: theme.surface }
-        Overlay.modal: Rectangle { color: "#66000000" }
+        Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
 
         Text {
             x: 24.7; y: 24.7; height: 28; verticalAlignment: Text.AlignVCenter
@@ -112,7 +112,7 @@ Item {
         }
         Rectangle {
             x: 24.7; y: 60.7; width: 536.7; height: 69.3; radius: 4
-            color: theme.pick("#F5F5F5", "#292929")
+            color: theme.pick("#F5F5F5", "#292929", "#000000")
             FluentIcon { x: 12.6; y: 10.6; name: "info-20"; size: 20; color: theme.textStrong }
             Text {
                 x: 40.6; y: 10.6; width: 495.3
@@ -124,11 +124,11 @@ Item {
         Row {
             x: 24.7; y: 156.7
             Text { y: 2.6; height: 16; text: "Name"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
-            Text { leftPadding: 2; text: "*"; font.family: theme.font; font.pixelSize: 14; color: "#D13438" }
+            Text { leftPadding: 2; text: "*"; font.family: theme.font; font.pixelSize: 14; color: theme.hc("#D13438", "#FFFFFF") }
         }
         Rectangle {
             x: 24.7; y: 180; width: 536.7; height: 40; radius: 4
-            color: theme.pick("#F5F5F5", "#292929")
+            color: theme.pick("#F5F5F5", "#292929", "#000000")
             TextInput {
                 id: nameField
                 x: 18; width: parent.width - 36; anchors.verticalCenter: parent.verticalCenter
@@ -143,14 +143,14 @@ Item {
             Rectangle {
                 visible: nameField.activeFocus || root.error.length > 0
                 anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1
-                color: root.error.length > 0 ? "#C50F1F" : theme.brand
+                color: root.error.length > 0 ? theme.hc("#C50F1F", "#000000") : theme.brand
             }
         }
         Text {
             visible: root.error.length > 0
             x: 24.7; y: 224; width: 536.7; wrapMode: Text.Wrap
             text: root.error
-            font.family: theme.font; font.pixelSize: 12; color: "#C50F1F"
+            font.family: theme.font; font.pixelSize: 12; color: theme.hc("#C50F1F", "#FFFFFF")
             Accessible.role: Accessible.AlertMessage
         }
         Text { x: 24.7; y: 273.3; height: 16; text: "Preview"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
@@ -161,15 +161,15 @@ Item {
             Accessible.name: "Emoji preview"
             Rectangle {
                 x: 32; y: 42; width: 28; height: 28; radius: 14
-                color: theme.pick("#E6E6E6", "#3D3D3D")
+                color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
                 Image { anchors.fill: parent; source: "https://teams.public.onecdn.static.microsoft/evergreen-assets/personal-expressions/v2/assets/emoticons/1f4ce_paperclip/default/50_f.png"; fillMode: Image.PreserveAspectFit; asynchronous: true }
-                Rectangle { x: 18; y: 18; width: 10; height: 10; radius: 5; color: "#6BB700"; border.color: theme.surface; border.width: 1.5 }
+                Rectangle { x: 18; y: 18; width: 10; height: 10; radius: 5; color: theme.hc("#6BB700", "#000000"); border.color: theme.surface; border.width: 1.5 }
             }
             Text { x: 72; y: 22; height: 16; text: "Clippy"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             Text { x: 113.1; y: 22; height: 16; text: "10:23 AM"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             Rectangle {
                 x: 72; y: 40; width: msg1.implicitWidth + 24 + 4 + 20; height: 36; radius: 6
-                color: theme.pick("#F5F5F5", "#292929")
+                color: theme.pick("#F5F5F5", "#292929", "#000000")
                 Text { id: msg1; x: 12; anchors.verticalCenter: parent.verticalCenter; text: "Great choice on the new emoji."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 Image { x: msg1.x + msg1.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; source: root.picture; fillMode: Image.PreserveAspectFit }
             }
@@ -183,15 +183,16 @@ Item {
             Rectangle {
                 anchors.right: parent.right; anchors.rightMargin: 58.6
                 y: 127; width: msg2.implicitWidth + 24 + 4 + 20; height: 36; radius: 6
-                color: theme.pick("#E8EBFA", "#2F2F4A")
+                color: theme.pick("#E8EBFA", "#2F2F4A", "#000000")
                 Text { id: msg2; x: 12; anchors.verticalCenter: parent.verticalCenter; text: "Thanks! I thought you’d like it."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 Image { x: msg2.x + msg2.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; source: root.picture; fillMode: Image.PreserveAspectFit }
             }
         }
         Rectangle {
+            id: hcFill1
             x: 375.3; y: 577.3; width: 96; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dialog.close() }
             Accessible.role: Accessible.Button
@@ -203,7 +204,7 @@ Item {
             function add() { backend.addCustomEmoji(root.name, root.picture) }
             x: 479.3; y: 577.3; width: 96; height: 31.3; radius: 4
             color: !can && !root.adding ? theme.bgDisabled : addHover.hovered ? theme.brandHover : theme.brandFill
-            Text { visible: !root.adding; anchors.centerIn: parent; text: "Add emoji"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: addButton.can ? "white" : theme.disabledStrong }
+            Text { visible: !root.adding; anchors.centerIn: parent; text: "Add emoji"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(addButton, addButton.can ? "white" : theme.disabledStrong) }
             BusyIndicator { visible: root.adding; running: root.adding; anchors.centerIn: parent; width: 16; height: 16 }
             HoverHandler { id: addHover; cursorShape: addButton.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: addButton.can; onTapped: addButton.add() }
@@ -225,9 +226,10 @@ Item {
             spacing: 24
             Text { width: 392; wrapMode: Text.Wrap; text: "Your org has hit the " + limitDialog.limit + " emoji limit."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Rectangle {
+                id: hcFill2
                 anchors.right: parent.right; width: 96; height: 31.3; radius: 4
                 color: okHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "OK"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
+                Text { anchors.centerIn: parent; text: "OK"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, "white") }
                 HoverHandler { id: okHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { limitDialog.close(); dialog.close() } }
                 Accessible.role: Accessible.Button

@@ -69,7 +69,7 @@ Item {
         id: header
         width: parent.width; height: 61
         color: theme.surface
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
         FluentIcon { x: 20; y: 20; size: 20; name: root.file ? root.typeIcon(root.file.file_type) : "" }
         Text {
             x: 60; y: 17.5
@@ -85,9 +85,9 @@ Item {
         Rectangle {
             id: closeButton
             x: parent.width - 39 - 96; y: 14.17; width: 96; height: 32; radius: 4
-            color: closeHover.pressed ? theme.pick("#E0E0E0", "#3D3D3D") : closeHover.hovered ? theme.menuHover : theme.surface
-            border.width: 0.67; border.color: closeHover.hovered ? theme.pick("#C7C7C7", "#757575") : theme.pick("#D1D1D1", "#666666")
-            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            color: closeHover.pressed ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : closeHover.hovered ? theme.menuHover : theme.surface
+            border.width: 0.67; border.color: closeHover.hovered ? theme.pick("#C7C7C7", "#757575", "#1AEBFF") : theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(closeButton, theme.text) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
@@ -97,7 +97,7 @@ Item {
             id: moreButton
             x: parent.width - 2 - 32; y: 14.17; width: 32; height: 32; radius: 4
             color: moreHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; size: 16; name: "more-horizontal-16"; color: moreHover.hovered ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; size: 16; name: "more-horizontal-16"; color: theme.onFill(moreButton, moreHover.hovered ? theme.brand : theme.textStrong) }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: if (root.file) root.menuRequested(root.file, moreButton) }
             ToolTip.visible: moreHover.hovered

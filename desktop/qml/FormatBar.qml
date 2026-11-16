@@ -213,12 +213,12 @@ Item {
                                     x: 15.7; anchors.verticalCenter: parent.verticalCenter
                                     size: row.modelData.wide ? 20 : 16
                                     name: row.modelData.icon
-                                    color: row.modelData.on ? theme.brand : theme.textStrong
+                                    color: theme.onFill(row, row.modelData.on ? theme.brand : theme.textStrong)
                                 }
                                 Text {
                                     x: row.modelData.wide ? 45.7 : 41.7; anchors.verticalCenter: parent.verticalCenter
                                     text: row.modelData.menuLabel || row.modelData.label
-                                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                    font.family: theme.font; font.pixelSize: 14; color: theme.onFill(row, theme.text)
                                 }
                                 HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler {
@@ -298,7 +298,7 @@ Item {
                     readonly property bool on: c <= tableGrid.cols && r <= tableGrid.rows
                     width: 24; height: 24
                     color: on ? theme.brand : theme.surface
-                    border.width: 0.67; border.color: on ? "white" : theme.pick("#424242", "#ADADAD")
+                    border.width: 0.67; border.color: on ? "white" : theme.pick("#424242", "#ADADAD", "#FFFFFF")
                     HoverHandler { cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) { tableGrid.cols = parent.c; tableGrid.rows = parent.r } }
                     TapHandler { onTapped: { tableGrid.close(); overflow.close(); root.command("table", parent.c + "x" + parent.r) } }
                     Accessible.role: Accessible.MenuItem
@@ -328,10 +328,11 @@ Item {
         }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Rectangle {
+            id: hcFill1
             x: 12.7; y: 8.7; width: 100; height: 24.3; radius: 4
             color: noneHover.hovered ? theme.menuHover : theme.surface
-            border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
-            Text { anchors.centerIn: parent; text: colors.highlight ? "No highlight" : "Automatic"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+            Text { anchors.centerIn: parent; text: colors.highlight ? "No highlight" : "Automatic"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: noneHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { colors.close(); root.command(colors.highlight ? "bg" : "fg", "") } }
             Accessible.role: Accessible.Button
@@ -371,11 +372,12 @@ Item {
         Repeater {
             model: [["Large", "24"], ["Medium", ""], ["Small", "13"]]
             Rectangle {
+                id: hcFill2
                 required property var modelData
                 required property int index
                 x: 6.7; y: 10.7 + index * 32; width: 91.5; height: 28; radius: 4
                 color: szHover.hovered ? theme.menuHover : "transparent"
-                Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData[0]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData[0]; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: szHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { sizes.close(); root.command("size", parent.modelData[1]) } }
                 Accessible.role: Accessible.RadioButton
@@ -403,6 +405,7 @@ Item {
             model: [{ t: "Heading 1", l: 1, s: 18, w: Font.Light, y: 10.7, h: 33 }, { t: "Heading 2", l: 2, s: 14, w: Font.Bold, y: 47.7, h: 28 },
                     { t: "Heading 3", l: 3, s: 12, w: Font.Bold, y: 79.7, h: 28 }, { t: "Paragraph", l: 0, s: 14, w: Font.Normal, y: 111.7, h: 28 }]
             Rectangle {
+                id: hcFill3
                 required property var modelData
                 x: 6.7; y: modelData.y; width: 117; height: modelData.h; radius: 4
                 color: stHover.hovered ? theme.menuHover : "transparent"
@@ -410,7 +413,7 @@ Item {
                     x: 12; anchors.verticalCenter: parent.verticalCenter
                     text: parent.modelData.t
                     font.family: theme.font; font.pixelSize: parent.modelData.s; font.weight: parent.modelData.w
-                    color: theme.pick("#424242", "#D6D6D6")
+                    color: theme.onFill(hcFill3, theme.pick("#424242", "#D6D6D6", "#FFFFFF"))
                 }
                 HoverHandler { id: stHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { styles.close(); overflow.close(); root.command("heading", String(parent.modelData.l)) } }
@@ -442,7 +445,7 @@ Item {
         Text { x: 16.7; y: 44.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "Text to display"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
             x: 16.7; y: 68.7; width: 270; height: 32; radius: 4
-            color: theme.pick("#F5F5F5", "#1F1F1F")
+            color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
             TextInput {
                 id: shown
                 x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
@@ -454,7 +457,7 @@ Item {
         Text { x: 16.7; y: 120.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "Address"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
             x: 16.7; y: 144.7; width: 270; height: 32; radius: 4
-            color: theme.pick("#F5F5F5", "#1F1F1F")
+            color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
             TextInput {
                 id: address
                 x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
@@ -478,19 +481,21 @@ Item {
         Row {
             x: 86.7; y: 208.7; spacing: 8
             Rectangle {
+                id: hcFill4
                 width: 96; height: 31.3; radius: 4
                 color: lcHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                 HoverHandler { id: lcHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: link.close() }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Cancel"
             }
             Rectangle {
+                id: hcFill5
                 readonly property bool can: link.href !== ""
                 width: 96; height: 31.3; radius: 4
-                color: !can ? theme.pick("#F0F0F0", "#141414") : liHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Insert"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C") }
+                color: !can ? theme.pick("#F0F0F0", "#141414", "#000000") : liHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: "Insert"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
                 HoverHandler { id: liHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: parent.can; onTapped: link.insert() }
                 Accessible.role: Accessible.Button

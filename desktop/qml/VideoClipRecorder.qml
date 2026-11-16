@@ -385,7 +385,7 @@ Popup {
         signal clicked()
         y: 12.3; width: 32; height: 31.3; radius: 4
         color: hbHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: hb.icon; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: hb.icon; size: 20; color: theme.onFill(hb, theme.textStrong) }
         HoverHandler { id: hbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }
         ToolTip.visible: hbHover.hovered; ToolTip.delay: 500; ToolTip.text: hb.label
@@ -420,7 +420,7 @@ Popup {
         id: canvas
         visible: rec.stage !== "review"
         x: 19.6; y: 56; width: 760.9; height: 428
-        color: rec.screenMode && rec.stage !== "setup" || (!rec.screenMode && !rec.audioMode) ? "black" : "#E6E6E6"
+        color: rec.screenMode && rec.stage !== "setup" || (!rec.screenMode && !rec.audioMode) ? "black" : theme.hc("#E6E6E6", "#000000")
         clip: true
         VideoOutput {
             id: camPreview
@@ -439,8 +439,8 @@ Popup {
         Rectangle {
             visible: rec.audioMode
             x: 400 - 19.6 - 54; y: 264 - 56 - 54; width: 108; height: 108; radius: 54
-            color: "#FCFCFC"
-            FluentIcon { anchors.centerIn: parent; name: "mic-20"; size: 48; color: "#252525" }
+            color: theme.hc("#FCFCFC", "#000000")
+            FluentIcon { anchors.centerIn: parent; name: "mic-20"; size: 48; color: theme.hc("#252525", "#FFFFFF") }
         }
         // Screen recording, before it starts.
         Column {
@@ -451,7 +451,7 @@ Popup {
             Text {
                 width: 684.8; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 text: "You’ll pick a screen, window, or tab. Recording will start automatically. For optimal quality, ensure this tab is in view while recording."
-                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: "#242424"
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(canvas, theme.hc("#242424", "#FFFFFF"))
             }
         }
         ClipFrames {
@@ -487,15 +487,16 @@ Popup {
         anchors.horizontalCenter: canvas.horizontalCenter
         y: 411 - 4.67
         width: startRow.implicitWidth + 32 + 9.33; height: 50 + 9.33; radius: height / 2
-        color: "white"
+        color: theme.hc("white", "#000000")
         Rectangle {
+            id: hcFill1
             anchors.fill: parent; anchors.margins: 4.67; radius: height / 2
             color: startHover.hovered ? theme.brandHover : theme.brand
             Row {
                 id: startRow
                 anchors.centerIn: parent; spacing: 8
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "record-20"; size: 20; color: "white" }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: rec.screenMode ? "Start screen recording" : "Start recording"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "record-20"; size: 20; color: theme.onFill(hcFill1, "white") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: rec.screenMode ? "Start screen recording" : "Start recording"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
             }
         }
         HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
@@ -512,7 +513,7 @@ Popup {
         signal clicked()
         width: 40; height: 40; radius: 20
         color: primary ? (pbHover.hovered ? theme.brandHover : theme.brand) : pbHover.hovered ? Qt.rgba(1, 1, 1, 0.5) : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: pb.icon; size: 20; color: pb.primary ? "white" : theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: pb.icon; size: 20; color: theme.onFill(pb, pb.primary ? "white" : theme.textStrong) }
         HoverHandler { id: pbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pb.clicked() }
         ToolTip.visible: pbHover.hovered; ToolTip.delay: 300; ToolTip.text: pb.label
@@ -520,6 +521,7 @@ Popup {
         Accessible.name: pb.label
     }
     Rectangle {
+        id: hcFill2
         visible: rec.stage === "recording" || rec.stage === "paused"
         x: 294.3; y: 406; width: 211.3; height: 60; radius: 30
         color: Qt.rgba(214 / 255, 214 / 255, 214 / 255, 0.65)
@@ -543,10 +545,10 @@ Popup {
         Text {
             x: 397 - 294.3; y: 19.3; height: 21.3; verticalAlignment: Text.AlignVCenter
             text: rec.clock(rec.limitMs - rec.total - rec.recordedMs)
-            font.family: theme.font; font.pixelSize: 16; color: theme.text
+            font.family: theme.font; font.pixelSize: 16; color: theme.onFill(hcFill2, theme.text)
             Accessible.role: Accessible.StaticText
         }
-        Rectangle { x: 442.3 - 294.3; y: 15; width: 0.67; height: 30; color: theme.pick("#8A8886", "#ADADAD") }
+        Rectangle { x: 442.3 - 294.3; y: 15; width: 0.67; height: 30; color: theme.pick("#8A8886", "#ADADAD", "#000000") }
         PillButton {
             x: 451 - 294.3; y: 10
             icon: "arrow-counterclockwise-20"; label: "Record again"
@@ -568,9 +570,9 @@ Popup {
         width: toolWidth; height: 51.3
         radius: 4
         topRightRadius: leftHalf ? 0 : 4; bottomRightRadius: leftHalf ? 0 : 4
-        color: tl.off ? theme.pick("#F5F5F5", "#292929") : tlHover.hovered && tl.enabledTool ? theme.menuHover : "transparent"
-        FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 6; name: tl.icon; size: 20; color: tl.enabledTool ? theme.text : theme.disabled }
-        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 25.7; height: 20; verticalAlignment: Text.AlignVCenter; text: tl.label; font.family: theme.font; font.pixelSize: 10; color: tl.enabledTool ? theme.text : theme.disabled }
+        color: tl.off ? theme.pick("#F5F5F5", "#292929", "#000000") : tlHover.hovered && tl.enabledTool ? theme.menuHover : "transparent"
+        FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 6; name: tl.icon; size: 20; color: theme.onFill(tl, tl.enabledTool ? theme.text : theme.disabled) }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 25.7; height: 20; verticalAlignment: Text.AlignVCenter; text: tl.label; font.family: theme.font; font.pixelSize: 10; color: theme.onFill(tl, tl.enabledTool ? theme.text : theme.disabled) }
         HoverHandler { id: tlHover; cursorShape: tl.enabledTool ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { onTapped: if (tl.enabledTool) tl.clicked() }
         Accessible.role: Accessible.Button
@@ -584,7 +586,7 @@ Popup {
         width: 24; height: 51.3
         topRightRadius: 4; bottomRightRadius: 4
         color: cvHover.hovered && cv.enabledTool ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "chevron-down-12"; size: 12; color: cv.enabledTool ? theme.textStrong : theme.disabled }
+        FluentIcon { anchors.centerIn: parent; name: "chevron-down-12"; size: 12; color: theme.onFill(cv, cv.enabledTool ? theme.textStrong : theme.disabled) }
         HoverHandler { id: cvHover; cursorShape: cv.enabledTool ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { onTapped: if (cv.enabledTool) cv.clicked() }
         Accessible.role: Accessible.ButtonMenu
@@ -668,7 +670,7 @@ Popup {
         width: 32; height: 31.3; radius: 4
         color: primary ? (sqHover.hovered ? theme.brandHover : theme.brand) : sqHover.hovered ? theme.menuHover : theme.surface
         border.color: primary ? "transparent" : theme.stroke; border.width: primary ? 0 : 0.67
-        FluentIcon { anchors.centerIn: parent; name: sq.icon; size: 20; color: sq.primary ? "white" : theme.text }
+        FluentIcon { anchors.centerIn: parent; name: sq.icon; size: 20; color: theme.onFill(sq, sq.primary ? "white" : theme.text) }
         HoverHandler { id: sqHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: sq.clicked() }
         ToolTip.visible: sqHover.hovered; ToolTip.delay: 500; ToolTip.text: sq.label
@@ -700,7 +702,7 @@ Popup {
         visible: false
         x: 49.3; y: 100; width: 701.3; height: 345.3; radius: 6
         color: Qt.rgba(1, 1, 1, 0.8)
-        border.color: "#D1D1D1"; border.width: 0.67
+        border.color: theme.hc("#D1D1D1", "#FFFFFF"); border.width: 0.67
         z: 5
         property bool playing: false
         property int word: 0
@@ -713,7 +715,7 @@ Popup {
         Item {
             width: parent.width; height: 32
             FluentIcon {
-                anchors.horizontalCenter: parent.horizontalCenter; y: 7.7; name: "re-order-dots-horizontal-20"; size: 18; color: theme.text
+                anchors.horizontalCenter: parent.horizontalCenter; y: 7.7; name: "re-order-dots-horizontal-20"; size: 18; color: theme.onFill(teleprompter, theme.text)
                 DragHandler { target: teleprompter; xAxis.minimum: -40; xAxis.maximum: rec.width - 80; yAxis.minimum: 0; yAxis.maximum: rec.height - 80; cursorShape: Qt.ClosedHandCursor }
                 HoverHandler { cursorShape: Qt.OpenHandCursor }
                 Accessible.role: Accessible.Button
@@ -759,7 +761,7 @@ Popup {
                 Component.onCompleted: load(rec.script)
                 onTextChanged: if (!loading) rec.script = getText(0, length).replace(/\u2029/g, "\n")
                 placeholderText: "Type or paste your script here"
-                placeholderTextColor: "#707070"
+                placeholderTextColor: theme.hc("#707070", "#FFFFFF")
                 wrapMode: TextEdit.Wrap
                 padding: promptSettings.fontSize
                 leftPadding: promptSettings.fontSize; rightPadding: promptSettings.fontSize
@@ -767,7 +769,7 @@ Popup {
                 leftInset: 0; rightInset: 0; topInset: 0; bottomInset: 0
                 textMargin: 0
                 font.family: theme.font; font.pixelSize: promptSettings.fontSize
-                color: "#242424"
+                color: theme.onFill(teleprompter, theme.hc("#242424", "#FFFFFF"))
                 background: null
                 selectByMouse: true
             }
@@ -787,7 +789,7 @@ Popup {
                 wrapMode: Text.Wrap
                 textFormat: Text.RichText
                 font.family: theme.font; font.pixelSize: promptSettings.fontSize
-                color: "#242424"
+                color: theme.onFill(teleprompter, theme.hc("#242424", "#FFFFFF"))
                 text: {
                     const esc = w => w.replace(/&/g, "&amp;").replace(/</g, "&lt;")
                     let k = 0
@@ -847,9 +849,9 @@ Popup {
             id: speedPop
             visible: false
             y: 32; width: 32; height: 195.9; radius: 16
-            color: "white"
+            color: theme.hc("white", "#000000")
             FluentSurface { z: -1; anchors.fill: parent; depth: 8; radius: 16 }
-            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 8; name: "add-16"; size: 16; color: theme.text }
+            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 8; name: "add-16"; size: 16; color: theme.onFill(speedPop, theme.text) }
             Slider {
                 anchors.horizontalCenter: parent.horizontalCenter; y: 31.5; height: 129
                 orientation: Qt.Vertical
@@ -858,7 +860,7 @@ Popup {
                 onMoved: promptSettings.speed = Math.round(value)
                 Accessible.name: "Scroll speed"
             }
-            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: parent.height - 24; name: "subtract-16"; size: 16; color: theme.text }
+            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: parent.height - 24; name: "subtract-16"; size: 16; color: theme.onFill(speedPop, theme.text) }
         }
     }
 
@@ -866,7 +868,7 @@ Popup {
     Rectangle {
         visible: rec.stage !== "review"
         y: 548; width: parent.width; height: 36
-        color: theme.pick("#FAFAFA", "#1F1F1F")
+        color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
         bottomLeftRadius: 8; bottomRightRadius: 8
         Row {
             x: 16; anchors.verticalCenter: parent.verticalCenter; spacing: 8
@@ -957,7 +959,7 @@ Popup {
                         }
                     }
                 }
-                Rectangle { anchors.fill: parent; radius: 10; color: "transparent"; border.width: 2.67; border.color: part.chosen || reviewUi.trimSeg ? theme.pick("#242424", "#FFFFFF") : theme.pick("#8A8886", "#8A8886") }
+                Rectangle { anchors.fill: parent; radius: 10; color: "transparent"; border.width: 2.67; border.color: part.chosen || reviewUi.trimSeg ? theme.pick("#242424", "#FFFFFF", "#FFFFFF") : theme.pick("#8A8886", "#8A8886", "#FFFFFF") }
                 TapHandler {
                     onTapped: ev => {
                         if (reviewUi.trimSeg) { player.position = reviewUi.trimSeg.length * ev.position.x / part.width; return }
@@ -1197,10 +1199,11 @@ Popup {
                                         Text { width: parent.width; text: song.modelData[1]; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                                     }
                                     Rectangle {
+                                        id: hcFill3
                                         x: 171.6; y: 11.5; width: 32; height: 32; radius: 4
                                         color: song.chosen ? "transparent" : addHover.hovered ? theme.menuHover : theme.surface
                                         border.color: song.chosen ? "transparent" : theme.stroke; border.width: 0.67
-                                        FluentIcon { anchors.centerIn: parent; name: song.chosen ? "data-bar-vertical-20" : "add-20"; size: 20; color: theme.text }
+                                        FluentIcon { anchors.centerIn: parent; name: song.chosen ? "data-bar-vertical-20" : "add-20"; size: 20; color: theme.onFill(hcFill3, theme.text) }
                                         HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { enabled: !song.chosen; onTapped: rec.pickSong(catCol.modelData, song.modelData) }
                                         Accessible.role: Accessible.Button
@@ -1239,32 +1242,35 @@ Popup {
     }
     // ---- Close your recording? ----
     Rectangle {
+        id: hcFill4
         visible: rec.confirmClose
         anchors.fill: parent; radius: 8
         color: Qt.rgba(1, 1, 1, 0.95)
         MouseArea { anchors.fill: parent }
         Column {
             x: 285.7; y: 243; spacing: 0
-            Text { height: 28; text: "Close your recording?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { height: 28; text: "Close your recording?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             Item { width: 1; height: 16 }
-            Text { height: 20; text: "This will delete your recording clips."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { height: 20; text: "This will delete your recording clips."; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
             Item { width: 1; height: 16 }
             Row {
                 spacing: 8
                 Rectangle {
+                    id: hcFill5
                     width: closeText.implicitWidth + 24; height: 31.3; radius: 4
                     color: closeRecHover.hovered ? theme.brandHover : theme.brand
-                    Text { id: closeText; anchors.centerIn: parent; text: "Close recording"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                    Text { id: closeText; anchors.centerIn: parent; text: "Close recording"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, "white") }
                     HoverHandler { id: closeRecHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { backend.removeRecorderFile(String(rec.clipPath)); rec.reset(); rec.close() } }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Close recording"
                 }
                 Rectangle {
+                    id: hcFill6
                     width: 96; height: 31.3; radius: 4
                     color: cancelRecHover.hovered ? theme.menuHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.text) }
                     HoverHandler { id: cancelRecHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: rec.confirmClose = false }
                     Accessible.role: Accessible.Button

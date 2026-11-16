@@ -189,7 +189,7 @@ Rectangle {
     FontMetrics { id: chipMetrics; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold }
     FontMetrics { id: plainChip; font.family: theme.font; font.pixelSize: 12 }
 
-    Rectangle { z: 3; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D") }
+    Rectangle { z: 3; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
 
     // A header button.
     component PaneAction: Rectangle {
@@ -200,7 +200,7 @@ Rectangle {
         color: paHover.hovered ? theme.hover : "transparent"
         HoverHandler { id: paHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pa.clicked() }
-        FluentIcon { id: paIcon; anchors.centerIn: parent; size: 20; color: theme.textStrong }
+        FluentIcon { id: paIcon; anchors.centerIn: parent; size: 20; color: theme.onFill(pa, theme.textStrong) }
         Accessible.role: Accessible.Button
     }
 
@@ -302,7 +302,7 @@ Rectangle {
                                           : chevron ? 54 : 36
         width: labelWidth + (on && !mode ? (label ? 18 : 16) : 0)
         height: 24; radius: 12
-        color: on || mode ? (chipHover.hovered || dismissHover.hovered ? theme.brandHover : theme.brand) : chipHover.hovered ? theme.pick("#DCE0FA", "#3D3E66") : theme.brandTint
+        color: on || mode ? (chipHover.hovered || dismissHover.hovered ? theme.brandHover : theme.brand) : chipHover.hovered ? theme.pick("#DCE0FA", "#3D3E66", "#1AEBFF") : theme.brandTint
         readonly property color ink: on || mode ? "#FFFFFF" : theme.text
         Item {
             id: face
@@ -314,31 +314,31 @@ Rectangle {
                 visible: (!chip.on || chip.mode) && !!chip.icon && (chip.mode || !chip.texted || !chip.chevron)
                 x: chip.mode ? 10 : chip.texted ? 6 : chip.chevron ? 12 : 10
                 anchors.verticalCenter: parent.verticalCenter
-                name: chip.icon; size: 16; color: chip.ink
+                name: chip.icon; size: 16; color: theme.onFill(chip, chip.ink)
             }
             Text {
                 visible: (!chip.on || chip.mode) && chip.texted && (chip.wide || !chip.mode)
                 x: chip.mode ? 30 : chip.chevron ? 12 : 22
                 anchors.verticalCenter: parent.verticalCenter
                 text: chip.text; font.family: theme.font; font.pixelSize: 12
-                font.weight: chip.mode ? Font.DemiBold : Font.Normal; color: chip.ink
+                font.weight: chip.mode ? Font.DemiBold : Font.Normal; color: theme.onFill(chip, chip.ink)
             }
             FluentIcon {
                 visible: (!chip.on || chip.mode) && chip.chevron
                 x: chip.mode ? (chip.wide ? 30 + chip.textWidth + 2 : 32) : chip.texted ? 12 + chip.textWidth + 2 : 30
                 anchors.verticalCenter: parent.verticalCenter
-                name: "chevron-down-20"; size: 12; color: chip.ink
+                name: "chevron-down-20"; size: 12; color: theme.onFill(chip, chip.ink)
             }
             // On: its label, type icon or icon.
             Text {
                 visible: chip.on && !chip.mode && !!chip.label
                 x: 12; anchors.verticalCenter: parent.verticalCenter
-                text: chip.label; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: chip.ink
+                text: chip.label; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(chip, chip.ink)
             }
             FluentIcon {
                 visible: chip.on && !chip.mode && !chip.label
                 x: chip.typeIcon ? 6 : 10; anchors.verticalCenter: parent.verticalCenter
-                name: chip.typeIcon || chip.icon; size: chip.typeIcon ? 20 : 16; color: chip.ink
+                name: chip.typeIcon || chip.icon; size: chip.typeIcon ? 20 : 16; color: theme.onFill(chip, chip.ink)
             }
         }
         Item {
@@ -346,7 +346,7 @@ Rectangle {
             x: chip.labelWidth; width: chip.width - chip.labelWidth; height: parent.height
             HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: chip.cleared() }
-            FluentIcon { x: 0; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 12; color: "#FFFFFF" }
+            FluentIcon { x: 0; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 12; color: theme.onFill(chip, "#FFFFFF") }
             Accessible.role: Accessible.Button
             Accessible.name: "Clear"
         }
@@ -445,8 +445,8 @@ Rectangle {
         items: pane.typeKeys.map(k => ({ label: pane.typeNames[k], icon: pane.typeIcons[k] }))
         onPicked: i => { close(); pane.fileType = pane.typeKeys[i]; pane.setActive("type", true); pane.run() }
     }
-    Rectangle { x: 0.67; y: pane.listY - 0.7; width: parent.width - 0.67; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
-    Rectangle { visible: pane.windowed; x: 0.67; y: pane.headerHeight; width: parent.width - 0.67; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+    Rectangle { x: 0.67; y: pane.listY - 0.7; width: parent.width - 0.67; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
+    Rectangle { visible: pane.windowed; x: 0.67; y: pane.headerHeight; width: parent.width - 0.67; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
 
     // Date ▾ (254 x 336.7, under the pill, its right edge on the pill's):
     // Today, Yesterday, This week, This month (32 tall, 16 in), a line,
@@ -470,10 +470,11 @@ Rectangle {
             Repeater {
                 model: [{ k: "today", l: "Today" }, { k: "yesterday", l: "Yesterday" }, { k: "week", l: "This week" }, { k: "month", l: "This month" }]
                 Rectangle {
+                    id: hcFill1
                     required property var modelData
                     width: parent.width; height: 32
-                    color: dh.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : pane.dateKey === modelData.k ? theme.pick("#EBEBEB", "#383838") : "transparent"
-                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.l; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    color: dh.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : pane.dateKey === modelData.k ? theme.pick("#EBEBEB", "#383838", "#000000") : "transparent"
+                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.l; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.text) }
                     HoverHandler { id: dh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { pane.dateKey = parent.modelData.k; pane.setActive("date", true); datePop.close(); pane.run() } }
                     Accessible.role: Accessible.ListItem
@@ -481,7 +482,7 @@ Rectangle {
                 }
             }
         }
-        Rectangle { x: 0.67; y: 144.7; width: parent.width - 1.33; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        Rectangle { x: 0.67; y: 144.7; width: parent.width - 1.33; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
         Text { x: 15.7; y: 161.7; text: "From"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
         DatePickerField {
             x: 15.7; y: 181.7; width: 222.7
@@ -498,20 +499,22 @@ Rectangle {
             onPicked: d => datePop.toDate = d
         }
         Rectangle {
+            id: hcFill2
             x: 79.6; y: 289; width: 54.7; height: 32; radius: 4
             readonly property bool usable: datePop.fromSet || !!pane.dateKey
             color: usable && clh.hovered ? theme.hover : "transparent"
-            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: parent.usable ? theme.text : theme.pick("#BDBDBD", "#5C5C5C") }
+            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, parent.usable ? theme.text : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: clh; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.usable; onTapped: { datePop.fromSet = false; datePop.toDate = new Date(); if (pane.dateKey) { datePop.close(); pane.clear("date") } } }
             Accessible.role: Accessible.Button
             Accessible.name: "Clear the Selected Date Range"
         }
         Rectangle {
+            id: hcFill3
             x: 142.3; y: 289; width: 96; height: 32; radius: 4
             readonly property bool usable: datePop.fromSet
-            color: usable ? (aph.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E")
-            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C") }
+            color: usable ? (aph.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E", "#000000")
+            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: aph; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler {
                 enabled: parent.usable
@@ -546,7 +549,7 @@ Rectangle {
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Rectangle {
             x: 12.7; y: 16.7; width: 230; height: 33.3; radius: 4
-            color: theme.pick("#F5F5F5", "#141414")
+            color: theme.pick("#F5F5F5", "#141414", "#000000")
             Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: who.activeFocus ? 2 : 0.67; color: who.activeFocus ? theme.brand : theme.textSecondary }
             TextInput {
                 id: who
@@ -573,19 +576,19 @@ Rectangle {
                     required property var modelData
                     readonly property bool me: (modelData.mri || "").toLowerCase() === (backend.userMri || "").toLowerCase()
                     width: 222; height: 50; radius: 4
-                    color: ph.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                    color: ph.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                     Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: prow.modelData.name || ""; photoId: prow.modelData.mri || "" }
                     Text {
                         x: 60; y: 7; width: parent.width - 68
                         textFormat: Text.StyledText; elide: Text.ElideRight
                         text: pane.boldPrefix(prow.modelData.name || "", who.text) + (prow.me ? " (You)" : "")
-                        font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prow, theme.textStrong)
                     }
                     Text {
                         x: 60; y: 27.5; width: parent.width - 68
                         textFormat: Text.StyledText; elide: Text.ElideRight
                         text: pane.boldPrefix(prow.modelData.mail || "", who.text)
-                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(prow, theme.textSecondary)
                     }
                     HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: fromPop.pick(prow.modelData) }
@@ -648,9 +651,10 @@ Rectangle {
                 Accessible.role: Accessible.Heading
             }
             Rectangle {
+                id: hcFill4
                 visible: !hitRow.heading
                 x: 4; width: list.rowWidth; height: parent.height; radius: 3
-                color: hitRow.picked ? theme.pick("#EBEBEB", "#3D3D3D") : rowHover.hovered || (list.activeFocus && list.currentIndex === hitRow.index) ? theme.pick("#FAFAFA", "#2E2E2E") : "transparent"
+                color: hitRow.picked ? theme.pick("#EBEBEB", "#3D3D3D", "#000000") : rowHover.hovered || (list.activeFocus && list.currentIndex === hitRow.index) ? theme.pick("#FAFAFA", "#2E2E2E", "#1AEBFF") : "transparent"
                 HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { list.currentIndex = hitRow.index; hitRow.open() } }
 
@@ -666,13 +670,13 @@ Rectangle {
                     }
                     FluentIcon {
                         visible: hitRow.posted
-                        x: 41; y: 1; size: 16; name: "textbox-20"; color: theme.textStrong
+                        x: 41; y: 1; size: 16; name: "textbox-20"; color: theme.onFill(hcFill4, theme.textStrong)
                     }
                     Text {
                         x: hitRow.posted ? 59.1 : 40; width: parent.width - x - timeText.width - 8; height: 16
                         text: (hitRow.me ? "You" : hitRow.modelData.sender_name || "") + (hitRow.posted ? " posted" : "")
                         elide: Text.ElideRight
-                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary)
                     }
                     Text {
                         visible: hitRow.hasSubject
@@ -681,13 +685,13 @@ Rectangle {
                         text: hitRow.hasSubject ? theme.markTerms(pane.escaped(hitRow.modelData.subject), pane.terms) : ""
                         elide: Text.ElideRight; maximumLineCount: 1
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
-                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text)
                     }
                     Text {
                         id: timeText
                         anchors.right: parent.right; height: 16
                         text: pane.when(hitRow.modelData.time)
-                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary)
                     }
                     Text {
                         id: textBlock
@@ -695,9 +699,9 @@ Rectangle {
                         textFormat: Text.RichText
                         text: pane.clamped(hitRow.modelData.text, width)
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
-                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text)
                     }
-                    Rectangle { y: parent.height - 0.67; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#525252") }
+                    Rectangle { y: parent.height - 0.67; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#525252", "#000000") }
                 }
 
                 // A file.
@@ -712,19 +716,19 @@ Rectangle {
                         x: 55; y: 8; width: parent.width - 55 - 48; height: 20
                         text: hitRow.modelData.file_name || ""
                         elide: Text.ElideRight
-                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text)
                     }
                     Text {
                         x: 55; y: 30; width: parent.width - 55 - 48; height: 16
                         textFormat: Text.StyledText; elide: Text.ElideRight
                         text: pane.bolded((hitRow.modelData.sender_name || "") + ", " + pane.when(hitRow.modelData.time))
-                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary)
                     }
                     Rectangle {
                         id: moreBtn
                         x: parent.width - 8 - 32; y: 11; width: 32; height: 32; radius: 4
                         color: mh.hovered ? theme.hover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(moreBtn, theme.textStrong) }
                         HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: fileMenu.open() }
                         Accessible.role: Accessible.Button
@@ -803,7 +807,7 @@ Rectangle {
         id: feedbackBar
         x: 0.67; width: parent.width - 0.67; height: 36
         anchors.bottom: parent.bottom
-        color: theme.pick("#FAFAFA", "#1A1A1A")
+        color: theme.pick("#FAFAFA", "#1A1A1A", "#000000")
         function context() {
             const bits = [pane.files ? "Files" : "Messages"]
             if (pane.dateKey) bits.push(pane.dateLabel())

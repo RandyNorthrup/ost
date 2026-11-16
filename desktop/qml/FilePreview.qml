@@ -23,7 +23,7 @@ Item {
     signal download(var item)
     signal details(var item)
     readonly property string tag: "pv" + Math.floor(Math.random() * 1e9) + ":"
-    readonly property color ink: "#F3F2F1"
+    readonly property color ink: theme.hc("#F3F2F1", "#FFFFFF")
     readonly property var files: siblings.filter(i => !i.is_folder)
     readonly property int at: item ? files.findIndex(i => i.id === item.id) : -1
     readonly property bool fav: !!item && favoriteIds.indexOf(item.id) >= 0
@@ -47,8 +47,8 @@ Item {
         }
     }
 
-    Rectangle { anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.4) }
-    Rectangle { anchors.fill: parent; color: Qt.rgba(31 / 255, 31 / 255, 31 / 255, 0.88) }
+    Rectangle { id: hcFill2; anchors.fill: parent; color: Qt.rgba(0, 0, 0, 0.4) }
+    Rectangle { id: hcFill1; anchors.fill: parent; color: Qt.rgba(31 / 255, 31 / 255, 31 / 255, 0.88) }
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: ev => ev.accepted = true }
     focus: visible
     Keys.onEscapePressed: close()
@@ -75,8 +75,8 @@ Item {
         property bool next: false
         width: 40; height: 40; radius: 20
         color: arh.hovered ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(31 / 255, 31 / 255, 31 / 255, 0.88)
-        border.width: 0.67; border.color: "#808080"
-        FluentIcon { anchors.centerIn: parent; size: 16; name: ar.next ? "chevron-right-16" : "chevron-left-16"; color: "#7F85F5" }
+        border.width: 0.67; border.color: theme.hc("#808080", "#FFFFFF")
+        FluentIcon { anchors.centerIn: parent; size: 16; name: ar.next ? "chevron-right-16" : "chevron-left-16"; color: theme.onFill(ar, theme.hc("#7F85F5", "#FFFFFF")) }
         HoverHandler { id: arh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.step(ar.next ? 1 : -1) }
         ToolTip.visible: arh.hovered
@@ -95,7 +95,7 @@ Item {
         signal clicked()
         width: 32; height: 40; radius: 6
         color: bih.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
-        FluentIcon { anchors.centerIn: parent; size: 20; name: bi.icon; color: root.ink }
+        FluentIcon { anchors.centerIn: parent; size: 20; name: bi.icon; color: theme.onFill(bi, root.ink) }
         HoverHandler { id: bih; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: bi.clicked() }
         ToolTip.visible: bih.hovered
@@ -111,10 +111,10 @@ Item {
         height: 32; radius: 6
         width: 12 + 16 + 8 + bbt.implicitWidth + 8 + 12 + 12
         color: bbh.hovered ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(31 / 255, 31 / 255, 31 / 255, 0.88)
-        border.width: 0.67; border.color: "#808080"
-        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 16; name: bb.icon; color: bb.icon.startsWith("ft-") ? "#212121" : "#7F85F5" }
-        Text { id: bbt; x: 36; anchors.verticalCenter: parent.verticalCenter; text: bb.label; font.family: theme.font; font.pixelSize: 14; color: "#7F85F5" }
-        FluentIcon { x: bbt.x + bbt.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "chevron-down-12"; color: "#FFFFFF" }
+        border.width: 0.67; border.color: theme.hc("#808080", "#FFFFFF")
+        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 16; name: bb.icon; color: theme.onFill(bb, bb.icon.startsWith("ft-") ? theme.hc("#212121", "#FFFFFF") : theme.hc("#7F85F5", "#FFFFFF")) }
+        Text { id: bbt; x: 36; anchors.verticalCenter: parent.verticalCenter; text: bb.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(bb, theme.hc("#7F85F5", "#FFFFFF")) }
+        FluentIcon { x: bbt.x + bbt.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "chevron-down-12"; color: theme.onFill(bb, "#FFFFFF") }
         HoverHandler { id: bbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: bb.clicked() }
         Accessible.role: Accessible.Button
@@ -131,7 +131,7 @@ Item {
                 visible: !!root.actions && root.actions.canWrite
                 onClicked: { const it = root.item; root.close(); root.actions.item = it; root.actions.act("Delete") }
             }
-            Rectangle { width: 1; height: 20; y: 10; color: "#808080" }
+            Rectangle { width: 1; height: 20; y: 10; color: theme.hc("#808080", "#000000") }
             Item { width: 18; height: 40 }
             BarIcon { icon: "info-20"; tip: "Info, View file details"; onClicked: { const it = root.item; root.close(); root.details(it) } }
             BarIcon {
@@ -146,7 +146,7 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.item ? root.item.name : ""
-                font.family: theme.font; font.pixelSize: 16; color: "#FFFFFF"
+                font.family: theme.font; font.pixelSize: 16; color: theme.onFill([hcFill1, hcFill2], "#FFFFFF")
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
             }

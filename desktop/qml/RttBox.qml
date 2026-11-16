@@ -50,10 +50,11 @@ Column {
     Timer { id: idle; interval: 3000; onTriggered: root.commit(false) }
 
     Rectangle {
+        id: hcFill1
         visible: root.barShown
         width: root.width; height: 36; radius: 4
-        color: root.tooLong ? theme.pick("#FDF3F4", "#3F1011") : theme.pick("#F5F5F5", "#1F1F1F")
-        border.color: root.tooLong ? theme.pick("#EEACB2", "#6E0811") : theme.pick("#D1D1D1", "#3D3D3D")
+        color: root.tooLong ? theme.pick("#FDF3F4", "#3F1011", "#000000") : theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+        border.color: root.tooLong ? theme.pick("#EEACB2", "#6E0811", "#FFFFFF") : theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF")
         border.width: 0.67
         Text {
             x: 20.67; width: parent.width - x - 12
@@ -61,7 +62,7 @@ Column {
             elide: Text.ElideRight
             text: root.tooLong ? "You cannot type more than 2000 characters" : "Please type a message to continue."
             font.family: theme.font; font.pixelSize: 14
-            color: theme.text
+            color: theme.onFill(hcFill1, theme.text)
         }
         Accessible.role: Accessible.AlertMessage
         Accessible.name: root.tooLong ? "You cannot type more than 2000 characters" : "Please type a message to continue."
@@ -70,11 +71,11 @@ Column {
         width: root.width; height: 32; radius: 4
         color: theme.surface
         border.width: 0.67
-        border.color: theme.pick("#B3B3B3", "#666666")
+        border.color: theme.pick("#B3B3B3", "#666666", "#FFFFFF")
         clip: true
         Rectangle {
             anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33; height: 0.67
-            color: input.activeFocus ? "transparent" : theme.pick("#4D4D4D", "#ADADAD")
+            color: input.activeFocus ? "transparent" : theme.pick("#4D4D4D", "#ADADAD", "#000000")
         }
         Rectangle {
             visible: input.activeFocus
@@ -118,7 +119,7 @@ Column {
                 visible: !input.text
                 text: "Type a message in real-time"
                 font: input.font
-                color: theme.pick("#707070", "#ADADAD")
+                color: theme.pick("#707070", "#ADADAD", "#FFFFFF")
             }
             Accessible.role: Accessible.EditableText
             Accessible.name: "Type a message in real-time"

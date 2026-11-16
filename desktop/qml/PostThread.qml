@@ -164,19 +164,21 @@ Item {
             // The pane's Go to channel (close-l2-view-button: 14/20
             // #424242, padding 12) and Open in new window (btn-l2-popout).
             Rectangle {
+                id: hcFill1
                 visible: win.inPane
                 width: goText.implicitWidth + 24; height: 31.3; radius: 4
                 color: goHover.hovered ? theme.hover : "transparent"
-                Text { id: goText; anchors.centerIn: parent; text: "Go to channel"; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                Text { id: goText; anchors.centerIn: parent; text: "Go to channel"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.textStrong) }
                 HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.goToChannel() }
                 Accessible.role: Accessible.Button; Accessible.name: "Go to channel"
             }
             Rectangle {
+                id: hcFill2
                 visible: win.inPane
                 width: 32; height: 31.3; radius: 4
                 color: popHover.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "open-window-20"; size: 20; color: theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "open-window-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                 HoverHandler { id: popHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.popOut() }
                 ToolTip.visible: popHover.hovered; ToolTip.delay: 500; ToolTip.text: "Open in new window"
@@ -185,16 +187,17 @@ Item {
             Item { visible: win.inPane; width: 8; height: 1 }
             Rectangle {
                 width: 1; height: 61 - 18; y: 18 - 14.2
-                color: theme.pick("#F0F0F0", "#3D3D3D")
+                color: theme.pick("#F0F0F0", "#3D3D3D", "#000000")
             }
             Item { width: 7; height: 1 }
             // Find in post: always in the pane; in the window while finding
             // (brand, as the side pane's toggle).
             Rectangle {
+                id: hcFill3
                 visible: win.finding || win.inPane
                 width: 32; height: 32; radius: 4
                 color: findToggleHover.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "search-20"; size: 20; color: win.finding ? theme.brand : theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "search-20"; size: 20; color: theme.onFill(hcFill3, win.finding ? theme.brand : theme.textStrong) }
                 HoverHandler { id: findToggleHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.toggleFind() }
                 ToolTip.visible: findToggleHover.hovered; ToolTip.delay: 500; ToolTip.text: "Find in post"
@@ -204,7 +207,7 @@ Item {
                 id: moreButton
                 width: 32; height: 31.3; radius: 4
                 color: moreHover.hovered || moreMenu.opened ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: moreMenu.opened ? theme.brand : theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(moreButton, moreMenu.opened ? theme.brand : theme.textStrong) }
                 HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.moreMenuForTest() }
                 ToolTip.visible: moreHover.hovered; ToolTip.delay: 500; ToolTip.text: "More channel options"
@@ -381,7 +384,7 @@ Item {
                 Rectangle {
                     visible: win.replies.length > 0
                     width: parent.width; height: 0.67
-                    color: theme.pick("#F0F0F0", "#3D3D3D")
+                    color: theme.pick("#F0F0F0", "#3D3D3D", "#000000")
                 }
                 // The replies
                 Repeater {

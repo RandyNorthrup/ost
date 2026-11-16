@@ -135,10 +135,10 @@ Window {
                     signal clicked()
                     height: 31.3; radius: 4
                     width: (icon ? 12.7 + 20 + 8 : 12) + obText.implicitWidth + 12
-                    color: obTap.pressed ? theme.pick("#E0E0E0", "#2E2E2E") : obHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
-                    border.color: obHover.hovered ? theme.pick("#C7C7C7", "#757575") : theme.stroke; border.width: 0.67
-                    FluentIcon { visible: !!ob.icon; x: 12.7; anchors.verticalCenter: parent.verticalCenter; name: ob.icon; size: 20; color: theme.text }
-                    Text { id: obText; x: ob.icon ? 12.7 + 20 + 8 : 12; anchors.verticalCenter: parent.verticalCenter; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    color: obTap.pressed ? theme.pick("#E0E0E0", "#2E2E2E", "#1AEBFF") : obHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+                    border.color: obHover.hovered ? theme.pick("#C7C7C7", "#757575", "#1AEBFF") : theme.stroke; border.width: 0.67
+                    FluentIcon { visible: !!ob.icon; x: 12.7; anchors.verticalCenter: parent.verticalCenter; name: ob.icon; size: 20; color: theme.onFill(ob, theme.text) }
+                    Text { id: obText; x: ob.icon ? 12.7 + 20 + 8 : 12; anchors.verticalCenter: parent.verticalCenter; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(ob, theme.text) }
                     TapHandler { id: obTap; onTapped: ob.clicked() }
                     HoverHandler { id: obHover; cursorShape: Qt.PointingHandCursor }
                     Accessible.role: Accessible.Button
@@ -160,14 +160,15 @@ Window {
                             required property string modelData
                             readonly property bool picture: /\.(png|jpe?g|gif|bmp|webp)$/i.test(modelData)
                             width: picture ? 96 : 200; height: 64; radius: 4
-                            color: theme.pick("#F5F5F5", "#2E2E2E"); border.color: theme.stroke; border.width: 0.67
+                            color: theme.pick("#F5F5F5", "#2E2E2E", "#000000"); border.color: theme.stroke; border.width: 0.67
                             Image { visible: parent.picture; anchors.fill: parent; anchors.margins: 2; source: parent.picture ? "file://" + parent.modelData : ""; fillMode: Image.PreserveAspectFit; asynchronous: true }
                             FluentIcon { visible: !parent.picture; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "document-20"; size: 20; color: theme.textSecondary }
                             Text { visible: !parent.picture; x: 34; width: parent.width - 60; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.split("/").pop(); elide: Text.ElideMiddle; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                             Rectangle {
+                                id: hcFill1
                                 anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 2
-                                width: 20; height: 20; radius: 10; color: xh.hovered ? theme.hover : theme.pick("#FFFFFFCC", "#000000AA")
-                                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 12; color: theme.text }
+                                width: 20; height: 20; radius: 10; color: xh.hovered ? theme.hover : theme.pick("#FFFFFFCC", "#000000AA", "#000000")
+                                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 12; color: theme.onFill(hcFill1, theme.text) }
                                 HoverHandler { id: xh; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: win.files = win.files.filter(f => f !== parent.parent.modelData) }
                                 Accessible.role: Accessible.Button
@@ -237,19 +238,21 @@ Window {
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         Rectangle {
+            id: hcFill2
             x: parent.width - 228; y: 536; width: 96; height: 31.3; radius: 4
-            color: win.ready ? (submitHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E")
-            Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: win.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C") }
+            color: win.ready ? (submitHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E", "#000000")
+            Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, win.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: submitHover; cursorShape: win.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: win.ready; onTapped: win.submit() }
             Accessible.role: Accessible.Button
             Accessible.name: "Submit"
         }
         Rectangle {
+            id: hcFill3
             x: parent.width - 120; y: 536; width: 96; height: 31.3; radius: 4
-            color: cancelHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+            color: cancelHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.close() }
             Accessible.role: Accessible.Button
@@ -276,10 +279,11 @@ Window {
             font.family: theme.font; font.pixelSize: 14; color: theme.text
         }
         Rectangle {
+            id: hcFill4
             x: parent.width - 96 + 24; y: 536 + 58 - 82; width: 96; height: 31.3; radius: 4
-            color: closeHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
+            color: closeHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.close() }
             Accessible.role: Accessible.Button

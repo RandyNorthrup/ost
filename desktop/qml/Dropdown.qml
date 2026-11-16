@@ -63,7 +63,7 @@ Rectangle {
                             width: parent.width - 16; elide: Text.ElideRight
                             text: opt.modelData[1]
                             font.family: theme.font; font.pixelSize: 14
-                            color: theme.text
+                            color: theme.onFill(opt, theme.text)
                         }
                         HoverHandler { id: oh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { list.close(); dd.picked(opt.modelData[0]) } }

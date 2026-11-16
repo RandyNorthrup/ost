@@ -15,6 +15,7 @@ Window {
         id: theme
         dark: window.appTheme.dark || window.callsDark
         classic: window.appTheme.classic
+        highContrast: window.appTheme.highContrast
         hoverCard: window.appTheme.hoverCard
     }
     property string peer
@@ -971,14 +972,15 @@ Window {
             readonly property string tip: !win.aiAvailable ? "AI isn't available in this meeting"
                 : active ? "AI is on in the meeting" : "AI is turned off and doesn't have access to the meeting"
             Rectangle {
+                id: hcFill1
                 x: 4.67; y: 6; width: 28; height: 20; radius: 10
                 color: aiIndicator.active ? (aiHover.hovered ? theme.brandHover : theme.brandFill) : theme.surface
                 FluentIcon {
                     x: 4; y: 0
                     name: aiIndicator.active ? "sparkle-20-filled" : "sparkle-off-20-regular"; size: 20
-                    color: aiIndicator.active ? theme.textOnBrand
+                    color: theme.onFill(hcFill1, aiIndicator.active ? theme.textOnBrand
                         : !win.aiAvailable ? theme.disabled
-                        : aiHover.hovered || aiPopover.visible ? theme.brand : theme.text
+                        : aiHover.hovered || aiPopover.visible ? theme.brand : theme.text)
                 }
             }
             HoverHandler { id: aiHover; cursorShape: win.aiAvailable ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -1030,7 +1032,7 @@ Window {
                 // room" with its exit arrow, and Leave meeting in its menu.
                 icon: win.heldMeeting ? "arrow-exit-20-filled" : "call-leave-filled"
                 label: win.heldMeeting ? "Leave room" : "Leave"; strong: true
-                iconColor: "#B10E1C"
+                iconColor: theme.hc("#B10E1C", "#FFFFFF")
                 tip: win.heldMeeting ? "Leave room" : "Leave"; shortcut: "Ctrl+Shift+H"
                 // Teams splits Leave only when its menu has more than Leave.
                 split: win.meeting && win.leaveItems.length > 1
@@ -1064,10 +1066,11 @@ Window {
                 }
                 Item { width: 1; height: 18 }
                 Rectangle {
+                    id: hcFill2
                     width: 240; height: 31.3; radius: 4
                     color: stayHover.hovered ? theme.menuHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Text { anchors.centerIn: parent; text: "Stay"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.centerIn: parent; text: "Stay"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: stayHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: leaveConfirm.close() }
                     Accessible.role: Accessible.Button
@@ -1075,9 +1078,10 @@ Window {
                 }
                 Item { width: 1; height: 8 }
                 Rectangle {
+                    id: hcFill3
                     width: 240; height: 31.3; radius: 4
-                    color: goHover.hovered ? "#A80C1A" : "#C50F1F"
-                    Text { anchors.centerIn: parent; text: "Leave"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                    color: goHover.hovered ? theme.hc("#A80C1A", "#1AEBFF") : theme.hc("#C50F1F", "#000000")
+                    Text { anchors.centerIn: parent; text: "Leave"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
                     HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { leaveConfirm.close(); win.leave() } }
                     Accessible.role: Accessible.Button
@@ -1333,8 +1337,8 @@ Window {
         Gradient {
             id: oneToOne
             orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: "#F2F1F8" }
-            GradientStop { position: 1.0; color: "#EEF6F6" }
+            GradientStop { position: 0.0; color: theme.hc("#F2F1F8", "#000000") }
+            GradientStop { position: 1.0; color: theme.hc("#EEF6F6", "#000000") }
         }
         // Meetings: alone, your picture and "Waiting for others to join…";
         // otherwise a tile for each other person.
@@ -1438,7 +1442,7 @@ Window {
                 z: 1
                 width: 245; height: 137; radius: 6
                 anchors { right: parent.right; bottom: parent.bottom; rightMargin: 5.6; bottomMargin: 5.5 }
-                color: "#F5F5F5"
+                color: theme.hc("#F5F5F5", "#000000")
                 MeetingTile {
                     anchors.fill: parent
                     call: win
@@ -1475,17 +1479,18 @@ Window {
                                 y: 7; height: 20
                                 verticalAlignment: Text.AlignVCenter
                                 text: (tiles.page + 1) + "/" + tiles.pageCount
-                                color: "#252423"
+                                color: theme.hc("#252423", "#FFFFFF")
                                 font.family: theme.font; font.pixelSize: 14
                             }
                             Rectangle {
+                                id: hcFill4
                                 visible: !pagerItem.modelData.counter
                                 y: 2; width: 32; height: 32; radius: 4
-                                color: pagerHover.hovered ? "#F5F5F5" : "transparent"
+                                color: pagerHover.hovered ? theme.hc("#F5F5F5", "#1AEBFF") : "transparent"
                                 FluentIcon {
                                     anchors.centerIn: parent
                                     name: pagerItem.modelData.icon || ""
-                                    color: pagerItem.enabledStep ? "#242424" : "#BDBDBD"
+                                    color: theme.onFill(hcFill4, pagerItem.enabledStep ? theme.hc("#242424", "#FFFFFF") : theme.hc("#BDBDBD", "#3FF23F"))
                                 }
                                 HoverHandler { id: pagerHover; enabled: !pagerItem.modelData.counter }
                                 TapHandler {
@@ -1526,11 +1531,12 @@ Window {
                     }
                 }
                 Rectangle {
+                    id: hcFill5
                     anchors { left: parent.left; bottom: parent.bottom; leftMargin: 8; bottomMargin: 8 }
                     height: 24; radius: 4
                     width: contentName.implicitWidth + 12
                     color: Qt.rgba(0, 0, 0, 0.5)
-                    Text { id: contentName; x: 6; anchors.verticalCenter: parent.verticalCenter; text: win.presenterName; color: "white"; font.family: theme.font; font.pixelSize: 14 }
+                    Text { id: contentName; x: 6; anchors.verticalCenter: parent.verticalCenter; text: win.presenterName; color: theme.onFill(hcFill5, "white"); font.family: theme.font; font.pixelSize: 14 }
                 }
                 Accessible.role: Accessible.Graphic
                 Accessible.name: win.presenterName + " is presenting"
@@ -1566,7 +1572,7 @@ Window {
                 Rectangle {
                     x: tiles.atTop ? 0 : 2; y: tiles.atTop ? 2 : 0
                     width: tiles.atTop ? parent.width : 1; height: tiles.atTop ? 1 : parent.height
-                    color: "#D1D1D1"
+                    color: theme.hc("#D1D1D1", "#000000")
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -1615,7 +1621,7 @@ Window {
             z: 2
             anchors { left: parent.left; top: parent.top; margins: 12 }
             width: shareText.implicitWidth + 16; height: 28; radius: 4
-            color: "#CC000000"
+            color: theme.hc("#CC000000", "#000000")
             Text { id: shareText; anchors.centerIn: parent; text: win.peer + " is presenting"; color: "white"; font.family: theme.font; font.pixelSize: theme.small }
         }
         Timer {
@@ -1673,7 +1679,7 @@ Window {
             z: 2
             anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
             width: nameText.implicitWidth + 12; height: 24; radius: 4
-            color: "#99000000"
+            color: theme.hc("#99000000", "#000000")
             Text {
                 id: nameText
                 anchors.centerIn: parent
@@ -1690,8 +1696,8 @@ Window {
             anchors { right: parent.right; bottom: parent.bottom; margins: 4 }
             width: 240; height: 134; radius: 6
             gradient: Gradient {
-                GradientStop { position: 0.0; color: "#F6EEF2" }
-                GradientStop { position: 1.0; color: "#EEF0F8" }
+                GradientStop { position: 0.0; color: theme.hc("#F6EEF2", "#000000") }
+                GradientStop { position: 1.0; color: theme.hc("#EEF0F8", "#000000") }
             }
             border.color: theme.dividerSoft
             Avatar { visible: !selfVideo.visible; anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
@@ -1713,7 +1719,7 @@ Window {
                 visible: win.muted || !win.hasAudio
                 anchors { left: parent.left; bottom: parent.bottom; margins: 8 }
                 width: 28; height: 24; radius: 4
-                color: "#99000000"
+                color: theme.hc("#99000000", "#000000")
                 FluentIcon { anchors.centerIn: parent; name: "mic-off-24"; size: 16; color: "white" }
             }
         }
@@ -1940,7 +1946,7 @@ Window {
                 title: "Shared content | " + win.peer + " | OST"
                 width: 1280; height: 680
                 visible: true
-                color: "#F5F5F5"
+                color: theme.hc("#F5F5F5", "#000000")
                 onClosing: win.contentPoppedOut = false
                 VideoFrame {
                     id: poppedShare
@@ -1951,11 +1957,12 @@ Window {
                     Timer { interval: 33; repeat: true; running: true; onTriggered: poppedShare.refresh() }
                 }
                 Rectangle {
+                    id: hcFill6
                     x: 10.67; anchors.bottom: parent.bottom; anchors.bottomMargin: 10.67
                     height: 24; radius: 4
                     width: poppedName.implicitWidth + 12
                     color: Qt.rgba(0, 0, 0, 0.5)
-                    Text { id: poppedName; x: 6; anchors.verticalCenter: parent.verticalCenter; text: win.presenterName; color: "white"; font.family: theme.font; font.pixelSize: 14 }
+                    Text { id: poppedName; x: 6; anchors.verticalCenter: parent.verticalCenter; text: win.presenterName; color: theme.onFill(hcFill6, "white"); font.family: theme.font; font.pixelSize: 14 }
                 }
             }
         }
@@ -2095,6 +2102,7 @@ Window {
             Repeater {
                 model: win.leaveItems
                 Rectangle {
+                    id: hcFill7
                     required property var modelData
                     width: leaveMenu.leaveItemW; height: 32; radius: 4
                     color: lmHover.hovered ? theme.menuHover : theme.surface
@@ -2103,7 +2111,7 @@ Window {
                         x: 12; anchors.verticalCenter: parent.verticalCenter
                         text: parent.modelData.t
                         font.family: theme.font; font.pixelSize: 14
-                        color: lmHover.hovered ? theme.text : theme.textStrong
+                        color: theme.onFill(hcFill7, lmHover.hovered ? theme.text : theme.textStrong)
                     }
                     HoverHandler { id: lmHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
@@ -2163,6 +2171,7 @@ Window {
                 Item {
                     width: resumeRow.width + 24.67 + 16; height: 60
                     Rectangle {
+                        id: hcFill8
                         anchors.centerIn: parent
                         width: resumeRow.width + 24.67; height: 31.33; radius: 4
                         color: resumeHover.hovered ? theme.menuHover : theme.surface
@@ -2170,8 +2179,8 @@ Window {
                         Row {
                             id: resumeRow
                             anchors.centerIn: parent; spacing: 6
-                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.text }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.onFill(hcFill8, theme.text) }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, theme.text) }
                         }
                         HoverHandler { id: resumeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: win.leaveRoom(true) }
@@ -2193,7 +2202,7 @@ Window {
                 BarButton { icon: "call-mic-off-filled"; label: "Mic"; strong: true; split: true; enabled: false }
                 BarButton { icon: "call-share-filled"; label: "Share"; strong: true; enabled: false }
                 Rectangle { width: 17; height: 60; color: "transparent"; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
-                BarButton { icon: "call-leave-filled"; label: "Leave"; strong: true; iconColor: "#B10E1C"; tip: "Leave"; onClicked: backend.leaveHeldMeeting() }
+                BarButton { icon: "call-leave-filled"; label: "Leave"; strong: true; iconColor: theme.hc("#B10E1C", "#FFFFFF"); tip: "Leave"; onClicked: backend.leaveHeldMeeting() }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
         }
@@ -2637,13 +2646,14 @@ Window {
                     model: [["1", ""], ["2", "ABC"], ["3", "DEF"], ["4", "GHI"], ["5", "JKL"], ["6", "MNO"],
                             ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"], ["*", ""], ["0", "+"], ["#", ""]]
                     Rectangle {
+                        id: hcFill9
                         required property var modelData
                         width: 68; height: 48; radius: theme.radius
                         color: kh.pressed ? theme.selected : kh2.hovered ? theme.rowHover : "transparent"
                         Column {
                             anchors.centerIn: parent
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[0]; font.family: theme.font; font.pixelSize: 20; color: theme.text }
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[1]; font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary; visible: text.length > 0 }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[0]; font.family: theme.font; font.pixelSize: 20; color: theme.onFill(hcFill9, theme.text) }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: modelData[1]; font.family: theme.font; font.pixelSize: 10; color: theme.onFill(hcFill9, theme.textSecondary); visible: text.length > 0 }
                         }
                         HoverHandler { id: kh2; cursorShape: Qt.PointingHandCursor }
                         TapHandler { id: kh; onTapped: dialPad.press(modelData[0]) }
@@ -2686,14 +2696,15 @@ Window {
             Repeater {
                 model: who.text.trim().length >= 2 ? win.directory.slice(0, 6) : []
                 Rectangle {
+                    id: hcFill10
                     required property var modelData
                     width: 296; height: 44; radius: theme.radius
                     color: ph.hovered ? theme.rowHover : "transparent"
                     Avatar { x: 6; anchors.verticalCenter: parent.verticalCenter; size: 28; name: modelData.name; photoId: "8:orgid:" + modelData.id }
                     Column {
                         x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52
-                        Text { width: parent.width; elide: Text.ElideRight; text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                        Text { width: parent.width; elide: Text.ElideRight; visible: !!modelData.job_title || !!modelData.mail; text: modelData.job_title || modelData.mail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                        Text { width: parent.width; elide: Text.ElideRight; text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill10, theme.text) }
+                        Text { width: parent.width; elide: Text.ElideRight; visible: !!modelData.job_title || !!modelData.mail; text: modelData.job_title || modelData.mail; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill10, theme.textSecondary) }
                     }
                     HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
@@ -2721,9 +2732,10 @@ Window {
             anchors.centerIn: parent; spacing: 12
             Text { anchors.verticalCenter: parent.verticalCenter; text: win.consulting ? "Consulting " + win.consulting.name : ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Rectangle {
+                id: hcFill11
                 width: 84; height: 28; radius: theme.radius; color: theme.brandFill
                 anchors.verticalCenter: parent.verticalCenter
-                Text { anchors.centerIn: parent; text: "Transfer"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                Text { anchors.centerIn: parent; text: "Transfer"; color: theme.onFill(hcFill11, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 TapHandler { onTapped: { const c = win.consulting; win.consulting = null; win.transfer(c.id, c.name) } }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Transfer to " + (win.consulting ? win.consulting.name : "")
@@ -2767,14 +2779,15 @@ Window {
         Item {
             width: win.ubarWidths.ResumeButton; height: 60
             Rectangle {
+                id: hcFill12
                 x: 4; anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 8; height: 48; radius: theme.radius
-                color: rph.hovered ? theme.pane : theme.rowHover
+                color: rph.hovered ? theme.hc(theme.pane, theme.hcHighlight) : theme.rowHover
                 border.color: theme.stroke
                 Row {
                     anchors.centerIn: parent; spacing: 8
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.text }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.onFill(hcFill12, theme.text) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, theme.text) }
                 }
                 HoverHandler { id: rph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.runControl("ResumeButton") }
@@ -2814,6 +2827,7 @@ Window {
         property string control
         width: btbText.implicitWidth + 24.67 + 16; height: bar.height
         Rectangle {
+            id: hcFill13
             anchors.centerIn: parent
             width: btbText.implicitWidth + 24.67; height: 31.33; radius: 4
             color: btbHover.hovered ? theme.menuHover : theme.surface
@@ -2823,7 +2837,7 @@ Window {
                 anchors.centerIn: parent
                 text: btb.label
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: theme.text
+                color: theme.onFill(hcFill13, theme.text)
             }
             HoverHandler { id: btbHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.runControl(btb.control) }
@@ -2873,7 +2887,7 @@ Window {
         BarButton {
             icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
             label: win.sharing ? "Stop sharing" : "Share"; strong: true
-            iconColor: win.sharing ? "#B10E1C" : theme.text
+            iconColor: win.sharing ? theme.hc("#B10E1C", "#FFFFFF") : theme.text
             tip: win.sharing ? "Stop sharing" : "Share content"; shortcut: "Ctrl+Shift+E"
             enabled: win.controlEnabled("ShareButton")
             onClicked: win.runControl("ShareButton")
@@ -2970,19 +2984,21 @@ Window {
             }
         }
         Rectangle {
+            id: hcFill14
             visible: bb.split
             x: 4 + bb.bw; y: 6; width: 22; height: 48
             topRightRadius: 4; bottomRightRadius: 4
             color: (chevHover.hovered || bb.chevronChecked) ? theme.rowHover : "transparent"
             // Disabled together with the button (Teams' split buttons).
             opacity: bb.enabled ? 1 : 0.45
-            FluentIcon { x: 3; y: 16; name: "call-chevron"; size: 16; color: theme.text }
+            FluentIcon { x: 3; y: 16; name: "call-chevron"; size: 16; color: theme.onFill(hcFill14, theme.text) }
             HoverHandler { id: chevHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: bb.enabled; onTapped: bb.chevronClicked() }
             Accessible.role: Accessible.Button
             Accessible.name: bb.chevronLabel
         }
         Rectangle {
+            id: hcFill15
             x: 4; y: 6; width: bb.bw; height: 48
             radius: 4
             topRightRadius: bb.split ? 0 : 4; bottomRightRadius: bb.split ? 0 : 4
@@ -2990,7 +3006,7 @@ Window {
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {
                 x: (bb.bw - 25) / 2; y: 3.5
-                name: bb.icon; size: 25; color: bb.iconColor
+                name: bb.icon; size: 25; color: theme.onFill(hcFill15, bb.iconColor)
                 // Teams' alert badge (roster-button-badge): 18 px with a
                 // 2 px white ring, #C50F1F, 10/700 white, 16 px right of
                 // and 1.8 px above the glyph's corner.
@@ -2998,7 +3014,7 @@ Window {
                     visible: bb.badge > 0 && bb.badgeAlert
                     x: 16; y: -1.8
                     width: Math.max(18, bbAlert.implicitWidth + 8); height: 18; radius: 10
-                    color: "#C50F1F"
+                    color: theme.hc("#C50F1F", "#000000")
                     border.color: "white"; border.width: 2
                     Text {
                         id: bbAlert
@@ -3013,7 +3029,7 @@ Window {
                     x: parent.width - 2; y: -1
                     text: bb.badge
                     font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold
-                    color: bb.iconColor
+                    color: theme.onFill(hcFill15, bb.iconColor)
                 }
             }
             Text {
@@ -3021,7 +3037,7 @@ Window {
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 text: bb.label
                 elide: Text.ElideRight
-                color: bb.strong || bbHover.hovered ? theme.text : theme.textStrong
+                color: theme.onFill(hcFill15, bb.strong || bbHover.hovered ? theme.text : theme.textStrong)
                 font.family: theme.font; font.pixelSize: 11
             }
             Rectangle {

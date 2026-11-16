@@ -184,14 +184,14 @@ Popup {
         }
         Rectangle {
             x: 286; y: 8; width: 40; height: 20; radius: 10
-            color: fs.checked ? (swHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+            color: fs.checked ? (swHover.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
             border.color: fs.checked ? "transparent" : theme.textSecondary
             border.width: 0.67
             Rectangle {
                 width: 14.4; height: 14.4; radius: 7.2
                 anchors.verticalCenter: parent.verticalCenter
                 x: (fs.checked ? 20.67 : 0.67) + 9 - 7.2
-                color: fs.checked ? "white" : theme.textSecondary
+                color: fs.checked ? theme.hc("white", "#1AEBFF") : theme.textSecondary
             }
             HoverHandler { id: swHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: fs.toggled() }

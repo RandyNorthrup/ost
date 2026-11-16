@@ -18,10 +18,10 @@ Item {
     Rectangle {
         anchors.fill: parent
         anchors.topMargin: 0.67
-        color: theme.pick("#E6E6E6", "#2E2E2E")
+        color: theme.pick("#E6E6E6", "#2E2E2E", "#000000")
         bottomLeftRadius: 6; bottomRightRadius: 6
     }
-    Rectangle { width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+    Rectangle { width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
     BusyIndicator {
         visible: root.busy
         running: root.busy
@@ -45,11 +45,12 @@ Item {
         Accessible.name: text
     }
     Rectangle {
+        id: hcFill1
         visible: !root.busy
         anchors.right: parent.right; anchors.rightMargin: 8
         y: 0.67 + 4; width: 20; height: 20; radius: 4
         color: dh.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; size: 20; name: "dismiss-20"; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; size: 20; name: "dismiss-20"; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: dh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button

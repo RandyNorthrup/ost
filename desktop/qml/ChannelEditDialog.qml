@@ -83,18 +83,19 @@ Popup {
         readonly property bool chosen: dlg.layout === key
         width: 157.3; height: 167.3; radius: 6
         color: "transparent"
-        border.color: lcHover.hovered ? theme.textSecondary : theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+        border.color: lcHover.hovered ? theme.textSecondary : theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
         Image {
             x: 8.6; y: 6.6; width: 140; height: 80
             source: "../assets/illustrations/channel-layout-" + lc.picture + (theme.dark ? "-dark" : "") + ".svg"
             sourceSize: Qt.size(280, 160)
         }
         Rectangle {
+            id: hcFill1
             visible: lc.isNew
             x: 17; y: 2; height: 20; radius: 10
             width: newText.implicitWidth + 12
             color: theme.brandFill
-            Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: "white" }
+            Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
         }
         Text { x: 8.6; y: 92.6; text: lc.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: lc.chosen ? theme.text : theme.textSecondary }
         Rectangle {
@@ -140,12 +141,12 @@ Popup {
         Row {
             spacing: 0
             Text { text: "Channel name"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
-            Text { leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#DC626D") }
+            Text { leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#DC626D", "#FFFFFF") }
         }
         Item { width: 1; height: 3 }
         Rectangle {
             width: parent.width; height: 32; radius: 4
-            color: theme.pick("#F5F5F5", "#1F1F1F")
+            color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
             TextInput {
                 id: nameField
                 anchors.fill: parent; leftPadding: 12; rightPadding: 12
@@ -181,7 +182,7 @@ Popup {
             Item { width: 1; height: 3 }
             Rectangle {
                 width: parent.width; height: Math.max(64, descField.contentHeight + 12); radius: 4
-                color: theme.pick("#F5F5F5", "#1F1F1F")
+                color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
                 TextEdit {
                     id: descField
                     x: 12; y: 6; width: parent.width - 24
@@ -220,18 +221,20 @@ Popup {
             anchors.right: parent.right
             spacing: 8
             Rectangle {
+                id: hcFill2
                 width: 96; height: 31.3; radius: 4
                 color: cancelHover.hovered ? theme.rowHover : theme.surface
-                border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Cancel"
             }
             Rectangle {
+                id: hcFill3
                 width: 96; height: 31.3; radius: 4
-                color: !dlg.canSave ? theme.pick("#F0F0F0", "#141414") : saveHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: dlg.canSave ? "white" : theme.disabled }
+                color: !dlg.canSave ? theme.pick("#F0F0F0", "#141414", "#000000") : saveHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, dlg.canSave ? "white" : theme.disabled) }
                 HoverHandler { id: saveHover; cursorShape: dlg.canSave ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: dlg.canSave; onTapped: dlg.save() }
                 Accessible.role: Accessible.Button; Accessible.name: "Save"

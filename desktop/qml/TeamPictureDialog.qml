@@ -103,8 +103,8 @@ Popup {
             id: pbRow
             x: 12; anchors.verticalCenter: parent.verticalCenter
             spacing: 6
-            FluentIcon { name: pb.icon; size: 20; color: theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+            FluentIcon { name: pb.icon; size: 20; color: theme.onFill(pb, theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pb, theme.textStrong) }
         }
         HoverHandler { id: pbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pb.clicked() }
@@ -119,7 +119,7 @@ Popup {
         width: 96; height: 32; radius: 4
         color: !enabled ? theme.bgDisabled : primary ? (btnHover.hovered ? theme.brandHover : theme.brandFill) : (btnHover.hovered ? theme.menuHover : theme.surface)
         border.color: primary || !enabled ? "transparent" : theme.stroke; border.width: 0.67
-        Text { anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: !btn.enabled ? theme.disabledStrong : btn.primary ? theme.textOnBrand : theme.text }
+        Text { anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(btn, !btn.enabled ? theme.disabledStrong : btn.primary ? theme.textOnBrand : theme.text) }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }
         Accessible.role: Accessible.Button

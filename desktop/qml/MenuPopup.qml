@@ -177,6 +177,7 @@ Popup {
                     Accessible.name: text
                 }
                 Rectangle {
+                    id: hcFill1
                     visible: !row.modelData.separator && !row.modelData.heading
                     anchors.fill: parent; radius: root.fabric ? 0 : 4
                     color: mh.hovered && row.on && !row.modelData.toggle ? theme.menuHover : "transparent"
@@ -184,43 +185,43 @@ Popup {
                     Rectangle {
                         visible: !!row.modelData.toggle
                         x: 8; y: 8; width: 40; height: 20; radius: 10
-                        color: row.modelData.checked ? (mh.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+                        color: row.modelData.checked ? (mh.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
                         border.color: row.modelData.checked ? "transparent" : (mh.hovered ? theme.text : theme.textStrong)
                         border.width: 0.67
                         Rectangle {
                             width: 14; height: 14; radius: 7
                             anchors.verticalCenter: parent.verticalCenter
                             x: row.modelData.checked ? parent.width - width - 3 : 3
-                            color: row.modelData.checked ? "white" : (mh.hovered ? theme.text : theme.textStrong)
+                            color: row.modelData.checked ? theme.hc("white", "#1AEBFF") : (mh.hovered ? theme.text : theme.textStrong)
                         }
                     }
                     FluentIcon {
                         visible: !!row.modelData.icon
                         x: root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
                         name: row.modelData.icon || ""
-                        color: row.modelData.iconColor ? row.modelData.iconColor : row.modelData.checked ? theme.brand : row.ink
+                        color: theme.onFill(hcFill1, row.modelData.iconColor ? row.modelData.iconColor : row.modelData.checked ? theme.brand : row.ink)
                     }
                     FluentIcon {
                         visible: !root.viewStyle && !row.modelData.icon && !row.modelData.toggle && row.modelData.checked === true
                         x: 8; anchors.verticalCenter: parent.verticalCenter; size: 16
-                        name: "checkmark-12"; color: row.ink
+                        name: "checkmark-12"; color: theme.onFill(hcFill1, row.ink)
                     }
                     FluentIcon {
                         visible: row.modelData.endCheck === true
                         anchors.right: parent.right; anchors.rightMargin: 6; y: 8.67; size: 16
-                        name: "view-check-16"; color: row.ink
+                        name: "view-check-16"; color: theme.onFill(hcFill1, row.ink)
                     }
                     FluentIcon {
                         visible: root.viewStyle && !row.modelData.toggle && row.modelData.checked === true
                         anchors.right: parent.right; anchors.rightMargin: 6; y: 8; size: 16
-                        name: "view-check-16"; color: row.ink
+                        name: "view-check-16"; color: theme.onFill(hcFill1, row.ink)
                     }
                     Text {
                         x: row.modelData.toggle ? 60 : root.viewStyle && !row.modelData.icon ? 10 : root.rowLabelX(row.modelData); anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - x - 6; elide: Text.ElideRight
                         text: row.modelData.label || ""
                         font.family: theme.font; font.pixelSize: theme.base
-                        color: row.modelData.toggle ? theme.text : row.ink
+                        color: theme.onFill(hcFill1, row.modelData.toggle ? theme.text : row.ink)
                     }
                     // A colour dot before the chevron (OneDrive's Folder color).
                     Rectangle {
@@ -233,7 +234,7 @@ Popup {
                     FluentIcon {
                         visible: !!row.modelData.chevron || !!row.modelData.submenu || !!row.modelData.flyout
                         anchors.right: parent.right; anchors.rightMargin: root.chevronMargin; anchors.verticalCenter: parent.verticalCenter
-                        name: root.viewStyle ? "view-chevron-16" : "chevron-right-" + root.chevronSize; size: root.chevronSize; color: row.ink
+                        name: root.viewStyle ? "view-chevron-16" : "chevron-right-" + root.chevronSize; size: root.chevronSize; color: theme.onFill(hcFill1, row.ink)
                     }
                     Text {
                         // Before a check row's 16 px check (6 either side).
@@ -241,7 +242,7 @@ Popup {
                         anchors.rightMargin: root.keysMargin + (row.modelData.endCheck !== undefined ? 22 : 0)
                         text: row.modelData.keys || ""
                         font.family: theme.font; font.pixelSize: theme.small
-                        color: row.on ? theme.textSecondary : theme.disabled
+                        color: theme.onFill(hcFill1, row.on ? theme.textSecondary : theme.disabled)
                     }
                     HoverHandler {
                         id: mh; cursorShape: row.on ? Qt.PointingHandCursor : Qt.ArrowCursor

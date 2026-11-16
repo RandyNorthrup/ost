@@ -42,7 +42,7 @@ Rectangle {
     signal manageChannel(string channelId)
     signal teamAnalytics(string teamId)
     signal workflows(string channelId)
-    color: theme.pick("#FFFFFF", "#292929")
+    color: theme.pick("#FFFFFF", "#292929", "#000000")
 
     function loadModeration() {
         generalSetting = -1
@@ -69,7 +69,7 @@ Rectangle {
     Rectangle {
         id: header
         width: parent.width; height: 61
-        color: theme.pick("#FFFFFF", "#292929")
+        color: theme.pick("#FFFFFF", "#292929", "#000000")
         Avatar {
             x: 20; y: 14.2
             size: 32; square: true; squareRadius: 4
@@ -121,7 +121,7 @@ Rectangle {
             id: moreButton
             x: parent.width - 39; y: 18.2; width: 32; height: 24; radius: 4
             color: moreHover.hovered ? theme.hover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: channelMenu.menu.opened ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(moreButton, channelMenu.menu.opened ? theme.brand : theme.textStrong) }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: channelMenu.show(moreButton, moreButton.width - channelMenu.menu.implicitWidth, moreButton.height) }
             Accessible.role: Accessible.Button
@@ -171,15 +171,16 @@ Rectangle {
                     Rectangle {
                         x: 38; y: 66
                         width: layoutText.implicitWidth + 16; height: 25.3; radius: 4
-                        color: theme.pick("#E6E6E6", "#3D3D3D")
+                        color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
                         border.color: theme.stroke; border.width: 0.67
                         Text { id: layoutText; anchors.centerIn: parent; text: page.channel.layout === "Conversational" ? "Threads" : "Posts"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                     }
                     Rectangle {
+                        id: hcFill1
                         x: 38; y: 106.3
                         width: 96; height: 31.3; radius: 4
                         color: editHover.hovered ? theme.brandHover : theme.brandFill
-                        Text { anchors.centerIn: parent; text: "Edit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                        Text { anchors.centerIn: parent; text: "Edit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
                         HoverHandler { id: editHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: editDialog.start(page.channel) }
                         Accessible.role: Accessible.Button
@@ -241,11 +242,12 @@ Rectangle {
         signal toggled()
         width: parent ? parent.width : 0
         Rectangle {
+            id: hcFill2
             width: parent.width; height: 44; radius: 4
-            color: secHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
-            FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: sec.open ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.text }
-            Text { id: secLabel; x: 38; anchors.verticalCenter: parent.verticalCenter; text: sec.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-            Text { x: secLabel.x + secLabel.implicitWidth + 30; anchors.verticalCenter: parent.verticalCenter; text: sec.hint; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            color: secHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
+            FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: sec.open ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.onFill(hcFill2, theme.text) }
+            Text { id: secLabel; x: 38; anchors.verticalCenter: parent.verticalCenter; text: sec.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+            Text { x: secLabel.x + secLabel.implicitWidth + 30; anchors.verticalCenter: parent.verticalCenter; text: sec.hint; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.textSecondary) }
             HoverHandler { id: secHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sec.toggled() }
             Accessible.role: Accessible.Button
@@ -264,7 +266,7 @@ Rectangle {
         Rectangle {
             x: 8; y: 10; width: 16; height: 16; radius: 8
             color: "transparent"
-            border.color: rb.chosen ? theme.brandFill : theme.textSecondary; border.width: 0.67
+            border.color: rb.chosen ? theme.checkedFill : theme.textSecondary; border.width: 0.67
             Rectangle { visible: rb.chosen; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brandFill }
         }
         Text {

@@ -34,6 +34,7 @@ Popup {
         Repeater {
             model: card.critique ? card.critique.suggestions : []
             Rectangle {
+                id: hcFill1
                 required property string modelData
                 width: card.width; height: 36; radius: 4
                 color: sugHover.hovered ? theme.menuHover : "transparent"
@@ -42,7 +43,7 @@ Popup {
                     elide: Text.ElideRight
                     text: parent.modelData
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                    color: theme.text
+                    color: theme.onFill(hcFill1, theme.text)
                 }
                 HoverHandler { id: sugHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { card.close(); card.picked(parent.modelData) } }
@@ -62,7 +63,7 @@ Popup {
                         required property var modelData
                         width: 37.3; height: 37.3; radius: 4
                         color: footHover.hovered || (modelData.key === "more" && moreMenu.opened) ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: footBtn.modelData.icon; size: 20; color: theme.text }
+                        FluentIcon { anchors.centerIn: parent; name: footBtn.modelData.icon; size: 20; color: theme.onFill(footBtn, theme.text) }
                         HoverHandler { id: footHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: card.act(footBtn.modelData.key, footBtn) }
                         ToolTip {
@@ -96,11 +97,12 @@ Popup {
             Repeater {
                 model: [{ key: "settings", icon: "settings-20", label: "Editor settings..." }, { key: "languages", icon: "local-language-20", label: "Manage languages..." }]
                 Rectangle {
+                    id: hcFill2
                     required property var modelData
                     width: 171.8; height: 37.3; radius: 4
                     color: mHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: parent.modelData.icon; size: 20; color: theme.text }
-                    Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: parent.modelData.icon; size: 20; color: theme.onFill(hcFill2, theme.text) }
+                    Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: mHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { moreMenu.close(); card.close(); window.showEditorSettings(parent.modelData.key === "languages") } }
                     Accessible.role: Accessible.MenuItem

@@ -29,7 +29,7 @@ Item {
         id: surface
         anchors { fill: parent; margins: 2 }
         radius: 6
-        color: "#F5F5F5"
+        color: theme.hc("#F5F5F5", "#000000")
         border.width: 0.67; border.color: Qt.rgba(0, 0, 0, 0.1)
         // Teams' camera-off background (#F5F5F5 under four radial
         // gradients, each an ellipse to the farthest corner, CSS-style).
@@ -91,11 +91,11 @@ Item {
             anchors.fill: parent
             visible: !mt.self && !!mt.call && mt.call.speakingIds.indexOf(mt.person.id) >= 0
             radius: 6; color: "transparent"
-            border.width: 4; border.color: "#5B5FC7"
+            border.width: 4; border.color: theme.hc("#5B5FC7", "#FFFFFF")
             Rectangle {
                 anchors { fill: parent; margins: 4 }
                 radius: 3; color: "transparent"
-                border.width: 0.67; border.color: "#F5F5F5"
+                border.width: 0.67; border.color: theme.hc("#F5F5F5", "#FFFFFF")
             }
         }
         // A raised hand: Teams' gold outline and "1 ✋" badge.
@@ -106,14 +106,15 @@ Item {
             border.width: 3; border.color: theme.handRaised
         }
         Rectangle {
+            id: hcFill1
             visible: mt.handAt >= 0
             anchors { left: parent.left; top: parent.top; margins: 10 }
             width: handRow.implicitWidth + 12; height: 28; radius: 14
-            color: "white"; border.color: theme.dividerSoft
+            color: theme.hc("white", "#000000"); border.color: theme.dividerSoft
             Row {
                 id: handRow
                 anchors.centerIn: parent; spacing: 4
-                Text { anchors.verticalCenter: parent.verticalCenter; text: mt.handAt + 1; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: mt.handAt + 1; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
                 Text { anchors.verticalCenter: parent.verticalCenter; text: "\u270B"; font.pixelSize: 16 }
             }
             Accessible.role: Accessible.StaticText
@@ -134,6 +135,7 @@ Item {
         // white; a guest's person-question glyph follows 4 px on; the
         // mic-off glyph (16 px, filled) 8 px on, after 6 more for you.
         Rectangle {
+            id: hcFill2
             anchors { left: parent.left; bottom: parent.bottom; leftMargin: mt.compact ? 4 : 8; bottomMargin: mt.compact ? 4 : 8 }
             height: 24; radius: 4
             width: tagRow.implicitWidth + 12
@@ -157,7 +159,7 @@ Item {
                             required property int index
                             x: 4 + index * 4; y: 16 - height
                             width: 2; height: [4, 7, 10][index]; radius: 1
-                            color: "white"
+                            color: theme.hc("white", "#000000")
                             opacity: index < nsi.lit ? 1 : 0.3
                         }
                     }
@@ -171,14 +173,14 @@ Item {
                     visible: !mt.nameless
                     anchors.verticalCenter: parent.verticalCenter
                     height: 16; verticalAlignment: Text.AlignVCenter
-                    text: mt.person.name || ""; color: "white"
+                    text: mt.person.name || ""; color: theme.onFill(hcFill2, "white")
                     font.family: theme.font; font.pixelSize: 12
                 }
                 Item { visible: !!mt.person.guest; width: 4; height: 1 }
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: !!mt.person.guest
-                    name: "person-unverified-16-filled"; size: 16; color: "white"
+                    name: "person-unverified-16-filled"; size: 16; color: theme.onFill(hcFill2, "white")
                     Accessible.role: Accessible.Graphic
                     Accessible.name: "Unverified"
                 }
@@ -188,14 +190,14 @@ Item {
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: tagRow.micOff
-                    name: "mic-off-20-filled"; size: 16; color: "white"
+                    name: "mic-off-20-filled"; size: 16; color: theme.onFill(hcFill2, "white")
                 }
                 // Pinned for you: Teams' 16 px pin, 6 on.
                 Item { visible: tagRow.pinned; width: 6; height: 1 }
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: tagRow.pinned
-                    name: "pin-20"; size: 16; color: "white"
+                    name: "pin-20"; size: 16; color: theme.onFill(hcFill2, "white")
                 }
             }
         }

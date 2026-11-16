@@ -33,9 +33,10 @@ Popup {
         color: theme.text
     }
     Rectangle {
+        id: hcFill1
         x: 352; y: 21; width: 32; height: 32; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.text }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill1, theme.text) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button

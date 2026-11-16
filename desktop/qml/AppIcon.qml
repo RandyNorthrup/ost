@@ -8,7 +8,7 @@ Rectangle {
     id: root
     property url source
     radius: width / 2.6
-    color: pic.visible ? "transparent" : theme.pick("#FAFAFA", "#1F1F1F")
+    color: pic.visible ? "transparent" : theme.pick("#FAFAFA", "#1F1F1F", "#000000")
 
     Image {
         id: src

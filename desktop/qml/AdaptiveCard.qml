@@ -512,7 +512,7 @@ Item {
                     property bool next: false
                     width: 24; height: 24; radius: 4
                     color: nbh.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; size: 20; name: nb.next ? "chevron-right-20" : "chevron-left-20"; color: theme.textStrong }
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: nb.next ? "chevron-right-20" : "chevron-left-20"; color: theme.onFill(nb, theme.textStrong) }
                     HoverHandler { id: nbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: car.step(nb.next ? 1 : -1) }
                     Accessible.role: Accessible.Button
@@ -768,10 +768,11 @@ Item {
             width: parent ? parent.width : 0
             height: 32
             Rectangle {
+                id: hcFill1
                 x: 8; y: 8; width: 16; height: 16; radius: 2
                 color: tg.on ? theme.brand : theme.surface
                 border.color: tg.on ? theme.brand : theme.textSecondary; border.width: 0.67
-                FluentIcon { visible: tg.on; anchors.centerIn: parent; name: "checkmark-12-filled"; size: 12; color: "white" }
+                FluentIcon { visible: tg.on; anchors.centerIn: parent; name: "checkmark-12-filled"; size: 12; color: theme.onFill(hcFill1, "white") }
             }
             Text { x: 36; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 44; text: tg.e.title || ""; font.family: theme.font; font.pixelSize: 14; color: tg.on ? theme.text : theme.textSecondary; wrapMode: Text.Wrap }
             TapHandler { onTapped: { tg.on = !tg.on; card.setValue(tg.e.id, tg.on ? (tg.e.valueOn === undefined ? "true" : tg.e.valueOn) : (tg.e.valueOff === undefined ? "false" : tg.e.valueOff)) } }
@@ -827,12 +828,13 @@ Item {
                         readonly property bool on: ch.picked.indexOf(String(modelData.value)) >= 0
                         width: ch.width; height: 32
                         Rectangle {
+                            id: hcFill3
                             x: 8; y: 8; width: 16; height: 16
                             radius: ch.e.isMultiSelect ? 2 : 8
                             color: opt.on && ch.e.isMultiSelect ? theme.brand : theme.surface
                             border.color: opt.on ? theme.brand : theme.textSecondary; border.width: 0.67
-                            Rectangle { visible: opt.on && !ch.e.isMultiSelect; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
-                            FluentIcon { visible: opt.on && !!ch.e.isMultiSelect; anchors.centerIn: parent; name: "checkmark-12-filled"; size: 12; color: "white" }
+                            Rectangle { id: hcFill2; visible: opt.on && !ch.e.isMultiSelect; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
+                            FluentIcon { visible: opt.on && !!ch.e.isMultiSelect; anchors.centerIn: parent; name: "checkmark-12-filled"; size: 12; color: theme.onFill([hcFill2, hcFill3], "white") }
                         }
                         Text { x: 36; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.title || ""; font.family: theme.font; font.pixelSize: 14; color: opt.on ? theme.text : theme.textSecondary }
                         TapHandler {
@@ -875,7 +877,7 @@ Item {
                     elide: Text.ElideRight
                     text: btn.modelData.title || ""
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                    color: btn.expanded ? "white" : theme.text
+                    color: theme.onFill(btn, btn.expanded ? "white" : theme.text)
                 }
                 HoverHandler { id: btnHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.run(btn.modelData) }

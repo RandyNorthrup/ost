@@ -21,7 +21,7 @@ Popup {
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-    Overlay.modal: Rectangle { color: "#66000000" }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
     readonly property bool sending: backend.reportResult === "sending"
     readonly property bool failed: backend.reportResult === "error"
     onOpened: { why.text = ""; why.forceActiveFocus() }
@@ -32,9 +32,10 @@ Popup {
 
     Text { x: 25; y: 25; height: 28; verticalAlignment: Text.AlignVCenter; text: "Report a security concern"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
     Rectangle {
+        id: hcFill1
         x: 543; y: 25; width: 32; height: 32; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -80,18 +81,20 @@ Popup {
     Row {
         x: 375; y: 293 + (root.failed ? 28 : 0); spacing: 8
         Rectangle {
+            id: hcFill2
             width: 96; height: 32; radius: 4
             color: cancelHover.hovered && !root.sending ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.sending ? theme.disabled : theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, root.sending ? theme.disabled : theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: root.close() }
             Accessible.role: Accessible.Button
             Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill3
             width: 96; height: 32; radius: 4
             color: root.sending ? theme.bgDisabled : reportHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: root.sending ? "Reporting" : "Report"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.sending ? theme.disabledStrong : "white" }
+            Text { anchors.centerIn: parent; text: root.sending ? "Reporting" : "Report"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.sending ? theme.disabledStrong : "white") }
             HoverHandler { id: reportHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: backend.reportMessage(root.message.id, why.text) }
             Accessible.role: Accessible.Button

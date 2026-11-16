@@ -56,6 +56,7 @@ Popup {
                 : root.good && root.videoOffByUs ? "Turn on all video" : ""
             visible: label.length > 0
             Rectangle {
+                id: hcFill1
                 readonly property bool usable: actionRow.label !== "All video off"
                 width: actionText.implicitWidth + 20 + 8 + 24; height: 32; radius: 4
                 color: usable && ah.hovered ? theme.menuHover : theme.surface
@@ -63,8 +64,8 @@ Popup {
                 opacity: usable ? 1 : 0.45
                 Row {
                     anchors.centerIn: parent; spacing: 8
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: actionRow.label === "Turn on all video" ? "video-20" : "video-off"; size: 20; color: theme.text }
-                    Text { id: actionText; anchors.verticalCenter: parent.verticalCenter; text: actionRow.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: actionRow.label === "Turn on all video" ? "video-20" : "video-off"; size: 20; color: theme.onFill(hcFill1, theme.text) }
+                    Text { id: actionText; anchors.verticalCenter: parent.verticalCenter; text: actionRow.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
                 }
                 HoverHandler { id: ah; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler {

@@ -35,10 +35,11 @@ Popup {
                     font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
                 }
                 Rectangle {
+                    id: hcFill1
                     anchors.right: parent.right
                     width: 32; height: 31.3; radius: 4
                     color: aboutClose.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
                     HoverHandler { id: aboutClose; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: aboutDialog.close() }
                     Accessible.role: Accessible.Button; Accessible.name: "Close"
@@ -64,7 +65,7 @@ Popup {
                         textFormat: Text.RichText
                         text: aboutDialog.about ? aboutDialog.about.description : ""
                         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-                        linkColor: "#0000EE"
+                        linkColor: theme.hc("#0000EE", "#FFFF00")
                         onLinkActivated: link => { if (/^https:/.test(link)) Qt.openUrlExternally(link) }
                     }
                     Text {

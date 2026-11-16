@@ -44,8 +44,8 @@ Item {
     Rectangle {
         anchors.fill: parent; radius: 4
         color: theme.surface
-        border.color: !root.enabled ? theme.pick("#E0E0E0", "#424242") : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
-        Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened || field.activeFocus ? 2 : 0.67; color: list.opened || field.activeFocus ? theme.brand : root.enabled ? theme.textSecondary : theme.pick("#E0E0E0", "#424242") }
+        border.color: !root.enabled ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+        Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened || field.activeFocus ? 2 : 0.67; color: list.opened || field.activeFocus ? theme.brand : root.enabled ? theme.textSecondary : theme.pick("#E0E0E0", "#424242", "#000000") }
         FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-16"; size: 16; color: root.enabled ? theme.text : theme.disabled }
         TextInput {
             id: field
@@ -100,12 +100,12 @@ Item {
                 required property int index
                 width: view.width; height: 50; radius: 4
                 color: optHover.hovered || view.currentIndex === index ? theme.menuHover : "transparent"
-                FluentIcon { visible: opt.modelData.key === root.current; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.text }
+                FluentIcon { visible: opt.modelData.key === root.current; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(opt, theme.text) }
                 Column {
                     x: 28; y: 6; width: parent.width - 36
                     spacing: 2
-                    Text { width: parent.width; elide: Text.ElideRight; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                    Text { width: parent.width; elide: Text.ElideRight; text: opt.modelData.sublabel || ""; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                    Text { width: parent.width; elide: Text.ElideRight; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(opt, theme.text) }
+                    Text { width: parent.width; elide: Text.ElideRight; text: opt.modelData.sublabel || ""; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(opt, theme.textSecondary) }
                 }
                 HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.picked(opt.modelData.key); list.close() } }

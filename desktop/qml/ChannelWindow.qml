@@ -89,7 +89,7 @@ Window {
         signal clicked()
         width: 32; height: 32; radius: 4
         color: actHover.hovered ? theme.hover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: act.icon; size: act.iconSize; color: act.ink }
+        FluentIcon { anchors.centerIn: parent; name: act.icon; size: act.iconSize; color: theme.onFill(act, act.ink) }
         HoverHandler { id: actHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: act.clicked() }
         ToolTip.visible: actHover.hovered && act.tip.length > 0; ToolTip.delay: 500; ToolTip.text: act.tip

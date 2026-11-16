@@ -44,7 +44,7 @@ Item {
         width: parent.width
         height: root.picked.length > 0 ? 38.7 : 33.3
         radius: 4
-        color: theme.pick("#F5F5F5", "#1F1F1F")
+        color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
         Flow {
             id: tags
             x: 12.6; width: parent.width - 24
@@ -76,7 +76,7 @@ Item {
                     visible: !field.text && root.picked.length === 0
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.placeholder
-                    font: field.font; color: theme.pick("#424242", "#D6D6D6")
+                    font: field.font; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
                 }
                 Keys.onDownPressed: if (root.results.length) root.current = (root.current + 1) % root.results.length
                 Keys.onUpPressed: if (root.results.length) root.current = (root.current - 1 + root.results.length) % root.results.length
@@ -107,13 +107,14 @@ Item {
             Repeater {
                 model: root.results
                 Rectangle {
+                    id: hcFill1
                     required property var modelData
                     required property int index
                     width: 346.7; height: 50; radius: 4
-                    color: index === root.current || rowHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                    color: index === root.current || rowHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                     Avatar { x: 12; y: 9; size: 32; name: parent.modelData.name; photoId: parent.modelData.mri }
-                    Text { x: 60; y: 6.5; height: 20; verticalAlignment: Text.AlignVCenter; width: 280; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.name, root.query); font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6") }
-                    Text { x: 60; y: 27.5; height: 16; verticalAlignment: Text.AlignVCenter; width: 280; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.sub, root.query); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Text { x: 60; y: 6.5; height: 20; verticalAlignment: Text.AlignVCenter; width: 280; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.name, root.query); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+                    Text { x: 60; y: 27.5; height: 16; verticalAlignment: Text.AlignVCenter; width: 280; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.modelData.sub, root.query); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, theme.textSecondary) }
                     HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.pick(parent.modelData) }
                     Accessible.role: Accessible.ListItem

@@ -73,12 +73,13 @@ Item {
         }
         // Create a plan: plans belong to a team; the menu lists yours.
         Rectangle {
+            id: hcFill1
             x: 16; y: 77; width: 153; height: 32; radius: theme.radius
             color: cph.hovered ? theme.brandHover : theme.brandFill
             Row {
                 anchors.centerIn: parent; spacing: 8
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: "white" }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create a plan"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: theme.onFill(hcFill1, "white") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create a plan"; color: theme.onFill(hcFill1, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             }
             HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: planDialog.open() }
@@ -100,8 +101,8 @@ Item {
                     width: parent.width; height: 46; radius: theme.radius
                     color: sel ? theme.selected : nh.hovered ? theme.rowHover : "transparent"
                     Rectangle { visible: nav.sel; width: 3; height: 20; radius: 1.5; anchors.verticalCenter: parent.verticalCenter; color: theme.brand }
-                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: nav.modelData.icon; size: 20; color: nav.sel ? theme.brand : theme.textStrong }
-                    Text { x: 46; anchors.verticalCenter: parent.verticalCenter; text: nav.modelData.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: nav.sel ? Font.DemiBold : Font.Normal; color: theme.text }
+                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: nav.modelData.icon; size: 20; color: theme.onFill(nav, nav.sel ? theme.brand : theme.textStrong) }
+                    Text { x: 46; anchors.verticalCenter: parent.verticalCenter; text: nav.modelData.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: nav.sel ? Font.DemiBold : Font.Normal; color: theme.onFill(nav, theme.text) }
                     HoverHandler { id: nh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.open(nav.modelData.key) }
                     Accessible.role: Accessible.Button
@@ -163,15 +164,16 @@ Item {
                 }
             }
             Rectangle {
+                id: hcFill2
                 width: searching.visible ? 200 : 32; height: 32; radius: theme.radius
                 color: searching.visible ? theme.input : (sh.hovered ? theme.rowHover : "transparent")
                 border.color: searching.visible ? theme.stroke : "transparent"
-                FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 18; color: theme.textStrong }
+                FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 18; color: theme.onFill(hcFill2, theme.textStrong) }
                 TextInput {
                     id: searching
                     visible: root.search.length > 0 || activeFocus
                     x: 32; width: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
-                    font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill2, theme.text); clip: true
                     onTextChanged: root.search = text
                     Keys.onEscapePressed: { text = ""; focus = false }
                     Accessible.name: "Search tasks"
@@ -189,6 +191,7 @@ Item {
             x: 16; y: 76; width: parent.width - 32; height: parent.height - y
             model: root.plans
             delegate: Rectangle {
+                id: hcFill3
                 required property var modelData
                 width: ListView.view.width; height: 56; radius: theme.radius
                 color: ph.hovered ? theme.rowHover : "transparent"
@@ -199,8 +202,8 @@ Item {
                 }
                 Column {
                     x: 56; anchors.verticalCenter: parent.verticalCenter
-                    Text { text: modelData.title; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                    Text { text: modelData.team; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                    Text { text: modelData.title; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
+                    Text { text: modelData.team; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill3, theme.textSecondary) }
                 }
                 HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.open("plan", modelData) }
@@ -384,8 +387,9 @@ Item {
             Row {
                 spacing: 8
                 Rectangle {
+                    id: hcFill4
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill4, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: planDialog.create() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Create"
@@ -416,14 +420,14 @@ Item {
         signal clicked()
         height: 32; radius: 16
         width: chipRow.implicitWidth + 24
-        color: on ? theme.brandTint : (chh.hovered ? theme.rowHover : theme.surface)
+        color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (chh.hovered ? theme.rowHover : theme.surface)
         border.color: on ? theme.brand : theme.stroke
         border.width: on ? 2 : 1
         Row {
             id: chipRow
             anchors.centerIn: parent; spacing: 6
-            FluentIcon { visible: !!chip.icon; anchors.verticalCenter: parent.verticalCenter; name: chip.icon || "add-20"; size: 16; color: chip.on ? theme.brand : theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: chip.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            FluentIcon { visible: !!chip.icon; anchors.verticalCenter: parent.verticalCenter; name: chip.icon || "add-20"; size: 16; color: theme.onFill(chip, chip.on ? theme.brand : theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: chip.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(chip, theme.text) }
         }
         HoverHandler { id: chh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: chip.clicked() }

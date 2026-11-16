@@ -92,7 +92,7 @@ Rectangle {
             id: pickerBtn
             x: 12; y: 8.3
             width: pickLabel.implicitWidth + 12 + 8 + 20 + 10; height: 31.3; radius: 4
-            color: theme.pick("#F5F5F5", "#292929")
+            color: theme.pick("#F5F5F5", "#292929", "#000000")
             Text {
                 id: pickLabel
                 x: 12; anchors.verticalCenter: parent.verticalCenter
@@ -255,8 +255,8 @@ Rectangle {
                             Column {
                                 x: table.colX(0) - 0.67 + 42; y: 5.7
                                 width: table.nameW - 16 - 42
-                                Text { width: parent.width; elide: Text.ElideRight; text: prow.modelData.displayName || ""; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                                Text { width: parent.width; elide: Text.ElideRight; text: prow.modelData.emailAddress || prow.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+                                Text { width: parent.width; elide: Text.ElideRight; text: prow.modelData.displayName || ""; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(prow, theme.text) }
+                                Text { width: parent.width; elide: Text.ElideRight; text: prow.modelData.emailAddress || prow.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(prow, theme.text) }
                             }
                             Repeater {
                                 model: [root.time(prow.modelData.joinTime), root.time(prow.modelData.leaveTime), root.durationText(prow.modelData.durationInSeconds), prow.modelData.role || ""]
@@ -268,7 +268,7 @@ Rectangle {
                                     text: modelData
                                     font.family: theme.font; font.pixelSize: 14
                                     lineHeight: 20; lineHeightMode: Text.FixedHeight
-                                    color: theme.text
+                                    color: theme.onFill(prow, theme.text)
                                 }
                             }
                             HoverHandler { id: rowH }
@@ -310,16 +310,17 @@ Rectangle {
                     color: theme.textSecondary
                 }
                 Rectangle {
+                    id: hcFill1
                     visible: prow2.modelData.kind === "meeting"
                     width: parent.width; height: 32; radius: 4
                     color: optH.hovered ? theme.menuHover : "transparent"
                     readonly property bool chosen: prow2.modelData.report ? prow2.modelData.report.callId === root.callId : false
-                    FluentIcon { visible: parent.chosen; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.text }
+                    FluentIcon { visible: parent.chosen; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(hcFill1, theme.text) }
                     Text {
                         x: 32; anchors.verticalCenter: parent.verticalCenter
                         text: prow2.modelData.text || ""
                         font.family: theme.font; font.pixelSize: 14
-                        color: theme.text
+                        color: theme.onFill(hcFill1, theme.text)
                     }
                     HoverHandler { id: optH; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { picker.close(); root.load(prow2.modelData.report.callId) } }
@@ -349,7 +350,7 @@ Rectangle {
                 Text { anchors.verticalCenter: parent.verticalCenter; text: "Show greater than"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Rectangle {
                     width: 91; height: 24; radius: 4
-                    color: theme.pick("#F5F5F5", "#292929")
+                    color: theme.pick("#F5F5F5", "#292929", "#000000")
                     TextInput {
                         id: filterBox
                         x: 8; width: parent.width - 16; height: parent.height
@@ -365,10 +366,11 @@ Rectangle {
                 }
             }
             Rectangle {
+                id: hcFill2
                 width: parent.width; height: 31.3; radius: 4
                 color: applyH.hovered ? theme.menuHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: applyH; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.applyFilter() }
                 Accessible.role: Accessible.Button

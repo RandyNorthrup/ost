@@ -66,8 +66,8 @@ Popup {
         Row {
             id: sbRow
             x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 6
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: sb.icon; color: theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: sb.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: sb.icon; color: theme.onFill(sb, theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: sb.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sb, theme.textStrong) }
         }
         HoverHandler { id: sbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: sb.enabled; onTapped: sb.clicked() }
@@ -100,7 +100,7 @@ Popup {
         Item { width: 1; height: 23 }
         Rectangle {
             width: parent.width; height: 32; radius: 4
-            color: theme.pick("#F5F5F5", "#1F1F1F")
+            color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
             TextInput {
                 id: field
                 anchors.fill: parent; leftPadding: 12; rightPadding: 12
@@ -159,19 +159,21 @@ Popup {
             anchors.right: parent.right
             spacing: 8
             Rectangle {
+                id: hcFill1
                 width: 96; height: 31.3; radius: 4
                 color: closeHover.hovered ? theme.rowHover : theme.surface
-                border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
                 HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Close"
             }
             Rectangle {
+                id: hcFill2
                 readonly property bool on: !!dlg.email && !dlg.busy
                 width: 96; height: 31.3; radius: 4
-                color: !on ? theme.pick("#F0F0F0", "#141414") : primaryHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: dlg.advanced ? "Save" : "Copy"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.on ? "white" : theme.disabled }
+                color: !on ? theme.pick("#F0F0F0", "#141414", "#000000") : primaryHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: dlg.advanced ? "Save" : "Copy"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.on ? "white" : theme.disabled) }
                 HoverHandler { id: primaryHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler {
                     enabled: parent.on

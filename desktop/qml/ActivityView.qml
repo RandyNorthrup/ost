@@ -40,6 +40,7 @@ Rectangle {
         Repeater {
             model: [{ icon: "more-20", label: "More options" }, { icon: "search-20", label: "Filter" }]
             Rectangle {
+                id: hcFill1
                 required property var modelData
                 required property int index
                 width: 32; height: 32; radius: theme.radius
@@ -51,7 +52,7 @@ Rectangle {
                         else { root.filtering = !root.filtering; if (!root.filtering) actFilter.text = ""; else actFilter.forceActiveFocus() }
                     }
                 }
-                FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.label
                 MenuPopup {
@@ -75,7 +76,7 @@ Rectangle {
                 readonly property bool on: root.chip === modelData.k
                 height: 24; radius: 12
                 width: chip.implicitWidth + 16
-                color: on ? theme.brandTint : (ach.hovered ? theme.rowHover : "transparent")
+                color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (ach.hovered ? theme.rowHover : "transparent")
                 border.color: on ? theme.brand : theme.stroke
                 HoverHandler { id: ach; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.chip = chipRect.on ? "" : chipRect.modelData.k }
@@ -84,7 +85,7 @@ Rectangle {
                     anchors.centerIn: parent
                     text: chipRect.modelData.l
                     font.family: theme.font; font.pixelSize: theme.small
-                    color: chipRect.on ? theme.brand : theme.textStrong
+                    color: theme.onFill(chipRect, chipRect.on ? theme.brand : theme.textStrong)
                 }
                 Accessible.role: Accessible.CheckBox
                 Accessible.name: modelData.l
@@ -154,10 +155,11 @@ Rectangle {
                 photoId: it.fromPerson ? it.modelData.actor_mri : ""
             }
             Rectangle {
+                id: hcFill2
                 visible: !it.fromPerson
                 x: 20.7; y: 10.7; width: 32; height: 32; radius: theme.radius
                 color: theme.brand
-                FluentIcon { anchors.centerIn: parent; name: "apps-20-filled"; size: 20; color: "white" }
+                FluentIcon { anchors.centerIn: parent; name: "apps-20-filled"; size: 20; color: theme.onFill(hcFill2, "white") }
             }
             // What happened, as a badge on the picture: the reaction itself,
             // or a coloured icon.
@@ -178,8 +180,8 @@ Rectangle {
                         : it.modelData.kind === "voicemail" ? "voicemail-16-filled"
                         : it.modelData.kind === "addedToTeam" ? "people-team-16-filled"
                         : "chat-20"
-                    color: it.modelData.kind === "missedCall" ? "#D13438"
-                        : it.modelData.kind === "voicemail" ? "#CA5010" : theme.brand
+                    color: it.modelData.kind === "missedCall" ? theme.hc("#D13438", "#FFFFFF")
+                        : it.modelData.kind === "voicemail" ? theme.hc("#CA5010", "#FFFFFF") : theme.brand
                 }
             }
             Column {
@@ -227,15 +229,16 @@ Rectangle {
                 Repeater {
                     model: ["Call", "Chat"]
                     Rectangle {
+                        id: hcFill3
                         required property string modelData
                         width: 65; height: 24; radius: theme.radius
-                        color: bh.hovered ? theme.pane : theme.surface
+                        color: bh.hovered ? theme.hc(theme.pane, theme.hcHighlight) : theme.surface
                         border.color: theme.stroke
                         Text {
                             anchors.centerIn: parent
                             text: parent.modelData
                             font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
-                            color: theme.text
+                            color: theme.onFill(hcFill3, theme.text)
                         }
                         HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: modelData === "Call" ? root.callBack(it.modelData) : root.chatWith(it.modelData) }

@@ -79,11 +79,12 @@ Rectangle {
                 color: theme.text
             }
             Rectangle {
+                id: hcFill1
                 anchors.right: parent.right; anchors.rightMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
                 width: 32; height: 21.3; radius: 4
                 color: closeHover.hovered ? theme.hover : "transparent"
-                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
                 HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pane.closed() }
                 Accessible.role: Accessible.Button; Accessible.name: "Close"
@@ -116,15 +117,16 @@ Rectangle {
             }
             Item { width: 1; height: 15 }
             Rectangle {
+                id: hcFill2
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: startLabel.implicitWidth + 24 + 2; height: 31.3; radius: 4
-                color: pane.starting ? theme.pick("#F0F0F0", "#141414") : startHover.hovered ? theme.brandHover : theme.brandFill
+                color: pane.starting ? theme.pick("#F0F0F0", "#141414", "#000000") : startHover.hovered ? theme.brandHover : theme.brandFill
                 Text {
                     id: startLabel
                     anchors.centerIn: parent
                     text: "Start conversation"
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                    color: pane.starting ? theme.disabled : "white"
+                    color: theme.onFill(hcFill2, pane.starting ? theme.disabled : "white")
                 }
                 HoverHandler { id: startHover; cursorShape: pane.starting ? Qt.ArrowCursor : Qt.PointingHandCursor }
                 TapHandler { enabled: !pane.starting; onTapped: pane.start() }

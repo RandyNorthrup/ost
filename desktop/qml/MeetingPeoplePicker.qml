@@ -88,7 +88,7 @@ Item {
                     required property int index
                     width: 23.7 + tagName.implicitWidth + 4 + 19.7
                     height: 20; radius: 12
-                    color: tagH.hovered && !root.disabled ? theme.pick("#E0E0E0", "#3D3D3D") : theme.pick("#F5F5F5", "#2E2E2E")
+                    color: tagH.hovered && !root.disabled ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                     Avatar {
                         x: 1.7; anchors.verticalCenter: parent.verticalCenter
                         size: 16; colorful: true; name: root.nameOf(tag.modelData)
@@ -99,12 +99,12 @@ Item {
                         height: 20; verticalAlignment: Text.AlignVCenter
                         text: root.nameOf(tag.modelData)
                         font.family: theme.font; font.pixelSize: 14
-                        color: root.disabled ? theme.disabled : theme.textStrong
+                        color: theme.onFill(tag, root.disabled ? theme.disabled : theme.textStrong)
                     }
                     FluentIcon {
                         x: tagName.x + tagName.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter
                         name: "dismiss-12"; size: 12
-                        color: root.disabled ? theme.disabled : theme.textStrong
+                        color: theme.onFill(tag, root.disabled ? theme.disabled : theme.textStrong)
                     }
                     HoverHandler { id: tagH; enabled: !root.disabled; cursorShape: Qt.PointingHandCursor }
                     TapHandler { enabled: !root.disabled; onTapped: root.unpick(tag.index) }
@@ -118,14 +118,14 @@ Item {
                 height: 20
                 enabled: !root.disabled
                 verticalAlignment: TextInput.AlignVCenter
-                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                font.family: theme.font; font.pixelSize: 14; color: theme.onFill(box, theme.text)
                 selectByMouse: true
                 Text {
                     visible: !field.text && root.picked.length === 0
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.placeholder
                     font: field.font
-                    color: root.disabled ? theme.disabled : theme.pick("#707070", "#ADADAD")
+                    color: theme.onFill(box, root.disabled ? theme.disabled : theme.pick("#707070", "#ADADAD", "#FFFFFF"))
                 }
                 onActiveFocusChanged: if (!activeFocus) root.open = false
                 // The dialog's Escape: close the list first.
@@ -173,7 +173,7 @@ Item {
                     width: parent.width - 52; elide: Text.ElideRight
                     text: root.nameOf(row.modelData)
                     font.family: theme.font; font.pixelSize: 14
-                    color: theme.text
+                    color: theme.onFill(row, theme.text)
                 }
                 HoverHandler { id: rowH; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.pick(row.modelData) }

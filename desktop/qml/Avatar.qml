@@ -90,7 +90,14 @@ Rectangle {
         for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997
         return h % swatches.length
     }
-    color: meeting ? "#C5CBFA" : pic.visible ? "transparent" : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
+    // High contrast (Teams, measured on winpc 2026-11-15): a person's or
+    // group's picture inside a 2 px white ring, initials white on black, a
+    // meeting's glyph white on black in a 0.67 px white ring.
+    readonly property bool hc: theme.highContrast && !square
+    readonly property real hcInset: hc && !meeting ? 2 : 0
+    color: hc ? "#000000" : meeting ? "#C5CBFA" : pic.visible ? "transparent" : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
+    border.color: hc ? "#FFFFFF" : "transparent"
+    border.width: hc ? (meeting ? 0.67 : 2) : 0
 
     function initials(n) {
         const words = n.trim().split(/\s+/).filter(w => w.length > 0)
@@ -120,7 +127,8 @@ Rectangle {
     Canvas {
         id: pic
         readonly property real oversample: 2
-        width: root.width * oversample; height: root.height * oversample
+        x: root.hcInset; y: root.hcInset
+        width: (root.width - 2 * root.hcInset) * oversample; height: (root.height - 2 * root.hcInset) * oversample
         scale: 1 / oversample
         transformOrigin: Item.TopLeft
         smooth: true
@@ -147,7 +155,7 @@ Rectangle {
         visible: root.meeting
         anchors.centerIn: parent
         name: "meeting-chat-20"; size: root.meetingGlyph
-        color: "#5B5FC7"
+        color: root.hc ? "#FFFFFF" : "#5B5FC7"
     }
     FluentIcon {
         visible: root.group && !root.meeting && !pic.visible
@@ -160,7 +168,7 @@ Rectangle {
         visible: !pic.visible && !root.group && !root.meeting
         anchors.centerIn: parent
         text: root.initialsText || (root.colorful && root.size <= 16 ? root.initials(root.name).charAt(0) : root.initials(root.name))
-        color: root.colorful ? root.fluentColors[1] : root.inks[root.hue]
+        color: root.hc ? "#FFFFFF" : root.colorful ? root.fluentColors[1] : root.inks[root.hue]
         font.family: theme.font
         font.pixelSize: root.colorful ? (root.size <= 24 ? 10 : root.size <= 28 ? 12 : root.size <= 40 ? 14 : Math.round(root.size * 0.38)) : Math.round(root.size * 0.38)
         font.weight: Font.DemiBold

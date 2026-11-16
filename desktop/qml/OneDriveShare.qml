@@ -19,7 +19,7 @@ Popup {
     Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
 
     // OneDrive's colours.
-    readonly property color ink: theme.pick("#252424", "#F3F2F1")
+    readonly property color ink: theme.pick("#252424", "#F3F2F1", "#FFFFFF")
     readonly property color soft: theme.pick("#605E5C", "#C8C6C4")
     readonly property color edge: theme.pick("#C8C8C8", "#605E5C")
     readonly property color accent: theme.pick("#5B5FC7", "#7F85F5")
@@ -165,7 +165,7 @@ Popup {
         signal clicked()
         width: 32; height: 32; radius: 2
         color: ibh.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: ib.glyph; color: root.soft }
+        FluentIcon { anchors.centerIn: parent; name: ib.icon; size: ib.glyph; color: theme.onFill(ib, root.soft) }
         HoverHandler { id: ibh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ib.clicked() }
         ToolTip.visible: ibh.hovered; ToolTip.delay: 600; ToolTip.text: label
@@ -181,9 +181,9 @@ Popup {
         signal clicked()
         height: 32; radius: 3
         width: Math.max(96, dbt.implicitWidth + 32)
-        color: !enabled2 ? theme.pick("#F3F2F1", "#323130") : primary ? (dbh.hovered ? theme.pick("#4F52B2", "#9297F7") : root.accent) : (dbh.hovered ? theme.menuHover : theme.surface)
-        border.width: primary || !enabled2 ? 0 : 0.67; border.color: theme.pick("#8A8886", "#8A8886")
-        Text { id: dbt; anchors.centerIn: parent; text: db.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: !db.enabled2 ? theme.pick("#B6B4B4", "#797775") : db.primary ? "white" : root.ink }
+        color: !enabled2 ? theme.pick("#F3F2F1", "#323130", "#000000") : primary ? (dbh.hovered ? theme.pick("#4F52B2", "#9297F7", "#1AEBFF") : root.accent) : (dbh.hovered ? theme.menuHover : theme.surface)
+        border.width: primary || !enabled2 ? 0 : 0.67; border.color: theme.pick("#8A8886", "#8A8886", "#FFFFFF")
+        Text { id: dbt; anchors.centerIn: parent; text: db.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(db, !db.enabled2 ? theme.pick("#B6B4B4", "#797775", "#FFFFFF") : db.primary ? "white" : root.ink) }
         HoverHandler { id: dbh; cursorShape: db.enabled2 ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: db.enabled2; onTapped: db.clicked() }
         Accessible.role: Accessible.Button
@@ -191,12 +191,13 @@ Popup {
     }
     // A link scope's 24 px round badge.
     component ScopeBadge: Rectangle {
+        id: hcFill1
         property int scope: 0
         property int size: 24
         width: size; height: size; radius: size / 2
         readonly property var look: [["#F1F6F1", "#0B6A0B", "globe-20"], ["#F0F5F8", "#004E8C", "briefcase-20"], ["#F2F2F2", "#393939", "person-add-20"], ["#F4EFEB", "#8E562E", "person-20"], ["#F6F6FA", "#6365A8", "chat-20"]][scope]
         color: look[0]; border.width: 0.67; border.color: look[1]
-        FluentIcon { anchors.centerIn: parent; name: parent.look[2]; size: Math.round(parent.size * 0.58); color: parent.look[1] }
+        FluentIcon { anchors.centerIn: parent; name: parent.look[2]; size: Math.round(parent.size * 0.58); color: theme.onFill(hcFill1, parent.look[1]) }
     }
 
     Item {
@@ -238,12 +239,13 @@ Popup {
                             required property var modelData
                             required property int index
                             width: pillName.implicitWidth + 28 + 8 + 32; height: 28; radius: 16
-                            color: theme.pick("#F3F2F1", "#3B3A39")
+                            color: theme.pick("#F3F2F1", "#3B3A39", "#000000")
                             Avatar { x: 1; size: 28; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId ? "8:orgid:" + parent.modelData.EntityData.ObjectId : "" }
                             Text { id: pillName; x: 37; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.DisplayText; font.family: theme.font; font.pixelSize: 14; color: root.ink }
                             Rectangle {
+                                id: hcFill2
                                 x: parent.width - 32; width: 32; height: 28; radius: 16; color: pxh.hovered ? theme.menuHover : "transparent"
-                                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: root.accent }
+                                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.onFill(hcFill2, root.accent) }
                                 HoverHandler { id: pxh; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: root.unpick(pill.index) }
                                 Accessible.role: Accessible.Button
@@ -267,13 +269,13 @@ Popup {
                     Accessible.role: Accessible.EditableText
                     Accessible.name: "Add a name, group, or email"
                 }
-                Rectangle { x: 362.33; y: 3.67; width: 1; height: parent.height - 7.33; color: theme.pick("#D1D1D1", "#605E5C") }
+                Rectangle { x: 362.33; y: 3.67; width: 1; height: parent.height - 7.33; color: theme.pick("#D1D1D1", "#605E5C", "#000000") }
                 Rectangle {
                     id: roleButton
                     x: 363.33; y: 0.67; width: 68; height: parent.height - 1.33; radius: 4
                     color: rbh.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: root.sendEdit ? "edit-20" : "eye-20"; size: 16; color: root.ink }
-                    FluentIcon { x: 40; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 12; color: root.ink }
+                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: root.sendEdit ? "edit-20" : "eye-20"; size: 16; color: theme.onFill(roleButton, root.ink) }
+                    FluentIcon { x: 40; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 12; color: theme.onFill(roleButton, root.ink) }
                     HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: roleMenu.open() }
                     Accessible.role: Accessible.ComboBox
@@ -292,12 +294,13 @@ Popup {
                     Repeater {
                         model: [{ edit: true, name: "Can edit", line: "Make any changes", icon: "edit-20" }, { edit: false, name: "Can view", line: "Can't make changes", icon: "eye-20" }]
                         Rectangle {
+                            id: hcFill3
                             required property var modelData
                             width: 182; height: 52; color: rmh.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { visible: root.sendEdit === parent.modelData.edit; x: 8; y: 20; size: 12; name: "checkmark-12"; color: root.ink }
-                            FluentIcon { x: 32; y: 18; size: 16; name: parent.modelData.icon; color: root.ink }
-                            Text { x: 60; y: 8; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
-                            Text { x: 60; y: 28; text: parent.modelData.line; font.family: theme.font; font.pixelSize: 12; color: root.soft }
+                            FluentIcon { visible: root.sendEdit === parent.modelData.edit; x: 8; y: 20; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill3, root.ink) }
+                            FluentIcon { x: 32; y: 18; size: 16; name: parent.modelData.icon; color: theme.onFill(hcFill3, root.ink) }
+                            Text { x: 60; y: 8; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.ink) }
+                            Text { x: 60; y: 28; text: parent.modelData.line; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill3, root.soft) }
                             HoverHandler { id: rmh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { root.sendEdit = parent.modelData.edit; roleMenu.close() } }
                             Accessible.role: Accessible.RadioButton
@@ -321,11 +324,12 @@ Popup {
                     model: root.suggestions
                     boundsBehavior: Flickable.StopAtBounds
                     delegate: Rectangle {
+                        id: hcFill4
                         required property var modelData
                         width: ListView.view.width; height: 54
                         color: sgh.hovered ? theme.menuHover : "transparent"
                         Avatar { x: 12; y: 7; size: 40; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId && parent.modelData.EntityType === "User" ? "8:orgid:" + parent.modelData.EntityData.ObjectId : "" }
-                        Text { x: 60; y: 17; text: parent.modelData.DisplayText; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                        Text { x: 60; y: 17; text: parent.modelData.DisplayText; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, root.ink) }
                         HoverHandler { id: sgh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.pick(parent.modelData) }
                         Accessible.role: Accessible.ListItem
@@ -333,12 +337,13 @@ Popup {
                     }
                 }
                 Rectangle {
+                    id: hcFill5
                     y: parent.height - 40; width: parent.width; height: 40
                     color: sdh.hovered ? theme.menuHover : "transparent"
                     Row {
                         anchors.centerIn: parent; spacing: 12
-                        FluentIcon { size: 16; name: "search-20"; color: theme.pick("#383966", "#C5C7F9") }
-                        Text { text: "Search directory"; font.family: theme.font; font.pixelSize: 12; color: root.ink }
+                        FluentIcon { size: 16; name: "search-20"; color: theme.onFill(hcFill5, theme.pick("#383966", "#C5C7F9", "#FFFFFF")) }
+                        Text { text: "Search directory"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill5, root.ink) }
                     }
                     HoverHandler { id: sdh; cursorShape: Qt.PointingHandCursor }
                     // The directory search is the same people search, with
@@ -382,7 +387,7 @@ Popup {
                     // A file only its owners have: a lock.
                     Rectangle {
                         visible: !root.shared; x: 4; anchors.verticalCenter: parent.verticalCenter; width: 26; height: 26; radius: 13
-                        color: theme.pick("#F3F2F1", "#3B3A39")
+                        color: theme.pick("#F3F2F1", "#3B3A39", "#000000")
                         FluentIcon { anchors.centerIn: parent; size: 16; name: "lock-closed-20"; color: root.soft }
                     }
                     Repeater {
@@ -400,14 +405,15 @@ Popup {
                     Accessible.name: "Manage access (" + (root.info ? root.info.people.length : 0) + " people) Select to manage access."
                 }
                 Rectangle {
+                    id: hcFill6
                     x: 175.71; width: 116.63; height: 33.33
-                    color: clh.hovered ? theme.pick("#E8E9F7", "#3D3E66") : theme.pick("#F4F4F9", "#2B2B40"); border.width: 0.67; border.color: theme.pick("#696BAA", "#7F85F5")
+                    color: clh.hovered ? theme.pick("#E8E9F7", "#3D3E66", "#1AEBFF") : theme.pick("#F4F4F9", "#2B2B40", "#000000"); border.width: 0.67; border.color: theme.pick("#696BAA", "#7F85F5", "#FFFFFF")
                     radius: 4
                     Rectangle { anchors.right: parent.right; width: 4; height: parent.height; color: parent.color; border.width: 0; visible: false }
                     Row {
                         anchors.centerIn: parent; spacing: 4
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "link-20"; color: theme.pick("#383966", "#C5C7F9") }
-                        Text { text: "Copy link"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.pick("#383966", "#C5C7F9") }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "link-20"; color: theme.onFill(hcFill6, theme.pick("#383966", "#C5C7F9", "#FFFF00")) }
+                        Text { text: "Copy link"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.pick("#383966", "#C5C7F9", "#FFFF00")) }
                     }
                     HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.copyLink() }
@@ -415,22 +421,24 @@ Popup {
                     Accessible.name: "Copy link"
                 }
                 Rectangle {
+                    id: hcFill7
                     x: 292.33; width: 32.67; height: 33.33; radius: 4
-                    color: lsh.hovered ? theme.pick("#E8E9F7", "#3D3E66") : theme.pick("#F4F4F9", "#2B2B40"); border.width: 0.67; border.color: theme.pick("#696BAA", "#7F85F5")
-                    FluentIcon { anchors.centerIn: parent; size: 16; name: "settings-20"; color: root.accent }
+                    color: lsh.hovered ? theme.pick("#E8E9F7", "#3D3E66", "#1AEBFF") : theme.pick("#F4F4F9", "#2B2B40", "#000000"); border.width: 0.67; border.color: theme.pick("#696BAA", "#7F85F5", "#FFFFFF")
+                    FluentIcon { anchors.centerIn: parent; size: 16; name: "settings-20"; color: theme.onFill(hcFill7, root.accent) }
                     HoverHandler { id: lsh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.openSettings() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Link settings"
                 }
                 Rectangle {
+                    id: hcFill8
                     x: 337; width: 95; height: 33.33; radius: 3
                     opacity: root.sending ? 0.6 : 1
-                    color: sdbh.hovered ? theme.pick("#4F52B2", "#9297F7") : root.accent
+                    color: sdbh.hovered ? theme.pick("#4F52B2", "#9297F7", "#1AEBFF") : root.accent
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "send-20"; color: "white" }
-                        Text { text: "Send"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "send-20"; color: theme.onFill(hcFill8, "white") }
+                        Text { text: "Send"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, "white") }
                     }
                     HoverHandler { id: sdbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.picked.length ? root.send() : pickerInput.forceActiveFocus() }
@@ -443,8 +451,8 @@ Popup {
                 id: copiedBar
                 visible: !!root.copied
                 x: 24; y: footer.y + footer.height + 12; width: 432; height: Math.max(31.33, copiedText.implicitHeight + 12)
-                radius: 2; color: theme.pick("#DFF6DD", "#054B16")
-                FluentIcon { x: 12; y: 8; size: 16; name: "checkmark-circle-20-filled"; color: theme.pick("#107C10", "#92C353") }
+                radius: 2; color: theme.pick("#DFF6DD", "#054B16", "#000000")
+                FluentIcon { x: 12; y: 8; size: 16; name: "checkmark-circle-20-filled"; color: theme.pick("#107C10", "#92C353", "#FFFFFF") }
                 Text {
                     id: copiedText
                     x: 34; width: parent.width - 46; anchors.verticalCenter: parent.verticalCenter
@@ -460,7 +468,7 @@ Popup {
                 visible: !!root.error
                 x: 24; y: (copiedBar.visible ? copiedBar.y + copiedBar.height : footer.y + footer.height) + 8; width: 432
                 wrapMode: Text.Wrap; text: root.error
-                font.family: theme.font; font.pixelSize: 12; color: theme.pick("#A4262C", "#F1707B")
+                font.family: theme.font; font.pixelSize: 12; color: theme.pick("#A4262C", "#F1707B", "#FFFFFF")
             }
         }
 
@@ -499,7 +507,7 @@ Popup {
                             ScopeBadge { scope: srow.modelData.scope }
                             Row {
                                 x: 40; y: 2; spacing: 0
-                                Text { text: srow.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: srow.on ? Font.Bold : Font.Normal; color: srow.on ? theme.pick("#575454", "#E1DFDD") : root.ink }
+                                Text { text: srow.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: srow.on ? Font.Bold : Font.Normal; color: srow.on ? theme.pick("#575454", "#E1DFDD", "#FFFFFF") : root.ink }
                                 Item {
                                     visible: !srow.on && !srow.modelData.noInfo; width: 24; height: 20
                                     FluentIcon { anchors.centerIn: parent; size: 12; name: "info-16"; color: root.soft }
@@ -516,7 +524,7 @@ Popup {
                             // The radio.
                             Rectangle {
                                 x: 412; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; radius: 10
-                                color: "transparent"; border.width: 1; border.color: srow.on ? root.accent : theme.pick("#605E5C", "#C8C6C4")
+                                color: "transparent"; border.width: 1; border.color: srow.on ? root.accent : theme.pick("#605E5C", "#C8C6C4", "#FFFFFF")
                                 Rectangle { visible: srow.on; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: root.accent }
                             }
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -540,9 +548,9 @@ Popup {
                 Rectangle {
                     id: roleCombo
                     width: 432; height: 42; color: rch.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 16; name: root.pendEdit ? "edit-20" : "eye-20"; color: root.soft }
-                    Text { x: 42; anchors.verticalCenter: parent.verticalCenter; text: root.pendEdit ? "Can edit" : "Can view"; font.family: theme.font; font.pixelSize: 14; color: root.soft }
-                    FluentIcon { anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "chevron-down-20"; color: root.soft }
+                    FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 16; name: root.pendEdit ? "edit-20" : "eye-20"; color: theme.onFill(roleCombo, root.soft) }
+                    Text { x: 42; anchors.verticalCenter: parent.verticalCenter; text: root.pendEdit ? "Can edit" : "Can view"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(roleCombo, root.soft) }
+                    FluentIcon { anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "chevron-down-20"; color: theme.onFill(roleCombo, root.soft) }
                     HoverHandler { id: rch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: linkRoleList.open() }
                     Accessible.role: Accessible.ComboBox
@@ -556,11 +564,12 @@ Popup {
                             Repeater {
                                 model: [{ edit: true, name: "Can edit", line: "Make any changes", icon: "edit-20" }, { edit: false, name: "Can view", line: "Can't make changes", icon: "eye-20" }]
                                 Rectangle {
+                                    id: hcFill9
                                     required property var modelData
                                     width: 424; height: 61.79; color: root.pendEdit === modelData.edit ? theme.menuHover : lrh.hovered ? theme.menuHover : "transparent"
-                                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 16; name: parent.modelData.icon; color: root.ink }
-                                    Text { x: 40; y: 12; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
-                                    Text { x: 40; y: 32; text: parent.modelData.line; font.family: theme.font; font.pixelSize: 12; color: root.soft }
+                                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 16; name: parent.modelData.icon; color: theme.onFill(hcFill9, root.ink) }
+                                    Text { x: 40; y: 12; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill9, root.ink) }
+                                    Text { x: 40; y: 32; text: parent.modelData.line; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill9, root.soft) }
                                     HoverHandler { id: lrh; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: { root.pendEdit = parent.modelData.edit; linkRoleList.close() } }
                                     Accessible.role: Accessible.RadioButton
@@ -618,7 +627,7 @@ Popup {
                             echoMode: TextInput.Password
                             text: root.pendPassword; onTextChanged: root.pendPassword = text
                             font.family: theme.font; font.pixelSize: 14; color: root.ink
-                            Text { visible: !parent.text; anchors.verticalCenter: parent.verticalCenter; text: "Set password"; font: parent.font; color: theme.pick("#3F3D3D", "#C8C6C4") }
+                            Text { visible: !parent.text; anchors.verticalCenter: parent.verticalCenter; text: "Set password"; font: parent.font; color: theme.pick("#3F3D3D", "#C8C6C4", "#FFFFFF") }
                             Accessible.role: Accessible.EditableText
                             Accessible.name: "Password field"
                         }
@@ -681,7 +690,7 @@ Popup {
                 x: 30; y: 92; width: stopRow.implicitWidth + 4; height: 20; color: "transparent"
                 Row {
                     id: stopRow; x: 2; spacing: 8
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 14; name: "subtract-circle-20"; color: theme.pick("#383966", "#C5C7F9") }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 14; name: "subtract-circle-20"; color: theme.pick("#383966", "#C5C7F9", "#FFFFFF") }
                     Text { text: "Stop sharing"; font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: ssh.hovered }
                 }
                 HoverHandler { id: ssh; cursorShape: Qt.PointingHandCursor }
@@ -754,13 +763,14 @@ Popup {
                         Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 32; name: prow.modelData.name; photoId: root.personPhoto(prow.modelData) }
                         Text { x: 48; anchors.verticalCenter: parent.verticalCenter; width: 260; elide: Text.ElideRight; text: prow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: root.ink }
                         Rectangle {
+                            id: hcFill10
                             anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                             width: roleRow.implicitWidth + 8; height: 28; radius: 2
                             color: prow.modelData.role !== 3 && prh.hovered ? theme.menuHover : "transparent"
                             Row {
                                 id: roleRow; anchors.centerIn: parent; spacing: 6
-                                FluentIcon { visible: prow.modelData.role !== 3; anchors.verticalCenter: parent.verticalCenter; size: 14; name: prow.modelData.role === 2 ? "edit-20" : "eye-20"; color: root.ink }
-                                Text { text: root.roleWord(prow.modelData.role); font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                                FluentIcon { visible: prow.modelData.role !== 3; anchors.verticalCenter: parent.verticalCenter; size: 14; name: prow.modelData.role === 2 ? "edit-20" : "eye-20"; color: theme.onFill(hcFill10, root.ink) }
+                                Text { text: root.roleWord(prow.modelData.role); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill10, root.ink) }
                             }
                             HoverHandler { id: prh; cursorShape: prow.modelData.role !== 3 ? Qt.PointingHandCursor : Qt.ArrowCursor }
                             TapHandler {
@@ -820,8 +830,9 @@ Popup {
                             Text { x: 8; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 16; elide: Text.ElideRight; text: parent.parent.modelData.url; font.family: theme.font; font.pixelSize: 14; color: root.ink }
                         }
                         Rectangle {
-                            x: 314; width: 54; height: 32; radius: 3; color: lch.hovered ? theme.menuHover : theme.surface; border.width: 0.67; border.color: theme.pick("#B6B4B4", "#8A8886")
-                            Text { anchors.centerIn: parent; text: "Copy"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.ink }
+                            id: hcFill11
+                            x: 314; width: 54; height: 32; radius: 3; color: lch.hovered ? theme.menuHover : theme.surface; border.width: 0.67; border.color: theme.pick("#B6B4B4", "#8A8886", "#FFFFFF")
+                            Text { anchors.centerIn: parent; text: "Copy"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill11, root.ink) }
                             HoverHandler { id: lch; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: backend.copyText(parent.parent.modelData.url) }
                             Accessible.role: Accessible.Button
@@ -896,8 +907,9 @@ Popup {
                                 Text { x: 8; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 16; elide: Text.ElideRight; text: way.modelData.url; font.family: theme.font; font.pixelSize: 14; color: root.ink }
                             }
                             Rectangle {
-                                x: 283; width: 54; height: 32; radius: 3; color: wch.hovered ? theme.menuHover : theme.surface; border.width: 0.67; border.color: theme.pick("#B6B4B4", "#8A8886")
-                                Text { anchors.centerIn: parent; text: "Copy"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.ink }
+                                id: hcFill12
+                                x: 283; width: 54; height: 32; radius: 3; color: wch.hovered ? theme.menuHover : theme.surface; border.width: 0.67; border.color: theme.pick("#B6B4B4", "#8A8886", "#FFFFFF")
+                                Text { anchors.centerIn: parent; text: "Copy"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, root.ink) }
                                 HoverHandler { id: wch; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: backend.copyText(way.modelData.url) }
                                 Accessible.role: Accessible.Button
@@ -943,7 +955,7 @@ Popup {
                             x: 22; width: 410; height: modelData.line ? 52 : 26
                             Rectangle {
                                 x: 12; y: 2; width: 20; height: 20; radius: 10; color: "transparent"
-                                border.width: 1; border.color: !direct.viaLink && root.personRole === opt.modelData.role ? root.accent : theme.pick("#605E5C", "#C8C6C4")
+                                border.width: 1; border.color: !direct.viaLink && root.personRole === opt.modelData.role ? root.accent : theme.pick("#605E5C", "#C8C6C4", "#FFFFFF")
                                 Rectangle { visible: !direct.viaLink && root.personRole === opt.modelData.role; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: root.accent }
                             }
                             Text { x: 46; y: 2; text: opt.modelData.name; font.family: theme.font; font.pixelSize: 14; color: direct.viaLink ? root.soft : root.ink }

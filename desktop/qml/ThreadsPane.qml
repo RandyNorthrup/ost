@@ -47,7 +47,7 @@ Rectangle {
         color: paHover.hovered ? theme.hover : "transparent"
         HoverHandler { id: paHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pa.clicked() }
-        FluentIcon { id: paIcon; anchors.centerIn: parent; size: 20; color: pa.iconColor }
+        FluentIcon { id: paIcon; anchors.centerIn: parent; size: 20; color: theme.onFill(pa, pa.iconColor) }
         Accessible.role: Accessible.Button
     }
     readonly property string threadKey: rootId ? channelId + ";messageid=" + rootId : ""
@@ -78,7 +78,7 @@ Rectangle {
         title = m ? (m.text || "").split("\n")[0] : ""
         rootId = id
     }
-    Rectangle { z: 3; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D") }
+    Rectangle { z: 3; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
 
     Conversation {
         id: thread
@@ -218,20 +218,20 @@ Rectangle {
                 x: 68; y: 8; width: stamp.x - x - 8; height: 20
                 verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                 text: (row.modelData.text || "").split("\n")[0]
-                font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                font.family: theme.font; font.pixelSize: 14; color: theme.onFill(row, theme.textStrong)
             }
             Text {
                 id: stamp
                 anchors.right: parent.right; anchors.rightMargin: 12; y: 10; height: 16
                 verticalAlignment: Text.AlignVCenter
                 text: pane.host ? pane.host.stamp(row.modelData.thread_last) : ""
-                font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
+                font.family: theme.font; font.pixelSize: 12; color: theme.onFill(row, theme.textStrong)
             }
             Text {
                 x: 68; y: 26; width: parent.width - x - 12; height: 20
                 verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                 text: (row.modelData.thread_last_mine ? "You" : row.modelData.thread_last_sender || "") + ": " + (row.modelData.thread_last_text || "").replace(/\n/g, " ")
-                font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                font.family: theme.font; font.pixelSize: 14; color: theme.onFill(row, theme.textSecondary)
             }
             Row {
                 x: 68; y: 50.5; height: 24
@@ -249,13 +249,13 @@ Rectangle {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.modelData.thread_replies + (row.modelData.thread_replies === 1 ? " reply" : " replies")
-                    font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
+                    font.family: theme.font; font.pixelSize: 12; color: theme.onFill(row, theme.textStrong)
                 }
             }
             FluentIcon {
                 visible: row.modelData.following === true
                 anchors.right: parent.right; anchors.rightMargin: 12
-                y: 55.3; name: "chat-multiple-checkmark-20-filled"; size: 14; color: theme.brand
+                y: 55.3; name: "chat-multiple-checkmark-20-filled"; size: 14; color: theme.onFill(row, theme.brand)
             }
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: pane.openThread(row.modelData.id) }

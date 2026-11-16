@@ -167,12 +167,12 @@ Item {
                     readonly property bool current: (root.channel.notify || "mentions") === modelData.mode
                     width: 290; height: 64; radius: 4
                     color: choiceHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { visible: choice.current; x: 4; y: 8; size: 16; name: "checkmark-16"; color: theme.textStrong }
-                    FluentIcon { x: 24; y: 6; size: 20; name: choice.modelData.icon; color: choiceHover.hovered ? theme.text : theme.textStrong }
+                    FluentIcon { visible: choice.current; x: 4; y: 8; size: 16; name: "checkmark-16"; color: theme.onFill(choice, theme.textStrong) }
+                    FluentIcon { x: 24; y: 6; size: 20; name: choice.modelData.icon; color: theme.onFill(choice, choiceHover.hovered ? theme.text : theme.textStrong) }
                     Column {
                         x: 50; y: 6; width: 232
-                        Text { text: choice.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: choiceHover.hovered ? theme.text : theme.textStrong }
-                        Text { width: 232; wrapMode: Text.Wrap; text: choice.modelData.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                        Text { text: choice.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(choice, choiceHover.hovered ? theme.text : theme.textStrong) }
+                        Text { width: 232; wrapMode: Text.Wrap; text: choice.modelData.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(choice, theme.textSecondary) }
                     }
                     HoverHandler { id: choiceHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { notifyFlyout.close(); menu.close(); if (!choice.current) root.act("notify", choice.modelData.mode) } }
@@ -186,10 +186,11 @@ Item {
                 Rectangle { anchors.verticalCenter: parent.verticalCenter; x: -5; width: 300; height: 0.67; color: theme.divider }
             }
             Rectangle {
+                id: hcFill1
                 width: 290; height: 32; radius: 4
                 color: customHover.hovered ? theme.menuHover : "transparent"
-                FluentIcon { x: 24; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "options-20"; color: customHover.hovered ? theme.text : theme.textStrong }
-                Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: "Customize"; font.family: theme.font; font.pixelSize: 14; color: customHover.hovered ? theme.text : theme.textStrong }
+                FluentIcon { x: 24; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "options-20"; color: theme.onFill(hcFill1, customHover.hovered ? theme.text : theme.textStrong) }
+                Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: "Customize"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, customHover.hovered ? theme.text : theme.textStrong) }
                 HoverHandler { id: customHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { notifyFlyout.close(); menu.close(); notifyDialog.start(root.channel) } }
                 Accessible.role: Accessible.MenuItem
@@ -232,18 +233,20 @@ Item {
             x: parent.width - 30.7 - width; y: cd.height - 32.7 - 31.3
             spacing: 8
             Rectangle {
+                id: hcFill2
                 width: 96; height: 31.3; radius: 4
                 color: cdCancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: cdCancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: cd.close() }
                 Accessible.role: Accessible.Button; Accessible.name: "Cancel"
             }
             Rectangle {
+                id: hcFill3
                 width: 96; height: 31.3; radius: 4
                 color: cdOkHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: cd.actionText; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                Text { anchors.centerIn: parent; text: cd.actionText; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
                 HoverHandler { id: cdOkHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { cd.close(); cd.accepted() } }
                 Accessible.role: Accessible.Button; Accessible.name: cd.actionText
@@ -265,10 +268,11 @@ Item {
         Item {
             width: parent.width; height: 36
             Rectangle {
+                id: hcFill4
                 x: 8; y: 10; width: 16; height: 16; radius: 2
                 color: archiveDialog.readOnly ? theme.brand : "transparent"
                 border.color: archiveDialog.readOnly ? theme.brand : theme.textSecondary; border.width: 0.67
-                FluentIcon { visible: archiveDialog.readOnly; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: "white" }
+                FluentIcon { visible: archiveDialog.readOnly; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill4, "white") }
             }
             Text { x: 36; y: 8; text: "Make the SharePoint folder read-only for team members"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: archiveDialog.readOnly ? theme.text : theme.textSecondary }
             HoverHandler { cursorShape: Qt.PointingHandCursor }

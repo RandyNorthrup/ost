@@ -82,13 +82,14 @@ Item {
         ToolButton2 { icon: "link-20"; label: "Copy link"; enabled: !!root.here && !!root.here.web_url; onClicked: { root.copy(root.here.web_url); backend.statusText = "Link copied" } }
         ToolButton2 { icon: "cloud-add-20"; label: "Add shortcut to OneDrive"; enabled: !!root.here; onClicked: root.change("shortcut", root.here.drive_id, root.here.id, root.here.name) }
         Rectangle {
+            id: hcFill1
             width: cuRow.implicitWidth + 24; height: 32; radius: theme.radius
             anchors.verticalCenter: parent.verticalCenter
             color: cuh.hovered ? theme.brandHover : theme.brandFill
             opacity: root.here ? 1 : 0.5
             Row { id: cuRow; anchors.centerIn: parent; spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 18; color: "white" }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create or upload"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 18; color: theme.onFill(hcFill1, "white") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create or upload"; color: theme.onFill(hcFill1, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             }
             HoverHandler { id: cuh; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !!root.here; onTapped: createMenu.open() }
@@ -131,7 +132,7 @@ Item {
                 color: fh.hovered ? theme.rowHover : "transparent"
                 Row {
                     height: parent.height
-                    Item { width: 64; height: parent.height; FluentIcon { anchors.centerIn: parent; name: frow.modelData.is_folder ? "folder-20-filled" : "document-20"; size: 20; color: frow.modelData.is_folder ? "#C19C00" : theme.textSecondary } }
+                    Item { width: 64; height: parent.height; FluentIcon { anchors.centerIn: parent; name: frow.modelData.is_folder ? "folder-20-filled" : "document-20"; size: 20; color: theme.onFill(frow, frow.modelData.is_folder ? theme.hc("#C19C00", "#FFFFFF") : theme.textSecondary) } }
                     Cell { width: frow.parent.parent.parent.wName; text: frow.modelData.name; strong: true }
                     Cell { width: 180; text: root.ago(frow.modelData.modified) }
                     Cell { width: 200; text: frow.modelData.modified_by }
@@ -141,8 +142,8 @@ Item {
                     visible: fh.hovered || actions.item === frow.modelData && actions.menuOpen
                     anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
                     width: 32; height: 32; radius: theme.radius
-                    color: mh.hovered ? theme.pane : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+                    color: mh.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(moreButton, theme.textStrong) }
                     HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: actions.popup(frow.modelData, moreButton, 0, moreButton.height) }
                     Accessible.role: Accessible.Button
@@ -206,8 +207,9 @@ Item {
             Row {
                 spacing: 8; layoutDirection: Qt.RightToLeft; width: 332
                 Rectangle {
+                    id: hcFill2
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: "white"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill2, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: folderDialog.done() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Create"
@@ -237,8 +239,8 @@ Item {
         color: tbh.hovered && enabled ? theme.rowHover : "transparent"
         opacity: enabled ? 1 : 0.45
         Row { id: tbRow; anchors.centerIn: parent; spacing: 6
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: tb.icon; size: 18; color: theme.textStrong }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: tb.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: tb.icon; size: 18; color: theme.onFill(tb, theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: tb.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(tb, theme.text) }
         }
         HoverHandler { id: tbh; cursorShape: tb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: tb.enabled; onTapped: tb.clicked() }

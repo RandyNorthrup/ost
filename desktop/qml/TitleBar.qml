@@ -93,7 +93,7 @@ Rectangle {
         color: hover.hovered && btn.usable ? theme.titleHover : "transparent"
         HoverHandler { id: hover }
         TapHandler { enabled: btn.usable; onTapped: btn.clicked() }
-        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20; color: btn.usable ? theme.titleIcon : theme.titleIconDisabled }
+        FluentIcon { id: glyph; anchors.centerIn: parent; size: 20; color: theme.onFill(btn, btn.usable ? theme.titleIcon : theme.titleIconDisabled) }
     }
 
     BarButton {
@@ -140,14 +140,14 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         color: theme.titleSearchFill
         border.color: field.activeFocus ? theme.brand : "transparent"
-        FluentIcon { name: "search-20"; size: 16; x: 25; anchors.verticalCenter: parent.verticalCenter; color: theme.titleSearchIcon }
+        FluentIcon { name: "search-20"; size: 16; x: 25; anchors.verticalCenter: parent.verticalCenter; color: theme.onFill(search, theme.titleSearchIcon) }
         TextInput {
             id: field
             // The input starts at 51 px with 8.5 px of padding, as in Teams.
             x: 60; width: parent.width - 70
             anchors.verticalCenter: parent.verticalCenter
             font.family: theme.font; font.pixelSize: theme.base
-            color: theme.text
+            color: theme.onFill(search, theme.text)
             clip: true
             onTextEdited: peopleDebounce.restart()
             Keys.onEscapePressed: { text = ""; focus = false; root.searchOpen = false }
@@ -161,7 +161,7 @@ Rectangle {
             Text {
                 visible: !field.text
                 text: field.activeFocus ? "Press Ctrl+G to go right to a chat or channel" : "Search (Ctrl+E)"
-                color: theme.textTertiary
+                color: theme.onFill(search, theme.textTertiary)
                 font: field.font
             }
             Accessible.name: "Search"
@@ -204,12 +204,12 @@ Rectangle {
                     id: item
                     required property var modelData
                     width: col.width; height: 44
-                    color: itemHover.hovered ? theme.pane : "transparent"
+                    color: itemHover.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
                     Avatar { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 28; name: item.modelData.name }
                     Column {
                         x: 56; anchors.verticalCenter: parent.verticalCenter
-                        Text { text: item.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                        Text { text: item.modelData.sub || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                        Text { text: item.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(item, theme.text) }
+                        Text { text: item.modelData.sub || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(item, theme.textSecondary) }
                     }
                     HoverHandler { id: itemHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: suggestions.choose(item.modelData) }
@@ -248,14 +248,14 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         width: pillRow.implicitWidth + 17.33; height: 31.33; radius: 4
         color: pillHover.hovered ? theme.menuHover : theme.surface
-        border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+        border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
         Row {
             id: pillRow
             x: 8.67; anchors.verticalCenter: parent.verticalCenter
             spacing: 6
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "premium-16"; size: 16; color: theme.text }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: premiumPill.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "more-horizontal-20"; size: 20; color: theme.text }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "premium-16"; size: 16; color: theme.onFill(premiumPill, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: premiumPill.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(premiumPill, theme.text) }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "more-horizontal-20"; size: 20; color: theme.onFill(premiumPill, theme.text) }
         }
         HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: moreMenu.visible = !moreMenu.visible }
@@ -307,16 +307,17 @@ Rectangle {
             signal picked()
             width: moreCol.width; height: 32; radius: 4
             color: mrh.hovered || (submenu && feedbackMenu.visible) ? theme.rowHover : "transparent"
-            FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: mr.icon; size: 20; color: mr.checked ? theme.brand : theme.textStrong }
-            Text { x: mr.labelX; anchors.verticalCenter: parent.verticalCenter; text: mr.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: mrh.hovered ? theme.text : theme.textStrong }
-            Text { visible: !!mr.keys; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: mr.keys; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
-            FluentIcon { visible: mr.submenu; anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: theme.textStrong }
+            FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: mr.icon; size: 20; color: theme.onFill(mr, mr.checked ? theme.brand : theme.textStrong) }
+            Text { x: mr.labelX; anchors.verticalCenter: parent.verticalCenter; text: mr.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(mr, mrh.hovered ? theme.text : theme.textStrong) }
+            Text { visible: !!mr.keys; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: mr.keys; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(mr, theme.textSecondary) }
+            FluentIcon { visible: mr.submenu; anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: theme.onFill(mr, theme.textStrong) }
             Rectangle {
+                id: hcFill1
                 visible: mr.pill
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                 width: 36.66; height: 20; radius: 10
                 color: theme.brandFill
-                Text { anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textOnBrand }
+                Text { anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             }
             HoverHandler { id: mrh; cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) feedbackMenu.showFor(mr.submenu ? mr : null) }
             TapHandler { onTapped: { if (mr.submenu) { feedbackMenu.showFor(mr); return } moreMenu.visible = false; mr.picked() } }
@@ -326,7 +327,7 @@ Rectangle {
         }
         component MenuDivider: Item {
             width: moreCol.width; height: 8.67
-            Rectangle { x: -4.67; y: 4; width: moreMenu.width; height: Math.max(0.67, 1 / Screen.devicePixelRatio); antialiasing: true; color: theme.pick("#E0E0E0", "#3D3D3D") }
+            Rectangle { x: -4.67; y: 4; width: moreMenu.width; height: Math.max(0.67, 1 / Screen.devicePixelRatio); antialiasing: true; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
         }
         component ZoomButton: Rectangle {
             id: zb
@@ -335,7 +336,7 @@ Rectangle {
             signal picked()
             width: 24; height: 23.33; radius: 4
             color: zbh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: zb.icon; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: zb.icon; size: 20; color: theme.onFill(zb, theme.textStrong) }
             HoverHandler { id: zbh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: zb.picked() }
             ToolTip.visible: zbh.hovered; ToolTip.delay: 500; ToolTip.text: zb.label
@@ -409,12 +410,13 @@ Rectangle {
                         { key: "compliment", icon: "heart-20", label: "Give a compliment", keys: "" },
                         { key: "suggest", icon: "microscope-20", label: "Suggest a feature", keys: "" }]
                 Rectangle {
+                    id: hcFill2
                     required property var modelData
                     width: feedbackCol.width; height: 36; radius: theme.radius
                     color: fbh.hovered ? theme.rowHover : "transparent"
-                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: parent.modelData.icon; size: 20; color: theme.textStrong }
-                    Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                    Text { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.keys; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: parent.modelData.icon; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
+                    Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill2, theme.text) }
+                    Text { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.keys; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
                     HoverHandler { id: fbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
@@ -464,7 +466,7 @@ Rectangle {
             property bool danger: false
             signal clicked()
             width: 44; height: parent.height
-            color: capHover.hovered ? (danger ? "#C42B1C" : theme.titleHover) : "transparent"
+            color: capHover.hovered ? (danger ? theme.hc("#C42B1C", "#1AEBFF") : theme.titleHover) : "transparent"
             HoverHandler { id: capHover }
             TapHandler { onTapped: cap.clicked() }
             Canvas {
@@ -646,9 +648,9 @@ Rectangle {
                 width: menuCol.width - 8; x: 4; height: 36; radius: theme.radius
                 color: frh.hovered || active ? theme.rowHover : "transparent"
                 Item { id: frLead; x: 78; width: 20; height: 20; anchors.verticalCenter: parent.verticalCenter }
-                FluentIcon { visible: !!fr.icon; x: 78; anchors.verticalCenter: parent.verticalCenter; name: fr.icon; size: 20; color: fr.iconColor }
-                Text { x: 108; anchors.verticalCenter: parent.verticalCenter; text: fr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                FluentIcon { visible: fr.chevron; anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.textStrong }
+                FluentIcon { visible: !!fr.icon; x: 78; anchors.verticalCenter: parent.verticalCenter; name: fr.icon; size: 20; color: theme.onFill(fr, fr.iconColor) }
+                Text { x: 108; anchors.verticalCenter: parent.verticalCenter; text: fr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(fr, theme.text) }
+                FluentIcon { visible: fr.chevron; anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.onFill(fr, theme.textStrong) }
                 HoverHandler { id: frh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: fr.clicked() }
                 Accessible.role: Accessible.Button
@@ -697,7 +699,7 @@ Rectangle {
                 Rectangle {
                     id: pausedCard
                     x: 76; y: 2; width: 234; height: 54; radius: 4
-                    color: theme.pick("#F5F5F5", "#2E2E2E")
+                    color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                     HoverHandler { id: pausedHover }
                     readonly property bool actions: pausedHover.hovered || editPause.activeFocus || resumePause.activeFocus || editMenu.opened
                     Text { x: 8; y: 8; height: 20; verticalAlignment: Text.AlignVCenter; text: "Notifications paused"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
@@ -778,8 +780,8 @@ Rectangle {
                         signal clicked()
                         width: 230.7; height: 32; radius: 4
                         color: wiHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { x: wi.iconX; anchors.verticalCenter: parent.verticalCenter; name: wi.icon; size: 20; color: theme.textStrong }
-                        Text { x: wi.labelX; anchors.verticalCenter: parent.verticalCenter; text: wi.label; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                        FluentIcon { x: wi.iconX; anchors.verticalCenter: parent.verticalCenter; name: wi.icon; size: 20; color: theme.onFill(wi, theme.textStrong) }
+                        Text { x: wi.labelX; anchors.verticalCenter: parent.verticalCenter; text: wi.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(wi, theme.textStrong) }
                         HoverHandler { id: wiHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: wi.clicked() }
                         Accessible.role: Accessible.MenuItem
@@ -801,7 +803,7 @@ Rectangle {
                 Rectangle {
                     id: noteBox
                     x: 76; y: 4; width: 233; height: Math.max(62, noteShown.implicitHeight + 24); radius: 4
-                    color: theme.pick("#F5F5F5", "#2E2E2E")
+                    color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                     Text {
                         id: noteShown
                         x: 12; y: 12; width: parent.width - 24 - (noteHover.hovered ? 56 : 0)
@@ -817,17 +819,19 @@ Rectangle {
                         visible: noteHover.hovered
                         anchors.right: parent.right; anchors.rightMargin: 4; y: 4
                         Rectangle {
+                            id: hcFill3
                             width: 24; height: 24; radius: 4
                             color: editHover.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: "edit-20"; size: 16; color: theme.textSecondary }
+                            FluentIcon { anchors.centerIn: parent; name: "edit-20"; size: 16; color: theme.onFill(hcFill3, theme.textSecondary) }
                             HoverHandler { id: editHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { notePage.start(); menu.page = "note" } }
                             Accessible.role: Accessible.Button; Accessible.name: "Set status message"
                         }
                         Rectangle {
+                            id: hcFill4
                             width: 24; height: 24; radius: 4
                             color: delHover.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.textSecondary }
+                            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.onFill(hcFill4, theme.textSecondary) }
                             HoverHandler { id: delHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.setStatusNote("", false, "Never") }
                             Accessible.role: Accessible.Button; Accessible.name: "Delete status message"
@@ -874,14 +878,14 @@ Rectangle {
                 anchors.bottom: parent.bottom; width: parent.width; height: 1; radius: 0
                 color: theme.brand; visible: dd.activeFocus
             }
-            FluentIcon { visible: !!dd.leadIcon; x: 12; anchors.verticalCenter: parent.verticalCenter; name: dd.leadIcon; size: 16; color: dd.leadColor || theme.text }
+            FluentIcon { visible: !!dd.leadIcon; x: 12; anchors.verticalCenter: parent.verticalCenter; name: dd.leadIcon; size: 16; color: theme.onFill(dd, dd.leadColor || theme.text) }
             Text {
                 x: dd.leadIcon ? 36 : 12; anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - x - 12 - 20 - 4; elide: Text.ElideRight
                 text: dd.options.length ? dd.options[dd.current].label : ""
-                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+                font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(dd, theme.text)
             }
-            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.text }
+            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(dd, theme.text) }
             HoverHandler { id: ddHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { id: ddTap; onTapped: { dd.forceActiveFocus(); ddMenu.opened ? ddMenu.close() : ddMenu.open() } }
             Keys.onPressed: e => { if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Down) { ddMenu.open(); e.accepted = true } }
@@ -905,7 +909,7 @@ Rectangle {
             signal clicked()
             width: 100; height: 32; radius: 4
             color: !enabled ? theme.bgDisabled : pbh.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: pb.label; color: pb.enabled ? "white" : theme.disabled; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+            Text { anchors.centerIn: parent; text: pb.label; color: theme.onFill(pb, pb.enabled ? "white" : theme.disabled); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             HoverHandler { id: pbh; cursorShape: pb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: pb.enabled; onTapped: pb.clicked() }
             Accessible.role: Accessible.Button
@@ -929,10 +933,11 @@ Rectangle {
                 statusPick.forceActiveFocus()
             }
             Rectangle {
+                id: hcFill5
                 x: 16; y: 18; width: 57; height: 21; radius: 4
                 color: durBack.hovered ? theme.menuHover : "transparent"
-                FluentIcon { x: 1; y: 1; name: "chevron-left-20"; size: 20; color: theme.textStrong }
-                Text { x: 27; y: 1; height: 20; verticalAlignment: Text.AlignVCenter; text: "Back"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+                FluentIcon { x: 1; y: 1; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill5, theme.textStrong) }
+                Text { x: 27; y: 1; height: 20; verticalAlignment: Text.AlignVCenter; text: "Back"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textStrong) }
                 HoverHandler { id: durBack; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: menu.page = "main" }
                 Accessible.role: Accessible.Button
@@ -969,7 +974,7 @@ Rectangle {
             property string leadIcon
             readonly property bool engaged: fd.activeFocus || fdMenu.opened
             width: 288; height: 32; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             activeFocusOnTab: true
             border.width: 0
             // Borders drawn per side (the bottom one differs).
@@ -1064,10 +1069,10 @@ Rectangle {
                             required property var modelData
                             required property int index
                             width: 298.7; height: 47.3; radius: 2.5
-                            color: index === notePicker.current ? theme.pick("#E6E6E6", "#3D3D3D") : npHover.hovered ? theme.menuHover : "transparent"
+                            color: index === notePicker.current ? theme.pick("#E6E6E6", "#3D3D3D", "#1AEBFF") : npHover.hovered ? theme.menuHover : "transparent"
                             Avatar { x: 19.6; y: 7.6; size: 32; name: np.modelData.name; photoId: np.modelData.mri }
-                            Text { x: 59.7; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: np.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                            Text { x: 59.7; y: 25.7; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: np.modelData.mail; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                            Text { x: 59.7; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: np.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(np, theme.text) }
+                            Text { x: 59.7; y: 25.7; height: 16; verticalAlignment: Text.AlignVCenter; width: 220; elide: Text.ElideRight; text: np.modelData.mail; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(np, theme.text) }
                             HoverHandler { id: npHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: notePage.pickMention(np.modelData) }
                             Accessible.role: Accessible.ListItem; Accessible.name: np.modelData.name
@@ -1076,9 +1081,10 @@ Rectangle {
                 }
             }
             Rectangle {
+                id: hcFill6
                 x: 16; y: 16; width: 21; height: 21; radius: 4
                 color: backHover.hovered ? theme.menuHover : "transparent"
-                FluentIcon { x: 1; y: 1; name: "chevron-left-20"; size: 20; color: theme.textStrong }
+                FluentIcon { x: 1; y: 1; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill6, theme.textStrong) }
                 HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: menu.page = "main" }
                 Accessible.role: Accessible.Button
@@ -1088,7 +1094,7 @@ Rectangle {
             Text { x: 53; y: 37; height: 16; verticalAlignment: Text.AlignVCenter; text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
             Rectangle {
                 x: 16; y: 71; width: 288; height: 240; radius: 3
-                color: theme.editorFilled
+                color: theme.editorFilled; border.color: theme.transparentStroke
                 clip: true
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand; visible: noteText.activeFocus }
                 TextEdit {
@@ -1135,8 +1141,8 @@ Rectangle {
                     id: pinBox
                     property bool checked: false
                     x: 2; y: 10; width: 16; height: 16; radius: 2
-                    color: checked ? theme.brandFill : "transparent"; border.color: checked ? theme.brandFill : theme.textSecondary; border.width: 1
-                    FluentIcon { anchors.centerIn: parent; visible: pinBox.checked; name: "checkmark-12-filled"; size: 12; color: "white" }
+                    color: checked ? theme.checkedFill : "transparent"; border.color: checked ? theme.checkedFill : theme.textSecondary; border.width: 1
+                    FluentIcon { anchors.centerIn: parent; visible: pinBox.checked; name: "checkmark-12-filled"; size: 12; color: theme.onFill(pinBox, "white") }
                     Accessible.role: Accessible.CheckBox
                     Accessible.checked: checked
                     Accessible.name: "Show when people message me"

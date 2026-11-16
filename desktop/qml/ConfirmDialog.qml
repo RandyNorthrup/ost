@@ -35,10 +35,11 @@ Popup {
     signal confirmed()
 
     Rectangle {
+        id: hcFill1
         visible: root.closeButton
         x: root.width - 24.67 - 32; y: 24.67; width: 32; height: 31.33; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
@@ -97,7 +98,7 @@ Popup {
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 text: db.label
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: db.primary ? theme.textOnBrand : theme.text
+                color: theme.onFill(db, db.primary ? theme.textOnBrand : theme.text)
             }
             HoverHandler { id: dbHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: db.clicked() }

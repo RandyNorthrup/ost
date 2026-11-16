@@ -71,8 +71,8 @@ Popup {
         Row {
             id: obRow
             anchors.centerIn: parent; spacing: 6
-            FluentIcon { visible: !!ob.icon; anchors.verticalCenter: parent.verticalCenter; size: 20; name: ob.icon; color: theme.text }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            FluentIcon { visible: !!ob.icon; anchors.verticalCenter: parent.verticalCenter; size: 20; name: ob.icon; color: theme.onFill(ob, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: ob.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(ob, theme.text) }
         }
         HoverHandler { id: obHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ob.clicked() }
@@ -90,9 +90,10 @@ Popup {
             Accessible.role: Accessible.Heading
         }
         Rectangle {
+            id: hcFill1
             x: 862; y: 24; width: 32; height: 32; radius: 4
             color: xHover.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; size: 16; name: "dismiss-16"; color: theme.text }
+            FluentIcon { anchors.centerIn: parent; size: 16; name: "dismiss-16"; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: xHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.close() }
             Accessible.role: Accessible.Button
@@ -124,7 +125,7 @@ Popup {
                 anchors.horizontalCenter: parent.horizontalCenter; y: 168
                 text: "To get the best result, choose an image that's at least 848x244 px."
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
-                color: theme.pick("#0F0F0F", "#FFFFFF")
+                color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
             }
             OutlineButton {
                 x: parent.width - 14.3 - width; y: 314
@@ -196,29 +197,31 @@ Popup {
         // The hint and the buttons.
         Row {
             x: 32; y: dlg.hasPicture ? 504.7 : 448.7; spacing: 8
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 12; name: "info-12"; color: theme.pick("#0F0F0F", "#FFFFFF") }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 12; name: "info-12"; color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF") }
             Text {
                 text: "To get the best result, choose an image that's at least 848x244 px."
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
-                color: theme.pick("#0F0F0F", "#FFFFFF")
+                color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
             }
         }
         Rectangle {
+            id: hcFill2
             x: dlg.hasPicture ? 686 : 790; y: dlg.hasPicture ? 496.7 : 440.7
             width: 96; height: 32; radius: 4
             color: cancelHover.hovered ? theme.rowHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.close() }
             Accessible.role: Accessible.Button; Accessible.name: "Cancel"
         }
         Rectangle {
+            id: hcFill3
             visible: dlg.hasPicture
             x: 790; y: 496.7
             width: 96; height: 32; radius: 4
             color: doneHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+            Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
             HoverHandler { id: doneHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.finish() }
             Accessible.role: Accessible.Button; Accessible.name: "Done"

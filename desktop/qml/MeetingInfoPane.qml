@@ -37,9 +37,10 @@ Rectangle {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             x: parent.width - 52; y: 13.67; width: 32; height: 30; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
@@ -90,6 +91,7 @@ Rectangle {
                 height: 31.33
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "link-20"; size: 20; color: theme.text }
                 Rectangle {
+                    id: hcFill2
                     width: 240; height: 31.33; radius: 4
                     color: copyHover.hovered ? theme.menuHover : theme.surface
                     border.color: copyHover.hovered ? theme.strokeHover : theme.stroke
@@ -98,7 +100,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: root.copied ? "Copied to clipboard" : "Copy join info"
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                        color: theme.text
+                        color: theme.onFill(hcFill2, theme.text)
                     }
                     HoverHandler { id: copyHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {

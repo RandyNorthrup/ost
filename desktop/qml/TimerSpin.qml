@@ -14,7 +14,7 @@ Rectangle {
     property string tip
     signal edited(int v)
     width: 70; height: 42.67; radius: 4
-    color: theme.pick("#F5F5F5", "#1F1F1F")
+    color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
     function pad(v) { return (v < 10 ? "0" : "") + v }
     // Filled from outside (+N min, a new length): show it unless typing.
     onValueChanged: if (!input.activeFocus) input.text = pad(value)
@@ -43,12 +43,12 @@ Rectangle {
         x: 46; y: up ? 0 : 21.33
         width: 24; height: 16
         radius: 4
-        color: sh.hovered ? theme.pick("#E0E0E0", "#333333") : "transparent"
+        color: sh.hovered ? theme.pick("#E0E0E0", "#333333", "#1AEBFF") : "transparent"
         FluentIcon {
             anchors.horizontalCenter: parent.horizontalCenter
             y: st.up ? 1.5 : -1.5
             name: st.up ? "chevron-up-16" : "chevron-down-16"; size: 14
-            color: theme.textSecondary
+            color: theme.onFill(st, theme.textSecondary)
         }
         HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.set(root.value + (st.up ? 1 : -1)) }

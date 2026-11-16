@@ -46,12 +46,13 @@ Popup {
                     width: column.width
                     spacing: 0
                     Rectangle {
+                        id: hcFill1
                         width: parent.width; height: 32; radius: 4
                         color: rowHover.hovered ? theme.menuHover : "transparent"
                         FluentIcon {
                             visible: entry.modelData.checked === true
                             x: 6; y: 8; size: 16
-                            name: "view-check-16"; color: rowHover.hovered ? theme.text : theme.textStrong
+                            name: "view-check-16"; color: theme.onFill(hcFill1, rowHover.hovered ? theme.text : theme.textStrong)
                         }
                         Text {
                             x: 26; width: parent.width - 32
@@ -59,7 +60,7 @@ Popup {
                             elide: Text.ElideRight
                             text: entry.modelData.label || ""
                             font.family: theme.font; font.pixelSize: theme.base
-                            color: rowHover.hovered ? theme.text : theme.textStrong
+                            color: theme.onFill(hcFill1, rowHover.hovered ? theme.text : theme.textStrong)
                         }
                         HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { root.close(); root.picked(entry.index) } }

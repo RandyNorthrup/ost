@@ -12,7 +12,7 @@ Window {
     property var call
     title: "Meeting join | " + (call ? call.peer : "") + " | OST"
     width: 1280; height: 680
-    color: "#F5F5F5"
+    color: theme.hc("#F5F5F5", "#000000")
     onClosing: if (call) call.roomMode = false
     // Teams opens it maximized on the room's display (a screen other than
     // this device's), else over this screen's work area, without
@@ -41,7 +41,7 @@ Window {
     Rectangle {
         x: parent.width - 360; width: 360; height: parent.height
         color: theme.pane
-        Rectangle { width: 0.67; height: parent.height; color: "#E0E0E0" }
+        Rectangle { width: 0.67; height: parent.height; color: theme.hc("#E0E0E0", "#000000") }
         PeoplePane {
             anchors.fill: parent
             display: true

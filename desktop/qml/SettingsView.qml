@@ -106,7 +106,7 @@ Rectangle {
         property string label: "Preview sound"
         width: 32; height: 31.3; radius: 4
         color: pbHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: preview.playing === pb.file ? "stop-20-filled" : "play-20"; size: 20; color: theme.text }
+        FluentIcon { anchors.centerIn: parent; name: preview.playing === pb.file ? "stop-20-filled" : "play-20"; size: 20; color: theme.onFill(pb, theme.text) }
         HoverHandler { id: pbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.previewSound(pb.file) }
         Accessible.role: Accessible.Button
@@ -185,7 +185,7 @@ Rectangle {
         height: (rowLabel ? rowCol.y + rowCol.height : optIn ? optInCol.y + optInCol.height : textCol.y + textCol.height) + 16.6
         radius: 8
         color: "transparent"
-        border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+        border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
         FluentIcon { x: 12.7; y: 16.7; name: rc.icon; size: 20; color: theme.text }
 
         Column {
@@ -206,7 +206,7 @@ Rectangle {
             Rectangle {
                 visible: !!rc.badge
                 width: badgeRow.implicitWidth + 16; height: 24; radius: 8
-                color: theme.pick("#F5F5F5", "#2E2E2E")
+                color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                 Row {
                     id: badgeRow
                     x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 4
@@ -302,7 +302,7 @@ Rectangle {
         width: parent ? parent.width : 0
         height: 20.7 + 20 + acCol.height + 20.6
         radius: 8; color: "transparent"
-        border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+        border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
         FluentIcon { visible: !!ac.icon; x: 18.7; y: (ac.height - 20) / 2; name: ac.icon; size: 20; color: theme.text }
         Image { visible: !ac.icon; x: 18.7; y: (ac.height - 20) / 2; width: 20; height: 20; source: "../assets/logo.png"; sourceSize: Qt.size(40, 40); smooth: true }
         Text { x: 56.7; y: 20.7; text: ac.title; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
@@ -361,15 +361,15 @@ Rectangle {
             property var def
             readonly property bool sel: root.page === def.key
             width: 346; height: 32; radius: 4
-            color: sel ? theme.surface : nh.hovered ? theme.rowHover : "transparent"
+            color: sel ? theme.hc(theme.surface, theme.hcHighlight) : nh.hovered ? theme.rowHover : "transparent"
             border.color: sel ? Qt.rgba(0, 0, 0, 0.05) : "transparent"; border.width: 0.67
-            FluentIcon { x: 16.7; anchors.verticalCenter: parent.verticalCenter; size: 20; name: ni.sel ? ni.def.icon + "-filled" : ni.def.icon; color: ni.sel ? theme.brand : theme.textStrong }
+            FluentIcon { x: 16.7; anchors.verticalCenter: parent.verticalCenter; size: 20; name: ni.sel ? ni.def.icon + "-filled" : ni.def.icon; color: theme.onFill(ni, ni.sel ? theme.brand : theme.textStrong) }
             Text {
                 x: 49.7; anchors.verticalCenter: parent.verticalCenter
                 text: ni.def.label
                 font.family: theme.font; font.pixelSize: 14
                 font.weight: nh.hovered && !ni.sel ? Font.DemiBold : Font.Normal
-                color: ni.sel ? theme.text : theme.textStrong
+                color: theme.onFill(ni, ni.sel ? theme.text : theme.textStrong)
             }
             HoverHandler { id: nh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.page = ni.def.key; root.subPage = "" } }
@@ -471,8 +471,8 @@ Rectangle {
                 Row {
                     spacing: 12.7
                     property string mode: root.local("openContentIn", "main")
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "main"; onPicked: { backend.setSetting("openContentIn", "main"); parent.mode = "main" } }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "main"; onPicked: { backend.setSetting("openContentIn", "main"); parent.mode = "main" } }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
                 }
             }
             // Teams' Starting chats card: new chats in the main window or a
@@ -485,8 +485,8 @@ Rectangle {
                 Row {
                     spacing: 12.7
                     readonly property bool popout: root.prop("userPersonalSettings", ["messagingSettings", "alwaysPopOutNewChat"], false) === true
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark") + ".svg"; checked: !parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", false) }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark") + ".svg"; checked: parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true) }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: !parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", false) }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true) }
                 }
             }
             // Teams' Meeting card. Its "New meeting controls" switches Teams
@@ -695,14 +695,14 @@ Rectangle {
                             readonly property bool removable: index > 0
                             width: chipRow.width + 24; height: 31.3
                             radius: height / 2
-                            color: chipHover.hovered && removable ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
-                            border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+                            color: chipHover.hovered && removable ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+                            border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
                             Row {
                                 id: chipRow
                                 x: 12; anchors.verticalCenter: parent.verticalCenter
                                 spacing: 4
-                                Text { anchors.verticalCenter: parent.verticalCenter; text: translationCard.nameOf(chip.modelData); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                                FluentIcon { visible: chip.removable; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 20; color: theme.text }
+                                Text { anchors.verticalCenter: parent.verticalCenter; text: translationCard.nameOf(chip.modelData); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(chip, theme.text) }
+                                FluentIcon { visible: chip.removable; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 20; color: theme.onFill(chip, theme.text) }
                             }
                             HoverHandler { id: chipHover; enabled: chip.removable; cursorShape: Qt.PointingHandCursor }
                             TapHandler { enabled: chip.removable; onTapped: translationCard.save("translationKnown", JSON.stringify(translationCard.settings.known.filter(k => k !== chip.modelData))) }
@@ -899,11 +899,12 @@ Rectangle {
                         width: 360; height: 40
                         Text { y: 9.6; text: spellManage.nameOf(langRow.modelData); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         Rectangle {
+                            id: hcFill1
                             visible: spellManage.st.languages.length > 1
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                             width: 32; height: 32; radius: 4
                             color: moreHover.hovered || langMenu.opened ? theme.menuHover : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.text }
+                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFill1, theme.text) }
                             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: langMenu.open() }
                             Accessible.role: Accessible.Button
@@ -916,7 +917,7 @@ Rectangle {
                                 MenuItem { text: "Remove"; onTriggered: spellManage.setLanguages(spellManage.st.languages.filter(x => x !== langRow.modelData)) }
                             }
                         }
-                        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                     }
                 }
                 SettingsParts.Gap { size: spellManage.st.languages.length ? 23.7 : 15 }
@@ -947,8 +948,8 @@ Rectangle {
                 bodyGap: 10.6
                 OutlineDropdown {
                     width: 249.3; height: 30
-                    readonly property var keys: ["system", "light", "dark", "classic"]
-                    options: [{ label: "Follow operating system theme" }, { label: "Light" }, { label: "Dark" }, { label: "Classic" }]
+                    readonly property var keys: ["system", "light", "dark", "classic", "highContrast"]
+                    options: [{ label: "Follow operating system theme" }, { label: "Light" }, { label: "Dark" }, { label: "Classic" }, { label: "High contrast" }]
                     current: Math.max(0, keys.indexOf(backend.themeMode))
                     accessibleName: "Theme"
                     onPicked: i => backend.setSetting("theme", keys[i])
@@ -1020,9 +1021,9 @@ Rectangle {
                 Row {
                     spacing: 12.7
                     readonly property bool separate: window.splitView
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Combined"; image: "../assets/settings/simple-collab-picker-combined-" + theme.pick("light", "dark") + ".svg"; checked: !parent.separate
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Combined"; image: "../assets/settings/simple-collab-picker-combined-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: !parent.separate
                         onPicked: backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: true })) }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Separate"; image: "../assets/settings/simple-collab-picker-separate-" + theme.pick("light", "dark") + ".svg"; checked: parent.separate
+                    SettingsParts.ImageRadio { imageHeight: 80; label: "Separate"; image: "../assets/settings/simple-collab-picker-separate-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.separate
                         onPicked: backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: false })) }
                 }
             }
@@ -1081,16 +1082,16 @@ Rectangle {
                 Row {
                     spacing: 12.7
                     readonly property string mode: root.prop("messageDensity", [], "COMFY")
-                    SettingsParts.ImageRadio { label: "Comfy"; image: "../assets/settings/chat-density-comfy-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode !== "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMFY") }
-                    SettingsParts.ImageRadio { label: "Compact"; image: "../assets/settings/chat-density-compact-" + theme.pick("default", "dark") + ".svg"; checked: parent.mode === "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMPACT") }
+                    SettingsParts.ImageRadio { label: "Comfy"; image: "../assets/settings/chat-density-comfy-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode !== "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMFY") }
+                    SettingsParts.ImageRadio { label: "Compact"; image: "../assets/settings/chat-density-compact-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMPACT") }
                 }
                 SettingsParts.SubHeading { text: "When I open a chat, take me to"; gapAbove: 15 }
                 SettingsParts.Gap { size: 12 }
                 Row {
                     spacing: 12.7
                     readonly property bool lastRead: root.prop("userPersonalSettings", ["messagingSettings", "navigateToLastReadMessage"], true) !== false
-                    SettingsParts.ImageRadio { label: "Last read message"; image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
-                    SettingsParts.ImageRadio { label: "Newest message"; image: "../assets/settings/chat-landing-latest-" + theme.pick("light", "dark") + ".svg"; checked: !parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", false) }
+                    SettingsParts.ImageRadio { label: "Last read message"; image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
+                    SettingsParts.ImageRadio { label: "Newest message"; image: "../assets/settings/chat-landing-latest-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: !parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", false) }
                 }
             }
             SettingsParts.Card {
@@ -1218,7 +1219,7 @@ Rectangle {
                             imageHeight: 80
                             label: modelData.label
                             checked: cornerTiles.corner === modelData.key
-                            image: "../assets/settings/notification-position-" + modelData.key.toLowerCase() + "-" + theme.pick("default", "dark") + "-" + (checked ? "active" : "inactive") + ".svg"
+                            image: "../assets/settings/notification-position-" + modelData.key.toLowerCase() + "-" + theme.pick("default", "dark", "contrast") + "-" + (checked ? "active" : "inactive") + ".svg"
                             onPicked: { backend.setSetting("notificationCorner", modelData.key); cornerTiles.corner = modelData.key }
                         }
                     }
@@ -1237,7 +1238,7 @@ Rectangle {
                             imageHeight: 80
                             label: modelData.label
                             checked: sizeTiles.size === modelData.key
-                            image: "../assets/settings/notification-style-" + modelData.key.toLowerCase() + "-" + theme.pick("default", "dark") + "-" + (checked ? "active" : "inactive") + ".svg"
+                            image: "../assets/settings/notification-style-" + modelData.key.toLowerCase() + "-" + theme.pick("default", "dark", "contrast") + "-" + (checked ? "active" : "inactive") + ".svg"
                             onPicked: { backend.setSetting("notificationSize", modelData.key); sizeTiles.size = modelData.key }
                         }
                     }
@@ -1425,7 +1426,7 @@ Rectangle {
                 trailing: Component {
                     Rectangle {
                         width: 371; height: 41
-                        color: theme.inputFilled; radius: 4
+                        color: theme.inputFilled; border.color: theme.transparentStroke; radius: 4
                         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: addPeople.activeFocus ? 2 : 0.67; color: addPeople.activeFocus ? theme.brand : theme.textSecondary }
                         TextInput {
                             id: addPeople
@@ -1446,11 +1447,12 @@ Rectangle {
                                 Repeater {
                                     model: backend.peopleJson ? JSON.parse(backend.peopleJson).slice(0, 6) : []
                                     Rectangle {
+                                        id: hcFill2
                                         required property var modelData
                                         width: matches.width - 8; height: 44; radius: 4
                                         color: pHover.hovered ? theme.menuHover : "transparent"
                                         Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name || ""; photoId: parent.modelData.id || "" }
-                                        Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                        Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
                                         HoverHandler { id: pHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: { backend.channelAction("notify-on", "", "", JSON.stringify({ mri: "8:orgid:" + parent.modelData.id })); addPeople.text = ""; matches.close() } }
                                         Accessible.role: Accessible.Button
@@ -1483,10 +1485,11 @@ Rectangle {
                         Avatar { anchors.verticalCenter: parent.verticalCenter; size: 32; name: tagRow.name; photoId: tagRow.modelData.mri.replace(/^8:orgid:/, "") }
                         Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 88; elide: Text.ElideRight; text: tagRow.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         Rectangle {
+                            id: hcFill3
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                             width: 32; height: 32; radius: 4
                             color: rmHover.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.text }
+                            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill3, theme.text) }
                             HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: backend.channelAction("notify-off", "", "", JSON.stringify({ id: tagRow.modelData.id, mri: tagRow.modelData.mri, email: tagRow.modelData.email })) }
                             Accessible.role: Accessible.Button
@@ -1610,11 +1613,12 @@ Rectangle {
                                         Repeater {
                                             model: backend.peopleJson ? JSON.parse(backend.peopleJson).slice(0, 6) : []
                                             Rectangle {
+                                                id: hcFill4
                                                 required property var modelData
                                                 width: prioMatches.width - 8; height: 44; radius: 4
                                                 color: ppHover.hovered ? theme.menuHover : "transparent"
                                                 Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name || ""; photoId: parent.modelData.id || "" }
-                                                Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                                Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
                                                 HoverHandler { id: ppHover; cursorShape: Qt.PointingHandCursor }
                                                 TapHandler { onTapped: { backend.channelAction("people-list-add", "", "", JSON.stringify({ list: "priority", mri: "8:orgid:" + parent.modelData.id })); prioField.text = ""; prioMatches.close() } }
                                                 Accessible.role: Accessible.Button
@@ -1655,7 +1659,7 @@ Rectangle {
                 visible: root.page === "accounts"
                 width: parent.width; height: 120.7
                 radius: 8; color: theme.surface
-                border.color: theme.pick("#D1D1D1", "#3D3D3D"); border.width: 0.67
+                border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
                 clip: true
                 Avatar { x: 10.7; y: 10.7; size: 56; name: backend.userName || "?"; photoId: "me"; presence: titleBar.presence }
                 Column {
@@ -1667,9 +1671,9 @@ Rectangle {
                     id: refreshBtn
                     x: parent.width - 158.7; y: 21.2
                     width: 32; height: 32; radius: 4
-                    color: refreshHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
-                    border.color: theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
-                    FluentIcon { anchors.centerIn: parent; name: "arrow-clockwise-20"; size: 20; color: theme.text }
+                    color: refreshHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+                    border.color: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
+                    FluentIcon { anchors.centerIn: parent; name: "arrow-clockwise-20"; size: 20; color: theme.onFill(refreshBtn, theme.text) }
                     HoverHandler { id: refreshHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.restartApp() }
                     ToolTip {
@@ -1682,24 +1686,25 @@ Rectangle {
                     Accessible.name: "Refresh license and restart"
                 }
                 Rectangle {
+                    id: hcFill5
                     x: parent.width - 118.7; y: 21.2
                     width: 96; height: 32; radius: 4
-                    color: manageHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D") : theme.surface
-                    border.color: theme.pick("#D1D1D1", "#5C5C5C"); border.width: 0.67
+                    color: manageHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+                    border.color: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.text }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.onFill(hcFill5, theme.text) }
                     }
                     HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
                     Accessible.role: Accessible.Link
                     Accessible.name: "Manage Account for " + backend.userName + " (opens in browser)"
                 }
-                Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D") }
+                Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D", "#000000") }
                 Rectangle {
                     x: 0.67; y: 72.67; width: parent.width - 1.33; height: 47.3
-                    color: theme.pick("#FAFAFA", "#242424")
+                    color: theme.pick("#FAFAFA", "#242424", "#000000")
                     Rectangle { x: 2; y: 4; width: 3; height: parent.height - 8; radius: 1.5; color: theme.brand }
                     Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: backend.orgName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
                     Accessible.role: Accessible.ListItem
@@ -1826,15 +1831,15 @@ Rectangle {
                     id: buildingBox
                     width: 300; height: 32; radius: 4
                     color: theme.surface
-                    border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
-                    Rectangle { anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33; height: buildingField.activeFocus ? 2 : 0.67; radius: 1; color: buildingField.activeFocus ? theme.brand : theme.pick("#575757", "#ADADAD") }
+                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                    Rectangle { anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33; height: buildingField.activeFocus ? 2 : 0.67; radius: 1; color: buildingField.activeFocus ? theme.brand : theme.pick("#575757", "#ADADAD", "#000000") }
                     TextInput {
                         id: buildingField
                         x: 8.67; width: 264.7 - 8; anchors.verticalCenter: parent.verticalCenter
                         font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                         text: stationaryPage.chosenBuilding ? stationaryPage.chosenBuilding.name : ""
                         onTextEdited: buildingList.open()
-                        Text { visible: !buildingField.text; text: "Find a building"; font: buildingField.font; color: theme.pick("#707070", "#ADADAD") }
+                        Text { visible: !buildingField.text; text: "Find a building"; font: buildingField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
                         Keys.onEscapePressed: buildingList.close()
                         Keys.onDownPressed: buildingList.open()
                         Accessible.role: Accessible.ComboBox
@@ -1856,18 +1861,19 @@ Rectangle {
                             Item {
                                 visible: buildingList.matches.length === 0
                                 width: 292; height: 32
-                                Text { x: 28; anchors.verticalCenter: parent.verticalCenter; text: stationaryPage.data_.loading ? "Loading…" : "No buildings found"; font.family: theme.font; font.pixelSize: 14; color: theme.pick("#BDBDBD", "#5C5C5C") }
+                                Text { x: 28; anchors.verticalCenter: parent.verticalCenter; text: stationaryPage.data_.loading ? "Loading…" : "No buildings found"; font.family: theme.font; font.pixelSize: 14; color: theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") }
                                 Accessible.role: Accessible.ListItem
                                 Accessible.name: "No buildings found"
                             }
                             Repeater {
                                 model: buildingList.matches
                                 Rectangle {
+                                    id: hcFill6
                                     required property var modelData
                                     width: 292; height: 32; radius: 4
                                     color: bHover.hovered ? theme.menuHover : "transparent"
-                                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; visible: parent.modelData.id === stationaryPage.chosen; name: "checkmark-16"; size: 16; color: theme.text }
-                                    Text { x: 28; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 36; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; visible: parent.modelData.id === stationaryPage.chosen; name: "checkmark-16"; size: 16; color: theme.onFill(hcFill6, theme.text) }
+                                    Text { x: 28; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 36; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill6, theme.text) }
                                     HoverHandler { id: bHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: { backend.setSetting("deviceHomeBuildingId", parent.modelData.id); buildingField.text = parent.modelData.name; buildingList.close() } }
                                     Accessible.role: Accessible.ListItem
@@ -2027,7 +2033,7 @@ Rectangle {
                     onToggled: v => { backend.setSetting("autoGainControl", v ? "on" : "off"); agcRow.on = v }
                 }
                 SettingsParts.Gap { size: 8 }
-                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D") }
+                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
                 SettingsParts.Gap { size: 22 }
                 SettingsParts.SwitchRow {
                     label: "Noise suppression"
@@ -2048,7 +2054,7 @@ Rectangle {
                     usable: false
                 }
                 SettingsParts.Gap { size: 24 }
-                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D") }
+                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
                 SettingsParts.Gap { size: 30 }
                 SettingsParts.SubHeading { text: "Secondary Ringer" }
                 SettingsParts.Gap { size: 16.7 }
@@ -2148,6 +2154,7 @@ Rectangle {
                             }
                         }
                         Rectangle {
+                            id: hcFill7
                             anchors.bottom: parent.bottom
                             width: parent.width; height: 24
                             color: Qt.rgba(0, 0, 0, 0.5)
@@ -2155,7 +2162,7 @@ Rectangle {
                                 anchors.centerIn: parent
                                 text: videoEffects.greenScreen ? "What is your background color?" : "Preview"
                                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
-                                color: "white"
+                                color: theme.onFill(hcFill7, "white")
                             }
                             Rectangle {
                                 visible: videoEffects.greenScreen
@@ -2164,7 +2171,7 @@ Rectangle {
                                 Rectangle {
                                     anchors.centerIn: parent
                                     width: 14; height: 14; radius: 3
-                                    color: videoCard.picking ? theme.pick("#F5F5F5", "#3D3D3D") : (videoEffects.greenScreenColor || videoEffects.detectedColor || "#FFFFFF")
+                                    color: videoCard.picking ? theme.pick("#F5F5F5", "#3D3D3D", "#000000") : (videoEffects.greenScreenColor || videoEffects.detectedColor || theme.hc("#FFFFFF", "#000000"))
                                     border.color: theme.stroke; border.width: 0.67
                                 }
                                 HoverHandler { id: swatchHover; cursorShape: Qt.PointingHandCursor }
@@ -2468,9 +2475,9 @@ Rectangle {
                 Rectangle {
                     visible: recognition.inCall
                     width: parent.width; height: 36; radius: 4
-                    color: theme.pick("#FDF3F4", "#3F1011")
-                    border.color: theme.pick("#EEACB2", "#6E0811"); border.width: 0.67
-                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#BC2F32", "#DC626D") }
+                    color: theme.pick("#FDF3F4", "#3F1011", "#000000")
+                    border.color: theme.pick("#EEACB2", "#6E0811", "#FFFFFF"); border.width: 0.67
+                    FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
                     Text { x: 36; anchors.verticalCenter: parent.verticalCenter; text: "You are currently in a meeting. To modify your profile, please return after your meeting."; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                 }
                     // Teams' voice card, by whether you have a profile and whether
@@ -2560,7 +2567,7 @@ Rectangle {
                 width: parent ? parent.width : 790
                 height: 64.7 + permList.height + 10
                 radius: 8; color: "transparent"
-                border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D")
+                border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
                 FluentIcon { x: 18.7; y: 22.7; size: 20; name: "shield-20"; color: theme.text }
                 Text { x: 68.5; y: 5.5; text: "App permissions"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Text {
@@ -2588,7 +2595,7 @@ Rectangle {
                             Rectangle {
                                 visible: appRow.index > 0
                                 x: 18.6; y: -5.3; width: parent.width - 37.2; height: 0.67
-                                color: theme.pick("#EBEBEB", "#3D3D3D")
+                                color: theme.pick("#EBEBEB", "#3D3D3D", "#000000")
                             }
                             Item {
                                 width: parent.width; height: 65.33
@@ -2596,7 +2603,7 @@ Rectangle {
                                     x: 18.6; y: 16.6; width: 32; height: 32
                                     source: appRow.modelData.icon || ""
                                     sourceSize: Qt.size(64, 64); fillMode: Image.PreserveAspectFit; asynchronous: true
-                                    Rectangle { anchors.fill: parent; radius: 6; color: "transparent"; border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D") }
+                                    Rectangle { anchors.fill: parent; radius: 6; color: "transparent"; border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
                                 }
                                 Text { x: 68.6; y: 22.6; width: parent.width - 68.6 - 60; elide: Text.ElideRight; text: appRow.modelData.name; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
                                 FluentIcon { x: 754; y: 22.6; size: 20; name: appRow.expanded ? "chevron-up-20" : "chevron-down-20"; color: theme.textStrong }
@@ -2655,12 +2662,13 @@ Rectangle {
                     width: parent.width; height: 47
                     Text { y: 4; width: parent.width - 140; elide: Text.ElideMiddle; text: downloads.where; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Rectangle {
+                        id: hcFill8
                         anchors.right: parent.right; anchors.rightMargin: 28; y: -2
                         width: changeRow.implicitWidth + 16; height: 31.3; radius: 4
                         color: changeHover.hovered ? theme.menuHover : "transparent"
                         Row { id: changeRow; anchors.centerIn: parent; spacing: 4
-                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "folder-20"; size: 20; color: theme.textStrong }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Change"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "folder-20"; size: 20; color: theme.onFill(hcFill8, theme.textStrong) }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Change"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, theme.text) } }
                         HoverHandler { id: changeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: folderPick.open() }
                         Accessible.role: Accessible.Button

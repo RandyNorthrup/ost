@@ -48,15 +48,15 @@ Item {
         id: field
         visible: !root.bare
         anchors.fill: parent; radius: 4
-        color: root.filled ? theme.pick("#F5F5F5", "#141414") : theme.surface
+        color: root.filled ? theme.pick("#F5F5F5", "#141414", "#000000") : theme.surface
         border.color: root.filled ? "transparent" : fieldHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
         Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: popup.opened ? 2 : 0.67; color: popup.opened ? theme.brand : theme.textSecondary }
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             text: root.empty ? root.placeholder : Qt.formatDate(root.date, root.format)
-            font.family: theme.font; font.pixelSize: 14; color: root.empty ? theme.textSecondary : theme.text
+            font.family: theme.font; font.pixelSize: 14; color: theme.onFill(field, root.empty ? theme.textSecondary : theme.text)
         }
-        FluentIcon { anchors.right: parent.right; anchors.rightMargin: root.iconRight; anchors.verticalCenter: parent.verticalCenter; name: "calendar-ltr-20"; size: root.iconSize; color: theme.textSecondary }
+        FluentIcon { anchors.right: parent.right; anchors.rightMargin: root.iconRight; anchors.verticalCenter: parent.verticalCenter; name: "calendar-ltr-20"; size: root.iconSize; color: theme.onFill(field, theme.textSecondary) }
         HoverHandler { id: fieldHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: popup.opened ? popup.close() : popup.open() }
         Accessible.role: Accessible.ComboBox
@@ -106,14 +106,14 @@ Item {
                     readonly property bool today: root.sameDay(modelData, new Date())
                     readonly property bool chosen: root.sameDay(modelData, root.date)
                     x: 14 + 28 * (index % 7); y: 70 + 28 * Math.floor(index / 7); width: 24; height: 24; radius: 4
-                    color: chosen ? theme.pick("#DCE0FA", "#2F2F4A") : dayHover.hovered && usable ? theme.menuHover : "transparent"
+                    color: chosen ? theme.pick("#DCE0FA", "#2F2F4A", "#000000") : dayHover.hovered && usable ? theme.menuHover : "transparent"
                     border.color: chosen ? theme.brand : "transparent"; border.width: chosen ? 0.67 : 0
-                    Rectangle { visible: day.today; anchors.centerIn: parent; width: 20; height: 20; radius: 10; color: theme.brand }
+                    Rectangle { id: hcFill1; visible: day.today; anchors.centerIn: parent; width: 20; height: 20; radius: 10; color: theme.brand }
                     Text {
                         anchors.centerIn: parent
                         text: day.modelData.getDate()
                         font.family: theme.font; font.pixelSize: 12; font.weight: day.today ? Font.DemiBold : Font.Normal
-                        color: day.today ? "white" : !day.usable ? theme.disabled : day.modelData.getMonth() !== popup.month ? theme.pick("#707070", "#ADADAD") : theme.text
+                        color: theme.onFill([hcFill1, day], day.today ? "white" : !day.usable ? theme.disabled : day.modelData.getMonth() !== popup.month ? theme.pick("#707070", "#ADADAD", "#FFFFFF") : theme.text)
                     }
                     HoverHandler { id: dayHover; cursorShape: day.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: day.usable; onTapped: { root.picked(day.modelData); popup.close() } }
@@ -128,9 +128,10 @@ Item {
         Item {
             x: 0.67; y: 0.67; width: 440; height: 241
             Rectangle {
+                id: hcFill2
                 x: 232.7; y: 12; width: 140; height: 28; radius: 4
                 color: yearHover.hovered && !popup.years ? theme.menuHover : "transparent"
-                Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: popup.years ? (popup.year - popup.year % 10) + " - " + (popup.year - popup.year % 10 + 9) : popup.year; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: popup.years ? (popup.year - popup.year % 10) + " - " + (popup.year - popup.year % 10 + 9) : popup.year; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: yearHover; cursorShape: popup.years ? Qt.ArrowCursor : Qt.PointingHandCursor }
                 TapHandler { enabled: !popup.years; onTapped: popup.years = true }
                 Accessible.role: Accessible.Button
@@ -156,7 +157,7 @@ Item {
                         anchors.centerIn: parent
                         text: popup.years ? cell.yearShown : root.monthNames[cell.index].slice(0, 3)
                         font.family: theme.font; font.pixelSize: 12
-                        color: cell.usable ? theme.textStrong : theme.disabled
+                        color: theme.onFill(cell, cell.usable ? theme.textStrong : theme.disabled)
                     }
                     HoverHandler { id: cellHover; cursorShape: cell.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: cell.usable; onTapped: { if (popup.years) { popup.year = cell.yearShown; popup.years = false } else popup.month = cell.index } }
@@ -187,7 +188,7 @@ Item {
         signal clicked()
         width: 28; height: 28; radius: 4
         color: nbHover.hovered && enabled ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: nb.icon; size: 16; color: nb.enabled ? theme.textSecondary : theme.disabled }
+        FluentIcon { anchors.centerIn: parent; name: nb.icon; size: 16; color: theme.onFill(nb, nb.enabled ? theme.textSecondary : theme.disabled) }
         HoverHandler { id: nbHover; cursorShape: nb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: nb.enabled; onTapped: nb.clicked() }
         Accessible.role: Accessible.Button

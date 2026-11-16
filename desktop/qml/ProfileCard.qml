@@ -123,13 +123,14 @@ Popup {
                     { icon: "linkedin-logo", label: "Find LinkedIn profile for ", act: "linkedin" }
                 ]
                 Rectangle {
+                    id: hcFill1
                     required property var modelData
                     width: 44; height: 32; radius: 4
                     color: ah.hovered ? theme.menuHover : "transparent"
                     FluentIcon {
                         anchors.centerIn: parent; name: modelData.icon
                         size: modelData.act === "linkedin" ? 16 : 20
-                        color: modelData.act === "linkedin" ? "#1177B3" : ah.hovered ? theme.brand : theme.textStrong
+                        color: theme.onFill(hcFill1, modelData.act === "linkedin" ? theme.hc("#1177B3", "#FFFF00") : ah.hovered ? theme.brand : theme.textStrong)
                     }
                     HoverHandler { id: ah; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
@@ -148,9 +149,10 @@ Popup {
             }
         }
         Rectangle {
+            id: hcFill2
             x: 800; y: 16; width: 24; height: 24; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
@@ -195,7 +197,7 @@ Popup {
                     spacing: 5
                     Rectangle {
                         width: 739.3; height: 32; radius: 4
-                        color: theme.pick("#F5F5F5", "#292929")
+                        color: theme.pick("#F5F5F5", "#292929", "#000000")
                         TextInput {
                             id: quick
                             x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
@@ -210,7 +212,7 @@ Popup {
                         function go() { if (!quick.text.trim()) return; root.quickMessage(root.mri, root.card.displayName || "", quick.text.trim()); quick.text = "" }
                         width: 44; height: 32; radius: 4
                         color: sendHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "send-20"; size: 20; color: quick.text.trim() ? theme.brand : theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: "send-20"; size: 20; color: theme.onFill(send, quick.text.trim() ? theme.brand : theme.textStrong) }
                         HoverHandler { id: sendHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: send.go() }
                         Accessible.role: Accessible.Button
@@ -220,7 +222,7 @@ Popup {
                 Item { width: 1; height: 15 }
                 Rectangle {
                     x: 3; width: 773; height: availCol.height + 20; radius: 4
-                    color: "transparent"; border.color: theme.pick("#E0E0E0", "#3D3D3D"); border.width: 0.67
+                    color: "transparent"; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); border.width: 0.67
                     Column {
                         id: availCol
                         x: 0; y: 10; width: parent.width
@@ -246,7 +248,7 @@ Popup {
                             FluentIcon { x: 12; y: 2; name: root.p.workLocation === "Office" ? "building-20" : "home-20"; size: 20; color: theme.textStrong }
                             Text { x: 43; y: 4; text: root.p.workLocation === "Office" ? "In the office" : "Working remotely"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                         }
-                        Rectangle { visible: !!root.localTime; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                        Rectangle { visible: !!root.localTime; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                         Item {
                             visible: !!root.localTime
                             width: parent.width; height: 34
@@ -349,7 +351,7 @@ Popup {
             Rectangle {
                 visible: root.tab === "organization"
                 y: -1.3; width: body.width; height: Math.max(body.height, orgTab.y + orgTab.height + 32) + 1.3
-                color: theme.pick("#FAFAFA", "#1F1F1F")
+                color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
             }
             Row {
                 visible: root.tab === "organization"
@@ -362,7 +364,7 @@ Popup {
                     signal go()
                     width: 32; height: 32; radius: 4
                     color: can && nbh.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; size: 20; name: nbtn.icon; color: nbtn.can ? theme.textStrong : theme.pick("#BDBDBD", "#5C5C5C") }
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: nbtn.icon; color: theme.onFill(nbtn, nbtn.can ? theme.textStrong : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
                     HoverHandler { id: nbh; enabled: nbtn.can; cursorShape: Qt.PointingHandCursor }
                     TapHandler { enabled: nbtn.can; onTapped: nbtn.go() }
                     Accessible.role: Accessible.Button
@@ -382,8 +384,8 @@ Popup {
                     visible: orgTab.noOrg
                     width: parent.width; height: noOrgText.height + 24
                     radius: 4
-                    color: theme.pick("#F5F5F5", "#292929")
-                    border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D")
+                    color: theme.pick("#F5F5F5", "#292929", "#000000")
+                    border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
                     FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 24; name: "error-circle-24"; color: theme.textStrong }
                     Text {
                         id: noOrgText
@@ -420,7 +422,7 @@ Popup {
                 width: body.width
                 topPadding: 98.7
                 spacing: 0
-                FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; size: 64; name: "linkedin-logo"; color: "#1177B3" }
+                FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; size: 64; name: "linkedin-logo"; color: theme.hc("#1177B3", "#FFFF00") }
                 Item { width: 1; height: 24 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -452,10 +454,11 @@ Popup {
                 }
                 Item { width: 1; height: 34.7 }
                 Rectangle {
+                    id: hcFill3
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: settingsLabel.implicitWidth + 41.33; height: 32; radius: 4
-                    color: setHover.pressed ? theme.pick("#444791", "#444791") : setHover.hovered ? theme.brandHover : theme.brand
-                    Text { id: settingsLabel; anchors.centerIn: parent; text: "Check your own settings"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
+                    color: setHover.pressed ? theme.pick("#444791", "#444791", "#1AEBFF") : setHover.hovered ? theme.brandHover : theme.brand
+                    Text { id: settingsLabel; anchors.centerIn: parent; text: "Check your own settings"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "#FFFFFF") }
                     HoverHandler { id: setHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/LinkedInVisibility") }
                     Accessible.role: Accessible.Button
@@ -515,8 +518,8 @@ Popup {
         width: 122; height: 156; radius: 4
         color: pth.hovered ? theme.menuHover : "transparent"
         Avatar { anchors.horizontalCenter: parent.horizontalCenter; y: 12; size: 56; name: pt.person.name || ""; photoId: pt.person.mri || "" }
-        Text { x: 8; y: 68; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: pt.person.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-        Text { x: 8; y: 112; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: pt.person.jobTitle || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+        Text { x: 8; y: 68; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: pt.person.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pt, theme.text) }
+        Text { x: 8; y: 112; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: pt.person.jobTitle || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(pt, theme.textStrong) }
         HoverHandler { id: pth; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: if (pt.person.mri) root.visit(pt.person.mri) }
         Accessible.role: Accessible.Button

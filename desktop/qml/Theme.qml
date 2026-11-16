@@ -7,6 +7,40 @@ QtObject {
     property bool dark: false
     /// Teams' Classic theme: Light with its purple title bar (measured).
     property bool classic: false
+    /// Teams' High contrast theme (Fluent's Teams high-contrast tokens,
+    /// docs/spec/teams-tokens-high-contrast.json; `dark` is on with it):
+    /// black surfaces, white text and strokes, #1AEBFF for hover, selection
+    /// and indicators with black on it, #FFFF00 links, #3FF23F disabled.
+    property bool highContrast: false
+    /// High contrast's colours.
+    readonly property color hcHighlight: "#1AEBFF"
+    readonly property color hcLink: "#FFFF00"
+    readonly property color hcDisabled: "#3FF23F"
+    /// Fluent's TransparentStroke: none, but white in High contrast (the
+    /// outline its bubbles, cards, menus and inputs get there).
+    readonly property color transparentStroke: highContrast ? "#FFFFFF" : "transparent"
+    /// Text or an icon on a hovered, pressed or selected fill: black on
+    /// High contrast's #1AEBFF (Fluent's Foreground*Hover/Selected), else
+    /// its usual colour.
+    function ink(onHighlight, normal) { return highContrast && onHighlight ? "#000000" : normal }
+    /// Text or an icon drawn on a fill: black on a light fill in High
+    /// contrast (the #1AEBFF hover and selection, a white primary button),
+    /// else its usual colour.
+    /// `fills` is the Rectangle (or a list of them) that may be under it;
+    /// a hidden one doesn't count.
+    function onFill(fills, normal) {
+        if (!highContrast) return normal
+        const list = Array.isArray(fills) ? fills : [fills]
+        for (let i = 0; i < list.length; i++) {
+            const f = list[i]
+            if (!f || !f.visible) continue
+            const c = Qt.color(f.color)
+            if (c.a > 0.5 && (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) > 0.5) return "#000000"
+        }
+        return normal
+    }
+    /// A colour that is fixed outside High contrast (`normal`) and `hc` in it.
+    function hc(normal, hcValue) { return highContrast ? hcValue : normal }
     readonly property color titleBar: classic ? "#444791" : chrome
     readonly property color titleIcon: classic ? "#FFFFFF" : icon
     readonly property color titleIconDisabled: classic ? "#BDBDBD" : disabled
@@ -16,7 +50,19 @@ QtObject {
     /// The compact profile card hovering a picture or name opens (Main
     /// sets it).
     property var hoverCard: null
-    function pick(light, darkValue) { return dark ? darkValue : light }
+    /// Light, dark and High contrast values. Without a High contrast value,
+    /// a light background (#E0E0E0 and lighter) becomes black and anything
+    /// else (text, icons, strokes) white.
+    function pick(light, darkValue, hcValue) {
+        // Not a colour (an asset variant, a flag): the dark one.
+        if (highContrast) return hcValue !== undefined ? hcValue : typeof light === "string" && light[0] === "#" ? hcFor(light) : darkValue
+        return dark ? darkValue : light
+    }
+    function hcFor(light) {
+        const c = Qt.color(light)
+        if (c.a === 0) return light
+        return (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) >= 0.74 ? "#000000" : "#FFFFFF"
+    }
     /// Teams' regional formats (Settings ▸ General ▸ Language and regional
     /// formats; read once, as a change applies after a restart). Every
     /// date and time OST shows goes through these.
@@ -64,19 +110,23 @@ QtObject {
     }
 
     // Brand
-    readonly property color brand: pick("#5B5FC7", "#7F85F5")          // BrandForeground1 / indicators
-    readonly property color brandFill: pick("#5B5FC7", "#4F52B2")      // BrandBackground (buttons)
-    readonly property color brandHover: pick("#4F52B2", "#5B5FC7")
-    readonly property color brandTint: pick("#E8EBFA", "#2B2B40")      // your bubbles
-    readonly property color textOnBrand: "#FFFFFF"
+    readonly property color brand: pick("#5B5FC7", "#7F85F5", "#1AEBFF")          // BrandForeground1 / indicators
+    readonly property color brandFill: pick("#5B5FC7", "#4F52B2", "#FFFFFF")      // BrandBackground (buttons)
+    readonly property color brandHover: pick("#4F52B2", "#5B5FC7", "#1AEBFF")
+    readonly property color brandTint: pick("#E8EBFA", "#2B2B40", "#000000")      // your bubbles
+    /// A checked switch, checkbox or radio (brand; High contrast's #1AEBFF).
+    readonly property color checkedFill: highContrast ? hcHighlight : brandFill
+    /// Links in messages and text (brand; High contrast's yellow).
+    readonly property color link: highContrast ? hcLink : brand
+    readonly property color textOnBrand: highContrast ? "#000000" : "#FFFFFF"   // NeutralForegroundOnBrand
 
     // Surfaces
-    readonly property color chrome: pick("#EBEBEB", "#0A0A0A")         // title bar, app rail
-    readonly property color pane: pick("#F5F5F5", "#1A1A1A")           // list panes
-    readonly property color surface: pick("#FFFFFF", "#1F1F1F")        // conversation, cards
-    readonly property color mentionMe: pick("#DA3B01", "#F48E64")      // your name where you're @mentioned
-    readonly property color channelPage: pick("#FAFAFA", "#141414")    // behind channel post cards
-    readonly property color cardEdge: pick("#E3E3E3", "#383838")       // channel post card outline
+    readonly property color chrome: pick("#EBEBEB", "#0A0A0A", "#000000")         // title bar, app rail
+    readonly property color pane: pick("#F5F5F5", "#1A1A1A", "#000000")           // list panes
+    readonly property color surface: pick("#FFFFFF", "#1F1F1F", "#000000")        // conversation, cards
+    readonly property color mentionMe: pick("#DA3B01", "#F48E64", "#FFFF00")      // your name where you're @mentioned
+    readonly property color channelPage: pick("#FAFAFA", "#141414", "#000000")    // behind channel post cards
+    readonly property color cardEdge: pick("#E3E3E3", "#383838", "#FFFFFF")       // channel post card outline
     // Teams' announcement colour schemes "0".."11" (443282 module 8196):
     // the palette's Background2 / Foreground2 (light: tint, shade; dark the
     // other way round), the first six light on dark text, the rest dark.
@@ -92,66 +142,67 @@ QtObject {
         const bg2 = dark ? pair[1] : pair[0], fg2 = dark ? pair[0] : pair[1]
         return i < 6 ? [bg2, fg2] : [fg2, bg2]
     }
-    readonly property color bubble: pick("#F5F5F5", "#292929")         // others' bubbles
-    readonly property color input: pick("#FFFFFF", "#292929")          // compose box
-    readonly property color selected: pick("#FFFFFF", "#242424")       // the open row in a pane
-    readonly property color rowHover: pick("#EBEBEB", "#2E2E2E")
-    readonly property color searchFill: pick("#FAFAFA", "#242424")
-    readonly property color menu: pick("#FFFFFF", "#292929")           // flyouts, tooltips
-    readonly property color menuHover: pick("#F5F5F5", "#3D3D3D")      // NeutralBackground1Hover (menu items)
-    readonly property color inputFilled: pick("#F5F5F5", "#141414")    // filled-darker inputs (dialogs)
-    readonly property color pressed: pick("#E0E0E0", "#1F1F1F")        // NeutralBackground1Pressed
-    readonly property color quoteFill: pick("#FAFAFA", "#1F1F1F")      // NeutralBackground2 (quote cards)
-    readonly property color selectionFill: pick("#B4D5FE", "#264F78")  // selected text
-    readonly property color quoteBorder: pick("#F0F0F0", "#3D3D3D")    // NeutralStroke3
-    readonly property color quoteBar: pick("#C7C7C7", "#757575")       // NeutralStroke1Hover
-    readonly property color brandLink: pick("#4F52B2", "#9EA2FF")      // transparent brand buttons ("About")
+    readonly property color bubble: pick("#F5F5F5", "#292929", "#000000")         // others' bubbles
+    readonly property color input: pick("#FFFFFF", "#292929", "#000000")          // compose box
+    readonly property color selected: pick("#FFFFFF", "#242424", "#1AEBFF")       // the open row in a pane
+    readonly property color rowHover: pick("#EBEBEB", "#2E2E2E", "#1AEBFF")
+    readonly property color searchFill: pick("#FAFAFA", "#242424", "#000000")
+    readonly property color menu: pick("#FFFFFF", "#292929", "#000000")           // flyouts, tooltips
+    readonly property color menuHover: pick("#F5F5F5", "#3D3D3D", "#1AEBFF")      // NeutralBackground1Hover (menu items)
+    readonly property color inputFilled: pick("#F5F5F5", "#141414", "#000000")    // filled-darker inputs (dialogs)
+    readonly property color pressed: pick("#E0E0E0", "#1F1F1F", "#1AEBFF")        // NeutralBackground1Pressed
+    readonly property color quoteFill: pick("#FAFAFA", "#1F1F1F", "#000000")      // NeutralBackground2 (quote cards)
+    readonly property color selectionFill: pick("#B4D5FE", "#264F78", "#1AEBFF")  // selected text
+    readonly property color quoteBorder: pick("#F0F0F0", "#3D3D3D", "#FFFFFF")    // NeutralStroke3
+    readonly property color quoteBar: pick("#C7C7C7", "#757575", "#FFFFFF")       // NeutralStroke1Hover
+    readonly property color brandLink: pick("#4F52B2", "#9EA2FF", "#FFFF00")      // transparent brand buttons ("About")
     // Fluent shadows: two layers each (ambient, key), as the client's CSS.
     readonly property color shadowAmbient: pick(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(0, 0, 0, 0.24))
     readonly property color shadowKey: pick(Qt.rgba(0, 0, 0, 0.14), Qt.rgba(0, 0, 0, 0.28))
 
     // Lines
-    readonly property color divider: pick("#E0E0E0", "#525252")        // NeutralStroke2
-    readonly property color dividerSoft: pick("#EBEBEB", "#3D3D3D")    // NeutralStroke3
-    readonly property color stroke: pick("#D1D1D1", "#666666")         // NeutralStroke1 (chips)
-    readonly property color strokeHover: pick("#C7C7C7", "#757575")
-    readonly property color strokePressed: pick("#B3B3B3", "#6B6B6B")       // NeutralStroke1Pressed
-    readonly property color strokeAccessibleHover: pick("#575757", "#BDBDBD")   // NeutralStrokeAccessibleHover
-    readonly property color strokeAccessiblePressed: pick("#4D4D4D", "#B3B3B3") // NeutralStrokeAccessiblePressed
-    readonly property color edge: pick("#EFEFEF", "#232323")           // between panes
-    readonly property color titleHairline: pick("#DDDDDD", "#1F1F1F")
+    readonly property color divider: pick("#E0E0E0", "#525252", "#FFFFFF")        // NeutralStroke2
+    readonly property color dividerSoft: pick("#EBEBEB", "#3D3D3D", "#FFFFFF")    // NeutralStroke3
+    readonly property color stroke: pick("#D1D1D1", "#666666", "#FFFFFF")         // NeutralStroke1 (chips)
+    readonly property color strokeHover: pick("#C7C7C7", "#757575", "#1AEBFF")
+    readonly property color strokePressed: pick("#B3B3B3", "#6B6B6B", "#1AEBFF")       // NeutralStroke1Pressed
+    readonly property color strokeAccessibleHover: pick("#575757", "#BDBDBD", "#1AEBFF")   // NeutralStrokeAccessibleHover
+    readonly property color strokeAccessiblePressed: pick("#4D4D4D", "#B3B3B3", "#1AEBFF") // NeutralStrokeAccessiblePressed
+    readonly property color edge: pick("#EFEFEF", "#232323", "#FFFFFF")           // between panes
+    readonly property color titleHairline: pick("#DDDDDD", "#1F1F1F", "#FFFFFF")
 
     // Hover on chrome
-    readonly property color hover: pick("#E0E0E0", "#2E2E2E")
+    readonly property color hover: pick("#E0E0E0", "#2E2E2E", "#1AEBFF")
 
     // Text and icons
-    readonly property color text: pick("#242424", "#FFFFFF")           // NeutralForeground1
-    readonly property color textStrong: pick("#424242", "#D6D6D6")     // NeutralForeground2
-    readonly property color textSecondary: pick("#616161", "#ADADAD")  // NeutralForeground3
-    readonly property color textTertiary: pick("#707070", "#999999")   // NeutralForeground4
-    readonly property color disabled: pick("#BDBDBD", "#5C5C5C")
-    readonly property color bgDisabled: pick("#F0F0F0", "#141414")     // NeutralBackgroundDisabled
-    readonly property color editorFilled: pick("#EBEBEB", "#1F1F1F")   // Teams' status-note editor (CKEditor)
-    readonly property color icon: pick("#424242", "#D6D6D6")
-    readonly property color badge: "#C4314B"
-    readonly property color danger: pick("#C4314B", "#E37D80")
-    readonly property color redForeground1: pick("#BC2F32", "#E37D80")  // colorPaletteRedForeground1 (failed sends)
-    readonly property color redForeground3: pick("#D13438", "#E37D80")  // colorPaletteRedForeground3 (required marks)
-    readonly property color brandForeground2: pick("#444791", "#9299F7")  // colorBrandForeground2 (forward card's time link)
-    readonly property color brandForeground1: pick("#4F52B2", "#7F85F5")  // colorBrandForeground1 (links, e.g. the compose hint)
-    readonly property color successFg: pick("#0E700E", "#54B054")       // colorStatusSuccessForeground1 (toast)
-    readonly property color greenForeground2: pick("#0B5A08", "#9FD89F") // colorPaletteGreenForeground2 (an open breakout room)
-    readonly property color cardStroke: pick("#E6E6E6", "#3D3D3D")      // the breakout rooms pane's assignment card
-    readonly property color peerNoteFill: pick("#E6E6E6", "#333333")    // the status bar over a 1:1's compose box
-    readonly property color effectTile: pick("#E6E6E6", "#333333")      // a video effect tile (NeutralBackground5)
-    readonly property color savedFg: pick("#C239B3", "#D24ED0")         // colorPaletteBerryForeground1 (saved bookmark)
-    readonly property color inputFilledDark: pick("#F0F0F0", "#141414") // the forward dialog's picker
-    readonly property color disabledStrong: pick("#C7C7C7", "#5C5C5C")  // a disabled primary button's text
-    readonly property color redBackground1: pick("#FDF6F6", "#3F1011")  // colorPaletteRedBackground1 (failed bubble)
-    readonly property color redBorder1: pick("#F1BBBC", "#D13438")      // colorPaletteRedBorder1
+    readonly property color text: pick("#242424", "#FFFFFF", "#FFFFFF")           // NeutralForeground1
+    readonly property color textStrong: pick("#424242", "#D6D6D6", "#FFFFFF")     // NeutralForeground2
+    readonly property color textSecondary: pick("#616161", "#ADADAD", "#FFFFFF")  // NeutralForeground3
+    readonly property color textTertiary: pick("#707070", "#999999", "#FFFFFF")   // NeutralForeground4
+    readonly property color disabled: pick("#BDBDBD", "#5C5C5C", "#3FF23F")
+    readonly property color bgDisabled: pick("#F0F0F0", "#141414", "#000000")     // NeutralBackgroundDisabled
+    readonly property color editorFilled: pick("#EBEBEB", "#1F1F1F", "#000000")   // Teams' status-note editor (CKEditor)
+    readonly property color icon: pick("#424242", "#D6D6D6", "#FFFFFF")
+    // High contrast: a white badge with black text (Teams, measured).
+    readonly property color badge: highContrast ? "#FFFFFF" : "#C4314B"
+    readonly property color danger: pick("#C4314B", "#E37D80", "#FFFFFF")
+    readonly property color redForeground1: pick("#BC2F32", "#E37D80", "#FFFFFF")  // colorPaletteRedForeground1 (failed sends)
+    readonly property color redForeground3: pick("#D13438", "#E37D80", "#FFFFFF")  // colorPaletteRedForeground3 (required marks)
+    readonly property color brandForeground2: pick("#444791", "#9299F7", "#FFFF00")  // colorBrandForeground2 (forward card's time link)
+    readonly property color brandForeground1: pick("#4F52B2", "#7F85F5", "#FFFF00")  // colorBrandForeground1 (links, e.g. the compose hint)
+    readonly property color successFg: pick("#0E700E", "#54B054", "#FFFFFF")       // colorStatusSuccessForeground1 (toast)
+    readonly property color greenForeground2: pick("#0B5A08", "#9FD89F", "#FFFFFF") // colorPaletteGreenForeground2 (an open breakout room)
+    readonly property color cardStroke: pick("#E6E6E6", "#3D3D3D", "#FFFFFF")      // the breakout rooms pane's assignment card
+    readonly property color peerNoteFill: pick("#E6E6E6", "#333333", "#000000")    // the status bar over a 1:1's compose box
+    readonly property color effectTile: pick("#E6E6E6", "#333333", "#000000")      // a video effect tile (NeutralBackground5)
+    readonly property color savedFg: pick("#C239B3", "#D24ED0", "#FFFFFF")         // colorPaletteBerryForeground1 (saved bookmark)
+    readonly property color inputFilledDark: pick("#F0F0F0", "#141414", "#000000") // the forward dialog's picker
+    readonly property color disabledStrong: pick("#C7C7C7", "#5C5C5C", "#3FF23F")  // a disabled primary button's text
+    readonly property color redBackground1: pick("#FDF6F6", "#3F1011", "#000000")  // colorPaletteRedBackground1 (failed bubble)
+    readonly property color redBorder1: pick("#F1BBBC", "#D13438", "#FFFFFF")      // colorPaletteRedBorder1
     // Teams' raised-hand outline.
     readonly property color handRaised: "#EAA300"
-    readonly property color unreadTint: pick("#FDF3F4", "#3E1F25")
+    readonly property color unreadTint: pick("#FDF3F4", "#3E1F25", "#000000")
 
     // Calls use the dark stage in every theme, as in Teams.
     readonly property color stage: "#1F1F1F"

@@ -83,7 +83,7 @@ Rectangle {
             anchors.centerIn: parent
             text: pb.label
             font.family: theme.font; font.pixelSize: 14; font.weight: pb.small ? Font.Normal : Font.DemiBold
-            color: !pb.enabled ? theme.disabled : pb.primary ? theme.textOnBrand : theme.text
+            color: theme.onFill(pb, !pb.enabled ? theme.disabled : pb.primary ? theme.textOnBrand : theme.text)
         }
         HoverHandler { id: pbHover; enabled: pb.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: pb.enabled; onTapped: pb.clicked() }
@@ -98,7 +98,7 @@ Rectangle {
         width: 24; height: 24; radius: 4
         color: !tb.enabled ? theme.bgDisabled : tbHover.hovered ? theme.menuHover : theme.surface
         border.color: tb.enabled ? theme.stroke : theme.divider; border.width: 0.67
-        FluentIcon { anchors.centerIn: parent; name: tb.icon; size: 16; color: tb.enabled ? theme.text : theme.disabled }
+        FluentIcon { anchors.centerIn: parent; name: tb.icon; size: 16; color: theme.onFill(tb, tb.enabled ? theme.text : theme.disabled) }
         HoverHandler { id: tbHover; cursorShape: tb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: tb.enabled; onTapped: tb.clicked() }
         ToolTip.visible: tbHover.hovered; ToolTip.text: tb.tip; ToolTip.delay: 500
@@ -112,13 +112,13 @@ Rectangle {
         width: 40; height: 20
         Rectangle {
             anchors.fill: parent; radius: 10
-            color: sw.checked ? (swHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+            color: sw.checked ? (swHover.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
             border.color: sw.checked ? "transparent" : theme.textSecondary; border.width: 0.67
             Rectangle {
                 width: 14.4; height: 14.4; radius: 7.2
                 anchors.verticalCenter: parent.verticalCenter
                 x: sw.checked ? 22.8 : 2.8
-                color: sw.checked ? "white" : theme.textSecondary
+                color: sw.checked ? theme.hc("white", "#1AEBFF") : theme.textSecondary
             }
         }
         HoverHandler { id: swHover; cursorShape: Qt.PointingHandCursor }
@@ -133,10 +133,11 @@ Rectangle {
         signal backClicked()
         y: 3; width: root.width; height: 58
         Rectangle {
+            id: hcFill1
             visible: hd.back
             x: 15.67; y: 13.67; width: 32; height: 30; radius: 4
             color: backHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: hd.backClicked() }
             Accessible.role: Accessible.Button
@@ -152,10 +153,11 @@ Rectangle {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill2
             visible: !hd.back
             x: root.width - 52; y: 13.67; width: 32; height: 30; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             Accessible.role: Accessible.Button
@@ -209,10 +211,11 @@ Rectangle {
                     Repeater {
                         model: [{ icon: "chevron-up-16", step: 1, name: "Increment value" }, { icon: "chevron-down-16", step: -1, name: "Decrement value" }]
                         Rectangle {
+                            id: hcFill3
                             required property var modelData
                             width: 24; height: 16; radius: 4
                             color: stepHover.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: modelData.icon; size: 14; color: theme.textSecondary }
+                            FluentIcon { anchors.centerIn: parent; name: modelData.icon; size: 14; color: theme.onFill(hcFill3, theme.textSecondary) }
                             HoverHandler { id: stepHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: createView.count = Math.max(1, Math.min(50, createView.count + modelData.step)) }
                             Accessible.role: Accessible.Button
@@ -412,10 +415,11 @@ Rectangle {
                                 Accessible.name: roomBlock.modelData.open ? "Room is Open." : "Room is Closed."
                             }
                             Rectangle {
+                                id: hcFill4
                                 visible: rowHover.hovered || roomMenu.visible
                                 x: root.width - 46; y: 11; width: 32; height: 32; radius: 4
                                 color: moreHover.hovered ? theme.menuHover : "transparent"
-                                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+                                FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFill4, theme.textStrong) }
                                 HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: roomMenu.open() }
                                 Accessible.role: Accessible.Button
@@ -513,6 +517,7 @@ Rectangle {
                     onToggled: on => { settingsForm.managersOn = on; if (!on) settingsForm.managers = [] }
                 }
                 Rectangle {
+                    id: hcFill5
                     x: 16.67; y: 83.33; width: 286; height: 32; radius: 4
                     color: settingsForm.managersOn ? theme.surface : theme.bgDisabled
                     border.color: settingsForm.managersOn ? theme.stroke : theme.divider; border.width: 0.67
@@ -520,9 +525,9 @@ Rectangle {
                         x: 12; anchors.verticalCenter: parent.verticalCenter; width: 240; elide: Text.ElideRight
                         text: settingsForm.managers.length ? settingsForm.managers.map(m => root.nameOf(m.mri)).join(", ") : "Search for presenters"
                         font.family: theme.font; font.pixelSize: 14
-                        color: settingsForm.managersOn && settingsForm.managers.length ? theme.text : theme.disabled
+                        color: theme.onFill(hcFill5, settingsForm.managersOn && settingsForm.managers.length ? theme.text : theme.disabled)
                     }
-                    FluentIcon { x: 260; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: settingsForm.managersOn ? theme.textSecondary : theme.disabled }
+                    FluentIcon { x: 260; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.onFill(hcFill5, settingsForm.managersOn ? theme.textSecondary : theme.disabled) }
                     TapHandler { enabled: settingsForm.managersOn; onTapped: presenterMenu.open() }
                     Accessible.role: Accessible.ComboBox
                     Accessible.name: "Search for presenters"
@@ -571,6 +576,7 @@ Rectangle {
                 Repeater {
                     model: [{ unit: "hours", y: 63.33, max: 23 }, { unit: "minutes", y: 104.67, max: 59 }]
                     Rectangle {
+                        id: hcFill6
                         required property var modelData
                         readonly property int value: modelData.unit === "hours" ? settingsForm.hours : settingsForm.minutes
                         x: 17.33; y: modelData.y; width: 284.67; height: 30; radius: 4
@@ -580,9 +586,9 @@ Rectangle {
                             x: 12; anchors.verticalCenter: parent.verticalCenter
                             text: parent.value + " " + (modelData.unit === "hours" ? (parent.value === 1 ? "hour" : "hours") : (parent.value === 1 ? "minute" : "minutes"))
                             font.family: theme.font; font.pixelSize: 14
-                            color: settingsForm.limitOn ? theme.text : theme.disabled
+                            color: theme.onFill(hcFill6, settingsForm.limitOn ? theme.text : theme.disabled)
                         }
-                        FluentIcon { x: 258; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: settingsForm.limitOn ? theme.textSecondary : theme.disabled }
+                        FluentIcon { x: 258; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.onFill(hcFill6, settingsForm.limitOn ? theme.textSecondary : theme.disabled) }
                         TapHandler { enabled: settingsForm.limitOn; onTapped: unitMenu.open() }
                         Accessible.role: Accessible.ComboBox
                         Accessible.name: modelData.unit === "hours" ? "Set hours limit" : "Set minutes limit"

@@ -107,13 +107,13 @@ Rectangle {
                 required property var modelData
                 width: Math.min(buttonRow.width, label.implicitWidth + 40); height: 32; radius: 4
                 color: btnHover.hovered ? theme.menuHover : theme.surface
-                border.color: theme.pick("#C5CBFA", "#4F52B2"); border.width: 0.67
+                border.color: theme.pick("#C5CBFA", "#4F52B2", "#FFFFFF"); border.width: 0.67
                 Text {
                     id: label
                     anchors.centerIn: parent
                     width: Math.min(implicitWidth, buttonRow.width - 40); elide: Text.ElideRight
                     text: btn.modelData.title || ""
-                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(btn, theme.brand)
                 }
                 HoverHandler { id: btnHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.act(btn.modelData) }

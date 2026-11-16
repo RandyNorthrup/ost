@@ -50,7 +50,7 @@ Window {
         signal clicked()
         radius: 4
         color: tbh.hovered ? theme.hover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: tb.icon; size: tb.glyph; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: tb.icon; size: tb.glyph; color: theme.onFill(tb, theme.textStrong) }
         HoverHandler { id: tbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: tb.clicked() }
         ToolTip.visible: tbh.hovered
@@ -87,7 +87,7 @@ Window {
             verticalAlignment: Text.AlignVCenter
             text: win.rttOn ? "RTT" : "Live Captions"
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold
-            color: theme.pick("#000000", "#FFFFFF")
+            color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
             Accessible.role: Accessible.Heading
             Accessible.name: text
         }
@@ -106,7 +106,7 @@ Window {
                     width: 14; height: 14; radius: 7
                     anchors.verticalCenter: parent.verticalCenter
                     x: win.captionsOn ? parent.width - width - 3 : 3
-                    color: win.captionsOn ? "white" : (sw.hovered ? theme.text : theme.textStrong)
+                    color: win.captionsOn ? theme.hc("white", "#000000") : (sw.hovered ? theme.text : theme.textStrong)
                 }
             }
             Text {
@@ -114,7 +114,7 @@ Window {
                 verticalAlignment: Text.AlignVCenter
                 text: "Live Captions"
                 font.family: theme.font; font.pixelSize: 14
-                color: theme.pick("#000000", "#FFFFFF")
+                color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
             }
             HoverHandler { id: sw; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.setCaptions(!win.captionsOn) }

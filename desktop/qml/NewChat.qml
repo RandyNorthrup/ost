@@ -87,7 +87,7 @@ Rectangle {
                     required property var modelData
                     height: 32; radius: theme.radius
                     width: chipRow.implicitWidth + 12
-                    color: theme.searchFill
+                    color: theme.searchFill; border.color: theme.transparentStroke
                     Row {
                         id: chipRow
                         x: 4; anchors.verticalCenter: parent.verticalCenter
@@ -95,10 +95,11 @@ Rectangle {
                         Avatar { anchors.verticalCenter: parent.verticalCenter; size: 24; name: modelData.name; photoId: modelData.id }
                         Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                         Rectangle {
+                            id: hcFill1
                             anchors.verticalCenter: parent.verticalCenter
                             width: 20; height: 20; radius: 10
                             color: xh.hovered ? theme.rowHover : "transparent"
-                            FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.textStrong }
+                            FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.onFill(hcFill1, theme.textStrong) }
                             HoverHandler { id: xh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.unpick(modelData.id) }
                             Accessible.role: Accessible.Button
@@ -138,7 +139,7 @@ Rectangle {
             y: (theme.headerHeight - height) / 2
             width: 32; height: 32; radius: theme.radius
             color: cvh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "chevron-down-16"; size: 16; color: theme.textStrong; rotation: root.naming ? 180 : 0 }
+            FluentIcon { anchors.centerIn: parent; name: "chevron-down-16"; size: 16; color: theme.onFill(chevron, theme.textStrong); rotation: root.naming ? 180 : 0 }
             HoverHandler { id: cvh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.naming = !root.naming; if (root.naming) nameField.forceActiveFocus() } }
             Accessible.role: Accessible.Button
@@ -159,14 +160,14 @@ Rectangle {
             id: person
             required property var modelData
             width: ListView.view.width; height: 52
-            color: hover.hovered ? theme.pane : "transparent"
+            color: hover.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
             Avatar { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: person.modelData.name; photoId: person.modelData.id || "" }
             Column {
                 x: 64; anchors.verticalCenter: parent.verticalCenter
-                Text { text: person.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                Text { text: person.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(person, theme.text) }
                 Text {
                     text: [person.modelData.job_title, person.modelData.mail].filter(t => t).join(" · ")
-                    font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
+                    font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(person, theme.textSecondary)
                 }
             }
             HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
@@ -219,7 +220,7 @@ Rectangle {
             anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter }
             width: 32; height: 32; radius: theme.radius
             color: sbh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: message.text.trim() ? "send-20-filled" : "send-20"; size: 20; color: message.text.trim() ? theme.brand : theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: message.text.trim() ? "send-20-filled" : "send-20"; size: 20; color: theme.onFill(sendButton, message.text.trim() ? theme.brand : theme.textStrong) }
             HoverHandler { id: sbh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.submit() }
             Accessible.role: Accessible.Button

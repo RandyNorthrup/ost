@@ -95,7 +95,7 @@ Item {
     // Search (256.7 wide without the customize button).
     Rectangle {
         x: 16; y: 16; width: root.customizing ? 256.7 : 242; height: 32; radius: 4
-        color: theme.inputFilled
+        color: theme.inputFilled; border.color: theme.transparentStroke
         TextInput {
             id: search
             x: 10; width: parent.width - 10 - 32; anchors.verticalCenter: parent.verticalCenter
@@ -166,10 +166,11 @@ Item {
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                 }
                 Rectangle {
+                    id: hcFill1
                     visible: backend.customEmojiCanAdd
                     x: 33.5; y: 110; width: 220; height: 32; radius: 4
                     color: addHover.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Add emoji"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: "white" }
+                    Text { anchors.centerIn: parent; text: "Add emoji"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
                     HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.addCustomEmoji() }
                     Accessible.role: Accessible.Button
@@ -198,11 +199,11 @@ Item {
                         Emoticon { visible: !cell.addCell; x: 8; y: 8; key: cell.shownId; named: "medium"; size: 30 }
                         // Teams' add entry point (custom-emoji-upload-entrypoint): a 30 px
                         // button with AddRegular, margin 8, tooltip "Add emoji".
-                        FluentIcon { visible: cell.addCell; anchors.centerIn: parent; name: "add-20"; size: 20; color: cellHover.hovered ? theme.brand : theme.textStrong }
+                        FluentIcon { visible: cell.addCell; anchors.centerIn: parent; name: "add-20"; size: 20; color: theme.onFill(cell, cellHover.hovered ? theme.brand : theme.textStrong) }
                         Rectangle {
                             visible: cell.modelData.diverse === true
                             x: 40.3; y: 0.6; width: 5; height: 5; radius: 2.5
-                            color: "#B9B9B9"
+                            color: theme.hc("#B9B9B9", "#000000")
                         }
                         HoverHandler { id: cellHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: cell.addCell ? root.addCustomEmoji() : root.choose(cell.shownId) }
@@ -255,25 +256,27 @@ Item {
         width: 440; padding: 24
         anchors.centerIn: parent
         background: FluentSurface { depth: 64; radius: 4; color: theme.surface }
-        Overlay.modal: Rectangle { color: "#66000000" }
+        Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
         contentItem: Column {
             spacing: 24
             Text { width: 392; wrapMode: Text.Wrap; text: "Are you sure you want to delete it?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading }
             Row {
                 anchors.right: parent.right; spacing: 8
                 Rectangle {
+                    id: hcFill2
                     width: 96; height: 31.3; radius: 4
                     color: dcHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: dcHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: deleteDialog.close() }
                     Accessible.role: Accessible.Button
                     Accessible.name: "Cancel"
                 }
                 Rectangle {
+                    id: hcFill3
                     width: 96; height: 31.3; radius: 4
                     color: ddHover.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Delete"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: "white" }
+                    Text { anchors.centerIn: parent; text: "Delete"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
                     HoverHandler { id: ddHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { if (root.customTarget) backend.deleteCustomEmoji(root.customTarget.id); deleteDialog.close() } }
                     Accessible.role: Accessible.Button

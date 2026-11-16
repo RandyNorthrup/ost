@@ -221,6 +221,29 @@ Everything below is in userPersonalSettings unless marked local.
   - The buildings come from Places: middle tier `GET v2.0/places/findPlaces?filterQuery=Type = "Building"`, which replies `{"data":{"places":[…]}}`. With none, the list shows a disabled "No buildings found" (#BDBDBD).
   - The choice is this device's own, not synced.
 
+## Appearance ▸ Theme ▸ High contrast (measured 2026-11-15)
+
+Teams' fifth theme, after Classic. It is Fluent's Teams high-contrast palette (all token values: `docs/spec/teams-tokens-high-contrast.json`):
+- **Surfaces** are black: panes, the title bar, cards, bubbles, menus and inputs.
+- **Text, icons and strokes** are white. `TransparentStroke` is also white, so bubbles, cards, menus, dialogs, reaction pills and filled inputs all get a white outline.
+- **Hover, pressed and selected** use #1AEBFF, with black text and icons on top. Examples:
+  - the selected chat row and the selected Settings nav item;
+  - the selected app-bar item, which fills all of its 68 × 44 with a black bar;
+  - a checked switch track or checkbox (0.67 px white border on the switch).
+- **Brand** (`BrandBackground`, the primary button) is white with black text. `CompoundBrand`, used for indicators such as the tab underline and the skin-tone bar, is #1AEBFF.
+- **Links** are #FFFF00. **Disabled** is #3FF23F: text, strokes, and the "Always use dark theme for calls" label.
+- **Badges** are white with black numbers.
+- **Avatars:**
+  - a person's or group's picture sits inside a 2 px white ring;
+  - a meeting's calendar glyph is white on black in a 0.67 px white ring.
+- A pressed reaction has a 1.33 px white outline; the others 0.67 px.
+
+How OST does it:
+- `Theme.highContrast`; `dark` is also on, so dark assets are used.
+- `pick(light, dark, hc)`. Every colour in the QML has a High contrast value, chosen by its role (background, text, stroke) and state. Literal colours use `theme.hc(...)`.
+- `theme.onFill(fills, colour)` makes text black on whatever light fill is under it.
+- Content colours (skin tones, avatar palettes, charts) keep their own colours.
+
 ## OST status
 
 - Built: the left pane and header, General (System, opening content, Out of office, keyboard

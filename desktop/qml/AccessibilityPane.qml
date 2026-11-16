@@ -38,9 +38,10 @@ Rectangle {
             Accessible.name: text
         }
         Rectangle {
+            id: hcFill1
             x: parent.width - 52; y: 13.67; width: 32; height: 30; radius: 4
             color: closeHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.textStrong }
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             Accessible.role: Accessible.Button
@@ -67,14 +68,14 @@ Rectangle {
         Rectangle {
             id: track
             x: 48; y: 8; width: 40; height: 20; radius: 10
-            color: tg.checked ? (th.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+            color: tg.checked ? (th.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
             border.color: tg.checked ? "transparent" : theme.textSecondary
             border.width: 0.67
             Rectangle {
                 width: 14.4; height: 14.4; radius: 7.2
                 anchors.verticalCenter: parent.verticalCenter
                 x: (tg.checked ? 20.67 : 0.67) + 9 - 7.2
-                color: tg.checked ? "white" : theme.textSecondary
+                color: tg.checked ? theme.hc("white", "#1AEBFF") : theme.textSecondary
             }
         }
         HoverHandler { id: th; cursorShape: Qt.PointingHandCursor }

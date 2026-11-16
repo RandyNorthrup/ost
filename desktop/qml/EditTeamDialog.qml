@@ -85,7 +85,7 @@ Popup {
         }
         Rectangle {
             y: 106.6; width: 550.7; height: 32; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             TextInput {
                 id: nameField
                 x: 12; width: parent.width - 52; anchors.verticalCenter: parent.verticalCenter
@@ -104,7 +104,7 @@ Popup {
         Text { y: 152; text: "Description"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
         Rectangle {
             y: 172.6; width: 550.7; height: 77.3; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             TextEdit {
                 id: descField
                 x: 12; y: 6; width: parent.width - 24; height: parent.height - 12
@@ -123,7 +123,7 @@ Popup {
         Rectangle {
             id: privacy
             y: 298.6; width: 327.6; height: 30; radius: 4
-            color: theme.inputFilled
+            color: theme.inputFilled; border.color: theme.transparentStroke
             Text {
                 x: 12; anchors.verticalCenter: parent.verticalCenter
                 text: dlg.isPublic ? "Public - Anyone in your organization can join" : "Private - Only team owners can add members"
@@ -149,8 +149,8 @@ Popup {
                             required property var modelData
                             width: 320.9; height: 32; radius: 4
                             color: poptHover.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { visible: dlg.isPublic === popt.modelData[0]; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.text }
-                            Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: popt.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            FluentIcon { visible: dlg.isPublic === popt.modelData[0]; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(popt, theme.text) }
+                            Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: popt.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(popt, theme.text) }
                             HoverHandler { id: poptHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { privacyMenu.close(); dlg.isPublic = popt.modelData[0] } }
                             Accessible.role: Accessible.ListItem
@@ -176,7 +176,7 @@ Popup {
         width: 96; height: 31.3; radius: 4
         color: !enabled ? theme.bgDisabled : primary ? (btnHover.hovered ? theme.brandHover : theme.brandFill) : (btnHover.hovered ? theme.menuHover : theme.surface)
         border.color: primary || !enabled ? "transparent" : theme.stroke; border.width: 0.67
-        Text { anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text }
+        Text { anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(btn, !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text) }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }
         Accessible.role: Accessible.Button

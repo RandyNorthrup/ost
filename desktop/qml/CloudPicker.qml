@@ -42,7 +42,7 @@ Popup {
     padding: 0
     closePolicy: Popup.CloseOnEscape
     Overlay.modal: Rectangle { color: Qt.rgba(37 / 255, 36 / 255, 36 / 255, 0.75) }
-    background: FluentSurface { depth: 64; radius: 8; color: theme.pick("#F5F5F5", "#1F1F1F") }
+    background: FluentSurface { depth: 64; radius: 8; color: theme.pick("#F5F5F5", "#1F1F1F", "#000000") }
 
     /// The files picked ({name, kind, web_url, drive_id, id}), sent on Attach.
     signal attached(var files)
@@ -65,7 +65,7 @@ Popup {
     readonly property var emptyStates: ({ shared: ["Shared files will show up here", "empty-shared-v3.png"],
                                           favorites: ["Items you favorite will show up here", "empty-favorites-v3.png"],
                                           meetings: ["Files shared in meetings will show up here", "empty-meeting-v3.png"] })
-    readonly property color ink: theme.pick("#616161", "#D6D6D6")
+    readonly property color ink: theme.pick("#616161", "#D6D6D6", "#FFFFFF")
     readonly property color faint: theme.pick("#8A8A8A", "#ADADAD")
     readonly property color label: theme.pick("#424242", "#D6D6D6")
     readonly property color railBlue: theme.pick("#115EA3", "#479EF5")
@@ -207,7 +207,7 @@ Popup {
             visible: dlg.place === "home" && dlg.rows.length > 0
             x: 16; y: 78; width: content.width - 40; height: dlg.height - 80 - y
             radius: 12; color: theme.surface
-            border.color: theme.pick("#F0F0F0", "#333333"); border.width: 0.67
+            border.color: theme.pick("#F0F0F0", "#333333", "#FFFFFF"); border.width: 0.67
             clip: true
             readonly property var cols: [["Name", 45.7], ["Opened", 370.2], ["Owner", 524.7], ["Activity", 699.2]]
             Repeater {
@@ -234,29 +234,29 @@ Popup {
                     required property var modelData
                     readonly property bool sel: dlg.isSelected(modelData)
                     width: ListView.view.width; height: 56
-                    color: sel ? theme.pick("#CFE4FA", "#0C3B5E") : hrHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
+                    color: sel ? theme.pick("#CFE4FA", "#0C3B5E", "#000000") : hrHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                     PickCircle { x: 21; y: 19; on: hr.sel; shown: hrHover.hovered || hr.sel }
                     FluentIcon { x: 53; y: 11.6; size: 32; name: dlg.typeIcon(hr.modelData.kind) }
                     Text {
                         x: 101; y: 9.8; width: 280; elide: Text.ElideRight
                         text: hr.modelData.name.replace(/\.(loop|fluid)$/i, "")
-                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hr, theme.text)
                     }
                     Text {
                         x: 101; y: 29.5; width: 280; elide: Text.ElideRight
                         text: hr.modelData.location || ""
-                        font.family: theme.font; font.pixelSize: 12; color: dlg.ink
+                        font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hr, dlg.ink)
                     }
-                    Text { x: 378.1; anchors.verticalCenter: parent.verticalCenter; width: 140; elide: Text.ElideRight; text: hr.modelData.opened || ""; font.family: theme.font; font.pixelSize: 14; color: dlg.ink }
-                    Text { x: 532; anchors.verticalCenter: parent.verticalCenter; width: 160; elide: Text.ElideRight; text: hr.modelData.owner || ""; font.family: theme.font; font.pixelSize: 14; color: dlg.ink }
-                    FluentIcon { visible: !!hr.modelData.activity; x: 710.5; y: 8; size: 16; name: "edit-16"; color: theme.pick("#0F6CBD", "#479EF5") }
+                    Text { x: 378.1; anchors.verticalCenter: parent.verticalCenter; width: 140; elide: Text.ElideRight; text: hr.modelData.opened || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hr, dlg.ink) }
+                    Text { x: 532; anchors.verticalCenter: parent.verticalCenter; width: 160; elide: Text.ElideRight; text: hr.modelData.owner || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hr, dlg.ink) }
+                    FluentIcon { visible: !!hr.modelData.activity; x: 710.5; y: 8; size: 16; name: "edit-16"; color: theme.onFill(hr, theme.pick("#0F6CBD", "#479EF5", "#FFFFFF")) }
                     Text {
                         visible: !!hr.modelData.activity
                         x: 736.5; y: 8; width: 95.5
                         wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
                         textFormat: Text.StyledText
                         text: dlg.activityText(hr.modelData)
-                        font.family: theme.font; font.pixelSize: 14; color: dlg.ink
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hr, dlg.ink)
                     }
                     HoverHandler { id: hrHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: dlg.toggle(hr.modelData) }
@@ -274,13 +274,13 @@ Popup {
             visible: dlg.place !== "home" && dlg.place !== "people" && dlg.place !== "media" && dlg.rows.length > 0
             x: 16; y: 80; width: content.width - 40; height: dlg.height - 80 - y
             radius: 12; color: theme.surface
-            border.color: theme.pick("#F0F0F0", "#333333"); border.width: 0.67
+            border.color: theme.pick("#F0F0F0", "#333333", "#FFFFFF"); border.width: 0.67
             clip: true
             Rectangle {
                 x: 0.7; y: 0.7; width: parent.width - 1.4; height: 43.7
                 topLeftRadius: 12; topRightRadius: 12
-                color: theme.pick("#F5F5F5", "#292929")
-                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D") }
+                color: theme.pick("#F5F5F5", "#292929", "#000000")
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                 HoverHandler { id: tableHead }
                 PickCircle { x: 23; anchors.verticalCenter: parent.verticalCenter; shown: tableHead.hovered; on: dlg.allPicked(); TapHandler { onTapped: dlg.pickAll() } }
                 FluentIcon { x: 64; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "document-16"; color: dlg.faint }
@@ -304,8 +304,8 @@ Popup {
                     readonly property bool sel: dlg.isSelected(modelData)
                     readonly property color cell: sel ? dlg.ink : dlg.faint
                     width: ListView.view.width; height: 59
-                    color: sel ? theme.pick("#CFE4FA", "#0C3B5E") : frHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent"
-                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: fr.sel ? "transparent" : theme.pick("#F5F5F5", "#2E2E2E") }
+                    color: sel ? theme.pick("#CFE4FA", "#0C3B5E", "#000000") : frHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: fr.sel ? "transparent" : theme.pick("#F5F5F5", "#2E2E2E", "#000000") }
                     PickCircle { visible: !fr.modelData.is_folder; x: 23; y: 20.5; on: fr.sel; shown: frHover.hovered || fr.sel }
                     SiteTile { visible: !!fr.modelData.library; x: 58; y: 13.5; size: 32; acronym: fr.modelData.library ? dlg.acronymOf(fr.modelData.library.site || fr.modelData.name) : "" }
                     FluentIcon {
@@ -316,30 +316,30 @@ Popup {
                     Text {
                         x: 104; y: fr.meta ? 11.5 : 19.2; width: 260; elide: Text.ElideRight
                         text: fr.modelData.name
-                        font.family: theme.font; font.pixelSize: 14; color: dlg.ink
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, dlg.ink)
                     }
                     readonly property string meta: modelData.library ? "" : modelData.is_folder ? dlg.itemCount(modelData.child_count) : dlg.sizeText(modelData.size)
                     Row {
                         visible: !!fr.meta
                         x: 104; y: 30.9; spacing: 0
-                        Text { text: fr.meta; font.family: theme.font; font.pixelSize: 12; color: fr.cell }
-                        Text { visible: fr.modelData.sharing === "Shared"; text: " • "; font.family: theme.font; font.pixelSize: 12; color: fr.cell }
-                        FluentIcon { visible: fr.modelData.sharing === "Shared"; y: 3.6; size: 12; name: "people-12"; color: fr.cell }
+                        Text { text: fr.meta; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(fr, fr.cell) }
+                        Text { visible: fr.modelData.sharing === "Shared"; text: " • "; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(fr, fr.cell) }
+                        FluentIcon { visible: fr.modelData.sharing === "Shared"; y: 3.6; size: 12; name: "people-12"; color: theme.onFill(fr, fr.cell) }
                     }
-                    Text { x: 374; anchors.verticalCenter: parent.verticalCenter; width: 150; elide: Text.ElideRight; text: fr.modelData.modified_text || ""; font.family: theme.font; font.pixelSize: 14; color: fr.cell }
-                    Text { x: 544; anchors.verticalCenter: parent.verticalCenter; width: 130; elide: Text.ElideRight; text: fr.modelData.modified_by || ""; font.family: theme.font; font.pixelSize: 14; color: fr.cell }
+                    Text { x: 374; anchors.verticalCenter: parent.verticalCenter; width: 150; elide: Text.ElideRight; text: fr.modelData.modified_text || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell) }
+                    Text { x: 544; anchors.verticalCenter: parent.verticalCenter; width: 130; elide: Text.ElideRight; text: fr.modelData.modified_by || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell) }
                     FluentIcon {
                         visible: !!fr.modelData.activity
                         x: 694; anchors.verticalCenter: parent.verticalCenter; size: 14
                         name: fr.modelData.activity ? dlg.activityIcon(fr.modelData.activity.kind) : ""
-                        color: theme.pick("#0078D4", "#479EF5")
+                        color: theme.onFill(fr, theme.pick("#0078D4", "#479EF5", "#FFFFFF"))
                     }
                     Text {
                         visible: !!fr.modelData.activity
                         x: 712; anchors.verticalCenter: parent.verticalCenter; width: fr.width - x - 12
                         elide: Text.ElideRight
                         text: fr.modelData.activity ? fr.modelData.activity.text + " " + fr.modelData.activity.time : ""
-                        font.family: theme.font; font.pixelSize: 14; color: fr.cell
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell)
                     }
                     HoverHandler { id: frHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: fr.modelData.library ? dlg.openLibrary(fr.modelData.library) : dlg.toggle(fr.modelData) }
@@ -376,17 +376,17 @@ Popup {
                                 required property var modelData
                                 readonly property bool sel: dlg.isSelected(modelData)
                                 width: 198; height: 41.3; radius: 6
-                                color: sel ? theme.pick("#CFE4FA", "#0C3B5E") : theme.surface
+                                color: sel ? theme.pick("#CFE4FA", "#0C3B5E", "#000000") : theme.surface
                                 FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 6 }
                                 FluentIcon { x: 12.7; anchors.verticalCenter: parent.verticalCenter; size: 16; name: dlg.typeIcon(chip.modelData.kind).replace("-32", "-20") }
                                 Text {
                                     x: 32.7; anchors.verticalCenter: parent.verticalCenter; width: 82; elide: Text.ElideRight
                                     text: chip.modelData.name.replace(/\.[^.]+$/, "")
-                                    font.family: theme.font; font.pixelSize: 12; color: theme.text
+                                    font.family: theme.font; font.pixelSize: 12; color: theme.onFill(chip, theme.text)
                                 }
                                 Rectangle {
                                     x: 118.4; anchors.verticalCenter: parent.verticalCenter; width: 71; height: 24; radius: 20
-                                    color: theme.pick("#F5F5F5", "#2E2E2E")
+                                    color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                                     Text {
                                         anchors.centerIn: parent
                                         text: chip.modelData.modified_text || ""
@@ -424,9 +424,10 @@ Popup {
                     Image { anchors.fill: parent; anchors.margins: 2; fillMode: Image.PreserveAspectCrop; source: dlg.thumbs[mt.modelData.id] || "" }
                     // Videos: a play mark (28, rgba(0,0,0,.5), radius 4) at 12, 12.
                     Rectangle {
+                        id: hcFill1
                         visible: ["mp4", "mov", "avi", "mkv", "webm", "wmv", "m4v"].indexOf(String(mt.modelData.kind || "").toLowerCase()) >= 0
                         x: 12; y: 12; width: 28; height: 28; radius: 4; color: Qt.rgba(0, 0, 0, 0.5)
-                        FluentIcon { anchors.centerIn: parent; size: 20; name: "play-20"; color: "white" }
+                        FluentIcon { anchors.centerIn: parent; size: 20; name: "play-20"; color: theme.onFill(hcFill1, "white") }
                     }
                 }
                 Text {
@@ -473,30 +474,32 @@ Popup {
             color: theme.surface
             bottomRightRadius: 8
             Rectangle {
+                id: hcFill2
                 visible: dlg.selected.length > 0
                 x: 24; y: 24; height: 32; width: selText.implicitWidth + 47.8; radius: 18
                 color: clearHover.hovered ? theme.menuHover : "transparent"
-                border.color: theme.pick("#605E5C", "#A19F9D"); border.width: 0.67
+                border.color: theme.pick("#605E5C", "#A19F9D", "#FFFFFF"); border.width: 0.67
                 Text {
                     id: selText
                     x: 12.7; anchors.verticalCenter: parent.verticalCenter
                     text: dlg.selected.length + " selected"
-                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                    font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text)
                 }
-                FluentIcon { x: selText.x + selText.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "dismiss-12"; color: theme.text }
+                FluentIcon { x: selText.x + selText.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "dismiss-12"; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: clearHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.selected = [] }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Clear selected items"
             }
             Rectangle {
+                id: hcFill3
                 x: parent.width - 192; y: 24; width: 80; height: 32; radius: 2
                 readonly property bool on: dlg.selected.length > 0
-                color: on ? (attachHover.hovered ? theme.brandHover : theme.brand) : theme.pick("#F5F5F5", "#2E2E2E")
+                color: on ? (attachHover.hovered ? theme.brandHover : theme.brand) : theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                 Text {
                     anchors.centerIn: parent; text: "Attach"
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                    color: parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C")
+                    color: theme.onFill(hcFill3, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F"))
                 }
                 HoverHandler { id: attachHover; enabled: parent.on; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: parent.on; onTapped: dlg.attach() }
@@ -504,10 +507,11 @@ Popup {
                 Accessible.name: "Attach"
             }
             Rectangle {
+                id: hcFill4
                 x: parent.width - 104; y: 24; width: 80; height: 32; radius: 2
                 color: cancelHover.hovered ? theme.menuHover : theme.surface
-                border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
                 Accessible.role: Accessible.Button
@@ -523,7 +527,7 @@ Popup {
     Rectangle {
         id: rail
         width: dlg.navOpen ? 210 : 68; height: dlg.height
-        color: theme.pick("#F5F5F5", "#1F1F1F")
+        color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
         topLeftRadius: 8; bottomLeftRadius: 8
         FluentSurface { visible: dlg.navOpen; z: -1; anchors.fill: parent; depth: 16; radius: 8 }
         Text {
@@ -552,7 +556,7 @@ Popup {
         RailItem { y: 239.3; key: "people"; icon: "person-20"; text: "People" }
         RailItem { y: 275.3; key: "meetings"; icon: "calendar-ltr-20"; text: "Meetings" }
         RailItem { y: 311.3; key: "media"; icon: "image-20"; text: "Media" }
-        Rectangle { visible: !dlg.navOpen; x: 22; y: 366.8; width: 24; height: 1; radius: 1; color: theme.pick("#D1D1D1", "#3D3D3D") }
+        Rectangle { visible: !dlg.navOpen; x: 22; y: 366.8; width: 24; height: 1; radius: 1; color: theme.pick("#D1D1D1", "#3D3D3D", "#000000") }
         Row {
             visible: dlg.navOpen
             x: 24; y: 364; spacing: 6
@@ -601,7 +605,7 @@ Popup {
         Rectangle {
             visible: ri.open || riHover.hovered
             width: dlg.navOpen ? ri.width : 36; height: 36; radius: 4
-            color: theme.pick("#EBEBEB", "#2E2E2E")
+            color: theme.pick("#EBEBEB", "#2E2E2E", "#000000")
         }
         Rectangle { visible: ri.open; x: -12; y: 10; width: 4; height: 16; radius: 2; color: dlg.railBlue }
         FluentIcon {
@@ -631,11 +635,12 @@ Popup {
         property bool shown: false
         width: 18; height: 18
         Rectangle {
+            id: hcFill5
             visible: parent.on || parent.shown
             anchors.fill: parent; radius: 9
             color: parent.on ? theme.brand : "transparent"
             border.color: parent.on ? theme.brand : dlg.faint; border.width: 1
-            FluentIcon { visible: parent.parent.on; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: "white" }
+            FluentIcon { visible: parent.parent.on; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill5, "white") }
         }
     }
 

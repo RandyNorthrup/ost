@@ -112,8 +112,8 @@ Item {
                             required property var modelData
                             width: 248; height: 32; radius: 4
                             color: miHover.hovered ? theme.menuHover : "transparent"
-                            FluentIcon { visible: !!mi.modelData.icon; x: 6; anchors.verticalCenter: parent.verticalCenter; name: mi.modelData.icon + "-20"; size: 20; color: theme.textSecondary }
-                            Text { x: 34; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 40; elide: Text.ElideRight; text: mi.modelData.title; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            FluentIcon { visible: !!mi.modelData.icon; x: 6; anchors.verticalCenter: parent.verticalCenter; name: mi.modelData.icon + "-20"; size: 20; color: theme.onFill(mi, theme.textSecondary) }
+                            Text { x: 34; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 40; elide: Text.ElideRight; text: mi.modelData.title; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(mi, theme.text) }
                             HoverHandler { id: miHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { root.tab = menu.kind; root.openPage(mi.modelData.id) } }
                             Accessible.role: Accessible.MenuItem; Accessible.name: mi.modelData.title
@@ -133,36 +133,36 @@ Item {
         property bool noRatings: false
         readonly property bool rated: !noRatings && (app.count || 0) > 0
         width: 330; height: full ? 148 : (rated ? 128 : 104)
-        Rectangle { anchors.fill: parent; radius: 12; color: cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : "transparent" }
+        Rectangle { id: hcFill1; anchors.fill: parent; radius: 12; color: cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent" }
         Item {
             x: 16; y: 16; width: 52; height: 52
             Rectangle { anchors.fill: parent; color: theme.quoteFill }
             Image { anchors.fill: parent; source: card.app.icon || ""; sourceSize: Qt.size(104, 104); fillMode: Image.PreserveAspectCrop; asynchronous: true; smooth: true }
-            RoundedCorners { anchors.fill: parent; squircle: true; background: cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : theme.surface }
+            RoundedCorners { anchors.fill: parent; squircle: true; background: cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : theme.surface }
             // You have it: Teams' check in a 24 px white circle on the
             // icon's corner.
             FluentSurface {
                 visible: !!card.app.installed
                 x: 29; y: 32; width: 24; height: 24; radius: 12; depth: 4
                 color: theme.surface
-                FluentIcon { anchors.centerIn: parent; name: "checkmark-16"; size: 16; color: theme.text }
+                FluentIcon { anchors.centerIn: parent; name: "checkmark-16"; size: 16; color: theme.onFill(hcFill1, theme.text) }
                 Accessible.role: Accessible.Graphic; Accessible.name: "Added"
             }
         }
-        Text { x: 84; y: 21; width: card.width - 84 - 16; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-        Text { visible: card.full; x: 84; y: 42; width: card.width - 100; height: 16; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.developer || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Text { x: 84; y: 21; width: card.width - 84 - 16; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+        Text { visible: card.full; x: 84; y: 42; width: card.width - 100; height: 16; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.developer || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, theme.text) }
         Text {
             x: 84; y: card.full ? 70 : 45; width: card.width - 100
             rightPadding: 40
             maximumLineCount: 2; wrapMode: Text.Wrap; elide: Text.ElideRight
             lineHeight: 20; lineHeightMode: Text.FixedHeight
-            text: card.app.short || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text
+            text: card.app.short || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.text)
         }
         Row {
             visible: card.rated
             x: 84; y: card.full ? 116 : 91; height: 16; spacing: 3
-            FluentIcon { name: "star-16-filled"; size: 16; color: theme.brandFill }
-            Text { height: 16; verticalAlignment: Text.AlignVCenter; textFormat: Text.StyledText; text: "<b>" + (card.app.average_text || "") + "</b> (" + (card.app.count_text || "") + " ratings)"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            FluentIcon { name: "star-16-filled"; size: 16; color: theme.onFill(hcFill1, theme.brandFill) }
+            Text { height: 16; verticalAlignment: Text.AlignVCenter; textFormat: Text.StyledText; text: "<b>" + (card.app.average_text || "") + "</b> (" + (card.app.count_text || "") + " ratings)"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, theme.text) }
         }
         HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: details.show(card.app.id) }
@@ -207,9 +207,9 @@ Item {
                 width: parent.width; height: 276
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: theme.dark ? "#2B2B40" : "#E8EBFA" }
-                    GradientStop { position: 0.5; color: theme.dark ? "#262636" : "#F3F2FA" }
-                    GradientStop { position: 1.0; color: theme.dark ? "#2B2B40" : "#E8EBFA" }
+                    GradientStop { position: 0.0; color: theme.dark ? theme.hc("#2B2B40", "#000000") : theme.hc("#E8EBFA", "#000000") }
+                    GradientStop { position: 0.5; color: theme.dark ? theme.hc("#262636", "#000000") : theme.hc("#F3F2FA", "#000000") }
+                    GradientStop { position: 1.0; color: theme.dark ? theme.hc("#2B2B40", "#000000") : theme.hc("#E8EBFA", "#000000") }
                 }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; y: 60; height: 56; verticalAlignment: Text.AlignVCenter; text: "Do more in Teams"; font.family: theme.font; font.pixelSize: 40; font.weight: Font.DemiBold; color: theme.text }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; y: 116; height: 20; verticalAlignment: Text.AlignVCenter; text: "Discover agents and apps that can help you tackle any task."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
@@ -260,9 +260,10 @@ Item {
             Item {
                 width: parent.width; height: 140
                 Rectangle {
+                    id: hcFill2
                     x: 0; y: 63; width: 32; height: 32; radius: 4
                     color: backHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.textSecondary }
+                    FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.onFill(hcFill2, theme.textSecondary) }
                     HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.home() }
                     Accessible.role: Accessible.Button; Accessible.name: "Back"

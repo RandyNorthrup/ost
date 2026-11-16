@@ -28,7 +28,7 @@ Item {
     readonly property var colors: theme.dark
         ? ["#9399F5", "#2F2F4A", "#7A80EB", "#FFFFFF", "#5B5FC7", "#242424"]
         : ["#5B5FC7", "#E8EBFA", "#9092C1", "#242424", "#A5A7CF", "#FAFAFA"]
-    readonly property color ink: theme.dark ? "#FFFFFF" : "#242424"
+    readonly property color ink: theme.dark ? "#FFFFFF" : theme.hc("#242424", "#FFFFFF")
     readonly property color grid: theme.dark ? "#2F2F4A" : "#E8EBFA"
     readonly property string fontFamily: "Arial"
 
@@ -191,13 +191,13 @@ Item {
                 required property int index
                 readonly property bool off: !!chart.hidden[index]
                 width: 15 + liText.implicitWidth; height: 25
-                Rectangle { width: 10; height: 25; color: li.off ? "#CCCCCC" : chart.colors[li.index % chart.colors.length] }
+                Rectangle { width: 10; height: 25; color: li.off ? theme.hc("#CCCCCC", "#000000") : chart.colors[li.index % chart.colors.length] }
                 Text {
                     id: liText
                     x: 15; y: 12
                     text: li.modelData.name
                     font.family: chart.fontFamily; font.pixelSize: 12; font.bold: true
-                    color: li.off ? (theme.dark ? "#2F2F4A" : "#E8EBFA") : liHover.hovered ? (theme.dark ? "#ACB3FA" : "#383966") : chart.ink
+                    color: li.off ? (theme.dark ? theme.hc("#2F2F4A", "#FFFFFF") : theme.hc("#E8EBFA", "#FFFFFF")) : liHover.hovered ? (theme.dark ? theme.hc("#ACB3FA", "#FFFFFF") : theme.hc("#383966", "#FFFFFF")) : chart.ink
                 }
                 HoverHandler { id: liHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { const h = Object.assign({}, chart.hidden); h[li.index] = !h[li.index]; chart.hidden = h } }
@@ -231,7 +231,7 @@ Item {
         Column {
             id: tipCol
             x: 8; y: 8
-            Text { text: chart.hover >= 0 ? (chart.categories[chart.hover] || "") : ""; font.family: chart.fontFamily; font.pixelSize: 10; color: theme.dark ? "#292929" : "#FFFFFF" }
+            Text { text: chart.hover >= 0 ? (chart.categories[chart.hover] || "") : ""; font.family: chart.fontFamily; font.pixelSize: 10; color: theme.onFill(tip, theme.dark ? theme.hc("#292929", "#FFFFFF") : "#FFFFFF") }
             Repeater {
                 model: chart.series
                 Text {
@@ -242,7 +242,7 @@ Item {
                     readonly property var pt: chart.hover >= 0 ? (modelData.points || [])[chart.hover] : null
                     text: "<font color=\"" + chart.colors[index % chart.colors.length] + "\">●</font> " + modelData.name + ": <b>" + (pt ? (pt.y || 0) : 0) + "</b>"
                     font.family: chart.fontFamily; font.pixelSize: 12
-                    color: theme.dark ? "#292929" : "#FFFFFF"
+                    color: theme.onFill(tip, theme.dark ? theme.hc("#292929", "#FFFFFF") : "#FFFFFF")
                 }
             }
         }

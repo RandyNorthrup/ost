@@ -127,17 +127,18 @@ Popup {
         width: Math.max(96, btnText.implicitWidth + 24.67); height: 31.3; radius: 4
         color: !enabled ? theme.bgDisabled : primary ? (btnHover.hovered ? theme.brandHover : theme.brandFill) : (btnHover.hovered ? theme.menuHover : theme.surface)
         border.color: primary || !enabled ? "transparent" : theme.stroke; border.width: 0.67
-        Text { id: btnText; anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text }
+        Text { id: btnText; anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(btn, !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text) }
         HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }
         Accessible.role: Accessible.Button
         Accessible.name: text
     }
     component CloseButton: Rectangle {
+        id: hcFill1
         signal clicked()
         x: 518.7; y: 0; width: 32; height: 31.3; radius: 4
         color: closeHover.hovered ? theme.menuHover : "transparent"
-        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: parent.clicked() }
         Accessible.role: Accessible.Button
@@ -217,9 +218,9 @@ Popup {
                     // Teams' Required: a #D13438 outline, its error glyph and
                     // the message (12/16 #BC2F32) 2 under the field; what
                     // follows moves down 18.
-                    border.color: dlg.nameError ? theme.pick("#D13438", "#DC626D") : "transparent"; border.width: 0.67
-                    FluentIcon { visible: dlg.nameError; x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#D13438", "#DC626D") }
-                    Text { visible: dlg.nameError; y: 34; text: "Required"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.pick("#BC2F32", "#DC626D") }
+                    border.color: dlg.nameError ? theme.pick("#D13438", "#DC626D", "#FFFFFF") : "transparent"; border.width: 0.67
+                    FluentIcon { visible: dlg.nameError; x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#D13438", "#DC626D", "#FFFFFF") }
+                    Text { visible: dlg.nameError; y: 34; text: "Required"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
                     TextInput {
                         id: nameField
                         onActiveFocusChanged: if (!activeFocus) dlg.nameTouched = true
@@ -238,7 +239,7 @@ Popup {
                 Rectangle {
                     y: (form.scratch ? 71 : form.clone ? 66 : 71) + 20 + fieldCol.shift
                     width: parent.width; height: 78; radius: 4
-                    color: theme.inputFilled
+                    color: theme.inputFilled; border.color: theme.transparentStroke
                     TextEdit {
                         id: descField
                         x: 12; y: 6; width: parent.width - 24; height: parent.height - 12
@@ -261,8 +262,8 @@ Popup {
                     border.color: theme.stroke; border.width: 0.67
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: dlg.isPublic ? "globe-20" : "lock-closed-20"; size: 20; color: theme.text }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: dlg.isPublic ? "Public" : "Private"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: dlg.isPublic ? "globe-20" : "lock-closed-20"; size: 20; color: theme.onFill(typeButton, theme.text) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: dlg.isPublic ? "Public" : "Private"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(typeButton, theme.text) }
                     }
                     HoverHandler { id: typeHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: dlg.page = "type" }
@@ -291,7 +292,7 @@ Popup {
                 Rectangle {
                     visible: form.scratch
                     y: 286.3 + fieldCol.shift; width: parent.width; height: 32; radius: 4
-                    color: theme.inputFilled
+                    color: theme.inputFilled; border.color: theme.transparentStroke
                     TextInput {
                         id: firstField
                         x: 12; width: 501.3; anchors.verticalCenter: parent.verticalCenter
@@ -305,7 +306,7 @@ Popup {
                         id: namingButton
                         x: 516; y: 4.3; width: 24; height: 23.3; radius: 4
                         color: namingHover.hovered || namingMenu.opened ? theme.menuHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 16; color: theme.textStrong }
+                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 16; color: theme.onFill(namingButton, theme.textStrong) }
                         HoverHandler { id: namingHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: namingMenu.open() }
                         Accessible.role: Accessible.Button
@@ -321,13 +322,14 @@ Popup {
                 }
                 // Customize channels > (template).
                 Rectangle {
+                    id: hcFill2
                     visible: dlg.kind === "template"
                     y: 262.3 + fieldCol.shift; width: 170.9; height: 31.3; radius: 4
                     color: customHover.hovered ? theme.menuHover : "transparent"
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Customize channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand }
-                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.brand }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Customize channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.brand) }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.onFill(hcFill2, theme.brand) }
                     }
                     HoverHandler { id: customHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { customRepeater.model = dlg.channelNames.slice(); dlg.page = "customize" } }
@@ -373,10 +375,11 @@ Popup {
                         readonly property bool on: modelData.fixed || (modelData.key === "tabs" ? dlg.pickTabs : modelData.key === "settings" ? dlg.pickSettings : dlg.pickMembers)
                         x: modelData.x; y: modelData.y + fieldCol.shift; width: 32 + cbText.implicitWidth + 12; height: 36
                         Rectangle {
+                            id: hcFill3
                             x: 8; y: 10; width: 16; height: 16; radius: 2
                             color: cb.on && !cb.modelData.fixed ? theme.brand : "transparent"
                             border.color: cb.modelData.fixed ? theme.disabled : cb.on ? theme.brand : theme.textSecondary; border.width: 0.67
-                            FluentIcon { visible: cb.on; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: cb.modelData.fixed ? theme.disabled : "white" }
+                            FluentIcon { visible: cb.on; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill3, cb.modelData.fixed ? theme.disabled : "white") }
                         }
                         Text { id: cbText; x: 36; y: 8; text: cb.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: cb.modelData.fixed ? theme.disabled : theme.text }
                         HoverHandler { enabled: !cb.modelData.fixed; cursorShape: Qt.PointingHandCursor }
@@ -419,11 +422,11 @@ Popup {
                 required property int index
                 readonly property bool chosen: dlg.isPublic === modelData[0]
                 y: 62.7 + index * 77; width: 550.7; height: 75; radius: 4
-                color: chosen || cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E") : theme.surface
+                color: chosen || cardHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : theme.surface
                 border.color: theme.stroke; border.width: 0.67
                 Image { x: 12.7; y: 12.7; width: 48; height: 48; source: "../assets/illustrations/" + card.modelData[3]; sourceSize: Qt.size(96, 96) }
-                Text { x: 72.7; y: 18.1; text: card.modelData[1]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Text { x: 72.7; y: 39.1; text: card.modelData[2]; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { x: 72.7; y: 18.1; text: card.modelData[1]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(card, theme.text) }
+                Text { x: 72.7; y: 39.1; text: card.modelData[2]; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(card, theme.text) }
                 HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { dlg.isPublic = card.modelData[0]; dlg.page = "form" } }
                 Accessible.role: Accessible.Button
@@ -432,12 +435,13 @@ Popup {
             }
         }
         Rectangle {
+            id: hcFill4
             y: 520; width: 96; height: 31.3; radius: 4
             color: backHover.hovered ? theme.menuHover : "transparent"
             Row {
                 anchors.centerIn: parent; spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-20"; size: 20; color: theme.textStrong }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Back"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill4, theme.textStrong) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Back"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.textStrong) }
             }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.page = "form" }
