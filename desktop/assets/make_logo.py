@@ -13,17 +13,17 @@ behind it to the right. OST keeps the trade dress apart. Its plate is a
 wide "OST" wordmark plate with no "T" shape, the letters are the largest
 element, and nothing is traced from or copied out of Teams' artwork. There
 are two layouts (see LAYOUTS):
-  a (default)  three people standing symmetrically behind a wide, centred
-               plate (one in the middle, one at each side);
-  b            the earlier composition: the plate at the front lower left
-               with two people behind it to the upper right.
+  b (default, the user's choice on 2026-11-16) the plate at the front lower
+               left with two people behind it to the upper right;
+  a            three people standing symmetrically behind a wide, centred
+               plate (one in the middle, one at each side).
 The wordmark is Selawik Bold (OFL, desktop/assets/fonts), outlined so the
 SVG renders anywhere.
 
 Writes desktop/assets/logo.svg, desktop/assets/logo.png (512),
 desktop/packaging/ost-desktop.png (256) and docs/logo_ost.png (512).
 Run from the repo root with the helper venv (fontTools; resvg on PATH):
-  ~/.local/share/ost-vnc-venv/bin/python -I desktop/assets/make_logo.py [--layout b]
+  ~/.local/share/ost-vnc-venv/bin/python -I desktop/assets/make_logo.py [--layout a]
 then python3 -I desktop/assets/tray/make.py for the tray icons. To try a
 layout without touching the app's assets, add --out DIR: that writes
 DIR/logo.svg and DIR/logo-{512,256,48,24}.png only.
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     import os
 
     ap = argparse.ArgumentParser(description="Make OST's logo.")
-    ap.add_argument("--layout", choices=sorted(LAYOUTS), default="a")
+    ap.add_argument("--layout", choices=sorted(LAYOUTS), default="b")
     ap.add_argument("--out", help="write logo.svg and logo-{512,256,48,24}.png into this "
                     "folder instead of the app's assets, to try a layout")
     args = ap.parse_args()
