@@ -145,7 +145,7 @@ pub async fn update_call_accessibility_settings(
 
 /// Settings kept as user properties whose value is a JSON object in a
 /// string (Teams merges the changed keys into the whole object).
-pub const JSON_PROPERTIES: [&str; 6] = [
+pub const JSON_PROPERTIES: [&str; 7] = [
     PROPERTY,
     CALL_ACCESSIBILITY,
     "simpleCollabUserSettings",
@@ -156,6 +156,10 @@ pub const JSON_PROPERTIES: [&str; 6] = [
     // Settings ▸ Notifications ▸ Calendar: Graph apps' notification
     // settings by app id ({activityGenerationSettings, toastSettings}).
     "userGraphSettings",
+    // Settings ▸ Privacy ▸ Manage my work location: Teams' places
+    // settings ({autoUpdateLocationPreference "Enabled"/"Disabled",
+    // autoLocationFirstEngagement, ...}).
+    "placesSettings",
 ];
 
 /// Settings kept as plain string user properties ("true", "COMFY", …),

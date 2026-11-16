@@ -39,6 +39,7 @@ pub mod onenote;
 pub mod outbox;
 pub mod planner;
 pub mod preferences;
+pub mod places;
 pub mod presence;
 pub mod profile;
 pub mod store;

@@ -409,7 +409,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.subPage === "connected" ? "Manage devices" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.subPage === "connected" ? "Manage devices" : root.subPage === "stationary" ? "Stationary device location" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -1708,23 +1708,175 @@ Rectangle {
             }
 
             // ---- Privacy ----
-            // Manage my work location (Teams' presence-location card): with
-            // the tenant's work-location detection policy off, Teams says so;
-            // where your work hours and location are set, in Outlook.
+            // Manage my work location (Teams' presence-location card). With
+            // the tenant's work-location detection policy off, Teams says
+            // so; with it on (teamsWorkLocationDetectionPolicy, and the
+            // places flights enableAutoDetectPlaceWifi and
+            // enableAutoDetectLocationToggle), the automatic work location
+            // switch, "Learn about automatically setting a work location"
+            // (its dialog) and, with adlWiredCheckout, "Manage stationary
+            // location" (measured on winpc 2026-11-15: the header 54.3, the
+            // button 12 under it, the Outlook note 12 under that, the switch
+            // centred on the whole card). The switch is the user property
+            // placesSettings.autoUpdateLocationPreference ("Enabled" /
+            // "Disabled"), written with autoLocationFirstEngagement
+            // "SETTING_TOGGLE" as Teams does. Where your work hours and
+            // location are set: Outlook.
             SettingsParts.Card {
                 id: workLocationCard
                 // (ECS answers aren't notified: read again each time Privacy opens.)
                 readonly property bool shown: root.page === "privacy" && !root.subPage
-                readonly property bool detection: shown && backend.ecsSetting("places", "enableWorkLocationDetectionPolicy") === "true" && backend.ecsSetting("places", "enableAutoDetectPlaceWifi") === "true"
+                readonly property var policy: backend.workLocationPolicyJson ? JSON.parse(backend.workLocationPolicyJson) : ({})
+                function flag(ns, key, dflt) { const v = backend.ecsSetting(ns, key); return v === "" ? dflt : v === "true" }
+                readonly property bool detection: shown && policy.detection === true && flag("places", "enableAutoDetectPlaceWifi", false) && flag("places", "enableAutoDetectLocationToggle", false)
+                readonly property bool stationary: detection && flag("places", "adlWiredCheckout", true)
                 readonly property string outlookUrl: { if (!shown) return ""; const v = backend.ecsSetting("presence", "outlookLocationSettingUrl"); return v ? JSON.parse(v) : "" }
                 readonly property bool outlookLink: shown && backend.ecsSetting("presence", "enableWorkLocationSettingsLink") === "true" && outlookUrl.length > 0
-                visible: root.page === "privacy" && !root.subPage && (!detection || outlookLink)
+                function link(href, label) { return "<a href=\"" + href + "\" style=\"color:" + theme.brandLink + ";text-decoration:none\">" + label + "</a>" }
+                readonly property string outlookNote: "Your work location will be shared with Places and Outlook. Manage more preferences in Outlook. " + link(outlookUrl, "Open Outlook work hours and location settings")
+                // Teams' convertAutoUpdateLocationPreferenceToBool: set, or
+                // for an unset preference the policy's default (with the
+                // adlEnableDefaultOptIn flight) unless this is the first run.
+                readonly property bool autoOn: {
+                    const pref = root.prop("placesSettings", ["autoUpdateLocationPreference"], "")
+                    if (pref === "Enabled") return true
+                    if (pref === "Disabled") return false
+                    if (policy.userDefault === "Enabled" && flag("places", "adlEnableDefaultOptIn", false))
+                        return root.prop("placesSettings", ["autoLocationFirstEngagement"], "") !== "FIRST_RUN"
+                    return flag("places", "adlSettingDefaultEnabled", false) || flag("places", "tpp", false)
+                }
+                function setAuto(on) { root.setProp("placesSettings", "", { autoUpdateLocationPreference: on ? "Enabled" : "Disabled", autoLocationFirstEngagement: "SETTING_TOGGLE" }) }
+                visible: shown
                 icon: "building-home-20"; title: "Manage my work location"
                 subtitleLineHeight: 17.14
-                subtitle: (detection ? "" : "Automatically setting your work location has been turned off by your IT department. <a href=\"https://support.microsoft.com/en-us/office/first-things-to-know-about-bookable-desks-in-microsoft-teams-5d10c217-1205-48a1-a883-ff4533f4ae71?preview=true\">Learn more</a>")
-                    + (!detection && outlookLink ? "<br>" : "")
-                    + (outlookLink ? "Your work location will be shared with Places and Outlook. Manage more preferences in Outlook. <a href=\"" + outlookUrl + "\">Open Outlook work hours and location settings</a>" : "")
-                onLinkActivated: l => Qt.openUrlExternally(l)
+                subtitleFormat: Text.RichText
+                subtitle: detection
+                    ? "Automatically set my location across all devices when connecting to my organization's networks and devices. " + link("learn", "Learn about automatically setting a work location")
+                    : "Automatically setting your work location has been turned off by your IT department. " + link("https://support.microsoft.com/en-us/office/first-things-to-know-about-bookable-desks-in-microsoft-teams-5d10c217-1205-48a1-a883-ff4533f4ae71?preview=true", "Learn more")
+                        + (outlookLink ? "<br>" + outlookNote : "")
+                onLinkActivated: l => { if (l === "learn") autoLocationDialog.open(); else Qt.openUrlExternally(l) }
+                trailingGapX: 0
+                bodyGap: 11.9
+                trailingY: detection ? (pad + headerHeight + bodyGap + bodyHeight + bottomPad - 36) / 2 : NaN
+                trailing: detection ? workLocationToggle : null
+                Component {
+                    id: workLocationToggle
+                    SettingsParts.Toggle { on: workLocationCard.autoOn; accessibleName: "Automatically set my work location"; onToggled: v => workLocationCard.setAuto(v) }
+                }
+                SettingsParts.Button {
+                    visible: workLocationCard.stationary
+                    label: "Manage stationary location"
+                    onClicked: { root.subPage = "stationary"; backend.loadBuildings() }
+                }
+                SettingsParts.Gap { visible: workLocationCard.stationary && workLocationCard.detection && workLocationCard.outlookLink; size: 12.1 }
+                Text {
+                    visible: workLocationCard.detection && workLocationCard.outlookLink
+                    width: parent.width - 116
+                    text: workLocationCard.outlookNote
+                    wrapMode: Text.Wrap
+                    textFormat: Text.RichText
+                    linkColor: theme.brandForeground1
+                    font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
+                    color: theme.textSecondary
+                    onLinkActivated: l => Qt.openUrlExternally(l)
+                    HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                }
+            }
+            AutoLocationDialog {
+                id: autoLocationDialog
+                settingOn: workLocationCard.autoOn
+                onTurnOn: workLocationCard.setAuto(true)
+            }
+
+            // Privacy ▸ Stationary device location (Teams' device home
+            // building; measured on winpc 2026-11-15): the paragraph (14/20
+            // #424242) 8 down, "Permanent device building" (14 semibold) 16
+            // under it, then a 300 x 32 "Find a building" combobox 15 under
+            // that. Its list opens beside the box (2 to the right, 4 up),
+            // 300 wide; with no buildings, a disabled "No buildings found".
+            // The building is this device's (Teams keeps it in its client
+            // preferences, places.deviceHomeBuildingId); the list is the
+            // tenant's buildings from Places.
+            Column {
+                id: stationaryPage
+                visible: root.page === "privacy" && root.subPage === "stationary"
+                width: parent.width
+                topPadding: 8
+                spacing: 0
+                readonly property var data_: backend.buildingsJson ? JSON.parse(backend.buildingsJson) : ({ buildings: [] })
+                readonly property var buildings: data_.buildings || []
+                readonly property string chosen: backend.setting("deviceHomeBuildingId")
+                readonly property var chosenBuilding: buildings.find(b => b.id === chosen) || null
+                onVisibleChanged: if (!visible) buildingList.close()
+                Text {
+                    width: Math.min(parent.width, 790)
+                    text: "Set a permanent location for stationary devices that stay in one building. When Wi-Fi isn't detected, this device will remain checked in at the selected building instead of being automatically checked out."
+                    wrapMode: Text.Wrap
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    color: theme.textStrong
+                }
+                SettingsParts.Gap { size: 16 }
+                Text {
+                    text: "Permanent device building"
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                }
+                SettingsParts.Gap { size: 15 }
+                Rectangle {
+                    id: buildingBox
+                    width: 300; height: 32; radius: 4
+                    color: theme.surface
+                    border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+                    Rectangle { anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33; height: buildingField.activeFocus ? 2 : 0.67; radius: 1; color: buildingField.activeFocus ? theme.brand : theme.pick("#575757", "#ADADAD") }
+                    TextInput {
+                        id: buildingField
+                        x: 8.67; width: 264.7 - 8; anchors.verticalCenter: parent.verticalCenter
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                        text: stationaryPage.chosenBuilding ? stationaryPage.chosenBuilding.name : ""
+                        onTextEdited: buildingList.open()
+                        Text { visible: !buildingField.text; text: "Find a building"; font: buildingField.font; color: theme.pick("#707070", "#ADADAD") }
+                        Keys.onEscapePressed: buildingList.close()
+                        Keys.onDownPressed: buildingList.open()
+                        Accessible.role: Accessible.ComboBox
+                        Accessible.name: "Permanent device building"
+                    }
+                    FluentIcon { x: 269.3; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
+                    TapHandler { onTapped: { buildingField.forceActiveFocus(); if (buildingList.opened) buildingList.close(); else buildingList.open() } }
+                    Popup {
+                        id: buildingList
+                        x: buildingBox.width + 2; y: -4; width: 300; padding: 4
+                        closePolicy: Popup.CloseOnPressOutsideParent | Popup.CloseOnEscape
+                        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                        readonly property var matches: {
+                            const q = buildingField.text.trim().toLowerCase()
+                            const chosenName = stationaryPage.chosenBuilding ? stationaryPage.chosenBuilding.name.toLowerCase() : ""
+                            return stationaryPage.buildings.filter(b => !q || q === chosenName || b.name.toLowerCase().indexOf(q) >= 0)
+                        }
+                        contentItem: Column {
+                            Item {
+                                visible: buildingList.matches.length === 0
+                                width: 292; height: 32
+                                Text { x: 28; anchors.verticalCenter: parent.verticalCenter; text: stationaryPage.data_.loading ? "Loading…" : "No buildings found"; font.family: theme.font; font.pixelSize: 14; color: theme.pick("#BDBDBD", "#5C5C5C") }
+                                Accessible.role: Accessible.ListItem
+                                Accessible.name: "No buildings found"
+                            }
+                            Repeater {
+                                model: buildingList.matches
+                                Rectangle {
+                                    required property var modelData
+                                    width: 292; height: 32; radius: 4
+                                    color: bHover.hovered ? theme.menuHover : "transparent"
+                                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; visible: parent.modelData.id === stationaryPage.chosen; name: "checkmark-16"; size: 16; color: theme.text }
+                                    Text { x: 28; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 36; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    HoverHandler { id: bHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: { backend.setSetting("deviceHomeBuildingId", parent.modelData.id); buildingField.text = parent.modelData.name; buildingList.close() } }
+                                    Accessible.role: Accessible.ListItem
+                                    Accessible.name: modelData.name
+                                }
+                            }
+                        }
+                    }
+                }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
@@ -2650,6 +2802,20 @@ Rectangle {
     Component.onCompleted: backend.loadReadReceipts()
     function setPropForTest(name, path, value) { setProp(name, path, value) }
     function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
+    // --work-location-test: the work location card's state and geometry,
+    // its dialog, and the stationary location list.
+    function workLocationForTest(what) {
+        if (what === "dialog") { autoLocationDialog.open(); return "" }
+        if (what === "closeDialog") { autoLocationDialog.close(); return "" }
+        if (what === "list") { buildingList.open(); return "" }
+        if (what === "on" || what === "off") { workLocationCard.setAuto(what === "on"); return "" }
+        const c = workLocationCard
+        const at = it => { const p = it.mapToItem(c, 0, 0); return [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, Math.round(it.width * 10) / 10, Math.round(it.height * 10) / 10] }
+        const kids = []
+        const walk = it => { for (let i = 0; i < it.children.length; i++) { const k = it.children[i]; if (!k.visible) continue; if (k.text !== undefined && k.text) kids.push([String(k.text).replace(/<[^>]+>/g, "").slice(0, 40)].concat(at(k))); else if (k.label !== undefined && k.label) kids.push([k.label].concat(at(k))); walk(k) } }
+        walk(c)
+        return JSON.stringify({ policy: c.policy, detection: c.detection, stationary: c.stationary, autoOn: c.autoOn, outlookLink: c.outlookLink, card: [c.width, c.height], trailingY: c.trailingY, items: kids, buildings: stationaryPage.buildings, chosen: stationaryPage.chosen })
+    }
     /// Teams' "Green screen settings" (the effects pane's link): Devices,
     /// scrolled to Green Screen.
     function showGreenScreen() {

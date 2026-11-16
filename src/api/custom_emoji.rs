@@ -257,17 +257,20 @@ pub fn message_html(ams_v2: &str, e: &CustomEmoji) -> String {
     )
 }
 
-/// Your Teams messaging policy, from the middle tier's effective policies
-/// (`POST beta/users/effectivePolicies` with the namespaces wanted,
-/// services-policies 929782).
-pub async fn messaging_policy(client: &TeamsClient) -> Result<serde_json::Value> {
+/// Your effective Teams policies for `namespaces` (such as
+/// "teamsMessagingPolicy"), from the middle tier (`POST
+/// beta/users/effectivePolicies` with the namespaces wanted,
+/// services-policies 929782). Teams maps some of them onto its settings
+/// (places.enableWorkLocationDetectionPolicy is
+/// teamsWorkLocationDetectionPolicy.enableWorkLocationDetection).
+pub async fn effective_policies(client: &TeamsClient, namespaces: &[&str]) -> Result<serde_json::Value> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
     let resp = client
         .http()
         .post(format!("{mt}/beta/users/effectivePolicies"))
         .bearer_auth(token)
-        .json(&serde_json::json!(["teamsMessagingPolicy"]))
+        .json(&namespaces)
         .send()
         .await
         .context("Effective policies")?;
@@ -280,6 +283,11 @@ pub async fn messaging_policy(client: &TeamsClient) -> Result<serde_json::Value>
         text.chars().take(300).collect::<String>()
     );
     serde_json::from_str(&text).context("Effective policies reply")
+}
+
+/// Your Teams messaging policy (effective_policies' teamsMessagingPolicy).
+pub async fn messaging_policy(client: &TeamsClient) -> Result<serde_json::Value> {
+    effective_policies(client, &["teamsMessagingPolicy"]).await
 }
 
 /// Whether you may delete custom emoji for the org: the messaging policy's

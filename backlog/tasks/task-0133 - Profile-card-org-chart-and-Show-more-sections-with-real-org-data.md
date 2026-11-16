@@ -2,9 +2,10 @@
 id: TASK-0133
 title: Profile card org chart and Show more sections, with real org data
 status: To Do
-assignee: []
+assignee:
+  - '@claude'
 created_date: '2026-11-14T03:26:00Z'
-updated_date: '2026-11-15T22:24:00Z'
+updated_date: '2026-11-15T23:33:00Z'
 labels:
   - desktop
   - people
@@ -29,4 +30,6 @@ Teams' profile card Organization tab draws an org chart (managers above, peers a
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-15 tenant (user: "you are authorized to adjust anything in the test tenant to unblock us"): OST Test 2 set as OST Test 1's manager (Microsoft 365 admin center), so profile cards have an org chart to show.
+
+- 2026-11-15 23:40: Graph has the manager (ost-test1 → OST Test 2), but Teams on winpc still shows "We don't have the necessary details…" for both people. Teams' live persona card reads org data from Loki (nam.loki.delve.office.com api/v1/organization and the GraphQL useOrgExplorerQueryRef_OrganizationQuery), which syncs from the directory with a delay. Re-check after 2026-11-16. OST reads Graph, so it can show a manager while Teams can't; to match, OST should use Teams' Loki calls (needs a Loki token).
 <!-- SECTION:NOTES:END -->

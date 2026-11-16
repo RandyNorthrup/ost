@@ -106,7 +106,7 @@ Window {
     }
     readonly property bool slackShortcuts: shortcutProfile === "chats_alt" || shortcutProfile === "chats_meetings_alt"
     readonly property bool zoomShortcuts: shortcutProfile === "meetings_alt" || shortcutProfile === "chats_meetings_alt"
-    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) { backend.loadSettings(); backend.loadUrlPreviewPolicy() } } }
+    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) { backend.loadSettings(); backend.loadUrlPreviewPolicy(); backend.loadWorkLocationPolicy() } } }
     // Settings ▸ General ▸ Starting chats (Teams' synced
     // userPersonalSettings.messagingSettings.alwaysPopOutNewChat): a new
     // chat in the main window, or in Teams' "New Message" window; once
@@ -3707,6 +3707,33 @@ Window {
             else if (st === 8 && Qt.application.arguments.indexOf("--link-preview-remove") >= 0) { const m = mine(); if (m) backend.removeUrlPreview(JSON.stringify(m)) }
             else if (st === 11 && Qt.application.arguments.indexOf("--link-preview-remove") >= 0) { const m = mine(); console.warn("LINKPREVIEW after remove", m ? m.id : "gone"); window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/link-removed.png")) }
             else if (st > 12 || (st > 4 && Qt.application.arguments.indexOf("--link-preview-send") < 0)) { c.clear(); Qt.quit() }
+        }
+    }
+    // --work-location-test: Settings ▸ Privacy's Manage my work location
+    // with the work-location detection policy (WORKLOC lines): the card,
+    // its "Why set my work location automatically?" dialog, then Manage
+    // stationary location and its building list. Pictures in /tmp/act.
+    Timer {
+        running: Qt.application.arguments.indexOf("--work-location-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/workloc-" + n + ".png"))
+            if (st === 0) { rail.current = "settings"; settingsView.pageForTest("privacy") }
+            else if (st === 2) { console.warn("WORKLOC card", settingsView.workLocationForTest("")); shot("card") }
+            else if (st === 3) settingsView.workLocationForTest("dialog")
+            else if (st === 4) shot("dialog")
+            else if (st === 5) { settingsView.workLocationForTest("closeDialog"); settingsView.pageForTest("privacy", "stationary"); backend.loadBuildings() }
+            else if (st === 7) { console.warn("WORKLOC stationary", backend.buildingsJson); shot("stationary") }
+            else if (st === 8) settingsView.workLocationForTest("list")
+            else if (st === 9) shot("list")
+            // --work-location-off: turn the automatic work location off,
+            // then read it back from the chat service.
+            else if (st === 10 && Qt.application.arguments.indexOf("--work-location-off") >= 0) { settingsView.pageForTest("privacy"); settingsView.workLocationForTest("off") }
+            else if (st === 13 && Qt.application.arguments.indexOf("--work-location-off") >= 0) backend.loadSettings()
+            else if (st === 15 && Qt.application.arguments.indexOf("--work-location-off") >= 0) { console.warn("WORKLOC after off", JSON.stringify((JSON.parse(backend.settingsJson).props || {}).placesSettings), JSON.parse(settingsView.workLocationForTest("")).autoOn); shot("off") }
+            else if (st > 9 && (st > 15 || Qt.application.arguments.indexOf("--work-location-off") < 0)) Qt.quit()
         }
     }
     // --everyone-test[=<chat>]: in a big group chat ("OST large chat test",

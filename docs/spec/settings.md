@@ -62,6 +62,8 @@ Teams' default.
 | Privacy | Surveys | userEnableSurveysNotification |
 | Privacy | Attendance reports | showInMeetingReport |
 | Privacy | Keyboard shortcut to unmute | enablePushToTalk |
+| Privacy | Automatic work location | placesSettings (JSON: autoUpdateLocationPreference "Enabled"/"Disabled", autoLocationFirstEngagement) |
+| Privacy | Stationary device location | device-local (Teams' client preferences places.deviceHomeBuildingId; OST setting deviceHomeBuildingId) |
 | Accessibility | Sign language mode | callAccessibilitySettings.accessibilityModeEnabledV2 |
 | Accessibility | Always show captions | callAccessibilitySettings.startCaptionsAutomatically |
 | Accessibility | Profanity filter | callAccessibilitySettings.profanityFilterEnabled |
@@ -196,6 +198,28 @@ Everything below is in userPersonalSettings unless marked local.
   chosen. With meeting room mode off, Room audio is only marked "(suggested)". Joining with
   it opens the shared display on a second screen and shows Teams' "Connected to a room
   device" notice (its explanation the first three times).
+
+## Privacy ▸ Manage my work location (measured 2026-11-15)
+
+- **When it shows the switch.** Teams maps the user's effective `teamsWorkLocationDetectionPolicy` (middle tier `POST beta/users/effectivePolicies`) onto `places.enableWorkLocationDetectionPolicy` and `places.adlUserSettingsDefault`. The switch shows when that policy is on and the ECS flights `places.enableAutoDetectPlaceWifi` and `places.enableAutoDetectLocationToggle` are on. "Manage stationary location" also needs `places.adlWiredCheckout`, which defaults to on. With the policy off, the card says automatic work location "has been turned off by your IT department".
+- **Card layout.**
+  - The header (title 14/20, subtitle 12 on 17.14 lines) is 54.3 tall. The subtitle ends with the link "Learn about automatically setting a work location".
+  - "Manage stationary location" (31.3 tall) sits 12 under the header. The Outlook note (12/17.14) sits 12 under that.
+  - The switch ("On"/"Off" before it) is centred on the whole card. The card is 185.2 tall.
+  - Links are #4F52B2 and not underlined.
+- **The switch's value.** It is the user property `placesSettings.autoUpdateLocationPreference`. Teams writes it with `autoLocationFirstEngagement: "SETTING_TOGGLE"` (`PUT chatsvc v1/users/ME/properties?name=placesSettings`).
+  - An unset preference is on only when the policy default is "Enabled", `adlEnableDefaultOptIn` is on, and this isn't the first run. Otherwise `adlSettingDefaultEnabled` or `tpp` decides.
+  - Turning it on also asks Places to detect the location now (`attemptAutoDetectLocationOptIn`). The Wi-Fi and peripheral detection is still to do.
+- **Learn about… dialog.**
+  - 600 wide, radius 8, centred. Teams' illustration (598.67 × 319.33) runs across the top.
+  - "Why set my work location automatically?" (20/28 semibold) sits 24 under the picture, followed by two paragraphs (14/20, 16 and 20 apart).
+  - The buttons (31.33 tall) sit 36 under the text, at the bottom right. With the setting off they are "Not now" and "Set my location automatically" (primary; it turns the setting on). With it on there is only "Got it" (primary).
+- **Stationary device location** (Privacy › Stationary device location).
+  - The text "Set a permanent location for stationary devices that stay in one building. When Wi-Fi isn't detected, this device will remain checked in at the selected building instead of being automatically checked out." (14/20 #424242) sits 8 down.
+  - "Permanent device building" (14 semibold) sits 16 under it. A "Find a building" combobox (300 × 32, chevron-down 20) sits 15 under that.
+  - The list opens beside the box: 2 to the right, 4 up, 300 wide, padding 4.
+  - The buildings come from Places: middle tier `GET v2.0/places/findPlaces?filterQuery=Type = "Building"`, which replies `{"data":{"places":[…]}}`. With none, the list shows a disabled "No buildings found" (#BDBDBD).
+  - The choice is this device's own, not synced.
 
 ## OST status
 

@@ -365,6 +365,13 @@ pub mod qobject {
         /// Your messaging policy turns link previews off (Teams'
         /// allowUrlPreviews false).
         #[qproperty(bool, url_previews_blocked)]
+        /// Your work-location detection policy (Teams maps
+        /// teamsWorkLocationDetectionPolicy onto places settings):
+        /// {detection: bool, userDefault: "Enabled"|"Disabled"|""}.
+        #[qproperty(QString, work_location_policy_json)]
+        /// The tenant's buildings from Places: {loading, buildings: [{id,
+        /// name, address}], error}.
+        #[qproperty(QString, buildings_json)]
         /// About OST's update line: {state: checking|latest|available|error,
         /// checkedAt (ms), latest, url}.
         #[qproperty(QString, update_json)]
@@ -1976,6 +1983,13 @@ pub mod qobject {
         /// Read whether your messaging policy allows link previews.
         #[qinvokable]
         fn load_url_preview_policy(self: Pin<&mut Backend>);
+        /// Read your work-location detection policy.
+        #[qinvokable]
+        fn load_work_location_policy(self: Pin<&mut Backend>);
+        /// Load the tenant's buildings (Places), for the stationary
+        /// device location.
+        #[qinvokable]
+        fn load_buildings(self: Pin<&mut Backend>);
         /// Recognition's voice "Opt out" with a profile made by hand: remove
         /// the voice profile.
         #[qinvokable]
@@ -2310,6 +2324,8 @@ pub struct BackendRust {
     recognition_json: QString,
     ringer_on: bool,
     url_previews_blocked: bool,
+    work_location_policy_json: QString,
+    buildings_json: QString,
     update_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
@@ -15400,6 +15416,44 @@ impl qobject::Backend {
             let policy = api::custom_emoji::messaging_policy(&client).await.unwrap_or_default();
             let blocked = api::custom_emoji::find_bool(&policy, "allowUrlPreviews") == Some(false);
             let _ = qt.queue(move |mut this| this.as_mut().set_url_previews_blocked(blocked));
+        });
+    }
+
+    pub fn load_work_location_policy(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let Ok(client) = TeamsClient::new().await else { return };
+            let policy = api::custom_emoji::effective_policies(&client, &["teamsWorkLocationDetectionPolicy"])
+                .await
+                .unwrap_or_default();
+            let p = &policy["teamsWorkLocationDetectionPolicy"]["value"];
+            let v = json!({
+                "detection": p["enableWorkLocationDetection"].as_bool().unwrap_or(false),
+                "userDefault": p["userSettingsDefault"].as_str().unwrap_or_default(),
+            });
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_work_location_policy_json(QString::from(v.to_string().as_str()))
+            });
+        });
+    }
+
+    pub fn load_buildings(mut self: Pin<&mut Self>) {
+        self.as_mut().set_buildings_json(QString::from(json!({ "loading": true, "buildings": [] }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::places::buildings(&client).await
+            }
+            .await;
+            let v = match result {
+                Ok(b) => json!({ "loading": false, "buildings": b }),
+                Err(e) => {
+                    tracing::warn!("buildings: {}", short_error(&e));
+                    json!({ "loading": false, "buildings": [], "error": short_error(&e) })
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_buildings_json(QString::from(v.to_string().as_str())));
         });
     }
 

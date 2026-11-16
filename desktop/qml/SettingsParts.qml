@@ -51,6 +51,9 @@ Item {
         property real subtitleSize: 12
         /// Its line height (Teams' work location card uses 17.14).
         property real subtitleLineHeight: subtitleSize > 12 ? 20 : 16
+        /// The subtitle's format (RichText where Teams' links aren't
+        /// underlined: style them with text-decoration:none).
+        property int subtitleFormat: Text.StyledText
         readonly property real textHeight: titleText.height + (subtitle ? subText.height : 0)
         readonly property real controlHeight: trailingLoader.item ? (trailingLoader.item.height <= 20 ? 36 : trailingLoader.item.height) : 0
         readonly property real headerHeight: Math.max(minHeader, textHeight, isNaN(trailingY) ? controlHeight : 0)
@@ -94,9 +97,10 @@ Item {
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: card.subtitleSize; lineHeight: card.subtitleLineHeight; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
-            textFormat: Text.StyledText
+            textFormat: card.subtitleFormat
             linkColor: theme.brandForeground1
             onLinkActivated: l => card.linkActivated(l)
+            HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         signal linkActivated(string link)
         Loader {
