@@ -182,7 +182,7 @@ Files OST keeps:
 | Path | What |
 | --- | --- |
 | `$XDG_CONFIG_HOME/ost/desktop.json` | Settings |
-| `$XDG_STATE_HOME/ost/drafts.json` | Unsent drafts |
+| `$XDG_STATE_HOME/ost/drafts.json` | Unsent drafts, with their formatting |
 | `$XDG_CACHE_HOME/ost/photos/` | Profile and team pictures (refreshed daily) |
 | `$XDG_DOWNLOAD_DIR` (else `~/Downloads`) | Downloaded attachments |
 | `$XDG_CONFIG_HOME/autostart/ost-desktop.desktop` | Only with "Start with the computer" on |
@@ -239,6 +239,7 @@ account.
 | `--assume-focused` | Treat the offscreen window as focused (read receipts). |
 | `--nav-test` | Visit apps, then back and forward. |
 | `--draft-test` | Type a draft, switch chats, check it survives. |
+| `--draft-format-test` | In OST group test (or `--open-chat=<id>`), type a draft with every format and a table, switch chats and back, capture it and check its HTML came back as typed; nothing is sent. A second run with `--draft-format-restart` checks it after the restart, then clears the draft. |
 | `--filter-test` | Try each chat list filter. |
 | `--search-test` | Search "Ran" and capture the suggestions. |
 | `--header-test` | Shared tab, a placeholder tab, find and participants. |

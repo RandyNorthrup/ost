@@ -21,6 +21,7 @@ pub mod search;
 pub mod sharing;
 pub mod bot_invoke;
 pub mod cloud_attach;
+pub mod compose_blocks;
 pub mod smart_replies;
 pub mod video_clips;
 pub mod copy_jobs;

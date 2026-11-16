@@ -36,6 +36,13 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "exportHtml"]
         fn export_html(self: Pin<&mut RichText>) -> QString;
+        /// Put HTML this item exported back in the (empty) box with every
+        /// format it had: quotes, code blocks, tables, lists, headings,
+        /// inline code, links, and mentions in `mention_color` (a draft
+        /// coming back).
+        #[qinvokable]
+        #[cxx_name = "importHtml"]
+        fn import_html(self: Pin<&mut RichText>, html: &QString, mention_color: &QString);
         /// The quote and code runs, as JSON, for QML to draw behind.
         #[qinvokable]
         fn regions(self: Pin<&mut RichText>) -> QString;
@@ -66,6 +73,11 @@ unsafe extern "C" {
     fn ost_rich_state(helper: *mut core::ffi::c_void, pos: i32) -> *mut core::ffi::c_char;
     fn ost_rich_export(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
     fn ost_rich_regions(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
+    fn ost_rich_import(
+        helper: *mut core::ffi::c_void,
+        blocks_json: *const core::ffi::c_char,
+        mention_color: *const core::ffi::c_char,
+    );
     fn ost_rich_free(s: *mut core::ffi::c_char);
     fn ost_rich_dpr(helper: *mut core::ffi::c_void) -> f64;
     fn ost_rich_code_runs(
@@ -150,6 +162,19 @@ impl qobject::RichText {
         let me = self.this();
         // SAFETY: `me` is this live item.
         take(unsafe { ost_rich_export(me) })
+    }
+
+    pub fn import_html(self: Pin<&mut Self>, html: &QString, mention_color: &QString) {
+        // The blocks are read here (teams-cli's compose_blocks); richtext.cpp
+        // builds them into the document.
+        let blocks = teams_cli::api::compose_blocks::compose_blocks_json(&html.to_string());
+        let (Ok(blocks), Ok(color)) = (CString::new(blocks), CString::new(mention_color.to_string()))
+        else {
+            return;
+        };
+        let me = self.this();
+        // SAFETY: `me` is this live item; the strings outlive the call.
+        unsafe { ost_rich_import(me, blocks.as_ptr(), color.as_ptr()) };
     }
 }
 

@@ -1422,9 +1422,26 @@ pub mod qobject {
         #[qinvokable]
         fn set_draft(self: Pin<&mut Backend>, chat_id: &QString, text: &QString);
 
+        /// Keep (or, when `text` is empty, drop) a chat's unsent draft with
+        /// its formatting: the compose box's text, its RichText HTML and
+        /// the fun picker's pictures in it (JSON).
+        #[qinvokable]
+        fn save_draft(
+            self: Pin<&mut Backend>,
+            chat_id: &QString,
+            text: &QString,
+            html: &QString,
+            media_json: &QString,
+        );
+
         /// The unsent text kept for a chat, or "".
         #[qinvokable]
         fn draft_for(self: Pin<&mut Backend>, chat_id: &QString) -> QString;
+
+        /// The draft kept for a chat as JSON {text, html, media}, or "" for
+        /// none (a draft from before formatting was kept has no html).
+        #[qinvokable]
+        fn draft_json(self: Pin<&mut Backend>, chat_id: &QString) -> QString;
 
         /// Load the Activity feed.
         #[qinvokable]
@@ -2443,8 +2460,8 @@ pub struct BackendRust {
     thumbnail_fetching: HashSet<String>,
     /// The calendar range last shown (UTC start, end), for refreshing.
     calendar_range: Option<(String, String)>,
-    /// Unsent drafts by chat id: (text, unix ms when last edited).
-    drafts: Option<HashMap<String, (String, u64)>>,
+    /// Unsent drafts by chat id.
+    drafts: Option<HashMap<String, Draft>>,
 }
 
 /// The call this app is ringing for or in. Lives on the engine side so the
@@ -5182,14 +5199,65 @@ fn drafts_path() -> Option<std::path::PathBuf> {
         .map(|b| b.join("ost").join("drafts.json"))
 }
 
-fn load_drafts() -> HashMap<String, (String, u64)> {
-    drafts_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| serde_json::from_str(&t).ok())
+/// A chat's unsent draft, as Teams keeps it: with its formatting.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+struct Draft {
+    /// Its plain text (the Drafts list's preview).
+    text: String,
+    /// The compose box's HTML (RichText's export); "" for a plain draft.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    html: String,
+    /// The fun picker's pictures in it (the compose box's `media`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    media: Vec<serde_json::Value>,
+    /// Unix ms when last edited.
+    time: u64,
+}
+
+/// A drafts.json entry: older versions kept [text, time].
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum StoredDraft {
+    Rich(Draft),
+    Plain(String, u64),
+}
+
+/// drafts.json read, in either form.
+fn parse_drafts(text: &str) -> HashMap<String, Draft> {
+    serde_json::from_str::<HashMap<String, StoredDraft>>(text)
+        .map(|all| {
+            all.into_iter()
+                .map(|(id, d)| {
+                    let d = match d {
+                        StoredDraft::Rich(d) => d,
+                        StoredDraft::Plain(text, time) => Draft {
+                            text,
+                            time,
+                            ..Default::default()
+                        },
+                    };
+                    (id, d)
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-fn save_drafts(drafts: &HashMap<String, (String, u64)>) -> anyhow::Result<()> {
+/// A draft's preview, as plain text: pictures (the editor's object
+/// characters) left out, and a table's cells (Qt's cell markers) apart.
+fn draft_preview(text: &str) -> String {
+    text.replace('\u{fffc}', "")
+        .replace(['\u{fdd0}', '\u{fdd1}'], " ")
+}
+
+fn load_drafts() -> HashMap<String, Draft> {
+    drafts_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|t| parse_drafts(&t))
+        .unwrap_or_default()
+}
+
+fn save_drafts(drafts: &HashMap<String, Draft>) -> anyhow::Result<()> {
     let path = drafts_path().ok_or_else(|| anyhow::anyhow!("No state directory"))?;
     let dir = path.parent().expect("drafts file has a directory");
     std::fs::create_dir_all(dir)?;
@@ -12057,28 +12125,58 @@ impl qobject::Backend {
         QString::default()
     }
 
-    fn drafts_mut(self: Pin<&mut Self>) -> &mut HashMap<String, (String, u64)> {
+    fn drafts_mut(self: Pin<&mut Self>) -> &mut HashMap<String, Draft> {
         self.rust_mut()
             .get_mut()
             .drafts
             .get_or_insert_with(load_drafts)
     }
 
-    pub fn set_draft(mut self: Pin<&mut Self>, chat_id: &QString, text: &QString) {
-        let id = chat_id.to_string();
-        let text = text.to_string();
+    pub fn set_draft(self: Pin<&mut Self>, chat_id: &QString, text: &QString) {
+        self.store_draft(chat_id.to_string(), text.to_string(), String::new(), Vec::new());
+    }
+
+    pub fn save_draft(
+        self: Pin<&mut Self>,
+        chat_id: &QString,
+        text: &QString,
+        html: &QString,
+        media_json: &QString,
+    ) {
+        let media = serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        self.store_draft(chat_id.to_string(), text.to_string(), html.to_string(), media);
+    }
+
+    fn store_draft(
+        mut self: Pin<&mut Self>,
+        id: String,
+        text: String,
+        html: String,
+        media: Vec<serde_json::Value>,
+    ) {
         if id.is_empty() {
             return;
         }
         let drafts = self.as_mut().drafts_mut();
         let changed = if text.trim().is_empty() {
             drafts.remove(&id).is_some()
-        } else if drafts.get(&id).map(|d| &d.0) != Some(&text) {
+        } else if drafts
+            .get(&id)
+            .is_none_or(|d| d.text != text || d.html != html || d.media != media)
+        {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or_default();
-            drafts.insert(id, (text, now));
+            drafts.insert(
+                id,
+                Draft {
+                    text,
+                    html,
+                    media,
+                    time: now,
+                },
+            );
             true
         } else {
             false
@@ -12097,9 +12195,20 @@ impl qobject::Backend {
             .as_mut()
             .drafts_mut()
             .get(&id)
-            .map(|d| d.0.clone())
+            .map(|d| d.text.clone())
             .unwrap_or_default();
         QString::from(text.as_str())
+    }
+
+    pub fn draft_json(mut self: Pin<&mut Self>, chat_id: &QString) -> QString {
+        let id = chat_id.to_string();
+        let json = self
+            .as_mut()
+            .drafts_mut()
+            .get(&id)
+            .map(|d| json!({ "text": d.text, "html": d.html, "media": d.media }).to_string())
+            .unwrap_or_default();
+        QString::from(json.as_str())
     }
 
     /// The drafts list for Quick views > Drafts, newest first.
@@ -12108,7 +12217,7 @@ impl qobject::Backend {
             .as_mut()
             .drafts_mut()
             .iter()
-            .map(|(id, (text, t))| (id.clone(), text.clone(), *t))
+            .map(|(id, d)| (id.clone(), draft_preview(&d.text), d.time))
             .collect();
         list.sort_by_key(|a| std::cmp::Reverse(a.2));
         let chats = &self.rust().chats;
@@ -16384,6 +16493,65 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod draft_tests {
+    use super::*;
+
+    #[test]
+    fn plain_drafts_from_older_versions_still_load() {
+        let d = parse_drafts(r#"{"19:a@thread.v2":["hello",1700000000000]}"#);
+        assert_eq!(
+            d["19:a@thread.v2"],
+            Draft {
+                text: "hello".into(),
+                time: 1_700_000_000_000,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn formatted_drafts_round_trip() {
+        let mut all = HashMap::new();
+        all.insert(
+            "19:b@thread.v2".to_string(),
+            Draft {
+                text: "bold\na\tb".into(),
+                html: "<p><b>bold</b></p><table><tbody><tr><td><p>a</p></td><td><p>b</p></td></tr></tbody></table>".into(),
+                media: vec![json!({"src": "https://e/20_f.png", "kind": "emoji", "id": "smile"})],
+                time: 5,
+            },
+        );
+        all.insert(
+            "19:c@thread.v2".to_string(),
+            Draft {
+                text: "plain".into(),
+                time: 6,
+                ..Default::default()
+            },
+        );
+        let saved = serde_json::to_string(&all).unwrap();
+        assert!(!saved.contains("\"html\":\"\""), "plain drafts leave html out: {saved}");
+        assert_eq!(parse_drafts(&saved), all);
+        // Old and new entries side by side.
+        let mixed = parse_drafts(r#"{"x":["old",1],"y":{"text":"new","html":"<p><i>new</i></p>","time":2}}"#);
+        assert_eq!(mixed["x"].text, "old");
+        assert_eq!(mixed["y"].html, "<p><i>new</i></p>");
+        assert!(mixed["y"].media.is_empty());
+    }
+
+    #[test]
+    fn unreadable_drafts_are_none() {
+        assert!(parse_drafts("not json").is_empty());
+    }
+
+    #[test]
+    fn preview_leaves_pictures_out() {
+        assert_eq!(draft_preview("hi \u{fffc} there"), "hi  there");
+        assert_eq!(draft_preview("A table:\u{fdd0}A1\u{fdd0}B1\u{fdd1}"), "A table: A1 B1 ");
     }
 }
 

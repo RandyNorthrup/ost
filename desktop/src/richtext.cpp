@@ -7,6 +7,9 @@
 // every call finds the document through its parent.
 #include <QtCore/QUuid>
 #include <QtCore/QHash>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
 #include <QtCore/QSet>
 #include <QtGui/QAbstractTextDocumentLayout>
@@ -90,6 +93,12 @@ void normalize(QTextDocument *doc)
 }
 
 const char *Mono = "Cascadia Mono";
+
+// A link's colour in the box (Teams' #4F52B2).
+QColor linkColor()
+{
+    return QColor(0x4F, 0x52, 0xB2);
+}
 
 // Teams' compose colours code blocks with highlight.js, folded into five
 // classes (measured on winpc 2026-11-10, CKEditor's code block): strings
@@ -554,6 +563,41 @@ QString blockHtml(const QTextBlock &block)
     return QStringLiteral("<p>") + inner + QStringLiteral("</p>");
 }
 
+// Teams' rich style sizes on the selected text: Heading 1 18 light, 2 14
+// bold, 3 12 bold; 0 back to Paragraph.
+void headingChars(QTextDocument *doc, QTextCursor &whole, int level)
+{
+    QTextCharFormat hf;
+    if (level == 1) {
+        hf.setProperty(QTextFormat::FontPixelSize, 18);
+        hf.setFontWeight(QFont::Light);
+    } else if (level == 2) {
+        hf.setProperty(QTextFormat::FontPixelSize, 14);
+        hf.setFontWeight(QFont::Bold);
+    } else if (level == 3) {
+        hf.setProperty(QTextFormat::FontPixelSize, 12);
+        hf.setFontWeight(QFont::Bold);
+    } else {
+        hf.setFontWeight(QFont::Normal);
+    }
+    // The heading's own weight isn't bold text.
+    hf.setProperty(HeadingWeight, level >= 1);
+    if (level == 0)
+        hf.clearProperty(QTextFormat::FontPixelSize);
+    whole.mergeCharFormat(hf);
+    if (level == 0) {
+        QTextCursor run(doc);
+        for (int p = whole.selectionStart(); p < whole.selectionEnd(); ++p) {
+            run.setPosition(p);
+            run.setPosition(p + 1, QTextCursor::KeepAnchor);
+            QTextCharFormat cf = run.charFormat();
+            cf.clearProperty(QTextFormat::FontPixelSize);
+            cf.clearProperty(HeadingWeight);
+            run.setCharFormat(cf);
+        }
+    }
+}
+
 // Teams' compose table (CKEditor's, measured on winpc): collapsed 0.67 px
 // #616161 borders, the box's full width, cells padded 0 5.
 void styleTable(QTextTable *t)
@@ -677,6 +721,170 @@ QString documentHtml(QTextDocument *doc)
     return out;
 }
 
+// A draft coming back: compose_blocks' JSON (teams-cli, read from this
+// file's own export) built into the document with the marks, list, table
+// and character formats the formatting bar gives them.
+struct Importer {
+    QTextDocument *doc;
+    QColor mention;
+    QHash<int, QTextList *> lists;
+
+    // Inline HTML at the cursor; Qt reads b/i/u/s, spans, links and
+    // pictures, then inline code and links become the editor's own again.
+    void inlineHtml(QTextCursor &cur, const QString &html)
+    {
+        if (html.isEmpty())
+            return;
+        const int start = cur.position();
+        cur.insertHtml(html);
+        const int end = cur.position();
+        QList<QPair<QPair<int, int>, QTextCharFormat>> fixes;
+        for (QTextBlock b = doc->findBlock(start); b.isValid() && b.position() < end; b = b.next()) {
+            for (auto it = b.begin(); !it.atEnd(); ++it) {
+                const QTextFragment frag = it.fragment();
+                const int a = qMax(start, frag.position()), z = qMin(end, frag.position() + frag.length());
+                if (a >= z)
+                    continue;
+                QTextCharFormat f = frag.charFormat();
+                bool changed = false;
+                if (f.fontFamilies().toStringList().contains(QStringLiteral("ost-inline-code"))) {
+                    f.setProperty(InlineCode, true);
+                    f.setFontFamilies({QString::fromLatin1(Mono)});
+                    f.setBackground(Qt::white);
+                    changed = true;
+                }
+                if (f.isAnchor()) {
+                    f.setForeground(f.anchorHref().startsWith(QStringLiteral("mention")) ? mention : linkColor());
+                    f.setFontUnderline(false);
+                    changed = true;
+                }
+                if (changed)
+                    fixes.append({{a, z}, f});
+            }
+        }
+        QTextCursor run(doc);
+        for (const auto &fix : fixes) {
+            run.setPosition(fix.first.first);
+            run.setPosition(fix.first.second, QTextCursor::KeepAnchor);
+            run.setCharFormat(fix.second);
+        }
+        cur.setPosition(end);
+        // What's typed next starts plain.
+        cur.setCharFormat(QTextCharFormat());
+    }
+
+    void table(QTextCursor &cur, bool &fresh, const QJsonObject &b)
+    {
+        const QJsonArray rows = b.value(QStringLiteral("rows")).toArray();
+        int cols = 0;
+        for (const auto &r : rows)
+            cols = qMax(cols, int(r.toArray().size()));
+        if (rows.isEmpty() || cols == 0)
+            return;
+        QTextTable *t = cur.insertTable(int(rows.size()), cols, QTextTableFormat());
+        for (int r = 0; r < rows.size(); ++r) {
+            const QJsonArray cells = rows.at(r).toArray();
+            for (int c = 0; c < cells.size() && c < cols; ++c) {
+                QTextCursor cc = t->cellAt(r, c).firstCursorPosition();
+                bool cellFresh = true;
+                blocks(cc, cellFresh, cells.at(c).toArray());
+            }
+        }
+        styleTable(t);
+        // On in the paragraph Qt keeps after a table.
+        const QTextBlock after = doc->findBlock(t->lastPosition()).next();
+        if (after.isValid()) {
+            cur = QTextCursor(after);
+            fresh = true;
+        } else {
+            cur.movePosition(QTextCursor::End);
+            fresh = false;
+        }
+    }
+
+    void blocks(QTextCursor &cur, bool &fresh, const QJsonArray &list)
+    {
+        for (const auto &v : list) {
+            const QJsonObject b = v.toObject();
+            const QString kind = b.value(QStringLiteral("kind")).toString();
+            if (kind == u"table") {
+                table(cur, fresh, b);
+                continue;
+            }
+            if (!fresh)
+                cur.insertBlock(QTextBlockFormat(), QTextCharFormat());
+            fresh = false;
+            QTextBlockFormat bf;
+            if (b.value(QStringLiteral("quote")).toBool())
+                bf.setProperty(QuoteBlock, true);
+            const int level = b.value(QStringLiteral("level")).toInt();
+            QTextCharFormat mono;
+            if (kind == u"p") {
+                bf.setIndent(b.value(QStringLiteral("indent")).toInt());
+            } else if (kind == u"h") {
+                bf.setHeadingLevel(level);
+            } else if (kind == u"hr") {
+                bf.setProperty(RuleBlock, true);
+                bf.setProperty(QTextFormat::BlockTrailingHorizontalRulerWidth, QTextLength(QTextLength::PercentageLength, 100));
+            } else if (kind == u"code") {
+                bf.setProperty(CodeBlockP, true);
+                bf.setProperty(BlockLang, b.value(QStringLiteral("lang")).toString());
+                mono.setFontFamilies({QString::fromLatin1(Mono)});
+                mono.setProperty(QTextFormat::FontPixelSize, 14);
+            }
+            cur.setBlockFormat(bf);
+            cur.setBlockCharFormat(mono);
+            cur.setCharFormat(mono);
+            const int start = cur.position();
+            if (kind == u"code")
+                cur.insertText(b.value(QStringLiteral("text")).toString(), mono);
+            else if (kind != u"hr")
+                inlineHtml(cur, b.value(QStringLiteral("html")).toString());
+            // The block's format is ours, whatever Qt's HTML brought.
+            cur.setBlockFormat(bf);
+            if (kind == u"li") {
+                const int id = b.value(QStringLiteral("list_id")).toInt();
+                if (QTextList *l = lists.value(id)) {
+                    l->add(cur.block());
+                } else {
+                    QTextListFormat lf;
+                    lf.setStyle(b.value(QStringLiteral("list")).toString() == u"ol" ? QTextListFormat::ListDecimal : QTextListFormat::ListDisc);
+                    lists.insert(id, cur.createList(lf));
+                }
+            } else if (kind == u"h" && level >= 1 && level <= 3) {
+                QTextCursor whole(doc);
+                whole.setPosition(start);
+                whole.setPosition(cur.position(), QTextCursor::KeepAnchor);
+                headingChars(doc, whole, level);
+            }
+        }
+    }
+
+    // Auto-detect language stays on for a code block whose language is
+    // the one its words point to (the export doesn't say).
+    void codeAuto()
+    {
+        for (QTextBlock b = doc->begin(); b.isValid();) {
+            if (!b.blockFormat().boolProperty(CodeBlockP)) {
+                b = b.next();
+                continue;
+            }
+            const QTextBlock first = b;
+            const QString lang = b.blockFormat().stringProperty(BlockLang);
+            QStringList text;
+            for (; b.isValid() && b.blockFormat().boolProperty(CodeBlockP); b = b.next())
+                text << b.text();
+            const QString found = detectLanguage(text.join(QLatin1Char('\n')));
+            const bool autoLang = found.isEmpty() ? lang == u"plaintext" : found == lang;
+            for (QTextBlock l = first; l.isValid() && l.blockFormat().boolProperty(CodeBlockP); l = l.next()) {
+                QTextBlockFormat lf = l.blockFormat();
+                lf.setProperty(CodeAuto, autoLang);
+                QTextCursor(l).setBlockFormat(lf);
+            }
+        }
+    }
+};
+
 } // namespace
 
 // Apply one of the formatting bar's commands to a..b.
@@ -783,35 +991,7 @@ extern "C" void ost_rich_apply(void *helper, int a, int b, const char *op_utf8, 
         whole.movePosition(QTextCursor::StartOfBlock);
         whole.setPosition(blocks.selectionEnd(), QTextCursor::KeepAnchor);
         whole.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
-        QTextCharFormat hf;
-        if (level == 1) {
-            hf.setProperty(QTextFormat::FontPixelSize, 18);
-            hf.setFontWeight(QFont::Light);
-        } else if (level == 2) {
-            hf.setProperty(QTextFormat::FontPixelSize, 14);
-            hf.setFontWeight(QFont::Bold);
-        } else if (level == 3) {
-            hf.setProperty(QTextFormat::FontPixelSize, 12);
-            hf.setFontWeight(QFont::Bold);
-        } else {
-            hf.setFontWeight(QFont::Normal);
-        }
-        // The heading's own weight isn't bold text.
-        hf.setProperty(HeadingWeight, level >= 1);
-        if (level == 0)
-            hf.clearProperty(QTextFormat::FontPixelSize);
-        whole.mergeCharFormat(hf);
-        if (level == 0) {
-            QTextCursor run(doc);
-            for (int p = whole.selectionStart(); p < whole.selectionEnd(); ++p) {
-                run.setPosition(p);
-                run.setPosition(p + 1, QTextCursor::KeepAnchor);
-                QTextCharFormat cf = run.charFormat();
-                cf.clearProperty(QTextFormat::FontPixelSize);
-                cf.clearProperty(HeadingWeight);
-                run.setCharFormat(cf);
-            }
-        }
+        headingChars(doc, whole, level);
     } else if (op == u"indent" || op == u"outdent") {
         const int d = op == u"indent" ? 1 : -1;
         QTextBlock blk = doc->findBlock(blocks.selectionStart());
@@ -949,7 +1129,7 @@ extern "C" void ost_rich_apply(void *helper, int a, int b, const char *op_utf8, 
         QTextCharFormat lf = at.charFormat();
         lf.setAnchor(true);
         lf.setAnchorHref(href);
-        lf.setForeground(QColor(0x4F, 0x52, 0xB2));
+        lf.setForeground(linkColor());
         at.insertText(text, lf);
         QTextCharFormat plain = lf;
         plain.setAnchor(false);
@@ -1245,6 +1425,29 @@ extern "C" char *ost_rich_code_runs(void *helper, const char *family_utf8, doubl
     }
     return dup(QStringLiteral("{\"settled\":%1,\"runs\":[").arg(QLatin1String(settled ? "true" : "false"))
                + parts.join(QLatin1Char(',')) + QStringLiteral("]}"));
+}
+
+// Build a draft's blocks (compose_blocks JSON) into the empty box, with
+// mentions in `mention_color`.
+extern "C" void ost_rich_import(void *helper, const char *blocks_utf8, const char *mention_utf8)
+{
+    QTextDocument *doc = documentOf(helper);
+    if (!doc)
+        return;
+    const QJsonArray list = QJsonDocument::fromJson(QByteArray(blocks_utf8)).array();
+    if (list.isEmpty())
+        return;
+    Importer in{doc, QColor(QString::fromUtf8(mention_utf8)), {}};
+    if (!in.mention.isValid())
+        in.mention = linkColor();
+    QTextCursor cur(doc);
+    cur.movePosition(QTextCursor::End);
+    bool fresh = doc->characterCount() <= 1;
+    cur.beginEditBlock();
+    in.blocks(cur, fresh, list);
+    in.codeAuto();
+    normalize(doc);
+    cur.endEditBlock();
 }
 
 extern "C" void ost_rich_free(char *s)

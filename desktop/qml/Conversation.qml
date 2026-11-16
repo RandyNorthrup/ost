@@ -569,15 +569,31 @@ Rectangle {
         editingId = ""
         // A thread pane keeps no draft (its channel's draft is the channel's).
         if (root.threadRoot) { draftChat = ""; root.setPlain(""); return }
-        if (draftChat) backend.setDraft(draftChat, root.plainText())
-        root.setPlain(chatId ? backend.draftFor(chatId) : "")
+        if (draftChat) root.saveDraft(draftChat)
+        const kept = chatId ? backend.draftJson(chatId) : ""
+        compose.setDraftState(kept ? JSON.parse(kept) : null)
+        draftShown = draftKey(compose.draftState())
         draftChat = chatId
+    }
+    // The draft as this box last loaded or saved it. Only a box changed
+    // since then writes the chat's draft, so another view of the same chat
+    // (a call's chat pane) never puts back an older copy.
+    property string draftShown: ""
+    function draftKey(d) { return JSON.stringify([d.text, d.html.replace(/codeBlockEditor-[0-9a-f-]+/g, ""), d.media]) }
+    // The compose box kept as the chat's draft, formatting and all (Teams
+    // keeps a draft's formatting when you switch chats and restart).
+    function saveDraft(chat) {
+        const d = compose.draftState()
+        const key = draftKey(d)
+        if (key === draftShown) return
+        backend.saveDraft(chat, d.text, d.html, JSON.stringify(d.media))
+        draftShown = key
     }
     // Keep the draft current while typing (so it survives a quit).
     Timer {
         id: draftSave
         interval: 1000
-        onTriggered: if (root.draftChat) backend.setDraft(root.draftChat, root.plainText())
+        onTriggered: if (root.draftChat) root.saveDraft(root.draftChat)
     }
     /// Your own notes chat: Teams drops the call and people buttons and
     /// shows only the Chat, Shared and Storyline tabs.

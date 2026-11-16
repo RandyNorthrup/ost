@@ -425,6 +425,20 @@ Item {
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
     function clear() { input.clear(); media = []; urlPreview = null; previewUrl = "" }
+    // The box as a draft, which Teams keeps with its formatting: the text
+    // (the Drafts list's preview), RichText's HTML and the pictures in it.
+    function draftState() {
+        const text = plainText()
+        return { text: text, html: text.trim() ? formattedText() : "", media: text.trim() ? mediaInUse() : [] }
+    }
+    // A kept draft back in the box, as it was typed ({text, html, media};
+    // a draft from before formatting was kept has only text).
+    function setDraftState(d) {
+        input.clear()
+        media = d && d.media ? d.media : []
+        if (d && d.html) { rich.importHtml(d.html, String(theme.brandForeground1)); input.cursorPosition = input.length; refreshRichState() }
+        else if (d && d.text) input.insert(0, escapeHtml(d.text))
+    }
     // One of your messages to edit: its edit form keeps the emoticons,
     // custom emoji and pictures (as Teams' edit does); else its text.
     function setMessage(m) {

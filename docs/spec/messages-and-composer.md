@@ -1234,6 +1234,7 @@ Teams' recorder is Microsoft Stream's `StreamCameraEmbed.aspx`. Its frame-ancest
 - **Drafts**: `SaveMessageDraft` (sync debounce 400 ms, `composeDebounceDraftSyncDuration`),
   `SetConversationHasDraft`, `RemoveMessageDraft`, `DeleteRoamedDraft`. REST
   `POST/PUT/DELETE v1/users/ME/drafts`. "Discard" asks for confirmation (619123).
+  - **OST.** A draft keeps its formatting, as Teams' does: drafts.json holds the compose box's text (the Drafts list's preview), RichText's HTML export and the fun picker's pictures. Switching back or restarting reads that HTML into blocks (`teams_cli::api::compose_blocks`), which richtext.cpp builds back into the document with its quote, code block, heading, list, table, inline code, link and mention formats. Plain drafts from older versions still load. Only a compose box changed since it loaded the draft writes it back, so another view of the same chat (a call window's chat pane) can't overwrite it with an older or empty copy.
 - **Send**: `ComponentsChatUtilsSendMessageMutation` → `POST {chatsvc}/v1/users/ME/conversations/{conv[;messageid=replyChainId]}/messages`.
   **Edit**: `PUT …/messages/{id}`.
 
