@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T05:21:00Z'
-updated_date: '2026-11-16T07:51:00Z'
+updated_date: '2026-11-16T09:43:00Z'
 labels:
   - desktop
   - auth
@@ -84,4 +84,6 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
 - Left:
   - Move the main ost-test1 profile to this sign-in: sign out, then one click. Wait until no agent uses that profile.
   - The app-side bridge, with TASK-0053.
+
+- Agent run finished; the default ost-test1 profile is free to move to the browser sign-in.
 <!-- SECTION:NOTES:END -->

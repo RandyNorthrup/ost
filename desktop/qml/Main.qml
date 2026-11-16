@@ -7378,7 +7378,7 @@ Window {
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "add-tab-" + n + ".png"))
             if (backend.currentChatId !== id) {
                 const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === id)
-                backend.selectChat(id, ch ? ch.name : "OST tab test"); return
+                const cc = chatList.chats.find(c => c.id === id); backend.selectChat(id, ch ? ch.name : (cc ? cc.name : "")); return
             }
             const s = tabPicker.store
             if (step === 0) { console.warn("ADDTAB tabs", JSON.stringify(conversation.tabNames), "meeting", backend.chatMeetingJson); shot("header") }
