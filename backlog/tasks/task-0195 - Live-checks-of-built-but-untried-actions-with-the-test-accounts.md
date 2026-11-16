@@ -1,9 +1,11 @@
 ---
 id: TASK-0195
 title: Live checks of built-but-untried actions with the test accounts
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
+updated_date: '2026-11-16T20:22:00Z'
 labels:
   - desktop
 dependencies: []
@@ -17,5 +19,18 @@ Built but never run live: creating and joining teams, adding team members and de
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each runs live with test teams, chats and emoji and matches Teams on winpc; anything that differs is fixed
+- [x] #1 Each runs live with test teams, chats and emoji and matches Teams on winpc; anything that differs is fixed
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Run live by a subagent (dd601ea) against Teams on winpc: create team (Teams' newer request, Add members step), join (OST Test 2), add members (fixed: guests get the guest role), delete team (fixed: OST drops it at once), delete custom emoji (dialog resized to Teams'), Leave chat with Remove chat history (Teams' dialog, the non-member compose text, menu), Communities search card (redone to Teams' single row).
+- Test teams, chats, emoji and section created and removed; leftovers found: TASK-0206.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Team, emoji and chat actions run live and match Teams on winpc; guest adds, team deletion, the emoji dialog, Leave chat and the Communities card were fixed along the way. Follow-up TASK-0206.
+<!-- SECTION:FINAL_SUMMARY:END -->

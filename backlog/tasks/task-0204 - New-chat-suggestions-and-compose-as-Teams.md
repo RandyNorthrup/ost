@@ -1,9 +1,11 @@
 ---
 id: TASK-0204
 title: New chat suggestions and compose as Teams
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-16T14:52:00Z'
+updated_date: '2026-11-16T20:22:00Z'
 labels:
   - desktop
 dependencies: []
@@ -21,6 +23,19 @@ Also in a new conversation OST's compose Attach and Actions do nothing and messa
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The new chat form's suggestions list the same people, order and second lines as Teams on winpc
-- [ ] #2 Compose in a new conversation attaches, runs actions and sends formatted text as in an existing chat
+- [x] #1 The new chat form's suggestions list the same people, order and second lines as Teams on winpc
+- [x] #2 Compose in a new conversation attaches, runs actions and sends formatted text as in an existing chat
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Built by a subagent (dd601ea). Teams' people-suggestion request, top 20, people only, you once; second line = sign-in name before @ in capitals ("(ALIAS) job" with a title); guests with the Guest tag and email. OST's list matched Teams row for row on winpc.
+- New-conversation compose: files, "+" list, video clips, formatted text with files (formatting and importance kept; OST TEST 0204 compose 4 checked in Teams).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+New chat suggestions and compose as Teams: same people, order and second lines as Teams on winpc; attaching, actions and formatted text work in a new conversation.
+<!-- SECTION:FINAL_SUMMARY:END -->
