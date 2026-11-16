@@ -4,7 +4,7 @@ title: 'Calls: opt-in call quality survey to the feedback repo'
 status: To Do
 assignee: []
 created_date: '2026-11-11T01:52:00Z'
-updated_date: '2026-11-11T16:51:00Z'
+updated_date: '2026-11-16T04:52:00Z'
 labels:
   - feedback
   - calls
@@ -33,4 +33,6 @@ Teams' post-call 'How was the call quality?' as an opt-in (off by default); low 
   - Good submits at once and shows "Thanks for the feedback!" / "We'll keep working on improving your experience." with a thumbs-up illustration.
   - Had issues: "What could've been better?" with tabs Video / Screenshare / Audio (radio buttons, 12/600, padding 5 12) and reason checkboxes in two columns. Video: The other side could not see my video; Video was ahead or behind audio; I could not see any video; The other side was too dark; Video kept freezing; Video blurring didn't work as expected; Image quality was poor; Video stopped unexpectedly. Screenshare: System audio didn't work as expected; I couldn't present my content; The other side could not see my presented content; The presented content kept freezing; I could not see any presented content; The presentation stopped unexpectedly; The image quality of the presented content was poor; There was a large delay in the presented content. (Audio's list wasn't captured.)
   - A privacy line with "Privacy statement", then Dismiss (96 x 31.3) and Send feedback (primary).
+
+Built so far: Only Teams' Surveys switch under Privacy (synced like Teams', on by default, not connected to anything). The post-call survey isn't built. (Audit 2026-11-16)
 <!-- SECTION:NOTES:END -->

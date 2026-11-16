@@ -4,6 +4,7 @@ title: 'Cloud file picker and attachment card: the rest of Teams'' details'
 status: To Do
 assignee: []
 created_date: '2026-11-13T21:53:00Z'
+updated_date: '2026-11-16T04:52:00Z'
 labels:
   - desktop
   - files
@@ -25,3 +26,9 @@ What TASK-0085's Attach left of Teams' cloud file picker and compose card (docs/
 - [ ] #3 Suggested files in the Attach popover look as Teams draws them (measured with an account that has suggestions)
 - [ ] #4 A post's thread view offers the same Attach popover
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far: The cloud picker (rail, Home, folders, People, Media, footer), the attachment card, and suggested files in the Attach popover (unmeasured). Missing: the command bar, Teams' People source, Media dates and zoom, Link settings, Attach in a post's thread. (Audit 2026-11-16)
+<!-- SECTION:NOTES:END -->

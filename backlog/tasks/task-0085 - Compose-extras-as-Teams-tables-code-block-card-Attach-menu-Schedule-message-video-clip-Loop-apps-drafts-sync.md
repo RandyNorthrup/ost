@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-15T23:27:00Z'
+updated_date: '2026-11-16T04:52:00Z'
 labels:
   - desktop
   - messages
@@ -25,9 +25,10 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - [x] #1 Tables can be inserted and edited from the formatting bar and are sent and shown as Teams does
 - [x] #2 Code blocks show Teams' card menu and syntax colours
 - [x] #3 Attach offers Teams' menu (OneDrive / cloud files, browse channels, upload) and sends what it picks as Teams does
-- [ ] #4 Schedule message, Record video clip, Loop components and installed apps' actions work as in Teams
-- [ ] #5 Drafts sync with Teams, and Teams' pre-send checks run
-- [ ] #6 Verified side by side with Teams on winpc
+- [ ] #4 Drafts sync with Teams, and Teams' pre-send checks run
+- [ ] #5 Verified side by side with Teams on winpc
+- [x] #6 Schedule message and Record video clip work as in Teams
+- [ ] #7 Loop components and installed apps' compose actions work as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -66,4 +67,6 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - 2026-11-14: Record video clip is now TASK-0136 (native recorder; recording, review, compose card and send done and verified). Received clips are TASK-0135. AC4 still waits on the rest of 0136, Loop components and the installed apps' actions in "+".
 
 - 2026-11-15: drafts roaming (enableRoamMessageDraft) is off by default in every Teams cloud config and only Microsoft's ECS rollout turns it on; no tenant setting exists. To get it early, ost-test1 and ost-test2 are now on Teams Public Preview (update policy "OST test accounts") and Microsoft 365 Targeted release (select users). Re-check ECS for enableRoamMessageDraft before capturing the roaming body. Teams' compose now shows "Write with Copilot" and "Loop components" for ost-test1.
+
+- 2026-11-16 audit: AC4 split. Schedule message (scheduled messages work) and Record video clip (TASK-0135/0136) are done and checked as #6. Loop components and installed apps' compose actions are not built (#7).
 <!-- SECTION:NOTES:END -->

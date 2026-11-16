@@ -4,7 +4,7 @@ title: Shared channels and private channel members as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-10T05:09:00Z'
-updated_date: '2026-11-15T22:24:00Z'
+updated_date: '2026-11-16T04:52:00Z'
 labels:
   - desktop
 dependencies: []
@@ -26,4 +26,6 @@ Private channels: OST creates and deletes them as Teams, but adding people (the 
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-15 tenant (user: "you are authorized to adjust anything in the test tenant to unblock us"): the Teams policy already allows shared channels (Create shared channels / Invite external / Join external: On), and OST Test 2 is a member of OST Test Team, so both criteria can be tested live now.
+
+Built so far: Creating a Shared channel (the type is offered), a member step for private channels (an unverified middle-tier request, not Teams' provisioning one), and Pending invites listed read-only. Missing: sharing a channel, accepting/declining invitations, live checks. (Audit 2026-11-16)
 <!-- SECTION:NOTES:END -->

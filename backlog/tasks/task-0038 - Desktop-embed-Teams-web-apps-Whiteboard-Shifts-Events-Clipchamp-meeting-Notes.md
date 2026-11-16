@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06T04:53:00Z'
-updated_date: '2026-11-15T05:59:00Z'
+updated_date: '2026-11-16T04:52:00Z'
 labels:
   - desktop
 dependencies: []
@@ -27,3 +27,9 @@ Teams embeds these web apps in its window; OST opens them in the browser because
 - [ ] #5 Immersive Reader (message ···) opens Teams' embedded reader
 - [ ] #6 Word, PowerPoint and Excel files open inside OST (Office for the web) as Teams' 'Teams' choice does, and Settings ▸ Files and links offers that choice as Teams
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far: Whiteboard and Clipchamp open inside OST (QtWebEngine, OST's own web profile; the same hosting serves Help, Communities, channel Page tabs and Workflows). Shifts and Events still open in the browser; meeting Notes, Copilot, Share to Outlook, Immersive Reader and Office for the web aren't embedded yet. (Audit 2026-11-16)
+<!-- SECTION:NOTES:END -->

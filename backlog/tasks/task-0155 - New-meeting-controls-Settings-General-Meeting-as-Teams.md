@@ -1,9 +1,11 @@
 ---
 id: TASK-0155
 title: New meeting controls (Settings > General > Meeting) as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-15T08:36:00Z'
+updated_date: '2026-11-16T04:37:00Z'
 labels:
   - calling
   - settings
