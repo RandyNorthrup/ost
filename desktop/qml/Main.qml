@@ -3825,6 +3825,87 @@ Window {
             else if (st > 12 || (st > 4 && Qt.application.arguments.indexOf("--link-preview-send") < 0)) { c.clear(); Qt.quit() }
         }
     }
+    // --app-card-test[=<text>] with --shots=<dir>: in "OST group test", type a
+    // link to a site with a Teams app (default a Wikipedia page) into
+    // compose as keys, log the app's card (APPCARD compose) and capture
+    // app-card-compose.png; --app-card-collapse collapses it first
+    // (app-card-collapsed.png); --app-card-send sends it and logs the sent
+    // message's card or preview (APPCARD sent, app-card-sent.png).
+    // --app-card-messages only captures the chat's newest messages
+    // (app-card-messages.png) and logs their link cards.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--app-card-test") || a === "--app-card-messages") && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const args = Qt.application.arguments
+            const dir = (args.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const arg = args.find(a => a.startsWith("--app-card-test="))
+            const text = arg ? arg.split("=").slice(1).join("=") : "OST app card test https://en.wikipedia.org/wiki/Lighthouse "
+            const c = conversation.composeForTest()
+            const linkCards = () => (conversation.messages || []).filter(m => (m.cards || []).some(k => k.link_card) || m.url_preview).slice(-3)
+            if (st === 0) { const ch = chatList.chats.find(x => x.name === "OST group test"); rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
+            else if (args.indexOf("--app-card-messages") >= 0) {
+                if (st === 3) { conversation.jumpToNewest(); for (const m of linkCards()) console.warn("APPCARD message", m.id, JSON.stringify((m.cards || []).map(k => ({ link: k.link_card, app: k.app_name, type: k.content_type, title: (k.content || {}).title }))), "preview", JSON.stringify(m.url_preview || null)); shot("app-card-messages") }
+                else if (st > 3) Qt.quit()
+            }
+            else if (st === 1) { conversation.focusCompose(); linkTyper.typeText(text) }
+            else if (st === 4) { console.warn("APPCARD compose", JSON.stringify(c.appCard), "shown", c.appCardShown, "preview", JSON.stringify(c.urlPreview)); shot("app-card-compose") }
+            else if (st === 5 && args.indexOf("--app-card-collapse") >= 0) c.setAppCard({ collapsed: true })
+            else if (st === 6 && args.indexOf("--app-card-collapse") >= 0) { console.warn("APPCARD collapsed", c.appCardCollapsedShown, JSON.stringify(c.shownPreview)); shot("app-card-collapsed") }
+            else if (st === 7 && args.indexOf("--app-card-send") >= 0) { console.warn("APPCARD send", c.appCardForSend().length > 0, c.previewForSend()); conversation.sendCompose() }
+            else if (st === 10 && args.indexOf("--app-card-send") >= 0) { conversation.jumpToNewest(); const m = linkCards().pop(); console.warn("APPCARD sent", m ? m.id + " " + JSON.stringify((m.cards || []).map(k => ({ link: k.link_card, app: k.app_name, type: k.content_type }))) + " preview " + JSON.stringify(m.url_preview || null) : "none"); shot("app-card-sent") }
+            else if (st > 11 || (st > 7 && args.indexOf("--app-card-send") < 0)) { c.clear(); Qt.quit() }
+        }
+    }
+    // --smart-reply-test[=<chat name>] with --shots=<dir>: open that chat
+    // (default "OST Test 1", for OST Test 2's profile), log the suggested
+    // replies Teams' rules show (SMARTREPLY) and capture smart-replies.png,
+    // then the feedback form (smart-feedback.png) and, when a file is
+    // suggested, Share a file's attach menu (smart-share-file.png).
+    // --smart-reply-fake puts a set with every kind on the newest message
+    // first (to draw the chips the tenant's features turn off).
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--smart-reply-test")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const args = Qt.application.arguments
+            const dir = (args.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const arg = args.find(a => a.startsWith("--smart-reply-test="))
+            const name = arg ? arg.split("=").slice(1).join("=") : "OST Test 1"
+            const log = (...a) => console.warn("SMARTREPLY", ...a)
+            if (st === 0) { const ch = chatList.chats.find(x => x.name === name); rail.current = "chat"; if (ch) backend.selectChat(ch.id, ch.name); else log("no chat", name) }
+            else if (st === 4) {
+                if (args.indexOf("--smart-reply-fake") >= 0) {
+                    const m = (conversation.messages || []).filter(x => x.kind === "message").pop()
+                    const t = new Date().toISOString()
+                    const at = k => ({ title: k.title, value: k.value || k.title, kind: k.kind, time: t, target: m ? m.id : "", start_time: k.start || "", end_time: k.end || "" })
+                    conversation.setSmartRepliesForTest({ target: m ? m.id : "", timestamp: t, feedback: true, replies: [
+                        at({ title: "Share file", value: "0", kind: "file_sharing" }), at({ title: "Sure!", kind: "reply" }), at({ title: "Sounds good", kind: "reply" }), at({ title: "Not right now", kind: "reply" })] })
+                }
+                log("shown", JSON.stringify(conversation.smartRepliesForTest())); shot("smart-replies")
+            }
+            else if (st === 5) { const b = conversation.smartReplyFeedbackButtonForTest(); if (b.visible) conversation.smartReplyFeedbackForTest().openFor(b); log("feedback", b.visible, JSON.stringify(conversation.smartReplyFeedbackForTest().categories)) }
+            else if (st === 6) shot("smart-feedback")
+            else if (st === 7) { conversation.smartReplyFeedbackForTest().close(); log("share file", conversation.clickSuggestionForTest("file_sharing")) }
+            else if (st === 8) shot("smart-share-file")
+            else if (st === 9 && args.indexOf("--smart-reply-fake") >= 0) {
+                const m = (conversation.messages || []).filter(x => x.kind === "message").pop()
+                const t = new Date().toISOString()
+                conversation.closeAttachForTest()
+                conversation.setSmartRepliesForTest({ target: m ? m.id : "", timestamp: t, feedback: true, replies: [
+                    { title: "Schedule a meeting", value: "Schedule a meeting", kind: "meeting", time: t, target: m ? m.id : "", start_time: "", end_time: "" },
+                    { title: "Sure!", value: "Sure!", kind: "reply", time: t, target: m ? m.id : "", start_time: "", end_time: "" }] })
+            }
+            else if (st === 10 && args.indexOf("--smart-reply-fake") >= 0) { log("meeting", JSON.stringify(conversation.smartRepliesForTest())); shot("smart-meeting") }
+            else if (st > 10 || (st > 8 && args.indexOf("--smart-reply-fake") < 0)) Qt.quit()
+        }
+    }
     // --premium-test: Teams Premium as it stands for the account (PREMIUM
     // line with the mode and days left), the title bar's button, then each
     // page of the Premium dialog in turn (offer, pending, active, home,
@@ -8859,6 +8940,9 @@ Window {
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onEditMessage: (id, text) => backend.editMessage(id, text)
         onOpenChatSettings: { settingsView.page = "chats"; rail.current = "settings" }
+        onOpenPrivacySettings: { settingsView.page = "privacy"; rail.current = "settings" }
+        // A suggested reply's meeting: Teams' scheduling form for the chat.
+        onScheduleMeetingWith: (attendees, startIso, endIso) => { rail.current = "calendar"; calendarView.newMeetingWith(attendees, startIso, endIso) }
         onScheduleMeeting: { rail.current = "calendar"; calendarView.newMeeting() }
         onOpenInNewWindow: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId) || {}

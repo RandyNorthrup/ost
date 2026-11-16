@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let name = (a[3] != "-").then(|| a[3].clone());
     let value: serde_json::Value = serde_json::from_str(&a[4])?;
-    let reply = bot_invoke::invoke(&client, &target, name.as_deref(), value, true).await?;
+    let reply = bot_invoke::invoke(&client, &target, name.as_deref(), None, value, true).await?;
     println!("{}", serde_json::to_string_pretty(&shape(&reply))?);
     println!("outcome: {:?}", bot_invoke::outcome(&reply).kind());
     Ok(())

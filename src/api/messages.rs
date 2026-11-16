@@ -78,6 +78,14 @@ pub struct Card {
     pub content: serde_json::Value,
     #[serde(default)]
     pub app_id: String,
+    /// An app's link card (Teams' `app-preview-card` ids): drawn with the
+    /// app's name and icon over it.
+    #[serde(default)]
+    pub link_card: bool,
+    #[serde(default)]
+    pub app_name: String,
+    #[serde(default)]
+    pub app_icon: String,
 }
 
 /// The person a bot message was sent for (`properties.onbehalfof`, an
@@ -187,6 +195,7 @@ pub fn swift_cards(swift: &serde_json::Value) -> (Vec<Card>, String, bool) {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
+                ..Default::default()
             })
         })
         .collect();
@@ -291,6 +300,9 @@ pub fn property_cards(props: Option<&serde_json::Value>) -> Vec<Card> {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
+                link_card: super::link_unfurl::is_link_card(c.get("cardClientId").and_then(|v| v.as_str()).unwrap_or_default()),
+                app_name: c.get("appName").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                app_icon: super::tabs::https_only(c.get("appIcon").and_then(|v| v.as_str()).unwrap_or_default()),
             })
         })
         .collect()

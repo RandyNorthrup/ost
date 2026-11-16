@@ -56,6 +56,7 @@ pub mod tabs;
 pub mod translation;
 pub mod updates;
 pub mod url_preview;
+pub mod link_unfurl;
 pub mod teams;
 pub mod quick_views;
 pub mod scheduled;

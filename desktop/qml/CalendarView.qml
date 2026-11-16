@@ -37,6 +37,20 @@ Item {
     function confirmDeleteForTest() { root.deleteEvent(details.ev.id); details.close() }
     /// Alt+N: schedule a meeting.
     function newMeeting() { newEvent.openAt(null) }
+    /// The new-meeting form with its people and times filled in (a
+    /// suggested reply's meeting: the chat's members, the proposed times).
+    function newMeetingWith(attendees, startIso, endIso) {
+        const s = startIso ? new Date(startIso) : null
+        newEvent.openAt(s && !isNaN(s) ? s : null)
+        who.text = attendees || ""
+        const e = endIso ? new Date(endIso) : null
+        if (s && e && !isNaN(e)) {
+            const mins = (e - s) / 60000, opts = [15, 30, 60, 120]
+            let best = 0
+            for (let i = 1; i < opts.length; i++) if (Math.abs(opts[i] - mins) < Math.abs(opts[best] - mins)) best = i
+            length.currentIndex = best
+        }
+    }
     function mondayOf(d) {
         const m = new Date(d.getFullYear(), d.getMonth(), d.getDate())
         m.setDate(m.getDate() - (m.getDay() + 6) % 7)

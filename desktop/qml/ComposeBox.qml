@@ -149,7 +149,16 @@ Item {
     property string previewUrl: ""
     /// Link previews are allowed here (the conversation decides).
     property bool previewsAllowed: true
-    readonly property bool previewShown: !!urlPreview && urlPreview.enabled && previewsAllowed && !editing && cloudFiles.length === 0 && !clip
+    readonly property bool previewShown: (!!urlPreview && urlPreview.enabled || appCardCollapsedShown) && previewsAllowed && !editing && cloudFiles.length === 0 && !clip
+    // An app's link card (TASK-0168): a link to a site with a Teams app gets
+    // that app's card (api::link_unfurl), which Collapse preview turns into
+    // the plain preview (sent so) and X removes.
+    property var appCard: null
+    /// The conversation the link's app is asked from.
+    property string chatId: ""
+    readonly property bool appCardShown: !!appCard && !appCard.removed && !appCard.collapsed && previewsAllowed && !editing && cloudFiles.length === 0 && !clip
+    readonly property bool appCardCollapsedShown: !!appCard && !appCard.removed && appCard.collapsed === true && !!appCard.preview
+    readonly property var shownPreview: appCardCollapsedShown ? Object.assign({}, appCard.preview, { enabled: true }) : urlPreview
     function firstLink() {
         const m = String(formattedText()).match(/<a\s+href="([^"]+)"/g) || []
         for (const a of m) {
@@ -167,7 +176,8 @@ Item {
             if (url === root.previewUrl) return
             root.previewUrl = url
             root.urlPreview = null
-            if (url) backend.fetchUrlPreview(url)
+            root.appCard = null
+            if (url) backend.fetchLinkPreview(url, root.chatId)
         }
     }
     Connections {
@@ -176,16 +186,34 @@ Item {
             if (url !== root.previewUrl || !json) return
             try { root.urlPreview = JSON.parse(json) } catch (e) {}
         }
+        function onAppLinkCardFetched(url, json) {
+            if (url !== root.previewUrl || !json) return
+            try { root.appCard = JSON.parse(json) } catch (e) {}
+        }
     }
     /// What goes with the message: the preview (on or removed), or "".
     function previewForSend() {
         if (!previewsAllowed || editing) return ""
         const link = firstLink()
         if (!link) return ""
+        if (appCard && link === previewUrl) {
+            // A removed app card goes as its preview turned off (Teams' X).
+            if (appCard.removed) return appCard.preview ? JSON.stringify(Object.assign({}, appCard.preview, { enabled: false })) : ""
+            return ""
+        }
         if (urlPreview && link === previewUrl) return JSON.stringify(urlPreview)
         // Not fetched yet (sent at once): Teams gets it as it sends.
         return "fetch"
     }
+    /// The app card that goes with the message (as its card, or collapsed as
+    /// its preview), or "".
+    function appCardForSend() {
+        if (!previewsAllowed || editing || !appCard || appCard.removed || firstLink() !== previewUrl) return ""
+        const c = Object.assign({}, appCard)
+        delete c.removed
+        return JSON.stringify(c)
+    }
+    function setAppCard(changes) { root.appCard = Object.assign({}, root.appCard, changes) }
     // Teams' AutoLink: a web address becomes a link when Space or Enter
     // follows it (more than 5 characters; trailing punctuation and an
     // unmatched closing bracket stay outside), or when the whole pasted
@@ -237,7 +265,9 @@ Item {
     /// Teams' compact compose (pane under 480 px): the editor across the
     /// box and the tools in the bottom row.
     property bool compact: false
-    readonly property bool multiline: !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
+    signal appCardSettingsRequested()
+    signal appCardPermissionsRequested(string appId)
+    readonly property bool multiline: appCardShown || !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -424,7 +454,7 @@ Item {
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
-    function clear() { input.clear(); media = []; urlPreview = null; previewUrl = "" }
+    function clear() { input.clear(); media = []; urlPreview = null; appCard = null; previewUrl = "" }
     // The box as a draft, which Teams keeps with its formatting: the text
     // (the Drafts list's preview), RichText's HTML and the pictures in it.
     function draftState() {
@@ -821,6 +851,7 @@ Item {
             width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
             height: cloudCards.visible ? cloudCards.y + cloudCards.height + 13.9
                 : previewCard.visible ? previewCard.y + previewCard.height + 6
+                : appLinkCard.visible ? appLinkCard.y + appLinkCard.height + 8
                 : clipCardBox.visible ? input.y + input.contentHeight + 8
                 : Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
             // Teams' quote box and code card behind the text's quote and
@@ -953,9 +984,29 @@ Item {
                 id: previewCard
                 visible: root.previewShown
                 x: 11.4; y: input.y + input.contentHeight + 11
-                preview: root.urlPreview
+                preview: root.shownPreview
                 removable: true
-                onRemoveRequested: { const p = Object.assign({}, root.urlPreview); p.enabled = false; root.urlPreview = p }
+                // A collapsed app card: Expand preview beside the X.
+                expandable: root.appCardCollapsedShown
+                onExpandRequested: root.setAppCard({ collapsed: false })
+                onRemoveRequested: {
+                    if (root.appCardCollapsedShown) { root.setAppCard({ removed: true }); return }
+                    const p = Object.assign({}, root.urlPreview); p.enabled = false; root.urlPreview = p
+                }
+            }
+            // The app's link card in compose (app-based-link-preview-card,
+            // measured on winpc 2026-11-16): 16.67 in, 16.4 under the text.
+            AppLinkCard {
+                id: appLinkCard
+                visible: root.appCardShown
+                x: 16.67; y: input.y + input.contentHeight + 16.4
+                compose: true
+                appCard: root.appCard
+                onCollapseRequested: root.setAppCard({ collapsed: true })
+                onRemoveRequested: root.setAppCard({ removed: true })
+                onSettingsRequested: root.appCardSettingsRequested()
+                onPermissionsRequested: root.appCardPermissionsRequested(root.appCard ? root.appCard.app_id : "")
+                onOpenLink: url => Qt.openUrlExternally(url)
             }
             // Teams' attachment card for a cloud file (file-well, measured
             // on winpc 2026-11-13): 320 x 237.3 under the text (13 in, 15

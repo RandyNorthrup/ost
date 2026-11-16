@@ -20,7 +20,11 @@ Item {
     property bool removable: false
     /// The card opens its link when clicked (messages).
     property bool clickable: false
+    /// A collapsed app link card in compose: Expand preview (ArrowMaximize,
+    /// 20) 12 left of the X (measured on winpc 2026-11-16).
+    property bool expandable: false
     signal removeRequested()
+    signal expandRequested()
     width: 460; height: 96
 
     readonly property string title: preview ? String(preview.title || "").trim() : ""
@@ -65,12 +69,21 @@ Item {
             color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
             Text {
                 visible: !!card.title
-                x: 12; y: 8; width: card.removable ? 284 : 316; height: 20
+                x: 12; y: 8; width: card.removable ? (card.expandable ? 252 : 284) : 316; height: 20
                 verticalAlignment: Text.AlignVCenter
                 text: card.title
                 elide: Text.ElideRight; maximumLineCount: 1
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.text
+            }
+            Item {
+                visible: card.expandable && !!card.title
+                x: 276; y: 8; width: 20; height: 20
+                FluentIcon { anchors.centerIn: parent; name: "arrow-maximize-20"; size: 20; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: card.expandRequested() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Expand preview"
             }
             Item {
                 visible: card.removable && !!card.title

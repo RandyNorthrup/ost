@@ -11,6 +11,15 @@
 //!   `adaptiveCard/action`, value `{action: {type, verb, data, id?, title?},
 //!   trigger}`; an automatic refresh adds `X-MS-AutoRefreshRequestInThread:
 //!   {thread}`. The reply carries the card to show, a message, or an error.
+//! - A plain `Action.Submit` (no `msteams`), a submit whose data says
+//!   `msteams.type: "messageBack"`, and a hero card's `messageBack` button
+//!   are Teams' messageBack (adaptivecard-react `Ne` and the messageBack
+//!   case; 455054 `UF` -> 730589 `SQ`): when the action has a `displayText`,
+//!   that text is posted to the chat first as a `Text` message with
+//!   `properties.skipfanouttobots` (Teams' BotMessageBack); then the invoke
+//!   goes with name `messageback`, the action's `text`, and the value (the
+//!   data and inputs, merged over `msteams.value`; a string value is sent
+//!   as `{}`, as Teams' JSON.parse leaves it). The bot answers in the chat.
 //! `userAadToken` is the middle tier's AAD token (Teams' MT_AAD_KEY).
 
 use anyhow::{Context, Result};
@@ -33,9 +42,10 @@ pub struct Target {
 }
 
 /// Teams' invoke body (925701 `jt`).
-pub fn body(t: &Target, name: Option<&str>, value: &Value, display_name: &str, aad_token: &str) -> Value {
+pub fn body(t: &Target, name: Option<&str>, text: Option<&str>, value: &Value, display_name: &str, aad_token: &str) -> Value {
     let mut b = json!({
         "name": name,
+        "text": text,
         "messageType": if t.message_type.is_empty() { "RichText/Media_Card" } else { &t.message_type },
         "value": value,
         "imdisplayname": display_name,
@@ -91,17 +101,97 @@ pub fn execute_value(action: &Value, inputs: &Value, automatic: bool) -> Value {
     json!({ "action": a, "trigger": if automatic { "automatic" } else { "manual" } })
 }
 
+/// A messageBack as Teams makes it from a card action.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MessageBack {
+    /// The invoke's value (an object; `{}` for a string value).
+    pub value: Value,
+    pub text: Option<String>,
+    /// Posted to the chat first (BotMessageBack) when not empty.
+    pub display_text: Option<String>,
+}
+
+fn str_opt(v: Option<&Value>) -> Option<String> {
+    v.and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(str::to_string)
+}
+
+/// A JSON value as Teams sends it: an object stays, a string holding an
+/// object is read, anything else is sent as {} (Teams' JSON.parse of a
+/// non-object).
+fn as_object(v: &Value) -> Value {
+    match v {
+        Value::Object(_) => v.clone(),
+        Value::String(s) => serde_json::from_str::<Value>(s).ok().filter(|x| x.is_object()).unwrap_or_else(|| json!({})),
+        _ => json!({}),
+    }
+}
+
+/// The messageBack for an `Action.Submit` (with the card's inputs) or a
+/// hero card's `messageBack` button ({type, text, displayText, value});
+/// None when the action is not one (invoke, imBack, signin, task/fetch).
+pub fn message_back(action: &Value, inputs: &Value) -> Option<MessageBack> {
+    let kind = action.get("type").and_then(|t| t.as_str()).unwrap_or_default().to_ascii_lowercase();
+    if kind == "messageback" {
+        return Some(MessageBack {
+            value: as_object(action.get("value").unwrap_or(&Value::Null)),
+            text: str_opt(action.get("text")),
+            display_text: str_opt(action.get("displayText")),
+        });
+    }
+    if kind != "action.submit" {
+        return None;
+    }
+    // The renderer merges the inputs into the data (an object's).
+    let mut data = action.get("data").cloned().unwrap_or(Value::Null);
+    if let (Some(o), Some(i)) = (data.as_object_mut(), inputs.as_object()) {
+        for (k, v) in i {
+            o.insert(k.clone(), v.clone());
+        }
+    } else if data.is_null() && inputs.as_object().is_some_and(|i| !i.is_empty()) {
+        data = inputs.clone();
+    }
+    let ms = data.get("msteams").or_else(|| data.get("msTeams")).cloned();
+    match ms.as_ref().and_then(|m| m.get("type")).and_then(|t| t.as_str()).map(str::to_ascii_lowercase) {
+        None => {
+            // Teams' `Ne`: a string's data is the text, the value and the
+            // text shown; an object's is the value.
+            if let Value::String(s) = &data {
+                Some(MessageBack { value: json!({}), text: Some(s.clone()), display_text: Some(s.clone()).filter(|s| !s.is_empty()) })
+            } else {
+                Some(MessageBack { value: if data.is_object() { data } else { json!({}) }, text: None, display_text: None })
+            }
+        }
+        Some(t) if t == "messageback" => {
+            let ms = ms.unwrap_or_default();
+            // The data without msteams, with msteams.value's keys filled in
+            // where the data has none (lodash defaults).
+            let mut v = data.clone();
+            if let Some(o) = v.as_object_mut() {
+                o.remove("msteams");
+                o.remove("msTeams");
+                if let Value::Object(extra) = as_object(ms.get("value").unwrap_or(&Value::Null)) {
+                    for (k, x) in extra {
+                        o.entry(k).or_insert(x);
+                    }
+                }
+            }
+            Some(MessageBack { value: as_object(&v), text: str_opt(ms.get("text")), display_text: str_opt(ms.get("displayText")) })
+        }
+        _ => None,
+    }
+}
+
 /// Whether a card's `Action.Submit` goes to its bot as an invoke.
 pub fn is_invoke_submit(data: &Value) -> bool {
     data.pointer("/msteams/type").and_then(|v| v.as_str()) == Some("invoke")
 }
 
 /// Send an invoke; the bot's reply (Null when empty).
-pub async fn invoke(client: &TeamsClient, t: &Target, name: Option<&str>, value: Value, automatic: bool) -> Result<Value> {
+pub async fn invoke(client: &TeamsClient, t: &Target, name: Option<&str>, text: Option<&str>, value: Value, automatic: bool) -> Result<Value> {
     let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.unwrap_or_default();
     let display = client.display_name().unwrap_or_default();
     let url = format!("{}/v1/agents/{}/invoke", client.chat_service_url(), t.bot_mri);
-    let b = body(t, name, &value, &display, &token);
+    let b = body(t, name, text, &value, &display, &token);
     let mut headers = vec![("content-type", "application/json")];
     if automatic {
         headers.push(("X-MS-AutoRefreshRequestInThread", t.thread_id.as_str()));
@@ -173,12 +263,38 @@ mod tests {
         assert!(is_invoke_submit(&data));
         let v = submit_value(&data, &json!({ "choice": "1" }));
         assert_eq!(v, json!({ "data": { "Type": "QuickPoll.SubmitVote", "Options": ["Red", "Blue"], "FormId": "F", "QuestionId": "Q" }, "choice": "1" }));
-        let b = body(&t, None, &v, "OST Test 1", "tok");
+        let b = body(&t, None, None, &v, "OST Test 1", "tok");
         assert_eq!(b, json!({
             "appId": "0e3bedea-4720-48b5-9e13-5a1ce1387d45", "messageType": "RichText/Media_Card", "value": v,
             "imdisplayname": "OST Test 1", "userAadToken": "tok", "serverMessageId": "1794621026819",
             "clientMessageId": "13086358480879058679", "conversation": { "id": "19:a@thread.v2" }
         }));
+    }
+
+    #[test]
+    fn message_back_is_teams() {
+        // A plain Action.Submit: its data and inputs as the value, no text.
+        let plain = json!({ "type": "Action.Submit", "title": "Go", "data": { "action": "go", "id": 7 } });
+        let mb = message_back(&plain, &json!({ "comment": "hi" })).unwrap();
+        assert_eq!(mb, MessageBack { value: json!({ "action": "go", "id": 7, "comment": "hi" }), text: None, display_text: None });
+        // A string's data is the text and is shown in the chat.
+        let s = json!({ "type": "Action.Submit", "data": "help" });
+        assert_eq!(message_back(&s, &json!({})).unwrap(), MessageBack { value: json!({}), text: Some("help".into()), display_text: Some("help".into()) });
+        // msteams messageBack: the data without msteams over msteams.value.
+        let m = json!({ "type": "Action.Submit", "data": { "a": 1, "msteams": { "type": "messageBack", "text": "do", "displayText": "Doing it", "value": "{\"a\":0,\"b\":2}" } } });
+        assert_eq!(message_back(&m, &json!({})).unwrap(), MessageBack { value: json!({ "a": 1, "b": 2 }), text: Some("do".into()), display_text: Some("Doing it".into()) });
+        // A hero card's messageBack button.
+        let h = json!({ "type": "messageBack", "title": "List", "text": "list", "displayText": "List my flows", "value": { "k": "v" } });
+        assert_eq!(message_back(&h, &json!({})).unwrap(), MessageBack { value: json!({ "k": "v" }), text: Some("list".into()), display_text: Some("List my flows".into()) });
+        // Invoke, imBack and signin aren't messageBacks.
+        for t in ["invoke", "imBack", "signin", "task/fetch"] {
+            assert!(message_back(&json!({ "type": "Action.Submit", "data": { "msteams": { "type": t } } }), &json!({})).is_none());
+        }
+        let t = Target { thread_id: "19:a@unq.gbl.spaces".into(), server_message_id: "1".into(), bot_mri: "28:b".into(), app_id: "app".into(), ..Default::default() };
+        let b = body(&t, Some("messageback"), Some("do"), &json!({ "a": 1 }), "OST Test 1", "tok");
+        assert_eq!(b["name"], "messageback");
+        assert_eq!(b["text"], "do");
+        assert!(body(&t, Some("messageback"), None, &json!({}), "OST Test 1", "tok").get("text").is_none());
     }
 
     #[test]

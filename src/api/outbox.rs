@@ -88,6 +88,14 @@ pub struct Outgoing {
     /// fetches one as it sends (within 3 s), when previews are allowed.
     #[serde(default)]
     pub url_preview_on_send: bool,
+    /// The first link's app card (Teams' app link unfurling), with its card
+    /// id; sent as the card, or as its preview when collapsed.
+    #[serde(default)]
+    pub app_card: Option<(super::link_unfurl::AppCard, String)>,
+    /// A card's messageBack text (Teams' BotMessageBack): sent as a `Text`
+    /// message that isn't fanned out to bots (`skipfanouttobots`).
+    #[serde(default)]
+    pub bot_message_back: bool,
 }
 
 /// An announcement banner's picture.
@@ -381,7 +389,10 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         "fromUserId": o.sender_mri,
         "composetime": o.compose_time,
         "originalarrivaltime": iso(o.arrival_ms),
-        "content": o.content,
+        "content": match &o.app_card {
+            Some((c, id)) if !c.collapsed => format!("{}{}", o.content, super::link_unfurl::inline_span(id)),
+            _ => o.content.clone(),
+        },
         "messagetype": "RichText/Html",
         "contenttype": "Text",
         "imdisplayname": o.display_name,
@@ -400,6 +411,20 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
             "formatVariant": "TEAMS",
         },
     });
+    if o.bot_message_back {
+        body["messagetype"] = "Text".into();
+        body["properties"]["skipfanouttobots"] = true.into();
+    }
+    // An app's link card (OST TEST 168a/b): the card in `cards` with the
+    // preview turned off, or, collapsed, only its preview.
+    if let Some((c, id)) = &o.app_card {
+        let p = &mut body["properties"];
+        let preview = c.preview.clone().map(|pv| super::url_preview::UrlPreview { enabled: c.collapsed, ..pv });
+        p["links"] = super::url_preview::links_property(preview.as_ref()).into();
+        if !c.collapsed {
+            p["cards"] = super::link_unfurl::cards_property(c, id).into();
+        }
+    }
     // qtdMsgs goes only with a quote (Teams adds it when quotedMessages is
     // not empty).
     if let Some(q) = &o.quote {
@@ -1019,7 +1044,41 @@ mod tests {
             ams_references: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
+            app_card: None,
+            bot_message_back: false,
         };
+        // An app's link card as Teams sent it (OST TEST 168a), and collapsed
+        // as its preview (OST TEST 168b).
+        let card = super::super::link_unfurl::AppCard {
+            url: "https://en.wikipedia.org/wiki/Lighthouse".into(),
+            app_id: "25492237-70ef-4c56-a36e-dd3405edd40e".into(),
+            app_name: "Wikipedia Search".into(),
+            content_type: "application/vnd.microsoft.card.thumbnail".into(),
+            content: serde_json::json!({ "title": "Lighthouse" }),
+            preview: Some(super::super::url_preview::UrlPreview {
+                url: "https://en.wikipedia.org/wiki/Lighthouse".into(),
+                title: "Lighthouse".into(),
+                description: "A lighthouse is a tower".into(),
+                thumbnail: "https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/content?url=x".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let id = "app-preview-card-ps45fbccde1d5f4f9ab44e0e070576b49f".to_string();
+        let with = Outgoing { app_card: Some((card.clone(), id.clone())), ..o.clone() };
+        let b = post_body(&with);
+        assert!(b["content"].as_str().unwrap().ends_with(&super::super::link_unfurl::inline_span(&id)));
+        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        assert_eq!(cards[0]["cardClientId"], id.as_str());
+        let links: serde_json::Value = serde_json::from_str(b["properties"]["links"].as_str().unwrap()).unwrap();
+        assert_eq!(links[0]["previewenabled"], false);
+        assert_eq!(links[0]["preview"]["title"], "Lighthouse");
+        let folded = Outgoing { app_card: Some((super::super::link_unfurl::AppCard { collapsed: true, ..card }, id)), ..o.clone() };
+        let b = post_body(&folded);
+        assert_eq!(b["content"], "<p>hi</p>");
+        assert_eq!(b["properties"]["cards"], "[]");
+        let links: serde_json::Value = serde_json::from_str(b["properties"]["links"].as_str().unwrap()).unwrap();
+        assert_eq!(links[0]["previewenabled"], true);
         let b = post_body(&o);
         assert!(b.get("postType").is_none(), "chats have no post type");
         assert_eq!(b["properties"]["importance"], "high");
@@ -1050,6 +1109,8 @@ mod tests {
             ams_references: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
+            app_card: None,
+            bot_message_back: false,
             ..o.clone()
         };
         let b = post_body(&root);
@@ -1110,6 +1171,8 @@ mod tests {
             ams_references: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
+            app_card: None,
+            bot_message_back: false,
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");

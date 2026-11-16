@@ -1,0 +1,189 @@
+import QtQuick
+
+// Teams' app link card (app link unfurling, TASK-0168; measured on winpc
+// 2026-11-16 with Wikipedia Search, OST TEST 168a): a link to a site with a
+// Teams app shows that app's card instead of the plain preview.
+// - The frame: 452 wide, white, a 0.67 px NeutralStroke2 border, radius 4,
+//   16.67 padding.
+// - The header (24 tall): the app's icon (24, round, on #FAFAFA) and its
+//   name (12/600 on a 16 line, NeutralForeground1) 12 to the right. In
+//   compose, Collapse preview (20, ArrowMinimize) and Remove URL Preview
+//   (20, Dismiss) sit at its end, 10 apart.
+// - 12 under it, the app's card (a thumbnail card here: the 100 x 100
+//   picture 8 down, the title as a 16 px brand link on a 22 line, the text
+//   8 under it, 12 px NeutralForeground2 on a 15 line).
+// - In compose, for an app used without installing it, the footer: 10
+//   down, a 0.67 px line, 10 more, "By using {app}, you agree to the
+//   privacy policy, terms of use, and permissions." (12 on a 17.14 line,
+//   the links brand) and a settings button (32 x 31.33) that opens
+//   Settings ▸ Privacy.
+// The sent message's card has no footer and no buttons.
+Rectangle {
+    id: card
+    /// link_unfurl::AppCard {app_name, app_icon, content_type, content,
+    /// anonymous, privacy_url, terms_url} (or a message Card with
+    /// app_name/app_icon).
+    property var appCard: null
+    /// Compose: the header's buttons and the footer.
+    property bool compose: false
+    signal collapseRequested()
+    signal removeRequested()
+    signal settingsRequested()
+    signal permissionsRequested()
+    signal openLink(string url)
+    readonly property bool hasFooter: compose && !!appCard && appCard.anonymous === true
+    width: 452
+    height: col.y + col.height + 16.67
+    radius: 4
+    color: theme.surface
+    border.width: 0.67; border.color: theme.divider
+
+    Column {
+        id: col
+        x: 16.67; y: 16.67
+        width: card.width - 33.33
+        Item {
+            width: parent.width; height: 24
+            Rectangle {
+                width: 24; height: 24; radius: 12
+                color: theme.pick("#FAFAFA", "#292929", "#000000")
+                clip: true
+                Image {
+                    anchors.fill: parent
+                    source: { backend.emoticonsVersion; return card.appCard && card.appCard.app_icon ? backend.cardImage(card.appCard.app_icon) : "" }
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    smooth: true
+                }
+            }
+            Text {
+                x: 36; y: 4; height: 16
+                width: parent.width - 36 - (card.compose ? 60 : 0)
+                text: card.appCard ? (card.appCard.app_name || "") : ""
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+                font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                color: theme.text
+            }
+            Item {
+                visible: card.compose
+                x: parent.width - 50; y: 2; width: 20; height: 20
+                FluentIcon { anchors.centerIn: parent; name: "arrow-minimize-20"; size: 20; color: theme.text }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: card.collapseRequested() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Collapse preview"
+            }
+            Item {
+                visible: card.compose
+                x: parent.width - 20; y: 0.67; width: 20; height: 20
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.text }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: card.removeRequested() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Remove URL Preview"
+            }
+        }
+        Item { width: 1; height: 12 }
+        // The app's hero or thumbnail card, as Teams lays it out in a link
+        // card: the picture first (a thumbnail's 100 x 100, 8 down; a hero's
+        // 16:9 across), then the title and text.
+        Column {
+            id: body
+            visible: !adaptive.visible
+            width: parent.width
+            readonly property var content: card.appCard ? (card.appCard.content || ({})) : ({})
+            readonly property bool thumb: !!card.appCard && card.appCard.content_type === "application/vnd.microsoft.card.thumbnail"
+            readonly property var image: content.images && content.images.length ? content.images[0] : null
+            Item {
+                visible: !!body.image
+                width: parent.width; height: body.thumb ? 108 : width * 0.5625 + 8
+                Image {
+                    y: 8
+                    width: body.thumb ? 100 : parent.width; height: body.thumb ? 100 : parent.width * 0.5625
+                    source: { backend.emoticonsVersion; return body.image ? backend.cardImage(body.image.url) : "" }
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    clip: true
+                    Accessible.role: Accessible.Graphic
+                    Accessible.name: body.image ? (body.image.alt || "") : ""
+                }
+            }
+            Text {
+                visible: !!body.content.title
+                width: parent.width; wrapMode: Text.Wrap
+                // Teams' links aren't underlined.
+                textFormat: Text.RichText
+                text: "<style>a { text-decoration: none; color: " + theme.brandForeground1 + "; }</style>" + (body.content.title || "")
+                lineHeight: 22; lineHeightMode: Text.FixedHeight
+                // A linked title is a 16 px brand link (Teams: 400 inside the
+                // semibold title).
+                font.family: theme.font; font.pixelSize: 16
+                font.weight: /<a\s/i.test(body.content.title || "") ? Font.Normal : Font.DemiBold
+                color: theme.textStrong
+                onLinkActivated: link => card.openLink(link)
+                HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            }
+            Text {
+                visible: !!body.content.subtitle
+                width: parent.width; wrapMode: Text.Wrap
+                textFormat: Text.StyledText
+                text: body.content.subtitle || ""
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong
+            }
+            Item { visible: !!body.content.text; width: 1; height: 8 }
+            Text {
+                visible: !!body.content.text
+                width: parent.width; wrapMode: Text.Wrap
+                textFormat: Text.StyledText
+                linkColor: theme.brandForeground1
+                text: body.content.text || ""
+                lineHeight: 15; lineHeightMode: Text.FixedHeight
+                font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
+                onLinkActivated: link => card.openLink(link)
+            }
+        }
+        AdaptiveCard {
+            id: adaptive
+            visible: !!card.appCard && card.appCard.content_type === "application/vnd.microsoft.card.adaptive"
+            content: visible ? card.appCard.content : ({})
+            cardWidth: col.width
+            hostsLinks: true
+            onOpenLink: link => card.openLink(link)
+        }
+        Item {
+            visible: card.hasFooter
+            width: parent.width; height: visible ? footerText.height + 20.67 : 0
+            Rectangle { y: 10; width: parent.width; height: 0.67; color: theme.pick("#FAFAFA", "#292929", "#FFFFFF") }
+            Text {
+                id: footerText
+                y: 20.67; width: parent.width - 32
+                wrapMode: Text.Wrap
+                textFormat: Text.RichText
+                lineHeight: 17.14; lineHeightMode: Text.FixedHeight
+                font.family: theme.font; font.pixelSize: 12
+                color: theme.textStrong
+                text: card.appCard ? "<style>a { text-decoration: none; color: " + theme.brandForeground1 + "; }</style>By using " + (card.appCard.app_name || "") + ", you agree to the <a href=\"privacy\">privacy policy</a>, <a href=\"terms\">terms of use</a>, and <a href=\"permissions\">permissions</a>." : ""
+                onLinkActivated: link => {
+                    if (link === "privacy" && card.appCard.privacy_url) Qt.openUrlExternally(card.appCard.privacy_url)
+                    else if (link === "terms" && card.appCard.terms_url) Qt.openUrlExternally(card.appCard.terms_url)
+                    else if (link === "permissions") card.permissionsRequested()
+                }
+                HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            }
+            Rectangle {
+                id: gear
+                x: parent.width - 32; y: 12.2; width: 32; height: 31.33; radius: 4
+                color: gearHover.hovered ? theme.menuHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "settings-20"; size: 20; color: theme.textStrong }
+                HoverHandler { id: gearHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: card.settingsRequested() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Settings"
+            }
+        }
+    }
+    Accessible.role: Accessible.Grouping
+    Accessible.name: card.appCard ? (card.appCard.app_name || "") : ""
+}

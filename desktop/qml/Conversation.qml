@@ -449,6 +449,8 @@ Rectangle {
         input.forceActiveFocus()
     }
     signal openChatSettings()
+    /// Settings ▸ Privacy (an app link card's settings button).
+    signal openPrivacySettings()
     /// Teams' app details for an app (a shared app's card, or a
     /// teams.microsoft.com/l/app/ link).
     signal openAppDetails(string appId)
@@ -2149,6 +2151,9 @@ Rectangle {
                 readonly property var urlPreview: msg.modelData.url_preview && !msg.modelData.deleted && root.previewsShown && files.length === 0 && cards.length === 0 && !hasPics ? msg.modelData.url_preview : null
                 // Cards (Adaptive Cards rendered natively; Teams' frame).
                 readonly property var cards: (msg.modelData.cards || []).filter(c => root.cardKinds.indexOf(c.content_type) >= 0)
+                // Teams' app link card sits 15.67 in and the bubble ends 8.67
+                // under it (measured, OST TEST 168a).
+                readonly property bool linkCardFirst: cards.length > 0 && cards[0].link_card === true
                 readonly property real cardW: list.width >= 720 ? (cards.some(c => c.content_type !== "application/vnd.microsoft.card.adaptive") ? 452 : 448) : 360
                 // Text shows unless the message is only a picture, only files
                 // or only cards.
@@ -2203,12 +2208,12 @@ Rectangle {
                 readonly property real cardsTop: botCard ? 0 : showBody ? body.y + bodyH + 8 : 8
                 width: root.postsLayout ? msg.maxBubble
                     : botCard ? cardCol.width
-                    : cards.length > 0 ? Math.max(cardCol.width + 2 * 17.3, showBody ? body.implicitWidth + 2 * pad : 0)
+                    : cards.length > 0 ? Math.max(cardCol.width + 2 * (linkCardFirst ? 15.67 : 17.3), showBody ? Math.min(msg.maxBubble, body.implicitWidth + 2 * pad) : 0)
                     : hasCode ? msg.maxBubble
                     : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: botCard ? cardCol.height
-                    : cards.length > 0 ? cardsTop + cardCol.height + 10.7
+                    : cards.length > 0 ? cardsTop + cardCol.height + (linkCardFirst ? 8.67 : 10.7)
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
@@ -2272,7 +2277,7 @@ Rectangle {
                 Column {
                     id: cardCol
                     visible: bubble.cards.length > 0
-                    x: bubble.botCard ? 0 : 17.3; y: bubble.cardsTop
+                    x: bubble.botCard ? 0 : bubble.linkCardFirst ? 15.67 : 17.3; y: bubble.cardsTop
                     width: bubble.cardW
                     spacing: 8
                     Repeater {
@@ -2281,7 +2286,8 @@ Rectangle {
                             id: cardLoader
                             required property var modelData
                             required property int index
-                            sourceComponent: modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp
+                            sourceComponent: modelData.link_card ? linkComp
+                                : modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp
                                 : modelData.content_type === "application/vnd.microsoft.teams.card.list" ? listComp
                                 : modelData.content_type === "application/vnd.microsoft.teams.card.o365connector" ? connectorComp : heroComp
                             Component {
@@ -2329,6 +2335,17 @@ Rectangle {
                                     onOpenLink: link => root.openLink(link)
                                 }
                             }
+                            // An app's link card (Teams' app link unfurling,
+                                // OST TEST 168a): the app's name and icon over
+                                // its card.
+                            Component {
+                                id: linkComp
+                                AppLinkCard {
+                                    appCard: modelData
+                                    width: list.width >= 720 ? 452 : 360
+                                    onOpenLink: link => root.openLink(link)
+                                }
+                            }
                             Component {
                                 id: listComp
                                 ListCard {
@@ -2347,10 +2364,25 @@ Rectangle {
                             Component {
                                 id: heroComp
                                 HeroCard {
+                                    id: hc
+                                    readonly property string cardKey: msg.modelData.id + ":" + cardLoader.index
+                                    readonly property var footerState: root.cardFooters[cardKey] || null
                                     content: modelData.content
                                     thumbnail: modelData.content_type === "application/vnd.microsoft.card.thumbnail"
                                     cardWidth: list.width >= 720 ? 452 : 360
+                                    bottomExtra: footerState ? 28.67 : 0
                                     onImBack: t => root.send(t)
+                                    // A messageBack button goes to the bot (Teams).
+                                    onMessageBack: b => root.cardAction(msg.modelData, cardLoader.index, b, {})
+                                    CardResponseBar {
+                                        visible: !!hc.footerState
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        busy: !!hc.footerState && hc.footerState.busy === true
+                                        text: hc.footerState ? hc.footerState.text : ""
+                                        error: !!hc.footerState && hc.footerState.error === true
+                                        onDismissed: root.setCardFooter(hc.cardKey, null)
+                                    }
                                 }
                             }
                         }
@@ -2915,11 +2947,42 @@ Rectangle {
         return v !== false
     }
     readonly property var newestMessage: { for (let i = root.messages.length - 1; i >= 0; i--) { const m = root.messages[i]; if (m.kind === "message") return m } return null }
-    readonly property var smartReplyChips: {
-        const set = root.smartReplies, m = root.newestMessage
-        if (!set || !m || !root.smartRepliesOn || root.isChannel || root.pane || m.mine || m.deleted || m.id !== set.target) return []
-        return set.replies.filter(r => r.kind === "reply").slice(0, 3)
+    // What Teams shows for the set (701487 `E6`/`W`/`Zw`, 79624 `vr`): text
+    // replies for the newest message (someone else's); in a 1:1, a file or
+    // meeting suggestion for one of the newest three (no file suggestion
+    // when you shared a file among them); a workflow suggestion only for
+    // the person it's for, on the newest message. Edited messages keep only
+    // suggestions made after the edit.
+    readonly property var smartReplyItems: {
+        const set = root.smartReplies
+        if (!set || !root.smartRepliesOn || root.isChannel || root.pane) return { special: [], text: [], feedback: false }
+        const msgs = root.messages.filter(m => m.kind === "message")
+        const newest = msgs[msgs.length - 1]
+        if (!newest) return { special: [], text: [], feedback: false }
+        const top3 = msgs.slice(-3)
+        const oneOnOne = !root.isGroup && !String(root.chatId).startsWith("48:")
+        const fresh = (r, m) => !!m && !m.mine && !m.deleted && !(m.edited && m.edit_ms && m.edit_ms > Date.parse(r.time))
+        const forNewest = r => r.target === newest.id && fresh(r, newest)
+        const forTop3 = r => fresh(r, top3.find(m => m.id === r.target))
+        const text = set.replies.filter(r => r.kind === "reply" && forNewest(r)).slice(0, 3)
+        let special = []
+        const files = set.replies.filter(r => r.kind === "file_sharing")
+        const meetings = set.replies.filter(r => r.kind === "meeting")
+        const workflows = set.replies.filter(r => r.kind === "workflow")
+        if (files.length) {
+            if (oneOnOne && forTop3(files[0]) && !top3.some(m => m.mine && (m.files || []).length > 0)) special = [files[0]]
+        } else if (workflows.length) {
+            const w = workflows.find(r => r.target === newest.id)
+            let v = null
+            try { v = w ? JSON.parse(w.value) : null } catch (e) {}
+            if (v && v.toolExecutorName === backend.userName && ["schedule_meeting", "create_planner_task", "remind_me"].indexOf(v.recommendedToolName) >= 0)
+                special = [Object.assign({}, w, { workflow: v })]
+        } else if (meetings.length) {
+            special = meetings.filter(r => oneOnOne ? forTop3(r) : forNewest(r))
+        }
+        return { special: special, text: text, feedback: set.feedback === true && (special.length + text.length) > 0 }
     }
+    readonly property bool smartRepliesShown: smartReplyRow.visible
     Connections {
         target: backend
         function onSmartRepliesReady(chatId, json) { if (chatId === root.chatId) root.smartReplies = JSON.parse(json) }
@@ -2933,45 +2996,168 @@ Rectangle {
         interval: count === 0 ? 2500 : 5000
         onTriggered: { backend.loadSmartReplies(root.chatId); if (++count < 3 && !(root.smartReplies && root.newestMessage && root.smartReplies.target === root.newestMessage.id)) restart() }
     }
-    Row {
-        id: smartReplyRow
-        visible: root.smartReplyChips.length > 0 && compose.visible && root.typingText.length === 0
-        anchors.right: compose.right
-        y: compose.y - 8 - height
-        height: 24
-        layoutDirection: Qt.RightToLeft
-        Accessible.role: Accessible.ToolBar
-        Accessible.name: "Suggested replies"
-        Repeater {
-            model: root.smartReplyChips
-            Rectangle {
-                id: chip
-                required property var modelData
-                readonly property bool fits: x >= 0
-                width: chipText.implicitWidth + 28 + 8; height: 24
-                color: "transparent"
-                Rectangle {
-                    id: hcFill7
-                    x: 4; width: parent.width - 8; height: 24; radius: 4
-                    color: chipTap.pressed ? theme.pick("#E8EBFA", "#2B2B40", "#1AEBFF") : chipHover.hovered ? theme.pick("#EBEBEB", "#383838", "#1AEBFF") : theme.surface
-                    border.width: 1
-                    border.color: chipHover.hovered || chipTap.pressed ? theme.brandHover : theme.brand
-                    Text {
-                        id: chipText
-                        anchors.centerIn: parent
-                        text: chip.modelData.title
-                        font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
-                        color: theme.onFill(hcFill7, chipHover.hovered || chipTap.pressed ? theme.brandHover : theme.brand)
-                    }
-                    HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { id: chipTap; onTapped: { root.send(chip.modelData.value); root.smartReplies = null } }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: chip.modelData.title
+    // A suggestion chip (Teams' small Fluent button with the cardButton and
+    // smartAction styles): 24 tall, radius 4, a 1 px BrandForeground1 edge,
+    // 12/600 brand text, padding 0 14, 4 either side; a 20 px icon 4 before
+    // the text on the file, meeting and workflow chips.
+    component SuggestionChip: Item {
+        id: chipItem
+        property string label
+        property string icon: ""
+        property string iconSource: ""
+        property string tip: ""
+        signal clicked()
+        width: chipRow.implicitWidth + 28 + 8; height: 24
+        Rectangle {
+            id: hcFill7
+            x: 4; width: parent.width - 8; height: 24; radius: 4
+            color: chipTap.pressed ? theme.pick("#E8EBFA", "#2B2B40", "#1AEBFF") : chipHover.hovered ? theme.pick("#EBEBEB", "#383838", "#1AEBFF") : theme.surface
+            border.width: 1
+            border.color: chipHover.hovered || chipTap.pressed ? theme.brandHover : theme.brand
+            Row {
+                id: chipRow
+                anchors.centerIn: parent
+                spacing: 4
+                FluentIcon {
+                    visible: chipItem.icon.length > 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: chipItem.icon; size: 20
+                    color: theme.onFill(hcFill7, chipHover.hovered || chipTap.pressed ? theme.brandHover : theme.brand)
                 }
+                Image {
+                    visible: chipItem.iconSource.length > 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16; height: 16
+                    source: chipItem.iconSource
+                    fillMode: Image.PreserveAspectFit
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: chipItem.label
+                    font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                    color: theme.onFill(hcFill7, chipHover.hovered || chipTap.pressed ? theme.brandHover : theme.brand)
+                }
+            }
+            HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { id: chipTap; onTapped: chipItem.clicked() }
+            Accessible.role: Accessible.Button
+            Accessible.name: chipItem.label
+        }
+        ToolTip {
+            visible: chipHover.hovered && chipItem.tip.length > 0; delay: 500
+            y: -height - 4; padding: 0
+            background: FluentSurface { depth: 16; radius: 4 }
+            contentItem: Text {
+                leftPadding: 12; rightPadding: 12; topPadding: 6; bottomPadding: 6
+                text: chipItem.tip; font.family: theme.font; font.pixelSize: 12; color: theme.text
             }
         }
     }
-    function smartRepliesForTest() { return { set: root.smartReplies, chips: root.smartReplyChips.map(c => c.title), shown: smartReplyRow.visible } }
+    Row {
+        id: smartReplyRow
+        visible: (root.smartReplyItems.special.length + root.smartReplyItems.text.length) > 0 && compose.visible && root.typingText.length === 0
+        anchors.right: compose.right
+        y: compose.y - 8 - height
+        height: 24
+        Accessible.role: Accessible.ToolBar
+        Accessible.name: "Suggested reply"
+        Repeater {
+            model: root.smartReplyItems.special
+            SuggestionChip {
+                id: special
+                required property var modelData
+                readonly property var wf: modelData.workflow || null
+                label: modelData.kind === "file_sharing" ? "Share a file"
+                    : wf ? (wf.recommendedToolName === "schedule_meeting" ? "Would you like to schedule a meeting?"
+                        : wf.recommendedToolName === "create_planner_task" ? "Would you like to create a Planner task?" : "Would you like a reminder to follow up?")
+                    : modelData.value
+                icon: modelData.kind === "file_sharing" ? "document-20" : modelData.kind === "meeting" ? "calendar-add-20" : ""
+                iconSource: wf ? backend.cardImage("https://res.cdn.office.net/teamsappdata/app-assets/ring0/c3a1996d-db0f-4857-a6ea-7aabf0266b00/c3a1996d-db0f-4857-a6ea-7aabf0266b00_largeImage.png?v=2.1.5") : ""
+                tip: wf ? ((wf.prefilledInputs || {}).title || (wf.prefilledInputs || {}).message || "") : ""
+                onClicked: root.smartSuggestionClicked(modelData, special)
+            }
+        }
+        Repeater {
+            model: root.smartReplyItems.text
+            SuggestionChip {
+                required property var modelData
+                label: modelData.title
+                onClicked: { root.send(modelData.value); root.smartReplies = null }
+            }
+        }
+        // Teams' suggested-reply feedback (sr-feedback-trigger): a 24 px
+        // transparent icon button, LightbulbFilament, its tooltip
+        // "Suggested reply feedback", opening the feedback form above it.
+        Item {
+            id: srFeedback
+            visible: root.smartReplyItems.feedback
+            width: 24; height: 24
+            Rectangle {
+                anchors.fill: parent; radius: 4
+                color: fbHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "transparent") : "transparent"
+                FluentIcon {
+                    anchors.centerIn: parent
+                    name: fbHover.hovered || srFeedbackForm.opened ? "lightbulb-filament-20-filled" : "lightbulb-filament-20"; size: 20
+                    color: fbHover.hovered || srFeedbackForm.opened ? theme.brandHover : theme.textStrong
+                }
+            }
+            HoverHandler { id: fbHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: srFeedbackForm.opened ? srFeedbackForm.close() : srFeedbackForm.openFor(srFeedback) }
+            ToolTip {
+                visible: fbHover.hovered && !srFeedbackForm.opened; delay: 500
+                y: -height - 4; x: parent.width - width; padding: 0
+                background: FluentSurface { depth: 16; radius: 4 }
+                contentItem: Text {
+                    leftPadding: 12; rightPadding: 12; topPadding: 6; bottomPadding: 6
+                    text: "Suggested reply feedback"; font.family: theme.font; font.pixelSize: 12; color: theme.text
+                }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Suggested reply feedback"
+        }
+    }
+    SmartReplyFeedback {
+        id: srFeedbackForm
+        kinds: root.smartReplies ? root.smartReplies.replies.map(r => r.kind).filter((k, i, a) => a.indexOf(k) === i) : []
+        onSubmitted: (categories, comment, attach) => {
+            const set = root.smartReplies || { replies: [] }
+            const m = root.newestMessage
+            const url = backend.smartReplyFeedbackUrl(JSON.stringify({ categories: categories, comment: comment, kinds: kinds,
+                attach: attach, suggestions: set.replies.map(r => r.title || r.value), last_message: m ? (m.html || m.text || "") : "" }))
+            if (url) Qt.openUrlExternally(url)
+            root.toastRequested({ text: "Finish on GitHub: select Create to send your feedback." })
+        }
+    }
+    /// A file, meeting or workflow suggestion was chosen (Teams' To / Mo / Us).
+    signal scheduleMeetingWith(string attendees, string startIso, string endIso)
+    function smartSuggestionClicked(r, chip) {
+        if (r.kind === "file_sharing") {
+            // Teams: the attach menu, above the chip at its end.
+            attachMenu.alignEnd = true
+            root.openAttach(chip)
+        } else if (r.kind === "meeting") {
+            const members = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+            root.scheduleMeetingWith(members.filter(p => !p.me && p.mail).map(p => p.mail).join(", "), r.start_time || "", r.end_time || "")
+        } else if (r.workflow) {
+            // Teams' Workflows dialog for the suggested action.
+            const pages = { schedule_meeting: "findmeetingtime", create_planner_task: "createaplanner", remind_me: "remindme" }
+            const page = pages[r.workflow.recommendedToolName]
+            if (page) Qt.openUrlExternally("https://automations.teams.cloud.microsoft/webapps/workflows/prod/suggestedAction/" + page)
+        }
+    }
+    function smartRepliesForTest() { return { set: root.smartReplies, chips: root.smartReplyItems.text.map(c => c.title), special: root.smartReplyItems.special.map(c => c.kind + ":" + (c.title || c.value)), feedback: root.smartReplyItems.feedback, shown: smartReplyRow.visible } }
+    function smartReplyFeedbackForTest() { return srFeedbackForm }
+    function setSmartRepliesForTest(set) { root.smartReplies = set }
+    function closeAttachForTest() { attachMenu.close() }
+    /// Click the first suggestion chip of this kind; its label, or "".
+    function clickSuggestionForTest(kind) {
+        for (let i = 0; i < smartReplyRow.children.length; i++) {
+            const c = smartReplyRow.children[i]
+            if (c.modelData && c.modelData.kind === kind && c.visible) { root.smartSuggestionClicked(c.modelData, c); return c.label }
+        }
+        return ""
+    }
+    function smartReplyFeedbackButtonForTest() { return srFeedback }
 
     // Typing indicator, as Teams draws it (chat-pane gutter box): the
     // latest typer's avatar, 16 px into the compose box and 24 px above it,
@@ -3889,8 +4075,11 @@ Rectangle {
             const ms = a.data && a.data.msteams ? a.data.msteams : null
             const mtype = ms ? String(ms.type || "").toLowerCase() : ""
             if (mtype === "imback") { root.send(String(ms.value || a.title || "")); return }
-            if (mtype !== "invoke") { console.warn("card: Action.Submit without an invoke isn't sent", JSON.stringify(a.data || {})); return }
-        } else if (t !== "action.execute") return
+            // Invoke, messageBack and a plain Action.Submit go to the bot
+            // (Teams: a plain submit is a messageBack); sign-in and task
+            // modules aren't built yet.
+            if (mtype && mtype !== "invoke" && mtype !== "messageback") { console.warn("card: Action.Submit " + mtype + " isn't sent", JSON.stringify(a.data || {})); return }
+        } else if (t !== "action.execute" && t !== "messageback") return
         if (!String(m.sender_mri || "").startsWith("28:")) return
         root.setCardFooter(key, { busy: true, text: "" })
         backend.cardInvoke(root.cardInvokeTag + key, JSON.stringify(root.cardTarget(m)), JSON.stringify(a), JSON.stringify(inputs || {}), false)
@@ -4064,6 +4253,7 @@ Rectangle {
         // The first link's preview goes with the message (Teams'
         // properties.links), shown or removed.
         backend.setNextUrlPreview(compose.previewForSend())
+        backend.setNextAppCard(compose.appCardForSend())
         if (root.popout) {
             // A chat window sends to its own chat.
             if (root.hasFiles) {
@@ -4275,6 +4465,10 @@ Rectangle {
         // Link previews: Optional connected experiences on, your messaging
         // policy allowing them, and not in your notes to self.
         previewsAllowed: root.previewsShown && root.chatId !== "48:notes"
+        chatId: root.chatId
+        // The app card's settings button: Settings ▸ Privacy (Teams).
+        onAppCardSettingsRequested: root.openPrivacySettings()
+        onAppCardPermissionsRequested: id => root.openAppDetails(id)
         visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop

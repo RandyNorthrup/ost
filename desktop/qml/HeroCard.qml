@@ -20,11 +20,15 @@ Rectangle {
     property bool thumbnail: false
     property real cardWidth: 452
     signal imBack(string text)
+    /// A messageBack button ({type, title, text, displayText, value}).
+    signal messageBack(var button)
+    /// Room for Teams' response bar under the card.
+    property real bottomExtra: 0
     readonly property var image: content && content.images && content.images.length ? content.images[0] : null
     readonly property var buttons: content && content.buttons ? content.buttons.slice(0, 6) : []
     readonly property bool stacked: thumbnail && cardWidth < 360
     width: cardWidth
-    height: col.y + col.height + (buttonRow.visible ? 8 + buttonRow.height : 0) + 16.6
+    height: col.y + col.height + (buttonRow.visible ? 8 + buttonRow.height : 0) + 16.6 + bottomExtra
     radius: 4
     color: theme.surface
     border.color: theme.divider; border.width: 0.67
@@ -33,6 +37,7 @@ Rectangle {
         const t = String(b.type || "").toLowerCase()
         if (t === "openurl" || t === "signin") Qt.openUrlExternally(b.value)
         else if (t === "imback") card.imBack(String(b.value || b.title || ""))
+        else if (t === "messageback") card.messageBack(b)
     }
 
     Row {

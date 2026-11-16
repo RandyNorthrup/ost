@@ -211,6 +211,8 @@ mod tests {
             ams_references: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
+            app_card: None,
+            bot_message_back: false,
         }
     }
 

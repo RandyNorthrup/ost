@@ -1085,7 +1085,14 @@ Groups are separated by dividers; empty groups are skipped.
   - The bot's picture is its app's icon in a 32 px square with 4 px corners.
   - A bot's card alone has no bubble: just the 448-wide card (#FAFAFA, radius 6, a soft shadow).
   - A grouped message that was edited shows "Edited" (12 px #616161) above its bubble.
-- **Not yet in OST:** a plain Action.Submit (not an invoke), messageBack, and Action.Submit/Execute from a task module.
+- **Plain Action.Submit and messageBack** (read 2026-11-16 from adaptivecard-react `Ne`/`De`, 455054 `UF`, 730589 `SQ`/`le`, 924759 `uu` and the chat worker's sendMessageInConv and postInvoke):
+  - A submit with no `msteams` is a messageBack. When its data is a string, that string is the text, the value and the text shown in the chat. When its data is an object (with the card's inputs merged in), the object is the value, with no text.
+  - A submit with `msteams.type: "messageBack"` uses its `text` and `displayText`. Its value is the data without `msteams`, filled in from `msteams.value` (lodash `defaults`). A hero card's `messageBack` button uses its own `text`, `displayText` and `value`.
+  - First, when there is a `displayText`, Teams posts it to the chat as the user's message: `messagetype` `Text` (Teams' BotMessageBack) with `properties.skipfanouttobots: true`, so the bot doesn't get it twice.
+  - Then it invokes the bot: `name` `messageback`, `text` (when there is one), and `value`. Teams JSON-parses the value and sends `{}` when it isn't an object. The rest is the same body as the invoke above. The bot answers with a message in the chat.
+  - Sign-in (`signin`) and task modules (`task/fetch`) aren't built yet.
+  - *Not verified live:* none of ost-test1's bots sends a card with these buttons. The Workflows bot answers in plain text, and Polly's private chat sent no poll card.
+- **Not yet in OST:** Action.Submit/Execute from a task module, and sign-in buttons.
 
 ### Suggested replies (read 2026-11-13: live data plus Teams' code and CSS)
 - **Where they come from.** Cortana (`28:30005246-…`) writes them to the conversation's `quickReplyAugmentation` property, a few seconds after a message lands. The property holds `{suggestedActivities: [{id, timestamp, replyToId, suggestedActions: {actions: [{type: "imBack" | "custom", title, value, channelData: {type: "reply" | "file_sharing", utcTime, targetMessageId}}]}}]}`.
@@ -1099,7 +1106,34 @@ Groups are separated by dividers; empty groups are skipped.
   - Each chip is a small Fluent Button: 24 tall, radius 4, a 1 px BrandForeground1 edge, 12 px semibold brand text, padding 0 14, margin 0 4.
   - Hover: NeutralBackground3Hover, with NeutralForeground2BrandHover text and a BrandBackgroundHover edge. Pressed: BrandBackground2.
   - OST draws the row 8 above the compose box.
-- **Not in OST:** the "Share file" (file_sharing), meeting, workflow, app and Viva Topics suggestions, and the feedback button.
+- **Which set** (701487 `Li`): the newest with a suggestion Teams shows. That is a reply, or, when their features are on, a file, meeting, workflow, call-summary, Viva Topics or app suggestion.
+- **Features** (ECS; the commercial defaults from config-prod, which ost-test1's ECS doesn't override):
+  - `messaging.enableSmartFilesSuggestions`: on.
+  - `messaging.enableSmartSchedulingSuggestions` (meetings): off.
+  - `extensibility.enableProactiveSuggestionPrompt` (workflows): off.
+  - `messaging.enableSmartAppSuggestions`: off.
+  - `messaging.enableSmartRepliesFeedback`: on.
+  - So in this tenant Teams shows replies, "Share a file" and the feedback button, but no meeting or workflow chips.
+- **Which message** (701487 `E6`/`W`/`Zw`):
+  - Replies are for the newest message, someone else's.
+  - In a 1:1, a file or meeting suggestion may be for any of the newest three, but there is no file suggestion if you shared a file among them. File suggestions show only in 1:1 chats.
+  - A workflow suggestion shows only on the newest message and only for the person in its `toolExecutorName`.
+  - A message edited after the suggestion's `utcTime` drops it.
+- **The row** (79624 `pr`): the file chip, the workflow chip or the meeting chips come first, then up to three replies, then the feedback button.
+  - Chips with an icon have a 20 px icon 4 before the text: Document for files, CalendarAdd for meetings, the Workflows app's 16 px icon for workflows.
+  - **Share a file** opens the attach menu above the chip, at its end ("above-end").
+  - **A meeting chip** shows its `value`. It opens the scheduling form with the chat's members and the suggestion's `startTime`/`endTime`.
+  - **A workflow chip** reads "Would you like to schedule a meeting?", "…to create a Planner task?" or "…a reminder to follow up?" for `schedule_meeting`, `create_planner_task` or `remind_me`. Its tooltip is the prefilled title or message (12 px, padding 6 12). It opens the Workflows dialog at `automations.teams.cloud.microsoft/webapps/workflows/prod/suggestedAction/{findmeetingtime|createaplanner|remindme}` (800 × 600).
+- **Feedback** (`sr-feedback-trigger`):
+  - It is a 24 px transparent icon button (LightbulbFilament) at the row's end, with the tooltip "Suggested reply feedback".
+  - It opens a popover above it, at its end. The popover holds "Help us improve our suggestions" (14/20), then 8 under it "How would you describe the suggestions we provided?" (12/16, 250 wide at most).
+  - Below are round checkboxes for Teams' categories. The list depends on the kinds shown: text; text and files; text and meetings; files; or meetings (`api::smart_replies::feedback_categories`).
+  - Then a textarea, "What else can you tell us?", 14 under, at least 74 tall, 14 px.
+  - Then "Your feedback will be sent to Microsoft.", the square checkbox "Attach my last message to help Microsoft analyze my feedback." (12 px), and Send (primary, small, 16 under, at the end). Send stays off until a category is picked or something is typed.
+  - Teams sends `sendSmartRepliesOCVFeedback` to Microsoft: the comment, the categories, the suggestion kinds and the survey strings. The suggestions and the last message (tags stripped) go only when the checkbox is ticked. A toast then says "Feedback has been sent" for 3 s.
+  - **OST** keeps the same form. Nothing goes to Microsoft: Send opens the repo's Report a problem issue form, filled in as `feedback-and-help.md` describes (a Give a compliment form when only "They're great…" or "The suggestion is great!" is picked), with area "Suggested replies". The suggestions and the message go only when the checkbox is ticked.
+  - OST's note reads "Your feedback opens as a public issue on GitHub ({repo})." The checkbox reads "Attach my last message to help OST analyze my feedback. It will be public." The toast reads "Finish on GitHub: select Create to send your feedback."
+- *Not measured live:* OST Test 1, the account Teams runs as on winpc, gets no suggestions, so the chips and the popover come from Teams' code and Griffel CSS, not from its DOM. The data is live: OST TEST 170a ("could you send me the file with the report?", sent from Teams to OST Test 2) got Cortana's `file_sharing` suggestion, and OST, signed in as OST Test 2, showed "Share a file" and the feedback button.
 
 ### A video clip in a message (measured on winpc, 2026-11-14, OST TEST 135)
 Teams' "+" ▸ Record video clip embeds Microsoft Stream's recorder

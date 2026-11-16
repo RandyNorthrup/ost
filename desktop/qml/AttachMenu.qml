@@ -43,7 +43,11 @@ Popup {
 
     parent: Overlay.overlay
     width: 305; height: 437; padding: 0
-    x: anchorItem ? Math.max(8, Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width / 2 - width / 2)) : 0
+    /// Open above the anchor at its end (a suggested reply's Share a file,
+    /// Teams' "above-end"), until closed.
+    property bool alignEnd: false
+    onClosed: alignEnd = false
+    x: anchorItem ? Math.max(8, Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + (alignEnd ? anchorItem.width - 4 - width : anchorItem.width / 2 - width / 2))) : 0
     y: anchorItem ? Math.max(8, anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height) : 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: FluentSurface { depth: 16; radius: 4; color: theme.surface }

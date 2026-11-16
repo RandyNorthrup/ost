@@ -716,6 +716,7 @@ mod tests {
                 content_type: "application/vnd.microsoft.card.adaptive".into(),
                 content: serde_json::json!({"body": [{"type": "TextBlock", "text": "Help"}, {"type": "TextBlock", "text": "Microsoft Corporation"}]}),
                 app_id: String::new(),
+                ..Default::default()
             }],
             ..Default::default()
         };

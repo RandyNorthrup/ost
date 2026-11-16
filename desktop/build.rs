@@ -81,6 +81,8 @@ fn main() {
         "qml/SharedDisplayWindow.qml",
         "qml/RoomNotice.qml",
         "qml/UrlPreviewCard.qml",
+        "qml/AppLinkCard.qml",
+        "qml/SmartReplyFeedback.qml",
         "qml/AutoLocationDialog.qml",
         "qml/MobileAppDialog.qml",
         "qml/PremiumDialog.qml",

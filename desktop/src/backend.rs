@@ -561,6 +561,17 @@ pub mod qobject {
         /// "privacy-feedback", "repo".
         #[qinvokable]
         fn feedback_link(self: &Backend, which: &QString) -> QString;
+        /// The repo feedback goes to ("owner/name").
+        #[qinvokable]
+        fn feedback_repo(self: &Backend) -> QString;
+        /// Teams' suggested-reply feedback categories for these kinds of
+        /// suggestions (a JSON list of kinds in, of labels out).
+        #[qinvokable]
+        fn smart_reply_feedback_categories(self: &Backend, kinds_json: &QString) -> QString;
+        /// The GitHub issue for suggested-reply feedback ({categories,
+        /// comment, kinds, attach, suggestions, last_message}).
+        #[qinvokable]
+        fn smart_reply_feedback_url(self: &Backend, json: &QString) -> QString;
         /// A folder for a feedback report's screenshots and files (created).
         #[qinvokable]
         fn feedback_dir(self: &Backend) -> QString;
@@ -2074,6 +2085,18 @@ pub mod qobject {
         /// Read whether your messaging policy allows link previews.
         #[qinvokable]
         fn load_url_preview_policy(self: Pin<&mut Backend>);
+        /// A link's preview for compose as Teams makes it: the card of the
+        /// app that unfurls the link (app_link_card_fetched), else Teams'
+        /// URL preview (url_preview_fetched). `chat_id` is the
+        /// conversation the app is asked from.
+        #[qinvokable]
+        fn fetch_link_preview(self: Pin<&mut Backend>, url: &QString, chat_id: &QString);
+        #[qsignal]
+        fn app_link_card_fetched(self: Pin<&mut Backend>, url: QString, json: QString);
+        /// The next message's app link card (compose's, maybe collapsed),
+        /// or "".
+        #[qinvokable]
+        fn set_next_app_card(self: Pin<&mut Backend>, json: &QString);
         /// Read your work-location detection policy.
         #[qinvokable]
         fn load_work_location_policy(self: Pin<&mut Backend>);
@@ -2483,6 +2506,8 @@ pub struct BackendRust {
     next_url_preview: Option<teams_cli::api::url_preview::UrlPreview>,
     /// Compose had none yet: fetch it as the message goes.
     next_url_preview_on_send: bool,
+    /// The next message's app link card (compose's).
+    next_app_card: Option<teams_cli::api::link_unfurl::AppCard>,
     /// The media-store objects the next message carries (a recorded clip).
     next_ams_refs: Vec<String>,
     /// The next channel post's subject, headline and banner colour.
@@ -6548,11 +6573,24 @@ impl qobject::Backend {
         });
     }
 
-    pub fn card_invoke(self: Pin<&mut Self>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool) {
+    pub fn card_invoke(mut self: Pin<&mut Self>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool) {
         let op = op.to_string();
         let target: api::bot_invoke::Target = serde_json::from_str(&target_json.to_string()).unwrap_or_default();
         let action: serde_json::Value = serde_json::from_str(&action_json.to_string()).unwrap_or_default();
         let inputs: serde_json::Value = serde_json::from_str(&inputs_json.to_string()).unwrap_or(json!({}));
+        // A messageBack (a plain Action.Submit, msteams messageBack, or a
+        // hero card's button): its displayText goes to the chat first, as
+        // Teams' BotMessageBack (a Text message not fanned out to bots).
+        let message_back = api::bot_invoke::message_back(&action, &inputs);
+        if let Some(text) = message_back.as_ref().and_then(|m| m.display_text.clone()) {
+            let chat = target.thread_id.clone();
+            let mut o = self.outgoing(&chat, chat.clone(), text, String::new(), None, String::new());
+            o.url_preview = None;
+            o.url_preview_on_send = false;
+            o.app_card = None;
+            o.bot_message_back = true;
+            self.as_mut().submit_outgoing(o);
+        }
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let mut target = target;
@@ -6565,12 +6603,15 @@ impl qobject::Backend {
                     }
                 }
                 let kind = action["type"].as_str().unwrap_or_default().to_ascii_lowercase();
-                let (name, value) = if kind == "action.execute" {
-                    (Some("adaptiveCard/action"), api::bot_invoke::execute_value(&action, &inputs, automatic))
+                let (name, text, value) = if kind == "action.execute" {
+                    (Some("adaptiveCard/action"), None, api::bot_invoke::execute_value(&action, &inputs, automatic))
+                } else if let Some(mb) = message_back {
+                    (Some("messageback"), mb.text, mb.value)
                 } else {
-                    (None, api::bot_invoke::submit_value(&action["data"], &inputs))
+                    (None, None, api::bot_invoke::submit_value(&action["data"], &inputs))
                 };
-                let reply = api::bot_invoke::invoke(&client, &target, name, value, automatic).await?;
+                tracing::info!("card action {op}: {} text={}", name.unwrap_or("invoke"), text.is_some());
+                let reply = api::bot_invoke::invoke(&client, &target, name, text.as_deref(), value, automatic).await?;
                 Ok(match api::bot_invoke::outcome(&reply) {
                     api::bot_invoke::Outcome::Sent => json!({ "kind": "sent" }),
                     api::bot_invoke::Outcome::Card(card) => json!({ "kind": "card", "card": card }),
@@ -9584,6 +9625,15 @@ impl qobject::Backend {
                                 ),
                                 Err(e) => tracing::warn!("ECS settings: {}", short_error(&e)),
                             }
+                            // The apps that unfurl links (app link cards).
+                            let r = async {
+                                let client = TeamsClient::new().await?;
+                                api::link_unfurl::load_index(&client, &cache_base()).await
+                            }
+                            .await;
+                            if let Err(e) = r {
+                                tracing::warn!("app link index: {}", short_error(&e));
+                            }
                         });
                     }
                     Err(e) => {
@@ -9605,6 +9655,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().next_importance.clear();
         self.as_mut().rust_mut().next_url_preview = None;
         self.as_mut().rust_mut().next_url_preview_on_send = false;
+        self.as_mut().rust_mut().next_app_card = None;
         self.as_mut().rust_mut().next_post = None;
         self.as_mut().rust_mut().next_schedule_ms = None;
         self.as_mut().rust_mut().typing_generation += 1;
@@ -9769,6 +9820,33 @@ impl qobject::Backend {
             unsafe { ost_set_clipboard_image(p.as_ptr()) };
         }
         QString::from(url.as_str())
+    }
+
+    pub fn feedback_repo(&self) -> QString {
+        QString::from(teams_cli::feedback::repo())
+    }
+
+    pub fn smart_reply_feedback_categories(&self, kinds_json: &QString) -> QString {
+        let kinds: Vec<String> = serde_json::from_str(&kinds_json.to_string()).unwrap_or_default();
+        QString::from(serde_json::to_string(&api::smart_replies::feedback_categories(&kinds)).unwrap_or_else(|_| "[]".into()).as_str())
+    }
+
+    pub fn smart_reply_feedback_url(&self, json: &QString) -> QString {
+        let v: serde_json::Value = serde_json::from_str(&json.to_string()).unwrap_or_default();
+        let list = |k: &str| -> Vec<String> {
+            v[k].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect()
+        };
+        let suggestions = list("suggestions");
+        let last = v["last_message"].as_str().unwrap_or_default().to_string();
+        let attach = v["attach"].as_bool().unwrap_or(false);
+        let report = api::smart_replies::feedback_report(
+            &list("categories"),
+            v["comment"].as_str().unwrap_or_default(),
+            &list("kinds"),
+            attach.then_some((suggestions.as_slice(), last.as_str())),
+        );
+        let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
+        QString::from(teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), "").as_str())
     }
 
     pub fn feedback_link(&self, which: &QString) -> QString {
@@ -10507,7 +10585,13 @@ impl qobject::Backend {
             ams_references: Vec::new(),
             // Compose sets it before each send (none when it has none).
             url_preview: self.rust().next_url_preview.clone(),
-            url_preview_on_send: self.rust().next_url_preview_on_send,
+            url_preview_on_send: self.rust().next_url_preview_on_send && self.rust().next_app_card.is_none(),
+            app_card: self
+                .rust()
+                .next_app_card
+                .clone()
+                .map(|c| (c, api::link_unfurl::new_card_client_id())),
+            bot_message_back: false,
         }
     }
 
@@ -15917,6 +16001,43 @@ impl qobject::Backend {
                 this.as_mut().url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
             });
         });
+    }
+
+    pub fn fetch_link_preview(self: Pin<&mut Self>, url: &QString, chat_id: &QString) {
+        let url = url.to_string();
+        let chat = chat_id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let Ok(client) = TeamsClient::new().await else { return };
+            // Teams asks the link's app first and makes a URL preview only
+            // when no app unfurls it.
+            match api::link_unfurl::unfurl(&client, &url, &chat).await {
+                Ok(Some(card)) => {
+                    let json = serde_json::to_string(&card).unwrap_or_default();
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().app_link_card_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+                    });
+                    return;
+                }
+                Ok(None) => {}
+                Err(e) => tracing::info!("no app link card: {}", short_error(&e)),
+            }
+            let json = match api::url_preview::fetch(&client, &url).await {
+                Ok(Some(p)) => serde_json::to_string(&p).unwrap_or_default(),
+                Ok(None) => String::new(),
+                Err(e) => {
+                    tracing::info!("no link preview: {}", short_error(&e));
+                    String::new()
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+            });
+        });
+    }
+
+    pub fn set_next_app_card(mut self: Pin<&mut Self>, json: &QString) {
+        self.as_mut().rust_mut().next_app_card = serde_json::from_str(&json.to_string()).ok();
     }
 
     pub fn set_next_url_preview(mut self: Pin<&mut Self>, json: &QString) {
