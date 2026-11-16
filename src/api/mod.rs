@@ -55,6 +55,7 @@ pub mod store_content;
 pub mod channels;
 pub mod editor;
 pub mod compose_copilot;
+pub mod meeting_copilot;
 pub mod regional;
 pub mod tab_add;
 pub mod tabs;
@@ -83,7 +84,7 @@ pub use teams::ChannelInfo;
 // Re-export data-returning functions for TUI integration
 pub use chat::{
     CallRecord, LiveCall, Member, ThreadMeeting, call_history, chat_meeting, chat_members,
-    create_group_chat, ensure_one_on_one_chat, list_chats_data, listed_chats, notes_name,
+    create_group_chat, ensure_one_on_one_chat, ensure_unique_chat, list_chats_data, listed_chats, notes_name,
     read_messages_data,
     send_html_with_client, send_message_with_client, send_typing, strip_html, thread_live_call,
     thread_member_ids, user_display_name,

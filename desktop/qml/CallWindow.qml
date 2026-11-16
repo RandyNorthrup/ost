@@ -604,7 +604,7 @@ Window {
         p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled,
         organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
         roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting,
-        centered: newControls, customization: controlsCustomization
+        centered: newControls, customization: controlsCustomization, echo: testCall, copilot: copilotAllowed
     })
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
@@ -638,7 +638,7 @@ Window {
         return ({
             PopoutContentButton: cPopout, ResumeButton: cResume, CallTransferButtonV2: cTransfer,
             CallConsultativeTransferButtonV2: cConsult, DialpadButton: cDialpad, HoldButton: cHold,
-            ChatButton: cChat, RosterButton: cPeople, RaiseHandsButton: cRaise, ReactionButton: cReact,
+            ChatButton: cChat, RosterButton: cPeople, MeetingCollabButton: cCopilot, RaiseHandsButton: cRaise, ReactionButton: cReact,
             ViewModeButton: cView, OrganizerControlButton: cControls, MeetingDetailsButton: cNotes,
             StartBreakoutRoomButton: cRooms, MeetingAppsAddButton: cApps, MoreButton: cMore,
             ReturnToBreakoutRoomButton: cJoinRoom, BreakoutRoomReturnToMainButton: cReturnMain,
@@ -652,6 +652,7 @@ Window {
     function runControl(name) {
         if (name === "ChatButton") { side = side === "chat" ? "" : "chat"; if (side === "chat") openChat() }
         else if (name === "RosterButton") side = side === "people" ? "" : "people"
+        else if (name === "MeetingCollabButton") openCopilot()
         else if (name === "RaiseHandsButton") toggleHand()
         else if (name === "ReactionButton") { if (reactMenu.visible) reactMenu.close(); else { reactMenu.parent = barItem(name); reactMenu.open() } }
         else if (["RecordingButton", "TranscriptButton", "ClosedCaptionsButton", "RealTimeTextButton"].indexOf(name) >= 0) recordControl(name)
@@ -665,7 +666,12 @@ Window {
         }
         else if (name === "VideoButton") toggleCamera()
         else if (name === "MicrophoneButton") toggleMute()
-        else if (name === "ShareButton") toggleShare()
+        else if (name === "ShareButton") {
+            // Teams: Share opens the share tray; while sharing it stops.
+            if (sharing) toggleShare()
+            else if (shareTray.visible) shareTray.close()
+            else openShareTray()
+        }
         else if (name === "PopoutContentButton") contentPoppedOut = true
         else if (name === "CallTransferButtonV2" || name === "CallConsultativeTransferButtonV2") {
             picker.mode = name === "CallTransferButtonV2" ? "transfer" : "consult"
@@ -695,6 +701,8 @@ Window {
         if (name === "DialpadButton") return live && canDtmf
         if (name === "HoldButton") return live && hasAudio
         if (name === "RealTimeTextButton") return !rttOn
+        // Copilot off in the meeting's options (copilotMode Disabled).
+        if (name === "MeetingCollabButton") return live && aiAvailable
         return true
     }
     // An overflowed control in More, as Teams names it there (the menu
@@ -803,7 +811,7 @@ Window {
         id: recordStart
         onConfirmed: (language, audioOnly) => {
             // Teams opens the Transcript pane for whoever starts it.
-            if (mode !== "recording") win.openTranscriptWhenStarted = true
+            if (mode !== "recording" && !win.copilotAfterTranscript) win.openTranscriptWhenStarted = true
             win.recorderCommand(mode === "transcription" ? "startTranscription" : "startRecording", language, audioOnly)
         }
     }
@@ -881,11 +889,97 @@ Window {
     }
     signal loadTranscript()
     property bool openTranscriptWhenStarted: false
+    // ---- Copilot in the meeting (TASK-0188; measured on winpc 2026-11-16,
+    // docs/spec/call-and-meeting-window.md §1.8j) ----
+    // For a user with a Copilot licence Teams' bar has Copilot
+    // (meeting-collab-button, "Open Copilot (Alt+C)"). Without the
+    // meeting's transcript it first asks to start it (the calling alert
+    // "Start transcription to use Copilot", Cancel / Start: Start runs
+    // Teams' spoken-language confirmation, starts the transcript and
+    // opens the pane). The pane (320 wide) is Teams' header — the Copilot
+    // mark, "Copilot" 14/600, Close Copilot — over the Microsoft 365
+    // Copilot app as a TeamsJS side panel (api::meeting_copilot): OST
+    // hosts it as Teams does and tells it the meeting
+    // (contextualChatChanged, again when the transcript starts or stops).
+    property bool copilotAllowed: false
+    property var copilotLaunch: null
+    property bool copilotAfterTranscript: false
+    readonly property bool copilotShown: side === "copilot"
+    function openCopilot() {
+        if (side === "copilot") { side = ""; return }
+        if (!transcribing && !copilotAsk.visible) { copilotAsk.visible = true; return }
+        copilotAsk.visible = false
+        side = "copilot"
+        if (!copilotLaunch) backend.meetingCopilotLaunch(copilotHostTheme)
+    }
+    readonly property string copilotHostTheme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default"
+    function sendCopilotContext() {
+        if (!copilotLaunch || !copilotLoader.item) return
+        const chat = JSON.parse(JSON.stringify(copilotLaunch.contextualChat))
+        chat.contentItems[0].meetingContext.isTranscriptRunningDuringMeeting = transcribing
+        copilotLoader.item.sendFrameMessage("contextualChatChanged", [chat])
+        copilotLoader.item.sendFrameMessage("updateCapabilities", [copilotLaunch.capabilities])
+    }
+    Connections {
+        target: backend
+        function onMeetingCopilotReady(json) {
+            try { win.copilotLaunch = JSON.parse(json) } catch (e) { win.copilotLaunch = null }
+            console.info("COPILOT launch", win.copilotLaunch ? "ready" : "failed")
+        }
+    }
+    Shortcut { sequence: "Alt+C"; enabled: win.live && win.ubar.bar.concat(win.ubar.overflowed).indexOf("MeetingCollabButton") >= 0; onActivated: win.openCopilot() }
+    function copilotAskForTest() { return copilotAsk }
+    function copilotStartForTest() { copilotAsk.visible = false; copilotAfterTranscript = true; recordStart.ask("transcription") }
+    function copilotEventsForTest() { return copilotLoader.item ? copilotLoader.item.hostEvents : [] }
+    // Teams' calling alert (ufd_copilotShowTranscriptUfd): 320 x 136.7,
+    // #FAFAFA, radius 8, centred 10.7 under the bar; the Copilot mark (20)
+    // and the title (12 px) 12.7 in, Close (16) at the end, the text 14/20
+    // #616161 at 40.7, Cancel and Start (143.3 x 31.3) at 92.7.
+    Rectangle {
+        id: copilotAsk
+        visible: false
+        z: 50
+        x: (win.width - width) / 2; y: bar.height + 10.7
+        width: 320; height: 136.7; radius: 8
+        color: theme.pick("#FAFAFA", "#292929", "#000000")
+        border.width: theme.highContrast ? 1 : 0; border.color: "#FFFFFF"
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: "Start transcription to use Copilot"
+        FluentIcon { x: 12.7; y: 12.7; size: 20; name: "ai-copilot"; color: theme.text }
+        Text {
+            x: 40.7; y: 12.7; height: 20; verticalAlignment: Text.AlignVCenter
+            text: "Start transcription to use Copilot"
+            font.family: theme.font; font.pixelSize: 12; color: theme.text
+        }
+        FluentIcon {
+            x: 291.3; y: 14.7; size: 16; name: "dismiss-16"; color: closeH.hovered ? theme.text : theme.textSecondary
+            HoverHandler { id: closeH; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: copilotAsk.visible = false }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close"
+        }
+        Text {
+            x: 12.7; y: 40.7; width: 296.7
+            text: "Transcription is required to get help from Copilot in the meeting."
+            wrapMode: Text.Wrap
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.textSecondary
+        }
+        SettingsParts.Button { x: 12.7; y: 92.7; width: 143.3; label: "Cancel"; onClicked: copilotAsk.visible = false }
+        SettingsParts.Button {
+            x: 164; y: 92.7; width: 143.3; label: "Start"; primary: true
+            onClicked: { copilotAsk.visible = false; win.copilotAfterTranscript = true; recordStart.ask("transcription") }
+        }
+    }
     // A transcript has run in this meeting (Teams' hasBeenStarted: More
     // then offers Show transcript).
     property bool transcriptRan: false
     readonly property bool transcriptStarted: transcriptRan || transcribing || transcript.length > 0
     onTranscribingChanged: {
+        // Copilot is told when the transcript starts or stops; Start in
+        // its alert opens the pane once the transcript runs.
+        if (copilotLaunch && copilotLoader.item && copilotLoader.item.hostEvents.indexOf("ChatReady") >= 0) sendCopilotContext()
+        if (transcribing && copilotAfterTranscript) { copilotAfterTranscript = false; side = "copilot"; if (!copilotLaunch) backend.meetingCopilotLaunch(copilotHostTheme) }
         if (!transcribing) return
         transcriptRan = true
         if (openTranscriptWhenStarted) {
@@ -1795,7 +1889,8 @@ Window {
         visible: win.side !== ""
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
-        width: 360
+        // (Copilot's pane is 320 wide.)
+        width: win.side === "copilot" ? 320 : 360
         color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" || win.side === "rooms" || win.side === "video" ? theme.pane : theme.surface
         clip: true
         Conversation {
@@ -1844,6 +1939,47 @@ Window {
             onClosed: win.side = ""
             onTurnOnVideo: if (!win.cameraOn) win.runControl("VideoButton")
             onGreenScreenSettings: win.greenScreenSettings()
+        }
+        // Copilot (Teams' copilot side pane: 320 wide; a 44 tall header
+        // with the Copilot mark (20) 24.7 in, "Copilot" 14/600 at 49.7
+        // and Close Copilot (32 x 31.3) 24 from the end; the app below).
+        Item {
+            id: copilotPane
+            visible: win.side === "copilot"
+            anchors.fill: parent
+            Rectangle {
+                id: copilotHeader
+                width: parent.width; height: 44; color: theme.surface
+                FluentIcon { x: 24.7; y: 11.7; size: 20; name: "copilot-color-48"; color: theme.text }
+                Text {
+                    x: 49.7; y: 11.7; height: 20; verticalAlignment: Text.AlignVCenter
+                    text: "Copilot"
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                    Accessible.role: Accessible.Heading; Accessible.name: text
+                }
+                BarButton {
+                    x: parent.width - 56; y: 6; width: 32; height: 31.3
+                    icon: "dismiss-20"; label: ""; tip: ""
+                    onClicked: win.side = ""
+                    Accessible.name: "Close Copilot"
+                }
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+            }
+            Loader {
+                id: copilotLoader
+                anchors { top: copilotHeader.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+                active: !!win.copilotLaunch
+                sourceComponent: WebApp {
+                    showHeader: false; teamsHost: true; deepNaa: true
+                    appName: "Copilot"; appId: "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162"
+                    frameContext: "sidePanel"
+                    hostThread: backend.callThreadId
+                    hostContext: win.copilotLaunch.context
+                    home: win.copilotLaunch.url
+                    // Teams tells the app the meeting once it is up.
+                    onHostEvent: (name, json) => { if (name === "ChatReady") win.sendCopilotContext() }
+                }
+            }
         }
         AudioSettingsPane {
             id: audioSettingsPane
@@ -2651,7 +2787,7 @@ Window {
     Shortcut { sequence: "Ctrl+Shift+K"; enabled: win.live && (win.ubar.bar.concat(win.ubar.overflowed).indexOf("RaiseHandsButton") >= 0
                                                        // The new controls raise hands from React.
                                                        || win.newControls && win.ubar.bar.concat(win.ubar.overflowed).indexOf("ReactionButton") >= 0); onActivated: win.toggleHand() }
-    Shortcut { sequence: "Ctrl+Shift+E"; enabled: win.live && (win.canShare || win.sharing); onActivated: win.toggleShare() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: win.live && (win.canShare || win.sharing); onActivated: win.runControl("ShareButton") }
     // Language and speech ▸ Show / Hide live captions.
     Shortcut { sequence: "Alt+Shift+C"; enabled: win.live && win.ubar.more.some(sec => sec.items.some(i => i.name === "LanguageSpeechMenuControl" || i.name === "ClosedCaptionsButton")); onActivated: win.setCaptions(!win.captionsOn) }
     // Admit the person the lobby notification shows.
@@ -2737,6 +2873,7 @@ Window {
         // Bar controls that overflowed or were unpinned: their bar label.
         else if (name === "ChatButton") e = { label: "Chat", icon: "nmc-chat", checked: side === "chat" }
         else if (name === "RosterButton") e = { label: "People", icon: "nmc-people", checked: side === "people" }
+        else if (name === "MeetingCollabButton") e = { label: "Copilot", icon: side === "copilot" ? "copilot-filled-48" : "ai-copilot", checked: side === "copilot" }
         else if (name === "ReactionButton") e = { label: "React", icon: handRaised ? "nmc-react-filled" : "nmc-react", checked: handRaised }
         else if (name === "RaiseHandsButton") e = { label: handRaised ? "Lower" : "Raise", icon: "nmc-raise", checked: handRaised }
         else if (name === "OrganizerControlButton") e = { label: "Controls", icon: "nmc-controls", chevron: true }
@@ -3232,6 +3369,9 @@ Window {
             }
         }
     }
+    // Copilot (meeting-collab-button): Teams' Copilot mark, filled while
+    // its pane is open; "Open Copilot (Alt+C)" / "Close Copilot".
+    Component { id: cCopilot; BarButton { icon: win.side === "copilot" ? "copilot-filled-48" : "ai-copilot"; label: "Copilot"; checked: win.side === "copilot"; tip: win.side === "copilot" ? "Close Copilot" : "Open Copilot"; shortcut: win.side === "copilot" ? "" : "Alt+C"; enabled: win.controlEnabled("MeetingCollabButton"); onClicked: win.runControl("MeetingCollabButton") } }
     Component { id: cChat; BarButton { icon: win.newControls ? "nmc-chat" : "call-chat"; label: "Chat"; checked: win.side === "chat"; tip: win.side === "chat" ? "Hide conversation" : "Show conversation"; enabled: win.controlEnabled("ChatButton"); onClicked: win.runControl("ChatButton") } }
     Component {
         id: cPeople
@@ -3530,5 +3670,37 @@ Window {
         reason: win.retryReason
         onRetry: { win.retryReason = ""; win.rejoin() }
         onDismiss: win.retryReason = ""
+    }
+    // Teams' share tray (ShareTray.qml): under the bar, centred on Share
+    // (kept in the window), down to 7.3 above the window's bottom.
+    signal startShare(string kind)
+    property alias shareIncludeSound: shareTray.includeSound
+    function openShareTray() {
+        const b = barItem("ShareButton")
+        const c = b && b !== bar ? b.mapToItem(win.contentItem, b.width / 2, 0).x : win.width / 2
+        shareTray.x = Math.max(8, Math.min(win.width - 360 - 8, c - 180))
+        shareTray.y = bar.height - 0.7
+        shareTray.open()
+    }
+    function shareTrayForTest() { return shareTray }
+    ShareTray {
+        id: shareTray
+        parent: win.contentItem
+        cameraOn: win.cameraOn
+        onShare: kind => { close(); win.startShare(kind) }
+    }
+    // Teams' test call (Settings ▸ Devices ▸ Make a test call): once it
+    // ends, its results replace the bar and stage until Close.
+    property bool testCall: false
+    property var testReport: []
+    signal testCallClosed()
+    function testReportForTest() { return testReportView }
+    TestCallReport {
+        id: testReportView
+        anchors.fill: parent
+        z: 100
+        visible: win.testCall && win.state === "ended" && win.testReport.length > 0
+        rows: win.testReport
+        onClosed: win.testCallClosed()
     }
 }

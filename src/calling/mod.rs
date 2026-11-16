@@ -19,6 +19,7 @@ pub mod datachannel;
 pub mod datapacket;
 #[cfg(feature = "video-capture")]
 pub mod display;
+pub mod echo_report;
 pub mod frames;
 pub mod ice;
 pub mod incoming;
@@ -45,6 +46,8 @@ pub mod rtcp;
 pub mod rtp;
 #[cfg(feature = "screencast")]
 pub mod screencast;
+#[cfg(feature = "audio")]
+pub mod system_sound;
 pub mod sdp;
 pub mod sdp_compress;
 pub mod signaling;

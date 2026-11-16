@@ -589,6 +589,12 @@ pub struct Facts {
     pub breakout_room: bool,
     /// Teams' New meeting controls are on (the `InlineCentered` layout).
     pub centered: bool,
+    /// Teams' test call with the Echo bot (measured 2026-11-16: no Chat
+    /// or People on its bar).
+    pub echo: bool,
+    /// Copilot in meetings for this user (a Copilot licence; Teams'
+    /// shouldEnableMeetingCollabButton with useAIFeatureLicense).
+    pub copilot: bool,
     /// The user's arrangement of the new controls.
     pub customization: Customization,
 }
@@ -601,8 +607,9 @@ impl Facts {
             "PopoutContentButton" => self.can_pop_out,
             "ResumeButton" => self.p2p && self.on_hold,
             "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => self.p2p,
-            "ChatButton" => !self.pstn,
-            "RosterButton" | "ViewModeButton" | "VideoButton" | "MicrophoneButton" | "ShareButton"
+            "ChatButton" => !self.pstn && !self.echo,
+            "RosterButton" => !self.echo,
+            "ViewModeButton" | "VideoButton" | "MicrophoneButton" | "ShareButton"
             | "CallButton" | "DialpadButton" => true,
             // Not in 1:1 calls (the component renders nothing for P2P).
             // The new controls raise hands from React's menu
@@ -610,6 +617,8 @@ impl Facts {
             "RaiseHandsButton" => !self.p2p && !(self.centered && self.shows("ReactionButton")),
             "ReactionButton" => !self.p2p && self.reactions,
             "OrganizerControlButton" => self.organizer,
+            // Copilot: meetings and group calls (not 1:1 calls), licensed.
+            "MeetingCollabButton" => self.copilot && !self.p2p,
             // Private scheduled meetings (not Meet now: its flag is off).
             "MeetingDetailsButton" => self.scheduled && !self.breakout_room,
             "StartBreakoutRoomButton" => self.scheduled && self.organizer,

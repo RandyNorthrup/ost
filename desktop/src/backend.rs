@@ -252,6 +252,15 @@ pub mod qobject {
         #[qproperty(bool, call_lobby_presenter)]
         /// What attendees may not do (bits: mic 1, camera 2, chat 4).
         #[qproperty(i32, call_attendee_restrictions)]
+        /// The call is Teams' test call (Settings > Devices > Make a test
+        /// call): the Echo bot's group call.
+        #[qproperty(bool, call_test)]
+        /// The computer's sound is shared (Include sound).
+        #[qproperty(bool, call_share_sound)]
+        /// The test call's report once it ends (Teams' Post EchoBot
+        /// Calling Screen): [{kind, title, problems}] for Microphone,
+        /// Speaker, Camera and Network; empty while it runs.
+        #[qproperty(QString, call_test_report)]
         /// Teams' bar shows its AI indicator in this meeting.
         #[qproperty(bool, call_ai_indicator)]
         /// AI is available in the meeting (copilotMode Enabled).
@@ -819,6 +828,10 @@ pub mod qobject {
         /// Group chats: Teams' Meet now (a huddle; members are nudged).
         #[qinvokable]
         fn meet_now(self: Pin<&mut Backend>);
+        /// Settings > Devices > Make a test call: Teams' test call with
+        /// the Echo bot, in the call window; its report shows when it ends.
+        #[qinvokable]
+        fn make_test_call(self: Pin<&mut Backend>);
         /// Channels: Teams' Meet now, a new meeting in the channel with
         /// this title (from the pre-join's title field).
         #[qinvokable]
@@ -1252,6 +1265,14 @@ pub mod qobject {
         /// Share your screen (the desktop's picker asks what), or stop.
         #[qinvokable]
         fn toggle_share(self: Pin<&mut Backend>);
+        /// Teams' share tray: share a screen ("screen") or a window
+        /// ("window"); the desktop's picker offers only that kind.
+        #[qinvokable]
+        fn start_share(self: Pin<&mut Backend>, kind: &QString);
+        /// Teams' Include sound: the computer's sound goes into the call
+        /// with the shared screen (mixed into your audio), or stops.
+        #[qinvokable]
+        fn set_share_sound(self: Pin<&mut Backend>, on: bool);
 
         /// "Don't use audio": no sound sent or played in this call.
         #[qinvokable]
@@ -1361,6 +1382,13 @@ pub mod qobject {
         /// `done`), its text, or an error.
         #[qsignal]
         fn compose_copilot_update(self: Pin<&mut Backend>, request: QString, html: QString, text: QString, done: bool, error: QString);
+        /// Copilot in the meeting: the pane's launch for the call in
+        /// progress (api::meeting_copilot::launch: url, context,
+        /// contextualChat, capabilities), answered by meeting_copilot_ready.
+        #[qinvokable]
+        fn meeting_copilot_launch(self: Pin<&mut Backend>, theme: &QString);
+        #[qsignal]
+        fn meeting_copilot_ready(self: Pin<&mut Backend>, json: QString);
 
         /// A video_clip_upload finished: the recording's path and {id,
         /// url, error}.
@@ -2491,6 +2519,9 @@ pub struct BackendRust {
     call_lobby_presenter: bool,
     call_attendee_restrictions: i32,
     call_speaking_while_muted: bool,
+    call_test: bool,
+    call_share_sound: bool,
+    call_test_report: QString,
     call_ai_indicator: bool,
     call_ai_available: bool,
     call_ai_facilitator: bool,
@@ -2805,14 +2836,14 @@ async fn describe_media(call: Option<&OutgoingCall>) -> anyhow::Result<()> {
 /// Ask the desktop what to share (its picker), then offer it to the call.
 /// Sending starts when Teams answers ([`reoffer_reply`]); in a meeting it
 /// starts at once and the meeting is told (returns true).
-async fn offer_screen() -> anyhow::Result<bool> {
+async fn offer_screen(kind: teams_cli::calling::screencast::Source) -> anyhow::Result<bool> {
     // Only open the desktop's picker when the call can take a screen.
     {
         let mut slot = call_slot().lock().await;
         let call = MediaCall::of(&mut slot).context("The call has ended")?;
         anyhow::ensure!(call.can_share(), "This call can't take a shared screen");
     }
-    let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::start().await?;
+    let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::start_kind(kind).await?;
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
     let mut call = MediaCall::of(slot).context("The call has ended")?;
@@ -3222,6 +3253,16 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
                 }
             };
             if let Some(muted) = muted {
+                let signal = teams_cli::calling::audio::take_mic_signal();
+                let strength = {
+                    let slot = call_slot().lock().await;
+                    slot.outgoing.as_ref().map(|c| c.network_strength())
+                };
+                if let (Some(w), Some(strength)) =
+                    (echo_watch().lock().unwrap_or_else(|e| e.into_inner()).as_mut(), strength)
+                {
+                    w.second(muted, signal, strength);
+                }
                 let now = muted_speech.report(muted, teams_cli::calling::audio::mic_recent_level());
                 if now != speaking_muted {
                     speaking_muted = now;
@@ -3389,6 +3430,23 @@ fn download_dir() -> Option<std::path::PathBuf> {
     std::env::var_os("XDG_DOWNLOAD_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Downloads")))
+}
+
+/// Teams' test call report while the test call runs (sampled each
+/// second by the call's stats logger, finished in end_call_ui).
+fn echo_watch() -> &'static std::sync::Mutex<Option<teams_cli::calling::echo_report::Watch>> {
+    static W: OnceLock<std::sync::Mutex<Option<teams_cli::calling::echo_report::Watch>>> = OnceLock::new();
+    W.get_or_init(Default::default)
+}
+
+/// The camera a call would use, (path, name): the one chosen in Settings
+/// > Devices, else the first camera, as the test call report names it.
+fn test_camera() -> Option<(String, String)> {
+    let cameras = teams_cli::calling::camera::list_devices();
+    match camera_device() {
+        Some(path) => cameras.into_iter().find(|c| c.0 == path),
+        None => cameras.into_iter().next(),
+    }
 }
 
 /// The camera chosen in Settings > Devices (a V4L2 path), else the default.
@@ -3903,7 +3961,10 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
     let on = |ns: &str, key: &str, dflt: bool| api::ecs::setting(ns, key).and_then(|v| v.as_bool()).unwrap_or(dflt);
     let licensed = license.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
     let allowed = licensed && on("compose", "enableComposeCopilot", false) && on("augloop", "enableAugLoopService", false);
-    serde_json::json!({"allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false)})
+    // Copilot in meetings (Teams' MeetingCollabButton: Calling's
+    // enableMeetingCollab with the licence check, useAIFeatureLicense).
+    let meeting = licensed && on("calling", "enableMeetingCollab", true);
+    serde_json::json!({"allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false), "meeting": meeting})
 }
 
 /// Editor's options by language, as its service lists them.
@@ -4860,6 +4921,22 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     });
                 }
             });
+        }
+    }
+    // Teams' test call ends once the Echo bot, having played your
+    // recording back, leaves.
+    if let Some(active) = teams_cli::calling::echo_report::echo_bot_active(json) {
+        let ended = match echo_watch().lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            Some(w) if active => {
+                w.bot_seen = true;
+                false
+            }
+            Some(w) => w.bot_seen,
+            None => false,
+        };
+        tracing::info!(active, ended, "Echo bot");
+        if ended {
+            let _ = qt.queue(|mut this| this.as_mut().hang_up());
         }
     }
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
@@ -6453,6 +6530,28 @@ impl qobject::Backend {
         // None: a new meeting in a channel, titled `title` (Meet now).
         kind: Option<teams_cli::calling::signaling::GroupCallKind>,
     ) {
+        self.start_group_call_as(chat_id, title, kind, false);
+    }
+
+    pub fn make_test_call(mut self: Pin<&mut Self>) {
+        if !self.rust().call_state.is_empty() {
+            return;
+        }
+        // Teams' window is titled with the bot's name.
+        self.as_mut().start_group_call_as(String::new(), QString::from("Echo"), None, true);
+    }
+
+    fn start_group_call_as(
+        mut self: Pin<&mut Self>,
+        chat_id: String,
+        title: QString,
+        kind: Option<teams_cli::calling::signaling::GroupCallKind>,
+        test: bool,
+    ) {
+        self.as_mut().set_call_test(test);
+        self.as_mut().set_call_test_report(QString::default());
+        *echo_watch().lock().unwrap_or_else(|e| e.into_inner()) =
+            test.then(teams_cli::calling::echo_report::Watch::new);
         let subject = title.to_string();
         self.as_mut().set_call_peer(title);
         self.as_mut().set_call_peer_id(QString::default());
@@ -6482,6 +6581,7 @@ impl qobject::Backend {
         runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
         runtime().spawn(async move {
             let result = match kind {
+                _ if test => outgoing::start_test_call(cancel_rx).await,
                 Some(kind) => outgoing::start_group_call(&chat_id, kind, cancel_rx).await,
                 None => outgoing::start_channel_meeting(&chat_id, &subject, cancel_rx).await,
             };
@@ -6504,6 +6604,11 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_video(can_video);
                         this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_state(QString::from("connected"));
+                        // Teams' test call starts with the camera on
+                        // (its intent's outgoingVideo), when there is one.
+                        if test && can_video && test_camera().is_some() {
+                            this.as_mut().toggle_camera();
+                        }
                     });
                 }
                 Err(e) => {
@@ -6518,6 +6623,51 @@ impl qobject::Backend {
                     });
                 }
             }
+        });
+    }
+
+    pub fn meeting_copilot_launch(self: Pin<&mut Self>, theme: &QString) {
+        let theme = theme.to_string();
+        let subject = self.rust().call_peer.to_string();
+        let link = outgoing::MeetingLink::parse(&self.rust().last_join.0.to_string());
+        let thread = self.rust().call_thread_id.to_string();
+        let transcript = self.rust().call_recording_state.to_string().contains("ranscrib");
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let (call_id, ical_uid, call_thread) = {
+                let slot = call_slot().lock().await;
+                slot.outgoing
+                    .as_ref()
+                    .map(|c| (c.call_id().to_string(), c.meeting_info().map(|i| i.ical_uid).unwrap_or_default(), c.thread().to_string()))
+                    .unwrap_or_default()
+            };
+            let client = TeamsClient::new().await.ok();
+            let oid = client.as_ref().and_then(|c| c.object_id()).unwrap_or_default();
+            let tid = client.as_ref().and_then(|c| c.tenant_id()).unwrap_or_default();
+            let site = match &client {
+                Some(c) => api::app_host::sharepoint_host(c).await,
+                None => String::new(),
+            };
+            let m = api::meeting_copilot::Meeting {
+                call_id,
+                thread_id: link.as_ref().map(|l| l.thread_id.clone()).filter(|t| !t.is_empty()).unwrap_or(if call_thread.is_empty() { thread } else { call_thread }),
+                organizer_id: link.as_ref().and_then(|l| l.organizer_id.clone()).unwrap_or_else(|| oid.clone()),
+                organizer_tenant: link.as_ref().and_then(|l| l.tenant_id.clone()).unwrap_or_else(|| tid.clone()),
+                ical_uid,
+                message_id: link.as_ref().map(|l| l.message_id.clone()).unwrap_or_else(|| "0".into()),
+                subject,
+                transcript_running: transcript,
+                user_oid: oid,
+                tenant_id: tid,
+                my_site: site.strip_suffix(".sharepoint.com").map(|t| format!("{t}-my.sharepoint.com")).unwrap_or_default(),
+                culture: "en-us".into(),
+                theme,
+                app_session: uuid::Uuid::new_v4().to_string(),
+                host_session: uuid::Uuid::new_v4().to_string(),
+            };
+            tracing::info!(has_call = !m.call_id.is_empty(), has_ical = !m.ical_uid.is_empty(), "meeting Copilot launch");
+            let v = api::meeting_copilot::launch(&m).to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().meeting_copilot_ready(QString::from(v.as_str())));
         });
     }
 
@@ -8595,11 +8745,47 @@ impl qobject::Backend {
     }
 
     pub fn toggle_share(self: Pin<&mut Self>) {
+        self.share_kind(teams_cli::calling::screencast::Source::Any);
+    }
+
+    pub fn set_share_sound(mut self: Pin<&mut Self>, on: bool) {
+        static SOUND: std::sync::Mutex<Option<teams_cli::calling::system_sound::SystemSound>> = std::sync::Mutex::new(None);
+        let mut sound = SOUND.lock().unwrap_or_else(|e| e.into_inner());
+        if !on {
+            *sound = None;
+        } else if sound.is_none() {
+            match teams_cli::calling::system_sound::SystemSound::start() {
+                Ok(s) => *sound = Some(s),
+                Err(e) => {
+                    tracing::warn!("system sound: {}", short_error(&e));
+                    drop(sound);
+                    self.as_mut().set_call_share_sound(false);
+                    return;
+                }
+            }
+        }
+        drop(sound);
+        self.as_mut().set_call_share_sound(on);
+    }
+
+    pub fn start_share(self: Pin<&mut Self>, kind: &QString) {
+        if self.rust().call_sharing {
+            return;
+        }
+        let kind = match kind.to_string().as_str() {
+            "screen" => teams_cli::calling::screencast::Source::Screen,
+            "window" => teams_cli::calling::screencast::Source::Window,
+            _ => teams_cli::calling::screencast::Source::Any,
+        };
+        self.share_kind(kind);
+    }
+
+    fn share_kind(self: Pin<&mut Self>, kind: teams_cli::calling::screencast::Source) {
         let on = !self.rust().call_sharing;
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = if on {
-                offer_screen().await
+                offer_screen(kind).await
             } else {
                 stop_screen().await.map(|()| false)
             };
@@ -8834,6 +9020,37 @@ impl qobject::Backend {
 
     /// Show the call as over; the UI fades it out from "ended".
     fn end_call_ui(mut self: Pin<&mut Self>) {
+        if self.rust().call_test && self.rust().call_test_report.is_empty() {
+            let watch = echo_watch().lock().unwrap_or_else(|e| e.into_inner()).take();
+            let mut report = watch.map(|w| w.report).unwrap_or_default();
+            let (inputs, outputs) = teams_cli::calling::audio::list_devices();
+            if inputs.is_empty() {
+                report.note(teams_cli::calling::echo_report::Event::NoMics);
+            }
+            if outputs.is_empty() {
+                report.note(teams_cli::calling::echo_report::Event::NoSpeakers);
+            }
+            let camera = test_camera();
+            report.finish(camera.is_some(), self.rust().call_muted, false);
+            let (default_mic, default_speaker) = teams_cli::calling::audio::default_devices();
+            let settings = load_settings();
+            let chosen = |key: &str, default: Option<String>| {
+                settings
+                    .get(key)
+                    .and_then(|v| v.as_str())
+                    .filter(|d| !d.is_empty() && *d != "default")
+                    .map(str::to_string)
+                    .or(default)
+            };
+            let rows = teams_cli::calling::echo_report::rows(
+                &report,
+                chosen("micDevice", default_mic).as_deref(),
+                chosen("speakerDevice", default_speaker).as_deref(),
+                camera.map(|c| c.1).as_deref(),
+            );
+            tracing::info!(report = %rows, "test call report");
+            self.as_mut().set_call_test_report(QString::from(rows.to_string().as_str()));
+        }
         self.as_mut().set_call_held(false);
         self.as_mut().set_call_held_by_peer(false);
         self.as_mut().set_call_can_dtmf(false);

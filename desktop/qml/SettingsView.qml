@@ -2013,10 +2013,10 @@ Rectangle {
             // sensitivity, a divider, Noise suppression with its two
             // choices (Voice isolation needs Microsoft's voice profile, so
             // Teams shows it disabled), a divider and Secondary Ringer.
-            // Teams' "Sync device buttons" (headset HID buttons), "Make a
-            // test call" (TASK-0141), Spatial audio (OST can't render it)
-            // and the Devices section (Teams Rooms' connected devices) aren't
-            // offered.
+            // "Make a test call" places Teams' test call
+            // (call-and-meeting-window.md §12a). Teams' "Sync device
+            // buttons" (headset HID buttons) and Spatial audio (OST can't
+            // render it) aren't offered.
             Text {
                 visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
@@ -2061,7 +2061,19 @@ Rectangle {
                     on: root.local("autoGainControl", "on") !== "off"
                     onToggled: v => { backend.setSetting("autoGainControl", v ? "on" : "off"); agcRow.on = v }
                 }
-                SettingsParts.Gap { size: 8 }
+                // Teams' "Make a test call" (start-echo-bot-call, measured
+                // on winpc 2026-11-16): an outlined button with its glyph,
+                // 30 under the row above and 30 over the divider, 12 left
+                // of the card's text. It places Teams' test call.
+                SettingsParts.Gap { size: 30 }
+                SettingsParts.Button {
+                    x: -12
+                    icon: "test-call-20"
+                    label: "Make a test call"
+                    enabled: backend.callState === "" || backend.callState === "ended"
+                    onClicked: backend.makeTestCall()
+                }
+                SettingsParts.Gap { size: 30 }
                 Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
                 SettingsParts.Gap { size: 22 }
                 SettingsParts.SwitchRow {
@@ -2137,6 +2149,18 @@ Rectangle {
                     } else {
                         if (picking) { picking = false; backend.setGreenScreenPicking(false) }
                         if (previewing) { previewing = false; backend.setCameraPreview(false) }
+                    }
+                }
+                // A call takes the camera (Make a test call starts one from
+                // this page, camera on): the preview lets go of it, and
+                // comes back once the call is over.
+                Connections {
+                    target: backend
+                    function onCallStateChanged() {
+                        const inCall = backend.callState !== "" && backend.callState !== "ended"
+                        if (inCall && videoCard.previewing) { videoCard.previewing = false; backend.setCameraPreview(false) }
+                        else if (backend.callState === "" && videoCard.showing && !videoCard.previewing && videoCard.cameras.length > 0)
+                            videoCard.previewing = backend.setCameraPreview(true)
                     }
                 }
                 // Green Screen's detected backdrop until you pick one.

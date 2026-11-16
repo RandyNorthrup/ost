@@ -81,6 +81,15 @@ pub fn take_speaker_peak() -> u32 {
     SPEAKER_PEAK.swap(0, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Whether the microphone gave any sound (a sample other than zero)
+/// since the last call: a device that captures only digital silence
+/// while unmuted "didn't work" in Teams' test call report.
+static MIC_SIGNAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn take_mic_signal() -> bool {
+    MIC_SIGNAL.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn mic_level() -> u32 {
     MIC_LEVEL.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -474,6 +483,9 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                     .max()
                     .unwrap_or(0);
                 MIC_LEVEL.store(peak * 100 / 32768, std::sync::atomic::Ordering::Relaxed);
+                if peak > 0 {
+                    MIC_SIGNAL.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 if logged < 3 {
                     logged += 1;
                     let rms = (chunk.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / chunk.len() as f64).sqrt();

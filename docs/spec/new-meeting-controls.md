@@ -236,8 +236,9 @@ Built (CallWindow.qml, MenuPopup.qml, SettingsView.qml,
 - [x] Move before / after, Pin, Unpin, Reset (saved per layout in OST's
   local settings, `meetingControlsLayouts`).
 - [ ] Drag and drop between the bar and More.
-- [ ] Copilot, Facilitator, Interpreter, Call me (OST has no such
-  features; hidden as in the current layout).
+- [x] Copilot (licensed users; call-and-meeting-window.md §1.8j).
+- [ ] Facilitator, Interpreter, Call me (OST has no such features;
+  hidden as in the current layout).
 - [ ] Dark and High contrast were not measured in Teams with the new
   controls on; OST draws them with the same Fluent tokens as the current
   bar (checked in OST with `--theme=dark` / `--theme=highContrast`).

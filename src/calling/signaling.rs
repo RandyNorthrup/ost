@@ -678,191 +678,29 @@ pub fn echo_thread_id(caller_oid: &str) -> String {
     format!("19:{}_{}@unq.gbl.spaces", caller_oid, ECHO_BOT_OID)
 }
 
-/// Create an Echo bot call in a single epconv POST (matching real Teams client flow).
-///
-/// Unlike the two-phase approach for channel calls, the echo call embeds the SDP
-/// directly in the epconv request. Returns both ConversationCreated and ConversationJoined.
+/// Start Teams' test call (Settings ▸ Devices ▸ Make a test call): as
+/// Teams' `placeEchoBotCall` does, a group call in the 1:1 chat with the
+/// Echo bot (`echo_thread_id`), nobody rung, scenario
+/// `UserInitiatedTestCall`; the bot is invited next ([`invite_echo_bot`]).
 pub async fn create_echo_call(
     http: &reqwest::Client,
     epconv_url: &str,
     params: &ConversationCallParams<'_>,
     sdp_offer: &str,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
-    let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
-    let cause_id = &params.message_id[..8.min(params.message_id.len())];
-
-    let payload = serde_json::json!({
-        "conversationRequest": {
-            "conversationType": null,
-            "subject": "",
-            "suppressDialout": true,
-            "roster": {
-                "type": "Delta",
-                "rosterUpdate": tc("conversation/rosterUpdate/")
-            },
-            "properties": {
-                "allowConversationWithoutHost": true,
-                "enableGroupCallEventMessages": true,
-                "enableGroupCallUpgradeMessage": false,
-                "enableGroupCallMeetupGeneration": false
-            },
-            "links": {
-                "conversationEnd": tc("conversation/conversationEnd/"),
-                "conversationUpdate": tc("conversation/conversationUpdate/"),
-                "localParticipantUpdate": tc("conversation/localParticipantUpdate/"),
-                "addParticipantSuccess": tc("conversation/addParticipantSuccess/"),
-                "addParticipantFailure": tc("conversation/addParticipantFailure/"),
-                "addModalitySuccess": tc("conversation/addModalitySuccess/"),
-                "addModalityFailure": tc("conversation/addModalityFailure/"),
-                "confirmUnmute": tc("conversation/confirmUnmute/"),
-                "receiveMessage": tc("conversation/receiveMessage/")
-            }
-        },
-        "scenario": "UserInitiatedTestCall",
-        "groupContext": null,
-        "groupChat": {
-            "threadId": params.thread_id,
-            "messageId": null
-        },
-        "participants": {
-            "from": {
-                "id": params.caller_mri,
-                "displayName": params.caller_display_name,
-                "endpointId": params.endpoint_id,
-                "participantId": params.participant_id,
-                "languageId": "en-US"
-            },
-            "to": []
-        },
-        "capabilities": null,
-        "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": 9336554,
-        "endpointMetadata": { "holographicCapabilities": 3 },
-        "meetingInfo": null,
-        "endpointState": {
-            "endpointStateSequenceNumber": 0,
-            "endpointProperties": {
-                "additionalEndpointProperties": {
-                    "infoShownInReportMode": "FullInformation"
-                }
-            }
-        },
-        "callInvitation": {
-            "callModalities": ["Audio", "Video", "ScreenViewer"],
-            "replaces": null,
-            "transferor": null,
-            "links": {
-                "progress": tc("call/progress/"),
-                "mediaAnswer": tc("call/mediaAnswer/"),
-                "acceptance": tc("call/acceptance/"),
-                "redirection": tc("call/redirection/"),
-                "end": tc("call/end/")
-            },
-            "clientContentForMediaController": {
-                "controlVideoStreaming": tc("call/controlVideoStreaming/"),
-                "csrcInfo": tc("call/csrcInfo/"),
-                "dominantSpeakerInfo": tc("call/dominantSpeakerInfo/")
-            },
-            "pstnContent": {
-                "emergencyCallCountry": "",
-                "platformName": "teams-cli",
-                "publicApiCall": false
-            },
-            "mediaContent": {
-                "contentType": "application/sdp",
-                "blob": sdp_offer
-            }
-        },
-        "debugContent": {
-            "ecsEtag": "\"0\"",
-            "causeId": cause_id
-        }
-    });
-
-    tracing::info!(
-        "Echo call: POST {} (single-shot epconv with SDP, scenario=UserInitiatedTestCall)",
-        epconv_url
-    );
-
-    let resp = http
-        .post(epconv_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
-        .header("Content-Type", "application/json")
-        .header("x-microsoft-skype-chain-id", params.chain_id)
-        .header("x-microsoft-skype-message-id", params.message_id)
-        .header("x-microsoft-skype-client", SKYPE_CLIENT_HEADER)
-        .header("Referer", "https://teams.microsoft.com/")
-        .header("ms-teams-partition", TEAMS_PARTITION)
-        .header("ms-teams-region", TEAMS_REGION)
-        .header("ms-teams-ring", TEAMS_RING)
-        .header("x-ms-migration", "True")
-        .json(&payload)
-        .send()
-        .await
-        .context("Echo call POST to epconv failed")?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let body = resp.text().await.unwrap_or_default();
-
-    tracing::info!("Echo call response: {} ({} bytes)", status, body.len());
-    tracing::debug!("Echo call response body: {}", &body[..body.len().min(2000)]);
-    for (k, v) in headers.iter() {
-        tracing::debug!(
-            "Echo call header: {}: {}",
-            k,
-            v.to_str().unwrap_or("(binary)")
-        );
-    }
-
-    if !status.is_success() {
-        anyhow::bail!("Echo call epconv failed ({}): {}", status, body);
-    }
-
-    // Parse conversationController from response
-    let resp_json: serde_json::Value =
-        serde_json::from_str(&body).context("Echo call response is not valid JSON")?;
-
-    let conv_controller = resp_json
-        .pointer("/conversationController")
-        .or_else(|| resp_json.pointer("/conversationResponse/conversationController"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| {
-            headers
-                .get("location")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-        })
-        .context("No conversationController in echo call response")?;
-
-    let add_participant_url = resp_json
-        .pointer("/links/addParticipant")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    tracing::info!(
-        "Echo call: conversationController = {}, addParticipant link = {:?}",
-        conv_controller,
-        add_participant_url
-    );
-
-    let cc_active_url = resp_json
-        .pointer("/links/active")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let created = ConversationCreated {
-        conversation_controller: conv_controller,
-        add_participant_url,
-        response_body: body.clone(),
+    let opts = CreateOptions {
+        group_chat: true,
+        meeting_message_id: None,
+        to: Vec::new(),
+        conversation_type: None,
+        invitation_type: None,
+        suppress_dialout: true,
+        subject: None,
+        meetup: false,
+        meeting_info: None,
+        scenario: Some("UserInitiatedTestCall"),
     };
-    let joined = ConversationJoined {
-        cc_active_url,
-        response_body: body,
-    };
-
-    Ok((created, joined))
+    create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
 
 /// Invite the Echo bot into the conversation via POST /conv/{id}/add.
@@ -1011,6 +849,7 @@ pub async fn join_meeting(
         subject: None,
         meetup: false,
         meeting_info: Some(meeting_info(organizer, (params.caller_oid, params.tenant_id))),
+        scenario: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1064,6 +903,7 @@ pub async fn create_group_call(
         subject: None,
         meetup: false,
         meeting_info: None,
+        scenario: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1089,6 +929,7 @@ pub async fn create_channel_meeting(
         subject: Some(subject),
         meetup: true,
         meeting_info: None,
+        scenario: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1108,6 +949,8 @@ struct CreateOptions<'a> {
     /// without it the call service starts a new ad hoc meeting organized
     /// by whoever joins.
     meeting_info: Option<serde_json::Value>,
+    /// The call's scenario (`UserInitiatedTestCall` for the test call).
+    scenario: Option<&'a str>,
 }
 
 async fn create_call(
@@ -1128,6 +971,7 @@ async fn create_call(
         subject: None,
         meetup: false,
         meeting_info: None,
+        scenario: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1240,6 +1084,9 @@ async fn create_call_with(
     });
 
     let mut payload = payload;
+    if let Some(scenario) = opts.scenario {
+        payload["scenario"] = scenario.into();
+    }
     if let Some(t) = opts.invitation_type {
         payload["participants"]["invitationType"] = t.into();
     }

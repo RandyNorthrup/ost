@@ -336,6 +336,15 @@
                 // Teams' own keyboard shortcuts, which the app passes up.
                 respond(source, from, d, [{ shortcuts: HOST_SHORTCUTS, overridableShortcuts: [] }]);
                 return;
+            case "ChatReady":
+            case "appLoadedFromCache":
+                // The Microsoft 365 Copilot app is ready for its context
+                // (Teams' bizChat custom message service answers with
+                // nothing, then posts contextualChatChanged and
+                // updateCapabilities: the page does, on this event).
+                respond(source, from, d, []);
+                ost.event("ChatReady", "{}");
+                return;
             default:
                 // Not answered, as Teams leaves what it doesn't handle; the
                 // name only, never the arguments.

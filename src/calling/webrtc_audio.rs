@@ -2642,8 +2642,14 @@ async fn send_loop(mut ctx: SendCtx) {
             }
             _ => {
                 tone = None;
-                let live = !ctx.muted.load(Ordering::Relaxed) && !ctx.held.load(Ordering::Relaxed);
-                let payload = ctx.encoder.encode(frame.as_deref().filter(|_| live));
+                let held = ctx.held.load(Ordering::Relaxed);
+                let live = !ctx.muted.load(Ordering::Relaxed) && !held;
+                let mic = frame.filter(|_| live);
+                // Shared computer sound (Include sound) goes in with the
+                // mic, and alone while it's muted; nothing while held.
+                #[cfg(feature = "audio")]
+                let mic = if held { mic } else { super::system_sound::mix(mic, (super::audio_codec::CALL_RATE / 50) as usize) };
+                let payload = ctx.encoder.encode(mic.as_deref());
                 rtp::encode(ctx.encoder.codec().payload_type(), seq, ts, ctx.ssrc, &payload)
             }
         };

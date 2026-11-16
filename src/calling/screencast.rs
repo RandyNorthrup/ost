@@ -20,6 +20,14 @@ use super::camera::YuvFrame;
 pub const MAX_W: u32 = 1280;
 pub const MAX_H: u32 = 720;
 
+/// What the desktop's picker offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Any,
+    Screen,
+    Window,
+}
+
 /// A running screen capture; drop it to stop (and end the portal session).
 pub struct ScreenCapture {
     stop: Arc<AtomicBool>,
@@ -30,6 +38,17 @@ impl ScreenCapture {
     /// Ask the portal what to share (it shows its picker) and start
     /// capturing it. Fails if the person cancels the picker.
     pub async fn start() -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        Self::start_kind(Source::Any).await
+    }
+
+    /// The same, offering only screens or only windows (Teams' share
+    /// tray: its Screen and Window tiles).
+    pub async fn start_kind(kind: Source) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        let sources = match kind {
+            Source::Any => SourceType::MONITOR | SourceType::WINDOW,
+            Source::Screen => SourceType::MONITOR.into(),
+            Source::Window => SourceType::WINDOW.into(),
+        };
         let proxy = Screencast::new()
             .await
             .context("The desktop's screen-sharing portal isn't available")?;
@@ -39,7 +58,7 @@ impl ScreenCapture {
                 &session,
                 SelectSourcesOptions::default()
                     .set_cursor_mode(CursorMode::EMBEDDED)
-                    .set_sources(SourceType::MONITOR | SourceType::WINDOW)
+                    .set_sources(sources)
                     .set_multiple(false)
                     .set_persist_mode(PersistMode::DoNot),
             )

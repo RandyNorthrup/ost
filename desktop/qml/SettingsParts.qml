@@ -314,12 +314,16 @@ Item {
         property string label
         /// Fluent's primary button (brand fill, white text).
         property bool primary: false
+        /// A 20 px glyph before the label (Fluent's icon button: 12.7 in,
+        /// 6 before the text), e.g. Devices' "Make a test call".
+        property string icon: ""
         signal clicked()
-        width: Math.max(96, btText.implicitWidth + 24); height: 31.3; radius: 4
+        width: Math.max(96, btText.implicitWidth + 24 + (icon ? 26 : 0)); height: 31.3; radius: 4
+        FluentIcon { visible: !!bt.icon; x: 12.7; anchors.verticalCenter: parent.verticalCenter; name: bt.icon; size: 20; color: theme.onFill(bt, !bt.enabled ? theme.disabled : theme.text) }
         color: primary ? (bh.pressed ? theme.pick("#444791", "#444791", "#1AEBFF") : bh2.hovered ? theme.brandHover : theme.brandFill)
             : bh.pressed ? theme.menuHover : bh2.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
         border.color: primary ? "transparent" : theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
-        Text { id: btText; anchors.centerIn: parent; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(bt, !bt.enabled ? theme.disabled : bt.primary ? "#FFFFFF" : theme.text) }
+        Text { id: btText; anchors.centerIn: parent; anchors.horizontalCenterOffset: bt.icon ? 13 : 0; text: bt.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(bt, !bt.enabled ? theme.disabled : bt.primary ? "#FFFFFF" : theme.text) }
         HoverHandler { id: bh2; cursorShape: Qt.PointingHandCursor }
         TapHandler { id: bh; onTapped: bt.clicked() }
         Accessible.role: Accessible.Button

@@ -720,6 +720,11 @@ impl OutgoingCall {
         &self.call_id
     }
 
+    /// The chat thread the call is in.
+    pub fn thread(&self) -> &str {
+        &self.thread_id
+    }
+
     /// The meeting's title, times, location and calendar link (Meeting info).
     pub fn meeting_info(&self) -> Option<super::meeting_info::MeetingInfo> {
         self.meeting_info.clone()
@@ -1794,6 +1799,33 @@ pub async fn start_channel_meeting(
     start(channel_id, Target::ChannelMeeting(subject), cancel).await
 }
 
+/// Teams' test call (Settings ▸ Devices ▸ Make a test call), as Teams'
+/// `placeEchoBotCall`: make sure the chat with the Echo bot exists, start
+/// a group call in it (scenario `UserInitiatedTestCall`, nobody rung) and
+/// invite the bot, which plays its prompt, records you and plays it back.
+pub async fn start_test_call(cancel: tokio::sync::oneshot::Receiver<()>) -> Result<OutgoingCall> {
+    let config = Config::load()?;
+    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let thread = signaling::echo_thread_id(&oid);
+    match crate::api::client::TeamsClient::new().await {
+        Ok(client) => {
+            if let Err(e) = crate::api::ensure_unique_chat(
+                &client,
+                &thread,
+                &format!("8:orgid:{oid}"),
+                signaling::ECHO_BOT_MRI,
+                None,
+            )
+            .await
+            {
+                tracing::warn!("Echo chat: {:#}", e);
+            }
+        }
+        Err(e) => tracing::warn!("Echo chat: {:#}", e),
+    }
+    start(&thread, Target::Echo, cancel).await
+}
+
 /// Group chats (not meetings, channels or 1:1 chats).
 pub fn is_group_chat(thread_id: &str) -> bool {
     thread_id.starts_with("19:")
@@ -1811,6 +1843,8 @@ enum Target<'a> {
     Meeting(&'a MeetingLink),
     /// A new meeting in a channel (Meet now), with this title.
     ChannelMeeting(&'a str),
+    /// Teams' test call with the Echo bot.
+    Echo,
 }
 
 async fn start(
@@ -1950,6 +1984,11 @@ async fn start(
         }
         Target::ChannelMeeting(subject) => {
             signaling::create_channel_meeting(&http, &epconv_url, &params, &offer, subject).await?
+        }
+        Target::Echo => {
+            let created = signaling::create_echo_call(&http, &epconv_url, &params, &offer).await?;
+            signaling::invite_echo_bot(&http, &created.0.conversation_controller, &params).await?;
+            created
         }
     };
     let leave_url = leave_link(&created.response_body);

@@ -123,6 +123,7 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
             // `details.hidden`, or its endpoint's `__platform.ui.hidden`).
             .filter(|(mri, p)| {
                 !(mri.starts_with("28:")
+                    && !mri.eq_ignore_ascii_case(super::signaling::ECHO_BOT_MRI)
                     && p.pointer("/details/displayName")
                         .and_then(|n| n.as_str())
                         .is_none_or(str::is_empty))
@@ -175,7 +176,13 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                     });
                 Participant {
                     id: mri.to_ascii_lowercase(),
-                    name: s("/details/displayName").to_string(),
+                    // The test call's Echo bot is named in its profile
+                    // ("Echo"), not always in the roster.
+                    name: Some(s("/details/displayName"))
+                        .filter(|n| !n.is_empty())
+                        .or_else(|| mri.eq_ignore_ascii_case(super::signaling::ECHO_BOT_MRI).then_some("Echo"))
+                        .unwrap_or_default()
+                        .to_string(),
                     role: [s("/meetingRole"), s("/advancedMeetingRole")]
                         .into_iter()
                         .find(|r| !r.is_empty())

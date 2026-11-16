@@ -667,6 +667,21 @@ pub async fn create_group_chat(
 pub async fn ensure_one_on_one_chat(client: &TeamsClient, me: &str, other: &str) -> Result<String> {
     let oid = |m: &str| m.trim_start_matches("8:orgid:").to_string();
     let id = super::directory::one_on_one_chat_id(&oid(me), &oid(other));
+    ensure_unique_chat(client, &id, me, other, Some("2")).await
+}
+
+/// Make sure the 1:1 chat `id` between `me` and `other` (a person or a
+/// bot, `28:…`) exists, creating it as Teams does when it doesn't.
+/// Teams' test call creates its chat with the Echo bot this way (no
+/// files index; measured on winpc 2026-11-16).
+pub async fn ensure_unique_chat(
+    client: &TeamsClient,
+    id: &str,
+    me: &str,
+    other: &str,
+    files_index: Option<&str>,
+) -> Result<String> {
+    let id = id.to_string();
     let url = format!(
         "{}/v1/threads/{}?view=msnp24Equivalent",
         client.chat_service_url(),
@@ -677,18 +692,20 @@ pub async fn ensure_one_on_one_chat(client: &TeamsClient, me: &str, other: &str)
         Err(e) if e.to_string().contains("HTTP 404") => {}
         Err(e) => return Err(e),
     }
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "members": [
             { "id": me.to_ascii_lowercase(), "role": "Admin" },
             { "id": other.to_ascii_lowercase(), "role": "Admin" },
         ],
         "properties": {
             "threadType": "chat",
-            "chatFilesIndexId": "2",
             "fixedRoster": "true",
             "uniquerosterthread": "true",
         },
     });
+    if let Some(index) = files_index {
+        body["properties"]["chatFilesIndexId"] = index.into();
+    }
     let resp = client
         .chat_post(&format!("{}/v1/threads", client.chat_service_url()), &body)
         .await?;

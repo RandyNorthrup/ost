@@ -218,6 +218,9 @@ fn main() {
         "qml/LoopPage.qml",
         "qml/ChannelPageTab.qml",
         "qml/RecapTab.qml",
+        "qml/TestCallReport.qml",
+        "qml/TestCallDevices.qml",
+        "qml/ShareTray.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [
