@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
-"""Make OST's logo: a flat Fluent-style mark, an "OST" tile in front of two
-people, in Fluent UI's brand purples. The wordmark is Selawik Bold (OFL,
-desktop/assets/fonts), outlined so the SVG renders anywhere.
+"""Make OST's logo: a wide "OST" plate in front of three people, drawn in
+the style of Fluent's 2023 app icons. Everything is rounded and shaded with
+smooth gradients in Fluent UI's brand purples: the plate runs from #5B5FC7
+down to #444791, the middle figure is a mid purple and the two side figures
+lighter tints. A soft white light falls from the top left on heads and
+bodies, and the plate casts a soft shadow on the people behind it. That
+depth is built from linear and radial gradients laid over the shapes, with
+no filters or clip paths, so Qt's SVG renderer draws it the same as resvg.
+
+Teams' own mark is a square "T" plate at the front left with two people
+behind it to the right. OST keeps the trade dress apart. Its wordmark plate
+is wide and centred, with three people standing symmetrically behind it
+(one in the middle, one at each side), and the "OST" letters are the
+largest element. Nothing is traced from or copied out of Teams' artwork.
+The wordmark is Selawik Bold (OFL, desktop/assets/fonts), outlined so the
+SVG renders anywhere.
 
 Writes desktop/assets/logo.svg, desktop/assets/logo.png (512),
 desktop/packaging/ost-desktop.png (256) and docs/logo_ost.png (512).
@@ -19,12 +32,18 @@ from fontTools.ttLib import TTFont
 FONT = "desktop/assets/fonts/selawkb.ttf"
 OUT = "desktop/assets/logo.svg"
 
-# Fluent UI brand ramp (the web palette Teams' UI is built on).
-BRAND = {"60": "#444791", "70": "#4F52B2", "80": "#5B5FC7", "90": "#6D71D8", "100": "#7F85F5", "110": "#9299F7", "120": "#AAB1FA"}
+# Fluent UI brand ramp (the web palette Teams' UI is built on), and the
+# lighter tints Fluent's app icons use for the parts further back.
+BRAND = {"60": "#444791", "70": "#4F52B2", "80": "#5B5FC7", "90": "#6D71D8", "100": "#7F85F5",
+         "110": "#9299F7", "120": "#AAB1FA", "140": "#C5CBFA", "icon": "#7B83EB", "deep": "#33357A"}
 
-# The tile and the wordmark.
-TILE = (40, 196, 330, 276, 44)  # x, y, w, h, radius
-CAP = 104                         # the letters' cap height
+# The plate and its wordmark: a wide plate, for three letters.
+PLATE = (78, 220, 356, 240, 54)   # x, y, w, h, radius
+CAP = 108                         # the letters' cap height
+# The three people behind it: (head cx, cy, r), (body x, y, w, h, radius).
+CENTRE = ((256, 112, 62), (150, 186, 212, 270, 96))
+SIDES = [((100, 150, 45), (30, 210, 140, 226, 66)),
+         ((412, 150, 45), (342, 210, 140, 226, 66))]
 
 
 def wordmark(text, cx, cy, cap):
@@ -54,39 +73,74 @@ def wordmark(text, cx, cy, cap):
     return pen.getCommands()
 
 
+def glow(id_, cx, cy, r, alpha):
+    """A soft white light from the top left, laid over a shape."""
+    return (f'<radialGradient id="{id_}" gradientUnits="userSpaceOnUse" cx="{cx}" cy="{cy}" r="{r}">'
+            f'<stop offset="0" stop-color="#FFFFFF" stop-opacity="{alpha}"/>'
+            f'<stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>')
+
+
+def cast(id_, x1, y1, x2, y2, alpha):
+    """The plate's shadow: dark at the plate's edge, gone `(x2, y2)` away."""
+    return (f'<linearGradient id="{id_}" gradientUnits="userSpaceOnUse" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">'
+            f'<stop offset="0" stop-color="{BRAND["deep"]}" stop-opacity="{alpha}"/>'
+            f'<stop offset="1" stop-color="{BRAND["deep"]}" stop-opacity="0"/></linearGradient>')
+
+
+def person(head, body, fill, light, shadows):
+    """A head and body, lit from the top left, with the plate's shadows on it.
+    The shading is gradients over the person's own shapes rather than
+    filters or clip paths, so Qt's SVG renderer draws it as resvg does."""
+    (hx, hy, hr), (bx, by, bw, bh, br) = head, body
+    disc = f'<circle cx="{hx}" cy="{hy}" r="{hr}" fill="url(#{{}})"/>'
+    torso = f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" rx="{br}" fill="url(#{{}})"/>'
+    parts = [disc.format(fill), disc.format(light), torso.format(fill), torso.format(light)]
+    parts += [torso.format(s) for s in shadows]
+    return "\n  ".join(parts)
+
+
 def svg():
-    x, y, w, h, r = TILE
-    letters = wordmark("OST", x + w / 2, y + h / 2, CAP)
+    x, y, w, h, r = PLATE
+    b = BRAND
+    letters = wordmark("OST", x + w / 2, y + h / 2 + 2, CAP)
+    (cx, cy, cr), _ = CENTRE
+    (lx, ly, lr), _ = SIDES[0]
+    (rx_, ry, rr), _ = SIDES[1]
+    reach = 30  # how far the plate's shadow falls
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <title>OST</title>
   <defs>
-    <linearGradient id="back" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" stop-color="{BRAND['120']}"/><stop offset="1" stop-color="{BRAND['100']}"/>
+    <linearGradient id="side" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="{b['140']}"/><stop offset="1" stop-color="{b['110']}"/>
     </linearGradient>
-    <linearGradient id="mid" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" stop-color="{BRAND['100']}"/><stop offset="1" stop-color="{BRAND['80']}"/>
+    <linearGradient id="centre" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="{b['120']}"/><stop offset="0.55" stop-color="{b['icon']}"/><stop offset="1" stop-color="{b['90']}"/>
     </linearGradient>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="{BRAND['80']}"/><stop offset="1" stop-color="{BRAND['60']}"/>
+    <linearGradient id="plate" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="{b['80']}"/><stop offset="0.5" stop-color="{b['70']}"/><stop offset="1" stop-color="{b['60']}"/>
     </linearGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.14"/><stop offset="0.4" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.8" stop-color="{b['deep']}" stop-opacity="0"/><stop offset="1" stop-color="{b['deep']}" stop-opacity="0.22"/>
     </linearGradient>
-    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1B1A4A" flood-opacity="0.28"/>
-    </filter>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4E6FF"/>
+    </linearGradient>
+    {glow("lightC", cx - 22, cy - 30, cr * 1.6, 0.34)}
+    {glow("lightL", lx - 16, ly - 22, lr * 1.6, 0.38)}
+    {glow("lightR", rx_ - 16, ry - 22, rr * 1.6, 0.38)}
+    {cast("castTop", 0, y, 0, y - reach, 0.42)}
+    {cast("castL", x, 0, x - reach, 0, 0.3)}
+    {cast("castR", x + w, 0, x + w + reach, 0, 0.3)}
   </defs>
-  <!-- The people behind the tile -->
-  <circle cx="386" cy="132" r="46" fill="url(#back)"/>
-  <rect x="318" y="192" width="150" height="232" rx="62" fill="url(#back)"/>
-  <circle cx="262" cy="106" r="60" fill="url(#mid)"/>
-  <rect x="166" y="184" width="200" height="252" rx="86" fill="url(#mid)"/>
-  <!-- The tile and its wordmark -->
-  <g filter="url(#lift)">
-    <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#tile)"/>
-    <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#sheen)"/>
-  </g>
-  <path d="{letters}" fill="#FFFFFF"/>
+  <!-- Three people behind the plate: one at each side, one in the middle -->
+  {person(*SIDES[0], "side", "lightL", ["castTop", "castL"])}
+  {person(*SIDES[1], "side", "lightR", ["castTop", "castR"])}
+  {person(*CENTRE, "centre", "lightC", ["castTop"])}
+  <!-- The plate and its wordmark -->
+  <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#plate)"/>
+  <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#sheen)"/>
+  <path d="{letters}" fill="url(#ink)"/>
 </svg>
 '''
 
