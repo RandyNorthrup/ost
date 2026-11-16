@@ -223,7 +223,10 @@ QtObject {
     readonly property color leave: highContrast ? "#000000" : "#C4314B"
     readonly property color leaveHover: highContrast ? hcHighlight : "#B12C44"
 
-    readonly property string font: "Selawik"
+    // Teams' font is Segoe UI. OST can't ship it (it comes with Windows), so
+    // it ships Microsoft's open Selawik, made to match it, and uses Segoe UI
+    // itself when the machine has it installed.
+    readonly property string font: Qt.fontFamilies().indexOf("Segoe UI") >= 0 ? "Segoe UI" : "Selawik"
     // Teams' code font (code blocks, inline code).
     readonly property string mono: "Cascadia Mono"
     readonly property int base: 14
