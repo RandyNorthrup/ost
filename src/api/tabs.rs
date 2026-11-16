@@ -712,7 +712,7 @@ fn tabs_from(
             name: if files {
                 "Shared".into()
             } else {
-                str_at(t, "/name")
+                super::tab_add::display_name(&str_at(t, "/name"))
             },
             content_url: fill(&str_at(t, "/configuration/contentUrl"), ctx, &entity_id),
             content_template: https_template(&str_at(t, "/configuration/contentUrl")),

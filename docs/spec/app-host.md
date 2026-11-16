@@ -82,6 +82,19 @@ doesn't handle gets no answer.
 | `settings.setSettings` | `[{entityId, contentUrl, websiteUrl, removeUrl, suggestedDisplayName, …}]` | `[true]` once saved |
 | `readyToUnload` | `[]` | none (Teams then posts `load`) |
 | `conversations.closeConversation` | `[]` | none |
+| `settings.setValidityState` | `[valid]` | none (Teams turns Save on or off) |
+| `registerHandler` `save` | (pages.config.registerOnSaveHandler) | none; Save posts `{func: "settings.save", args: [{}]}` |
+| `settings.save.success` | `[]` | none; Teams then adds the tab |
+| `settings.save.failure` | `[reason]` | none; Save stays |
+| `getChatMembers` | `[]` (in a chat) | `[{members: [{upn}, …]}]` |
+| `copilot.eligibility.getEligibilityInfo` | `[null]` | `[{cohort: "bcais", ageGroup: null, isCopilotEnabledRegion: true, isCopilotEligible, isOptedOutByAdmin: false, userClassification: {persona: "other"}, featureSet: {uxFeatures: [], serverFeatures: []}, settings: {conversationSettings: {isOptionalConnectedExperiencesEnabled: null}}}]` |
+| `tasks.startTask` | `[taskInfo {url, title, width, height, …}]` | when the dialog closes: `[null, result]` (submitted) or `["User cancelled/closed the task module.", undefined]` |
+| `tasks.completeTask` | `[result, appIds]` (from the dialog's page) | none; the dialog closes |
+| `tasks.updateTask` | `[{width, height}]` | none; the dialog resizes |
+| `messageForParent` / `messageForChild` | `[message]` | none; passed to the opener's / dialog's frame as an event of that name |
+| `readyForUrl` (Whiteboard) | `[]` | `[]`, then the event `updateBoardContentFromTeams ["[]", ""]` |
+| `loadingCallback` (Whiteboard) | `[success, errorMessage?]` | `[]` (Teams logs it) |
+| `changeWhiteboardUrl` (Whiteboard) | `[url, passThrough?]` | `[]`; Teams keeps the board for the meeting (below) |
 
 The runtime Teams answers (apiVersion 4):
 `{apiVersion: 4, hostVersionsInfo: {adaptiveCardSchemaVersion: {1, 5}},
@@ -227,6 +240,107 @@ The context for the General channel's Notes tab: `locale "en"`,
   `updateBoardContentFromTeams ["[]", ""]`), `changeWhiteboardUrl`,
   `loadingCallback`.
 
+## Which apps get deeply nested NAA
+- Teams' runtime answer's `isDeeplyNestedAuthSupported` and
+  `canParentManageNAATrustedOrigins` are its NAA service's (module
+  985817): `allowList.includes(appId)`, the list being ECS
+  `extensibility.deeplyNestedAppAuthAllowList`. Measured: OneNote
+  (`0d820ecd`) and Storyline true; Lists (`26bc2873`), Whiteboard, Q&A and
+  Workflows false. OST reads the same ECS list (`api::app_host::deep_naa`)
+  and falls back to the tab's own setting without ECS.
+
+## Configuration pages and Save (Add a tab, measured 2026-11-16)
+Choosing OneNote in OST group test's Add a tab:
+- The dialog (600 x 603 in a 1212 x 700 window) frames the app's
+  configurationUrl in an `hwc-iframe` titled `tab-configurable-content`
+  (no id; `allow` `clipboard-write *; local-network-access *; autoplay;
+  camera *; microphone *; encrypted-media *; speaker-selection *;`,
+  the usual sandbox with `allow-downloads`), 550 x 412, 25 in and 94.5
+  down. Placeholders the context has no value for stay as they are
+  (`groupId={groupId}&channelType={channelType}` in a chat).
+- The page (m365.cloud.microsoft/launch/onenote/officeunihost/config,
+  TeamsJS 2.33): initialize (answered frameContext `settings`), getContext,
+  setValidityState `[false]` several times, getChatMembers, registerHandler
+  load / fullScreenChange / themeChange / save, appLoaded, success; picking
+  a notebook sends setValidityState `[true]` (Save turns on).
+- **Save**: Teams posts `{func: "settings.save", args: [{}]}`; the page
+  calls `settings.setSettings [{entityId, websiteUrl, contentUrl,
+  suggestedDisplayName, apiUrl, notebookSource}]` (answered `[true]`), then
+  `settings.save.success []`. Teams then adds the tab (add-a-tab.md: the
+  thread property, the post, the reply chain), closes the dialog, opens
+  the new tab and frames its contentUrl (frameContext `content`).
+- A content page may set its tab up later the same way (no save event):
+  Lists' page after making the list, OneNote's ChannelNotes after
+  provisioning; Teams rewrites the tab (add-a-tab.md), posts
+  `beforeUnload` and, on `readyToUnload`, `load [{entityId, contentUrl}]`
+  to its cached frame.
+
+## Dialogs (task modules, measured 2026-11-16)
+- Teams' dialog (`task-module-dialog`): the taskInfo's width (Workflows:
+  900), radius 8, the dialog shadow, 27 above the header; the header
+  (`taskModuleHeader`, 55.3 tall, padding 0 32): the app's 32 px icon
+  (radius 28.56%, #FAFAFA) at (32, 38.7), the title (h1, 20/28.57 bold) at
+  76, Close (`closeButton`, 32 x 55.3) at width − 64; the page
+  (`iframe-container`) 90.3 down, the taskInfo's height (560), in an
+  `hwc-iframe` titled after the app (`allow` `clipboard-write *;
+  local-network-access *; autoplay`).
+- The page runs with frameContext `task`, the runtime without deeply
+  nested NAA, and a context with `dialogParameters: {}` (the Workflows
+  dialog of a channel: `appSessionId` and `data-sessionid` the channel's
+  id). Workflows asked NAA GetToken for client a0a3c1d3 (api.bap,
+  service.flow, graph, api.powerplatform) and
+  `copilot.eligibility.getEligibilityInfo`.
+- An app opens one with `tasks.startTask` (dialog.url.open); Teams answers
+  that request when it closes: `[null, result]` after the page's
+  `tasks.completeTask [result]` (the result as JSON), or
+  `["User cancelled/closed the task module.", undefined]` (platform-app,
+  useTaskModuleResult). A taskInfo with a `card` is an Adaptive Card
+  dialog; Microsoft's own apps may ask `useHeaderlessDialog`.
+- **The workflow suggestion** (chat-app 139267): Teams'
+  `launchTaskModule` with `appId 25b07509-bc6a-4a53-b683-9beb24e55570`,
+  `templateName "Workflows"`, the Workflows icon, `taskInfo {width: 800,
+  height: 600, url:
+  automations.teams.cloud.microsoft/webapps/workflows/prod/suggestedAction/{findmeetingtime|createaplanner|remindme}?theme={theme}&locale={locale}&ringId={ringId}}`,
+  the Workflows valid domains, and `launchContext {launchId, type 0,
+  chatId, subEntityId: JSON.stringify(prefilledInputs)}`.
+
+## Meeting Whiteboard: the meeting's board (measured 2026-11-16)
+- Opening the tab, Teams asks the middle tier for the meeting's board
+  (GraphQL getWhiteboardUrl): `GET {mt}/beta/meetings/fluidboard?threadId=
+  {meeting chat}&messageId=0&organizerId=8:orgid:{organizer}&tenantId=…
+  &meetingTitle=…` → `{url, shareUrl}`, `url` the board's address
+  (`app.whiteboard.microsoft.com/meeting?embed=1&encodedShareLink=…
+  &shareLinkId=…&meetingTitle=…` once the meeting has a board).
+- The frame loads that address with `tabStartTime`, `correlationId`,
+  `culture`, `enableReactApp=1`, `isInitiator`, `isEduUser=0`,
+  `meetingId` (base64 of `0#{chat}#0`), `teamsEnvV2=prod`,
+  `client=TeamsModern`, `userRole=Member`, `isEU=false`, `userId`,
+  `userTenantId`, `isNAAEnabled=true` added (cacheable-iframe, title
+  Whiteboard, 864 x 555 under the header).
+- Whiteboard (TeamsJS 2.22): initialize (frameContext `meetingStage`),
+  getContext (many), registerHandler sharepointSiteUrlAndDriveId /
+  themeChange / whiteboardUrlChanged / sendPassThroughData /
+  updateBoardContentFromTeams, getUser, NAA (client 95de633a:
+  whiteboard.microsoft.com, Graph, api.office.net, the user's OneDrive,
+  pushchannel.1drv.ms), `readyForUrl` (answered `[]`, then
+  `updateBoardContentFromTeams ["[]", ""]`), then `changeWhiteboardUrl
+  [url]` with the board's address (its `proofToken` included).
+- Teams answers `[]` and keeps it for the meeting: `POST {mt}/beta/
+  meetings/v2/whiteboard?threadId=…&messageId=0&organizerId=…&tenantId=…`,
+  the body the address as a JSON string without the proof token, answered
+  `{"success": true}` (twice in the capture). Everyone opening the tab
+  then gets that board from fluidboard.
+- `loadingCallback [success, error]`: Teams logs whether the board loaded
+  (whiteboard-renderer `onLoadingCallback`) and answers `[]`.
+
+## Meeting Q&A (scheduled meeting, measured 2026-11-16)
+- "OST calendar test: created from OST" (a scheduled meeting) lists Q&A;
+  its page (web.yammer.com, TeamsJS 2.49) sends initialize, getContext
+  (several), NAA GetInitContext / GetToken (client 00bf137d), success,
+  registerHandler themeChange, and shows "Q&A is not available for this
+  event. Turn it on from meeting options. Learn more" (Q&A isn't turned
+  on in that meeting's options).
+
 ## OST's host (why this design)
 Options weighed:
 - **Inject a native interface into a top-level page** (TeamsJS'
@@ -262,14 +376,25 @@ Options weighed:
   notebook. The first attempt sat on the wait page for over a minute
   (the section had just been deleted by the test reset); after Reload it
   completed in seconds.
-- [x] Storyline; Meeting Whiteboard (opens a new board, see below).
-- [ ] Meeting Whiteboard's changeWhiteboardUrl / loadingCallback; Q&A
-  untried (no scheduled test meeting).
-- [ ] Another app's configuration page (OneNote's, in OST group test):
-  hosted, it initializes, reports validity and succeeds; it also asks
-  `getChatMembers` (not handled); Save not built.
-- Shortcuts: `shortcutRelay.getHostShortcuts` answered; the readyForUrl
-  answer for Whiteboard.
+- [x] Storyline; Meeting Whiteboard on the meeting's own board
+  (fluidboard, changeWhiteboardUrl kept, loadingCallback answered);
+  Q&A in a scheduled meeting chat as Teams shows it there.
+- [x] Configuration pages and Save (OneNote in OST group test); Lists'
+  content page setting its tab up (OST test channel); getChatMembers.
+- [x] Dialogs: the channel's Workflows dialog runs as Teams' task module
+  (frameContext task) and shows Workflows' page as in Teams.
+- [ ] The workflow suggestion's dialog opens as Teams launches it (800 x
+  600, Teams' address and launch context), and the page initializes and
+  reports success, but stays blank in OST: it logs "Initial app state
+  does not contain valid QSP" and "User ID or Tenant ID is empty" — Teams'
+  Workflows task-module runtime (workflowsRuntimeConfig) adds more than
+  the template address, not traced yet; the tenant has suggestions off,
+  so Teams' own rendering couldn't be compared.
+- [ ] App-initiated dialogs (tasks.startTask from a tab) are wired
+  (dialog, completeTask / cancel answers, messageForParent/Child,
+  updateTask) but no tested app opened one; Adaptive Card dialogs and
+  header-less dialogs aren't drawn.
+- Shortcuts: `shortcutRelay.getHostShortcuts` answered.
 
 Host features:
 - [x] The host: the frame as Teams', initialize / getContext /
@@ -281,6 +406,10 @@ Host features:
   executeDeepLink, themeChange.
 - [ ] authentication.getAuthToken: answered from the stored sign-in for
   the app's webApplicationInfo resource; not seen in a capture yet.
+- [x] settings.save round trip, getChatMembers, copilot eligibility,
+  tasks.startTask / completeTask / updateTask, messageForParent /
+  messageForChild, Whiteboard's readyForUrl / loadingCallback /
+  changeWhiteboardUrl; deeply nested NAA per Teams' ECS allow list.
 - [ ] authentication.authenticate (pop-up sign-in windows the host
-  parents), dialogs (`tasks.startTask`), stageView, people, files and the
-  other capabilities the runtime lists: not handled yet (logged by name).
+  parents), stageView, people, files and the other capabilities the
+  runtime lists: not handled yet (logged by name).

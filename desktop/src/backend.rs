@@ -108,6 +108,9 @@ pub mod qobject {
         /// The last tab change's outcome: {op, tab, ok} (its dialog shows
         /// Teams' failure text, or closes).
         #[qproperty(QString, channel_tab_result)]
+        /// A pasted Loop link for Add an existing page: {link, page:
+        /// {name, edited_by, web_url, …}} or {link, error}.
+        #[qproperty(QString, page_link_json)]
         /// About this tab: {app, about} once loaded.
         #[qproperty(QString, app_about_json)]
         /// Teams' About dialog for an app: {app, details} or {app, error}.
@@ -1674,6 +1677,11 @@ pub mod qobject {
         fn app_host_page(self: &Backend, title: &QString) -> QString;
         #[qinvokable]
         fn app_host_script(self: &Backend) -> QString;
+        /// A meeting board's address in the Whiteboard tab: the stored
+        /// address with Teams' parameters (`params` JSON: tabStart,
+        /// correlation, initiator, meetingId, user, tenant).
+        #[qinvokable]
+        fn meeting_board_frame_url(self: &Backend, stored: &QString, params: &QString) -> QString;
         /// A native call from the TeamsJS host of `app_id` (a tab of
         /// `thread`, in the team `team_thread`): `kind` context, naa, sso
         /// or saveTab; answered by app_host_reply with the same `id`.
@@ -1797,6 +1805,22 @@ pub mod qobject {
         /// fine or empty).
         #[qinvokable]
         fn website_url_error(self: &Backend, url: &QString) -> QString;
+        /// Save another app's tab once its configuration page saved
+        /// (`settings` what the page set: contentUrl, entityId,
+        /// websiteUrl, removeUrl, suggestedDisplayName); a channel when
+        /// `team_id` is set. Outcome as add_website_tab's.
+        #[qinvokable]
+        fn add_app_tab(self: Pin<&mut Backend>, team_id: &QString, conversation_id: &QString, app_id: &QString, app_name: &QString, settings: &QString, post: bool);
+        /// A channel's New list (`existing` false) or Existing list tab.
+        #[qinvokable]
+        fn add_list_tab(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString, existing: bool);
+        /// Look a pasted Loop link up for Add an existing page (to
+        /// pageLinkJson).
+        #[qinvokable]
+        fn resolve_page_link(self: Pin<&mut Backend>, link: &QString);
+        /// Add an existing Loop page as a channel tab (Confirm).
+        #[qinvokable]
+        fn add_existing_page(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString, link: &QString);
         /// Save a website tab as Teams' Website configuration does (a
         /// channel when `team_id` is set); the outcome goes to
         /// channelTabResult as op "add", and the tabs reload.
@@ -2340,6 +2364,7 @@ pub struct BackendRust {
     store_json: QString,
     channel_tabs_json: QString,
     channel_tab_result: QString,
+    page_link_json: QString,
     app_about_json: QString,
     app_details_json: QString,
     app_reviews_json: QString,
@@ -13514,6 +13539,21 @@ impl qobject::Backend {
         QString::from(include_str!("app_host.js"))
     }
 
+    pub fn meeting_board_frame_url(&self, stored: &QString, params: &QString) -> QString {
+        let p: serde_json::Value = serde_json::from_str(&params.to_string()).unwrap_or_default();
+        let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let url = api::app_host::board_frame_url(
+            &stored.to_string(),
+            p.get("tabStart").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+            &s("correlation"),
+            p.get("initiator").and_then(|v| v.as_bool()).unwrap_or(false),
+            &s("meetingId"),
+            &s("user"),
+            &s("tenant"),
+        );
+        QString::from(url.unwrap_or_else(|| stored.to_string()).as_str())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn app_host_request(self: Pin<&mut Self>, app_id: &QString, thread: &QString, team_thread: &QString, tab_id: &QString, kind: &QString, id: &QString, payload: &QString) {
         let (app, thread, team, tab, kind, id, payload) =
@@ -13525,7 +13565,7 @@ impl qobject::Backend {
             let answer = match kind.as_str() {
                 "context" => match TeamsClient::new().await {
                     Ok(c) => match api::app_host::context(&c, &app, &thread, &team).await {
-                        Ok(v) => json!({ "context": v }).to_string(),
+                        Ok(v) => json!({ "context": v, "deepNaa": api::app_host::deep_naa(&app) }).to_string(),
                         Err(e) => json!({ "error": short_error(&e) }).to_string(),
                     },
                     Err(e) => json!({ "error": short_error(&e) }).to_string(),
@@ -13559,6 +13599,31 @@ impl qobject::Backend {
                             json!({ "error": "FailedToGetToken" }).to_string()
                         }
                     }
+                }
+                // getChatMembers: the chat's members' sign-in names.
+                "chatMembers" => {
+                    let r = async { api::tab_add::chat_member_upns(&TeamsClient::new().await?, &thread).await }.await;
+                    json!({ "upns": r.unwrap_or_default() }).to_string()
+                }
+                // A meeting chat's Whiteboard: the meeting's own board
+                // (Teams' fluidboard), and keeping the board Whiteboard
+                // reports (changeWhiteboardUrl).
+                "board" => {
+                    let r = async { api::app_host::meeting_board(&TeamsClient::new().await?, &thread, &s("organizer"), &s("title")).await }.await;
+                    match r {
+                        Ok(u) => json!({ "url": u }).to_string(),
+                        Err(e) => {
+                            tracing::warn!("meeting board for {thread} failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                "saveBoard" => {
+                    let r = async { api::app_host::save_meeting_board(&TeamsClient::new().await?, &thread, &s("organizer"), &s("url")).await }.await;
+                    if let Err(e) = &r {
+                        tracing::warn!("saving the meeting board for {thread} failed: {}", short_error(e));
+                    }
+                    json!({ "ok": r.is_ok() }).to_string()
                 }
                 "saveTab" => {
                     let settings = p.get("settings").cloned().unwrap_or_default();
@@ -15039,6 +15104,79 @@ impl qobject::Backend {
                 this.as_mut().set_agent_search_json(QString::from(v.to_string().as_str()));
             });
         });
+    }
+
+    pub fn add_app_tab(
+        self: Pin<&mut Self>,
+        team_id: &QString,
+        conversation_id: &QString,
+        app_id: &QString,
+        app_name: &QString,
+        settings: &QString,
+        post: bool,
+    ) {
+        let (team, conv, app, app_name) = (team_id.to_string(), conversation_id.to_string(), app_id.to_string(), app_name.to_string());
+        let settings: serde_json::Value = serde_json::from_str(&settings.to_string()).unwrap_or_default();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::tab_add::add_app_tab(&client, &conv, !team.is_empty(), &app, &app_name, &settings, post).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
+        });
+    }
+
+    pub fn add_list_tab(self: Pin<&mut Self>, team_id: &QString, channel_id: &QString, existing: bool) {
+        let (team, conv) = (team_id.to_string(), channel_id.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::tab_add::add_list_tab(&TeamsClient::new().await?, &conv, existing).await }.await;
+            let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
+        });
+    }
+
+    pub fn resolve_page_link(self: Pin<&mut Self>, link: &QString) {
+        let link = link.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::tab_add::resolve_page_link(&TeamsClient::new().await?, &link).await }.await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(p) => json!({ "link": link, "page": p }),
+                    Err(e) => json!({ "link": link, "error": short_error(&e) }),
+                };
+                this.as_mut().set_page_link_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn add_existing_page(self: Pin<&mut Self>, team_id: &QString, channel_id: &QString, link: &QString) {
+        let (team, conv, link) = (team_id.to_string(), channel_id.to_string(), link.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::tab_add::add_existing_page(&TeamsClient::new().await?, &conv, &link).await }.await;
+            let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
+        });
+    }
+
+    /// A tab was added (another app's, a list or a page): the outcome to
+    /// channelTabResult as op "add", and the tabs reload.
+    fn tab_added(mut self: Pin<&mut Self>, team: &str, conv: &str, result: anyhow::Result<String>) {
+        if let Err(e) = &result {
+            tracing::warn!("add tab failed: {e:#}");
+        }
+        let outcome = json!({
+            "op": "add",
+            "conversation": conv,
+            "tab": result.as_ref().map(|t| t.clone()).unwrap_or_default(),
+            "ok": result.is_ok(),
+            "error": result.as_ref().err().map(short_error).unwrap_or_default(),
+        })
+        .to_string();
+        self.as_mut().set_channel_tab_result(QString::from(outcome.as_str()));
+        self.as_mut().reload_tabs(team, conv);
     }
 
     pub fn website_url_error(&self, url: &QString) -> QString {

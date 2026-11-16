@@ -440,6 +440,21 @@ Rectangle {
         openTabPicker(chatId, isMeetingChat ? "meeting" : "chat", "")
     }
     function addTabMenuForTest() { addTabMenu.open(); return addTabMenu }
+    // A channel's Add a tab choice (Teams' extraAddTabActions): New list
+    // and Existing list add a Lists tab at once, which its page then sets
+    // up; Existing page asks for the page's link; Apps opens the picker.
+    function addTabChoice(key) {
+        if (key === "apps") root.openTabPicker(root.chatId, "channel", root.teamThread)
+        else if (key === "newList" || key === "existingList") backend.addListTab(root.teamId, root.chatId, key === "existingList")
+        else if (key === "existingPage") existingPageDialog.start(root.teamId, root.chatId)
+    }
+    // A tab just added opens, as Teams opens it (not a website tab, which
+    // opens in the browser).
+    property string pendingOpenTab: ""
+    onChannelTabsChanged: if (pendingOpenTab) {
+        const t = channelTabs.find(x => x.id === pendingOpenTab)
+        if (t) { pendingOpenTab = ""; if (!t.opens_in_browser) { manageApps = false; tab = t.name } }
+    }
     readonly property bool composeFocused: input.activeFocus
     readonly property bool detailsOpen: participants.visible
     function attachFile() { if (compose.visible) root.openAttach(compose.attachButton()) }
@@ -1219,12 +1234,12 @@ Rectangle {
                     x: 0; y: parent.height + 1
                     items: [
                         { label: "New page", icon: "loop-page-20", enabled: false },
-                        { label: "Existing page", icon: "link-20", enabled: false },
-                        { label: "New list", icon: "lists-new-20", enabled: false },
-                        { label: "Existing list", icon: "table-link-20", enabled: false },
+                        { label: "Existing page", icon: "link-20" },
+                        { label: "New list", icon: "lists-new-20" },
+                        { label: "Existing list", icon: "table-link-20" },
                         { label: "Apps", icon: "apps-20" }
                     ]
-                    onPicked: i => { if (i === 4) root.openTabPicker(root.chatId, "channel", root.teamThread) }
+                    onPicked: i => root.addTabChoice(["newPage", "existingPage", "newList", "existingList", "apps"][i])
                 }
             }
         }
@@ -1274,9 +1289,9 @@ Rectangle {
                 const choices = root.canAddTab && root.isChannel
                 if (choices) {
                     out.push({ kind: "add", key: "newPage", item: { label: "New page", icon: "loop-page-20", enabled: false } },
-                             { kind: "add", key: "existingPage", item: { label: "Existing page", icon: "link-20", enabled: false } },
-                             { kind: "add", key: "newList", item: { label: "New list", icon: "lists-new-20", enabled: false } },
-                             { kind: "add", key: "existingList", item: { label: "Existing list", icon: "table-link-20", enabled: false } },
+                             { kind: "add", key: "existingPage", item: { label: "Existing page", icon: "link-20" } },
+                             { kind: "add", key: "newList", item: { label: "New list", icon: "lists-new-20" } },
+                             { kind: "add", key: "existingList", item: { label: "Existing list", icon: "table-link-20" } },
                              { kind: "add", key: "apps", item: { label: "Apps", icon: "apps-20" } },
                              { kind: "sep", item: { separator: true } })
                 }
@@ -1295,7 +1310,7 @@ Rectangle {
                 onPicked: k => {
                     const e = tabDropdown.entries[k]
                     if (e.kind === "tab") root.openTabAt(e.index)
-                    else if (e.key === "apps") root.openTabPicker(root.chatId, "channel", root.teamThread)
+                    else if (e.kind === "add" && e.key !== "addTab") root.addTabChoice(e.key)
                     else if (e.key === "addTab") root.addTab()
                 }
                 onSubPicked: (k, j) => {
@@ -3224,11 +3239,28 @@ Rectangle {
             const members = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
             root.scheduleMeetingWith(members.filter(p => !p.me && p.mail).map(p => p.mail).join(", "), r.start_time || "", r.end_time || "")
         } else if (r.workflow) {
-            // Teams' Workflows dialog for the suggested action.
+            // Teams' Workflows dialog for the suggested action (chat-app
+            // 139267: launchTaskModule with the Workflows template, 800 x
+            // 600, the prefilled inputs as the launch's subEntityId).
             const pages = { schedule_meeting: "findmeetingtime", create_planner_task: "createaplanner", remind_me: "remindme" }
             const page = pages[r.workflow.recommendedToolName]
-            if (page) Qt.openUrlExternally("https://automations.teams.cloud.microsoft/webapps/workflows/prod/suggestedAction/" + page)
+            if (page) root.openWorkflowDialog(page, r.workflow.prefilledInputs)
         }
+    }
+    property var workflowDialog: null
+    function openWorkflowDialog(page, prefilled) {
+        const c = Qt.createComponent("TaskModuleDialog.qml")
+        if (c.status !== Component.Ready) { console.warn("workflow dialog", c.errorString()); return }
+        const d = c.createObject(root, {
+            appId: "25b07509-bc6a-4a53-b683-9beb24e55570", appName: "Workflows",
+            appIcon: "https://res.cdn.office.net/teamsappdata/app-assets/ring0/c3a1996d-db0f-4857-a6ea-7aabf0266b00/c3a1996d-db0f-4857-a6ea-7aabf0266b00_largeImage.png?v=2.1.5",
+            taskInfo: { width: 800, height: 600,
+                        url: "https://automations.teams.cloud.microsoft/webapps/workflows/prod/suggestedAction/" + page + "?theme={theme}&locale={locale}&ringId={ringId}" },
+            hostThread: root.chatId,
+            hostContext: prefilled ? { subEntityId: JSON.stringify(prefilled) } : {} })
+        d.finished.connect(() => { if (root.workflowDialog === d) root.workflowDialog = null; Qt.callLater(() => d.destroy()) })
+        root.workflowDialog = d
+        d.open()
     }
     function smartRepliesForTest() { return { set: root.smartReplies, chips: root.smartReplyItems.text.map(c => c.title), special: root.smartReplyItems.special.map(c => c.kind + ":" + (c.title || c.value)), feedback: root.smartReplyItems.feedback, shown: smartReplyRow.visible } }
     function smartReplyFeedbackForTest() { return srFeedbackForm }
@@ -3550,7 +3582,9 @@ Rectangle {
     // A channel's app tab (Notes, other apps' tabs): the app's own page,
     // framed and answered as Teams hosts it (OST's TeamsJS host,
     // docs/spec/app-host.md), filling the tab under the channel's header.
-    readonly property var hostedTab: isChannel ? (channelTabs.find(t => t.name === tab && (t.kind === "Extension" || t.kind === "OneNote") && !!t.content_template) || null) : null
+    // A chat's own app tabs (another app added with "+") too.
+    readonly property var hostedTab: channelTabs.find(t => t.name === tab && (t.kind === "Extension" || t.kind === "OneNote") && !!t.content_template) || null
+    function reloadTabs() { if (isChannel) backend.channelTabsLoad(teamId, chatId, chatName); else backend.chatTabsLoad(chatId) }
     function hostedTabForTest() { return hostedTabLoader.item }
     Loader {
         id: hostedTabLoader
@@ -3567,10 +3601,12 @@ Rectangle {
             hostContext: ({ entityId: hostedTabLoader.shown.entity_id, subEntityId: "" })
             hostThread: root.chatId; hostTeamThread: root.teamThread; hostTabId: hostedTabLoader.shown.id
             location: root.chatName + (root.teamName ? " · " + root.teamName : "")
-            home: hostedTabLoader.shown.content_template
+            homeTemplate: hostedTabLoader.shown.content_template
             // The app set its tab up (Notes, once its section is made):
             // read the channel's tabs again, as Teams' list updates.
-            onHostEvent: (name, json) => { if (name === "tabSaved") backend.channelTabsLoad(root.teamId, root.chatId, root.chatName) }
+            // (Its page may rename it, e.g. Lists: the tab stays open under
+            // its new name, as in Teams.)
+            onHostEvent: (name, json) => { if (name === "tabSaved") { root.pendingOpenTab = hostedTabLoader.shown ? hostedTabLoader.shown.id : ""; root.reloadTabs() } }
         }
     }
     // A meeting chat's Attendance tab.
@@ -3615,7 +3651,12 @@ Rectangle {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         onActiveChanged: if (active && !url) url = root.whiteboardUrl()
         sourceComponent: WebApp { showHeader: false; appName: "Whiteboard"; appId: "95de633a-083e-42f5-b444-a4295d8e9314"; location: root.chatName; home: whiteboardTabLoader.url
-            teamsHost: true; deepNaa: false; frameContext: "meetingStage"; hostThread: root.chatId; hostContext: ({ entityId: "", subEntityId: "" }) }
+            teamsHost: true; deepNaa: false; frameContext: "meetingStage"; hostThread: root.chatId; hostContext: ({ entityId: "", subEntityId: "" })
+            // The meeting's own board (Teams' fluidboard), with Teams'
+            // parameters; Whiteboard's changeWhiteboardUrl is kept for it.
+            meetingBoard: root.meeting ? { organizer: root.meeting.organizer_id || "", title: root.chatName, params: {
+                tabStart: Date.now(), correlation: root.newGuid(), initiator: root.meeting.organizer_id === root.myOid, meetingId: root.meetingIdB64,
+                user: root.myOid, tenant: backend.tenantId() || "" } } : null }
     }
     // The built-in chat tabs (docs/spec/chat-tabs.md). Notes: the chat's
     // Loop page under Teams' own header; Recap: drawn by Teams; Storyline:
@@ -3855,6 +3896,9 @@ Rectangle {
     }
     // About this tab (Teams' About dialog).
     TabAboutDialog { id: aboutDialog }
+    // A channel's Existing page (Teams' Add an existing page).
+    ExistingPageDialog { id: existingPageDialog }
+    function existingPageDialogForTest() { return existingPageDialog }
     // A tab change's outcome: close its dialog, or show Teams' failure text.
     Connections {
         target: backend
@@ -3863,6 +3907,8 @@ Rectangle {
             if (r.op === "rename" && renameDialog.tab && r.tab === renameDialog.tab.id) {
                 if (r.ok) { if (root.tab === renameDialog.tab.name) root.tab = renameField.text.trim(); renameDialog.close() }
                 else { renameDialog.saving = false; renameDialog.failure = "Unable to save " + renameDialog.tab.name + " tab configuration." }
+            } else if (r.op === "add" && r.ok && r.conversation === root.chatId && r.tab && root.visible) {
+                root.pendingOpenTab = r.tab
             } else if (r.op === "remove" && removeDialog.tab && r.tab === removeDialog.tab.id) {
                 if (r.ok) { if (root.tab === removeDialog.tab.name) root.tab = ""; removeDialog.close() }
                 else { removeDialog.removing = false; removeDialog.failure = "We couldn't remove your tab. Please try later." }

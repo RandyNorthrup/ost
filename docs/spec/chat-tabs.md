@@ -84,6 +84,44 @@ tokens. It talks to `{tenant}.sharepoint.com/_api/v2.1/drives/{drive}/items/{ite
 typing...", padding 12 40) and the insert row (Table, Bulleted list,
 Checklist, Task list, Voting table, More: 32 tall, radius 6, a #D1D1D1
 line, padding 5 12, 14/20, 12 apart, 40 in, 16 above the bottom).
+- **How Teams hosts it** (read 2026-11-16 from Teams on the web while a
+  channel's New page was made; the same host serves channel Pages):
+  - The frame is a same-origin `srcdoc` iframe (`frameborder=0
+    tabindex=-1 title=""`, `<body style="margin: 0px;"><div
+    id="componentDiv"></div>`), so it runs with Teams' origin; Teams'
+    code fills it. In it: the ODSP driver
+    (`res.cdn.office.net/fluid/prod/odsp-driver/hashed/index.*.js`,
+    global `FluidOdspDriver {getDocumentServiceFactory, prefetchSnapshot,
+    scriptLoadingStarted}`; its version from
+    `odsp-driver/versionless/deploymentManifestOdspDriver.json`) and the
+    page container's files from
+    `loop-page-container/versionless/loopPageContainerCodeLoadDetails.json`
+    (runtime, griffel css, loopPageContainer js/css, strings.en-us; global
+    `loopPageContainer.fluidExport {registerDependencies,
+    viewRegistryData, codeVersionDetails, config}`).
+  - Teams' "OfficeWebHost" / "LoopExperiences" code (chunks 600862 code
+    loader with a CDN allow list, 595515 ODSP driver loading, 285723) runs
+    Fluid's container loader (`@fluidframework/container-loader` 2.x,
+    bundled in Teams' 285723: Loader with `urlResolver`,
+    `documentServiceFactory: FluidOdspDriver.getDocumentServiceFactory({
+    tokenProvider, logger, driverCache, hostStoragePolicy,
+    settingsProvider})`, `codeLoader`, `scope: {IFluidDependencySynthesizer}`
+    with the host's services), resolves the file (`{siteUrl, driveId,
+    itemId}` or a new file `{driveId, siteUrl, filePath, filename}`),
+    loads the container and renders its entry point into `componentDiv`.
+  - The tokens are Teams' own (its web client `5e3ce6c0`): the storage
+    token for `https://{tenant}.sharepoint.com` (SharePoint Embedded for a
+    chat's Notes, the team site for a Page) and `https://pushchannel.1drv.ms`
+    for the push channel; the container's requests are
+    `{site}/_api/v2.1/drives/{drive}/items/{item}/opStream/…`
+    (`snapshots/trees/latest`, `opStream?filter=sequenceNumber…`,
+    `joinSession`, `capabilities`) and, for a new page,
+    `…/items/root:/{folder}/Loop paragraph.loop:/opStream/snapshots/snapshot
+    ?createLinkScope=default&createLinkRole=edit`.
+  - So showing the page needs OST to be that host: Fluid's container
+    loader, the dependency synthesizer with the services Loop's page
+    container asks the host for, and a token provider from OST's sign-in
+    (the browser sign-in's Teams client, which the storage accepts).
 - The file can't be opened outside Teams: the Loop web app
   (loop.cloud.microsoft/p/…, which the file's `:fl:` link redirects to)
   gets **403 accessDenied** on the container, and the file's address goes
@@ -160,9 +198,11 @@ chat: one Meet now call, no recording, no transcript):
   (`POST …/files`), Teams' header and lock, the loading, deleted (Create
   new) and error (Retry) pages; the "Notes have been created in this
   chat." row with its link.
-- [ ] Notes' page: needs OST to host Loop's page container (a Fluid
-  container with Teams' SharePoint tokens). Until then OST says "OST
-  can't show these notes yet." with Open in browser.
+- [ ] Notes' page: needs OST to host Loop's page container the way Teams
+  does (above: Fluid's container loader, the dependency synthesizer with
+  Loop's host services, the ODSP driver with OST's tokens). Measured, not
+  built; until then OST says "OST can't show these notes yet." with Open
+  in browser.
 - [x] Recap: the empty chat page; the meeting recap's layout, Shared files
   (Attendance opens the Attendance tab), the three pills and their empty
   pages.

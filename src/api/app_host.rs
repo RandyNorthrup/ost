@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 use super::client::TeamsClient;
@@ -130,6 +130,23 @@ pub fn sso_resource(f: &AppFacts, team_site_domain: &str, asked: Option<&serde_j
         anyhow::ensure!(r.eq_ignore_ascii_case(&mine), "App resource defined in manifest and iframe origin do not match");
     }
     Ok(mine)
+}
+
+/// Whether Teams offers deeply nested NAA (and managing trusted origins)
+/// to an app: its id in ECS `extensibility.deeplyNestedAppAuthAllowList`
+/// (Teams' NAA service, module 985817: `isDeeplyNestedAuthSupported()` is
+/// `allowList.includes(appId)`, `canParentManageNAATrustedOrigins()` the
+/// same). Measured: OneNote and Storyline yes; Lists, Whiteboard, Q&A
+/// and Workflows no. Without the ECS list, the apps measured with it.
+pub fn deep_naa(app_id: &str) -> bool {
+    const MEASURED: [&str; 2] = ["0d820ecd-def2-4297-adad-78056cde7c78", "683f3525-d193-4a67-8d91-22093beab1ca"];
+    super::ecs::setting("extensibility", "deeplyNestedAppAuthAllowList")
+        .and_then(|l| deep_naa_in(&l, app_id))
+        .unwrap_or_else(|| MEASURED.iter().any(|a| a.eq_ignore_ascii_case(app_id)))
+}
+
+fn deep_naa_in(list: &serde_json::Value, app_id: &str) -> Option<bool> {
+    Some(list.as_array()?.iter().filter_map(|v| v.as_str()).any(|a| a.eq_ignore_ascii_case(app_id)))
 }
 
 /// One id for this run of OST: Teams' `sessionId` in app contexts.
@@ -326,9 +343,129 @@ pub async fn context(client: &TeamsClient, app_id: &str, thread: &str, team_thre
     ))
 }
 
+/// The meeting's own whiteboard, which Teams keeps for the meeting so
+/// everyone opens the same board (captured 2026-11-16 in a "Meeting with
+/// OST Test 1" chat): `GET {mt}/beta/meetings/fluidboard?threadId=…
+/// &messageId=0&organizerId=8:orgid:{organizer}&tenantId=…&meetingTitle=…`
+/// answers `{url, shareUrl}`, the board's Whiteboard address (with its
+/// `encodedShareLink` once there is a board).
+pub async fn meeting_board(client: &TeamsClient, thread: &str, organizer_oid: &str, title: &str) -> Result<String> {
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let q = board_query(client, thread, organizer_oid);
+    let v: serde_json::Value = client
+        .http()
+        .get(format!("{base}/beta/meetings/fluidboard?{q}&meetingTitle={}", super::tabs::encode_uri_component(title)))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let url = v.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+    anyhow::ensure!(url.starts_with("https://"), "No whiteboard url for this meeting");
+    Ok(url.to_string())
+}
+
+fn board_query(client: &TeamsClient, thread: &str, organizer_oid: &str) -> String {
+    let e = super::tabs::encode_uri_component;
+    format!(
+        "threadId={}&messageId=0&organizerId={}&tenantId={}",
+        e(thread),
+        e(&format!("8:orgid:{organizer_oid}")),
+        e(&client.tenant_id().unwrap_or_default())
+    )
+}
+
+/// A board address as Teams keeps it for the meeting: what Whiteboard
+/// sent in `changeWhiteboardUrl`, without its `proofToken` (a credential;
+/// Teams' saved address has none).
+pub fn board_url_to_save(url: &str) -> Option<String> {
+    let mut u = url::Url::parse(url).ok().filter(|u| u.scheme() == "https")?;
+    let host = u.host_str()?.to_ascii_lowercase();
+    if !(host == "app.whiteboard.microsoft.com" || host == "whiteboard.cloud.microsoft" || host.ends_with(".whiteboard.microsoft.com")) {
+        return None;
+    }
+    // The other parameters exactly as sent.
+    let kept: Vec<&str> = u.query().unwrap_or_default().split('&').filter(|p| !p.is_empty() && !p.starts_with("proofToken=") && *p != "proofToken").collect();
+    let query = kept.join("&");
+    u.set_query(if query.is_empty() { None } else { Some(&query) });
+    Some(u.to_string())
+}
+
+/// Keep the meeting's board, as Teams does when Whiteboard reports it
+/// (`changeWhiteboardUrl`): `POST {mt}/beta/meetings/v2/whiteboard?
+/// threadId=…&messageId=0&organizerId=…&tenantId=…` with the address as a
+/// JSON string; answered `{"success": true}`.
+pub async fn save_meeting_board(client: &TeamsClient, thread: &str, organizer_oid: &str, url: &str) -> Result<()> {
+    let url = board_url_to_save(url).context("Not a whiteboard address")?;
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    client
+        .http()
+        .post(format!("{base}/beta/meetings/v2/whiteboard?{}", board_query(client, thread, organizer_oid)))
+        .bearer_auth(&token)
+        .json(&url)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+/// Teams' parameters on a meeting board's address in the meeting chat's
+/// Whiteboard tab (measured): the stored address, then tabStartTime,
+/// correlationId, culture, enableReactApp, isInitiator, isEduUser,
+/// meetingId, teamsEnvV2, client, userRole, isEU, userId, userTenantId,
+/// isNAAEnabled.
+#[allow(clippy::too_many_arguments)]
+pub fn board_frame_url(stored: &str, tab_start: i64, correlation: &str, initiator: bool, meeting_id: &str, user: &str, tenant: &str) -> Option<String> {
+    let mut u = url::Url::parse(stored).ok().filter(|u| u.scheme() == "https")?;
+    u.query_pairs_mut()
+        .append_pair("tabStartTime", &tab_start.to_string())
+        .append_pair("correlationId", correlation)
+        .append_pair("culture", "en-us")
+        .append_pair("enableReactApp", "1")
+        .append_pair("isInitiator", if initiator { "1" } else { "0" })
+        .append_pair("isEduUser", "0")
+        .append_pair("meetingId", meeting_id)
+        .append_pair("teamsEnvV2", "prod")
+        .append_pair("client", "TeamsModern")
+        .append_pair("userRole", "Member")
+        .append_pair("isEU", "false")
+        .append_pair("userId", user)
+        .append_pair("userTenantId", tenant)
+        .append_pair("isNAAEnabled", "true");
+    Some(u.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deep_naa_follows_teams_allow_list() {
+        let list = serde_json::json!(["0d820ecd-def2-4297-adad-78056cde7c78", "683F3525-D193-4A67-8D91-22093BEAB1CA"]);
+        assert_eq!(deep_naa_in(&list, "0d820ecd-def2-4297-adad-78056cde7c78"), Some(true));
+        assert_eq!(deep_naa_in(&list, "683f3525-d193-4a67-8d91-22093beab1ca"), Some(true));
+        assert_eq!(deep_naa_in(&list, "26bc2873-6023-480c-a11b-76b66605ce8c"), Some(false));
+        assert_eq!(deep_naa_in(&serde_json::json!("x"), "a"), None);
+    }
+
+    #[test]
+    fn meeting_boards_are_kept_as_teams() {
+        // Whiteboard's changeWhiteboardUrl carries a proof token; Teams'
+        // saved address has none.
+        let sent = "https://app.whiteboard.microsoft.com/meeting?embed=1&encodedShareLink=aHR0cA%3D%3D&shareLinkId=ae8a&canEditBoardUsingProofToken=1&proofToken=v1.secret&fluidFileId=c3Bv";
+        assert_eq!(
+            board_url_to_save(sent).unwrap(),
+            "https://app.whiteboard.microsoft.com/meeting?embed=1&encodedShareLink=aHR0cA%3D%3D&shareLinkId=ae8a&canEditBoardUsingProofToken=1&fluidFileId=c3Bv"
+        );
+        assert!(board_url_to_save("https://evil.example/meeting?x=1").is_none());
+        assert!(board_url_to_save("http://app.whiteboard.microsoft.com/meeting").is_none());
+        let f = board_frame_url("https://app.whiteboard.microsoft.com/meeting?embed=1&encodedShareLink=aHR0cA%3d%3d&shareLinkId=ae8a&meetingTitle=Meeting%20with%20OST%20Test%201",
+            1794843119003, "c", true, "MCMx", "u", "t").unwrap();
+        let keys: Vec<String> = url::Url::parse(&f).unwrap().query_pairs().map(|(k, _)| k.into_owned()).collect();
+        assert_eq!(keys, ["embed", "encodedShareLink", "shareLinkId", "meetingTitle", "tabStartTime", "correlationId", "culture", "enableReactApp", "isInitiator",
+            "isEduUser", "meetingId", "teamsEnvV2", "client", "userRole", "isEU", "userId", "userTenantId", "isNAAEnabled"]);
+    }
 
     #[test]
     fn channel_context_is_teams() {

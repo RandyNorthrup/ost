@@ -60,11 +60,12 @@ Popup {
     /// is its own page, which Teams embeds in this dialog (24.7, 75.9,
     /// 550.7 x 452.8) and which turns Save on through TeamsJS
     /// (pages.config.setValidityState). OST hosts that page in its TeamsJS
-    /// host (frameContext settings; docs/spec/app-host.md) and keeps what
-    /// it reports; saving another app's tab (settings.save and the tab's
-    /// property) isn't built yet, so Save stays off for it.
+    /// host (frameContext settings; docs/spec/app-host.md). Save asks the
+    /// page to save (settings.save); once it has set its settings and
+    /// answered settings.save.success, the tab is added as Teams'
+    /// createPlatformTab adds it (api::tab_add::add_app_tab).
     readonly property bool website: !!app && app.id === "com.microsoft.teamspace.tab.web"
-    readonly property bool valid: website && !nameError && !urlError && urlField.text.length > 0
+    readonly property bool valid: website ? (!nameError && !urlError && urlField.text.length > 0) : (appValid && !!configPage.item)
 
     function start(a, id, team, isChannel) {
         app = a; conversationId = id; teamId = team || ""; channel = isChannel
@@ -77,7 +78,11 @@ Popup {
     function save() {
         if (!valid || saving) return
         saving = true; failure = ""
-        backend.addWebsiteTab(teamId, conversationId, nameField.text.trim(), urlField.text, post.checked)
+        if (website) backend.addWebsiteTab(teamId, conversationId, nameField.text.trim(), urlField.text, post.checked)
+        else configPage.item.requestSave()
+    }
+    function appSaved(settings) {
+        backend.addAppTab(teamId, conversationId, app.id, app.name || "", JSON.stringify(settings || appSettings || {}), post.checked)
     }
     onOpened: urlField.forceActiveFocus()
     Connections {
@@ -88,7 +93,7 @@ Popup {
             if (r.op !== "add" || r.conversation !== root.conversationId) return
             root.saving = false
             if (r.ok) { root.close(); root.saved(r.tab) }
-            else root.failure = "Unable to save " + nameField.text.trim() + " tab configuration."
+            else root.failure = "Unable to save " + (root.website ? nameField.text.trim() : root.app.name) + " tab configuration."
         }
     }
 
@@ -163,12 +168,18 @@ Popup {
     }
 
     Loader {
+        id: configPage
         active: root.opened && !root.website && !!root.app && !!root.app.config_url
         x: 24.7; y: 75.9; width: 550.7; height: 452.8
         sourceComponent: WebApp {
             showHeader: false; appName: root.app ? root.app.name : ""; appId: root.app ? root.app.id : ""; home: root.app ? root.app.config_url : ""
             teamsHost: true; frameContext: "settings"; hostThread: root.conversationId
-            onHostEvent: (name, json) => { if (name === "validity") root.appValid = JSON.parse(json).valid; else if (name === "settings") root.appSettings = JSON.parse(json) }
+            onHostEvent: (name, json) => {
+                if (name === "validity") root.appValid = JSON.parse(json).valid
+                else if (name === "settings") root.appSettings = JSON.parse(json)
+                else if (name === "saveSuccess" && root.saving) root.appSaved(JSON.parse(json))
+                else if (name === "saveFailure" && root.saving) { root.saving = false; root.failure = "Unable to save " + root.app.name + " tab configuration." }
+            }
         }
     }
     Column {
@@ -233,6 +244,13 @@ Popup {
             Accessible.role: Accessible.AlertMessage; Accessible.name: text
         }
     }
+    Text {
+        visible: !root.website && !!root.failure
+        x: 24.7; y: 506.7; width: 550.7
+        text: root.failure; elide: Text.ElideRight
+        font.family: theme.font; font.pixelSize: 14; color: theme.redForeground3
+        Accessible.role: Accessible.AlertMessage; Accessible.name: text
+    }
     readonly property TextInput nameField: nameBox.input
     readonly property TextInput urlField: urlBox.input
 
@@ -263,6 +281,7 @@ Popup {
     }
 
     function setPost(on) { post.checked = on }
+    function configPageForTest() { return configPage.item }
     function fillForTest(name, url) { nameField.text = name; urlField.text = url }
     function stateForTest() { return JSON.stringify({ name: nameField.text, url: urlField.text, nameError: nameError, urlError: urlError, valid: valid, saving: saving, failure: failure, appValid: appValid, appSettings: appSettings }) }
 }

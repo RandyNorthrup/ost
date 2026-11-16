@@ -147,7 +147,7 @@ Window {
             hostContext: ({ entityId: win.tab.entity_id || "", subEntityId: "", isMultiWindow: true })
             hostThread: win.channelId; hostTeamThread: win.teamThread; hostTabId: win.tab.id || ""
             location: win.channelName + (win.teamName ? " · " + win.teamName : "")
-            home: win.tab.content_template
+            homeTemplate: win.tab.content_template || ""
         }
     }
     Column {

@@ -132,6 +132,73 @@ properties (`tab::{guid}`), set through the chat service:
   0.67 #F0F0F0, radius 4, padding 7 3 7 11, the 38 px icon, the name 14/20
   semibold at 60.7).
 
+## Another app's tab (measured in Teams on the web, 2026-11-16)
+OneNote in OST group test (its notebook "OST Notebook"), the requests
+read in Teams' page and worker (createPlatformTab, worker module 707328):
+1. Save → the page's `settings.setSettings` and `settings.save.success`
+   (app-host.md).
+2. `PUT {chatsvc}/v1/threads/{thread}/properties?name=tab::{guid}`, the
+   property in this key order:
+   `{"id":"tab::{guid}","order":110000,"definitionId":"0d820ecd-…","directive":"extension-tab","name":"OST%20Notebook","type":"tab:","settings":{"subtype":"extension","url":"<contentUrl>","websiteUrl":"https://m365.cloud.microsoft/launch/onenote?auth=2","entityId":"3604df1d-…","dateAdded":"2026-11-16T15:10:41.974Z"}}`.
+   The settings are `{subtype: "extension", url: contentUrl, removeUrl,
+   websiteUrl, entityId, dateAdded}`; what the page didn't give is left
+   out (OneNote gave no removeUrl). The order as Website's.
+3. **The name** (module 850195 `l`) is the page's suggestedDisplayName,
+   stored URI-encoded (`encodeURIComponent`, "OST%20Notebook") and shown
+   decoded; when another tab here has that name (case-insensitive), "
+   (n)" goes after it, one more than the highest taken ("OST%20test%20list
+   (1)").
+4. With "Post to the chat about this tab": the same post as Website's, its
+   `fileName`/`title` the stored (encoded) name, then the PUT again with
+   `replyChainId`.
+5. The dialog closes and the new tab opens (its contentUrl framed,
+   frameContext `content`); `POST {mt}/beta/users/apps/activity/{app}/`
+   `{instanceId, channelId, lastViewTimestamp}` records its use.
+
+## A channel's New page, Existing page, New list, Existing list
+Measured in OST Test Team › OST test channel (Teams' module 987977
+useChannelPagesTabActions / useChannelSpListsTabActions, the worker's
+createPlatformTab):
+- **New list** / **Existing list**: no dialog; Teams adds a Lists tab
+  (`26bc2873-6023-480c-a11b-76b66605ce8c`, displayName "Untitled list")
+  at once, no post:
+  `{"id","order","definitionId":"26bc2873-…","directive":"extension-tab","name":"Untitled%20list","type":"tab:","settings":{"subtype":"extension","url":"https://{teamSiteDomain}{teamSitePath}/_layouts/15/teamsappstartup.aspx?launch=create&theme={theme}&locale={locale}&app=teamslist&teamId={teamId}&channelId={channelId}&ringId={ringId}&sid={sessionId}&asid={appSessionId}&userTeamRole={userTeamRole}","dateAdded"}}`
+  (`launch=existing` for Existing list; ECS channelSpListNewListUrl /
+  channelSpListExistingListUrl), and opens it. SharePoint's page ("How
+  would you like to start?": List, Form, Gallery, Calendar, Board,
+  Import from…; Existing: "Add an existing list", Paste a list link, Or
+  select a list from the team) makes or picks the list and calls
+  `settings.setSettings [{entityId: "", contentUrl: "…/_layouts/15/
+  FileBrowser.aspx?…&scenario=Lists…", suggestedDisplayName}]`. Teams
+  rewrites the property in place (updatePlatformTab, worker module 548096
+  `C`): keys kept in their order, `settings.url` and `entityId` set
+  (`entityId` added at the end), the name stored as above ("Untitled
+  list" → "OST%20test%20list"; the same list picked again became "OST
+  test list (1)"); then beforeUnload / readyToUnload / load to the cached
+  frame. Lists' runtime: no deeply nested NAA.
+- **Existing page**: Teams' "Add an existing page" (paste-loop-modal), 600
+  wide, radius 8, padding 16 24: "Add an existing page" (h2 20/28
+  semibold) at 17, "When you add a page, everyone in the channel can
+  access it." (12/16 #424242) at 48, a 550 x 32 "Paste a link" field at
+  81; New Page (outline) left, Cancel and Add page (brand; off until
+  there's a link) right, 96 x 32, at 137 (186 tall). Add page looks the
+  link up (`GET graph/v1.0/shares/u!{link}`, the channel group's access
+  checked) and shows the page's card (550 x 64 at 137: the Loop icon, the
+  name 14/20 semibold, "Last edited by {name}" 12/20 semibold #424242,
+  "Open in Loop" 32 x 32), the button now Confirm (274 tall). Confirm:
+  `POST {site}/_api/v2.1/drives/{drive}/items/{item}/createLink
+  {"type":"edit","scope":"organization"}`, then
+  `{"id","order","definitionId":"5ae80e49-…","directive":"channel-page-tab","type":"tab:","settings":{"componentUrl":"<the new link>?nav=<the pasted link's nav>","isLieChannelPageTab":false,"isTabNameSynced":true,"dateAdded"},"name":"Loop%20paragraph"}`
+  (the name last), and the tab opens.
+- **New page**: Teams adds the Page tab first,
+  `{"id","order","definitionId":"5ae80e49-…","directive":"channel-page-tab","type":"tab:","settings":{"isLieChannelPageTab":false,"isTabNameSynced":false,"creatorUserMri":"8:orgid:{me}","dateAdded"},"name":"Untitled%20page"}`,
+  opens it, and Loop's page container (chat-tabs.md, the same host as a
+  chat's Notes) makes the page: `POST {site}/_api/v2.1/drives/{drive}/
+  items/root:/{channel folder}/Loop paragraph.loop:/opStream/snapshots/
+  snapshot?createLinkScope=default&createLinkRole=edit` with the new
+  container's summary; Teams then sets the tab's `componentUrl` (the
+  property without `creatorUserMri`).
+
 ## A chat's own tabs
 - They follow the built-in ones; in OST group test the website tab went
   under "+1" (the "+" keeps its 32 px).
@@ -200,20 +267,34 @@ properties (`tab::{guid}`), set through the chat service:
   meetingStage, no deeply nested NAA): it initializes, gets its tokens
   (client 95de633a for whiteboard.microsoft.com, Graph, api.office.net)
   and opens a board (seen 2026-11-16 in a "Meeting with OST Test 1" chat).
-- [ ] Meeting Whiteboard's custom messages: Teams answers `readyForUrl`
-  and passes `updateBoardContentFromTeams`; `changeWhiteboardUrl` (the
-  meeting's board, which Teams keeps so everyone opens the same one) and
-  `loadingCallback` aren't handled yet, so OST opens a new board each
-  time instead of the meeting's.
-- [ ] Q&A is hosted the same way (its context measured: entityId "",
-  the meeting chat, meetingId base64 of `0#<chat>#0`, NAA client
-  00bf137d for `https://web.yammer.com/teamsmeeting/user_impersonation`),
-  but not tried live: only scheduled meetings have it, and the test
-  meeting chats are Meet now.
-- [ ] New page, Existing page, New list, Existing list (shown, off).
-- [ ] Other apps' configuration pages load in OST's TeamsJS host
-  (frameContext settings), which keeps the validity and settings they
-  report; Save (Teams' settings.save round trip and the new tab's
-  property) isn't built, so it stays off.
+- [x] Meeting Whiteboard opens the meeting's own board: Teams'
+  fluidboard address with Teams' parameters; Whiteboard's
+  `changeWhiteboardUrl` is kept for the meeting (`POST …/meetings/v2/
+  whiteboard`, without the proof token) and `loadingCallback` answered
+  (checked 2026-11-16 in a "Meeting with OST Test 1" chat: the same board
+  Teams on the web opened, the same parameter list, saved twice as in
+  Teams).
+- [x] Q&A in a scheduled meeting chat ("OST calendar test: created from
+  OST"): Engage's page on OST's host shows what Teams shows there, "Q&A is
+  not available for this event." (Q&A isn't on in that meeting's options,
+  which were left as they are).
+- [x] Another app's configuration page: Save asks the page
+  (`settings.save`), then adds the tab exactly as Teams'
+  createPlatformTab (property, name rule, post, reply chain), opens it
+  and hosts its content page (checked: OneNote's "OST Notebook" in OST
+  group test, saved as "OST Notebook (1)" next to the one Teams had made,
+  opened, removed).
+- [x] New list and Existing list add the Lists tab as Teams and host
+  SharePoint's page; the page's setSettings renames and re-points the tab
+  in place (checked in OST test channel: "Untitled list (2)" became "OST
+  test list (2)" after picking the list in OST).
+- [x] Existing page: Teams' dialog, the link looked up (card with the
+  page's name and last editor), Confirm adds the Page tab as Teams
+  (createLink, property); checked with the channel's "Loop paragraph".
+- [ ] New page: needs Loop's page container in OST (chat-tabs.md, the
+  same host as a chat's Notes), which makes the page; shown, off (also
+  the dialog's New Page button).
+- [ ] The channel-group access check and its warnings in Add an existing
+  page (paste_loop_modal_permission_*), and Teams' success notification.
 - [ ] Breakout Rooms with rooms (the room list's layout), Assign
   participants, Room settings and Import from CSV in the tab.

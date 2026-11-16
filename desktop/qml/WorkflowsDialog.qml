@@ -83,7 +83,13 @@ Popup {
             id: page
             active: false
             x: 0; y: 90.4; width: parent.width; height: parent.height - 90.4
-            sourceComponent: WebApp { showHeader: false; appName: "Workflows"; appId: dlg.appId; home: dlg.url }
+            // Teams' task module: the Workflows page in its TeamsJS host
+            // (frameContext task, no deeply nested NAA; the session is the
+            // conversation's id, measured 2026-11-16).
+            sourceComponent: WebApp { showHeader: false; appName: "Workflows"; appId: dlg.appId; home: dlg.url
+                teamsHost: true; frameContext: "task"; deepNaa: false
+                hostThread: dlg.chatId || dlg.channelId; hostSessionId: dlg.chatId || dlg.channelId
+                hostContext: ({ entityId: "", subEntityId: "", dialogParameters: {} }) }
         }
     }
 }

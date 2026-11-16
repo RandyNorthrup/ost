@@ -74,7 +74,47 @@ Item {
     /// failure, settings, validity, openLink…), as (name, JSON).
     signal hostEvent(string name, string json)
     readonly property string hostId: "h" + Math.floor(Math.random() * 1e9).toString(36) + Date.now().toString(36)
-    readonly property string appSessionId: newGuid()
+    /// The app's session (getContext's appSessionId, the frame's
+    /// data-sessionid): new for each host unless given (Teams' Workflows
+    /// dialog uses the channel's id).
+    property string hostSessionId: ""
+    readonly property string appSessionId: hostSessionId || newGuid()
+    /// A meeting chat's Whiteboard: {organizer, title, params}. Teams opens
+    /// the meeting's own board (its fluidboard address, with Teams'
+    /// parameters) and keeps the board Whiteboard reports.
+    property var meetingBoard: null
+    /// Ask the hosted configuration page to save (Teams' Save).
+    function requestSave() { hostBridge.saveRequested() }
+    /// Answer a dialog this app opened (tasks.startTask): `error` (null, or
+    /// Teams' "User cancelled/closed the task module.") and its result.
+    function finishTask(callId, error, result) { hostBridge.taskFinished(callId, JSON.stringify({ error: error, result: result })) }
+    /// Post Teams' event `func` with `args` to the app's frame.
+    function sendFrameMessage(func, args) { hostBridge.frameMessage(func, JSON.stringify(args || [])) }
+    // The dialog this app has open (tasks.startTask), if any.
+    property var openTask: null
+    Connections {
+        target: root
+        function onHostEvent(name, json) { root.taskEvent(name, json) }
+    }
+    function taskEvent(name, json) {
+        if (name === "startTask") {
+            const r = JSON.parse(json)
+            const info = r.taskInfo || {}
+            // A page (dialog.url); adaptive-card dialogs aren't drawn.
+            if (!info.url || String(info.url).indexOf("https://") !== 0) { root.finishTask(r.callId, "User cancelled/closed the task module.", null); return }
+            // (Made at run time: the dialog hosts a WebApp itself.)
+            const c = Qt.createComponent("TaskModuleDialog.qml")
+            if (c.status !== Component.Ready) { console.warn("APPHOST dialog", c.errorString()); root.finishTask(r.callId, "User cancelled/closed the task module.", null); return }
+            const d = c.createObject(root, { opener: root, callId: r.callId, taskInfo: info, appId: root.appId, appName: root.appName, appIcon: root.tileUrl,
+                                             hostThread: root.hostThread, hostTeamThread: root.hostTeamThread })
+            d.finished.connect((callId, error, result) => { root.finishTask(callId, error, result); if (root.openTask === d) root.openTask = null; Qt.callLater(() => d.destroy()) })
+            d.messageForParent.connect(m => root.sendFrameMessage("messageForParent", [m]))
+            root.openTask = d
+            d.open()
+        } else if (name === "messageForChild" && root.openTask) {
+            root.openTask.sendToPage(JSON.parse(json).message)
+        }
+    }
     property var hostEvents: []
     /// TeamsJS's theme names.
     readonly property string hostTheme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default"
@@ -86,20 +126,39 @@ Item {
             return (c === "x" ? r : (r & 3 | 8)).toString(16)
         })
     }
+    // The address the frame loads: `home`, or the meeting's board.
+    property string hostUrl: ""
+    /// A hosted app's address as stored, placeholders kept (a `url`
+    /// property can't hold `https://{teamSiteDomain}{teamSitePath}/…`,
+    /// Lists' address); else `home`.
+    property string homeTemplate: ""
+    readonly property string hostAddress: homeTemplate || home.toString()
     function startHost() {
-        if (!root.home.toString()) return
-        backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "context", root.hostId + ":ctx", "{}")
+        if (!root.hostAddress) return
+        root.hostUrl = root.hostAddress
+        if (root.meetingBoard)
+            backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "board", root.hostId + ":board",
+                                   JSON.stringify({ organizer: root.meetingBoard.organizer || "", title: root.meetingBoard.title || "" }))
+        else
+            backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "context", root.hostId + ":ctx", "{}")
     }
     function loadHostPage(ctx) {
         const c = Object.assign({}, ctx, root.hostContext, {
             appSessionId: root.appSessionId, appLaunchId: newGuid(), theme: hostBridge.theme,
             appId: root.appId, hostClientType: "desktop" })
-        hostBridge.config = JSON.stringify({ hostId: root.hostId, url: root.home.toString(), appId: root.appId, title: root.appName,
-                                             frameContext: root.frameContext, hostClientType: "desktop", deepNaa: root.deepNaa, context: c })
+        hostBridge.config = JSON.stringify({ hostId: root.hostId, url: root.hostUrl || root.hostAddress, appId: root.appId, title: root.appName,
+                                             frameContext: root.frameContext, hostClientType: "desktop", deepNaa: root.deepNaa, context: c,
+                                             meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null })
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
     }
-    function hostStateForTest() { return JSON.stringify({ events: root.hostEvents, url: web.url.toString() }) }
+    function hostStateForTest() {
+        // The frame's address without its values (they may hold links).
+        const full = root.hostUrl || root.hostAddress
+        const q = full.indexOf("?")
+        const u = { frame: q < 0 ? full : full.slice(0, q), params: q < 0 ? [] : full.slice(q + 1).split("&").map(p => p.split("=")[0]) }
+        return JSON.stringify({ events: root.hostEvents, url: web.url.toString(), frame: u.frame || "", params: u.params || [] })
+    }
     /// Point the hosted frame at another entity and address, as Teams
     /// moves its cached frame (beforeUnload, then load).
     function relaunchHost(entityId, template) { hostBridge.relaunchRequested(entityId, template) }
@@ -110,6 +169,9 @@ Item {
         readonly property string theme: root.hostTheme
         signal reply(string id, string json)
         signal relaunchRequested(string entityId, string template)
+        signal saveRequested()
+        signal taskFinished(string callId, string json)
+        signal frameMessage(string func, string json)
         function request(kind, id, json) {
             if (id.indexOf(root.hostId + ":") !== 0) return
             backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, kind, id, json)
@@ -128,8 +190,21 @@ Item {
         function onAppHostReply(id, json) {
             if (id === root.hostId + ":ctx") {
                 let ctx = {}
-                try { ctx = JSON.parse(json).context || {} } catch (e) {}
+                try {
+                    const r = JSON.parse(json)
+                    ctx = r.context || {}
+                    // Teams' allow list for deeply nested NAA, when known.
+                    if (typeof r.deepNaa === "boolean") root.deepNaa = r.deepNaa
+                } catch (e) {}
                 root.loadHostPage(ctx)
+            } else if (id === root.hostId + ":board") {
+                // The meeting's board, with Teams' parameters (else the
+                // address OST was given, where Whiteboard makes one).
+                let r = {}
+                try { r = JSON.parse(json) } catch (e) {}
+                if (r.url) root.hostUrl = backend.meetingBoardFrameUrl(r.url, JSON.stringify(root.meetingBoard.params || {}))
+                console.info("APPHOST " + root.appName + " board " + (r.url ? "meeting's" : "none: " + (r.error || "")))
+                backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "context", root.hostId + ":ctx", "{}")
             } else if (id.indexOf(root.hostId + ":") === 0) hostBridge.reply(id, json)
         }
     }
@@ -304,7 +379,8 @@ Item {
         ready = true
     }
     // Another page for the same view (a different channel's Page).
-    onHomeChanged: if (ready) { if (root.teamsHost) { if (root.channelJs) root.startHost() } else web.url = root.home }
+    onHomeChanged: if (ready) { if (root.teamsHost) { if (root.channelJs && !root.homeTemplate) root.startHost() } else web.url = root.home }
+    onHomeTemplateChanged: if (ready && root.teamsHost && root.channelJs) root.startHost()
 
     // A channel's Page, as Teams heads it: the Loop page's icon and name
     // (which opens it in Loop), then Shared locations, Copy component and

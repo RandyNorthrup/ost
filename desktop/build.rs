@@ -127,6 +127,8 @@ fn main() {
         "qml/AppIcon.qml",
         "qml/TabAboutDialog.qml",
         "qml/TabConfigDialog.qml",
+        "qml/TaskModuleDialog.qml",
+        "qml/ExistingPageDialog.qml",
         "qml/BreakoutTab.qml",
         "qml/TabWindow.qml",
         "qml/MessageHost.qml",

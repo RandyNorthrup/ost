@@ -202,17 +202,16 @@ pub async fn rename_property(client: &TeamsClient, thread_id: &str, tab_id: &str
     let others: Vec<String> = tabs
         .iter()
         .filter(|t| str_at(t, "/id") != tab_id)
-        .map(|t| str_at(t, "/name"))
+        .map(|t| display_name(&str_at(t, "/name")))
         .collect();
     if let Some(e) = tabs::rename_error(name, &others) {
         bail!(e);
     }
-    let mut t = tabs
-        .into_iter()
-        .find(|t| str_at(t, "/id") == tab_id)
-        .context("No such tab")?;
-    t["name"] = serde_json::json!(name.trim());
-    put_property(client, thread_id, tab_id, Some(&t.to_string())).await
+    // In place, the name stored as Teams stores names (module 850195 `D`).
+    let raw = raw_property(&props, tab_id).context("No such tab")?;
+    let mut t: ordered::Json = serde_json::from_str(&raw).context("Tab property")?;
+    t.set("name", Some(stored_name(name, &others).into()));
+    put_property(client, thread_id, tab_id, Some(&serde_json::to_string(&t)?)).await
 }
 
 /// A tab's thread property once its app has set its settings (TeamsJS
@@ -273,17 +272,469 @@ pub fn configured_property(old: &serde_json::Value, settings: &serde_json::Value
 }
 
 /// Save a tab's new settings from its app, as Teams does: the thread
-/// property rewritten (see [`configured_property`]). Only https content
-/// addresses are taken.
+/// property rewritten. A tab Teams' client made (it has a `dateAdded`,
+/// e.g. a channel's New list) is updated in place, Teams' updatePlatformTab
+/// (see [`updated_property`], captured for Lists 2026-11-16); a tab the
+/// service made (the team's first Notes) takes Teams' configured shape
+/// ([`configured_property`]). Only https content addresses are taken.
 pub async fn set_settings(client: &TeamsClient, thread_id: &str, tab_id: &str, settings: &serde_json::Value) -> Result<()> {
     let url = settings.get("contentUrl").and_then(|v| v.as_str()).unwrap_or_default();
     anyhow::ensure!(url.starts_with("https://"), "The tab's address must be https");
     let props = thread_properties(client, thread_id).await?;
-    let old = property_tabs(&props)
+    let tabs = property_tabs(&props);
+    let old = tabs.iter().find(|t| str_at(t, "/id") == tab_id).context("No such tab")?;
+    let property = if old.pointer("/settings/dateAdded").is_some() {
+        let raw = raw_property(&props, tab_id).context("No such tab")?;
+        let others: Vec<String> = tabs.iter().filter(|t| str_at(t, "/id") != tab_id).map(|t| display_name(&str_at(t, "/name"))).collect();
+        updated_property(&raw, settings, &others)?
+    } else {
+        configured_property(old, settings)
+    };
+    put_property(client, thread_id, tab_id, Some(&property)).await
+}
+
+/// A `tab::` thread property as stored (the JSON text).
+fn raw_property(props: &serde_json::Value, tab_id: &str) -> Option<String> {
+    props.as_object()?.iter().find_map(|(_, v)| {
+        let s = match v {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Object(_) => v.to_string(),
+            _ => return None,
+        };
+        let t: serde_json::Value = serde_json::from_str(&s).ok()?;
+        (t.get("id").and_then(|i| i.as_str()) == Some(tab_id)).then_some(s)
+    })
+}
+
+/// A tab's name as Teams shows it: the stored name is URI-encoded (Teams
+/// keeps `encodeURIComponent(name)`, e.g. "OST%20Notebook") and shown
+/// decoded; a name that doesn't decode is shown as it is.
+pub fn display_name(stored: &str) -> String {
+    if !stored.contains('%') {
+        return stored.to_string();
+    }
+    let bytes = stored.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = stored.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok());
+            match hex {
+                Some(b) => {
+                    out.push(b);
+                    i += 3;
+                    continue;
+                }
+                None => return stored.to_string(),
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| stored.to_string())
+}
+
+/// The name Teams stores for a new or renamed tab (worker module 850195
+/// `l`): `encodeURIComponent` of the (decoded, trimmed) name, with " (n)"
+/// added when another tab here already has that name ("OST test list" →
+/// "OST%20test%20list (1)").
+pub fn stored_name(name: &str, others: &[String]) -> String {
+    let encoded = tabs::encode_uri_component(&display_name(name.trim()));
+    let plain = display_name(&encoded);
+    let mut n: i64 = -1;
+    for o in others {
+        if o.eq_ignore_ascii_case(&plain) {
+            n = n.max(0);
+        } else if let (Some(head), Some(rest)) = (o.get(..plain.len()), o.get(plain.len()..))
+            && head.eq_ignore_ascii_case(&plain)
+            && let Some(num) = rest.strip_prefix(" (").and_then(|r| r.strip_suffix(')'))
+            && !num.is_empty()
+            && num.bytes().all(|b| b.is_ascii_digit())
+            && let Ok(k) = num.parse::<i64>()
+        {
+            n = n.max(k);
+        }
+    }
+    if n > -1 { format!("{encoded} ({})", n + 1) } else { encoded }
+}
+
+/// JSON with its objects' keys kept in order (Teams rewrites a tab's
+/// property in place, so its key order is kept).
+mod ordered {
+    use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+    use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum Json {
+        Plain(serde_json::Value),
+        Array(Vec<Json>),
+        Object(Vec<(String, Json)>),
+    }
+
+    impl Json {
+        pub fn get_mut(&mut self, key: &str) -> Option<&mut Json> {
+            match self {
+                Json::Object(o) => o.iter_mut().find(|(k, _)| k == key).map(|(_, v)| v),
+                _ => None,
+            }
+        }
+        /// Set a key (kept in its place, or added at the end); `None`
+        /// leaves it out, as JavaScript's JSON drops `undefined`.
+        pub fn set(&mut self, key: &str, value: Option<serde_json::Value>) {
+            if let Json::Object(o) = self {
+                match value {
+                    Some(v) => match o.iter_mut().find(|(k, _)| k == key) {
+                        Some((_, slot)) => *slot = Json::Plain(v),
+                        None => o.push((key.to_string(), Json::Plain(v))),
+                    },
+                    None => o.retain(|(k, _)| k != key),
+                }
+            }
+        }
+    }
+
+    impl Serialize for Json {
+        fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            match self {
+                Json::Plain(v) => v.serialize(s),
+                Json::Array(a) => {
+                    let mut seq = s.serialize_seq(Some(a.len()))?;
+                    for x in a {
+                        seq.serialize_element(x)?;
+                    }
+                    seq.end()
+                }
+                Json::Object(o) => {
+                    let mut map = s.serialize_map(Some(o.len()))?;
+                    for (k, v) in o {
+                        map.serialize_entry(k, v)?;
+                    }
+                    map.end()
+                }
+            }
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Json {
+        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct V;
+            impl<'de> Visitor<'de> for V {
+                type Value = Json;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("JSON")
+                }
+                fn visit_bool<E>(self, v: bool) -> Result<Json, E> {
+                    Ok(Json::Plain(v.into()))
+                }
+                fn visit_i64<E>(self, v: i64) -> Result<Json, E> {
+                    Ok(Json::Plain(v.into()))
+                }
+                fn visit_u64<E>(self, v: u64) -> Result<Json, E> {
+                    Ok(Json::Plain(v.into()))
+                }
+                fn visit_f64<E>(self, v: f64) -> Result<Json, E> {
+                    Ok(Json::Plain(serde_json::json!(v)))
+                }
+                fn visit_str<E>(self, v: &str) -> Result<Json, E> {
+                    Ok(Json::Plain(v.into()))
+                }
+                fn visit_string<E>(self, v: String) -> Result<Json, E> {
+                    Ok(Json::Plain(v.into()))
+                }
+                fn visit_unit<E>(self) -> Result<Json, E> {
+                    Ok(Json::Plain(serde_json::Value::Null))
+                }
+                fn visit_none<E>(self) -> Result<Json, E> {
+                    Ok(Json::Plain(serde_json::Value::Null))
+                }
+                fn visit_seq<A: SeqAccess<'de>>(self, mut a: A) -> Result<Json, A::Error> {
+                    let mut out = Vec::new();
+                    while let Some(x) = a.next_element()? {
+                        out.push(x);
+                    }
+                    Ok(Json::Array(out))
+                }
+                fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Json, A::Error> {
+                    let mut out: Vec<(String, Json)> = Vec::new();
+                    while let Some((k, v)) = m.next_entry::<String, Json>()? {
+                        out.retain(|(o, _)| *o != k);
+                        out.push((k, v));
+                    }
+                    Ok(Json::Object(out))
+                }
+            }
+            d.deserialize_any(V)
+        }
+    }
+}
+
+/// A string setting an app gave, or `None` when it left it out (Teams'
+/// property then has no such key).
+fn given(settings: &serde_json::Value, key: &str) -> Option<serde_json::Value> {
+    settings.get(key).filter(|v| v.is_string()).cloned()
+}
+
+/// A tab's property after its content page set new settings, as Teams'
+/// updatePlatformTab rewrites it (worker module 548096 `C`): the stored
+/// JSON with its keys in place; the name, when the page suggests another,
+/// stored as [`stored_name`] does; `settings.url`, `entityId`,
+/// `removeUrl` and `websiteUrl` set from the page (left out when it gave
+/// none). Captured: Lists' "Untitled list" became "OST%20test%20list"
+/// with its list's address, `dateAdded` kept.
+pub fn updated_property(raw: &str, settings: &serde_json::Value, other_names: &[String]) -> Result<String> {
+    let mut t: ordered::Json = serde_json::from_str(raw).context("Tab property")?;
+    let name = settings.get("suggestedDisplayName").and_then(|v| v.as_str()).unwrap_or_default().trim();
+    let old_name = match t.get_mut("name") {
+        Some(ordered::Json::Plain(serde_json::Value::String(s))) => s.clone(),
+        _ => String::new(),
+    };
+    if !name.is_empty() && name != old_name {
+        t.set("name", Some(stored_name(name, other_names).into()));
+    }
+    if let Some(s) = t.get_mut("settings") {
+        s.set("url", given(settings, "contentUrl"));
+        s.set("entityId", given(settings, "entityId"));
+        s.set("removeUrl", given(settings, "removeUrl"));
+        s.set("websiteUrl", given(settings, "websiteUrl"));
+    }
+    Ok(serde_json::to_string(&t)?)
+}
+
+/// A configurable tab's thread property as Teams' createPlatformTab makes
+/// it for an ExtensionTab (worker module 707328 `v`), in its key order:
+/// `{"id","order","definitionId","directive":"extension-tab","name",
+/// "type":"tab:","settings":{"subtype":"extension","url","removeUrl",
+/// "websiteUrl","entityId","dateAdded"}}`, settings the app didn't give
+/// left out (OneNote's: no removeUrl).
+pub fn extension_property(id: &str, order: f64, app_id: &str, name: &str, settings: &serde_json::Value, date_added: &str) -> String {
+    let mut s = vec![("subtype".to_string(), ordered::Json::Plain("extension".into()))];
+    for (key, from) in [("url", "contentUrl"), ("removeUrl", "removeUrl"), ("websiteUrl", "websiteUrl"), ("entityId", "entityId")] {
+        if let Some(v) = given(settings, from) {
+            s.push((key.to_string(), ordered::Json::Plain(v)));
+        }
+    }
+    s.push(("dateAdded".to_string(), ordered::Json::Plain(date_added.into())));
+    let p = |k: &str, v: serde_json::Value| (k.to_string(), ordered::Json::Plain(v));
+    let t = ordered::Json::Object(vec![
+        p("id", id.into()),
+        p("order", serde_json::from_str(&js_number(order)).unwrap_or_default()),
+        p("definitionId", app_id.into()),
+        p("directive", "extension-tab".into()),
+        p("name", name.into()),
+        p("type", "tab:".into()),
+        ("settings".to_string(), ordered::Json::Object(s)),
+    ]);
+    serde_json::to_string(&t).unwrap_or_default()
+}
+
+/// The tabs and orders a new tab is placed after, and the names it must
+/// not repeat.
+async fn existing_tabs(client: &TeamsClient, thread_id: &str) -> Result<(Vec<f64>, Vec<String>)> {
+    let props = thread_properties(client, thread_id).await?;
+    let tabs = property_tabs(&props);
+    let orders = tabs.iter().map(order_of).filter(|o| o.is_finite() && *o < f64::MAX).collect();
+    let names = tabs.iter().map(|t| display_name(&str_at(t, "/name"))).collect();
+    Ok((orders, names))
+}
+
+/// Add another app's tab once its configuration page saved (Teams'
+/// app-configuration Save: `settings.save`, the page's `setSettings` and
+/// `settings.save.success`, then createPlatformTab), for everyone in the
+/// chat or channel: the thread property ([`extension_property`]), named
+/// after the page's suggestedDisplayName (else the app), then with `post`
+/// "I added a tab…" and the reply chain, exactly as Website's. Captured
+/// in OST group test adding OneNote's "OST Notebook" (2026-11-16).
+/// Returns the tab's id.
+pub async fn add_app_tab(
+    client: &TeamsClient,
+    thread_id: &str,
+    channel: bool,
+    app_id: &str,
+    app_name: &str,
+    settings: &serde_json::Value,
+    post: bool,
+) -> Result<String> {
+    let url = settings.get("contentUrl").and_then(|v| v.as_str()).unwrap_or_default();
+    anyhow::ensure!(url.starts_with("https://"), "The tab's address must be https");
+    anyhow::ensure!(!app_id.is_empty() && app_id.len() < 100 && !app_id.contains(['"', '\\', '/']), "Not an app");
+    let (orders, names) = existing_tabs(client, thread_id).await?;
+    let suggested = settings.get("suggestedDisplayName").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).unwrap_or(app_name);
+    let name = stored_name(suggested, &names);
+    let id = format!("tab::{}", uuid::Uuid::new_v4());
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let property = extension_property(&id, add_order(&orders), app_id, &name, settings, &now);
+    put_property(client, thread_id, &id, Some(&property)).await?;
+    record_used(app_id);
+    if post {
+        let root = post_link(client, thread_id, &id, &name, announcement(channel)).await?;
+        put_property(client, thread_id, &id, Some(&append_reply_chain(&property, &root)?)).await?;
+    }
+    Ok(id)
+}
+
+/// SharePoint Lists' app (a channel's New list and Existing list).
+pub const LISTS_APP: &str = "26bc2873-6023-480c-a11b-76b66605ce8c";
+
+/// A channel's New list (`create`) or Existing list (`existing`) tab, as
+/// Teams' useChannelSpListsTabActions makes it: an "Untitled list"
+/// Lists tab whose page (SharePoint's teamsappstartup) then creates or
+/// picks the list and sets the tab up (setSettings). No post. The address
+/// is Teams' channelSpListNewListUrl / channelSpListExistingListUrl
+/// (captured 2026-11-16 in OST test channel).
+pub fn list_tab_url(existing: bool) -> String {
+    format!(
+        "https://{{teamSiteDomain}}{{teamSitePath}}/_layouts/15/teamsappstartup.aspx?launch={}&theme={{theme}}&locale={{locale}}&app=teamslist&teamId={{teamId}}&channelId={{channelId}}&ringId={{ringId}}&sid={{sessionId}}&asid={{appSessionId}}&userTeamRole={{userTeamRole}}",
+        if existing { "existing" } else { "create" }
+    )
+}
+
+/// Add a channel's New list or Existing list tab ([`list_tab_url`]).
+/// Returns the tab's id.
+pub async fn add_list_tab(client: &TeamsClient, channel_id: &str, existing: bool) -> Result<String> {
+    let (orders, names) = existing_tabs(client, channel_id).await?;
+    let id = format!("tab::{}", uuid::Uuid::new_v4());
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let settings = serde_json::json!({ "contentUrl": list_tab_url(existing) });
+    let property = extension_property(&id, add_order(&orders), LISTS_APP, &stored_name("Untitled list", &names), &settings, &now);
+    put_property(client, channel_id, &id, Some(&property)).await?;
+    record_used(LISTS_APP);
+    Ok(id)
+}
+
+/// A channel Page tab's thread property as Teams' createPlatformTab makes
+/// a ChannelPageTab (worker module 707328), in its key order:
+/// `{"id","order","definitionId":Pages,"directive":"channel-page-tab",
+/// "type":"tab:","settings":{"componentUrl","isLieChannelPageTab":false,
+/// "isTabNameSynced","creatorUserMri","dateAdded"},"name"}` — the name
+/// last. Existing page: the page's link and `isTabNameSynced: true`; New
+/// page: no link yet, `isTabNameSynced: false` and the creator.
+pub fn page_property(id: &str, order: f64, component_url: Option<&str>, creator: &str, name: &str, date_added: &str) -> String {
+    let p = |k: &str, v: serde_json::Value| (k.to_string(), ordered::Json::Plain(v));
+    let mut s = Vec::new();
+    if let Some(u) = component_url {
+        s.push(p("componentUrl", u.into()));
+    }
+    s.push(p("isLieChannelPageTab", false.into()));
+    s.push(p("isTabNameSynced", component_url.is_some().into()));
+    if component_url.is_none() {
+        s.push(p("creatorUserMri", creator.into()));
+    }
+    s.push(p("dateAdded", date_added.into()));
+    let t = ordered::Json::Object(vec![
+        p("id", id.into()),
+        p("order", serde_json::from_str(&js_number(order)).unwrap_or_default()),
+        p("definitionId", PAGES_APP.into()),
+        p("directive", "channel-page-tab".into()),
+        p("type", "tab:".into()),
+        ("settings".to_string(), ordered::Json::Object(s)),
+        p("name", name.into()),
+    ]);
+    serde_json::to_string(&t).unwrap_or_default()
+}
+
+/// A Loop page a pasted link points to (Teams' Add an existing page).
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct LinkedPage {
+    pub name: String,
+    pub edited_by: String,
+    pub web_url: String,
+    pub drive_id: String,
+    pub item_id: String,
+    pub site: String,
+    /// The pasted link's `nav` (Teams keeps it on the tab's link).
+    pub nav: String,
+}
+
+/// Graph's sharing id for a link (`u!` + unpadded base64url).
+fn share_id(link: &str) -> String {
+    use base64::Engine as _;
+    format!("u!{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(link.as_bytes()))
+}
+
+/// Resolve a pasted Loop link (Teams: `GET graph/v1.0/shares/u!{link}`),
+/// for the page card: its name (without `.loop`), who edited it last.
+pub async fn resolve_page_link(client: &TeamsClient, link: &str) -> Result<LinkedPage> {
+    let link = link.trim();
+    let u = url::Url::parse(link).ok().filter(|u| u.scheme() == "https").context("That isn't a valid link.")?;
+    let v: serde_json::Value = client
+        .graph_get(&format!("/shares/{}/driveItem?$select=id,name,webUrl,lastModifiedBy,parentReference,sharepointIds", share_id(link)))
+        .await?
+        .json()
+        .await
+        .context("Page")?;
+    let s = |p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let name = s("/name");
+    anyhow::ensure!(name.to_lowercase().ends_with(".loop") || name.to_lowercase().ends_with(".fluid"), "That link isn't a Loop page.");
+    let web = s("/webUrl");
+    let site = s("/sharepointIds/siteUrl");
+    Ok(LinkedPage {
+        name: name.rsplit_once('.').map(|(n, _)| n.to_string()).unwrap_or(name.clone()),
+        edited_by: s("/lastModifiedBy/user/displayName"),
+        web_url: web,
+        drive_id: s("/parentReference/driveId"),
+        item_id: s("/id"),
+        site: if site.is_empty() { format!("https://{}", u.host_str().unwrap_or_default()) } else { site },
+        nav: u.query_pairs().find(|(k, _)| k == "nav").map(|(_, v)| v.to_string()).unwrap_or_default(),
+    })
+}
+
+/// Add an existing Loop page as a channel tab, as Teams' Confirm does:
+/// an organization edit link for the page (`POST {site}/_api/v2.1/drives/
+/// {drive}/items/{item}/createLink {"type":"edit","scope":"organization"}`),
+/// the pasted link's `nav` kept on it, then the Page tab ([`page_property`])
+/// named after the page. Returns the tab's id.
+pub async fn add_existing_page(client: &TeamsClient, channel_id: &str, link: &str) -> Result<String> {
+    let page = resolve_page_link(client, link).await?;
+    let site = url::Url::parse(&page.site).context("Page site")?;
+    anyhow::ensure!(site.host_str().is_some_and(|h| h.ends_with(".sharepoint.com")), "That link isn't a Loop page.");
+    let token = crate::auth::oauth::access_token_for(&format!("https://{}/.default", site.host_str().unwrap_or_default())).await?;
+    let made: serde_json::Value = client
+        .http()
+        .post(format!(
+            "{}/_api/v2.1/drives/{}/items/{}/createLink",
+            page.site.trim_end_matches('/'),
+            tabs::encode_uri_component(&page.drive_id),
+            tabs::encode_uri_component(&page.item_id)
+        ))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"type": "edit", "scope": "organization"}))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Page link")?
+        .json()
+        .await?;
+    let mut component = made.pointer("/link/webUrl").and_then(|x| x.as_str()).context("Page link")?.to_string();
+    anyhow::ensure!(component.starts_with("https://"), "Page link");
+    if !page.nav.is_empty() {
+        component.push_str(if component.contains('?') { "&nav=" } else { "?nav=" });
+        component.push_str(&tabs::encode_uri_component(&page.nav));
+    }
+    let (orders, names) = existing_tabs(client, channel_id).await?;
+    let id = format!("tab::{}", uuid::Uuid::new_v4());
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let me = client.object_id().map(|o| format!("8:orgid:{o}")).unwrap_or_default();
+    let property = page_property(&id, add_order(&orders), Some(&component), &me, &stored_name(&page.name, &names), &now);
+    put_property(client, channel_id, &id, Some(&property)).await?;
+    Ok(id)
+}
+
+/// A chat's members' sign-in names, as Teams answers an app's
+/// `getChatMembers` (`[{members: [{upn}, …]}]`).
+pub async fn chat_member_upns(client: &TeamsClient, thread_id: &str) -> Result<Vec<String>> {
+    check_thread(thread_id)?;
+    let v: serde_json::Value = client
+        .graph_get(&format!("/chats/{}/members?$select=email", tabs::encode_uri_component(thread_id)))
+        .await?
+        .json()
+        .await
+        .context("Chat members")?;
+    Ok(v.get("value")
+        .and_then(|x| x.as_array())
         .into_iter()
-        .find(|t| str_at(t, "/id") == tab_id)
-        .context("No such tab")?;
-    put_property(client, thread_id, tab_id, Some(&configured_property(&old, settings))).await
+        .flatten()
+        .filter_map(|m| m.get("email").and_then(|e| e.as_str()).filter(|e| !e.is_empty()).map(str::to_string))
+        .collect())
 }
 
 /// A chat's own tabs (its `tab::` thread properties), with their menus:
@@ -324,7 +775,7 @@ pub fn tab_from_property(t: &serde_json::Value, ctx: &tabs::TabContext) -> Tab {
         .find(|u| !u.is_empty())
         .unwrap_or_default();
     Tab {
-        name: str_at(t, "/name"),
+        name: display_name(&str_at(t, "/name")),
         content_url: tabs::fill(&content, ctx, &entity_id),
         content_template: tabs::https_template(&content),
         website_url: tabs::https_only(&tabs::fill(&str_at(t, "/settings/websiteUrl"), ctx, &entity_id)),
@@ -668,6 +1119,54 @@ mod tests {
             configured_property(&old, &set),
             r#"{"id":"tab::bd0832e4-b2df-4f65-9da5-93178e668f4d","name":"Notes","definitionId":"0d820ecd-def2-4297-adad-78056cde7c78","directive":"extension-tab","tabType":"tab:","order":10000,"replyChainId":0,"settings":{"url":"https://www.microsoft365.com/launch/onenote/officeunihost/teams?locale={locale}","websiteUrl":"https://onenote.com/","entityId":"NOTES_d9d63f71","subtype":"extension","removeUrl":""}}"#
         );
+    }
+
+    #[test]
+    fn app_tabs_are_teams_properties_byte_for_byte() {
+        // OneNote's "OST Notebook" saved in OST group test (2026-11-16):
+        // no removeUrl from the page, so none in the property.
+        let set = serde_json::json!({"entityId": "3604df1d-f46c-45b4-a6ac-3ad052836bda", "websiteUrl": "https://m365.cloud.microsoft/launch/onenote?auth=2",
+            "contentUrl": "https://m365.cloud.microsoft/launch/onenote/officeunihost/teams?auth=2&locale={locale}", "suggestedDisplayName": "OST Notebook",
+            "apiUrl": "https://www.onenote.com/api/v1.0/x", "notebookSource": "Pick"});
+        assert_eq!(stored_name("OST Notebook", &[]), "OST%20Notebook");
+        assert_eq!(
+            extension_property("tab::0967ad02-4eb1-4e25-8802-bbd1e7e0e326", 110_000.0, "0d820ecd-def2-4297-adad-78056cde7c78", "OST%20Notebook", &set, "2026-11-16T15:10:41.974Z"),
+            r#"{"id":"tab::0967ad02-4eb1-4e25-8802-bbd1e7e0e326","order":110000,"definitionId":"0d820ecd-def2-4297-adad-78056cde7c78","directive":"extension-tab","name":"OST%20Notebook","type":"tab:","settings":{"subtype":"extension","url":"https://m365.cloud.microsoft/launch/onenote/officeunihost/teams?auth=2&locale={locale}","websiteUrl":"https://m365.cloud.microsoft/launch/onenote?auth=2","entityId":"3604df1d-f46c-45b4-a6ac-3ad052836bda","dateAdded":"2026-11-16T15:10:41.974Z"}}"#
+        );
+        // A channel's New list, then the list made on its page (OST test
+        // channel): the page's setSettings rewrites it in place.
+        let new_list = extension_property("tab::f2f8c4b5-a61c-465e-83c4-fa025ffd6563", 110_000.0, LISTS_APP, &stored_name("Untitled list", &[]),
+            &serde_json::json!({"contentUrl": list_tab_url(false)}), "2026-11-16T15:14:53.036Z");
+        assert_eq!(
+            new_list,
+            r#"{"id":"tab::f2f8c4b5-a61c-465e-83c4-fa025ffd6563","order":110000,"definitionId":"26bc2873-6023-480c-a11b-76b66605ce8c","directive":"extension-tab","name":"Untitled%20list","type":"tab:","settings":{"subtype":"extension","url":"https://{teamSiteDomain}{teamSitePath}/_layouts/15/teamsappstartup.aspx?launch=create&theme={theme}&locale={locale}&app=teamslist&teamId={teamId}&channelId={channelId}&ringId={ringId}&sid={sessionId}&asid={appSessionId}&userTeamRole={userTeamRole}","dateAdded":"2026-11-16T15:14:53.036Z"}}"#
+        );
+        let made = serde_json::json!({"entityId": "", "contentUrl": "https://scnetsolutions.sharepoint.com/sites/OSTTestTeam/_layouts/15/FileBrowser.aspx?app=Teams&scenario=Lists&teamId={teamId}", "suggestedDisplayName": "OST test list"});
+        assert_eq!(
+            updated_property(&new_list, &made, &["Notes".into(), "Page".into()]).unwrap(),
+            r#"{"id":"tab::f2f8c4b5-a61c-465e-83c4-fa025ffd6563","order":110000,"definitionId":"26bc2873-6023-480c-a11b-76b66605ce8c","directive":"extension-tab","name":"OST%20test%20list","type":"tab:","settings":{"subtype":"extension","url":"https://scnetsolutions.sharepoint.com/sites/OSTTestTeam/_layouts/15/FileBrowser.aspx?app=Teams&scenario=Lists&teamId={teamId}","dateAdded":"2026-11-16T15:14:53.036Z","entityId":""}}"#
+        );
+        // Existing list picked the same list: Teams numbered the name.
+        assert_eq!(stored_name("OST test list", &["Notes".into(), "OST test list".into()]), "OST%20test%20list (1)");
+        assert_eq!(stored_name("OST test list", &["ost test list (1)".into(), "OST test list".into()]), "OST%20test%20list (2)");
+        assert_eq!(stored_name("Untitled list", &["OST test list".into()]), "Untitled%20list");
+        assert_eq!(display_name("OST%20test%20list (1)"), "OST test list (1)");
+        assert_eq!(display_name("100% done"), "100% done");
+        assert_eq!(display_name("Website"), "Website");
+    }
+
+    #[test]
+    fn page_tabs_are_teams_properties() {
+        // New page and Existing page in OST test channel (2026-11-16).
+        assert_eq!(
+            page_property("tab::1d556e44-09de-48f9-a4e4-2d8e6781a076", 130_000.0, None, "8:orgid:4287e791-1b98-4963-8b94-281c50472683", "Untitled%20page", "2026-11-16T15:20:47.685Z"),
+            r#"{"id":"tab::1d556e44-09de-48f9-a4e4-2d8e6781a076","order":130000,"definitionId":"5ae80e49-7ada-461a-a6bd-c5df2e0cdb06","directive":"channel-page-tab","type":"tab:","settings":{"isLieChannelPageTab":false,"isTabNameSynced":false,"creatorUserMri":"8:orgid:4287e791-1b98-4963-8b94-281c50472683","dateAdded":"2026-11-16T15:20:47.685Z"},"name":"Untitled%20page"}"#
+        );
+        assert_eq!(
+            page_property("tab::3695a39f-1e11-43d8-bd64-b34e28a2c8df", 140_000.0, Some("https://scnetsolutions.sharepoint.com/:fl:/s/OSTTestTeam/IQBu0v?nav=cz0l"), "8:orgid:x", "Loop%20paragraph", "2026-11-16T15:26:44.086Z"),
+            r#"{"id":"tab::3695a39f-1e11-43d8-bd64-b34e28a2c8df","order":140000,"definitionId":"5ae80e49-7ada-461a-a6bd-c5df2e0cdb06","directive":"channel-page-tab","type":"tab:","settings":{"componentUrl":"https://scnetsolutions.sharepoint.com/:fl:/s/OSTTestTeam/IQBu0v?nav=cz0l","isLieChannelPageTab":false,"isTabNameSynced":true,"dateAdded":"2026-11-16T15:26:44.086Z"},"name":"Loop%20paragraph"}"#
+        );
+        assert!(share_id("https://x.sharepoint.com/:fl:/r/a?b=1").starts_with("u!aHR0cHM6Ly94"));
     }
 
     #[test]

@@ -64,10 +64,24 @@
         const pending = new Map();
         let seq = 0;
         // (The address may reach here with its braces percent-encoded.)
-        const fill = url => String(url || "").replace(/(?:\{|%7B)(\w+)(?:\}|%7D)/gi, (m, k) => {
-            const v = ctx[ALIASES[k] || k];
-            return encodeURIComponent(v === undefined || v === null ? "" : String(v));
-        });
+        // A placeholder the context has no value for stays as it is (Teams
+        // left `{groupId}` and `{channelType}` in OneNote's configuration
+        // address in a chat).
+        // Before the query the value goes in as it is (Lists'
+        // `https://{teamSiteDomain}{teamSitePath}/_layouts/…` became
+        // `https://<tenant>.sharepoint.com/sites/OSTTestTeam/_layouts/…` in
+        // Teams' load event); in the query it is URI-encoded.
+        const fill = url => {
+            const s = String(url || "");
+            const q = s.indexOf("?");
+            return s.replace(/(?:\{|%7B)(\w+)(?:\}|%7D)/gi, (m, k, at) => {
+                const key = ALIASES[k] || k;
+                if (!(key in ctx)) return m;
+                const v = ctx[key];
+                const text = v === undefined || v === null ? "" : String(v);
+                return q >= 0 && at > q ? encodeURIComponent(text) : text;
+            });
+        };
         // Native calls answer by id.
         ost.reply.connect((id, json) => {
             const f = pending.get(id);
@@ -112,6 +126,25 @@
             } else go();
         };
         ost.relaunchRequested.connect((entityId, template) => relaunch(entityId, template));
+        // Teams' Save in the tab configuration dialog: `settings.save` with
+        // `[{}]`; the page answers settings.save.success (or .failure)
+        // after setting its settings (TeamsJS answers for a page that
+        // registered no save handler).
+        ost.saveRequested.connect(() => send("settings.save", [{}]));
+        // A dialog this app opened (tasks.startTask) closed: Teams answers
+        // the request with [error, result].
+        const tasks = new Map();
+        ost.taskFinished.connect((callId, json) => {
+            const t = tasks.get(callId);
+            if (!t) return;
+            tasks.delete(callId);
+            let r = {};
+            try { r = JSON.parse(json) } catch (e) {}
+            respond(t.source, t.from, t.d, [r.error === undefined ? null : r.error, r.result]);
+        });
+        // A message for the app's frame from Teams (messageForChild,
+        // messageForParent between a dialog and its opener).
+        ost.frameMessage.connect((func, json) => { let a = []; try { a = JSON.parse(json) } catch (e) {} send(func, a) });
         ost.themeChanged.connect(() => { ctx.theme = ost.theme; if (handlers.has("themeChange")) send("themeChange", [ost.theme]) });
 
         const handle = async (d, source, from, nested) => {
@@ -204,6 +237,67 @@
                 return;
             case "conversations.closeConversation":
                 return;
+            case "getChatMembers": {
+                // In a chat: its members' sign-in names (measured
+                // `[{members: [{upn}, …]}]`).
+                if (!ctx.chatId) return;
+                const r = JSON.parse(await native("chatMembers", {}));
+                respond(source, from, d, [{ members: (r.upns || []).map(u => ({ upn: u })) }]);
+                return;
+            }
+            case "copilot.eligibility.getEligibilityInfo":
+                // Teams' answer for the signed-in user (measured for the
+                // Workflows dialog).
+                respond(source, from, d, [{ cohort: "bcais", ageGroup: null, isCopilotEnabledRegion: true, isCopilotEligible: ctx.userLicenseType === "Copilot",
+                    isOptedOutByAdmin: false, userClassification: { persona: "other" }, featureSet: { uxFeatures: [], serverFeatures: [] },
+                    settings: { conversationSettings: { isOptionalConnectedExperiencesEnabled: null } } }]);
+                return;
+            case "settings.save.success":
+                ost.event("saveSuccess", JSON.stringify(cfg.settings || {}));
+                return;
+            case "settings.save.failure":
+                ost.event("saveFailure", JSON.stringify({ reason: String(args[0] || "") }));
+                return;
+            case "tasks.startTask": {
+                // A dialog (dialog.url.open / tasks.startTask): Teams shows
+                // it and answers when it closes.
+                const info = args[0] && typeof args[0] === "object" ? args[0] : {};
+                const callId = cfg.hostId + ":task:" + (++seq);
+                tasks.set(callId, { source, from, d });
+                ost.event("startTask", JSON.stringify({ callId, taskInfo: info }));
+                return;
+            }
+            case "tasks.completeTask":
+                // From a dialog's own page: its result (dialog.url.submit).
+                ost.event("completeTask", JSON.stringify({ result: args[0] === undefined ? null : args[0] }));
+                return;
+            case "tasks.updateTask":
+                ost.event("updateTask", JSON.stringify({ taskInfo: args[0] || {} }));
+                return;
+            case "messageForParent":
+                ost.event("messageForParent", JSON.stringify({ message: args[0] === undefined ? null : args[0] }));
+                return;
+            case "messageForChild":
+                ost.event("messageForChild", JSON.stringify({ message: args[0] === undefined ? null : args[0] }));
+                return;
+            case "loadingCallback":
+                // Meeting Whiteboard: whether the board loaded (Teams logs
+                // it and answers).
+                respond(source, from, d, []);
+                ost.event("loading", JSON.stringify({ success: args[0] === true, error: typeof args[1] === "string" ? args[1].slice(0, 200) : "" }));
+                return;
+            case "changeWhiteboardUrl": {
+                // Meeting Whiteboard reports the meeting's board: Teams
+                // keeps it for the meeting (without the board's proof
+                // token) and answers.
+                respond(source, from, d, []);
+                const url = typeof args[0] === "string" ? args[0] : "";
+                if (cfg.meetingBoard && url) {
+                    const r = JSON.parse(await native("saveBoard", { url, organizer: cfg.meetingBoard.organizer || "" }));
+                    ost.event("boardSaved", JSON.stringify({ ok: !!r.ok }));
+                }
+                return;
+            }
             case "readyForUrl":
                 // Meeting Whiteboard's custom message: Teams answers, then
                 // passes the meeting's board content (none yet).

@@ -7565,7 +7565,7 @@ Window {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             if (step === 0) { window.openWorkflows(id); if (!workflowsDialog.opened) return }
             else if (step === 5) { console.warn("WORKFLOWS", workflowsDialog.url, !!workflowsDialog.about); window.contentItem.grabToImage(r => r.saveToFile(dir + "wf.png")) }
-            else if (step === 6) { workflowsDialog.close(); Qt.quit() }
+            else if (step === 6) { if (Qt.application.arguments.indexOf("--workflows-stay") >= 0) return; workflowsDialog.close(); Qt.quit() }
             step++
         }
     }
@@ -7868,6 +7868,8 @@ Window {
         running: Qt.application.arguments.indexOf("--add-tab-test") >= 0 && backend.signedIn
         interval: 2500; repeat: true
         property int step: 0
+        property int saveWait: 0
+        property bool appSaved: false
         property string added: ""
         onTriggered: {
             const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
@@ -7902,9 +7904,18 @@ Window {
                 tabPicker.pickTabApp(web)
             }
             else if (step === 18) shot("config")
-            else if (step === 26 && arg("--add-tab-app")) { console.warn("ADDTAB app config", tabConfig.stateForTest()); shot("config-app"); step++; return }
-            else if (step === 27 && arg("--add-tab-app")) { tabConfig.close(); Qt.quit(); return }
-            else if (step > 18 && step < 26 && arg("--add-tab-app")) { step++; return }
+            else if (step === 26 && arg("--add-tab-app") && !appSaved) { console.warn("ADDTAB app config", tabConfig.stateForTest()); shot("config-app"); step++; return }
+            // --add-tab-save: wait (up to 3 minutes) until the page reports
+            // a valid setup (pick its item yourself, e.g. over the DevTools
+            // port), then Save as Teams; then the result, the tabs and the
+            // new tab as for a website (--add-tab-remove removes it).
+            else if (step === 27 && arg("--add-tab-app") && has("--add-tab-save") && !appSaved) {
+                if (!tabConfig.appValid && saveWait++ < 72) return
+                console.warn("ADDTAB app save", tabConfig.stateForTest()); appSaved = true; if (has("--add-tab-nopost")) tabConfig.setPost(false); tabConfig.save(); step = 24; return
+            }
+            else if (step === 27 && arg("--add-tab-app") && !appSaved) { tabConfig.close(); Qt.quit(); return }
+            else if (step > 18 && step < 26 && arg("--add-tab-app") && !appSaved) { step++; return }
+            else if (step > 23 && step < 27 && appSaved) { if (tabConfig.saving && saveWait++ < 120) return; step = 27; return }
             else if (step === 19) tabConfig.fillForTest(name, "http://example")
             else if (step === 20) { console.warn("ADDTAB invalid", tabConfig.stateForTest()); shot("config-invalid") }
             else if (step === 21) { tabConfig.fillForTest(name, url || "https://example.com") }
@@ -7948,7 +7959,96 @@ Window {
             else if (step === 4) { conversation.closeOverflowForTest(); conversation.tab = which }
             else if (step === 8) { const h = conversation.meetingAppTabForTest(); console.warn("MEETINGTAB breakout", backend.meetingBreakoutJson, "host", h ? h.hostStateForTest() : ""); shot("open-10s") }
             else if (step === 14) { const h = conversation.meetingAppTabForTest(); console.warn("MEETINGTAB host", h ? h.hostStateForTest() : ""); shot("open-25s") }
-            else if (step === 15) Qt.quit()
+            else if (step === 15) { if (Qt.application.arguments.indexOf("--meeting-tab-stay") < 0) Qt.quit(); return }
+            step++
+        }
+    }
+
+    // --add-tab-choice=<newList|existingList|existingPage> with
+    // --open-chat=<channel id> --shots=<dir>: a channel's "+" choice as
+    // Teams: New list / Existing list add the Lists tab and open its page
+    // (ADDTAB choice result, tabs, the page's host events after 20 s);
+    // Existing page needs --add-tab-link=<Loop link>: the link looked up
+    // (the card), then Confirm. --add-tab-remove removes the new tab.
+    // Pictures add-tab-choice-*.png; quits (--add-tab-stay keeps it open).
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--add-tab-choice=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property string added: ""
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const has = k => Qt.application.arguments.indexOf(k) >= 0
+            const id = arg("--open-chat"), which = arg("--add-tab-choice"), link = arg("--add-tab-link")
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "add-tab-choice-" + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === id)
+                backend.selectChat(id, ch ? ch.name : ""); return
+            }
+            const dlg = conversation.existingPageDialogForTest()
+            if (step === 1) { console.warn("ADDTAB choice tabs", JSON.stringify(conversation.tabNames)); conversation.addTabMenuForTest() }
+            else if (step === 2) { shot("menu"); conversation.addTabMenuForTest().close(); conversation.addTabChoice(which) }
+            else if (step === 3 && which === "existingPage") { shot("page-dialog"); dlg.fillForTest(link); dlg.next() }
+            else if (step === 5 && which === "existingPage") { console.warn("ADDTAB choice page", dlg.stateForTest()); shot("page-card"); dlg.next() }
+            else if (step === 8) {
+                const r = JSON.parse(backend.channelTabResult || "{}")
+                added = r.ok ? r.tab : ""
+                console.warn("ADDTAB choice result", backend.channelTabResult)
+                console.warn("ADDTAB choice tabs after", JSON.stringify(conversation.channelTabs.map(t => ({ id: t.id, name: t.name, kind: t.kind }))), "open", conversation.tab)
+                shot("added")
+            }
+            else if (step === 16) { const h = conversation.hostedTabForTest(); console.warn("ADDTAB choice host", h ? h.hostStateForTest() : "none"); shot("page-20s") }
+            else if (step === 17) { if (has("--add-tab-stay")) return; if (!has("--add-tab-remove") || !added) { Qt.quit(); return } const t = conversation.channelTabs.find(t => t.id === added); if (t) conversation.tabChangeForTest("remove", t.name, "") }
+            else if (step === 20) { console.warn("ADDTAB choice removed", backend.channelTabResult, JSON.stringify(conversation.tabNames)); Qt.quit() }
+            step++
+        }
+    }
+
+    // --tab-cleanup=<name|name…> with --open-chat=<chat or channel id>:
+    // remove those tabs (Teams' Remove: the thread property to null), one
+    // every 5 s, logging TABCLEANUP lines; quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--tab-cleanup=")) && backend.signedIn
+        interval: 5000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const id = arg("--open-chat"), names = arg("--tab-cleanup").split("|")
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === id)
+                backend.selectChat(id, ch ? ch.name : ""); return
+            }
+            if (step === 0) { step++; return }
+            const left = names.filter(n => conversation.channelTabs.some(t => t.name === n))
+            console.warn("TABCLEANUP", backend.channelTabResult, "left", JSON.stringify(left))
+            if (!left.length || step > 30) { Qt.quit(); return }
+            conversation.tabChangeForTest("remove", left[0], "")
+            step++
+        }
+    }
+
+    // --task-dialog-test=<findmeetingtime|createaplanner|remindme> with
+    // --open-chat=<chat id> --shots=<dir>: the workflow suggestion's
+    // Workflows dialog (Teams' task module) in OST's TeamsJS host: its
+    // state and host events after 15 and 30 s (TASKDIALOG lines,
+    // task-dialog-*.png), then Close (the dialog answers "User
+    // cancelled/closed the task module."); nothing is submitted.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--task-dialog-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const id = arg("--open-chat"), page = arg("--task-dialog-test")
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "task-dialog-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST dialog test" }).name); return }
+            if (step === 1) conversation.openWorkflowDialog(page, { title: "OST test" })
+            else if (step === 7) { console.warn("TASKDIALOG 15s", conversation.workflowDialog ? conversation.workflowDialog.stateForTest() : "none"); shot("15s") }
+            else if (step === 13) { console.warn("TASKDIALOG 30s", conversation.workflowDialog ? conversation.workflowDialog.stateForTest() : "none"); shot("30s") }
+            else if (step === 14) { if (conversation.workflowDialog) conversation.workflowDialog.close() }
+            else if (step === 15) { console.warn("TASKDIALOG closed", !conversation.workflowDialog); Qt.quit() }
             step++
         }
     }
@@ -8011,7 +8111,7 @@ Window {
             const dir = (arg("--shots") || ".") + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "app-host-" + n + ".png"))
             if (backend.currentChatId !== id) {
-                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).flatMap(t => t.channels).find(c => c.id === id)
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === id)
                 backend.selectChat(id, ch ? ch.name : "OST app host test"); return
             }
             const host = conversation.hostedTabForTest()
