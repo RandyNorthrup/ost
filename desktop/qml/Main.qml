@@ -5673,7 +5673,7 @@ Window {
         property real openedAt: 0
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST send test"); openedAt = Date.now(); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST send test" }).name); openedAt = Date.now(); return }
             // --send-delay=<ms>: wait that long after opening the chat.
             const delay = parseInt((Qt.application.arguments.find(a => a.startsWith("--send-delay=")) || "--send-delay=0").slice(13))
             if (sent || Date.now() - openedAt < delay) return
@@ -5735,7 +5735,7 @@ Window {
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "actions-" + n + ".png"))
             const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.deleted)
             const theirs = msgs.filter(m => !m.mine).pop(), mine = msgs.filter(m => m.mine).pop()
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST actions test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST actions test" }).name); return }
             if (step === 0 && theirs) conversation.forceBarId = theirs.id
             else if (step === 1) shot("bar-theirs")
             else if (step === 2 && mine) conversation.forceBarId = mine.id
@@ -5762,7 +5762,7 @@ Window {
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST who reacted test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST who reacted test" }).name); return }
             const m = JSON.parse(backend.messagesJson || "[]").filter(m => (m.reactions || []).length > 0).pop()
             if (!m) return
             if (step === 0) { console.warn("WHO-TEST", m.id, JSON.stringify(m.reactions)); conversation.jumpToMessage(m.id) }
@@ -5785,7 +5785,7 @@ Window {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "tones-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST tones test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST tones test" }).name); return }
             const m = JSON.parse(backend.messagesJson || "[]").filter(m => (m.reactions || []).length > 0).pop()
             if (!m) return
             if (step === 0) { conversation.jumpToMessage(m.id); conversation.openReactionPicker(m.id, conversation) }
@@ -5814,7 +5814,7 @@ Window {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const save = (Qt.application.arguments.find(a => a.startsWith("--customize-save=")) || "").slice(17)
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "customize-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST customize test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST customize test" }).name); return }
             if (step === 0) conversation.customizeForTest()
             else if (step === 1) shot("dialog")
             else if (step === 2) conversation.customizeSlotForTest(0)
@@ -5845,7 +5845,7 @@ Window {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const keys = (Qt.application.arguments.find(a => a.startsWith("--react-test=")) || "").slice(13).split(",")
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST react test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST react test" }).name); return }
             const msgs = JSON.parse(backend.messagesJson || "[]")
             if (!target) { const m = msgs.filter(m => (m.reactions || []).length > 0).pop(); if (!m) return; target = m.id; conversation.jumpToMessage(m.id) }
             const m = msgs.find(m => m.id === target)
@@ -5882,7 +5882,7 @@ Window {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const cancel = Qt.application.arguments.indexOf("--edit-cancel") >= 0
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "edit-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST edit test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST edit test" }).name); return }
             const msgs = JSON.parse(backend.messagesJson || "[]")
             if (!target) { const m = msgs.filter(m => m.mine && m.kind === "message" && !m.deleted).pop(); if (!m) return; target = m.id; conversation.jumpToMessage(m.id); conversation.startEdit(m); return }
             const box = conversation.editBoxForTest()
@@ -5908,7 +5908,7 @@ Window {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const text = (Qt.application.arguments.find(a => a.startsWith("--compose-send-test=")) || "").slice(20)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST compose test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST compose test" }).name); return }
             if (step === 0) { conversation.setPlain(text); conversation.formatForTest(0, text.indexOf(" "), "b"); conversation.focusCompose() }
             else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(dir + "compose-typed.png"))
             else if (step === 2) conversation.sendForTest()
@@ -6001,7 +6001,7 @@ Window {
             const text = (Qt.application.arguments.find(a => a.startsWith("--delivery-test=")) || "").slice(16)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "delivery-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST delivery test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST delivery test" }).name); return }
             if (step === 0) conversation.composeForTest().plusForTest()
             else if (step === 1) shot("plus")
             else if (step === 2) conversation.composeForTest().deliveryForTest()
@@ -7419,7 +7419,7 @@ Window {
             const name = (Qt.application.arguments.find(a => a.startsWith("--agent-add-test=")) || "").slice(17)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "agentadd-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST agent test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST agent test" }).name); return }
             const s = agentStore.store
             if (step === 0) agentStore.show(id, conversation.isChannel)
             else if (step < 12 && (!s || s.loading)) { step++; return }
@@ -7515,7 +7515,7 @@ Window {
             const id = arg("--open-chat"), which = arg("--meeting-tab-test").replace(/_/g, " ").replace("QnA", "Q&A")
             const dir = (arg("--shots") || ".") + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "meeting-tab-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST meeting tab test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST meeting tab test" }).name); return }
             if (step === 1) { console.warn("MEETINGTAB tabs", JSON.stringify(conversation.tabNames), "meeting", backend.chatMeetingJson); shot("header") }
             else if (step === 2) conversation.overflowMenuForTest()
             else if (step === 3) shot("overflow")
@@ -7542,7 +7542,7 @@ Window {
             const id = arg("--open-chat"), which = arg("--chat-tab-test")
             const dir = (arg("--shots") || ".") + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "chat-tab-" + which.toLowerCase() + "-" + n + ".png"))
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST chat tab test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST chat tab test" }).name); return }
             const notes = conversation.notesTabForTest(), recap = conversation.recapTabForTest(), story = conversation.storylineTabForTest()
             const web = which === "Storyline" ? story : null
             const page = () => web && web.view ? { url: String(web.view.url).slice(0, 160), title: web.view.title, progress: web.view.loadProgress }
@@ -7581,7 +7581,7 @@ Window {
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "agents-" + n + ".png"))
             if (backend.currentChatId !== id) {
                 const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).flatMap(t => t.channels).find(c => c.id === id)
-                backend.selectChat(id, ch ? ch.name : "OST agent test"); return
+                backend.selectChat(id, ch ? ch.name : (chatList.chats.find(c => c.id === id) || { name: "OST agent test" }).name); return
             }
             const c = conversation.composeForTest()
             const s = agentStore.store
@@ -7620,7 +7620,7 @@ Window {
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "mention-" + n + ".png"))
             if (backend.currentChatId !== id) {
                 const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).flatMap(t => t.channels).find(c => c.id === id)
-                backend.selectChat(id, ch ? ch.name : "OST mention test"); return
+                backend.selectChat(id, ch ? ch.name : (chatList.chats.find(c => c.id === id) || { name: "OST mention test" }).name); return
             }
             const c = conversation.composeForTest()
             const text = (Qt.application.arguments.find(a => a.startsWith("--mention-text=")) || "--mention-text=OST test 54: mention for ").slice(15)
@@ -7768,7 +7768,7 @@ Window {
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const name = (Qt.application.arguments.find(a => a.startsWith("--rename-test=")) || "").slice(14)
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST rename test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST rename test" }).name); return }
             if (step === 0) backend.renameChat(name)
             else if (step === 2) { const c = JSON.parse(backend.chatsJson || "[]").find(c => c.id === id); console.warn("RENAME-TEST", c ? c.name : "?", backend.currentChatName); Qt.quit() }
             step++
@@ -7786,7 +7786,7 @@ Window {
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST menu test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST menu test" }).name); return }
             const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.deleted)
             const theirs = msgs.filter(m => !m.mine).pop(), mine = msgs.filter(m => m.mine).pop()
             if (step === 0) { console.warn("MENU-TEST save", theirs.id); backend.setMessageSaved(theirs.id, true) }
@@ -7817,7 +7817,7 @@ Window {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "fwd-" + n + ".png"))
             const d = conversation.forwardDialogForTest()
-            if (step === 0 && backend.currentChatId !== id) { backend.selectChat(id, "OST forward test"); return }
+            if (step === 0 && backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST forward test" }).name); return }
             const msgs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.deleted)
             if (step === 0) { who = msgs.filter(m => !m.mine && !m.forward).pop(); if (!who) return; d.message = who; d.open() }
             else if (step === 1) d.typeForTest(who.sender.split(" ")[0])
@@ -7843,7 +7843,7 @@ Window {
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST pin test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST pin test" }).name); return }
             if (step === 0 && !backend.pinnedJson) return
             if (step === 0) { pinned = JSON.parse(backend.pinnedJson).id; console.warn("PIN-TEST banner", backend.pinnedJson); window.contentItem.grabToImage(r => r.saveToFile(dir + "pin-banner.png")) }
             else if (step === 1) { console.warn("PIN-TEST unpin", pinned); backend.setMessagePinned(pinned, false) }
@@ -7863,7 +7863,7 @@ Window {
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST translate test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST translate test" }).name); return }
             const m = () => JSON.parse(backend.messagesJson || "[]").find(x => x.id === target)
             if (step === 0 && !m()) return
             if (step === 0) backend.translateMessage(target, true)
@@ -7884,7 +7884,7 @@ Window {
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (backend.currentChatId !== id) { backend.selectChat(id, "OST report test"); return }
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST report test" }).name); return }
             const theirs = JSON.parse(backend.messagesJson || "[]").filter(m => m.kind === "message" && !m.mine && !m.deleted).pop()
             if (step === 0 && !theirs) return
             const d = conversation.reportDialogForTest()
