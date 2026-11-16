@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-16T04:52:00Z'
+updated_date: '2026-11-16T14:25:00Z'
 labels:
   - desktop
   - messages
@@ -25,7 +25,7 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - [x] #1 Tables can be inserted and edited from the formatting bar and are sent and shown as Teams does
 - [x] #2 Code blocks show Teams' card menu and syntax colours
 - [x] #3 Attach offers Teams' menu (OneDrive / cloud files, browse channels, upload) and sends what it picks as Teams does
-- [ ] #4 Drafts sync with Teams, and Teams' pre-send checks run
+- [x] #4 Drafts sync with Teams, and Teams' pre-send checks run
 - [ ] #5 Verified side by side with Teams on winpc
 - [x] #6 Schedule message and Record video clip work as in Teams
 - [ ] #7 Loop components and installed apps' compose actions work as in Teams
@@ -69,4 +69,8 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - 2026-11-15: drafts roaming (enableRoamMessageDraft) is off by default in every Teams cloud config and only Microsoft's ECS rollout turns it on; no tenant setting exists. To get it early, ost-test1 and ost-test2 are now on Teams Public Preview (update policy "OST test accounts") and Microsoft 365 Targeted release (select users). Re-check ECS for enableRoamMessageDraft before capturing the roaming body. Teams' compose now shows "Write with Copilot" and "Loop components" for ost-test1.
 
 - 2026-11-16 audit: AC4 split. Schedule message (scheduled messages work) and Record video clip (TASK-0135/0136) are done and checked as #6. Loop components and installed apps' compose actions are not built (#7).
+
+- 2026-11-16 (subagent, c854fa1, merged):
+  - Drafts follow Teams' protocol: kept on the device, and roamed to v1/users/ME/drafts (RegularDraft) only when Teams' enableRoamMessageDraft is on, with Teams' conflict banner and Saved draft dialog. The setting is off for ost-test1 (Teams on winpc sends no drafts and ignores server drafts), so OST, like Teams, keeps drafts on the device here. The roaming was checked OST-to-OST via the server (OST_ROAM_DRAFTS=1). Teams-to-OST sync can only be checked once Microsoft turns the setting on.
+  - Pre-send checks: Teams' 16 checks measured from its code; the ones for chats and posts are built with Teams' wording and banner (empty or spaces, upload running, missing headline, over 90112 bytes, past schedule time, old video clip, bot mention in a reply). The empty-message banner was compared on winpc. The rest is in TASK-0203.
 <!-- SECTION:NOTES:END -->
