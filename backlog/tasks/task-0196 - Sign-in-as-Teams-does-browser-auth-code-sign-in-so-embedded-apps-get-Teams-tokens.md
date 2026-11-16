@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T05:21:00Z'
-updated_date: '2026-11-16T09:43:00Z'
+updated_date: '2026-11-16T09:52:00Z'
 labels:
   - desktop
   - auth
@@ -86,4 +86,7 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
   - The app-side bridge, with TASK-0053.
 
 - Agent run finished; the default ost-test1 profile is free to move to the browser sign-in.
+
+- 2026-11-16: the main ost-test1 profile (default OST_PROFILE) on linuxlt moved to the browser sign-in: logout, then one click on "OST Test 1 · Signed in" in Microsoft's picker (the div.table[role=button] tile). auth_flow = teams-web; a restart signs in from the stored sign-in and loads chats.
+- Left: OST Test 2 (profile test2) and the app-side NAA bridge with TASK-0053.
 <!-- SECTION:NOTES:END -->
