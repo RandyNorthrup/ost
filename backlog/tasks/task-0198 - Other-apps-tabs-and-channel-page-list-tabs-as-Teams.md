@@ -4,6 +4,7 @@ title: Other apps' tabs and channel page/list tabs as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-16T09:43:00Z'
+updated_date: '2026-11-16T14:45:00Z'
 labels:
   - desktop
 dependencies:
@@ -21,3 +22,9 @@ Teams' Add a tab picker opens each app's own configuration page (OneNote, PDF, E
 - [ ] #1 Choosing an app other than Website in the picker shows that app's configuration page and Save adds its tab for everyone, as in Teams
 - [ ] #2 A channel's New page, Existing page, New list and Existing list add their tabs as in Teams
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far: other apps' configuration pages load in OST's TeamsJS host (TASK-0053; OneNote's notebook picker renders). Left: their Save, and New/Existing page and list.
+<!-- SECTION:NOTES:END -->

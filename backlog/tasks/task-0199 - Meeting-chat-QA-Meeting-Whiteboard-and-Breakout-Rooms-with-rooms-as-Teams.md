@@ -4,6 +4,7 @@ title: Meeting chat Q&A, Meeting Whiteboard and Breakout Rooms with rooms as Tea
 status: To Do
 assignee: []
 created_date: '2026-11-16T09:43:00Z'
+updated_date: '2026-11-16T14:45:00Z'
 labels:
   - desktop
 dependencies:
@@ -21,3 +22,9 @@ OST lists a meeting chat's tabs as Teams (Attendance, Breakout Rooms, Q&A, Meeti
 - [ ] #1 Q&A and Meeting Whiteboard tabs run in a meeting chat as in Teams
 - [ ] #2 Breakout Rooms with rooms created matches Teams' layout, and its Assign participants, Room settings and Import from CSV work from the tab as in Teams
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far: Meeting Whiteboard and Q&A run on OST's TeamsJS host (TASK-0053). Whiteboard opens a board but makes a new one each time instead of the meeting's own (its changeWhiteboardUrl and loadingCallback messages aren't handled yet); Q&A not tried live (only scheduled meetings have it).
+<!-- SECTION:NOTES:END -->

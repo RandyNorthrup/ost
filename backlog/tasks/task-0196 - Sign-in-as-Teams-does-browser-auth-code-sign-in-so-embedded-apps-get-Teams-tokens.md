@@ -3,11 +3,11 @@ id: TASK-0196
 title: >-
   Sign in as Teams does (browser auth-code sign-in), so embedded apps get Teams'
   tokens
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T05:21:00Z'
-updated_date: '2026-11-16T09:52:00Z'
+updated_date: '2026-11-16T14:45:00Z'
 labels:
   - desktop
   - auth
@@ -24,7 +24,7 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 OST's sign-in opens Microsoft's sign-in page as Teams does and keeps the session; existing device-code sign-ins keep working until replaced
-- [ ] #2 Embedded apps get their tokens through Teams' broker (NAA) without a separate sign-in, as in Teams
+- [x] #2 Embedded apps get their tokens through Teams' broker (NAA) without a separate sign-in, as in Teams
 - [x] #3 Signing out and switching accounts work as in Teams
 <!-- AC:END -->
 
@@ -89,4 +89,19 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
 
 - 2026-11-16: the main ost-test1 profile (default OST_PROFILE) on linuxlt moved to the browser sign-in: logout, then one click on "OST Test 1 · Signed in" in Microsoft's picker (the div.table[role=button] tile). auth_flow = teams-web; a restart signs in from the stored sign-in and loads chats.
 - Left: OST Test 2 (profile test2) and the app-side NAA bridge with TASK-0053.
+
+- Embedded apps get NAA tokens through OST's host (TASK-0053): OneNote's editor and its nested frames, Storyline and Whiteboard sign in with no separate sign-in.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST signs in exactly as Teams on the web does, and embedded apps get their tokens through Teams' broker.
+
+- src/auth/spa.rs: Teams on the web's single-page-app sign-in (client 5e3ce6c0…, auth code + PKCE, return address teams.cloud.microsoft/v2/authv2, Origin header), shown in OST's web view; silent renewal every 12 h with prompt=none from the web profile's Microsoft session.
+- auth::brokered_token / broker: Teams' NAA broker requests (brk_client_id, brk-multihub://<app host>) for embedded apps.
+- Sign-out shows Microsoft's Pick an account; one click signs back in.
+- The main ost-test1 profile moved to this sign-in; device-code sign-ins keep working until replaced (OST Test 2 still uses one).
+
+Tests: sign-in URL, return address, broker address and renewal unit tests; live sign-in, renewal, sign-out/in, and NAA tokens for Engage, OneNote and Storyline.
+<!-- SECTION:FINAL_SUMMARY:END -->
