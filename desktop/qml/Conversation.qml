@@ -264,9 +264,11 @@ Rectangle {
     }
     Shortcut { sequence: "Escape"; enabled: root.tabDragFrom >= 0; onActivated: root.tabDragCancel() }
     readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map((t, i) => i === 0 && threadsLayout ? "Conversation" : t.name) : [threadsLayout ? "Conversation" : "Posts", "Shared"])
-        // Teams (worker Ct): Storyline only in 1:1 chats. Then the chat's
-        // own tabs (its thread properties), in their order.
-        : (isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? meetingTabNames : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"])
+        // Teams (worker Ct): Storyline only in 1:1 chats (and your own
+        // notes chat, which has Notes but no Recap; Teams on the web,
+        // 2026-11-16). Then the chat's own tabs (its thread properties),
+        // in their order.
+        : (isSelf ? ["Chat", "Shared", "Notes", "Storyline"] : isMeetingChat ? meetingTabNames : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"])
             .concat(channelTabs.map(t => t.name))
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
     // A meeting chat's tabs (chat-app `Zv`, measured on winpc 2026-11-16):
@@ -1862,7 +1864,7 @@ Rectangle {
                          PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", LobbyJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
                          MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", DeleteCustomApp: "apps-20",
                          RecordingStarted: "record-20", RecordingStopped: "record-stop-20", RecordingSaved: "cloud-arrow-up-20",
-                         Transcript: "slide-text-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
+                         Transcript: "slide-text-20", NotesCreated: "document-edit-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
                 // Recording started is brand (Teams).
                 color: msg.recordingRow && msg.modelData.event.kind === "RecordingStarted" ? theme.brand : theme.textSecondary
             }
@@ -1882,11 +1884,14 @@ Rectangle {
                     wrapMode: Text.Wrap
                     // Unverified visitors' names carry Teams' 16 px badge.
                     readonly property var unverified: msg.isEvent && msg.modelData.event ? (msg.modelData.event.unverified || []) : []
-                    textFormat: msg.recordingRow || unverified.length > 0 ? Text.RichText : msg.isCall || msg.appAdded ? Text.StyledText : Text.PlainText
+                    // The chat's Notes row: its "Notes" opens the Notes tab
+                    // (Teams' FileAdd row, an inline link in the row's colour).
+                    readonly property bool notesRow: msg.isEvent && !!msg.modelData.event && msg.modelData.event.kind === "NotesCreated"
+                    textFormat: msg.recordingRow || unverified.length > 0 || notesRow ? Text.RichText : msg.isCall || msg.appAdded ? Text.StyledText : Text.PlainText
                     linkColor: theme.brandForeground1
                     // A saved recording's "Remove expiration" opens it (Teams
                     // opens its player's About panel, which is web content).
-                    onLinkActivated: link => Qt.openUrlExternally(link)
+                    onLinkActivated: link => { if (link === "ost:notes-tab") root.tab = "Notes"; else Qt.openUrlExternally(link) }
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     text: {
                         if (msg.recordingRow) {
@@ -1905,6 +1910,7 @@ Rectangle {
                             for (const n of unverified) { const e = root.escapeHtml(n), i = t.indexOf(e); if (i >= 0) t = t.slice(0, i + e.length) + badge + t.slice(i + e.length) }
                             return t
                         }
+                        if (notesRow) return "<a href=\"ost:notes-tab\" style=\"text-decoration: none; color: " + theme.textSecondary + "\">Notes</a> have been created in this chat."
                         if (msg.isEvent) return msg.modelData.text
                         // Meet now (Teams: "You started a meeting." /
                         // "{{initiator}} started a meeting.", then
@@ -3310,17 +3316,49 @@ Rectangle {
         onActiveChanged: if (active && !url) url = root.whiteboardUrl()
         sourceComponent: WebApp { showHeader: false; appName: "Whiteboard"; location: root.chatName; home: whiteboardTabLoader.url }
     }
-    // Tabs OST can't offer say so.
-    Column {
-        visible: !root.webTab && ["Notes", "Recap", "Storyline"].indexOf(root.tab) >= 0
-        anchors.centerIn: parent
-        spacing: 8
-        FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "info-16"; size: 32; color: theme.textSecondary }
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: root.tab + " isn't available in OST yet."
-            font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
+    // The built-in chat tabs (docs/spec/chat-tabs.md). Notes: the chat's
+    // Loop page under Teams' own header; Recap: drawn by Teams; Storyline:
+    // Viva Engage's page, which Teams embeds (hwc-iframe), for the person
+    // you chat with (your own in your notes chat).
+    readonly property bool builtInTab: !root.isChannel && !root.webTab && !root.channelTabs.some(t => t.name === root.tab)
+    function notesTabForTest() { return notesTabLoader.item }
+    function recapTabForTest() { return recapTabLoader.item }
+    function storylineTabForTest() { return storylineTabLoader.item }
+    Loader {
+        id: notesTabLoader
+        active: root.builtInTab && root.tab === "Notes" && !root.isMeetingChat
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: ChatNotesTab { chat: root.chatId; location: root.chatName }
+    }
+    Loader {
+        id: recapTabLoader
+        active: root.builtInTab && root.tab === "Recap"
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: RecapTab {
+            meeting: root.isMeetingChat
+            hasAttendance: root.hasAttendanceReport
+            onOpenAttendance: root.openAttendance("")
         }
+    }
+    // The person whose storyline it is: the other one in a 1:1 chat
+    // (19:{oid}_{oid}@unq.gbl.spaces), you in your notes chat.
+    readonly property string storylineOid: isSelf ? myOid
+        : chatId.endsWith("@unq.gbl.spaces") ? (chatId.slice(3, -"@unq.gbl.spaces".length).split("_").find(o => o !== myOid) || "") : ""
+    function storylineUrl() {
+        return "https://engage.cloud.microsoft/teams-branded-exp/officeusers/" + storylineOid
+            + "/storyline?hostappname=TeamsModern&appsessionid=" + newGuid()
+    }
+    Loader {
+        id: storylineTabLoader
+        property string url: ""
+        property string forOid: ""
+        active: root.builtInTab && root.tab === "Storyline" && !!root.storylineOid
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        onActiveChanged: if (active && (!url || forOid !== root.storylineOid)) { forOid = root.storylineOid; url = root.storylineUrl() }
+        sourceComponent: WebApp { showHeader: false; appName: "Storyline"; appId: "683f3525-d193-4a67-8d91-22093beab1ca"; location: root.chatName; home: storylineTabLoader.url }
     }
 
     // A channel tab's menu, exactly as Teams builds it (the backend gives
@@ -4237,7 +4275,7 @@ Rectangle {
         // Link previews: Optional connected experiences on, your messaging
         // policy allowing them, and not in your notes to self.
         previewsAllowed: root.previewsShown && root.chatId !== "48:notes"
-        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly
+        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }

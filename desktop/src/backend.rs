@@ -440,6 +440,10 @@ pub mod qobject {
         /// same as call_breakout_rooms_json, with its `thread`, `busy`
         /// and `error`.
         #[qproperty(QString, meeting_breakout_json)]
+        /// A chat's Notes tab (docs/spec/chat-tabs.md): {chat, state:
+        /// "ready" (with url, the Loop file), "preparing", "deleted",
+        /// "failed" or "error", busy} ("" before any).
+        #[qproperty(QString, chat_notes_json)]
         /// The meeting's rooms from the call (its organizer's view):
         /// [{name, thread, join_url, open, invitees, auto_move,
         /// allow_return}] ("" before any).
@@ -922,6 +926,12 @@ pub mod qobject {
             action: &QString,
             args_json: &QString,
         );
+        /// A chat's Notes, as opening Teams' Notes tab: makes them when the
+        /// chat has none (`create`), or again after they were deleted
+        /// (`recreate`); without `create` only reads them (to follow a file
+        /// being made). The answer comes in chat_notes_json.
+        #[qinvokable]
+        fn chat_notes_load(self: Pin<&mut Backend>, chat: &QString, create: bool, recreate: bool);
         /// OneDrive's share dialog (docs/spec/onedrive-share.md) for a file
         /// ({site, list, item}): "info"; "people" {query}; "send" {people,
         /// edit, message}; "link" {scope, edit, expiration, password} (its
@@ -2448,6 +2458,7 @@ pub struct BackendRust {
     call_breakout_json: QString,
     call_breakout_rooms_json: QString,
     meeting_breakout_json: QString,
+    chat_notes_json: QString,
     call_breakout_all_json: QString,
     call_breakout_room_json: QString,
     call_held_meeting_json: QString,
@@ -6657,6 +6668,40 @@ impl qobject::Backend {
                 }
             };
             let _ = qt.queue(move |mut this| this.as_mut().share_done(QString::from(op.as_str()), QString::from(value.as_str()), QString::from(error.as_str())));
+        });
+    }
+
+    pub fn chat_notes_load(mut self: Pin<&mut Self>, chat: &QString, create: bool, recreate: bool) {
+        let chat = chat.to_string();
+        let mut busy: serde_json::Value = serde_json::from_str(&self.rust().chat_notes_json.to_string()).unwrap_or(json!({}));
+        if busy.get("chat").and_then(|c| c.as_str()) != Some(chat.as_str()) {
+            busy = json!({ "chat": chat, "state": "preparing" });
+        }
+        busy["busy"] = json!(true);
+        self.as_mut().set_chat_notes_json(QString::from(busy.to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                if create || recreate {
+                    api::chat_notes::open(&client, &chat, recreate).await
+                } else {
+                    api::chat_notes::read(&client, &chat).await
+                }
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let mut state = match result {
+                    Ok(s) => serde_json::to_value(&s).unwrap_or(json!({ "state": "error" })),
+                    Err(e) => {
+                        tracing::warn!("chat notes {chat}: {}", short_error(&e));
+                        json!({ "state": "error", "error": short_error(&e) })
+                    }
+                };
+                state["chat"] = json!(chat);
+                state["busy"] = json!(false);
+                this.as_mut().set_chat_notes_json(QString::from(state.to_string().as_str()));
+            });
         });
     }
 

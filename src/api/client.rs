@@ -505,6 +505,23 @@ impl TeamsClient {
         check_response(resp, url).await
     }
 
+    /// POST a JSON body given as text (its keys in the order the client
+    /// sends them) to the chat service.
+    pub async fn chat_post_text(&self, url: &str, body: &str) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat POST {}", url);
+        let resp = self
+            .http
+            .post(url)
+            .header("Authentication", format!("skypetoken={}", token))
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send()
+            .await
+            .with_context(|| format!("Chat POST {} failed", url))?;
+        check_response(resp, url).await
+    }
+
     /// POST to the chat service and hand back the reply whatever its status
     /// (the send pipeline classifies failures itself). Err only when no reply
     /// came at all.

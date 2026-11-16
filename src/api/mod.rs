@@ -7,6 +7,7 @@ pub mod biometric;
 pub mod breakout_rooms;
 pub mod calendar;
 mod chat;
+pub mod chat_notes;
 pub mod client;
 pub mod contacts;
 pub mod custom_emoji;

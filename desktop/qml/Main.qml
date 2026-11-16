@@ -7446,6 +7446,47 @@ Window {
         }
     }
 
+    // --chat-tab-test=<Notes|Recap|Storyline> with --open-chat=<chat id>
+    // --shots=<dir>: a chat's tabs (CHATTAB line), then that tab, logged
+    // and captured after 10 and 25 s (chat-tab-<tab>-*.png); Notes logs its
+    // state and its page's address and title; Recap in a meeting chat
+    // also captures its Mentions and Transcript pages and More options;
+    // quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--chat-tab-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const id = arg("--open-chat"), which = arg("--chat-tab-test")
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "chat-tab-" + which.toLowerCase() + "-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST chat tab test"); return }
+            const notes = conversation.notesTabForTest(), recap = conversation.recapTabForTest(), story = conversation.storylineTabForTest()
+            const web = which === "Storyline" ? story : null
+            const page = () => web && web.view ? { url: String(web.view.url).slice(0, 160), title: web.view.title, progress: web.view.loadProgress }
+                : notes ? { state: notes.state_, file: notes.pageUrl.split("?")[0] } : null
+            if (step === 1) { console.warn("CHATTAB tabs", JSON.stringify(conversation.tabNames)); shot("header") }
+            else if (step === 2) conversation.tab = which
+            else if (step === 6) { console.warn("CHATTAB open-10s", which, backend.chatNotesJson ? backend.chatNotesJson.slice(0, 300) : "", JSON.stringify(page())); shot("open-10s") }
+            else if (step === 12) { console.warn("CHATTAB open-25s", which, backend.chatNotesJson ? backend.chatNotesJson.slice(0, 300) : "", JSON.stringify(page())); shot("open-25s") }
+            // Notes' other pages, drawn from a set state (nothing is sent).
+            else if (step >= 13 && step <= 18 && notes) {
+                const st = ["preparing", "deleted", "failed"][Math.floor((step - 13) / 2)]
+                if (step % 2 === 1) notes.stateForTest = st
+                else shot(st)
+            }
+            else if (step === 13 && recap && recap.meeting) recap.pillForTest("Mentions")
+            else if (step === 14 && recap && recap.meeting) shot("mentions")
+            else if (step === 15 && recap && recap.meeting) recap.pillForTest("Transcript")
+            else if (step === 16 && recap && recap.meeting) shot("transcript")
+            else if (step === 17 && recap && recap.meeting) recap.moreForTest()
+            else if (step === 18 && recap && recap.meeting) shot("more")
+            else if (step === 19) Qt.quit()
+            step++
+        }
+    }
+
     // --agent-store-test with --open-chat=<id> --shots=<dir>: the @ picker
     // (its Add agent row), then Teams' agent Store: overview, scrolled,
     // See all, a search for "poll"; logs what loaded, then quits.

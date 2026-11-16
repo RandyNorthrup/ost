@@ -204,6 +204,8 @@ fn main() {
         "qml/EnrollmentDone.qml",
         "qml/FaceCaptureDialog.qml",
         "qml/VoiceCaptureDialog.qml",
+        "qml/ChatNotesTab.qml",
+        "qml/RecapTab.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

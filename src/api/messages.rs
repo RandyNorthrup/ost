@@ -1020,6 +1020,11 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
             let app = first("targetName");
             (!actor.is_empty() && !app.is_empty()).then(|| ev(kind, targets, app, None))
         }
+        // The chat's Notes were made (Teams' FileAdd row, module 75579
+        // `Pa`: only for a Loop thread file): "Notes have been created in
+        // this chat.", its "Notes" opening the Notes tab.
+        "FileAdd" => (first("type") == "loop" && first("subtype").eq_ignore_ascii_case("loopthread"))
+            .then(|| ev("NotesCreated", Vec::new(), String::new(), None)),
         _ => None,
     }
 }
@@ -1095,6 +1100,7 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
         "MemberRenamed" => format!("{actor} changed their display name to {}.", e.value),
         "AddCustomApp" => format!("{actor} added {} here.", e.value),
         "DeleteCustomApp" => format!("{actor} removed {} from the chat.", e.value),
+        "NotesCreated" => "Notes have been created in this chat.".into(),
         "Transcript" => "Transcript".into(),
         "RecordingStarted" if e.value == "auto" => "Recording started automatically per the organizer's setting.".into(),
         "RecordingStarted" if e.actor.is_empty() => "Recording has started".into(),
@@ -5261,6 +5267,12 @@ mod paging_and_event_tests {
         let del = add.replace("AddCustomApp", "DeleteCustomApp");
         let e = chat_event("ThreadActivity/DeleteCustomApp", &del).unwrap();
         assert_eq!(event_text(&e, &names, false), "Ann removed Polls from the chat.");
+        // Opening OST group test's Notes in Teams (2026-11-16, shortened).
+        let notes = "<fileadd><eventtime>1794824035822</eventtime><initiator>8:orgid:a</initiator><target><id>fd75f050</id><uri>https://x.sharepoint.com/contentstorage/CSP_b2c9/Document%20Library/19_ef21_thread_v2/loop_loopThread.loop?nav=cz0</uri><type>loop</type><subtype>loopthread</subtype><creator>8:orgid:a</creator><createdAt>1794824028156</createdAt></target></fileadd>";
+        let e = chat_event("ThreadActivity/FileAdd", notes).unwrap();
+        assert_eq!(e.kind, "NotesCreated");
+        assert_eq!(event_text(&e, &names, false), "Notes have been created in this chat.");
+        assert!(chat_event("ThreadActivity/FileAdd", &notes.replace("<type>loop</type>", "<type>file</type>")).is_none());
     }
 
     #[test]
