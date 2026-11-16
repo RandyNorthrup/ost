@@ -44,8 +44,54 @@ Measured on winpc on 2026-11-15, with ost-test1 on Teams Public Preview.
   - **Notes:** "Free 60-day trial, no card required." (12/20) and the "Microsoft Teams Trial Terms & Conditions." link (fwlink 2194722), centred at 460 and 480.
   - **Buttons:** "View all benefits" (subtle, fwlink 2227979) 24 in, and Start trial (primary, 96) 24 from the right, both at 544.67.
 - **Start trial.** `POST …/acquire/` with `{}`, sending Prefer `exchange.behavior="ApplicationData,SubstrateFiles"` and ScenarioTag `acquireLowFrictionTrialLicense`.
-  - Teams' strings for the steps: "Getting your trial ready...", "Your Teams Premium trial is now active!" with Got it, and "We ran into a problem setting up your trial. Let's try again." with Try again.
-  - The layout of those steps isn't measured, because no trial was started on the test accounts.
+  - It returns 202 with `{"lowFrictionEntityDetails":{startDate,endDate,state:0}}`.
+  - Teams then asks `GET …/entity` about every 1.5 s until `state` is 1, refreshes its token (authz), and shows the trial as active. About 6 s in all, measured on 2026-11-15.
+- **Cancel trial.** `POST …/cancel` with no body. The reply is the trial with `state` 2. After that, eligibility answers 403.
+
+## Teams Premium's pages
+
+All of these were measured on 2026-11-15, when a trial was started and then cancelled on ost-test1.
+
+- **Getting your trial ready.**
+  - Close is greyed out.
+  - Teams' 192 px logo sits at (204, 128).
+  - "Getting your trial ready..." (20/28 semibold) is at y 353, and "This might take a minute." (14/20) at 399.
+  - A 32 px spinner sits at 441.3.
+- **"Your Teams Premium trial is now active!"** (605.33 tall)
+  - The header and badge as on the offer page.
+  - "Here's how to make the most of it:" sits at y 244.
+  - Three tips follow, each a picture (60 or 48 px) at x 120 with its text (14/20, #424242) beside it.
+  - "Premium features may take up to 24 hours to become available." (12/16) sits at y 495.
+  - Got it at y 550.
+- **The trial's home** (Teams Premium benefits during a trial)
+  - "You’ve got N days left to enjoy your free trial of Teams Premium" (24/32 bold, two lines, with the days in the title gradient) at y 197.
+  - "How's your trial going? Request a license anytime to keep using premium features." at y 269.67.
+  - Three cards at y 312 (176 tall, radius 6, depth-4 shadow, at x 24, 206.57 and 402.69), each with a 32 px picture, a title, text and a link:
+    - "Explore your benefits" with View benefits
+    - "Share feedback" with Share feedback, which opens Teams' feedback form (in OST, OST's own form)
+    - "Get help" with Get help, which opens Help
+  - Footer at y 544.67:
+    - Cancel trial (12 px, subtle)
+    - Buy now with the open glyph, which opens signup.microsoft.com (product CFQ7TTC0RM8K:0007)
+    - Request a license (primary). Teams embeds Microsoft 365's Centro licence-request app here; the request is sent straight away and shows "Your request was sent". OST opens that app in the browser.
+- **"You’ve got Teams Premium!"** (580 tall)
+  - Shown after Cancel trial, while Premium lasts.
+  - Teams' 600 × 240 header, with the diamond at y 206.
+  - Title at y 309, its line at 349.67.
+  - The same cards at y 404, with no footer.
+- **Your benefits with Premium**
+  - Back and the title (20/28) at y 24.
+  - A scrolling area from y 63.33, 457 tall, holding three sections: a 240 × 192 picture, a title, text, bullets and Learn more (each opens its support article). The middle section sits on #FAFAFA.
+  - "*Must be turned on by your admin." at the end.
+- **Cancel trial confirmation**
+  - Back at (32, 32).
+  - The warning picture (192 px SVG drawn 200 tall) at y 90.
+  - "Are you sure you want to cancel your trial?" (20/28 semibold) at y 322.
+  - The two lines at y 363 and 438.
+  - Never mind and Cancel trial at y 546.7.
+- **The ··· button by mode**
+  - **Trial (state 0/1):** a bordered button: the premium glyph, "N days left" and ···. The menu starts with "Teams Premium benefits".
+  - **After cancelling (state 2):** the same button reading "Get Premium". The menu starts with "Get Teams Premium" and "Teams Premium benefits", both opening "You’ve got Teams Premium!".
 
 ## Cast
 

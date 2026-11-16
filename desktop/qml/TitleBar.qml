@@ -122,7 +122,7 @@ Rectangle {
     // 720 px it folds into a search button until clicked.
     readonly property bool searchFolded: width < 720
     property bool searchOpen: false
-    readonly property real searchRoomEnd: moreButton.x - 9
+    readonly property real searchRoomEnd: (premiumPill.visible ? premiumPill.x : moreButton.x) - 9
     readonly property real searchWide: width >= 1680 ? 760 : width >= 1440 ? 664 : width >= 1280 ? 624 : 468
     BarButton {
         id: searchButton
@@ -227,11 +227,42 @@ Rectangle {
 
     BarButton {
         id: moreButton
+        visible: !premiumPill.visible
         icon: "more-20"
         anchors.right: profile.left; anchors.rightMargin: 5
         anchors.verticalCenter: parent.verticalCenter
         Accessible.name: "Settings and more"
         onClicked: moreMenu.visible = !moreMenu.visible
+    }
+    // With a Teams Premium trial (or after it, while Premium lasts) Teams
+    // turns Settings and more into a bordered button (measured on winpc
+    // 2026-11-15): 31.33 tall, white, 0.67 #D1D1D1, radius 4; the premium
+    // glyph (16) 8.67 in, "60 days left" / "Get Premium" (14 semibold) 6
+    // after it, then ··· (20) 6 after that, 8.67 from the right edge, which
+    // stays where the plain button's is.
+    Rectangle {
+        id: premiumPill
+        visible: root.premiumMode === "trial" || root.premiumMode === "canceled"
+        readonly property string label: root.premiumMode === "trial" ? (root.premiumDaysLeft === 1 ? "1 day left" : root.premiumDaysLeft + " days left") : "Get Premium"
+        anchors.right: moreButton.right
+        anchors.verticalCenter: parent.verticalCenter
+        width: pillRow.implicitWidth + 17.33; height: 31.33; radius: 4
+        color: pillHover.hovered ? theme.menuHover : theme.surface
+        border.color: theme.pick("#D1D1D1", "#666666"); border.width: 0.67
+        Row {
+            id: pillRow
+            x: 8.67; anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "premium-16"; size: 16; color: theme.text }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: premiumPill.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "more-horizontal-20"; size: 20; color: theme.text }
+        }
+        HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: moreMenu.visible = !moreMenu.visible }
+        Accessible.role: Accessible.Button
+        Accessible.name: "Settings and more"
+        Accessible.description: root.premiumMode === "trial" ? "There are " + root.premiumDaysLeft + " days left in your premium trial" : "Start your free 60 day Teams Premium trial"
+        Accessible.onPressAction: moreMenu.visible = !moreMenu.visible
     }
     // "Settings and more", as Teams' (measured on winpc 2026-11-15): a
     // 238.47-wide popover centred under the button, 8 below it (radius 4,
@@ -243,11 +274,14 @@ Rectangle {
     // mobile app ends with Teams' "New" pill. Unlock Teams Premium shows
     // while you can start Teams' Premium trial.
     property int zoomPercent: 100
-    property bool premiumOffered: false
+    /// Teams Premium: "offer", "trial", "canceled" or "" (none).
+    property string premiumMode: ""
+    /// Days left in the trial (the button's "N days left").
+    property int premiumDaysLeft: 0
     signal zoomOut()
     signal zoomIn()
     signal zoomReset()
-    signal openPremium()
+    signal openPremium(string kind)
     signal openCast()
     signal openDownloads()
     signal openMobileApp()
@@ -257,8 +291,9 @@ Rectangle {
         z: 100
         depth: 16; radius: 4; color: theme.menu
         width: 238.47; height: moreCol.implicitHeight + 9.33
-        x: moreButton.x + moreButton.width / 2 - width / 2
-        y: moreButton.y + moreButton.height + 8
+        readonly property Item anchorButton: premiumPill.visible ? premiumPill : moreButton
+        x: anchorButton.x + anchorButton.width / 2 - width / 2
+        y: anchorButton.y + anchorButton.height + 8
         component MenuRow: Rectangle {
             id: mr
             property string icon
@@ -312,8 +347,11 @@ Rectangle {
             id: moreCol
             x: 4.67; y: 4.67; width: parent.width - 9.33
             spacing: 2
-            MenuRow { visible: root.premiumOffered; icon: "premium-20"; label: "Unlock Teams Premium"; onPicked: root.openPremium() }
-            MenuDivider { visible: root.premiumOffered }
+            // Teams Premium (its modes: offer, trial, canceled).
+            MenuRow { visible: root.premiumMode === "offer"; icon: "premium-20"; label: "Unlock Teams Premium"; onPicked: root.openPremium("offer") }
+            MenuRow { visible: root.premiumMode === "canceled"; icon: "premium-20"; label: "Get Teams Premium"; onPicked: root.openPremium("home") }
+            MenuRow { visible: root.premiumMode === "trial" || root.premiumMode === "canceled"; icon: "premium-20"; label: "Teams Premium benefits"; onPicked: root.openPremium("home") }
+            MenuDivider { visible: root.premiumMode === "offer" || root.premiumMode === "trial" || root.premiumMode === "canceled" }
             MenuRow { icon: "pin-20"; label: root.pinned ? "Unpin window" : "Pin window on top"; keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
             MenuRow { icon: "settings-20"; label: "Settings"; keys: "Ctrl+,"; onPicked: root.openSettings() }
             MenuRow { icon: "cast-20"; label: "Cast"; onPicked: root.openCast() }

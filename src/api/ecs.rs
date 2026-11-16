@@ -143,6 +143,19 @@ pub async fn license(client: &TeamsClient) -> Option<serde_json::Value> {
     Some(l)
 }
 
+/// Fetch the licence details again (a fresh authz exchange, kept in the
+/// config), as Teams does after a licence changes (Teams Premium's trial).
+pub async fn refresh_license() -> Option<serde_json::Value> {
+    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.ok()?;
+    let x = crate::auth::skype::exchange_skype_token(&token, false).await.ok()?;
+    let l = x.license_details?;
+    if let Ok(mut c) = crate::config::Config::load() {
+        c.set_license_details(l.clone());
+        let _ = c.save();
+    }
+    Some(l)
+}
+
 /// Load the settings: the cached reply at once, then ECS (If-None-Match).
 /// `cache_dir` keeps `ecs.json` (the reply) between runs.
 pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {

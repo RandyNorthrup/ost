@@ -3,7 +3,9 @@
 //! service's `v1.0/lfts/TeamsPremium/policies/selfserve` (PolicyValue 0
 //! ENABLED, 1 ONLY_TRIALS_WITHOUT_PAYMENT_METHOD, 2 DISABLED),
 //! `…/eligibility/` (`{lowFrictionEntityDetails, ineligibilityReason}`) and
-//! Start trial's `POST …/acquire/` with `{}`.
+//! Start trial's `POST …/acquire/` with `{}` (202 with the trial, `state` 0
+//! while it is set up), then `GET …/entity` until `state` is 1 (active);
+//! Cancel trial's `POST …/cancel` (captured on winpc 2026-11-15).
 
 use anyhow::{Context, Result};
 
@@ -28,6 +30,45 @@ impl TrialState {
     pub fn offered(&self) -> bool {
         self.policy != "DISABLED" && !self.policy.is_empty() && self.eligible && self.entity.is_none()
     }
+}
+
+/// The trial's state (0 setting up, 1 active).
+pub fn entity_state(entity: &serde_json::Value) -> Option<i64> {
+    entity.get("state").and_then(|s| s.as_i64())
+}
+
+/// Whole days left in a trial (Teams' "60 days left": the time to its
+/// `endDate`, rounded up).
+pub fn days_left(entity: &serde_json::Value, now: chrono::DateTime<chrono::Utc>) -> Option<i64> {
+    let end = chrono::DateTime::parse_from_rfc3339(entity.get("endDate")?.as_str()?).ok()?;
+    let secs = (end.with_timezone(&chrono::Utc) - now).num_seconds();
+    Some(if secs <= 0 { 0 } else { (secs + 86_399) / 86_400 })
+}
+
+/// Your trial now (`GET …/entity`), if you have one.
+pub async fn entity(http: &reqwest::Client) -> Result<Option<serde_json::Value>> {
+    let token = token().await?;
+    let resp = request(http, reqwest::Method::GET, &format!("{BASE}/entity"), &token, "getLowFrictionTrialEntity")
+        .send()
+        .await
+        .context("Trial")?;
+    if resp.status() == reqwest::StatusCode::NOT_FOUND || resp.status() == reqwest::StatusCode::CONFLICT {
+        return Ok(None);
+    }
+    let v: serde_json::Value = resp.error_for_status().context("Trial")?.json().await.context("Trial reply")?;
+    Ok(v.get("lowFrictionEntityDetails").filter(|e| !e.is_null()).cloned())
+}
+
+/// Cancel trial (Teams: "Your trial will cancel within 24 hours.").
+pub async fn cancel(http: &reqwest::Client) -> Result<()> {
+    let token = token().await?;
+    // As Teams: a POST with no body; the reply is the trial, now state 2.
+    let resp = request(http, reqwest::Method::POST, &format!("{BASE}/cancel"), &token, "cancelLowFrictionTrialLicense")
+        .send()
+        .await
+        .context("Cancel trial")?;
+    anyhow::ensure!(resp.status().is_success(), "Cancel trial: HTTP {}", resp.status().as_u16());
+    Ok(())
 }
 
 async fn token() -> Result<String> {
@@ -64,15 +105,16 @@ pub async fn state(http: &reqwest::Client) -> Result<TrialState> {
         .json()
         .await
         .context("Trial policy reply")?;
-    let elig: serde_json::Value = request(http, reqwest::Method::GET, &format!("{BASE}/eligibility/"), &token, "getLowFrictionTrialEligibility")
+    let resp = request(http, reqwest::Method::GET, &format!("{BASE}/eligibility/"), &token, "getLowFrictionTrialEligibility")
         .send()
         .await
-        .context("Trial eligibility")?
-        .error_for_status()
-        .context("Trial eligibility")?
-        .json()
-        .await
-        .context("Trial eligibility reply")?;
+        .context("Trial eligibility")?;
+    // Forbidden once your trial is used up (after Cancel trial).
+    let elig: serde_json::Value = if resp.status() == reqwest::StatusCode::FORBIDDEN {
+        serde_json::json!({ "ineligibilityReason": "FORBIDDEN" })
+    } else {
+        resp.error_for_status().context("Trial eligibility")?.json().await.context("Trial eligibility reply")?
+    };
     Ok(state_from(&policy, &elig))
 }
 
@@ -115,5 +157,13 @@ mod tests {
         assert!(!off.offered());
         let no = state_from(&serde_json::json!({"PolicyValue": 0}), &serde_json::json!({"ineligibilityReason": "AlreadyLicensed"}));
         assert!(!no.offered());
+    }
+
+    #[test]
+    fn days_left_round_up() {
+        let e = serde_json::json!({"startDate": "2026-11-16T01:42:49Z", "endDate": "2027-01-15T01:42:45.9200065Z", "state": 1});
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-16T01:50:00Z").unwrap().with_timezone(&chrono::Utc);
+        assert_eq!(days_left(&e, now), Some(60));
+        assert_eq!(entity_state(&e), Some(1));
     }
 }

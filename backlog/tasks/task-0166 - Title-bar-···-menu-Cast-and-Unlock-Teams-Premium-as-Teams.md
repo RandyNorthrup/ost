@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T00:26:00Z'
-updated_date: '2026-11-16T01:39:00Z'
+updated_date: '2026-11-16T02:19:00Z'
 labels:
   - desktop
   - shell
@@ -25,7 +25,7 @@ Teams' title bar Settings and more menu (measured 2026-11-15): 229 wide with 32-
 <!-- AC:BEGIN -->
 - [x] #1 OST's ··· menu has Teams' items, order, separators and geometry
 - [x] #2 Zoom out, Zoom in and reset scale OST's whole window as Teams does, with Teams' steps and Ctrl+-, Ctrl+= and Ctrl+0
-- [ ] #3 Downloads, Get the mobile app, Cast and Unlock Teams Premium open what Teams' open, measured on winpc
+- [x] #3 Downloads, Get the mobile app, Cast and Unlock Teams Premium open what Teams' open, measured on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -40,4 +40,11 @@ Teams' title bar Settings and more menu (measured 2026-11-15): 229 wide with 32-
   - Get the mobile app: dialog with Teams' QR code and store badges.
   - Teams' download history on winpc was cleared while measuring the empty state.
   - Left (AC3): measure Start trial's pending, success and error dialogs (needs a Premium trial started on a test account).
+
+- 2026-11-15: with the user's OK, a Teams Premium trial was started on ost-test1 from Teams on winpc, every page was measured, and the trial was cancelled from Teams (the cancel was captured: POST …/cancel, state 2).
+  - OST now has the trial's whole flow: Getting your trial ready (acquire, then the trial until state 1, then a licence refresh), "now active", the trial home (N days left, three cards, Cancel trial / Buy now / Request a license), Your benefits with Premium, the cancel confirmation, and "You've got Teams Premium!" after cancelling.
+  - The ··· button becomes the "N days left" / "Get Premium" button, and its menu changes by mode.
+  - OST shows ost-test1 as Teams does now (mode canceled, "Get Premium").
+  - Teams' Request a license sent a request at once (Centro app); it was rejected in the admin center. OST opens that app in the browser.
+  - Re-check after 2026-11-16, once the cancellation finishes, for the state after Premium ends.
 <!-- SECTION:NOTES:END -->

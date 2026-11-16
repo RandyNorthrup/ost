@@ -220,7 +220,7 @@ fn main() {
             let path = entry.expect("asset entry").path();
             if matches!(
                 path.extension().and_then(|e| e.to_str()),
-                Some("svg" | "ttf" | "png" | "json" | "mp3")
+                Some("svg" | "ttf" | "png" | "jpg" | "json" | "mp3")
             ) {
                 resources.push(path.to_string_lossy().into_owned());
             }

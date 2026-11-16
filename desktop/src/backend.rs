@@ -373,7 +373,7 @@ pub mod qobject {
         /// name, address}], error}.
         #[qproperty(QString, buildings_json)]
         /// Teams Premium's trial: {policy, eligible, offered, entity,
-        /// starting, started, error}.
+        /// inTrial, daysLeft, starting, started, canceling, canceled, error}.
         #[qproperty(QString, premium_json)]
         /// Settings and more ▸ Downloads: [{path, name, at, exists}].
         #[qproperty(QString, downloads_json)]
@@ -2001,6 +2001,9 @@ pub mod qobject {
         /// Start Teams Premium's trial (Teams' Start trial).
         #[qinvokable]
         fn start_premium_trial(self: Pin<&mut Backend>);
+        /// Cancel Teams Premium's trial (Teams' Cancel trial).
+        #[qinvokable]
+        fn cancel_premium_trial(self: Pin<&mut Backend>);
         /// Downloads: "load", "open" (path), "folder" (path: its folder;
         /// empty: the Downloads folder), "delete" (path: the file) or
         /// "clear" (the history).
@@ -3093,6 +3096,25 @@ const RECORDING_DOWNLOAD_NAME: &str = "Recording.mp4";
 
 /// The name Teams gives a downloaded clip ("MicrosoftTeams-video", an MP4).
 const CLIP_DOWNLOAD_NAME: &str = "MicrosoftTeams-video.mp4";
+
+/// Teams Premium's trial for QML: the offer, and a trial you have (its
+/// days left; Teams counts it as yours from when it is set up).
+fn premium_json(s: &api::premium::TrialState, entity: Option<&serde_json::Value>) -> serde_json::Value {
+    let mut v = json!(s);
+    let state = entity.and_then(api::premium::entity_state);
+    let in_trial = matches!(state, Some(0) | Some(1));
+    // Teams' modes (winpc 2026-11-15): "offer" (Unlock Teams Premium),
+    // "trial" (the "N days left" pill, Teams Premium benefits) and
+    // "canceled" (state 2: the "Get Premium" pill, Get Teams Premium and
+    // Teams Premium benefits while Premium lasts).
+    let mode = if in_trial { "trial" } else if state == Some(2) { "canceled" } else if s.offered() && entity.is_none() { "offer" } else { "none" };
+    v["mode"] = json!(mode);
+    v["offered"] = json!(mode == "offer");
+    v["inTrial"] = json!(in_trial);
+    v["entity"] = entity.cloned().unwrap_or(serde_json::Value::Null);
+    v["daysLeft"] = json!(entity.and_then(|e| api::premium::days_left(e, chrono::Utc::now())));
+    v
+}
 
 /// Where downloads go: Settings ▸ Files and links' location, else
 /// $XDG_DOWNLOAD_DIR, else ~/Downloads.
@@ -15478,12 +15500,16 @@ impl qobject::Backend {
     pub fn load_premium(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let v = match api::premium::state(&reqwest::Client::new()).await {
+            let http = reqwest::Client::new();
+            let v = match api::premium::state(&http).await {
                 Ok(s) => {
-                    let offered = s.offered();
-                    let mut v = json!(s);
-                    v["offered"] = json!(offered);
-                    v
+                    // The eligibility reply carries a trial you already
+                    // have; else ask for it.
+                    let entity = match s.entity.clone() {
+                        Some(e) => Some(e),
+                        None => api::premium::entity(&http).await.ok().flatten(),
+                    };
+                    premium_json(&s, entity.as_ref())
                 }
                 Err(e) => {
                     tracing::warn!("premium trial: {}", short_error(&e));
@@ -15501,17 +15527,65 @@ impl qobject::Backend {
         self.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = api::premium::acquire(&reqwest::Client::new()).await;
+            let http = reqwest::Client::new();
+            // Teams: acquire (the trial comes back setting up, state 0),
+            // then ask for it until it is active (state 1), then refresh
+            // the licence (authz).
+            let result = async {
+                let first = api::premium::acquire(&http).await?;
+                let mut entity = first.get("lowFrictionEntityDetails").cloned().unwrap_or(serde_json::Value::Null);
+                for _ in 0..60 {
+                    if api::premium::entity_state(&entity) == Some(1) {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    if let Some(e) = api::premium::entity(&http).await? {
+                        entity = e;
+                    }
+                }
+                anyhow::ensure!(api::premium::entity_state(&entity) == Some(1), "The trial didn't become active");
+                let _ = api::ecs::refresh_license().await;
+                anyhow::Ok(entity)
+            }
+            .await;
             let _ = qt.queue(move |mut this| {
                 let mut v: serde_json::Value = serde_json::from_str(&this.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
                 v["starting"] = json!(false);
                 match result {
-                    Ok(r) => {
+                    Ok(entity) => {
+                        let days = api::premium::days_left(&entity, chrono::Utc::now());
                         v["started"] = json!(true);
                         v["offered"] = json!(false);
-                        v["entity"] = r;
+                        v["inTrial"] = json!(true);
+                        v["mode"] = json!("trial");
+                        v["daysLeft"] = json!(days);
+                        v["entity"] = entity;
                     }
                     Err(e) => v["error"] = json!(short_error(&e)),
+                }
+                this.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn cancel_premium_trial(mut self: Pin<&mut Self>) {
+        let mut v: serde_json::Value = serde_json::from_str(&self.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+        v["canceling"] = json!(true);
+        v["error"] = serde_json::Value::Null;
+        self.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = api::premium::cancel(&reqwest::Client::new()).await;
+            let _ = qt.queue(move |mut this| {
+                let mut v: serde_json::Value = serde_json::from_str(&this.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+                v["canceling"] = json!(false);
+                match result {
+                    Ok(()) => {
+                        v["canceled"] = json!(true);
+                        v["inTrial"] = json!(false);
+                        v["mode"] = json!("canceled");
+                    }
+                    Err(e) => v["cancelError"] = json!(short_error(&e)),
                 }
                 this.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
             });

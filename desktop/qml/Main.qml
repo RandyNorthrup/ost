@@ -3735,6 +3735,29 @@ Window {
             else if (st > 12 || (st > 4 && Qt.application.arguments.indexOf("--link-preview-send") < 0)) { c.clear(); Qt.quit() }
         }
     }
+    // --premium-test: Teams Premium as it stands for the account (PREMIUM
+    // line with the mode and days left), the title bar's button, then each
+    // page of the Premium dialog in turn (offer, pending, active, home,
+    // licensed, benefits scrolled half way, cancel). Pictures in /tmp/act.
+    Timer {
+        running: Qt.application.arguments.indexOf("--premium-test") >= 0 && backend.signedIn
+        interval: 1500; repeat: true
+        property int step: 0
+        readonly property var pages: ["offer", "pending", "active", "home", "licensed", "benefits", "cancel"]
+        onTriggered: {
+            const st = step++
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/premium-" + n + ".png"))
+            if (st === 2) { console.warn("PREMIUM", backend.premiumJson, "mode", titleBar.premiumMode, "days", titleBar.premiumDaysLeft); shot("titlebar") }
+            else if (st === 3) titleBar.moreMenuForTest(true)
+            else if (st === 4) shot("menu")
+            else if (st >= 5 && st < 5 + pages.length * 2) {
+                const i = Math.floor((st - 5) / 2), pg = pages[i]
+                if ((st - 5) % 2 === 0) { titleBar.moreMenuForTest(false); premiumDialog.page = pg; if (!premiumDialog.opened) premiumDialog.open() }
+                else { if (pg === "benefits") premiumDialog.contentItem.parent && 0; shot(pg) }
+            }
+            else if (st > 5 + pages.length * 2) { premiumDialog.close(); Qt.quit() }
+        }
+    }
     // --zoom-test: hold 150% for 12 s (for a screen capture), open the
     // menu at that zoom, then reset to 100% and quit.
     Timer {
@@ -3773,7 +3796,7 @@ Window {
             else if (st === 4) { console.warn("MENU zoom", window.zoomPercent, window.contentItem.scale, window.contentItem.width); shot("zoom110") }
             else if (st === 5) { window.zoomReset(); titleBar.moreMenuForTest(false); mobileAppDialog.open() }
             else if (st === 6) shot("mobile")
-            else if (st === 7) { mobileAppDialog.close(); premiumDialog.open() }
+            else if (st === 7) { mobileAppDialog.close(); premiumDialog.openFor("offer") }
             else if (st === 8) shot("premium")
             else if (st === 9) { premiumDialog.close(); downloadsFlyout.open() }
             else if (st === 10) { console.warn("MENU downloads", backend.downloadsJson); shot("downloads") }
@@ -7718,14 +7741,16 @@ Window {
         onZoomIn: window.zoomIn()
         onZoomOut: window.zoomOut()
         onZoomReset: window.zoomReset()
-        premiumOffered: { const p = backend.premiumJson ? JSON.parse(backend.premiumJson) : ({}); return !!p.offered || !!p.starting }
-        onOpenPremium: premiumDialog.open()
+        readonly property var premium: backend.premiumJson ? JSON.parse(backend.premiumJson) : ({})
+        premiumMode: premium.mode || (premium.starting ? "offer" : "")
+        premiumDaysLeft: premium.daysLeft || 0
+        onOpenPremium: kind => premiumDialog.openFor(kind)
         onOpenCast: castWindow.start()
         onOpenDownloads: downloadsFlyout.open()
         onOpenMobileApp: mobileAppDialog.open()
     }
     // Settings and more's dialogs and windows.
-    PremiumDialog { id: premiumDialog }
+    PremiumDialog { id: premiumDialog; onFeedbackRequested: window.openFeedback("problem", "Teams Premium", ""); onHelpRequested: window.openHelp() }
     MobileAppDialog { id: mobileAppDialog }
     DownloadsFlyout { id: downloadsFlyout; x: window.contentItem.width - 13.33 - width; y: 60 }
     CastWindow { id: castWindow; visible: false }
