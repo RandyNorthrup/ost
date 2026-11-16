@@ -2571,6 +2571,7 @@ Window {
             step++
         }
     }
+    property string nmcWas: ""
     readonly property bool joinRaise: Qt.application.arguments.indexOf("--join-raise") >= 0
     property bool speechShot: false
     property bool deniedOne: false
@@ -2709,6 +2710,51 @@ Window {
                 else if (step === 16) { log("900"); shot("900") }
                 else if (step === 17) callWindow.width = 1280
                 else if (step === 19) { log("restored"); shot("restored") }
+            } else if (step >= 8 && step <= 44 && Qt.application.arguments.indexOf("--join-new-controls") >= 0) {
+                // --join-new-controls: Teams' New meeting controls (turned on
+                // for the test, put back after): the bar at 1280, More with
+                // View ▸ / Join info ▸ / Settings ▸, React (raise and lower
+                // your hand), a control's right-click menu, Unpin People
+                // (bar and More), Reset, then 700 (overflow) and 460 (the
+                // compact bar). Needs --join-stay=80 or more.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nmc-" + n + ".png")))
+                const log = t => console.warn("JOIN nmc", t, callWindow.width, "compact", callWindow.compactBar, JSON.stringify(callWindow.ubar))
+                if (step === 8) {
+                    window.nmcWas = backend.setting("newMeetingControls")
+                    backend.setSetting("newMeetingControls", "true"); callWindow.newControls = true
+                    callWindow.side = ""; callWindow.width = 1280
+                }
+                else if (step === 9) { log("wide"); shot("wide") }
+                else if (step === 10) callWindow.newMoreForTest()
+                else if (step === 11) { shot("more"); console.warn("JOIN nmc more grid", JSON.stringify(callWindow.newGridItems.map(e => e.label)), "list", JSON.stringify(callWindow.newListItems.map(e => e.label || "|"))) }
+                else if (step === 12) callWindow.newMoreSubForTest(0)
+                else if (step === 13) shot("more-view")
+                else if (step === 14) callWindow.newMoreSubForTest(1)
+                else if (step === 15) shot("more-joininfo")
+                else if (step === 16) callWindow.newMoreSubForTest(2)
+                else if (step === 17) { shot("more-settings"); console.warn("JOIN nmc settings", JSON.stringify(callWindow.newListItems[2].submenu.map(e => e.label || "|"))) }
+                else if (step === 18) { callWindow.closeMenusForTest(); callWindow.runControl("ReactionButton") }
+                else if (step === 19) shot("react")
+                else if (step === 20) callWindow.toggleHand()
+                else if (step === 22) { shot("react-raised"); console.warn("JOIN nmc hand", callWindow.handRaised, backend.callHandRaised) }
+                else if (step === 23) callWindow.toggleHand()
+                else if (step === 25) { console.warn("JOIN nmc hand lowered", !backend.callHandRaised); callWindow.closeMenusForTest(); callWindow.controlMenuForTest("ChatButton") }
+                else if (step === 26) { shot("arrange-chat"); console.warn("JOIN nmc arrange", JSON.stringify(callWindow.arrangeMenuForTest().items.map(e => e.label || "|"))) }
+                else if (step === 27) { callWindow.closeMenusForTest(); callWindow.arrangeForTest("unpin", "RosterButton") }
+                else if (step === 28) { log("unpinned"); shot("unpinned"); callWindow.newMoreForTest() }
+                else if (step === 29) shot("unpinned-more")
+                else if (step === 30) { callWindow.closeMenusForTest(); callWindow.arrangeForTest("reset", "") }
+                else if (step === 31) { log("reset"); callWindow.width = 700 }
+                else if (step === 33) { log("700"); shot("700"); callWindow.newMoreForTest() }
+                else if (step === 34) shot("700-more")
+                else if (step === 35) { callWindow.closeMenusForTest(); callWindow.width = 460 }
+                else if (step === 37) { log("460"); shot("460") }
+                else if (step === 38) callWindow.width = 1280
+                else if (step === 40) {
+                    backend.setSetting("newMeetingControls", window.nmcWas); callWindow.newControls = window.nmcWas === "true"
+                    log("restored")
+                }
+                else if (step === 41) shot("restored")
             } else if (step >= 8 && step <= 30 && Qt.application.arguments.indexOf("--join-keys") >= 0) {
                 // --join-keys: log the state each step while keys are sent
                 // from outside (Teams' call shortcuts).
@@ -9765,6 +9811,7 @@ Window {
         id: settingsView
         visible: rail.current === "settings"
         onShowShortcuts: shortcutsDialog.open()
+        onFeedbackRequested: (kind, area, context) => window.openFeedback(kind, area, context)
         myPresence: titleBar.presence
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
     }

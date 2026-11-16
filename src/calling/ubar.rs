@@ -16,6 +16,12 @@
 //!   [`overflow`] is Fluent's `Overflow`: the lowest priority leaves first
 //!   (`AsFirst` 0, `AsLast` 500; `Docked` never), the last in bar order on
 //!   ties; what leaves goes to the top of More, in bar order.
+//! - Teams' "New meeting controls" (Settings ▸ General ▸ Meeting, a Teams
+//!   Labs feature) switches `ubarLayoutSetup` to `InlineCentered`, which
+//!   picks `ubarLayoutPresets[1]` (kept here as `centered`): Mic, Camera
+//!   and Share first, More's grid and list, Leave apart, and the user's
+//!   own arrangement ([`Customization`]: Pin, Unpin, Move before/after).
+//!   docs/spec/new-meeting-controls.md.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -130,6 +136,12 @@ pub struct BarControl {
 pub struct BarGroup {
     pub name: String,
     pub controls: Vec<BarControl>,
+    /// The group's own grouping strategy (else the layout's).
+    #[serde(skip)]
+    pub grouping: Option<Grouping>,
+    /// The user may reorder and unpin this group's controls
+    /// (`layoutCustomizationBehaviour` All).
+    pub customizable: bool,
 }
 
 /// A More menu section and its controls (each a name; menus hold their
@@ -139,6 +151,23 @@ pub struct BarGroup {
 pub struct MenuSection {
     pub name: String,
     pub items: Vec<MenuItem>,
+    /// Drawn as Teams' grid of labelled buttons (`MenuGridControls`)
+    /// rather than a list.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub grid: bool,
+}
+
+/// The user's arrangement of the new controls (Teams keeps it per client:
+/// `stageSettings.callingControlsPreferences`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Customization {
+    /// Controls moved off the bar into More (the most recent first).
+    pub unpinned: Vec<String>,
+    /// Controls of More's grid pinned to the bar, in the order pinned.
+    pub pinned: Vec<String>,
+    /// The customizable groups' controls in the user's order.
+    pub order: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -163,6 +192,8 @@ pub struct Layout {
 #[derive(Deserialize)]
 struct Config {
     preset: PresetNode,
+    /// `ubarLayoutPresets[1]`, the `InlineCentered` preset.
+    centered: PresetNode,
     overrides: std::collections::HashMap<String, OverrideEntry>,
 }
 
@@ -177,6 +208,12 @@ struct PresetGroup {
     name: String,
     #[serde(default)]
     items: Vec<PresetItem>,
+    #[serde(rename = "groupingStrategy")]
+    grouping: Option<String>,
+    #[serde(rename = "layoutCustomizationBehaviour")]
+    customization: Option<String>,
+    #[serde(rename = "rendererLibrary")]
+    renderer: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -211,7 +248,27 @@ impl Layout {
     /// controls whose rule fails are left out, and a menu with nothing
     /// left in it disappears.
     pub fn build(name: LayoutName, shown: &dyn Fn(&str) -> bool) -> Layout {
+        Self::build_with(name, false, &Customization::default(), shown)
+    }
+
+    /// Build a layout from Teams' current preset, or (`centered`) from the
+    /// new meeting controls' preset with the user's arrangement applied.
+    pub fn build_with(
+        name: LayoutName,
+        centered: bool,
+        custom: &Customization,
+        shown: &dyn Fn(&str) -> bool,
+    ) -> Layout {
+        let mut layout = Self::build_preset(name, centered, shown);
+        if centered {
+            layout.customize(custom, shown);
+        }
+        layout
+    }
+
+    fn build_preset(name: LayoutName, centered: bool, shown: &dyn Fn(&str) -> bool) -> Layout {
         let cfg = config();
+        let preset = if centered { &cfg.centered } else { &cfg.preset };
         let entry = cfg
             .overrides
             .get(name.config_name())
@@ -232,7 +289,7 @@ impl Layout {
         let mut middle = Vec::new();
         let mut end = Vec::new();
         let mut more = Vec::new();
-        for group in &cfg.preset.groups {
+        for group in &preset.groups {
             let mut controls = Vec::new();
             // Menu controls the overrides lift out of this group's menus:
             // their own group, placed before this one, in preset order.
@@ -261,29 +318,102 @@ impl Layout {
                 }
             }
             if !lifted.is_empty() {
-                middle.push(BarGroup { name: format!("{}Overrides", group.name), controls: lifted });
+                middle.push(BarGroup {
+                    name: format!("{}Overrides", group.name),
+                    controls: lifted,
+                    grouping: None,
+                    customizable: false,
+                });
             }
-            if !controls.is_empty() {
-                middle.push(BarGroup { name: group.name.clone(), controls });
+            // The new controls keep each group, even an empty one, so the
+            // user's pins have somewhere to go.
+            if !controls.is_empty() || (centered && group.customization.as_deref() == Some("All")) {
+                middle.push(BarGroup {
+                    name: group.name.clone(),
+                    controls,
+                    grouping: Grouping::parse(group.grouping.as_deref()),
+                    customizable: group.customization.as_deref() == Some("All"),
+                });
             }
         }
         Layout { middle, end, more, grouping }
     }
 
+    /// The user's arrangement: unpinned controls leave the bar for the
+    /// front of More's grid, pinned grid controls join the end of the
+    /// first customizable group, and customizable groups take the user's
+    /// order.
+    fn customize(&mut self, custom: &Customization, shown: &dyn Fn(&str) -> bool) {
+        let in_grid: Vec<String> = self
+            .more
+            .iter()
+            .filter(|s| s.grid)
+            .flat_map(|s| s.items.iter().map(|i| i.name.clone()))
+            .collect();
+        let pinned: Vec<String> = custom
+            .pinned
+            .iter()
+            .filter(|n| in_grid.contains(n) && pinnable(n) && !custom.unpinned.contains(n))
+            .cloned()
+            .collect();
+        let mut unpinned = Vec::new();
+        let first_custom = self.middle.iter().position(|g| g.customizable);
+        for (gi, g) in self.middle.iter_mut().enumerate() {
+            if !g.customizable {
+                continue;
+            }
+            g.controls.retain(|c| {
+                let gone = custom.unpinned.contains(&c.name);
+                if gone {
+                    unpinned.push(c.name.clone());
+                }
+                !gone
+            });
+            if Some(gi) == first_custom {
+                for n in &pinned {
+                    g.controls.push(BarControl { name: n.clone(), overflow: Overflow::AsFirst, on_hold: false });
+                }
+            }
+            if !custom.order.is_empty() {
+                let default: Vec<String> = g.controls.iter().map(|c| c.name.clone()).collect();
+                let key = |n: &str| {
+                    custom
+                        .order
+                        .iter()
+                        .position(|o| o == n)
+                        .unwrap_or(custom.order.len() + default.iter().position(|d| d == n).unwrap_or(0))
+                };
+                g.controls.sort_by_key(|c| key(&c.name));
+            }
+        }
+        self.middle.retain(|g| !g.controls.is_empty());
+        // Unpinned controls head the grid, the most recently unpinned first.
+        unpinned.sort_by_key(|n| custom.unpinned.iter().position(|u| u == n));
+        if let Some(grid) = self.more.iter_mut().find(|s| s.grid) {
+            grid.items.retain(|i| !pinned.contains(&i.name));
+            for (i, n) in unpinned.iter().enumerate() {
+                if shown(n) {
+                    grid.items.insert(i, MenuItem { name: n.clone(), sections: Vec::new() });
+                }
+            }
+        }
+    }
+
     /// The middle slot in bar order, with dividers: `None` is a divider.
     pub fn with_dividers(&self, kept: &dyn Fn(&str) -> bool) -> Vec<Option<&BarControl>> {
-        let groups: Vec<Vec<&BarControl>> = self
+        let groups: Vec<(Grouping, Vec<&BarControl>)> = self
             .middle
             .iter()
-            .map(|g| g.controls.iter().filter(|c| kept(&c.name)).collect::<Vec<_>>())
-            .filter(|g| !g.is_empty())
+            .map(|g| (g.grouping.unwrap_or(self.grouping), g.controls.iter().filter(|c| kept(&c.name)).collect::<Vec<_>>()))
+            .filter(|g| !g.1.is_empty())
             .collect();
         let mut out = Vec::new();
-        for (i, g) in groups.iter().enumerate() {
+        for (i, (strategy, g)) in groups.iter().enumerate() {
             if i > 0 {
-                let divider = match self.grouping {
+                // The group's own strategy, else the layout's.
+                let divider = match strategy {
                     Grouping::AlwaysKeep => true,
-                    Grouping::MergeWithNext => groups[i - 1].len() > 1,
+                    Grouping::MergeWithNext => groups[i - 1].1.len() > 1,
                     Grouping::MergeWithPrevious => g.len() > 1,
                 };
                 if divider {
@@ -342,10 +472,17 @@ fn menu_sections(
             menu_items(item, available, shown, moved, &mut items);
         }
         if !items.is_empty() {
-            out.push(MenuSection { name: g.name.clone(), items });
+            let grid = g.renderer.as_deref() == Some("MenuGridControls");
+            out.push(MenuSection { name: g.name.clone(), items, grid });
         }
     }
     out
+}
+
+/// Whether the user can pin a grid control to the bar (Teams' Docked
+/// controls stay where they are).
+pub fn pinnable(name: &str) -> bool {
+    name != "MeetingAppsAddButton"
 }
 
 fn menu_items(
@@ -359,13 +496,17 @@ fn menu_items(
         return;
     }
     if available(&item.name) {
-        if item.groups.is_empty() {
+        // View keeps its own menu (the call window builds it).
+        if item.groups.is_empty() || item.name == "ViewModeButton" {
             if shown(&item.name) {
                 out.push(MenuItem { name: item.name.clone(), sections: Vec::new() });
             }
         } else {
+            // A menu control needs something in it; a button with a menu
+            // of its own (the new controls' Record, Transcribe) shows
+            // without one.
             let sections = menu_sections(&item.groups, available, shown, moved);
-            if !sections.is_empty() && shown(&item.name) {
+            if (!sections.is_empty() || !item.name.ends_with("MenuControl")) && shown(&item.name) {
                 out.push(MenuItem { name: item.name.clone(), sections });
             }
         }
@@ -446,6 +587,10 @@ pub struct Facts {
     pub can_return_to_main: bool,
     /// This call is a breakout room (Teams shows no Notes there).
     pub breakout_room: bool,
+    /// Teams' New meeting controls are on (the `InlineCentered` layout).
+    pub centered: bool,
+    /// The user's arrangement of the new controls.
+    pub customization: Customization,
 }
 
 impl Facts {
@@ -460,7 +605,9 @@ impl Facts {
             "RosterButton" | "ViewModeButton" | "VideoButton" | "MicrophoneButton" | "ShareButton"
             | "CallButton" | "DialpadButton" => true,
             // Not in 1:1 calls (the component renders nothing for P2P).
-            "RaiseHandsButton" => !self.p2p,
+            // The new controls raise hands from React's menu
+            // (showRaiseHandInReactionMenu).
+            "RaiseHandsButton" => !self.p2p && !(self.centered && self.shows("ReactionButton")),
             "ReactionButton" => !self.p2p && self.reactions,
             "OrganizerControlButton" => self.organizer,
             // Private scheduled meetings (not Meet now: its flag is off).
@@ -498,9 +645,15 @@ impl Facts {
             // its streams in any call).
             "CallHealth" => true,
             // Settings ▸ Accessibility settings (the in-meeting pane).
-            "SettingsMenuControl" | "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => {
-                self.scheduled
-            }
+            "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => self.scheduled,
+            // The new controls keep Video effects and Audio settings in
+            // Settings ▸, so it shows in every call.
+            "SettingsMenuControl" => self.scheduled || self.centered,
+            // The new controls' More: Join info ▸ (Meeting info, Call
+            // health) and Settings ▸ Hide me / Optimize for room (the old
+            // controls keep those two in View ▸ More options).
+            "JoinInfoMenuControl" => true,
+            "ToggleHideMyselfButton" | "ByodMeetingRoomModeButton" => self.centered && !self.p2p,
             _ => false,
         }
     }
@@ -520,11 +673,19 @@ pub struct Arranged {
     pub more: Vec<MenuSection>,
     /// Controls Teams keeps enabled on hold (the rest are disabled).
     pub on_hold: Vec<String>,
+    /// The new controls: each customizable group's controls in order (for
+    /// Move before / Move after and Unpin).
+    pub movable: Vec<Vec<String>>,
 }
 
 /// Lay the bar out for `facts` in `available` px of middle slot.
 pub fn arrange(facts: &Facts, widths: &dyn Fn(&str) -> f64, divider: f64, available: f64) -> Arranged {
-    let layout = Layout::build(layout_name(facts.p2p, facts.pstn, facts.consult), &|n| facts.shows(n));
+    let layout = Layout::build_with(
+        layout_name(facts.p2p, facts.pstn, facts.consult),
+        facts.centered,
+        &facts.customization,
+        &|n| facts.shows(n),
+    );
     let overflowed = overflow(&layout, widths, divider, available);
     let kept = |n: &str| !overflowed.iter().any(|o| o == n);
     let bar = layout
@@ -540,12 +701,19 @@ pub fn arrange(facts: &Facts, widths: &dyn Fn(&str) -> f64, divider: f64, availa
         .filter(|c| c.on_hold)
         .map(|c| c.name.clone())
         .collect();
+    let movable = layout
+        .middle
+        .iter()
+        .filter(|g| g.customizable)
+        .map(|g| g.controls.iter().map(|c| c.name.clone()).collect())
+        .collect();
     Arranged {
         bar,
         end: layout.end.iter().map(|c| c.name.clone()).collect(),
         overflowed,
         more: layout.more,
         on_hold,
+        movable,
     }
 }
 
@@ -698,6 +866,101 @@ mod tests {
         let held = arrange(&Facts { p2p: true, on_hold: true, ..Default::default() }, &w, 17.0, 5000.0);
         assert!(held.bar.contains(&"ResumeButton".to_string()) && !held.bar.contains(&"HoldButton".to_string()));
         assert!(!held.bar.contains(&"RaiseHandsButton".to_string()));
+    }
+
+    fn new_controls_meeting() -> Facts {
+        Facts { scheduled: true, organizer: true, reactions: true, centered: true, ..Default::default() }
+    }
+
+    fn more_names(a: &Arranged) -> Vec<Vec<String>> {
+        a.more.iter().map(|s| s.items.iter().map(|i| i.name.clone()).collect()).collect()
+    }
+
+    #[test]
+    fn new_controls_bar_as_teams_on_winpc() {
+        // Teams on winpc with New meeting controls on (2026-11-16): Mic,
+        // Camera, Share | React, Chat, People, (Copilot), Controls, More;
+        // Leave apart; Raise is in React's menu.
+        let a = arrange(&new_controls_meeting(), &|_| 56.0, 17.0, 5000.0);
+        assert_eq!(
+            a.bar,
+            ["MicrophoneButton", "VideoButton", "ShareButton", "|", "ReactionButton", "ChatButton", "RosterButton",
+             "OrganizerControlButton", "MoreButton"]
+        );
+        assert_eq!(a.end, ["CallButton"]);
+        // More: the grid, then the list.
+        assert!(a.more[0].grid && !a.more[1].grid);
+        assert_eq!(
+            more_names(&a)[0],
+            ["RecordingButton", "TranscriptButton", "MeetingFacilitatorTimerButton", "MeetingDetailsButton",
+             "ClosedCaptionsButton", "StartBreakoutRoomButton", "RealTimeTextButton", "MeetingAppsAddButton"]
+        );
+        assert_eq!(
+            more_names(&a)[1],
+            ["ViewModeButton", "JoinInfoMenuControl", "SettingsMenuControl", "ReportMeetingButton", "MeetingHelpButton"]
+        );
+        let settings = &a.more[1].items[2];
+        let sec: Vec<Vec<&str>> = settings.sections.iter().map(|s| s.items.iter().map(|i| i.name.as_str()).collect()).collect();
+        assert_eq!(
+            sec,
+            [vec!["AccessibilitySettingsButton"], vec!["ChatBubblesButton", "ToggleHideMyselfButton"],
+             vec!["CameraEffectsButton", "AudioSettingsButton", "ByodMeetingRoomModeButton"]]
+        );
+        let info = &a.more[1].items[1];
+        assert_eq!(info.sections[0].items.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(), ["MeetingInfoButton", "CallHealth"]);
+        // The current controls are unchanged.
+        let old = arrange(&Facts { centered: false, ..new_controls_meeting() }, &|_| 56.0, 17.0, 5000.0);
+        assert_eq!(old.bar.first().map(String::as_str), Some("ChatButton"));
+        assert!(old.bar.contains(&"RaiseHandsButton".to_string()));
+    }
+
+    #[test]
+    fn new_controls_overflow_as_teams() {
+        // Teams (winpc, widths swept 2026-11-16): Controls leaves first,
+        // then (Copilot), People, Chat; React last.
+        let w = |n: &str| if n == "MicrophoneButton" || n == "VideoButton" { 74.0 } else { 56.0 };
+        let f = new_controls_meeting();
+        let full = 74.0 * 2.0 + 56.0 + 17.0 + 5.0 * 56.0;
+        assert!(arrange(&f, &w, 17.0, full).overflowed.is_empty());
+        assert_eq!(arrange(&f, &w, 17.0, full - 1.0).overflowed, ["OrganizerControlButton"]);
+        assert_eq!(arrange(&f, &w, 17.0, full - 3.0 * 56.0).overflowed, ["ChatButton", "RosterButton", "OrganizerControlButton"]);
+        let gone = arrange(&f, &w, 17.0, 0.0);
+        assert_eq!(gone.bar, ["MicrophoneButton", "VideoButton", "ShareButton", "MoreButton"]);
+        assert!(gone.overflowed.contains(&"ReactionButton".to_string()));
+    }
+
+    #[test]
+    fn new_controls_follow_the_users_arrangement() {
+        let mut f = new_controls_meeting();
+        f.customization = Customization {
+            unpinned: vec!["RosterButton".into()],
+            pinned: vec!["MeetingFacilitatorTimerButton".into()],
+            order: vec!["ChatButton".into(), "ReactionButton".into()],
+        };
+        let a = arrange(&f, &|_| 56.0, 17.0, 5000.0);
+        assert_eq!(
+            a.bar,
+            ["MicrophoneButton", "VideoButton", "ShareButton", "|", "ChatButton", "ReactionButton",
+             "OrganizerControlButton", "MeetingFacilitatorTimerButton", "MoreButton"]
+        );
+        let grid = &more_names(&a)[0];
+        assert_eq!(grid[0], "RosterButton");
+        assert!(!grid.contains(&"MeetingFacilitatorTimerButton".to_string()));
+        assert_eq!(a.movable[0], ["ChatButton", "ReactionButton", "OrganizerControlButton", "MeetingFacilitatorTimerButton"]);
+        // Apps stays docked in the grid.
+        f.customization.pinned = vec!["MeetingAppsAddButton".into()];
+        assert!(!arrange(&f, &|_| 56.0, 17.0, 5000.0).bar.contains(&"MeetingAppsAddButton".to_string()));
+    }
+
+    #[test]
+    fn new_controls_one_to_one() {
+        let a = arrange(&Facts { p2p: true, centered: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+        assert_eq!(a.bar[..4], ["MicrophoneButton", "VideoButton", "ShareButton", "|"]);
+        assert!(a.bar.contains(&"HoldButton".to_string()) && a.bar.contains(&"DialpadButton".to_string()));
+        assert!(!a.bar.contains(&"RaiseHandsButton".to_string()) && !a.bar.contains(&"ReactionButton".to_string()));
+        // On hold: Resume is with Leave.
+        let held = arrange(&Facts { p2p: true, on_hold: true, centered: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+        assert_eq!(held.end, ["ResumeButton", "CallButton"]);
     }
 
     #[test]

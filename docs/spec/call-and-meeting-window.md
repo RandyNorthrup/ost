@@ -57,8 +57,9 @@ the Windows client, saved in the research dir as presets.json / overrides.json):
   `callsmonitor`, `lightweight-callsmonitor`, `speaker-only-callsmonitor`.
 - `ubarLayoutSetup`: live value **`Inline`**. That selects preset 0 (no preset has
   setup "Inline"). The other setup, `InlineCentered`, is the alternative
-  "centred" design (preset 1). The template names are Anchor, Inline,
-  InlineCentered and Stacked (`GI`).
+  "centred" design (preset 1), which Settings ▸ General ▸ Meeting ▸ New
+  meeting controls switches on (new-meeting-controls.md). The template
+  names are Anchor, Inline, InlineCentered and Stacked (`GI`).
 - `ubarLayoutOverrides`: 30 per-call-type entries (`configName`). Each lists the
   `available` controls (a whitelist), plus `overrides` that move a control to
   another slot or change its props, and `settings` (groupingStrategy,

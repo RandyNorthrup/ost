@@ -57,6 +57,7 @@ Teams' default.
 | Chats | Suggested replies | suggestedRepliesSettings.suggestionsEnabled |
 | General | Starting chats in a new window | userPersonalSettings.messagingSettings.alwaysPopOutNewChat |
 | General | System, opening content, meeting, efficiency | local |
+| General | Meeting ▸ New meeting controls | device-local (Teams Labs cache storage `feature-32b3a453-…`; OST setting newMeetingControls) |
 | Appearance | Theme, dark calls, app bar | local |
 | Appearance | Skin tone | preferredSkinToneIndex |
 | Privacy | Surveys | userEnableSurveysNotification |
@@ -86,6 +87,8 @@ Middle tier (`{mt}`):
   - The profile flyout's "Schedule out of office" opens Settings › General › Out of office.
   - Teams' page keeps its first read and doesn't re-read on reopen.
 - Turning "New meeting controls" off opens "Submit feedback to Microsoft"; never submit it.
+  The setting is a Teams Labs feature kept on the device only; see
+  new-meeting-controls.md.
 
 ## Calls (captured 2026-11-10)
 

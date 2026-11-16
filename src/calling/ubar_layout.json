@@ -1,5 +1,5 @@
 {
- "source": "Teams desktop ECS settings (calling: ubarLayoutPresets[0], ubarLayoutOverrides), read from the live client on 2026-11-06; ubarLayoutSetup = Inline",
+ "source": "Teams desktop ECS settings (calling: ubarLayoutPresets[0], ubarLayoutOverrides), read from the live client on 2026-11-06; ubarLayoutSetup = Inline; centered = ubarLayoutPresets[1] (layoutSetup InlineCentered, picked by Teams' New meeting controls), read from the live client on 2026-11-16",
  "preset": {
   "groups": [
    {
@@ -1134,5 +1134,775 @@
     "groupingStrategy": "AlwaysKeep"
    }
   }
+ },
+ "centered": {
+  "groups": [
+   {
+    "name": "indicators",
+    "items": [
+     {
+      "name": "BroadcastStateIndicator",
+      "slot": "indicators"
+     },
+     {
+      "name": "E2EEncryptionIndicator",
+      "slot": "indicators",
+      "isOnHold": true
+     },
+     {
+      "name": "RecordingIndicator",
+      "slot": "indicators",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "VirtualEventsLiveIndicator",
+      "slot": "indicators"
+     },
+     {
+      "name": "CopilotIndicator",
+      "slot": "indicators",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "AiInterpretationIndicator",
+      "slot": "indicators",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "CallDurationIndicator",
+      "slot": "indicators",
+      "isStagingRoom": true
+     },
+     {
+      "name": "ImmersiveEventLiveIndicator",
+      "slot": "indicators"
+     },
+     {
+      "name": "BroadcastAttendeeCountIndicator",
+      "slot": "indicators"
+     },
+     {
+      "name": "VdiLocalStackStatusIndicator",
+      "slot": "indicators"
+     },
+     {
+      "name": "IndicatorOverflowButton",
+      "slot": "indicators",
+      "isCritical": true,
+      "overflowBehaviour": "Docked",
+      "isStagingRoom": true,
+      "isOnHold": true
+     }
+    ]
+   },
+   {
+    "name": "primary",
+    "placeholderGroup": "collaborationCommunication",
+    "items": [
+     {
+      "name": "MicrophoneButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true,
+      "overflowBehaviour": "Docked",
+      "isStagingRoom": true,
+      "isOnHold": true
+     },
+     {
+      "name": "VideoButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true,
+      "overflowBehaviour": "Docked",
+      "isStagingRoom": true,
+      "isImmersiveViewDisabled": true
+     },
+     {
+      "name": "ShareButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true,
+      "overflowBehaviour": "Docked"
+     },
+     {
+      "name": "PauseScreenShareButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true,
+      "overflowBehaviour": "Docked"
+     },
+     {
+      "name": "VolumeControlButton",
+      "slot": "horizontalMiddleEnd",
+      "overflowBehaviour": "Docked"
+     }
+    ]
+   },
+   {
+    "name": "secondary",
+    "layoutCustomizationBehaviour": "All",
+    "groupingStrategy": "MergeWithNext",
+    "placeholderGroup": "collaborationCommunication",
+    "items": [
+     {
+      "name": "ReactionButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true,
+      "isGreenRoomDisabled": true,
+      "overflowBehaviour": "AsLast"
+     },
+     {
+      "name": "RaiseHandsButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true,
+      "overflowBehaviour": "AsLast"
+     },
+     {
+      "name": "ChatButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive",
+      "isCritical": true,
+      "isStagingRoom": true,
+      "isOnHold": true
+     },
+     {
+      "name": "RosterButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive",
+      "isCritical": true
+     },
+     {
+      "name": "BizChatCopilotButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "MeetingCollabButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "OneCopilotButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "OrganizerControlButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true
+     },
+     {
+      "name": "YammerQnaButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive",
+      "isStagingRoom": true,
+      "isDisconnected": true
+     },
+     {
+      "name": "BroadcastQnaButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive"
+     },
+     {
+      "name": "CallContextButton",
+      "slot": "horizontalMiddleEnd",
+      "hoistingBehaviour": "WhenActive"
+     }
+    ]
+   },
+   {
+    "name": "contextual",
+    "layoutCustomizationBehaviour": "All",
+    "groupingStrategy": "MergeWithNext",
+    "placeholderGroup": "collaborationCommunication",
+    "items": [
+     {
+      "name": "CallTransferDuringConsultButton",
+      "slot": "horizontalMiddleEnd",
+      "template": "button"
+     },
+     {
+      "name": "DialpadButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "HoldButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "UpgradeCallButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "CallConsultativeTransferButtonV2",
+      "slot": "horizontalMiddleEnd",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "CallTransferButtonV2",
+      "slot": "horizontalMiddleEnd",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "CallTransferMenuControl",
+      "slot": "horizontalMiddleEnd",
+      "props": {
+       "icon": "CallTransferIcon",
+       "buttonLabel": "calling_ubar_calling_transfer_menu_button_label",
+       "title": "calling_ubar_calling_transfer_menu_title",
+       "tooltip": "calling_ubar_calling_transfer_menu_tooltip"
+      },
+      "groups": [
+       {
+        "name": "callTransferMenu",
+        "items": [
+         {
+          "name": "CallTransferButton",
+          "isE2EEHidden": true
+         },
+         {
+          "name": "CallConsultativeTransferButton",
+          "isE2EEHidden": true
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "name": "MergeCallsButton",
+      "slot": "horizontalMiddleEnd",
+      "isE2EEHidden": true
+     },
+     {
+      "name": "ScreensharingControlButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "WhiteboardControlsSection",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "PptControlsSection",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "MixedRealityToolbarButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "AnnotationViewerButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "StopSpotlightButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "PopoutContentButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "TogetherModeSharedViewButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "TogetherModeChangeSceneButton",
+      "slot": "horizontalMiddleEnd"
+     },
+     {
+      "name": "TogetherModeAssignSeatsButton",
+      "slot": "horizontalMiddleEnd"
+     }
+    ]
+   },
+   {
+    "name": "overflowAndHoisting",
+    "groupingStrategy": "MergeWithPrevious",
+    "items": [
+     {
+      "name": "MoreButton",
+      "slot": "horizontalMiddleEnd",
+      "isCritical": true,
+      "overflowBehaviour": "Docked",
+      "isStagingRoom": true,
+      "isOnHold": true,
+      "groups": [
+       {
+        "name": "collaborationCommunication",
+        "behaviour": "Section",
+        "groupingStrategy": "AlwaysKeep",
+        "layoutCustomizationBehaviour": "DragOnly",
+        "placeholderGroup": "secondary",
+        "rendererLibrary": "MenuGridControls",
+        "items": [
+         {
+          "name": "CallParkButton",
+          "isE2EEHidden": true
+         },
+         {
+          "name": "SlaCallLockButton",
+          "isE2EEHidden": true
+         },
+         {
+          "name": "RecordingButton",
+          "isE2EEHidden": true,
+          "isGreenRoomDisabled": true,
+          "isImmersiveViewDisabled": true,
+          "isProtected": true,
+          "groups": [
+           {
+            "name": "recordingMenu1",
+            "placeholderGroup": "secondary",
+            "items": [
+             {
+              "name": "LocalRecordingButton",
+              "isGreenRoomDisabled": true,
+              "isImmersiveViewDisabled": true,
+              "isE2EEHidden": true
+             }
+            ]
+           },
+           {
+            "name": "recordingMenu2",
+            "placeholderGroup": "secondary",
+            "items": [
+             {
+              "name": "StopMdpDataCollectionButton"
+             },
+             {
+              "name": "ByodRoomToggleSpeakerAttributionButton",
+              "isE2EEHidden": true
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "name": "TranscriptButton",
+          "isGreenRoomDisabled": true,
+          "isE2EEHidden": true,
+          "groups": [
+           {
+            "name": "transcriptMenu",
+            "placeholderGroup": "secondary",
+            "items": [
+             {
+              "name": "TranscriptPanelButton",
+              "isE2EEHidden": true
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "name": "FacilitatorButton",
+          "hoistingBehaviour": "WhenActive"
+         },
+         {
+          "name": "AiInterpretationButtonForAll",
+          "isGreenRoomDisabled": true,
+          "isE2EEHidden": true
+         },
+         {
+          "name": "LiveInterpretationButton",
+          "isGreenRoomDisabled": true,
+          "isE2EEHidden": true
+         },
+         {
+          "name": "MeetingFacilitatorTimerButton",
+          "hoistingBehaviour": "WhenClicked"
+         },
+         {
+          "name": "MeetingNotesButton",
+          "isE2EEHidden": true,
+          "hoistingBehaviour": "WhenActive"
+         },
+         {
+          "name": "MeetingDetailsButton",
+          "isE2EEHidden": true,
+          "hoistingBehaviour": "WhenNotified"
+         },
+         {
+          "name": "ClosedCaptionsButton",
+          "isDisconnected": true,
+          "isProtected": true,
+          "hoistingBehaviour": "WhenActive",
+          "isStagingRoom": true
+         },
+         {
+          "name": "WhiteboardButton",
+          "hoistingBehaviour": "WhenClicked"
+         },
+         {
+          "name": "StartBreakoutRoomButton",
+          "isImmersiveViewDisabled": true,
+          "isOnHold": true,
+          "isE2EEHidden": true,
+          "hoistingBehaviour": "WhenActive"
+         },
+         {
+          "name": "RealTimeTextButton",
+          "hoistingBehaviour": "WhenActive"
+         },
+         {
+          "name": "MeetingContentBinButton",
+          "isE2EEHidden": true,
+          "hoistingBehaviour": "WhenActive"
+         },
+         {
+          "name": "MeetingCoachButton",
+          "isE2EEHidden": true
+         },
+         {
+          "name": "MeetingInsightsButton",
+          "hoistingBehaviour": "WhenActive"
+         },
+         {
+          "name": "PlatformTabSection",
+          "hoistingBehaviour": "WhenActive",
+          "isStagingRoom": true,
+          "isE2EEHidden": true
+         },
+         {
+          "name": "PlatformTabOverflowSection",
+          "hoistingBehaviour": "WhenActive",
+          "isStagingRoom": true,
+          "isE2EEHidden": true
+         },
+         {
+          "name": "MeetingAppsAddButton",
+          "isE2EEHidden": true,
+          "overflowBehaviour": "Docked",
+          "template": "button"
+         }
+        ]
+       },
+       {
+        "name": "overflowSecondaryControls",
+        "groupingStrategy": "AlwaysKeep",
+        "layoutCustomizationBehaviour": "DragOnly",
+        "placeholderGroup": "secondary",
+        "rendererLibrary": "MenuVerticalControls",
+        "items": [
+         {
+          "name": "ViewModeButton",
+          "groups": [
+           {
+            "name": "grid",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "placeholderGroup": "secondary",
+            "items": [
+             {
+              "name": "GridButton",
+              "isCritical": true
+             },
+             {
+              "name": "MixedGridButton",
+              "isGreenRoomDisabled": true
+             },
+             {
+              "name": "DynamicViewButton",
+              "isGreenRoomDisabled": true
+             },
+             {
+              "name": "SpeakerViewButton",
+              "isGreenRoomDisabled": true
+             },
+             {
+              "name": "AudienceButton",
+              "isGreenRoomDisabled": true,
+              "isE2EEHidden": true
+             },
+             {
+              "name": "LargeGridButton",
+              "isGreenRoomDisabled": true,
+              "isE2EEHidden": true
+             },
+             {
+              "name": "AccessibilityButton",
+              "isGreenRoomDisabled": true
+             },
+             {
+              "name": "ImmersiveViewModeButton",
+              "isGreenRoomDisabled": true,
+              "isE2EEHidden": true
+             }
+            ]
+           },
+           {
+            "name": "screen",
+            "placeholderGroup": "secondary",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "items": [
+             {
+              "name": "FullScreenButton"
+             },
+             {
+              "name": "FocusModeButton"
+             },
+             {
+              "name": "NarrowModeButton"
+             },
+             {
+              "name": "GalleryViewSizeButton"
+             },
+             {
+              "name": "ChangeSceneButton"
+             },
+             {
+              "name": "AssignSeatsButton"
+             }
+            ]
+           },
+           {
+            "name": "videocontrols",
+            "placeholderGroup": "secondary",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "items": [
+             {
+              "name": "IncomingVideoButton"
+             },
+             {
+              "name": "PrioritizeVideoButton"
+             },
+             {
+              "name": "ParticipantsPopoutButton"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "name": "StreamingMenuControl",
+          "props": {
+           "icon": "StreamIcon",
+           "buttonLabel": "calling_ubar_streaming_button_label",
+           "title": "calling_ubar_streaming_title",
+           "tooltip": "calling_ubar_streaming_tooltip"
+          },
+          "groups": [
+           {
+            "name": "streamingMenu",
+            "placeholderGroup": "secondary",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "items": [
+             {
+              "name": "MediaStreamsButton"
+             },
+             {
+              "name": "NdiBroadcastButton"
+             },
+             {
+              "name": "NdiSwitchboardButton"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "name": "JoinInfoMenuControl",
+          "props": {
+           "icon": "InfoIcon",
+           "buttonLabel": "calling_join_info_icon_label",
+           "title": "calling_join_info_icon_title",
+           "tooltip": "calling_join_info_icon_title"
+          },
+          "groups": [
+           {
+            "name": "meetingInfoMenu",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "placeholderGroup": "secondary",
+            "items": [
+             {
+              "name": "MeetingInfoButton",
+              "isStagingRoom": true
+             },
+             {
+              "name": "PstnButton",
+              "isStagingRoom": true
+             },
+             {
+              "name": "CallHealth"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "name": "SettingsMenuControl",
+          "props": {
+           "icon": "SettingsIcon",
+           "buttonLabel": "calling_ubar_settings_button_label",
+           "title": "calling_ubar_settings_title",
+           "tooltip": "calling_ubar_settings_tooltip"
+          },
+          "groups": [
+           {
+            "name": "settingsMenu1",
+            "placeholderGroup": "secondary",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "items": [
+             {
+              "name": "PrivacyModeButton"
+             },
+             {
+              "name": "CustomVideoBackgroundsPanelButton"
+             },
+             {
+              "name": "MeetingOptions"
+             },
+             {
+              "name": "AccessibilitySettingsButton"
+             }
+            ]
+           },
+           {
+            "name": "settingsMenu2",
+            "placeholderGroup": "secondary",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "items": [
+             {
+              "name": "ChatBubblesButton"
+             },
+             {
+              "name": "HideControlsButton"
+             },
+             {
+              "name": "ToggleHideMyselfButton"
+             }
+            ]
+           },
+           {
+            "name": "settingsMenu3",
+            "placeholderGroup": "secondary",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "items": [
+             {
+              "name": "CameraEffectsButton",
+              "isImmersiveViewDisabled": true
+             },
+             {
+              "name": "CustomVideoBackgroundsPanelButton"
+             },
+             {
+              "name": "AudioSettingsButton"
+             },
+             {
+              "name": "DeviceSettingsButton",
+              "isCritical": true,
+              "isStagingRoom": true
+             },
+             {
+              "name": "ByodMeetingRoomModeButton"
+             },
+             {
+              "name": "IsolateVoiceButton"
+             },
+             {
+              "name": "MusicModeButton",
+              "isE2EEHidden": true
+             },
+             {
+              "name": "BroadcastYammerButton"
+             }
+            ]
+           },
+           {
+            "name": "settingsMenu4",
+            "placeholderGroup": "secondary",
+            "layoutCustomizationBehaviour": "DragOnly",
+            "items": [
+             {
+              "name": "DataDonationButton"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "name": "RestartEvent"
+         },
+         {
+          "name": "ByodExtendToRoomDisplayButton"
+         },
+         {
+          "name": "MusicModeButton",
+          "isE2EEHidden": true
+         },
+         {
+          "name": "BroadcastYammerButton"
+         },
+         {
+          "name": "ReportProblemButton"
+         },
+         {
+          "name": "ReportMeetingButton"
+         },
+         {
+          "name": "MeetingHelpButton"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "callControls",
+    "items": [
+     {
+      "name": "ReturnToBreakoutRoomButton",
+      "slot": "horizontalEnd",
+      "template": "button"
+     },
+     {
+      "name": "BreakoutRoomReturnToMainButton",
+      "slot": "horizontalEnd",
+      "template": "button"
+     },
+     {
+      "name": "FollowChangeButton",
+      "slot": "horizontalEnd",
+      "overflowBehaviour": "Docked",
+      "template": "button"
+     },
+     {
+      "name": "StagingRoomStartMeetingButton",
+      "slot": "horizontalEnd",
+      "overflowBehaviour": "Docked",
+      "template": "button"
+     },
+     {
+      "name": "StagingRoomEndMeetingButton",
+      "slot": "horizontalEnd",
+      "overflowBehaviour": "Docked",
+      "template": "button"
+     },
+     {
+      "name": "MonitoredAgentStateChangeButton",
+      "slot": "horizontalEnd",
+      "overflowBehaviour": "Docked",
+      "template": "button",
+      "isCritical": true
+     },
+     {
+      "name": "ResumeButton",
+      "slot": "horizontalEnd",
+      "overflowBehaviour": "Docked",
+      "template": "button",
+      "isOnHold": true
+     },
+     {
+      "name": "CallButton",
+      "slot": "horizontalEnd",
+      "overflowBehaviour": "Docked",
+      "isCritical": true,
+      "isStagingRoom": true,
+      "isOnHold": true,
+      "isDisconnected": true,
+      "isLobbyEnabled": true
+     }
+    ]
+   }
+  ]
  }
 }

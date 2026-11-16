@@ -62,6 +62,9 @@ Rectangle {
     function setMt(name, value) { backend.changeSetting("mt", name, JSON.stringify(value)) }
     function local(name, dflt) { const v = backend.setting(name); return v === "" ? dflt : v }
     signal settingsChanged()
+    /// Teams' feedback form (a Teams Labs feature turned off asks for a
+    /// thumbs-down): kind, area, context.
+    signal feedbackRequested(string kind, string area, string context)
 
     /// Starts Teams' voice or face capture (Recognition).
     signal recognitionRequested(string kind)
@@ -489,11 +492,26 @@ Rectangle {
                     SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true) }
                 }
             }
-            // Teams' Meeting card. Its "New meeting controls" switches Teams
-            // to a different meeting toolbar; OST has Teams' current one.
+            // Teams' Meeting card (measured on winpc 2026-11-16). "New
+            // meeting controls" is a Teams Labs feature (OptIn): Teams keeps
+            // it on this device only (its cache storage), so OST keeps it in
+            // its local settings; on, the meeting window uses Teams' new
+            // controls (InlineCentered). Turning it off opens Teams'
+            // thumbs-down feedback form (OST's, sent to its GitHub).
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
                 icon: "video-20"; title: "Meeting"
+                SettingsParts.SwitchRow {
+                    id: newControlsRow
+                    label: "New meeting controls"
+                    sublabel: "Meetings are easier than ever with a simplified, organized, and intuitive experience."
+                    on: root.local("newMeetingControls", "false") === "true"
+                    onToggled: v => {
+                        backend.setSetting("newMeetingControls", v ? "true" : "false")
+                        newControlsRow.on = v
+                        if (!v) root.feedbackRequested("problem", "New meeting controls", "Turned off New meeting controls")
+                    }
+                }
                 SettingsParts.SwitchRow {
                     id: leaveRow
                     label: "Ask me to confirm when I leave a meeting"

@@ -275,6 +275,7 @@ account.
 | `--settings-test` | Switch the theme and read receipts and back. |
 | `--calendar-test` | Schedule a Teams meeting tomorrow at 3 PM. |
 | `--join-test` | Join that meeting through the pre-join window, capture it, the stage and People, leave (`--join-stay=<s>` stays longer, `--join-muted` joins with the mic off, `--join-raise` raises and lowers your hand). |
+| `--join-new-controls` | With `--join-test --join-stay=80` (and `--join-url=<link>`): turn on Teams' New meeting controls for the test (put back after) and capture the bar at 1280, More with View ▸ / Join info ▸ / Settings ▸, React (raising and lowering your hand), Chat's right-click menu, People unpinned (bar and More), Reset, then 700 (overflow, More) and 460 (the compact bar); `JOIN nmc` lines log each layout (`-nmc-*.png`). |
 | `--keys-test` | Press the keyboard shortcuts as real key events and check each (needs the QtTest QML module). |
 | `--call-test` | Wait for a call, capture the toast, answer, capture, hang up (`--accept-video` answers with video when offered, `--camera-on` turns the camera on once connected). |
 | `--call-panes` | As `--call-test`, also opening the Chat and People panes. |

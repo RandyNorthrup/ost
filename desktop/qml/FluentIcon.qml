@@ -47,6 +47,6 @@ Image {
     /// folder (OneDrive's Folder color).
     property var swaps: ({})
     source: svgText
-        ? "data:image/svg+xml;utf8," + encodeURIComponent(Object.keys(swaps).reduce((t, k) => t.split(k).join(swaps[k]), svgText.replace(/#212121/g, root.color.toString())))
+        ? "data:image/svg+xml;utf8," + encodeURIComponent(Object.keys(swaps).reduce((t, k) => t.split(k).join(swaps[k]), svgText.replace(/#212121|currentColor/g, root.color.toString())))
         : ""
 }

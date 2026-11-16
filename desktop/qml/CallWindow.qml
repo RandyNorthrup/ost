@@ -577,23 +577,54 @@ Window {
     readonly property bool pstnCall: !meeting && (backend.callPeerId || "").indexOf("4:") === 0
     /// A scheduled meeting (joined from its link), not a chat's group call.
     property bool scheduled: false
+    // Teams' New meeting controls (Settings ▸ General ▸ Meeting, a Teams
+    // Labs feature kept on this device): its InlineCentered layout. Read
+    // again whenever the window is activated, so turning it on or off in
+    // Settings reaches a meeting in progress, as in Teams.
+    property bool newControls: backend.setting("newMeetingControls") === "true"
+    // The user's arrangement of the new controls (Pin, Unpin, Move), per
+    // client as Teams keeps it: {unpinned, pinned, order} per layout.
+    property var controlsLayouts: { try { return JSON.parse(backend.setting("meetingControlsLayouts") || "{}") } catch (e) { return {} } }
+    readonly property string controlsLayoutId: meeting ? "default" : pstnCall ? "oneToOnePstn" : "oneToOneOrGroupCall"
+    readonly property var controlsCustomization: controlsLayouts[controlsLayoutId] || ({})
+    onActiveChanged: if (active) {
+        newControls = backend.setting("newMeetingControls") === "true"
+    }
+    function saveCustomization(c) {
+        const all = Object.assign({}, controlsLayouts)
+        if (c) all[controlsLayoutId] = c
+        else delete all[controlsLayoutId]
+        controlsLayouts = all
+        backend.setSetting("meetingControlsLayouts", JSON.stringify(all))
+    }
+    // Under 480 px wide Teams' bar turns compact: 40 tall, 32 px buttons
+    // without labels (measured with New meeting controls on).
+    readonly property bool compactBar: newControls && width < 480
     readonly property var ubarFacts: ({
         p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled,
         organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
-        roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting
+        roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting,
+        centered: newControls, customization: controlsCustomization
     })
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
     TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Join room" }
     TextMetrics { id: returnMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Return" }
-    readonly property var ubarWidths: ({ MicrophoneButton: 74, VideoButton: 74, ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8,
+    // The compact bar: 32 px buttons in 36 px slots, split buttons 54.
+    readonly property real ubarButton: compactBar ? 36 : 56
+    readonly property real ubarDivider: compactBar ? 9 : 17
+    readonly property var ubarWidths: ({ MicrophoneButton: compactBar ? 54 : 74, VideoButton: compactBar ? 54 : 74,
+                                         ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8,
                                          ReturnToBreakoutRoomButton: Math.ceil(joinRoomMetrics.advanceWidth) + 24.67 + 16,
-                                         BreakoutRoomReturnToMainButton: Math.ceil(returnMetrics.advanceWidth) + 24.67 + 16 })
+                                         BreakoutRoomReturnToMainButton: Math.ceil(returnMetrics.advanceWidth) + 24.67 + 16,
+                                         default: ubarButton })
     // The middle slot's room: from 4 past the indicators (shield, timer)
-    // to 17 before Leave.
-    readonly property real ubarRoom: leaveGroup.x - 17 - (timerText.x + timerText.implicitWidth + 6.67 + 4)
-    readonly property var ubar: JSON.parse(backend.ubarArrange(JSON.stringify(ubarFacts), JSON.stringify(ubarWidths), 17,
-                                                               ubarRoom - 10) || '{"bar":[],"end":[],"overflowed":[],"more":[],"onHold":[]}')
+    // to 17 before Leave; the new controls' slot ends 4 before the end
+    // slot and centres its controls.
+    readonly property real ubarStart: timerText.x + timerText.implicitWidth + (compactBar ? 2.7 : 6.67) + 4
+    readonly property real ubarRoom: newControls ? leaveGroup.x - 4 - ubarStart : leaveGroup.x - 17 - ubarStart
+    readonly property var ubar: JSON.parse(backend.ubarArrange(JSON.stringify(ubarFacts), JSON.stringify(ubarWidths), ubarDivider,
+                                                               ubarRoom - 10) || '{"bar":[],"end":[],"overflowed":[],"more":[],"onHold":[],"movable":[]}')
     /// Teams disables what isn't marked usable on hold.
     function holdOk(name) { return !held || ubar.onHold.indexOf(name) >= 0 }
     property var barItems: ({})
@@ -611,7 +642,10 @@ Window {
             ViewModeButton: cView, OrganizerControlButton: cControls, MeetingDetailsButton: cNotes,
             StartBreakoutRoomButton: cRooms, MeetingAppsAddButton: cApps, MoreButton: cMore,
             ReturnToBreakoutRoomButton: cJoinRoom, BreakoutRoomReturnToMainButton: cReturnMain,
-            VideoButton: cCamera, MicrophoneButton: cMic, ShareButton: cShare
+            VideoButton: cCamera, MicrophoneButton: cMic, ShareButton: cShare,
+            // More's grid controls the user pinned to the bar.
+            RecordingButton: cPinned, TranscriptButton: cPinned, MeetingFacilitatorTimerButton: cPinned,
+            ClosedCaptionsButton: cPinned, RealTimeTextButton: cPinned
         })[name] || null
     }
     // What each control does, from the bar or from More.
@@ -619,12 +653,16 @@ Window {
         if (name === "ChatButton") { side = side === "chat" ? "" : "chat"; if (side === "chat") openChat() }
         else if (name === "RosterButton") side = side === "people" ? "" : "people"
         else if (name === "RaiseHandsButton") toggleHand()
-        else if (name === "ReactionButton") { reactMenu.parent = barItem(name); reactMenu.open() }
+        else if (name === "ReactionButton") { if (reactMenu.visible) reactMenu.close(); else { reactMenu.parent = barItem(name); reactMenu.open() } }
+        else if (["RecordingButton", "TranscriptButton", "ClosedCaptionsButton", "RealTimeTextButton"].indexOf(name) >= 0) recordControl(name)
         else if (name === "ViewModeButton") { viewMenu.parent = barItem(name); viewMenu.open() }
         else if (name === "OrganizerControlButton") { loadControls(); controlsMenu.open() }
         else if (name === "MeetingDetailsButton") Qt.openUrlExternally(chatUrl)
         else if (name === "MeetingAppsAddButton") { appsMenu.parent = barItem(name); appsMenu.open() }
-        else if (name === "MoreButton") { moreMenu.parent = barItem(name); moreMenu.open() }
+        else if (name === "MoreButton") {
+            if (newControls) { if (newMore.visible) newMore.close(); else newMore.openAt(barItem(name)) }
+            else { moreMenu.parent = barItem(name); moreMenu.open() }
+        }
         else if (name === "VideoButton") toggleCamera()
         else if (name === "MicrophoneButton") toggleMute()
         else if (name === "ShareButton") toggleShare()
@@ -656,6 +694,7 @@ Window {
         if (name === "ShareButton") return canShare || sharing
         if (name === "DialpadButton") return live && canDtmf
         if (name === "HoldButton") return live && hasAudio
+        if (name === "RealTimeTextButton") return !rttOn
         return true
     }
     // An overflowed control in More, as Teams names it there (the menu
@@ -925,15 +964,17 @@ Window {
     // Meeting bar
     Rectangle {
         id: bar
-        width: parent.width; height: 60
+        // The compact bar (new controls under 480 px): 40 tall.
+        width: parent.width; height: win.compactBar ? 40 : 60
         color: theme.surface
         // Meetings: Teams' shield (meeting info) beside the timer: a 30 x 32
         // indicator at x 8 with its 20 px glyph, then the duration in
         // 14 px #424242 with 6.7 px of padding.
         FluentIcon {
             visible: win.meeting
-            x: 13; y: 20
-            name: "call-shield"; size: 20; color: theme.textStrong
+            // Compact: a 22 px indicator with its 14 px glyph.
+            x: win.compactBar ? 12 : 13; y: win.compactBar ? 12.7 : 20
+            name: "call-shield"; size: win.compactBar ? 14 : 20; color: theme.textStrong
         }
         // The AI indicator (measured in Teams, 2026-11-08): a 37.33 x 32
         // button at x 38 with a 28 x 20 pill (padding 0 4) holding the
@@ -967,17 +1008,19 @@ Window {
         Item {
             id: aiIndicator
             visible: win.meeting && win.aiIndicator
-            x: recordingIndicator.visible ? 68 : 38; y: 14; width: 37.33; height: 32
+            x: win.compactBar ? (recordingIndicator.visible ? 52 : 30) : recordingIndicator.visible ? 68 : 38
+            y: win.compactBar ? 8.7 : 14; width: win.compactBar ? 24.9 : 37.33; height: win.compactBar ? 22 : 32
             readonly property bool active: win.aiOn && win.aiAvailable
             readonly property string tip: !win.aiAvailable ? "AI isn't available in this meeting"
                 : active ? "AI is on in the meeting" : "AI is turned off and doesn't have access to the meeting"
             Rectangle {
                 id: hcFill1
-                x: 4.67; y: 6; width: 28; height: 20; radius: 10
+                x: win.compactBar ? 2.7 : 4.67; y: win.compactBar ? 4 : 6
+                width: win.compactBar ? 19.6 : 28; height: win.compactBar ? 14 : 20; radius: height / 2
                 color: aiIndicator.active ? (aiHover.hovered ? theme.brandHover : theme.brandFill) : theme.surface
                 FluentIcon {
-                    x: 4; y: 0
-                    name: aiIndicator.active ? "sparkle-20-filled" : "sparkle-off-20-regular"; size: 20
+                    x: win.compactBar ? 2.8 : 4; y: 0
+                    name: aiIndicator.active ? "sparkle-20-filled" : "sparkle-off-20-regular"; size: win.compactBar ? 14 : 20
                     color: theme.onFill(hcFill1, aiIndicator.active ? theme.textOnBrand
                         : !win.aiAvailable ? theme.disabled
                         : aiHover.hovered || aiPopover.visible ? theme.brand : theme.text)
@@ -997,11 +1040,13 @@ Window {
             id: timerText
             // After the shield (and the AI indicator), 6.67 into the
             // duration's slot.
-            x: !win.meeting ? 16 : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + 6.67
+            x: win.compactBar ? (!win.meeting ? 10.7 : 30 + (recordingIndicator.visible ? 22 : 0) + (aiIndicator.visible ? 24.9 : 0) + 2.7)
+               : !win.meeting ? 16 : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + 6.67
             anchors.verticalCenter: parent.verticalCenter
             text: win.state === "connected" ? win.clock(win.seconds) : "--:--"
             color: theme.textStrong
-            font.family: theme.font; font.pixelSize: 14
+            // Compact: 12 px.
+            font.family: theme.font; font.pixelSize: win.compactBar ? 12 : 14
         }
         // The controls, as Teams' layout engine places them
         // (teams_cli::calling::ubar over Teams' layout config): which show,
@@ -1009,16 +1054,24 @@ Window {
         // slot is right-aligned 4 px before the end slot and whatever
         // doesn't fit (Fluent's overflow, keeping 10 px free) moves to the
         // top of More.
+        // The new controls' slot runs from 4 past the indicators to 4 before
+        // the end slot, its controls centred in it.
         Row {
             id: middleSlot
-            anchors { right: leaveGroup.left; rightMargin: 17; top: parent.top }
+            x: win.newControls ? win.ubarStart + Math.max(0, (win.ubarRoom - implicitWidth) / 2)
+                               : leaveGroup.x - 17 - implicitWidth
+            anchors.top: parent.top
             spacing: 0
             Repeater {
                 model: win.ubar.bar
                 Loader {
                     required property string modelData
                     sourceComponent: modelData === "|" ? barDivider : win.barComponent(modelData)
-                    onLoaded: if (modelData !== "|") win.registerBarItem(modelData, item)
+                    onLoaded: if (modelData !== "|") {
+                        win.registerBarItem(modelData, item)
+                        // The new controls: right-click to arrange them.
+                        if (item.contextMenu) item.contextMenu.connect(p => win.openControlMenu(modelData, item, p))
+                    }
                 }
             }
         }
@@ -1026,6 +1079,16 @@ Window {
         Row {
             id: leaveGroup
             anchors { right: parent.right; rightMargin: 14; top: parent.top }
+            // The new controls keep Resume, Join room and Return in the end
+            // slot, before Leave.
+            Repeater {
+                model: win.newControls ? win.ubar.end.filter(n => n !== "CallButton") : []
+                Loader {
+                    required property string modelData
+                    sourceComponent: win.barComponent(modelData)
+                    onLoaded: win.registerBarItem(modelData, item)
+                }
+            }
             BarButton {
                 id: leaveButton
                 // In a room joined over the held main meeting: Teams' "Leave
@@ -1967,7 +2030,8 @@ Window {
             }
         }
     }
-    function closeMenusForTest() { viewMenu.close(); controlsMenu.close(); moreMenu.close(); videoFlyout.close(); audioFlyout.close(); peoplePane.closeMenusForTest() }
+    function closeMenusForTest() { viewMenu.close(); controlsMenu.close(); moreMenu.close(); newMore.close(); reactMenu.close(); arrangeMenu.close(); cellMenu.close(); videoFlyout.close(); audioFlyout.close(); peoplePane.closeMenusForTest() }
+    function newMoreSubForTest(i) { newMore.openSubmenuForTest(i) }
     /// For the --join-view harness: open the View menu (and a submenu row).
     function viewMenuForTest(sub) {
         viewMenu.parent = barItem("ViewModeButton")
@@ -2387,8 +2451,10 @@ Window {
         onToggleMute: win.toggleMute()
         // Teams opens its Audio settings pane (TASK-0062); OST's device settings for now.
         onMoreAudioSettings: win.side = "audio"
-        x: parent ? parent.width - width : 0
-        y: 60
+        // Right-aligned to the chevron; start-aligned to the button when
+        // that would leave the window (the new controls' Mic and Camera).
+        x: !parent ? 0 : parent.mapToItem(null, parent.width - width, 0).x < 0 ? 0 : parent.width - width
+        y: parent ? parent.height : 60
         maxHeight: win.height - 60 - 5
     }
     function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
@@ -2410,8 +2476,10 @@ Window {
     VideoFlyout {
         id: videoFlyout
         cameraOn: win.cameraOn
-        x: parent ? parent.width - width : 0
-        y: 60
+        // Right-aligned to the chevron; start-aligned to the button when
+        // that would leave the window (the new controls' Mic and Camera).
+        x: !parent ? 0 : parent.mapToItem(null, parent.width - width, 0).x < 0 ? 0 : parent.width - width
+        y: parent ? parent.height : 60
         // Teams opens its Video effects and settings pane.
         onMoreVideoSettings: win.side = "video"
     }
@@ -2422,14 +2490,19 @@ Window {
     // React (reaction-menu-button-toolbox, measured on winpc): a 249.3 x
     // 73.3 surface under the React button, padding 16, five 32 px buttons
     // 12 apart holding Teams' 24 px reaction pictures.
+    // The new controls (measured on winpc 2026-11-16): 250 x 104.7, the
+    // reactions 14.1 apart from 16.7 in, and under them Teams' "Raise
+    // hand" / "Lower hand" button (224.7 x 35.3 at 12.7, 56.7; outlined,
+    // brand while raised); it stays open after a pick
+    // (enableReactionsPersistentFlyout).
     Popup {
         id: reactMenu
-        x: 4; y: 59.3
-        width: 249.3; height: 73.3
+        x: win.compactBar ? 2 : 4; y: win.compactBar ? 41 : 59.3
+        width: win.newControls ? 250 : 249.3; height: win.newControls ? 104.7 : 73.3
         padding: 0
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Row {
-            x: 20.7; y: 20.7; spacing: 12
+            x: win.newControls ? 16.7 : 20.7; y: win.newControls ? 16.7 : 20.7; spacing: win.newControls ? 14.13 : 12
             Repeater {
                 model: [{ n: "like", t: "Like" }, { n: "heart", t: "Love" }, { n: "applause", t: "Applause" }, { n: "laugh", t: "Laugh" }, { n: "surprised", t: "Surprised" }]
                 Rectangle {
@@ -2438,11 +2511,39 @@ Window {
                     color: rmHover.hovered ? theme.menuHover : "transparent"
                     Image { x: 4; y: 4; width: 24; height: 24; smooth: true; source: win.reactionUrl(parent.modelData.n, false) }
                     HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { reactMenu.close(); win.sendReaction(parent.modelData.n) } }
+                    TapHandler { onTapped: { if (!win.newControls) reactMenu.close(); win.sendReaction(parent.modelData.n) } }
                     Accessible.role: Accessible.Button
                     Accessible.name: modelData.t
                 }
             }
+        }
+        Rectangle {
+            id: hcFillRaise
+            visible: win.newControls
+            x: 12.7; y: 56.7; width: 224.7; height: 35.3; radius: 4
+            color: win.handRaised ? (raiseHover.hovered ? theme.brandHover : theme.checkedFill)
+                 : raiseHover.hovered ? theme.menuHover : theme.surface
+            border.width: 0.67
+            border.color: win.handRaised ? theme.hc("#C7C7C7", "#1AEBFF") : theme.stroke
+            Row {
+                anchors.centerIn: parent; spacing: 6
+                FluentIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: "nmc-raise"; size: 24
+                    color: theme.onFill(hcFillRaise, win.handRaised ? theme.textOnBrand : raiseHover.hovered ? theme.text : theme.textStrong)
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: win.handRaised ? "Lower hand" : "Raise hand"
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                    color: theme.onFill(hcFillRaise, win.handRaised ? theme.textOnBrand : raiseHover.hovered ? theme.text : theme.textStrong)
+                }
+            }
+            HoverHandler { id: raiseHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: win.live; onTapped: win.toggleHand() }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Raise"
+            Accessible.onPressAction: win.toggleHand()
         }
     }
     function reactForTest(name) { sendReaction(name) }
@@ -2547,10 +2648,12 @@ Window {
     // Teams' call shortcuts (§13). Mute, camera and leave work app-wide
     // (Main.qml); the rest in the call window.
     readonly property bool inCall: state === "connected" || state === "calling" || state === "connecting"
-    Shortcut { sequence: "Ctrl+Shift+K"; enabled: win.live && win.ubar.bar.concat(win.ubar.overflowed).indexOf("RaiseHandsButton") >= 0; onActivated: win.toggleHand() }
+    Shortcut { sequence: "Ctrl+Shift+K"; enabled: win.live && (win.ubar.bar.concat(win.ubar.overflowed).indexOf("RaiseHandsButton") >= 0
+                                                       // The new controls raise hands from React.
+                                                       || win.newControls && win.ubar.bar.concat(win.ubar.overflowed).indexOf("ReactionButton") >= 0); onActivated: win.toggleHand() }
     Shortcut { sequence: "Ctrl+Shift+E"; enabled: win.live && (win.canShare || win.sharing); onActivated: win.toggleShare() }
     // Language and speech ▸ Show / Hide live captions.
-    Shortcut { sequence: "Alt+Shift+C"; enabled: win.live && win.ubar.more.some(sec => sec.items.some(i => i.name === "LanguageSpeechMenuControl")); onActivated: win.setCaptions(!win.captionsOn) }
+    Shortcut { sequence: "Alt+Shift+C"; enabled: win.live && win.ubar.more.some(sec => sec.items.some(i => i.name === "LanguageSpeechMenuControl" || i.name === "ClosedCaptionsButton")); onActivated: win.setCaptions(!win.captionsOn) }
     // Admit the person the lobby notification shows.
     Shortcut {
         sequence: "Ctrl+Shift+Y"
@@ -2610,6 +2713,338 @@ Window {
         }
         onSubPicked: (i, j) => win.recordControl(win.barMoreItems[i].submenu[j].name)
     }
+
+    // ── Teams' New meeting controls: More's grid and list, the arrange
+    // menus (measured on winpc 2026-11-16; docs/spec/new-meeting-controls.md).
+
+    /// A control as More's grid shows it (and as it shows on the bar once
+    /// pinned): its short label and glyph; null when OST doesn't show it.
+    function gridEntry(name) {
+        let e = null
+        if (name === "RecordingButton") e = { label: recording ? "Recording" : "Record", icon: "nmc-record", checked: recording }
+        else if (name === "TranscriptButton") {
+            e = { label: transcribing ? "Transcribing" : "Transcribe", icon: "nmc-transcribe", checked: transcribing }
+            // Once a transcript has run: its pane from the item's chevron.
+            if (transcriptStarted) e.submenu = [{ name: "TranscriptPanelButton", label: side === "transcript" ? "Hide transcript" : "Show transcript",
+                                                 icon: "transcript-panel-20", checked: side === "transcript" }]
+        }
+        else if (name === "MeetingFacilitatorTimerButton") e = timerCanView ? { label: "Timer", icon: "nmc-timer", checked: timerVisible } : null
+        else if (name === "MeetingDetailsButton") e = { label: "Notes", icon: "nmc-notes" }
+        else if (name === "ClosedCaptionsButton") e = { label: "Captions", icon: "nmc-captions", checked: captionsOn }
+        else if (name === "StartBreakoutRoomButton") e = { label: "Rooms", icon: "nmc-rooms", checked: side === "rooms" }
+        else if (name === "RealTimeTextButton") e = { label: "RTT", icon: "nmc-rtt", checked: rttOn, enabled: !rttOn }
+        else if (name === "MeetingAppsAddButton") e = { label: "Get more apps and agents", apps: true, checked: appsMenu.visible }
+        // Bar controls that overflowed or were unpinned: their bar label.
+        else if (name === "ChatButton") e = { label: "Chat", icon: "nmc-chat", checked: side === "chat" }
+        else if (name === "RosterButton") e = { label: "People", icon: "nmc-people", checked: side === "people" }
+        else if (name === "ReactionButton") e = { label: "React", icon: handRaised ? "nmc-react-filled" : "nmc-react", checked: handRaised }
+        else if (name === "RaiseHandsButton") e = { label: handRaised ? "Lower" : "Raise", icon: "nmc-raise", checked: handRaised }
+        else if (name === "OrganizerControlButton") e = { label: "Controls", icon: "nmc-controls", chevron: true }
+        else if (name === "PopoutContentButton") e = { label: "Pop out", icon: "call-popout" }
+        else if (name === "CallTransferButtonV2") e = { label: "Transfer", icon: "call-transfer" }
+        else if (name === "CallConsultativeTransferButtonV2") e = { label: "Consult", icon: "consult" }
+        else if (name === "DialpadButton") e = { label: "Dial pad", icon: "dialpad" }
+        else if (name === "HoldButton") e = { label: "Hold", icon: "pause" }
+        if (!e) return null
+        e.name = name
+        if (e.enabled === undefined) e.enabled = controlEnabled(name)
+        return e
+    }
+    /// More's grid: what overflowed off the bar (in bar order), then the
+    /// grid section (unpinned controls first, Apps last).
+    readonly property var newGridItems: {
+        if (!newControls) return []
+        const out = []
+        for (const n of ubar.overflowed) { const e = gridEntry(n); if (e) out.push(e) }
+        for (const sec of ubar.more) if (sec.grid) for (const it of sec.items) {
+            if (ubar.overflowed.indexOf(it.name) >= 0) continue
+            const e = gridEntry(it.name); if (e) out.push(e)
+        }
+        return out
+    }
+    /// More's list rows (and their submenus), as the new controls name them.
+    function newLabel(n) {
+        if (n === "ViewModeButton") return { label: "View", icon: "nmc-view", submenu: newViewItems }
+        if (n === "JoinInfoMenuControl") return { label: "Join info", icon: "nmc-info" }
+        if (n === "SettingsMenuControl") return { label: "Settings", icon: "nmc-settings" }
+        if (n === "MeetingInfoButton") return { label: "Meeting info", icon: "nmc-info", checked: side === "info" }
+        if (n === "CallHealth") return { label: "Call health", icon: "nmc-health", checked: side === "callHealth" }
+        if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "nmc-accessibility", checked: side === "accessibility" }
+        if (n === "ChatBubblesButton") return chatBubblesSuppressed ? { label: "Show chat bubbles", icon: "nmc-bubbles" }
+                                                                   : { label: "Don't show chat bubbles", icon: "nmc-bubbles-off" }
+        if (n === "ToggleHideMyselfButton") return hideMe ? { label: "Unhide me", icon: "nmc-show-me" } : { label: "Hide me", icon: "nmc-hide-me" }
+        if (n === "CameraEffectsButton") return { label: "Video effects and settings", icon: "nmc-effects", checked: side === "video" }
+        if (n === "AudioSettingsButton") return { label: "Audio settings", icon: "nmc-audio", checked: side === "audio" }
+        if (n === "ByodMeetingRoomModeButton") return { label: "Optimize for room", icon: "nmc-room", checked: roomMode }
+        if (n === "ReportMeetingButton") return { label: "Report a concern", icon: "nmc-report" }
+        if (n === "MeetingHelpButton") return { label: "Help", icon: "nmc-help" }
+        return null
+    }
+    // A menu control's sections as one list (a section of one merges
+    // into the next, as Teams' Settings ▸ shows).
+    function newSubmenuOf(item) {
+        const secs = (item.sections || []).map(sec => sec.items.filter(i => !!newLabel(i.name))).filter(sec => sec.length > 0)
+        const out = []
+        secs.forEach((sec, i) => {
+            sec.forEach(i2 => out.push(Object.assign({ name: i2.name }, newLabel(i2.name))))
+            if (i < secs.length - 1 && sec.length > 1) out.push({ separator: true })
+        })
+        return out
+    }
+    readonly property var newListItems: {
+        if (!newControls) return []
+        const out = []
+        const secs = ubar.more.filter(sec => !sec.grid).map(sec => sec.items.filter(i => !!newLabel(i.name)))
+        secs.forEach((sec, si) => {
+            for (const it of sec) {
+                const row = Object.assign({ name: it.name }, newLabel(it.name))
+                if (it.sections && it.sections.length) {
+                    row.submenu = newSubmenuOf(it)
+                    if (row.submenu.length === 0) continue
+                }
+                out.push(row)
+            }
+            if (si < secs.length - 1 && sec.length > 0) out.push({ separator: true })
+        })
+        return out
+    }
+    // More ▸ View (measured): Gallery, Speaker | Full screen, Focus on
+    // content, Show gallery at top, Gallery size ▸ | Turn off other
+    // videos, Show videos first.
+    readonly property var newViewItems: [
+        { action: "gallery", label: "Gallery", icon: "nmc-view", checked: layout === "gallery" },
+        { action: "speaker", label: "Speaker", icon: "nmc-speaker", checked: layout === "speaker" },
+        { separator: true },
+        { action: "fullscreen", label: "Full screen", icon: "nmc-fullscreen", keys: "F11", checked: visibility === Window.FullScreen },
+        { action: "focus", label: "Focus on content", icon: "nmc-focus", checked: layout === "focus", enabled: shareShown || layout === "focus" },
+        { action: "galleryTop", label: galleryAtTop ? "Show gallery on right" : "Show gallery at top", icon: "nmc-gallery-right" }]
+        .concat(layout === "gallery" ? [{ action: "gallerySize", label: "Gallery size", icon: "nmc-gallery-size",
+                                          submenu: [4, 9, 16, 49].map(n => ({ label: n + " people", checked: gallerySize === n })) }] : [])
+        .concat([{ separator: true },
+                 { action: "incoming", label: incomingVideoOff ? "Turn on other videos" : "Turn off other videos", icon: "nmc-videos-off" }])
+        .concat(layout === "gallery" ? [{ action: "videosFirst", label: "Show videos first", icon: "view-videos-first-20", checked: videosFirst }] : [])
+    function runViewAction(a) {
+        if (a === "gallery") layout = "gallery"
+        else if (a === "speaker") layout = "speaker"
+        else if (a === "focus") layout = layout === "focus" ? "gallery" : "focus"
+        else if (a === "fullscreen") toggleFullScreen()
+        else if (a === "galleryTop") galleryAtTop = !galleryAtTop
+        else if (a === "incoming") incomingVideoOff = !incomingVideoOff
+        else if (a === "videosFirst") videosFirst = !videosFirst
+    }
+    function runNewMore(name) {
+        if (name === "ToggleHideMyselfButton") hideMe = !hideMe
+        else if (name === "ByodMeetingRoomModeButton") roomMode = !roomMode
+        else if (["MeetingInfoButton", "CameraEffectsButton", "AudioSettingsButton", "MeetingHelpButton", "ReportMeetingButton"].indexOf(name) >= 0) runControl(name)
+        else recordControl(name)
+    }
+    // More (new controls): a 309.3 wide surface (padding 12.67) start-
+    // aligned 5.3 under the More button, end-aligned when it would leave
+    // the window; the grid (70 x 52 items in 96 px columns, 58 px rows),
+    // "Get more apps and agents", a full-width divider, then the list
+    // (284 px rows); submenus (230 px rows) open to the left.
+    MenuPopup {
+        id: newMore
+        viewStyle: true; newStyle: true
+        parent: win.contentItem
+        minRowWidth: 284; submenuMinWidth: 230
+        items: win.newListItems
+        header: newMoreGrid
+        submenuLeft: x >= 255.33
+        function openAt(button) {
+            const p = button.mapToItem(win.contentItem, 0, 0)
+            const bx = p.x + (win.compactBar ? 2 : 4), bw = win.compactBar ? 32 : 48
+            x = bx + width > win.width ? bx + bw - width : bx
+            y = p.y + (win.compactBar ? 3.7 + 32 : 6 + 48) + 5.33
+            open()
+        }
+        onPicked: i => {
+            const it = win.newListItems[i]
+            if (it && !it.submenu) win.runNewMore(it.name)
+        }
+        onSubPicked: (i, j) => {
+            const it = win.newListItems[i]
+            const sub = it.submenu[j]
+            if (it.name === "ViewModeButton") win.runViewAction(sub.action)
+            else win.runNewMore(sub.name)
+        }
+        onSubSubPicked: (i, j, k) => {
+            const it = win.newListItems[i]
+            if (it.name === "ViewModeButton" && it.submenu[j].action === "gallerySize") win.gallerySize = [4, 9, 16, 49][k]
+        }
+    }
+    function newMoreForTest() { newMore.openAt(barItem("MoreButton")); return newMore }
+    Component {
+        id: newMoreGrid
+        Item {
+            id: gridRoot
+            readonly property var cells: win.newGridItems.filter(e => !e.apps)
+            readonly property var apps: win.newGridItems.find(e => e.apps)
+            readonly property int rows: Math.ceil(cells.length / 3)
+            readonly property real gridHeight: rows > 0 ? rows * 58 - 6 : 0
+            height: gridHeight + (apps ? (rows > 0 ? 12 : 0) + 32 : 0) + 6
+            Repeater {
+                model: gridRoot.cells
+                Item {
+                    id: cell
+                    required property var modelData
+                    required property int index
+                    readonly property bool on: modelData.enabled !== false
+                    readonly property bool hasMenu: !!modelData.submenu
+                    x: 12 + (index % 3) * 96; y: Math.floor(index / 3) * 58
+                    width: hasMenu ? 92 : 70; height: 52
+                    Rectangle {
+                        id: hcFillCell
+                        width: 70; height: 52
+                        radius: 4; topRightRadius: cell.hasMenu ? 0 : 4; bottomRightRadius: cell.hasMenu ? 0 : 4
+                        color: cellHover.hovered && cell.on ? theme.rowHover : "transparent"
+                        FluentIcon {
+                            x: 22.5; y: 4.5; size: 25; name: cell.modelData.icon || ""
+                            color: theme.onFill(hcFillCell, !cell.on ? theme.disabled : cell.modelData.checked ? theme.brand
+                                                : cellHover.hovered ? theme.text : theme.textStrong)
+                        }
+                        Text {
+                            x: 0.67; y: 33.3; width: 68.67; height: 16
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                            text: cell.modelData.label; elide: Text.ElideRight
+                            font.family: theme.font; font.pixelSize: 11
+                            color: theme.onFill(hcFillCell, !cell.on ? theme.disabled : cellHover.hovered ? theme.text : theme.textStrong)
+                        }
+                        HoverHandler { id: cellHover; cursorShape: cell.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                        TapHandler {
+                            enabled: cell.on
+                            onTapped: {
+                                const n = cell.modelData.name
+                                newMore.close()
+                                win.runControl(n)
+                            }
+                        }
+                        TapHandler {
+                            acceptedButtons: Qt.RightButton
+                            onTapped: (ev) => win.openGridMenu(cell.modelData.name, hcFillCell.mapToItem(win.contentItem, ev.position.x, ev.position.y))
+                        }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: cell.modelData.label
+                        Accessible.checkable: cell.modelData.checked !== undefined
+                        Accessible.checked: !!cell.modelData.checked
+                    }
+                    // A grid item with a menu of its own: its 22 px chevron.
+                    Rectangle {
+                        id: hcFillCellChev
+                        visible: cell.hasMenu
+                        x: 70; width: 22; height: 52
+                        topRightRadius: 4; bottomRightRadius: 4
+                        color: chevHoverCell.hovered ? theme.rowHover : "transparent"
+                        FluentIcon { x: 3; y: 18; size: 16; name: "call-chevron"; color: theme.onFill(hcFillCellChev, theme.textStrong) }
+                        HoverHandler { id: chevHoverCell; cursorShape: Qt.PointingHandCursor }
+                        TapHandler {
+                            onTapped: {
+                                cellMenu.items = cell.modelData.submenu
+                                cellMenu.parent = hcFillCellChev
+                                cellMenu.open()
+                            }
+                        }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: "More options for " + cell.modelData.label
+                    }
+                }
+            }
+            // "Get more apps and agents": a 284 x 32 outlined button.
+            Rectangle {
+                id: hcFillApps
+                visible: !!gridRoot.apps
+                y: gridRoot.gridHeight + (gridRoot.rows > 0 ? 12 : 0)
+                width: 284; height: 32; radius: 4
+                color: appsHover.hovered ? theme.menuHover : theme.surface
+                border.width: 0.67; border.color: theme.stroke
+                Text {
+                    anchors.centerIn: parent
+                    text: gridRoot.apps ? gridRoot.apps.label : ""
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.onFill(hcFillApps, appsHover.hovered ? theme.text : theme.textStrong)
+                }
+                HoverHandler { id: appsHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { newMore.close(); win.runControl("MeetingAppsAddButton") } }
+                Accessible.role: Accessible.MenuItem
+                Accessible.name: "Apps"
+            }
+        }
+    }
+    // A grid item's own menu (Transcribe ▸ Show transcript).
+    MenuPopup {
+        id: cellMenu
+        viewStyle: true; newStyle: true
+        minRowWidth: 230
+        x: parent ? parent.width : 0; y: 0
+        onPicked: i => { const n = items[i].name; newMore.close(); win.recordControl(n) }
+    }
+
+    // Right-click on a bar control (new controls, its group customizable):
+    // Move before "{previous}", Move after "{next}", Unpin, divider, Reset
+    // meeting controls; on a grid item: Pin, divider, Reset (207 wide at
+    // the pointer).
+    property string arrangeTarget: ""
+    function controlLabel(n) { const e = gridEntry(n); return e ? e.label : n }
+    function openControlMenu(name, item, p) {
+        if (!newControls) return
+        const group = ubar.movable.find(g => g.indexOf(name) >= 0)
+        if (!group) return
+        const i = group.indexOf(name)
+        const rows = []
+        if (i > 0) rows.push({ action: "before", label: "Move before \"" + controlLabel(group[i - 1]) + "\"", icon: "nmc-move-before" })
+        if (i < group.length - 1) rows.push({ action: "after", label: "Move after \"" + controlLabel(group[i + 1]) + "\"", icon: "nmc-move-after" })
+        rows.push({ action: "unpin", label: "Unpin", icon: "nmc-unpin" }, { separator: true },
+                  { action: "reset", label: "Reset meeting controls", icon: "nmc-reset" })
+        arrangeTarget = name
+        arrangeMenu.items = rows
+        const q = item.mapToItem(win.contentItem, p.x, p.y)
+        arrangeMenu.x = Math.min(q.x - 5, win.width - arrangeMenu.implicitWidth)
+        arrangeMenu.y = q.y - 4
+        arrangeMenu.open()
+    }
+    function openGridMenu(name, q) {
+        const rows = []
+        const grid = ubar.more.filter(s => s.grid).reduce((a, s) => a.concat(s.items.map(i => i.name)), [])
+        if (name !== "MeetingAppsAddButton" && (grid.indexOf(name) >= 0 || ubar.overflowed.indexOf(name) >= 0))
+            rows.push({ action: "pin", label: "Pin", icon: "nmc-pin" }, { separator: true })
+        rows.push({ action: "reset", label: "Reset meeting controls", icon: "nmc-reset" })
+        arrangeTarget = name
+        arrangeMenu.items = rows
+        arrangeMenu.x = Math.min(q.x - 5, win.width - arrangeMenu.implicitWidth)
+        arrangeMenu.y = q.y - 4
+        arrangeMenu.open()
+    }
+    function arrange(action, name) {
+        const c = JSON.parse(JSON.stringify(controlsCustomization))
+        c.unpinned = c.unpinned || []; c.pinned = c.pinned || []; c.order = c.order || []
+        if (action === "reset") { saveCustomization(null); return }
+        if (action === "unpin") {
+            c.unpinned = [name].concat(c.unpinned.filter(n => n !== name))
+            c.pinned = c.pinned.filter(n => n !== name)
+        } else if (action === "pin") {
+            if (c.unpinned.indexOf(name) >= 0) c.unpinned = c.unpinned.filter(n => n !== name)
+            else if (ubar.overflowed.indexOf(name) < 0 && c.pinned.indexOf(name) < 0) c.pinned.push(name)
+        } else {
+            const order = ubar.movable.map(g => g.slice())
+            const g = order.find(g => g.indexOf(name) >= 0)
+            if (!g) return
+            const i = g.indexOf(name), j = action === "before" ? i - 1 : i + 1
+            if (j < 0 || j >= g.length) return
+            g[i] = g[j]; g[j] = name
+            c.order = order.reduce((a, g2) => a.concat(g2), [])
+        }
+        saveCustomization(c)
+    }
+    MenuPopup {
+        id: arrangeMenu
+        viewStyle: true; newStyle: true
+        parent: win.contentItem
+        minRowWidth: 181.67
+        onPicked: i => win.arrange(items[i].action, win.arrangeTarget)
+    }
+    function arrangeForTest(action, name) { arrange(action, name) }
+    function controlMenuForTest(name) { const it = barItems[name]; if (it) openControlMenu(name, it, Qt.point(24, 24)) }
+    function arrangeMenuForTest() { return arrangeMenu }
     // Dial pad: Teams' keypad under the button; keys send tones.
     Popup {
         id: dialPad
@@ -2767,7 +3202,8 @@ Window {
     // line under it while its pane is open.
     // The bar's controls (see barComponent), with Teams' labels and
     // tooltips (titles and shortcuts as Teams shows them).
-    Component { id: barDivider; Item { width: 17; height: 60; Rectangle { x: 8; y: 13.5; width: 0.67; height: 33; color: theme.stroke } } }
+    // Compact: 9 wide, the line 4 in and 21.6 tall.
+    Component { id: barDivider; Item { width: win.ubarDivider; height: bar.height; Rectangle { x: win.compactBar ? 4 : 8; y: win.compactBar ? 8.9 : 13.5; width: 0.67; height: win.compactBar ? 21.6 : 33; color: theme.stroke } } }
     Component { id: cPopout; BarButton { icon: "call-popout"; label: "Pop out"; tip: "Pop out"; onClicked: win.runControl("PopoutContentButton") } }
     Component { id: cTransfer; BarButton { icon: "call-transfer"; label: "Transfer"; tip: "Transfer"; enabled: win.controlEnabled("CallTransferButtonV2"); checked: picker.visible && picker.mode === "transfer"; onClicked: win.runControl("CallTransferButtonV2") } }
     Component { id: cConsult; BarButton { icon: "consult"; label: "Consult"; tip: "Consult then transfer"; enabled: win.controlEnabled("CallConsultativeTransferButtonV2"); checked: picker.visible && picker.mode === "consult"; onClicked: win.runControl("CallConsultativeTransferButtonV2") } }
@@ -2796,13 +3232,14 @@ Window {
             }
         }
     }
-    Component { id: cChat; BarButton { icon: "call-chat"; label: "Chat"; checked: win.side === "chat"; tip: win.side === "chat" ? "Hide conversation" : "Show conversation"; enabled: win.controlEnabled("ChatButton"); onClicked: win.runControl("ChatButton") } }
+    Component { id: cChat; BarButton { icon: win.newControls ? "nmc-chat" : "call-chat"; label: "Chat"; checked: win.side === "chat"; tip: win.side === "chat" ? "Hide conversation" : "Show conversation"; enabled: win.controlEnabled("ChatButton"); onClicked: win.runControl("ChatButton") } }
     Component {
         id: cPeople
         BarButton {
-            icon: "call-people"; label: "People"; checked: win.side === "people"
+            icon: win.newControls ? "nmc-people" : "call-people"; label: "People"; checked: win.side === "people"
             readonly property int count: win.roster.length
-            tip: (count === 0 ? "" : count === 1 ? "1 participant. " : count + " participants. ") + (win.side === "people" ? "Hide participants" : "Show participants")
+            // The new controls' tooltip has no count.
+            tip: (count === 0 || win.newControls ? "" : count === 1 ? "1 participant. " : count + " participants. ") + (win.side === "people" ? "Hide participants" : "Show participants")
             // Teams: people waiting in the lobby, or raised hands, as a
             // red count; else how many are here (meetings).
             badge: !win.meeting ? 0 : win.lobby.length > 0 ? win.lobby.length : win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
@@ -2812,13 +3249,30 @@ Window {
         }
     }
     Component { id: cRaise; BarButton { icon: "call-raise"; label: win.handRaised ? "Lower" : "Raise"; checked: win.handRaised; tip: win.handRaised ? "Lower your hand" : "Raise your hand"; shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
-    Component { id: cReact; BarButton { icon: "call-react"; label: "React"; checked: reactMenu.visible; tip: "Send a reaction"; enabled: win.controlEnabled("ReactionButton"); onClicked: win.runControl("ReactionButton") } }
+    // The new controls: React holds Raise hand too; its glyph is the
+    // emoji-hand, filled in brand while your hand is up.
+    Component { id: cReact; BarButton { icon: !win.newControls ? "call-react" : win.handRaised ? "nmc-react-filled" : "nmc-react"; label: "React"; checked: reactMenu.visible
+            iconColor: win.newControls && win.handRaised ? theme.brand : hovered ? theme.text : theme.textStrong
+            tip: !win.newControls ? "Send a reaction" : win.handRaised ? "React or lower your hand. Your hand is raised" : "React or raise your hand. Your hand is not raised"; enabled: win.controlEnabled("ReactionButton"); onClicked: win.runControl("ReactionButton") } }
     Component { id: cView; BarButton { id: viewB; icon: "call-view"; label: "View"; tip: "Change your view"; checked: viewMenu.visible && viewMenu.parent === viewB; enabled: win.controlEnabled("ViewModeButton"); onClicked: win.runControl("ViewModeButton") } }
     // Controls: the meeting options (organizers), as Teams opens them.
-    Component { id: cControls; BarButton { id: ctlB; icon: "call-controls"; label: "Controls"; checked: controlsMenu.visible; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton"); Component.onCompleted: win.controlsButton = ctlB } }
+    Component { id: cControls; BarButton { id: ctlB; icon: win.newControls ? "nmc-controls" : "call-controls"; label: "Controls"; checked: controlsMenu.visible; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton"); Component.onCompleted: win.controlsButton = ctlB } }
     // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
-    Component { id: cNotes; BarButton { icon: "call-notes"; label: "Notes"; tip: "Open notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
-    Component { id: cRooms; BarButton { icon: "call-rooms"; label: "Rooms"; tip: win.breakoutRooms.length ? "Breakout rooms" : "Create breakout rooms"; checked: win.side === "rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton"); onClicked: win.runControl("StartBreakoutRoomButton") } }
+    Component { id: cNotes; BarButton { icon: win.newControls ? "nmc-notes" : "call-notes"; label: "Notes"; tip: "Open notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
+    Component { id: cRooms; BarButton { icon: win.newControls ? "nmc-rooms" : "call-rooms"; label: "Rooms"; tip: win.breakoutRooms.length ? "Breakout rooms" : "Create breakout rooms"; checked: win.side === "rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton"); onClicked: win.runControl("StartBreakoutRoomButton") } }
+    // A More grid control the user pinned to the bar (new controls): its
+    // grid label and glyph.
+    Component {
+        id: cPinned
+        BarButton {
+            readonly property string ctl: parent ? parent.modelData : ""
+            readonly property var entry: win.gridEntry(ctl) || ({ label: "", icon: "" })
+            icon: entry.icon; label: entry.label; tip: entry.label
+            checked: !!entry.checked
+            enabled: entry.enabled !== false
+            onClicked: win.runControl(ctl)
+        }
+    }
     // Teams' contextual text buttons (the layout's "button" template): a
     // bordered 31.33 tall button, 14/600, padded 12, in an 8 wider slot.
     component BarTextButton: Item {
@@ -2848,12 +3302,14 @@ Window {
     Component { id: cJoinRoom; BarTextButton { label: "Join room"; control: "ReturnToBreakoutRoomButton" } }
     Component { id: cReturnMain; BarTextButton { label: "Return"; control: "BreakoutRoomReturnToMainButton" } }
     Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
-    Component { id: cMore; BarButton { icon: "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible; onClicked: win.runControl("MoreButton") } }
+    Component { id: cMore; BarButton { icon: win.newControls ? "nmc-more" : "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible || newMore.visible; onClicked: win.runControl("MoreButton") } }
     Component {
         id: cCamera
         BarButton {
             id: camB
-            icon: win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"; label: "Camera"; strong: true
+            // The new controls draw the regular glyphs in #424242.
+            icon: win.newControls ? (win.cameraOn ? "nmc-camera" : "nmc-camera-off") : win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"
+            label: "Camera"; strong: !win.newControls
             // Teams' disabled reasons, first match wins (§3).
             readonly property string disabledReason: !win.canVideo ? "No available camera found"
                 : win.videoRestricted ? "Only select participants can share video" : ""
@@ -2871,7 +3327,8 @@ Window {
         id: cMic
         BarButton {
             id: micB
-            icon: win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"; label: "Mic"; strong: true
+            icon: win.newControls ? (win.muted || !win.hasAudio ? "nmc-mic-off" : "nmc-mic") : win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"
+            label: "Mic"; strong: !win.newControls
             tip: win.micRestricted ? "Only select participants can unmute"
                 : !win.hasAudio ? "Turn audio on" : win.muted ? "Unmute mic" : "Mute mic"
             shortcut: win.micRestricted ? "" : "Ctrl+Shift+M"
@@ -2885,9 +3342,9 @@ Window {
     Component {
         id: cShare
         BarButton {
-            icon: win.sharing ? "call-share-stop-filled" : "call-share-filled"
-            label: win.sharing ? "Stop sharing" : "Share"; strong: true
-            iconColor: win.sharing ? theme.hc("#B10E1C", "#FFFFFF") : theme.text
+            icon: win.newControls ? (win.sharing ? "nmc-share-stop" : "nmc-share") : win.sharing ? "call-share-stop-filled" : "call-share-filled"
+            label: win.sharing ? "Stop sharing" : "Share"; strong: !win.newControls
+            iconColor: win.sharing ? theme.hc("#B10E1C", "#FFFFFF") : win.newControls && !hovered ? theme.textStrong : theme.text
             tip: win.sharing ? "Stop sharing" : "Share content"; shortcut: "Ctrl+Shift+E"
             enabled: win.controlEnabled("ShareButton")
             onClicked: win.runControl("ShareButton")
@@ -2931,6 +3388,7 @@ Window {
         property bool checked: false
         /// Camera, Mic, Share and Leave: #242424 at rest.
         property bool strong: false
+        readonly property bool hovered: bbHover.hovered
         property color iconColor: bb.strong || bbHover.hovered ? theme.text : theme.textStrong
         /// A count beside the icon (People: how many are in the meeting).
         property int badge: 0
@@ -2946,10 +3404,19 @@ Window {
         property string shortcut: ""
         signal clicked()
         signal chevronClicked()
+        /// Right-click (the new controls' Move / Pin / Unpin menu), at the
+        /// pointer in this button's coordinates.
+        signal contextMenu(point p)
+        /// The new controls' compact bar (under 480 px): a 32 px button in
+        /// a 36 px slot without its label, the chevron 20 wide (slot 54).
+        readonly property bool compact: win.compactBar
         // 48 wide, or wider for a long label (Teams' "Leave room").
-        readonly property real bw: Math.max(48, Math.ceil(bbLabelMetrics.advanceWidth) + 8)
+        readonly property real bw: compact ? 32 : Math.max(48, Math.ceil(bbLabelMetrics.advanceWidth) + 8)
+        readonly property real bx: compact ? 2 : 4
+        readonly property real by: compact ? 3.7 : 6
+        readonly property real cw: compact ? 20 : 22
         TextMetrics { id: bbLabelMetrics; font.family: theme.font; font.pixelSize: 11; text: bb.label }
-        width: split ? bw + 26 : bw + 8; height: 60
+        width: split ? bx + bw + cw : bw + 2 * bx; height: compact ? 40 : 60
         // Teams' bar tooltip (Fluent Tooltip, measured on winpc): 10 below
         // the button, its left edge on the button's (or its right edge on
         // the button's when it would leave the window); 12/16 text,
@@ -2963,8 +3430,8 @@ Window {
             delay: 250
             topPadding: 4; bottomPadding: 6; leftPadding: 11; rightPadding: 11
             readonly property bool flip: bb.mapToItem(null, 4 + implicitWidth, 0).x > (bb.Window.window ? bb.Window.window.width : 1e9)
-            x: flip ? 52 - implicitWidth : 4
-            y: 64
+            x: flip ? bb.bx + bb.bw - implicitWidth : bb.bx
+            y: bb.by + (bb.compact ? 32 : 48) + 10
             contentItem: Text {
                 text: bb.tip + (bb.shortcut.length > 0 ? " (" + bb.shortcut + ")" : "")
                 font.family: theme.font; font.pixelSize: 12
@@ -2986,12 +3453,12 @@ Window {
         Rectangle {
             id: hcFill14
             visible: bb.split
-            x: 4 + bb.bw; y: 6; width: 22; height: 48
+            x: bb.bx + bb.bw; y: bb.by; width: bb.cw; height: bb.compact ? 32 : 48
             topRightRadius: 4; bottomRightRadius: 4
             color: (chevHover.hovered || bb.chevronChecked) ? theme.rowHover : "transparent"
             // Disabled together with the button (Teams' split buttons).
             opacity: bb.enabled ? 1 : 0.45
-            FluentIcon { x: 3; y: 16; name: "call-chevron"; size: 16; color: theme.onFill(hcFill14, theme.text) }
+            FluentIcon { x: bb.compact ? 4 : 3; y: bb.compact ? 10 : 16; name: "call-chevron"; size: bb.compact ? 12 : 16; color: theme.onFill(hcFill14, theme.text) }
             HoverHandler { id: chevHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: bb.enabled; onTapped: bb.chevronClicked() }
             Accessible.role: Accessible.Button
@@ -2999,14 +3466,14 @@ Window {
         }
         Rectangle {
             id: hcFill15
-            x: 4; y: 6; width: bb.bw; height: 48
+            x: bb.bx; y: bb.by; width: bb.bw; height: bb.compact ? 32 : 48
             radius: 4
             topRightRadius: bb.split ? 0 : 4; bottomRightRadius: bb.split ? 0 : 4
             color: bbHover.hovered && bb.enabled ? theme.rowHover : "transparent"
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {
-                x: (bb.bw - 25) / 2; y: 3.5
-                name: bb.icon; size: 25; color: theme.onFill(hcFill15, bb.iconColor)
+                x: bb.compact ? 6 : (bb.bw - 25) / 2; y: bb.compact ? 6 : 3.5
+                name: bb.icon; size: bb.compact ? 20 : 25; color: theme.onFill(hcFill15, bb.iconColor)
                 // Teams' alert badge (roster-button-badge): 18 px with a
                 // 2 px white ring, #C50F1F, 10/700 white, 16 px right of
                 // and 1.8 px above the glyph's corner.
@@ -3033,6 +3500,7 @@ Window {
                 }
             }
             Text {
+                visible: !bb.compact
                 x: 0.7; y: 30.3; width: bb.bw - 1.3; height: 16
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 text: bb.label
@@ -3042,11 +3510,15 @@ Window {
             }
             Rectangle {
                 visible: bb.checked
-                x: 0.7; y: 50.3; width: bb.bw - 1.3; height: 2; radius: 1
+                x: 0.7; y: bb.compact ? 34.3 : 50.3; width: bb.bw - 1.3; height: 2; radius: 1
                 color: theme.brand
             }
             HoverHandler { id: bbHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { onTapped: if (bb.enabled) bb.clicked() }
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                onTapped: (ev) => bb.contextMenu(hcFill15.mapToItem(bb, ev.position.x, ev.position.y))
+            }
         }
         Accessible.role: Accessible.Button
         Accessible.name: bb.label

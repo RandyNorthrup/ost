@@ -24,6 +24,9 @@ Popup {
     property var items: []
     signal picked(int index)
     signal subPicked(int index, int subIndex)
+    /// A pick in a submenu's own submenu (the new controls' More ▸ View ▸
+    /// Gallery size ▸).
+    signal subSubPicked(int index, int subIndex, int subSubIndex)
     /// A row with `flyout: true` (a chevron) opens its owner's own popup
     /// beside it on hover, as a submenu would (Teams' Manage notifications):
     /// row is the row item, to place it by; -1 when another row is hovered.
@@ -32,6 +35,11 @@ Popup {
     /// (16 px, 6 from the right), labels of rows without an icon at 10, and
     /// dividers spanning the surface with 10 px either side.
     property bool viewStyle: false
+    /// Teams' new meeting controls' menus (More's list, its submenus and
+    /// the controls' right-click menu): View's style with padding 12.67
+    /// and 20.67 px dividers; a submenu that would leave the window ends
+    /// level with its row's bottom instead.
+    property bool newStyle: false
     /// OneDrive's (Fabric) context menu, as Teams' Files apps draw it: no
     /// padding, rows 36 tall with no gap, a 16 px icon 8 in, the label at
     /// 32, a 12 px chevron 8 from the right, 1 px dividers with 4 above and
@@ -43,7 +51,7 @@ Popup {
     // menu uses label 32, dividers 8.6, a 20 px chevron 5.6 from the right
     // and shortcut letters 8 from the right.
     property real labelInset: -1
-    property real separatorHeight: viewStyle ? 16.67 : fabric ? 9 : 5
+    property real separatorHeight: newStyle ? 20.67 : viewStyle ? 16.67 : fabric ? 9 : 5
     property int chevronSize: viewStyle ? 16 : 12
     property real chevronMargin: viewStyle ? 6 : 8
     property real keysMargin: 6
@@ -59,7 +67,7 @@ Popup {
     /// 0 keeps the default.
     property real rowHeight: 0
     function rowLabelX(i) { return checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
-    padding: viewStyle ? 16.67 : fabric ? 0 : 4
+    padding: newStyle ? 12.67 : viewStyle ? 16.67 : fabric ? 0 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
     property real minRowWidth: 0
     /// Fluent's hasCheckmarks (Teams' tab dropdown): every row keeps a
@@ -115,10 +123,12 @@ Popup {
             // 230), wider when a row needs it.
             subMenu = Qt.createComponent("MenuPopup.qml").createObject(root.contentItem, {
                 viewStyle: Qt.binding(() => root.viewStyle),
+                newStyle: Qt.binding(() => root.newStyle),
                 fabric: Qt.binding(() => root.fabric),
                 fabricWidth: 232,
                 minRowWidth: Qt.binding(() => root.submenuMinWidth >= 0 ? root.submenuMinWidth : root.width - 2 * root.padding) })
             subMenu.picked.connect(i => { const s = root.subIndex; root.close(); root.subPicked(s, i) })
+            subMenu.subPicked.connect((i, j) => { const s = root.subIndex; root.close(); root.subSubPicked(s, i, j) })
         }
         return subMenu
     }
@@ -149,6 +159,14 @@ Popup {
         // OneDrive's submenus sit 4 px off the list, 4 below the row's top.
         sub.x = root.submenuLeft ? -sub.width : root.contentItem.width + (root.fabric ? 4 : 0)
         sub.y = p.y + (root.fabric ? 4 : 0)
+        if (root.newStyle) {
+            // Fluent flips a submenu that won't fit below: its bottom level
+            // with the row's bottom (Teams' More ▸ View, ▸ Settings).
+            const win = root.contentItem.Window.window
+            const top = root.contentItem.mapToItem(null, 0, p.y).y
+            if (win && top + sub.implicitHeight > win.height)
+                sub.y = p.y + rowItem.height - sub.implicitHeight
+        }
         sub.open()
     }
     onClosed: if (subMenu) subMenu.close()
@@ -162,7 +180,7 @@ Popup {
         Loader {
             active: !!root.header
             visible: active
-            width: root.width - 8
+            width: root.width - 2 * root.padding
             sourceComponent: root.header
         }
         Item {

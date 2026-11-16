@@ -1457,7 +1457,7 @@ pub mod qobject {
         /// The call bar as Teams builds it from its layout config: `facts`
         /// (JSON, see teams_cli::calling::ubar::Facts), each control's
         /// width (JSON {name: px}), a divider's width and the middle slot's
-        /// room. Returns JSON {bar, end, overflowed, more, onHold}.
+        /// room. Returns JSON {bar, end, overflowed, more, onHold, movable}.
         #[qinvokable]
         fn ubar_arrange(
             self: &Backend,
@@ -12308,9 +12308,11 @@ impl qobject::Backend {
         use teams_cli::calling::ubar;
         let facts: ubar::Facts = serde_json::from_str(&facts.to_string()).unwrap_or_default();
         let widths: HashMap<String, f64> = serde_json::from_str(&widths.to_string()).unwrap_or_default();
+        // "default": every other control's slot (56, or 36 on the compact bar).
+        let other = widths.get("default").copied().unwrap_or(56.0);
         let arranged = ubar::arrange(
             &facts,
-            &|n| widths.get(n).copied().unwrap_or(56.0),
+            &|n| widths.get(n).copied().unwrap_or(other),
             divider,
             available,
         );
