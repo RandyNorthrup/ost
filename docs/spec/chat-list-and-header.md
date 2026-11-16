@@ -69,6 +69,56 @@ and measures 320 px.)
 - The filter pills inside the list overflow by measured width (see §4);
   nothing else in the list changes with width.
 
+**Measured on Teams web (2026-11-16, viewport emulated; the user's Chrome,
+read-only).** The slot carries `--slot-width` (28rem / 32rem / 36rem) and
+`--other-inline-slots-with-minimal-main: calc(68px + 320px)`:
+- 1272 and 1279 → 280; 1300 → 320; 1540 → 360 (`--slot-width: 36rem`).
+  1500 read 320 straight after the change (the 250 ms debounce); the map
+  in 708731 says 36rem from 1500.
+- 700 → 280, with the app bar laid over the list (the < 947 reflow);
+  639 → no list, and the header gets a back arrow.
+- The divider: `role="slider"`, "Resize left panel"
+  (`framework:resizable_divider_text`, "Resize {{direction}} panel",
+  direction "left"), 4 px wide at the list's right edge, `aria-valuemin`
+  280, `aria-valuemax` 400. Its `aria-valuenow` is only updated on a
+  resize (it read 280 at 1300).
+
+**The size rule (CSS, griffel `f8bvcdq`).** `width: clamp(var(--slot-min-width),
+var(--slot-width), var(--slot-max-width))`, with min 280 and max
+`min(400px, calc(100vw - var(--other-inline-slots-with-minimal-main)))`:
+the app bar (68) plus the main area's minimum (32rem = 320 with
+contextual-Copilot slots, else 360). When the max falls under 280 the
+minimum wins (CSS clamp), so the list never goes under 280 while shown.
+
+**Dragging and keys (module 133260 `A`, the slots reflow coordinator;
+the hook is fluentui-contrib `useResizeHandle`, `unit: "viewport"`).**
+- The value is kept in **vw** (`px / innerWidth * 100`), so a dragged list
+  keeps its share of the window when the window resizes.
+- ArrowLeft / ArrowRight on the focused divider: 20 px a step (the hook's
+  `getOffsetStep`, 20 px converted to vw).
+- Double-click (`onDoubleClick` → `resetSlotDimensions`): back to the
+  breakpoint default, **and that default is saved as vw too** (the reset
+  goes through `handleAreaDragged(…, isReset)`).
+- MID_NAV can also collapse (to 12 px) when it is in the core setting
+  `enableCollapsibleSlots`: a drag below 3/4 of 280 collapses it. → TODO:
+  the live value (not readable without the debugger; check on winpc).
+- With `enableResizableSlotsPolishedCursor`, a focused divider also shows
+  **Resize smaller** / **Resize larger** buttons. → TODO: the live value.
+
+**Where the width is kept.** `SlotSizePersistenceManager` (`_B`, only with
+`enableReflow` and `enableSizePersistenceOfResizableSlots`, both on: the
+web client has the key) writes **localStorage** key
+`teams-layout-slot-size-persistence` (the "Global" scope, stored as
+`tmp.teams-layout-slot-size-persistence`), JSON by window type
+(`standard`, `focus`, `focus_calling`, `search_app`) then slot:
+`{"standard":{"mid-nav":{"width":25,"height":…}}}`, 500 ms (`l.Ko`) after
+the drag ends. It is **on this device only**: no settings sync, and other
+windows of the same type follow through an observable. The live web value
+held only `{"search_app":{"end":{"width":"calc((100vw - 68px) * .4)","height":"auto"}}}`
+(from `enableSizePersistenceCustom`); nobody had dragged the list there.
+- Desktop: the same React code in WebView2, so its own localStorage. →
+  check on winpc that a dragged width survives a restart.
+
 ## 2. List header (module 855406, `Mb`)
 
 Row: title on the left, then (in this order) **··· (More list
@@ -116,6 +166,33 @@ and a chevron (aria **"Mark all as read options"**) that opens a submenu:
 | TEAMS_AND_CHANNELS | `split_channel` | with the communities flag: **All** (`split_channel`), **All channels**, **All communities**; without it: a plain item |
 | CHATS | `chat` | none (plain item) |
 
+**The live menu (Teams web, 2026-11-16, unified list, licensed for
+Engage).** The order in code (`$L`) is: Mark all as read, [Collapse all
+sections, divider] unless `disableCustomSectionsAndShowFavUnfavMenu`,
+Customize view, then [divider, Your teams and channels, Your communities]
+unless `hideSeeAllYourTeams` or the Chat-only list. So there is **no
+divider between Mark all as read and Collapse all sections**. Measured:
+- the menu 248 wide, 4 below the trigger, left-aligned with it; rows 32
+  tall, 2 apart; dividers 1 px with 4 above and below;
+- icons (Teams' own Fluent set, regular): **Glasses** (Mark all as
+  read), **ArrowCollapseAll**, **Settings**, **PeopleTeam**,
+  **PeopleCommunity** (Teams' bundled PeopleCommunity, an older drawing
+  than the current Fluent repo's);
+- Mark all as read is a split item: the label part (with "Shift+Esc" 8.6
+  before the split), a 1 × 20 divider, and a 31 px chevron part
+  (ChevronRight 16; aria "Mark all as read options") that opens the
+  submenu on hover. Only the hovered part highlights;
+- the submenu (no icons, about 137 wide): **All**, **All chats**, **All
+  channels**, **All communities**; it opens beside the menu, level with
+  the row;
+- the "Try it" badge was not shown (`showDotAndBadge` off for this user).
+
+The app types the items send (`xL`): unified main part and **All** →
+`unified`, **All chats** → `chat`, **All channels** → `channel`, **All
+communities** → `engage_community`. In the Teams-only list the split has
+**All** → `split_channel`. The filter (pill) is passed along but only
+scopes the local list update.
+
 - From the menu the action runs **at once, without a confirmation**.
 - The **Shift+Esc** shortcut (`enableMAARKeyboardShortcut`, live on)
   shows a confirmation dialog first when `enableMAARConfirmDialog` (live
@@ -127,6 +204,28 @@ and a chevron (aria **"Mark all as read options"**) that opens a submenu:
   **Confirm** / **Cancel**. Entities: **"chats"** (CHATS mode),
   **"channels"** (Teams mode), **"chats, channels, and communities"**
   (unified).
+  - The dialog (`iR` in simple-collab-app, `data-testid`
+    `simple-collab-markallasread-dialog`) is a plain Fluent Dialog: no
+    width of its own (DialogSurface: up to 600), title, content, then two
+    DialogActions: the **"Don't ask again"** checkbox at the start and
+    Cancel / Confirm (primary) at the end.
+  - The body's entities come from the selected pill (`tR`): tags CHATS,
+    CHATS_AND_MEETING_CHATS, NON_MEETING_CHATS or SPLIT_CHAT → "chats";
+    TEAMS_AND_CHANNELS or SPLIT_CHANNEL → "channels"; otherwise "chats,
+    channels, and communities".
+  - **The title is passed `entitiesToBeMarked`, but its string wants
+    `{{entities}}`.** Teams' i18next has a missingInterpolationHandler
+    that returns nothing, so the gap is empty: the title should read
+    "Are you sure you want to mark all  as read?" (one space in HTML). →
+    check on winpc with ost-test1 (Shift+Esc, then Cancel). Not opened on
+    the web: that is the user's real account, and with "Don't ask again"
+    already ticked Shift+Esc would mark everything read at once.
+  - Confirm marks (with the filter); Cancel only closes. Either one, with
+    the box ticked, saves `skipMarkAllAsReadConfirmDialog: true` through
+    `updateClientPreferences` (client preferences: on this device). Esc
+    closes without saving.
+  - The shortcut is the header menu's command (`ea.wk("MarkAllAsRead")`),
+    so it only works while the list header is mounted.
 - Data: mutation `markAllAsReadByAppName(input: {appType})` → worker
   `startMarkAllAsReadWorkflow(appType)`. The optimistic update clears
   every unread/mention/important/urgent flag and badge count of every
@@ -204,6 +303,57 @@ Teams mode: like unified, but item 1/2 only with the rename flag and
 Actions: New team → `createTeam` (or `createTeamOnMainView` with
 `canUserCreateTeam`); Join team → `joinTeam`; New channel →
 `createChannel`; New section → the "Create a new section" dialog (§5.4).
+
+### 2.4 The new chat form (measured on Teams web, 2026-11-16)
+
+Measured in the user's Chrome at 1272 × 561 CSS px (DPR 1.5), list 280,
+main area from x 348 (positions below are from the main area's left and
+top). Nothing was sent or created: one person was picked, the group name
+opened, then another chat was clicked.
+
+- **List.** While the form is open, a **"New message"** row (compose icon
+  20 at 32, label 14 at 64, the list's selected row style) leads the
+  Chats section and is the only selected row. It goes once the form
+  closes (another chat picked).
+- **To row** (in the header's place, 61 tall, bottom line 1 px: brand
+  while the picker has focus, else NeutralStroke2):
+  - "To:" 14 px at x 32, centred;
+  - the picker (Fluent TagPicker, `people-picker-search`), placeholder
+    **"Enter name, chat, channel, email or tag"** (also its aria-label),
+    text from x 64;
+  - a picked person is a chip (`recipient-line-entry`, fui-Tag): 32 tall,
+    a pill on NeutralBackground4, the 32 px picture at 1, the name 14 px
+    8 after it, and a 20 px dismiss (12 px glyph) right after the name;
+    the first chip at x 73, the field 9 after the last chip;
+  - the group name chevron (ChevronDown 20, centre 35.5 from the right),
+    aria **"Add group name and create a new group chat"**, open:
+    **"Collapse group name"** (ChevronUp).
+- **Group name row** (above To): "Group name:" 14 px at 32, the input
+  (aria "Group name", no placeholder) right after it, focused on open;
+  its underline 2 px brand, 20 in from each side. The To row moves under
+  it.
+- **Suggestions** (`people-picker-list`, opens with the focus): x 52.67,
+  2 below the To row, as wide as the picker (800 here: to 71.33 from the
+  right), white, radius 4 (Medium), shadow 16, padding 4, rows 2 apart
+  (XXS), max height 22.5rem. Rows (fui-Option): 50 tall, padding 6 / 8,
+  the 32 px picture 16 in, the name 14/20 and a second line 12/16
+  (#616161) at 64; hover NeutralBackground1Hover.
+  - With nothing typed it lists your recent one-on-one people, then you
+    ("Randy Northrup (You)"). Picking one keeps it open with the rest.
+  - The second line is the entry's `description` (here "OST-TEST1",
+    "RANDY"). → TODO: which directory field that is.
+- **Middle**, with nobody picked (or a new conversation):
+  **"You're starting a new conversation"** (16 px bold, a heading) and
+  43 below its centre **"Type your first message below."** (14 px), both
+  #242424, centred in the message area. Screen readers hear "You're
+  starting a new conversation, type your first message below, press right
+  arrow key to change focus to add group name button".
+- **One person you already chat with**: the note goes and that chat's
+  messages show under the To row (the same message list), with the To
+  row and its chip kept. Opening the group name keeps them.
+- **The compose box is always there**: the conversation's own (Type a
+  message, the formatting, emoji, attach, Loop and apps buttons, Send),
+  at the conversation's place (72 in at this width, 24 above the bottom).
 
 ## 3. Sections (folders)
 
@@ -1121,6 +1271,33 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
   - the inline context buttons, 32 each;
   - a 16-wide divider;
   - the action items: the call container (the button plus 8), the roster count, Meeting details.
+**The tab dropdown in a channel (Teams web, 2026-11-16, 960 wide → header
+612, OST's "General" in a Posts channel).** The same rule as chats:
+- the team picture stays 32 px at 20, centred; the title "General" is
+  14/700 at y 10, x 62 (a button 66 wide from 60);
+- under it at y 28 the dropdown button (`tab-overflow-button`, id
+  `addTabButton`, aria-label "Posts"): **"Posts ⌄"** 12 px, 64 wide with
+  the chevron; brand while open. A Threads channel reads "Conversation ⌄";
+- inline only the icon-only Meet now (26 × 31) with its chevron, the
+  divider, Find, and ···.
+- The menu (module 454179 `o`): 1 below the button, left-aligned; Fluent
+  `hasCheckmarks` (a check column: the check at 8, labels of rows without
+  an icon at 30, icons at 30 with their labels at 54); max height 300
+  (`menuStyles`), which scrolled here (172 wide with the scrollbar). In
+  order:
+  1. the channel's add-tab choices (`extraAddTabActions`, when you can
+     add tabs): **New page**, **Existing page**, **New list**, **Existing
+     list**, **Apps** (`framework:add_app_label`), then a divider
+     (`extra-actions-group-divider`);
+  2. the fixed tabs (`isNotDraggable`): ✓ **Posts**, **Shared**;
+  3. a divider (`tab-group-divider`) only when there are no add-tab
+     choices and there are movable tabs or you can add tabs;
+  4. the movable tabs: **Page ›**, **Notes ›**: split items (the tab, then
+     a chevron "More menu" for the open tab's own menu, else its
+     right-click menu);
+  5. without the choices (a chat): **Add a tab** (`add-tab-menu-item`,
+     the Add icon) last.
+
 - **Tab overflow** is by width (Fluent overflow): the tabs that fit stay, the rest go under "+N" (14/400 #616161, padding 0 2, 60.3 tall).
   - Its menu sits 5 below and 5 in.
   - At 1280 the meeting chat showed Chat, Shared, Recap, then "+4".
@@ -1471,9 +1648,9 @@ the channel again, or **Go to channel**, returns to its posts).
   leave; the delete confirmation dialog; `PopoutConv` shortcut text.
 
 ## OST status against this spec
-- [ ] List width 280/320/360 px by window width (<640 hidden), drag-resize clamped 280–400, double-click reset.
-- [ ] Header: title by mode; ··· menu items and order (Mark all as read split item with All / All chats / All channels / All communities; Collapse all sections; Customize view with Try it badge; Your teams and channels; Your communities).
-- [ ] Mark all as read from the menu without confirmation; Shift+Esc with the confirmation dialog and "Don't ask again".
+- [x] List width 280/320/360 px by window width, drag-resize clamped 280–400 and to the window less 68 + 320, ArrowLeft/Right 20 px, double-click reset; kept as vw on the device (TASK-0178). Not yet: the < 640 layout (no list, a back arrow), the collapse to 12 px, the Resize smaller/larger buttons.
+- [x] ··· menu items and order (Mark all as read split item with All / All chats / All channels / All communities; Collapse all sections; Customize view; Your teams and channels; Your communities) (TASK-0179). Not yet: the Try it badge (first-run state); Customize view opens Settings (OST has no settings search box to focus).
+- [x] Mark all as read from the menu without confirmation; Shift+Esc with the confirmation dialog and "Don't ask again" (on this device) (TASK-0179).
 - [ ] Collapse all sections saves expanded state on the server.
 - [ ] Filter toggle labels, Ctrl+Shift+F, text box placeholder by mode, 100-char limit, 250 ms debounce, Esc closes, empty-result state.
 - [ ] New message button + New items ▾ split; menu items, order, dividers and their conditions.
@@ -1488,7 +1665,7 @@ the channel again, or **Go to channel**, returns to its posts).
 - [ ] Drag and drop of sections, items and teams; Start reordering.
 - [ ] Shortcuts in §6.
 - [ ] Header layout: 61 px, title 18 px bold, toolbar order action items › divider › context buttons › ···.
-- [ ] Header breakpoints on the header's own width (ResizeObserver): <640 tabs under title + dropdown, Meeting details into ···; <720 Participants into ···; ≥834 Meet now text; context buttons 3/2/0 at ≥640/480–639/<480, overflow into a "Sidepane Features" group at the top of ···.
+- [ ] Header breakpoints on the header's own width (ResizeObserver): <640 tabs under title + dropdown (done for chats and channels, with Teams' menu order, TASK-0177), Meeting details into ···; <720 Participants into ···; ≥834 Meet now text; context buttons 3/2/0 at ≥640/480–639/<480, overflow into a "Sidepane Features" group at the top of ···.
 - [x] 1:1 call control: one sticky Audio/Video button (last used, saved to `mruChatHeaderCallOption`) + "More call options" chevron.
 - [x] Group chat: Meet now (video icon) + chevron with only Audio call; roster count button with its tooltips.
 - [x] Meeting chat: Join and Meeting details (inline from 640, else in ···; opens the meeting in the calendar, its week then its card); meeting tabs; Leave hidden for the creator.

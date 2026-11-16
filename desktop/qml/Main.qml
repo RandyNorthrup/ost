@@ -221,7 +221,30 @@ Window {
     Shortcut { sequence: "Ctrl+J"; onActivated: if (conversation.visible) conversation.jumpToNewest() }
     Shortcut { sequence: "Alt+P"; onActivated: if (conversation.visible) conversation.toggleDetails() }
     Shortcut { sequence: "Alt+Shift+O"; onActivated: if (conversation.visible) conversation.attachFile() }
-    Shortcut { sequence: "Shift+Esc"; onActivated: backend.markAllRead() }
+    // Teams' Mark all as read (Shift+Esc) and Collapse all sections (Alt+Q)
+    // are the chat list header's commands: they act while the list shows.
+    // Shift+Esc asks first (enableMAARConfirmDialog) until "Don't ask
+    // again" (clientPreferences simpleCollab.skipMarkAllAsReadConfirmDialog,
+    // kept on this device).
+    Shortcut { sequence: "Shift+Esc"; enabled: chatList.visible; onActivated: window.shiftEscMarkAll() }
+    Shortcut { sequence: "Alt+Q"; enabled: chatList.visible && !window.zoomShortcuts; onActivated: chatList.collapseAll() }
+    function shiftEscMarkAll() {
+        if (backend.setting("skipMarkAllAsReadConfirmDialog") === "true") backend.markAllRead(chatList.markAllAppType)
+        else markAllDialog.open()
+    }
+    // Teams' SimpleCollabMarkAllAsReadConfirmDialog: a plain Fluent dialog
+    // (600 wide). Its title passes the entities as "entitiesToBeMarked" to
+    // a string that wants "entities", so Teams shows none there.
+    ConfirmDialog {
+        id: markAllDialog
+        dialogWidth: 600
+        title: "Are you sure you want to mark all as read?"
+        body: "This will mark all your " + chatList.markAllEntities + " as read. This action can't be undone."
+        confirmText: "Confirm"
+        checkText: "Don't ask again"
+        onConfirmed: { if (checked) backend.setSetting("skipMarkAllAsReadConfirmDialog", "true"); backend.markAllRead(chatList.markAllAppType) }
+        onCancelled: if (checked) backend.setSetting("skipMarkAllAsReadConfirmDialog", "true")
+    }
     Shortcut { sequence: "Ctrl+Alt+Z"; onActivated: chatList.clearFilters() }
     Shortcut { sequence: "Ctrl+Alt+C"; onActivated: { rail.current = "chat"; chatList.setChip("chats") } }
     Shortcut { sequence: "Ctrl+Alt+A"; onActivated: { rail.current = "chat"; chatList.setChip(window.slackShortcuts ? "unread" : "channels") } }
@@ -2384,7 +2407,7 @@ Window {
                 newChat.pick(p)
                 newChat.naming = true
                 newChat.nameText = "OST group test"
-                newChat.messageText = "OST test 27: group chat started from OST"
+                newChat.setMessage("OST test 27: group chat started from OST")
                 step = 2
                 return
             }
@@ -4099,6 +4122,129 @@ Window {
             else if (st === 12) castWindow.contentItem.grabToImage(r => r.saveToFile("/tmp/act/menu-cast.png"))
             else if (st === 27) { console.warn("MENU cast after 20 s, searching", castWindow.searching); castWindow.contentItem.grabToImage(r => r.saveToFile("/tmp/act/menu-cast-none.png")) }
             else if (st > 28) Qt.quit()
+        }
+    }
+    // --chatlist-menu-test with --shots=<dir>: the chat list's ··· menu (CHATLIST
+    // menu rows), its Mark all as read options, Shift+Esc's confirmation
+    // (opened and closed again: nothing is marked), and the list's width:
+    // Teams' default for the window, a drag to 400 and below 280 (clamped),
+    // ArrowRight on the divider, the kept vw, and a double-click reset.
+    // The width setting is put back as it was.
+    Timer {
+        running: Qt.application.arguments.indexOf("--chatlist-menu-test") >= 0 && backend.signedIn
+        interval: 1500; repeat: true
+        property int step: 0
+        property string keptVw: ""
+        onTriggered: {
+            const st = step++
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "chatlist-" + n + ".png"))
+            const r2 = v => Math.round(v * 100) / 100
+            const rowsOf = m => {
+                const out = []
+                const walk = it => { for (let i = 0; i < it.children.length; i++) { const c = it.children[i]; if (!c.visible) continue; if (c.modelData !== undefined && c.modelData && (c.modelData.label || c.modelData.separator)) { const q = c.mapToItem(m.contentItem, 0, 0); out.push([c.modelData.separator ? "|" : c.modelData.label, r2(q.y), r2(c.height), c.modelData.keys || "", c.modelData.split ? "split" : ""]) } else walk(c) } }
+                walk(m.contentItem)
+                return out
+            }
+            if (st === 0) { keptVw = backend.setting("listWidthVw") || ""; backend.setSetting("listWidthVw", ""); chatList.widthVw = -1 }
+            else if (st === 1) console.warn("CHATLIST width", window.width, chatList.width, "default", chatList.defaultWidth, "max", chatList.maxWidth)
+            else if (st === 2) shot("default")
+            else if (st === 3) chatList.openListMenuForTest()
+            else if (st === 4) {
+                const m = chatList.listMenuForTest()
+                const p = m.contentItem.mapToItem(null, 0, 0)
+                console.warn("CHATLIST menu", r2(p.x), r2(p.y), r2(m.width), r2(m.height), JSON.stringify(rowsOf(m)))
+                shot("menu")
+            }
+            else if (st === 5) chatList.openMarkAllSubmenuForTest()
+            else if (st === 6) {
+                const sm = chatList.listMenuForTest().subMenu
+                if (sm) { const p = sm.contentItem.mapToItem(null, 0, 0); console.warn("CHATLIST markall", r2(p.x), r2(p.y), r2(sm.width), JSON.stringify(rowsOf(sm))) }
+                shot("menu-markall")
+            }
+            else if (st === 7) { chatList.listMenuForTest().close(); window.shiftEscMarkAll() }
+            else if (st === 8) {
+                const p = markAllDialog.contentItem.mapToItem(null, 0, 0)
+                console.warn("CHATLIST dialog", markAllDialog.opened, r2(markAllDialog.width), r2(markAllDialog.height), markAllDialog.title, "|", markAllDialog.body)
+                shot("maar-dialog")
+            }
+            else if (st === 9) markAllDialog.checked = true
+            else if (st === 10) shot("maar-dialog-checked")
+            else if (st === 11) markAllDialog.close()
+            else if (st === 12) { console.warn("CHATLIST skip setting", JSON.stringify(backend.setting("skipMarkAllAsReadConfirmDialog"))); chatList.setWidthPx(400) }
+            else if (st === 13) { console.warn("CHATLIST drag 400 ->", chatList.width, "vw", r2(chatList.widthVw)); shot("wide") }
+            else if (st === 14) chatList.setWidthPx(200)
+            else if (st === 15) { console.warn("CHATLIST drag 200 ->", chatList.width); chatList.setWidthPx(chatList.width + 20) }
+            else if (st === 16) console.warn("CHATLIST arrow right ->", chatList.width, "kept", backend.setting("listWidthVw"))
+            else if (st === 17) chatList.resetWidth()
+            else if (st === 18) { console.warn("CHATLIST reset ->", chatList.width, "kept", backend.setting("listWidthVw")); shot("reset") }
+            else if (st === 19) { backend.setSetting("listWidthVw", keptVw); console.warn("CHATLIST restored", JSON.stringify(keptVw)); Qt.quit() }
+        }
+    }
+    // --new-chat-form-test with --shots=<dir>: Teams' new chat form before
+    // picking anyone (the suggestions and the note), after picking the
+    // first suggestion you have a chat with (its messages under the To
+    // row), with the group name open, and with two people (the note). It
+    // never sends: the form is closed at the end (NEWCHAT lines).
+    Timer {
+        running: Qt.application.arguments.indexOf("--new-chat-form-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "newchat-" + n + ".png"))
+            const r2 = v => Math.round(v * 100) / 100
+            if (st === 0) { rail.current = "chat"; window.composing = true }
+            else if (st === 2) {
+                const p = newChat.mapToItem(null, 0, 0)
+                console.warn("NEWCHAT empty at", r2(p.x), r2(p.y), r2(newChat.width), r2(newChat.height), "suggesting", newChat.suggesting,
+                    "suggestions", JSON.stringify(newChat.suggestions.map(x => x.name)), "history", newChat.history, "compose y", r2(newChat.composeBox().y), r2(newChat.composeBox().height))
+                shot("empty")
+            }
+            else if (st === 3) {
+                const s1 = newChat.suggestions.find(x => newChat.chatWith(x.id)) || newChat.suggestions[0]
+                if (s1) newChat.pick(s1)
+            }
+            else if (st === 5) {
+                console.warn("NEWCHAT picked", JSON.stringify(newChat.picked), "history", newChat.history, newChat.existingChat, "current", backend.currentChatId)
+                shot("picked")
+            }
+            else if (st === 6) { newChat.naming = true }
+            else if (st === 7) shot("group")
+            else if (st === 8) {
+                newChat.naming = false
+                const s2 = newChat.suggestions.find(x => !/\(You\)$/.test(x.name)) || newChat.suggestions[0]
+                if (s2) newChat.pick(s2)
+            }
+            else if (st === 9) { console.warn("NEWCHAT two", JSON.stringify(newChat.picked.map(x => x.name)), "history", newChat.history); shot("two") }
+            else if (st === 10) { window.composing = false; console.warn("NEWCHAT closed", window.composing) }
+            else if (st === 11) Qt.quit()
+        }
+    }
+    // --tab-dropdown-test with --open-chat=<id> --size=<narrow> --shots=<dir>:
+    // under 640 the tabs fold into Teams' dropdown under the title; logs
+    // TABDROPDOWN (the header width, the button, the menu's rows) and
+    // captures the header and the open menu.
+    Timer {
+        running: Qt.application.arguments.indexOf("--tab-dropdown-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "tabdropdown-" + n + ".png"))
+            const r2 = v => Math.round(v * 100) / 100
+            if (st === 3) { console.warn("TABDROPDOWN header", r2(conversation.width), "narrow", conversation.narrowTitle, "shown", conversation.tabDropdownShownForTest(), "tabs", JSON.stringify(conversation.tabNames)); shot("header") }
+            else if (st === 4) {
+                const m = conversation.tabDropdownForTest()
+                const rows = []
+                const walk = it => { for (let i = 0; i < it.children.length; i++) { const c = it.children[i]; if (!c.visible) continue; if (c.modelData !== undefined && c.modelData && (c.modelData.label || c.modelData.separator)) { const q = c.mapToItem(m.contentItem, 0, 0); rows.push([c.modelData.separator ? "|" : c.modelData.label, r2(q.y), c.modelData.checked ? "checked" : "", c.modelData.split ? "split" : "", c.modelData.enabled === false ? "disabled" : ""]) } else walk(c) } }
+                walk(m.contentItem)
+                Qt.callLater(() => { const p = m.contentItem.mapToItem(null, 0, 0); console.warn("TABDROPDOWN menu", r2(p.x), r2(p.y), r2(m.width), r2(m.height), JSON.stringify(rows)) })
+            }
+            else if (st === 5) shot("menu")
+            else if (st === 6) Qt.quit()
         }
     }
     // --work-location-test: Settings ▸ Privacy's Manage my work location
@@ -8440,9 +8586,16 @@ Window {
         id: newChat
         visible: window.composing && rail.current === "chat"
         z: 3
-        anchors { top: appBanner.bottom; bottom: parent.bottom; left: chatList.right; right: parent.right }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+        chats: chatList.chats
+        myMri: backend.userMri
+        myName: backend.userName
         onSearch: q => backend.searchPeople(q)
+        // One person you have a chat with: Teams shows that chat under the
+        // To row; its own compose box sends there.
+        onPreviewChat: (id, name) => { if (id && backend.currentChatId !== id) backend.selectChat(id, name) }
+        onEmojiRequested: box => conversation.openEmojiFor(box)
         onChosen: (oid, name, text) => {
             window.composing = false
             backend.openChatWith(oid, name)
@@ -8864,14 +9017,19 @@ Window {
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right }
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
-        currentId: backend.currentChatId
+        // The new chat form selects nothing but its own row.
+        currentId: window.composing ? "" : backend.currentChatId
         onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
         onNewChat: { draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() }
         onOpenYourTeams: window.openYourTeams("teams")
         onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
         onManageChatApps: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; if (backend.currentChatId !== id) backend.selectChat(id, name); conversation.manageApps = true }
         onChatWorkflows: (id, name) => workflowsDialog.startChat(id, name)
-        onMarkAllRead: backend.markAllRead()
+        onMarkAllRead: appType => backend.markAllRead(appType)
+        onCustomizeView: { window.composing = false; rail.current = "settings" }
+        windowWidth: window.width
+        composing: window.composing
+        onOpenComposing: window.composing = true
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
         onOpenDrafts: { window.composing = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; draftsOpen = true }
         hasMentions: mentionsView.mentions.length > 0
@@ -9034,6 +9192,8 @@ Window {
     }
     Conversation {
         id: conversation
+        // Sent from a chat shown in the new chat form: the form is done.
+        onComposeSent: if (window.composing) window.composing = false
         onToastRequested: d => window.showToast(d)
         onOpenFileRequested: f => fileViewer.show(f)
         onOpenAppDetails: id => appDetails.show(id)

@@ -28,6 +28,11 @@ Window {
         id: form
         anchors { top: titleRow.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
         people: win.people
+        chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
+        myMri: backend.userMri
+        myName: backend.userName
+        // No conversation behind it: the window keeps its note and compose.
+        allowHistory: false
         onSearch: q => win.search(q)
         onChosen: (oid, name, text) => win.chosen(oid, name, text)
         onGroup: (oids, topic, text) => win.group(oids, topic, text)

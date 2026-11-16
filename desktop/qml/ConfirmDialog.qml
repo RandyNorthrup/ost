@@ -17,7 +17,15 @@ Popup {
     parent: Overlay.overlay
     modal: true; focus: true
     padding: 0
-    width: stacked ? 320 : 400; height: buttons.y + buttons.height + 24.67
+    width: dialogWidth > 0 ? dialogWidth : stacked ? 320 : 400; height: buttons.y + buttons.height + 24.67
+    /// A width of its own (Fluent's DialogSurface without one: 600).
+    property real dialogWidth: 0
+    /// A Fluent checkbox at the start of the buttons' row (Teams'
+    /// DialogActions position "start"), as Mark all as read's "Don't ask
+    /// again"; `checked` holds it.
+    property string checkText: ""
+    property bool checked: false
+    onAboutToShow: checked = false
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
@@ -33,6 +41,8 @@ Popup {
     /// carry a 32 x 31.33 Close at the title's end.
     property bool closeButton: false
     signal confirmed()
+    /// Cancel (not Esc).
+    signal cancelled()
 
     Rectangle {
         id: hcFill1
@@ -69,6 +79,32 @@ Popup {
         text: root.body
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
+    }
+    // The checkbox: a 16 px square 8 in, its label at 36 (secondary text,
+    // primary once ticked), centred on the buttons.
+    Item {
+        visible: root.checkText.length > 0
+        x: 24.67 - 8; width: checkLabel.implicitWidth + 36 + 8; height: 32
+        y: buttons.y + (Math.min(buttons.height, 31.33) - height) / 2
+        Rectangle {
+            id: checkBox
+            x: 8; y: 8; width: 16; height: 16; radius: 2
+            color: root.checked ? theme.brandFill : "transparent"
+            border.color: root.checked ? theme.brandFill : theme.textSecondary; border.width: 0.67
+            FluentIcon { visible: root.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(checkBox, "white") }
+        }
+        Text {
+            id: checkLabel
+            x: 36; anchors.verticalCenter: parent.verticalCenter
+            text: root.checkText
+            font.family: theme.font; font.pixelSize: 14
+            color: root.checked ? theme.text : theme.textSecondary
+        }
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.checked = !root.checked }
+        Accessible.role: Accessible.CheckBox
+        Accessible.name: root.checkText
+        Accessible.checked: root.checked
     }
     TextMetrics { id: confirmMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: root.confirmText }
     Grid {
@@ -108,7 +144,7 @@ Popup {
         DialogButton {
             label: "Cancel"
             height: Math.max(31.33, confirmButton.height)
-            onClicked: root.close()
+            onClicked: { root.close(); root.cancelled() }
         }
         DialogButton {
             id: confirmButton

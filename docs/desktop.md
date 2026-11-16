@@ -206,7 +206,7 @@ Files OST keeps:
 | General | `Ctrl+.` shortcuts, `Ctrl+E` / `Ctrl+G` search, `Ctrl+N` new chat, `Ctrl+Shift+F` filter, `Ctrl+,` settings, `Ctrl+Shift+T` pin window on top |
 | Navigation | `Ctrl+R` compose box, `Alt+Left` / `Alt+Right` back and forward, `Ctrl+1`–`Ctrl+5` apps |
 | Compose | `Shift+Enter` new line, `Alt+Shift+O` attach file, `Ctrl+B` / `Ctrl+I` / `Ctrl+U` / `Ctrl+Alt+X` bold, italic, underline, strikethrough, plus the usual undo, redo, cut, copy, paste and select all |
-| Messaging | `Ctrl+F` find in chat, `Ctrl+J` newest message, `Shift+Esc` mark all read, `Ctrl+Alt+U` / `C` / `A` unread, chats, channels, `Ctrl+Alt+Z` clear filters, `Alt+P` details pane, `Alt+1`–`Alt+5` header tabs |
+| Messaging | `Ctrl+F` find in chat, `Ctrl+J` newest message, `Shift+Esc` mark all read (asks first, with "Don't ask again"), `Alt+Q` collapse all sections, `Ctrl+Alt+U` / `C` / `A` unread, chats, channels, `Ctrl+Alt+Z` clear filters, `Alt+P` details pane, `Alt+1`–`Alt+5` header tabs |
 | Calls and calendar | `Ctrl+Shift+M` mute, `Ctrl+Shift+O` camera, `Ctrl+Shift+H` leave, `Alt+Shift+A` start an audio call, `Ctrl+Shift+S` / `Ctrl+Shift+A` accept with audio / video, `Ctrl+Shift+D` decline, `Alt+N` schedule a meeting |
 
 ## Test harness
@@ -252,6 +252,9 @@ account.
 | `--typing-test` | Send typing for 12 s and watch for the other side's. |
 | `--send-file=<path>` | Attach a file and send it. |
 | `--new-chat`, `--new-chat-test` | Open New chat; search a person and open the chat. |
+| `--new-chat-form-test` | With `--shots=<dir>`: Teams' new chat form before picking (suggestions, the note, the compose box), after picking the first suggestion you have a chat with (its messages under the To row), with the group name open, and with two people; NEWCHAT lines, `newchat-*.png`. Never sends; the form is closed at the end. |
+| `--chatlist-menu-test` | With `--shots=<dir>`: the chat list's ··· menu and its Mark all as read options (CHATLIST menu rows), Shift+Esc's confirmation opened and closed (nothing marked), and the list width: the default for the window, a drag to 400 and under 280, a 20 px step, the kept vw and a reset; `chatlist-*.png`. The width setting is put back. |
+| `--tab-dropdown-test` | With `--open-chat=<id> --size=<narrow> --shots=<dir>`: under 640 the tabs fold into Teams' dropdown under the title; TABDROPDOWN lines (header width, the menu's rows), `tabdropdown-*.png`. |
 | `--group-test` | Start a named group chat with a first message. |
 | `--channel-test` | Post in OST Test Team > General. |
 | `--reply-test` | With `--open-chat=<channel>`, reply in the newest post's thread. |

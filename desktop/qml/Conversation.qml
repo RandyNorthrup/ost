@@ -343,12 +343,21 @@ Rectangle {
     // into ··· as "In this chat" (measured at 604: only Find stays inline);
     // below 480 Find goes too. Live roster avatars show from 834.
     function openChatMenuForTest() { chatMenu.open() }
+    function tabDropdownForTest() { tabDropdownMenu.open(); return tabDropdownMenu }
+    function tabDropdownShownForTest() { return tabDropdown.visible }
     function funPickerForTest() { return msgHost.emojiPicker }
     function customEmojiAddForTest() { return msgHost.customEmojiAdd }
     function composeMediaForTest() { return compose.mediaInUse() }
     function closeChatMenuForTest() { chatMenu.close() }
     function toggleFind() { root.finding = !root.finding; if (root.finding) root.tab = "" }
     readonly property bool headerNarrow: width < 640
+    /// Under 640 the title is 14 px and the tabs fold into a dropdown under
+    /// it (Teams' isDropdownAtSmallViewports): chats, and channels in the
+    /// main view ("Posts ⌄", a Threads channel's "Conversation ⌄"; measured
+    /// on Teams web 2026-11-16 at a 612 px header).
+    readonly property bool narrowTitle: headerNarrow && (!isChannel || (!pane && !popout))
+    /// Where the narrow title (and its dropdown) must end.
+    readonly property real narrowTitleEnd: isChannel ? (channelMeet.visible ? channelMeet.x - 4 : header.width - 160) : header.toolbarLeft
     readonly property bool rosterInMenu: width < 720 && isGroup && !isChannel && !isSelf
     // A Threads-layout channel's Open threads button sits before Find; under
     // 640 its channel details move to the ··· menu (Teams, measured).
@@ -923,16 +932,16 @@ Rectangle {
             x: 61
             // Below 640 Teams sets the title 14/700 (line 20) at 10, the
             // tab dropdown under it.
-            y: root.headerNarrow && !root.isChannel ? 10 : (parent.height - height) / 2
-            height: root.headerNarrow && !root.isChannel ? 20 : implicitHeight
-            lineHeight: root.headerNarrow && !root.isChannel ? 20 : 1; lineHeightMode: root.headerNarrow && !root.isChannel ? Text.FixedHeight : Text.ProportionalHeight
+            y: root.narrowTitle ? 10 : (parent.height - height) / 2
+            height: root.narrowTitle ? 20 : implicitHeight
+            lineHeight: root.narrowTitle ? 20 : 1; lineHeightMode: root.narrowTitle ? Text.FixedHeight : Text.ProportionalHeight
             // Long names elide so the tabs and actions keep their place.
             // Narrow: Teams' title (and the tab dropdown under it) ends where
             // the toolbar starts (measured: 220.2 px at a 452 px header).
-            width: Math.max(0, Math.min(implicitWidth, root.headerNarrow && !root.isChannel ? header.toolbarLeft - x : parent.width * 0.35))
+            width: Math.max(0, Math.min(implicitWidth, root.narrowTitle ? root.narrowTitleEnd - x : parent.width * 0.35))
             elide: Text.ElideRight
             text: root.chatName
-            font.family: theme.font; font.pixelSize: root.headerNarrow && !root.isChannel ? 14 : theme.title; font.weight: Font.Bold
+            font.family: theme.font; font.pixelSize: root.narrowTitle ? 14 : theme.title; font.weight: Font.Bold
             color: root.hdrText
             // A 1:1 chat's title opens the person's card on hover, as their
             // picture does (Teams).
@@ -1045,7 +1054,7 @@ Rectangle {
         }
         Row {
             id: tabs
-            visible: !(root.headerNarrow && !root.isChannel) && !root.popout
+            visible: !root.narrowTitle && !root.popout
             x: (renameButton.visible ? renameButton.x + renameButton.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {
@@ -1220,27 +1229,79 @@ Rectangle {
             }
         }
         // Below 640: the tabs as a dropdown under the title (Teams'
-        // tab-overflow-button with the open tab's name, 12 px #424242 and a
-        // 12 px chevron 4 after it; a menu of the tabs, the open one checked).
+        // tab-overflow-button, module 454179): the open tab's name, 12 px
+        // #424242 (brand while open), and a 12 px chevron 4 after it. Its
+        // menu (max 300 tall in Teams, which scrolls) has Teams' order:
+        // a channel's Add a tab choices (New page, Existing page, New list,
+        // Existing list, Apps) and a divider; the fixed tabs; a divider
+        // (only without those choices); the tabs you can move, each with
+        // its menu beside it (a split item); and, without the choices, "Add
+        // a tab". The open tab is checked (Fluent's check column).
         Item {
             id: tabDropdown
-            visible: root.headerNarrow && !root.isChannel && !root.pane && !root.popout && header.toolbarLeft - title.x >= ddRow.implicitWidth
+            visible: root.narrowTitle && !root.pane && !root.popout && root.narrowTitleEnd - title.x >= ddRow.implicitWidth
             x: title.x; y: 28; width: ddRow.implicitWidth; height: 17.3
             Row {
                 id: ddRow
                 anchors.verticalCenter: parent.verticalCenter; spacing: 4
-                Text { anchors.verticalCenter: parent.verticalCenter; text: root.tab === "" ? (root.tabNames[0] || "") : root.tab; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: root.tab === "" ? (root.tabNames[0] || "") : root.tab; font.family: theme.font; font.pixelSize: 12; color: tabDropdownMenu.opened ? theme.brand : theme.textStrong }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: tabDropdownMenu.opened ? theme.brand : theme.textStrong }
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: tabDropdownMenu.open() }
             Accessible.role: Accessible.Button
             Accessible.name: root.tab === "" ? (root.tabNames[0] || "") : root.tab
+            function ownTab(i) { return root.channelTabs.find(t => t.name === root.tabNames[i]) || null }
+            readonly property var entries: {
+                const sel = root.tab === "" ? 0 : root.tabNames.indexOf(root.tab)
+                const fixed = [], movable = []
+                for (let i = 0; i < root.tabNames.length; i++) {
+                    const t = tabDropdown.ownTab(i)
+                    const draggable = root.isChannel ? root.tabIsDraggable(i) : !!t && t.draggable !== false
+                    // The open tab's own menu, else a movable tab's
+                    // right-click menu (Teams web: Shared, a fixed tab, has
+                    // none in the dropdown).
+                    const m = !t ? [] : i === sel && t.menu && t.menu.length ? t.menu : draggable ? (t.context_menu || []) : []
+                    const e = { kind: "tab", index: i, tab: t, menu: m, item: { label: root.tabNames[i], checked: i === sel } }
+                    if (m.length) {
+                        e.item.split = true
+                        e.item.splitLabel = "More menu"
+                        e.item.submenu = m.map(x => x.key === "divider" ? { separator: true } : { label: x.label, icon: tabMenu.icons[x.key] || "", enabled: x.enabled })
+                    }
+                    (draggable ? movable : fixed).push(e)
+                }
+                const out = []
+                const choices = root.canAddTab && root.isChannel
+                if (choices) {
+                    out.push({ kind: "add", key: "newPage", item: { label: "New page", icon: "loop-page-20", enabled: false } },
+                             { kind: "add", key: "existingPage", item: { label: "Existing page", icon: "link-20", enabled: false } },
+                             { kind: "add", key: "newList", item: { label: "New list", icon: "lists-new-20", enabled: false } },
+                             { kind: "add", key: "existingList", item: { label: "Existing list", icon: "table-link-20", enabled: false } },
+                             { kind: "add", key: "apps", item: { label: "Apps", icon: "apps-20" } },
+                             { kind: "sep", item: { separator: true } })
+                }
+                out.push(...fixed)
+                if (fixed.length && (movable.length || root.canAddTab) && !choices) out.push({ kind: "sep", item: { separator: true } })
+                out.push(...movable)
+                if (root.canAddTab && !choices) out.push({ kind: "add", key: "addTab", item: { label: "Add a tab", icon: "add-20" } })
+                return out
+            }
             MenuPopup {
                 id: tabDropdownMenu
-                y: parent.height + 4
-                items: root.tabNames.map((n, i) => ({ label: n, checked: (root.tab === "" ? 0 : root.tabNames.indexOf(root.tab)) === i }))
-                onPicked: i => root.tab = i === 0 ? "" : root.tabNames[i]
+                y: parent.height + 1
+                checkColumn: true
+                submenuMinWidth: 0
+                items: tabDropdown.entries.map(e => e.item)
+                onPicked: k => {
+                    const e = tabDropdown.entries[k]
+                    if (e.kind === "tab") root.openTabAt(e.index)
+                    else if (e.key === "apps") root.openTabPicker(root.chatId, "channel", root.teamThread)
+                    else if (e.key === "addTab") root.addTab()
+                }
+                onSubPicked: (k, j) => {
+                    const e = tabDropdown.entries[k]
+                    if (e.tab && e.menu[j]) root.tabAction(e.menu[j].key, e.tab)
+                }
             }
         }
         component HeaderAction: Rectangle {
@@ -4375,7 +4436,10 @@ Rectangle {
         compose.importance = ""
         compose.resetPost()
         root.posting = false
+        root.composeSent()
     }
+    /// The main compose box sent (the new chat form closes on it).
+    signal composeSent()
     // Teams' pinned-message banner (pinned-message-banner, measured): over
     // the top of the list, 40 tall, NeutralBackground2 with shadow 8 and a
     // NeutralStroke3 bottom line. Pin icon (20) at 20.7, the sender (12),

@@ -1999,9 +1999,11 @@ pub mod qobject {
             teams_meeting: bool,
         );
 
-        /// Mark every unread chat read (chat pane > More list options).
+        /// Mark all as read (chat pane > More list options, Shift+Esc) for
+        /// Teams' app type: "unified", "chat", "channel", "split_channel"
+        /// or "engage_community".
         #[qinvokable]
-        fn mark_all_read(self: Pin<&mut Backend>);
+        fn mark_all_read(self: Pin<&mut Backend>, app_type: &QString);
 
         /// Load the team list again (after creating or joining a team).
         #[qinvokable]
@@ -16107,12 +16109,50 @@ impl qobject::Backend {
         self.load_teams();
     }
 
-    pub fn mark_all_read(mut self: Pin<&mut Self>) {
-        let ids: Vec<String> = self.as_mut().rust_mut().unread.drain().collect();
-        self.as_mut().publish_chats();
+    pub fn mark_all_read(mut self: Pin<&mut Self>, app_type: &QString) {
+        let app_type = app_type.to_string();
+        // Channels: the teams list's unread flags, and channel threads in
+        // the unread set.
+        let mut teams: serde_json::Value = serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        let channel_ids: HashSet<String> = teams
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|t| t["channels"].as_array().into_iter().flatten())
+            .filter_map(|c| c["id"].as_str().map(String::from))
+            .collect();
+        let mut unread: Vec<String> = self.rust().unread.iter().cloned().collect();
+        for t in teams.as_array().into_iter().flatten() {
+            for c in t["channels"].as_array().into_iter().flatten() {
+                if c["unread"] == json!(true)
+                    && let Some(id) = c["id"].as_str()
+                    && !unread.iter().any(|u| u == id)
+                {
+                    unread.push(id.to_string());
+                }
+            }
+        }
+        let ids = mark_all_targets(&app_type, &unread, &channel_ids);
         if ids.is_empty() {
             return;
         }
+        let mut teams_changed = false;
+        for t in teams.as_array_mut().into_iter().flatten() {
+            for c in t["channels"].as_array_mut().into_iter().flatten() {
+                if c["unread"] == json!(true) && c["id"].as_str().is_some_and(|id| ids.iter().any(|i| i == id)) {
+                    c["unread"] = json!(false);
+                    teams_changed = true;
+                }
+            }
+        }
+        if teams_changed {
+            self.as_mut().set_teams_json(QString::from(teams.to_string().as_str()));
+        }
+        for id in &ids {
+            self.as_mut().rust_mut().unread.remove(id);
+        }
+        self.as_mut().publish_chats();
+        tracing::info!(%app_type, count = ids.len(), "mark all as read");
         runtime().spawn(async move {
             let Ok(client) = TeamsClient::new().await else {
                 return;
@@ -17698,5 +17738,46 @@ mod low_end_tests {
         assert!(super::is_low_end(2, 16_000_000));
         assert!(super::is_low_end(8, 4_000_000));
         assert!(!super::is_low_end(8, 31_000_000));
+    }
+}
+
+/// Which unread conversations Teams' Mark all as read clears for an app
+/// type (markAllAsReadByAppName's appType): "unified" all of them, "chat"
+/// the chats (meeting chats too), "channel" the channels, "split_channel"
+/// the channels and communities, "engage_community" communities only
+/// (OST keeps no communities' unread state, so none). A conversation is a
+/// channel when it is one of your teams' channels or a channel thread.
+fn mark_all_targets(app_type: &str, unread: &[String], channels: &HashSet<String>) -> Vec<String> {
+    let (chats, chans) = match app_type {
+        "chat" => (true, false),
+        "channel" | "split_channel" => (false, true),
+        "engage_community" => (false, false),
+        _ => (true, true),
+    };
+    unread
+        .iter()
+        .filter(|id| {
+            let is_channel = channels.contains(id.as_str()) || id.ends_with("@thread.tacv2");
+            if is_channel { chans } else { chats }
+        })
+        .cloned()
+        .collect()
+}
+
+#[cfg(test)]
+mod mark_all_tests {
+    use std::collections::HashSet;
+    #[test]
+    fn mark_all_read_keeps_to_its_app_type() {
+        let unread: Vec<String> = ["19:a@unq.gbl.spaces", "19:meeting_x@thread.v2", "19:c@thread.tacv2", "19:old@thread.skype"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let channels: HashSet<String> = ["19:old@thread.skype".to_string()].into_iter().collect();
+        assert_eq!(super::mark_all_targets("unified", &unread, &channels).len(), 4);
+        assert_eq!(super::mark_all_targets("chat", &unread, &channels), vec!["19:a@unq.gbl.spaces", "19:meeting_x@thread.v2"]);
+        assert_eq!(super::mark_all_targets("channel", &unread, &channels), vec!["19:c@thread.tacv2", "19:old@thread.skype"]);
+        assert_eq!(super::mark_all_targets("split_channel", &unread, &channels).len(), 2);
+        assert!(super::mark_all_targets("engage_community", &unread, &channels).is_empty());
     }
 }

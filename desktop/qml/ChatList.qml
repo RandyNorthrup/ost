@@ -79,7 +79,15 @@ Rectangle {
     onActiveFocusChanged: if (!activeFocus) keyboardNav = false
     signal newChat()
     signal openDrafts()
-    signal markAllRead()
+    /// Mark all as read for Teams' app type: "unified", "chat", "channel",
+    /// "split_channel" or "engage_community".
+    signal markAllRead(string appType)
+    /// The ··· menu's Customize view (Teams opens Settings).
+    signal customizeView()
+    /// Teams' new chat form is open: its "New message" row leads the Chats
+    /// section, selected, and nothing else is.
+    property bool composing: false
+    signal openComposing()
     /// Communities ▸ Join communities.
     signal openCommunities()
     /// The chat menu's Open in new window, Manage apps and Set workflows.
@@ -111,7 +119,30 @@ Rectangle {
     property bool yourTeamsOpen: false
     signal openYourTeams()
     color: theme.pane
-    width: theme.listWidth
+    width: listWidth
+    // ---- Width (Teams' MID_NAV slot, module 708731) ----
+    // Teams' default by window width: 280 from 640, 320 from 1280, 360 from
+    // 1500. Dragging the divider (or ArrowLeft / ArrowRight on it, 20 px a
+    // step) sets a width kept as a share of the window (vw), clamped to
+    // 280-400 and to the window less the app bar (68) and the main area's
+    // minimum (320); the CSS clamp lets the minimum win. Double-click puts
+    // the default back. Teams keeps the dragged width on the device
+    // (localStorage teams-layout-slot-size-persistence, per window type);
+    // OST in its device settings ("listWidthVw").
+    property real windowWidth: 1280
+    readonly property real defaultWidth: windowWidth >= 1500 ? 360 : windowWidth >= 1280 ? 320 : 280
+    /// The dragged width as vw, or -1 (never dragged).
+    property real widthVw: { const v = parseFloat(backend.setting("listWidthVw")); return isNaN(v) ? -1 : v }
+    readonly property real maxWidth: Math.min(400, windowWidth - theme.railWidth - 320)
+    function clampWidth(px) { return Math.max(280, Math.min(px, maxWidth)) }
+    readonly property real listWidth: clampWidth(widthVw >= 0 ? widthVw * windowWidth / 100 : defaultWidth)
+    function setWidthPx(px) {
+        widthVw = clampWidth(px) / windowWidth * 100
+        widthSave.restart()
+    }
+    function resetWidth() { widthVw = defaultWidth / windowWidth * 100; widthSave.restart() }
+    // Teams saves the size a moment after the drag ends.
+    Timer { id: widthSave; interval: 500; onTriggered: backend.setSetting("listWidthVw", String(Math.round(root.widthVw * 1e5) / 1e5)) }
 
     // ---- Filters ----
     // Unread combines with one category: "channels", "chats", "meetings"
@@ -221,6 +252,9 @@ Rectangle {
             rows = heldRows(f)
         } else if (f.kind === "RecentChats") {
             rows = root.others.map(c => ({ type: "chat", chat: c }))
+            // Teams' new chat form: "New message" (compose icon) leads the
+            // section, selected, while the form is open.
+            if (root.composing && !filtered) rows.unshift({ type: "newMessage" })
         } else if (f.kind === "TeamsAndChannels") {
             rows = root.shownTeams.map(t => ({ type: "team", team: t }))
             if (rows.length && !filtered) rows.push({ type: "seeAllTeams" })
@@ -234,6 +268,80 @@ Rectangle {
     readonly property bool nothingShown: filtered && sections.every(s => s.rows.length === 0)
 
     Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: theme.edge }
+
+    // ---- ··· More list options ----
+    // Teams' mode: the unified list, the Chat app's or the Teams app's
+    // (split view).
+    readonly property string appMode: pane === "chats" ? "chat" : pane === "teams" ? "channel" : "unified"
+    readonly property var markAllSubmenu: appMode === "unified"
+        ? [{ label: "All", appType: "unified" }, { label: "All chats", appType: "chat" }, { label: "All channels", appType: "channel" }]
+            .concat(hasCommunities ? [{ label: "All communities", appType: "engage_community" }] : [])
+        : appMode === "channel" && hasCommunities
+        ? [{ label: "All", appType: "split_channel" }, { label: "All channels", appType: "channel" }, { label: "All communities", appType: "engage_community" }]
+        : []
+    readonly property var listMenuItems: {
+        const mark = { key: "markAll", label: "Mark all as read", icon: "glasses-20", keys: "Shift+Esc" }
+        if (markAllSubmenu.length) { mark.split = true; mark.submenu = markAllSubmenu; mark.splitLabel = "Mark all as read options" }
+        const out = [mark,
+            { key: "collapseAll", label: "Collapse all sections", icon: "arrow-collapse-all-20", keys: "Alt+Q" },
+            { separator: true },
+            { key: "customize", label: "Customize view", icon: "settings-20" }]
+        if (appMode !== "chat") {
+            out.push({ separator: true }, { key: "yourTeams", label: "Your teams and channels", icon: "people-team-20" })
+            if (hasCommunities) out.push({ key: "yourCommunities", label: "Your communities", icon: "people-community-20" })
+        }
+        return out
+    }
+    /// Teams' app type for Mark all as read here (the menu's main part and
+    /// Shift+Esc): the whole list, or the split view's app.
+    readonly property string markAllAppType: appMode === "channel" ? "split_channel" : appMode
+    function listMenuPicked(key) {
+        if (key === "markAll") root.markAllRead(root.markAllAppType)
+        else if (key === "collapseAll") root.collapseAll()
+        else if (key === "customize") root.customizeView()
+        else if (key === "yourTeams") root.openYourTeams()
+        else if (key === "yourCommunities") root.openCommunities()
+    }
+    /// Collapse all sections (Alt+Q): every folder of this app, as Teams'
+    /// setConversationFoldersExpandedState.
+    function collapseAll() { backend.folderAction("collapseAll", "{}") }
+    function openListMenuForTest() { listMenu.open() }
+    function openMarkAllSubmenuForTest() { listMenu.openSubmenuForTest(0) }
+    function listMenuForTest() { return listMenu }
+    /// Shift+Esc's confirmation: what it marks, by the selected filter
+    /// (Teams' tR: the Chats pill or the Chat app "chats", the Channels
+    /// pill or the Teams app "channels", otherwise all three).
+    readonly property string markAllEntities: category === "chats" || appMode === "chat" ? "chats"
+        : category === "channels" || appMode === "channel" ? "channels" : "chats, channels, and communities"
+
+    // ---- The divider (Teams' resize handle, role slider "Resize left
+    // panel", 280-400) ----
+    Item {
+        id: resizeHandle
+        x: root.width - 4; width: 4; height: root.height
+        z: 10
+        activeFocusOnTab: false
+        HoverHandler { cursorShape: Qt.SplitHCursor }
+        property real startWidth: 0
+        DragHandler {
+            id: resizeDrag
+            target: null
+            xAxis.enabled: true; yAxis.enabled: false
+            cursorShape: Qt.SplitHCursor
+            onActiveChanged: if (active) resizeHandle.startWidth = root.width
+            onTranslationChanged: if (active) root.setWidthPx(resizeHandle.startWidth + translation.x)
+        }
+        TapHandler {
+            onDoubleTapped: root.resetWidth()
+            onTapped: resizeHandle.forceActiveFocus()
+        }
+        Keys.onLeftPressed: root.setWidthPx(root.width - 20)
+        Keys.onRightPressed: root.setWidthPx(root.width + 20)
+        Rectangle { anchors.fill: parent; visible: resizeHandle.activeFocus || resizeDrag.active; color: theme.brand; opacity: 0.6 }
+        Accessible.role: Accessible.Slider
+        Accessible.name: "Resize left panel"
+        Accessible.description: Math.round(root.width) + "px"
+    }
 
     component HeaderButton: Rectangle {
         id: hb
@@ -260,30 +368,36 @@ Rectangle {
         }
         HeaderButton {
             id: moreList
-            x: 194; y: 15; icon: "more-20"; Accessible.name: "More list options"
+            x: root.width - 126; y: 15; icon: "more-20"; Accessible.name: "More list options"
             onClicked: listMenu.open()
+            // Teams' ··· More list options ($L, measured on Teams web
+            // 2026-11-16): below-start, 248 wide; Mark all as read (a split
+            // item in the unified list: All / All chats / All channels /
+            // All communities), Collapse all sections | Customize view |
+            // Your teams and channels, Your communities. The Chat-only list
+            // has no split and stops after Customize view.
             MenuPopup {
                 id: listMenu
                 y: parent.height + 4
-                items: [{ label: "Mark all as read", icon: "checkmark-12" }, { separator: true },
-                        { label: "Collapse all sections" }]
-                onPicked: i => {
-                    if (i === 0) root.markAllRead()
-                    else if (i === 2) backend.folderAction("collapseAll", "{}")
-                }
+                submenuMinWidth: 0
+                // Teams' menu measures 248 (its Segoe text is a little wider).
+                minRowWidth: 240
+                items: root.listMenuItems
+                onPicked: i => root.listMenuPicked(root.listMenuItems[i].key)
+                onSubPicked: (i, j) => root.markAllRead(root.listMenuItems[i].submenu[j].appType)
             }
         }
         HeaderButton {
-            x: 226; y: 15; icon: "search-20"; Accessible.name: "Show filter text box"
+            x: root.width - 94; y: 15; icon: "search-20"; Accessible.name: "Show filter text box"
             onClicked: { root.filtering = !root.filtering; if (root.filtering) filterField.forceActiveFocus(); else { filterField.text = "" } }
         }
         HeaderButton {
-            x: 258; y: 14; width: 26; icon: "compose-20"
+            x: root.width - 62; y: 14; width: 26; icon: "compose-20"
             Accessible.name: "New message"
             onClicked: root.newChat()
         }
         HeaderButton {
-            x: 284; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "New items"
+            x: root.width - 36; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "New items"
             onClicked: newMenu.open()
             MenuPopup {
                 id: newMenu
@@ -311,10 +425,10 @@ Rectangle {
     function pillOn(k) { return k === "unread" ? unreadOn : category === k }
     FontMetrics { id: pillMetrics; font.family: theme.font; font.pixelSize: 12 }
     function pillWidth(label) { return Math.ceil(pillMetrics.advanceWidth(label)) + 18 }
-    // Pills that fit in the first row (250 px); the chosen ones first in
+    // Pills that fit in the first row (the list's width less 70); the chosen ones first in
     // priority, the rest in order.
     readonly property var pillRows: {
-        const room = 250
+        const room = root.width - 70
         const w = pillDefs.map(p => pillWidth(p.label))
         const keep = pillDefs.map(() => true)
         const total = () => pillDefs.reduce((s, p, i) => s + (keep[i] ? w[i] + 4 : 0), -4)
@@ -362,7 +476,7 @@ Rectangle {
     // More filters / Fewer filters: only when pills overflow.
     HeaderButton {
         visible: !root.filtering && root.pillRows.second.length > 0 && root.filtersShown
-        x: 282; y: 65; width: 24; height: 24; radius: 4
+        x: root.width - 38; y: 65; width: 24; height: 24; radius: 4
         icon: root.moreFiltersOpen ? "chevron-up-16" : "chevron-down-16"; iconSize: 16
         iconColor: root.moreFiltersOpen ? theme.brand : theme.textStrong
         onClicked: root.moreFiltersOpen = !root.moreFiltersOpen
@@ -372,7 +486,7 @@ Rectangle {
     // "Show filter text box": filter the list by name.
     Rectangle {
         visible: root.filtering
-        x: 32; y: 65; width: 272; height: 32; radius: theme.radius
+        x: 32; y: 65; width: root.width - 48; height: 32; radius: theme.radius
         color: theme.input
         border.color: filterField.activeFocus ? theme.brand : theme.stroke
         FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
@@ -443,6 +557,7 @@ Rectangle {
                                 : modelData.type === "team" ? teamComp
                                 : modelData.type === "slice" ? sliceComp
                                 : modelData.type === "seeAllTeams" ? seeAllComp
+                                : modelData.type === "newMessage" ? newMessageComp
                                 : joinCommunitiesComp
                             property var row: modelData
                             property var section: sec.folder
@@ -460,7 +575,7 @@ Rectangle {
                 topPadding: 40
                 spacing: 0
                 Image {
-                    x: 60; width: 200; height: 204
+                    x: (list.width - width) / 2; width: 200; height: 204
                     source: "../assets/illustrations/all-caught-up.svg"
                     sourceSize: Qt.size(400, 408)
                 }
@@ -487,6 +602,10 @@ Rectangle {
             selected: parent.row.key === "mentions" ? root.mentionsOpen : parent.row.key === "drafts" ? root.draftsOpen : root.quickOpen === parent.row.key
             onClicked: parent.row.key === "mentions" ? root.openMentions() : parent.row.key === "drafts" ? root.openDrafts() : root.openQuick(parent.row.key)
         }
+    }
+    Component {
+        id: newMessageComp
+        ListRow { label: "New message"; icon: "compose-20"; selected: root.composing; onClicked: root.openComposing() }
     }
     // See all your teams: Teams' Your teams and channels page (the row
     // shows as chosen while it's open).

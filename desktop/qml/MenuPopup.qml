@@ -15,7 +15,10 @@ import QtQuick.Window
 // RTT captions menu's "Live Captions": picking it leaves the menu open);
 // picking an enabled row emits picked(index) and closes. A row
 // with a submenu (a list of items) opens it beside the list on hover;
-// picking there emits subPicked(index, subIndex).
+// picking there emits subPicked(index, subIndex). A `split` row with a
+// submenu is Fluent's MenuSplitGroup (Teams' Mark all as read): the label
+// part picks the row, and a 32 px chevron part after a 1 x 20 divider
+// opens the submenu on hover or click.
 Popup {
     id: root
     property var items: []
@@ -52,10 +55,18 @@ Popup {
     /// for it (Teams' Pause notifications: "10 minutes" at 6,
     /// "Notifications settings" at 30).
     property bool perItemIcons: false
-    function rowLabelX(i) { return perItemIcons ? (i.icon ? 30 : 6) : labelX }
+    function rowLabelX(i) { return checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
     padding: viewStyle ? 16.67 : fabric ? 0 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
     property real minRowWidth: 0
+    /// Fluent's hasCheckmarks (Teams' tab dropdown): every row keeps a
+    /// check column (the 16 px check 8 in), so icons sit at 30 and their
+    /// labels at 54, and rows without an icon have their label at 30.
+    property bool checkColumn: false
+    /// Submenus' minimum row width; -1: as wide as this menu (Teams' More
+    /// menu), 0: their own width (a split row's submenu, Teams' Mark all
+    /// as read options).
+    property real submenuMinWidth: -1
     implicitWidth: fabric ? fabricWidth : Math.min(290, Math.max(widest.value, minRowWidth)) + 2 * padding
     /// The pointer is over the menu (for menus that open on hover).
     readonly property bool hovered: surfaceHover.hovered
@@ -73,8 +84,11 @@ Popup {
             for (const i of root.items) {
                 if (i.separator) continue
                 let row = (i.toggle ? 60 : root.rowLabelX(i)) + metrics.advanceWidth(i.label || "") + (i.toggle ? 8 : 6)
-                if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
-                if (i.chevron || i.submenu || i.flyout) row += root.chevronSize + root.chevronMargin
+                // A split row (Teams' Mark all as read): the keys 8.7 after
+                // the label, then 8.6 to the 31 px chevron part.
+                if (i.split) row += -6 + (i.keys ? 8.7 + keyMetrics.advanceWidth(i.keys) : 0) + 8.6 + 31
+                else if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
+                if (!i.split && (i.chevron || i.submenu || i.flyout)) row += root.chevronSize + root.chevronMargin
                 if (i.endCheck !== undefined) row += 16 + 6
                 w = Math.max(w, row)
             }
@@ -99,14 +113,20 @@ Popup {
                 viewStyle: Qt.binding(() => root.viewStyle),
                 fabric: Qt.binding(() => root.fabric),
                 fabricWidth: 232,
-                minRowWidth: Qt.binding(() => root.width - 2 * root.padding) })
+                minRowWidth: Qt.binding(() => root.submenuMinWidth >= 0 ? root.submenuMinWidth : root.width - 2 * root.padding) })
             subMenu.picked.connect(i => { const s = root.subIndex; root.close(); root.subPicked(s, i) })
         }
         return subMenu
     }
     readonly property bool hasFlyout: items.some(i => i && i.flyout === true)
-    function hoverRow(i, rowItem) {
+    function hoverRow(i, rowItem, part) {
         const it0 = items[i]
+        // A split row's label part never opens its submenu.
+        if (it0 && it0.split && part !== "chevron") {
+            if (subMenu) subMenu.close()
+            subIndex = -1
+            return
+        }
         if (it0 && it0.flyout === true && it0.enabled !== false) {
             if (subMenu) subMenu.close()
             subIndex = -1
@@ -131,7 +151,7 @@ Popup {
     /// Open row `i`'s submenu as hovering it would (tests).
     function openSubmenuForTest(i) {
         const rows = contentItem.children.filter(c => c.index === i)
-        if (rows.length) hoverRow(i, rows[0])
+        if (rows.length) hoverRow(i, rows[0], "chevron")
     }
     contentItem: Column {
         spacing: root.fabric ? 0 : 2
@@ -180,7 +200,33 @@ Popup {
                     id: hcFill1
                     visible: !row.modelData.separator && !row.modelData.heading
                     anchors.fill: parent; radius: root.fabric ? 0 : 4
-                    color: mh.hovered && row.on && !row.modelData.toggle ? theme.menuHover : "transparent"
+                    color: mh.hovered && row.on && !row.modelData.toggle && !row.modelData.split ? theme.menuHover : "transparent"
+                    // A split row: the label part and the chevron part
+                    // highlight on their own (Fluent's MenuSplitGroup).
+                    Rectangle {
+                        visible: !!row.modelData.split
+                        width: parent.width - 31; height: parent.height; radius: 4
+                        color: mh.hovered && !splitHover.hovered && row.on ? theme.menuHover : "transparent"
+                    }
+                    Rectangle {
+                        id: splitPart
+                        visible: !!row.modelData.split
+                        anchors.right: parent.right
+                        width: 31; height: parent.height; radius: 4
+                        color: (splitHover.hovered || root.subIndex === row.index) && row.on ? theme.menuHover : "transparent"
+                        Rectangle { width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
+                        FluentIcon {
+                            anchors.centerIn: parent; anchors.horizontalCenterOffset: 0.5
+                            name: "chevron-right-16"; size: 16; color: theme.onFill(hcFill1, row.ink)
+                        }
+                        HoverHandler {
+                            id: splitHover; cursorShape: row.on ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onHoveredChanged: if (hovered) root.hoverRow(row.index, row, "chevron")
+                        }
+                        TapHandler { enabled: row.on; onTapped: root.hoverRow(row.index, row, "chevron") }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: row.modelData.splitLabel || ""
+                    }
                     // A switch row's track and knob.
                     Rectangle {
                         visible: !!row.modelData.toggle
@@ -197,12 +243,12 @@ Popup {
                     }
                     FluentIcon {
                         visible: !!row.modelData.icon
-                        x: root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
+                        x: root.checkColumn ? 30 : root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
                         name: row.modelData.icon || ""
                         color: theme.onFill(hcFill1, row.modelData.iconColor ? row.modelData.iconColor : row.modelData.checked ? theme.brand : row.ink)
                     }
                     FluentIcon {
-                        visible: !root.viewStyle && !row.modelData.icon && !row.modelData.toggle && row.modelData.checked === true
+                        visible: !root.viewStyle && (!row.modelData.icon || root.checkColumn) && !row.modelData.toggle && row.modelData.checked === true
                         x: 8; anchors.verticalCenter: parent.verticalCenter; size: 16
                         name: "checkmark-12"; color: theme.onFill(hcFill1, row.ink)
                     }
@@ -232,21 +278,21 @@ Popup {
                         color: row.modelData.dot || "transparent"
                     }
                     FluentIcon {
-                        visible: !!row.modelData.chevron || !!row.modelData.submenu || !!row.modelData.flyout
+                        visible: (!!row.modelData.chevron || !!row.modelData.submenu || !!row.modelData.flyout) && !row.modelData.split
                         anchors.right: parent.right; anchors.rightMargin: root.chevronMargin; anchors.verticalCenter: parent.verticalCenter
                         name: root.viewStyle ? "view-chevron-16" : "chevron-right-" + root.chevronSize; size: root.chevronSize; color: theme.onFill(hcFill1, row.ink)
                     }
                     Text {
                         // Before a check row's 16 px check (6 either side).
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                        anchors.rightMargin: root.keysMargin + (row.modelData.endCheck !== undefined ? 22 : 0)
+                        anchors.rightMargin: row.modelData.split ? 31 + 8.6 : root.keysMargin + (row.modelData.endCheck !== undefined ? 22 : 0)
                         text: row.modelData.keys || ""
                         font.family: theme.font; font.pixelSize: theme.small
                         color: theme.onFill(hcFill1, row.on ? theme.textSecondary : theme.disabled)
                     }
                     HoverHandler {
                         id: mh; cursorShape: row.on ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onHoveredChanged: if (hovered) root.hoverRow(row.index, row)
+                        onHoveredChanged: if (hovered && !splitHover.hovered) root.hoverRow(row.index, row)
                     }
                     // A row's tooltip (`tip`), 10 px after the row, centred
                     // on it, as Teams' Record and transcribe items show it.
@@ -274,8 +320,10 @@ Popup {
                     }
                     TapHandler {
                         enabled: row.on
-                        onTapped: {
-                            if (row.modelData.submenu || row.modelData.flyout) { root.hoverRow(row.index, row); return }
+                        onTapped: (ev) => {
+                            // A split row's chevron part has its own tap.
+                            if (row.modelData.split && ev.position.x > hcFill1.width - 31) return
+                            if ((row.modelData.submenu || row.modelData.flyout) && !row.modelData.split) { root.hoverRow(row.index, row); return }
                             if (row.modelData.toggle) { root.picked(row.index); return }
                             root.close(); root.picked(row.index)
                         }

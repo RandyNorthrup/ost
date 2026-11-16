@@ -25,6 +25,8 @@ cards.
   32 px) sits just before Find in channel. Its ChatMultiple icon turns filled
   and brand while the pane shows. Under 640 px wide, Open channel details
   moves to the top of the ··· menu (Alt+P), right before Open in new window.
+  Under 640 the tabs also fold into a "Conversation ⌄" dropdown under the
+  channel name (chat-list-and-header.md §7.3; done, TASK-0177).
 - The ··· menu for a Threads channel has no posts order, Manage channel,
   Recommend or Archive. Owners get only Delete channel, after a divider.
 
@@ -104,5 +106,4 @@ The pane has a 0.67 px line on its left and a 61 px header.
 
 - Banner: "A channel owner set this channel to a threads layout. Learn how
   threads work". It shows only in channels converted from Posts.
-- At narrow widths, Teams folds the tabs into a "Conversation ⌄" menu under
-  the channel name.
+
